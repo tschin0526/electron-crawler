@@ -1,0 +1,2233 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>📥 AI 回复查看器</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: #f0f2f5;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+        .header {
+            background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+            color: white;
+            padding: 16px 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 12px;
+            flex-wrap: wrap;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .header h1 {
+            font-size: 18px;
+            font-weight: 700;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .header .url {
+            font-size: 12px;
+            opacity: 0.95;
+            background: rgba(255,255,255,0.15);
+            padding: 6px 12px;
+            border-radius: 6px;
+            max-width: 400px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .status {
+            display: flex;
+            gap: 12px;
+            align-items: center;
+        }
+        .status-badge {
+            font-size: 12px;
+            padding: 6px 12px;
+            border-radius: 20px;
+            background: rgba(255,255,255,0.2);
+        }
+        .main-content {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+        .response-container {
+            flex: 1;
+            padding: 20px;
+            overflow-y: auto;
+            background: #f8fafc;
+        }
+        .response-content {
+            font-size: 15px;
+            line-height: 1.8;
+            color: #1f2937;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            background: white;
+            padding: 16px;
+            border-radius: 8px;
+        }
+        .metadata {
+            background: white;
+            padding: 16px 20px;
+            border-top: 1px solid #e5e7eb;
+            display: flex;
+            gap: 20px;
+            flex-wrap: wrap;
+            font-size: 13px;
+            color: #64748b;
+        }
+        .metadata-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .metadata-label {
+            font-weight: 600;
+            color: #475569;
+        }
+        .empty-state {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100%;
+            color: #94a3b8;
+            text-align: center;
+            gap: 20px;
+        }
+        .empty-icon {
+            font-size: 64px;
+            opacity: 0.5;
+        }
+        .empty-text {
+            font-size: 16px;
+        }
+        .loading-spinner {
+            width: 40px;
+            height: 40px;
+            border: 4px solid #e5e7eb;
+            border-top-color: #6366f1;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        .action-bar {
+            display: flex;
+            gap: 10px;
+        }
+        .action-btn {
+            background: rgba(255,255,255,0.2);
+            border: none;
+            color: white;
+            padding: 8px 16px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 13px;
+            font-weight: 600;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .action-btn:hover {
+            background: rgba(255,255,255,0.3);
+        }
+        .action-btn.primary {
+            background: white;
+            color: #6366f1;
+        }
+        .action-btn.primary:hover {
+            background: #f8fafc;
+        }
+        .char-count {
+            font-size: 12px;
+            background: rgba(0,0,0,0.1);
+            padding: 4px 10px;
+            border-radius: 12px;
+        }
+        
+        /* 选择器可编辑样式 */
+        #selectorDisplay {
+            cursor: pointer;
+            position: relative;
+            max-width: 300px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        #selectorDisplay:hover {
+            background: rgba(0,0,0,0.25);
+        }
+        
+        /* 选择器编辑输入框 */
+        #selectorInput {
+            display: none;
+            font-size: 12px;
+            background: rgba(255,255,255,0.95);
+            color: #1f2937;
+            border: 2px solid #6366f1;
+            border-radius: 8px;
+            padding: 4px 10px;
+            outline: none;
+            font-family: monospace;
+            max-width: 400px;
+            min-width: 200px;
+        }
+        #selectorInput:focus {
+            border-color: #8b5cf6;
+            box-shadow: 0 0 0 3px rgba(99,102,241,0.3);
+        }
+        
+        /* 选择器测试按钮 */
+        #selectorTestBtn {
+            display: none;
+            font-size: 11px;
+            background: rgba(255,255,255,0.25);
+            color: white;
+            border: 1px solid rgba(255,255,255,0.4);
+            border-radius: 6px;
+            padding: 3px 8px;
+            cursor: pointer;
+            font-weight: 600;
+            white-space: nowrap;
+        }
+        #selectorTestBtn:hover {
+            background: rgba(255,255,255,0.4);
+        }
+        #selectorTestBtn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        
+        /* Tooltip 样式 */
+        .selector-tooltip {
+            display: none;
+            position: absolute;
+            top: 100%;
+            left: 50%;
+            transform: translateX(-50%);
+            margin-top: 8px;
+            background: #1e293b;
+            color: #e2e8f0;
+            padding: 12px 16px;
+            border-radius: 8px;
+            font-size: 12px;
+            line-height: 1.6;
+            max-width: 450px;
+            min-width: 350px;
+            z-index: 1000;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+            white-space: normal;
+            word-wrap: break-word;
+            pointer-events: none;
+        }
+        .selector-tooltip::before {
+            content: '';
+            position: absolute;
+            top: -6px;
+            left: 50%;
+            transform: translateX(-50%);
+            border-left: 6px solid transparent;
+            border-right: 6px solid transparent;
+            border-bottom: 6px solid #1e293b;
+        }
+        .selector-tooltip strong {
+            color: #60a5fa;
+        }
+        .selector-tooltip code {
+            background: rgba(99,102,241,0.2);
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-family: monospace;
+            color: #c4b5fd;
+        }
+        
+        /* 视图切换按钮 */
+        .view-toggle {
+            display: flex;
+            background: rgba(255,255,255,0.15);
+            border-radius: 8px;
+            overflow: hidden;
+        }
+        .view-toggle-btn {
+            padding: 6px 14px;
+            border: none;
+            background: transparent;
+            color: rgba(255,255,255,0.7);
+            cursor: pointer;
+            font-size: 12px;
+            font-weight: 600;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+        .view-toggle-btn:hover {
+            background: rgba(255,255,255,0.1);
+        }
+        .view-toggle-btn.active {
+            background: rgba(255,255,255,0.25);
+            color: white;
+        }
+        
+        /* 卡片模式样式 */
+        .card-list {
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+        .news-card {
+            background: white;
+            border-radius: 12px;
+            padding: 16px 20px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+            border-left: 4px solid #6366f1;
+            transition: all 0.2s;
+        }
+        .news-card:hover {
+            box-shadow: 0 4px 12px rgba(99,102,241,0.15);
+            transform: translateY(-1px);
+        }
+        .card-header {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 10px;
+        }
+        .card-time {
+            font-size: 13px;
+            color: #64748b;
+            font-weight: 600;
+            background: #f1f5f9;
+            padding: 4px 10px;
+            border-radius: 6px;
+            white-space: nowrap;
+        }
+        .card-title {
+            font-size: 15px;
+            font-weight: 700;
+            color: #1e293b;
+            flex: 1;
+        }
+        .card-body {
+            font-size: 14px;
+            line-height: 1.7;
+            color: #475569;
+            padding-left: 12px;
+            border-left: 2px solid #e2e8f0;
+            margin-top: 8px;
+        }
+        .card-divider {
+            border: none;
+            border-top: 1px dashed #e2e8f0;
+            margin: 0;
+        }
+        
+        /* 简单卡片（无标题只有内容） */
+        .simple-card {
+            background: white;
+            border-radius: 12px;
+            padding: 16px 20px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+            transition: all 0.2s;
+        }
+        .simple-card:hover {
+            box-shadow: 0 4px 12px rgba(0,0,0,0.12);
+        }
+        .simple-card .card-time {
+            margin-bottom: 8px;
+        }
+        .simple-card .card-body {
+            padding-left: 0;
+            border-left: none;
+        }
+        
+        /* 提示消息 */
+        .hint-message {
+            background: #fffbeb;
+            border: 1px solid #fbbf24;
+            border-radius: 8px;
+            padding: 12px 16px;
+            margin-bottom: 16px;
+            font-size: 13px;
+            color: #92400e;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        /* 段落模式（普通文本优化显示） */
+        .paragraph-mode .paragraph {
+            margin-bottom: 12px;
+            padding: 12px 16px;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+        }
+
+        /* 🌙 黑夜模式 */
+        :root {
+            --content-bg: #ffffff;
+            --content-text: #1f2937;
+            --h1-color: #1e40af;
+            --h2-color: #1e3a8a;
+            --h3-color: #2563eb;
+            --h4-color: #3b82f6;
+            --link-color: #2563eb;
+            --citation-border: #475569;
+            --citation-color: #475569;
+            --sup-color: #64748b;
+            --strong-bg: linear-gradient(120deg, #fef3c7 0%, #fde68a 100%);
+            --strong-color: #7c2d12;
+            --code-bg: #fee2e2;
+            --code-color: #dc2626;
+            --code-border: #fca5a5;
+            --pre-bg: #f8f9fa;
+            --pre-color: #24292e;
+            --pre-border: #e1e4e8;
+            --li-color: #1f2937;
+            --blockquote-border: #3b82f6;
+            --blockquote-bg: #f8fafc;
+            --blockquote-color: #4b5563;
+            --table-bg: #ffffff;
+            --table-border: #e5e7eb;
+            --thead-bg: #f1f5f9;
+            --thead-color: #1e293b;
+            --tbody-bg: #ffffff;
+            --tr-border: #e5e7eb;
+            --th-border-right: rgba(255,255,255,0.2);
+            --td-color: #1e293b;
+            --td-border-right: #f3f4f6;
+        }
+        body.dark {
+            --content-bg: #1e293b;
+            --content-text: #e2e8f0;
+            --h1-color: #93c5fd;
+            --h2-color: #93c5fd;
+            --h3-color: #60a5fa;
+            --h4-color: #60a5fa;
+            --link-color: #60a5fa;
+            --citation-border: #94a3b8;
+            --citation-color: #94a3b8;
+            --sup-color: #94a3b8;
+            --strong-bg: linear-gradient(120deg, #451a03 0%, #78350f 100%);
+            --strong-color: #fde68a;
+            --code-bg: #450a0a;
+            --code-color: #f87171;
+            --code-border: #7f1d1d;
+            --pre-bg: #0f172a;
+            --pre-color: #e2e8f0;
+            --pre-border: #334155;
+            --li-color: #e2e8f0;
+            --blockquote-border: #60a5fa;
+            --blockquote-bg: #1e293b;
+            --blockquote-color: #cbd5e1;
+            --table-bg: #1e293b;
+            --table-border: #334155;
+            --thead-bg: #334155;
+            --thead-color: #e2e8f0;
+            --tbody-bg: #1e293b;
+            --tr-border: #334155;
+            --th-border-right: rgba(255,255,255,0.1);
+            --td-color: #e2e8f0;
+            --td-border-right: #334155;
+
+            background: #0f172a;
+            color: #e2e8f0;
+        }
+        body.dark .header {
+            background: linear-gradient(135deg, #4338ca 0%, #6d28d9 100%);
+        }
+        body.dark .url {
+            background: rgba(255,255,255,0.15);
+            color: #e2e8f0;
+        }
+        body.dark .status-badge,
+        body.dark .char-count {
+            background: rgba(255,255,255,0.15);
+            color: #e2e8f0;
+        }
+        body.dark #selectorDisplay:hover {
+            background: rgba(0,0,0,0.3);
+        }
+        body.dark #selectorInput {
+            background: #1e293b;
+            color: #e2e8f0;
+            border-color: #6366f1;
+        }
+        body.dark .action-btn {
+            background: rgba(255,255,255,0.15);
+        }
+        body.dark .action-btn:hover {
+            background: rgba(255,255,255,0.25);
+        }
+        body.dark .action-btn.primary {
+            background: #e2e8f0;
+            color: #4338ca;
+        }
+        body.dark .action-btn.primary:hover {
+            background: #cbd5e1;
+        }
+        body.dark #markdownToggleBtn {
+            background: #4338ca !important;
+        }
+        body.dark .main-content {
+            background: #0f172a;
+        }
+        body.dark .response-container {
+            background: #0f172a;
+        }
+        body.dark .response-content {
+            background: var(--content-bg);
+            color: var(--content-text);
+        }
+        body.dark .metadata {
+            background: #1e293b;
+            border-top-color: #334155;
+            color: #94a3b8;
+        }
+        body.dark .metadata-label {
+            color: #cbd5e1;
+        }
+        body.dark .empty-state {
+            color: #64748b;
+        }
+        body.dark .loading-spinner {
+            border-color: #334155;
+            border-top-color: #6366f1;
+        }
+        body.dark .news-card,
+        body.dark .simple-card {
+            background: #1e293b;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+        }
+        body.dark .news-card:hover {
+            box-shadow: 0 4px 12px rgba(99,102,241,0.25);
+        }
+        body.dark .card-time {
+            background: #334155;
+            color: #cbd5e1;
+        }
+        body.dark .card-title {
+            color: #e2e8f0;
+        }
+        body.dark .card-body {
+            color: #cbd5e1;
+            border-left-color: #334155;
+        }
+        body.dark .card-divider {
+            border-top-color: #334155;
+        }
+        body.dark .hint-message {
+            background: #451a03;
+            border-color: #f59e0b;
+            color: #fde68a;
+        }
+        body.dark .paragraph-mode .paragraph {
+            background: #1e293b;
+            color: #e2e8f0;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.3);
+        }
+        body.dark .selector-tooltip {
+            background: #0f172a;
+            color: #e2e8f0;
+            border: 1px solid #334155;
+        }
+        body.dark .selector-tooltip::before {
+            border-bottom-color: #0f172a;
+        }
+        body.dark #debugInfo > div {
+            background: #451a03 !important;
+            border-color: #f59e0b !important;
+            color: #fde68a !important;
+        }
+        body.dark .response-content pre[style*="#fee2e2"] {
+            background: #450a0a !important;
+            color: #f87171 !important;
+        }
+
+        /* 主题切换按钮 */
+        .theme-toggle {
+            background: rgba(255,255,255,0.2);
+            border: none;
+            color: white;
+            padding: 6px 10px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 12px;
+            font-weight: 600;
+            transition: background 0.2s;
+        }
+        .theme-toggle:hover {
+            background: rgba(255,255,255,0.3);
+        }
+    </style>
+    
+    <!-- ✨ Markdown 渲染库（用于 AI 回复的美化显示） -->
+    <script src="https://unpkg.com/marked@12.0.0/marked.min.js"></script>
+    <script src="https://unpkg.com/dompurify@3.0.8/dist/purify.min.js"></script>
+    <!-- ✨ KaTeX 数学公式渲染库 -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+</head>
+<body>
+    <div class="header">
+        <h1>
+             AI 回复查看器
+        </h1>
+        <div class="status">
+            <span id="platformBadge" class="status-badge">等待数据...</span>
+            <span id="charCount" class="char-count"></span>
+            <div style="position: relative; display: flex; align-items: center; gap: 6px;">
+                <span id="selectorDisplay" class="char-count" style="background: rgba(0,0,0,0.15);" title="双击可编辑选择器">选择器：-</span>
+                <input type="text" id="selectorInput" placeholder="输入 CSS 选择器..." />
+                <button id="selectorTestBtn" title="测试选择器">测试</button>
+                <div class="selector-tooltip" id="selectorTooltip">
+                    <strong>📌 选择器工作原理：</strong><br/>
+                    真正使用选择器定位 DOM 的是 <code>renderer.js</code> 中的 <code>captureWithCustomSelector</code> 函数，它通过 <code>webview.executeJavaScript</code> 在目标页面中执行 JavaScript 代码来选择元素。<br/><br/>
+                    <strong>双击此区域</strong>可以输入自定义选择器并测试。<br/>
+                    <strong>建议</strong>优先使用 <code>data-*</code> 属性选择器，它们比 Tailwind 类名更稳定。
+                </div>
+            </div>
+        </div>
+        <div class="action-bar">
+            <!-- ✨ 移除了"卡片/原始"切换按钮，简化为双视图：Markdown / 文本 -->
+            
+            <!-- 🎨 视图切换按钮组（HTML原生 / Markdown / 文本） -->
+            <button id="markdownToggleBtn" onclick="toggleViewMode()" title="切换视图模式（点击循环切换：Markdown美化 → 纯文本 → HTML原生）" style="background: #6366f1; color: white; font-weight: 600; padding: 8px 20px; border: none; border-radius: 8px; cursor: pointer; font-size: 14px; white-space: nowrap; transition: all 0.3s ease; box-shadow: 0 2px 6px rgba(99,102,241,0.3);">🎨 Markdown</button>
+            
+            <button id="copyBtn" class="action-btn primary" disabled>📋 复制内容</button>
+            <button id="saveBtn" class="action-btn" disabled>💾 保存到文件</button>
+        </div>
+        <span id="urlDisplay" class="url"></span>
+        <button id="themeToggle" class="theme-toggle" title="切换黑夜/白天模式">🌙 黑夜</button>
+    </div>
+
+    <div class="main-content">
+        <!-- 🔥 可视化诊断面板（调试用）- 默认折叠，使用立体斜三角手柄 -->
+        <div id="debugInfoWrapper" style="
+            position: relative;
+            margin-bottom: 12px;
+            display: none;
+        ">
+            <!-- 左上角立体斜三角手柄（90度直角与左上角并拢，参考截图二的样式） -->
+            <div onclick="toggleDebugPanel()" style="
+                position: absolute;
+                top: 0;
+                left: 0;
+                width: 0;
+                height: 0;
+                border-style: solid;
+                border-width: 24px 24px 0 0;
+                border-color: #fbbf24 transparent transparent transparent;
+                cursor: pointer;
+                z-index: 10;
+                transition: all 0.2s;
+                filter: drop-shadow(2px 2px 3px rgba(0,0,0,0.3));
+            " title="诊断信息（点击展开/收起）">
+                <!-- 立体高光层（内嵌的浅色三角形，模拟光照） -->
+                <div style="
+                    position: absolute;
+                    top: -22px;
+                    left: -2px;
+                    width: 0;
+                    height: 0;
+                    border-style: solid;
+                    border-width: 20px 20px 0 0;
+                    border-color: rgba(255,255,255,0.4) transparent transparent transparent;
+                    pointer-events: none;
+                "></div>
+                <!-- 立体阴影层（内嵌的深色三角形，模拟厚度） -->
+                <div style="
+                    position: absolute;
+                    top: -24px;
+                    left: 2px;
+                    width: 0;
+                    height: 0;
+                    border-style: solid;
+                    border-width: 24px 20px 0 0;
+                    border-color: rgba(180,83,9,0.6) transparent transparent transparent;
+                    pointer-events: none;
+                "></div>
+            </div>
+
+            <div id="debugInfo" style="
+                display: none;
+                margin-left: 20px;
+                margin-top: 8px;
+                margin-right: 20px;
+            "></div>
+        </div>
+
+        <div id="responseContainer" class="response-container">
+            <div class="empty-state">
+                <div class="empty-icon">🤖</div>
+                <div class="empty-text">点击「📥 获取AI回复」按钮开始获取</div>
+            </div>
+        </div>
+    </div>
+
+    <div id="metadataBar" class="metadata" style="display: none;">
+        <div class="metadata-item">
+            <span class="metadata-label">获取时间:</span>
+            <span id="captureTime"></span>
+        </div>
+        <div class="metadata-item">
+            <span class="metadata-label">字符数:</span>
+            <span id="characterCount"></span>
+        </div>
+        <div class="metadata-item" id="durationItem" style="display: none;">
+            <span class="metadata-label">耗时:</span>
+            <span id="responseDuration"></span>
+        </div>
+    </div>
+
+    <script>
+        const { ipcRenderer, shell } = require('electron');
+        const fs = require('fs');
+        const path = require('path');
+        
+        let currentResponseData = null;
+        let currentViewMode = 'card';
+
+        document.addEventListener('DOMContentLoaded', () => {
+            document.getElementById('copyBtn').addEventListener('click', copyContent);
+            document.getElementById('saveBtn').addEventListener('click', saveToFile);
+
+            // 主题切换
+            const themeToggle = document.getElementById('themeToggle');
+            function updateThemeButton(isDark) {
+                if (!themeToggle) return;
+                themeToggle.textContent = isDark ? '☀️ 白天' : '🌙 黑夜';
+            }
+            function loadTheme() {
+                const saved = localStorage.getItem('aiResponseViewerTheme');
+                const isDark = saved === 'dark';
+                if (isDark) {
+                    document.body.classList.add('dark');
+                } else {
+                    document.body.classList.remove('dark');
+                }
+                updateThemeButton(isDark);
+            }
+            if (themeToggle) {
+                themeToggle.addEventListener('click', () => {
+                    const isDark = document.body.classList.toggle('dark');
+                    localStorage.setItem('aiResponseViewerTheme', isDark ? 'dark' : 'light');
+                    updateThemeButton(isDark);
+                });
+            }
+            loadTheme();
+
+            // 视图切换
+            document.querySelectorAll('.view-toggle-btn').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    document.querySelectorAll('.view-toggle-btn').forEach(b => b.classList.remove('active'));
+                    btn.classList.add('active');
+                    currentViewMode = btn.dataset.view;
+                    if (currentResponseData) {
+                        displayResponse(currentResponseData);
+                    }
+                });
+            });
+            
+            // 选择器编辑和测试功能
+            initSelectorEditor();
+        });
+        
+        // 选择器编辑器初始化
+        function initSelectorEditor() {
+            const selectorDisplay = document.getElementById('selectorDisplay');
+            const selectorInput = document.getElementById('selectorInput');
+            const selectorTestBtn = document.getElementById('selectorTestBtn');
+            const selectorTooltip = document.getElementById('selectorTooltip');
+            
+            // 鼠标悬停显示 tooltip
+            selectorDisplay.addEventListener('mouseenter', () => {
+                selectorTooltip.style.display = 'block';
+            });
+            
+            selectorDisplay.addEventListener('mouseleave', () => {
+                selectorTooltip.style.display = 'none';
+            });
+            
+            // 双击进入编辑模式
+            selectorDisplay.addEventListener('dblclick', () => {
+                const currentSelector = selectorDisplay.textContent.replace('选择器：', '').trim();
+                selectorDisplay.style.display = 'none';
+                selectorInput.style.display = 'inline-block';
+                selectorTestBtn.style.display = 'inline-block';
+                selectorInput.value = currentSelector === '-' ? '' : currentSelector;
+                selectorInput.focus();
+                selectorInput.select();
+            });
+            
+            // 测试按钮点击
+            selectorTestBtn.addEventListener('click', async () => {
+                const selector = selectorInput.value.trim();
+                if (!selector) {
+                    alert('请输入有效的 CSS 选择器');
+                    return;
+                }
+                
+                // 显示加载状态
+                selectorTestBtn.disabled = true;
+                selectorTestBtn.textContent = '测试中...';
+                showLoading('正在测试选择器...');
+                
+                try {
+                    // 通过主进程转发到 renderer.js 执行选择器测试
+                    const result = await ipcRenderer.invoke('test-selector', {
+                        selector: selector
+                    });
+                    
+                    if (result && result.success) {
+                        selectorTestBtn.textContent = '✅ 成功';
+                        
+                        // 构建完整的数据对象，调用 displayResponse 保持布局一致
+                        currentResponseData = {
+                            content: result.content || '获取成功',
+                            selector: selectorInput.value.trim() || selectorDisplay.textContent.replace('选择器：', '').trim(),
+                            url: document.getElementById('urlDisplay').textContent || '',
+                            platform: document.getElementById('platformBadge').textContent || '测试',
+                            timestamp: new Date().toISOString(),
+                            responseDuration: 0
+                        };
+                        
+                        // 调用 displayResponse 来更新所有UI元素（平台徽章、字符数、URL、底部栏等）
+                        displayResponse(currentResponseData);
+                        
+                        setTimeout(() => {
+                            selectorTestBtn.disabled = false;
+                            selectorTestBtn.textContent = '测试';
+                            exitEditMode();
+                        }, 1500);
+                    } else {
+                        throw new Error((result && result.error) || '测试失败');
+                    }
+                } catch (e) {
+                    showError('测试选择器失败: ' + e.message);
+                    selectorTestBtn.textContent = ' 失败';
+                    selectorTestBtn.disabled = false;
+                    setTimeout(() => {
+                        selectorTestBtn.textContent = '测试';
+                    }, 2000);
+                }
+            });
+            
+            // 回车键触发测试
+            selectorInput.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') {
+                    selectorTestBtn.click();
+                } else if (e.key === 'Escape') {
+                    exitEditMode();
+                }
+            });
+            
+            // 失去焦点时退出编辑模式
+            selectorInput.addEventListener('blur', () => {
+                setTimeout(() => {
+                    if (document.activeElement !== selectorInput && document.activeElement !== selectorTestBtn) {
+                        exitEditMode();
+                    }
+                }, 100);
+            });
+            
+            // 退出编辑模式
+            function exitEditMode() {
+                selectorDisplay.style.display = 'inline';
+                selectorInput.style.display = 'none';
+                selectorTestBtn.style.display = 'none';
+            }
+        }
+
+        ipcRenderer.on('set-loading', (event, message) => {
+            showLoading(message);
+        });
+
+        ipcRenderer.on('set-selector', (event, selector) => {
+            const selectorDisplay = document.getElementById('selectorDisplay');
+            if (selectorDisplay) {
+                selectorDisplay.textContent = `选择器：${selector || '-'}`;
+            }
+        });
+
+        ipcRenderer.on('set-response-data', (event, data) => {
+            currentResponseData = data;
+            // 根据数据来源动态设置标题
+            updateViewerTitle(data);
+            displayResponse(data);
+        });
+        
+        // 动态更新查看器标题
+        function updateViewerTitle(data) {
+            const titleEl = document.querySelector('.header h1');
+            const docTitle = document.querySelector('title');
+            
+            // 如果包含 selector 字段，说明是自定义选择器测试（非AI平台）
+            if (data.selector) {
+                const newTitle = ' 元素内容查看器';
+                if (titleEl) titleEl.textContent = newTitle;
+                if (docTitle) docTitle.textContent = newTitle;
+            } else {
+                // AI 平台默认标题
+                const newTitle = ' AI 回复查看器';
+                if (titleEl) titleEl.textContent = newTitle;
+                if (docTitle) docTitle.textContent = newTitle;
+            }
+        }
+
+        ipcRenderer.on('set-error', (event, errorMessage) => {
+            showError(errorMessage);
+        });
+
+        function showLoading(message) {
+            const container = document.getElementById('responseContainer');
+            container.innerHTML = `
+                <div class="empty-state">
+                    <div class="loading-spinner"></div>
+                    <div class="empty-text">${message}</div>
+                </div>
+            `;
+            document.getElementById('platformBadge').textContent = '正在获取...';
+            document.getElementById('urlDisplay').textContent = '';
+            document.getElementById('charCount').textContent = '';
+            document.getElementById('copyBtn').disabled = true;
+            document.getElementById('saveBtn').disabled = true;
+            document.getElementById('metadataBar').style.display = 'none';
+            document.getElementById('viewToggle').style.display = 'none';
+        }
+
+        /**
+         * 🔧 切换诊断面板显示/隐藏
+         */
+        function toggleDebugPanel() {
+            const debugInfoWrapper = document.getElementById('debugInfoWrapper');
+            const debugInfo = document.getElementById('debugInfo');
+
+            if (debugInfo.style.display === 'none' || debugInfo.style.display === '') {
+                // 展开内容（手柄始终可见）
+                debugInfo.style.display = 'block';
+                console.log('[AI-Response-Viewer] 🔍 诊断面板已展开');
+            } else {
+                // 只收起内容，保留手柄可见！
+                debugInfo.style.display = 'none';
+                console.log('[AI-Response-Viewer] 🔍 诊断面板已收起（手柄仍可见）');
+            }
+        }
+
+        function displayResponse(data) {
+            console.log('[AI-Response-Viewer] ✅ displayResponse() 被调用，收到数据:', data ? '有数据' : '无数据');
+            
+            const container = document.getElementById('responseContainer');
+            
+            if (!data || !data.content) {
+                console.warn('[AI-Response-Viewer] ⚠️ 数据为空或无内容');
+                container.innerHTML = `
+                    <div class="empty-state">
+                        <div class="empty-icon">⚠️</div>
+                        <div class="empty-text">没有获取到内容</div>
+                    </div>
+                `;
+                return;
+            }
+
+            try {
+                // ✨ 移除了对已删除的 viewToggle 元素的引用
+                
+                document.getElementById('urlDisplay').textContent = data.url || '';
+                document.getElementById('platformBadge').textContent = data.platform || 'AI 平台';
+                
+                // 显示选择器
+                const selectorDisplay = document.getElementById('selectorDisplay');
+                if (data.selector) {
+                    selectorDisplay.textContent = `选择器：${data.selector}`;
+                    selectorDisplay.style.display = 'inline';
+                } else {
+                    selectorDisplay.textContent = '选择器：-';
+                    selectorDisplay.style.display = 'inline';
+                }
+                
+                const charCount = data.content.length;
+                document.getElementById('charCount').textContent = `${charCount} 字符`;
+                
+                document.getElementById('copyBtn').disabled = false;
+                document.getElementById('saveBtn').disabled = false;
+                
+                document.getElementById('metadataBar').style.display = 'flex';
+                document.getElementById('captureTime').textContent = formatTimestamp(data.timestamp);
+                document.getElementById('characterCount').textContent = `${charCount} 字符`;
+                
+                if (data.responseDuration !== undefined && data.responseDuration !== null) {
+                    document.getElementById('durationItem').style.display = 'flex';
+                    document.getElementById('responseDuration').textContent = `${Math.round(data.responseDuration / 1000)} 秒`;
+                }
+                
+                // ✨ 根据 viewMode 决定显示方式
+                console.log('[AI-Response-Viewer] 📊 data.content 长度:', data.content.length);
+                console.log('[AI-Response-Viewer] 📊 data.html 长度:', data.html ? data.html.length : 0);
+                console.log('[AI-Response-Viewer] 📊 当前视图模式:', viewMode);
+
+                // 🔥 可视化诊断面板（数据已准备好，显示手柄但默认不展开内容）
+                const debugInfoWrapper = document.getElementById('debugInfoWrapper');
+                const debugInfo = document.getElementById('debugInfo');
+                if (debugInfo && debugInfoWrapper) {
+                    const modeNames = { 'html': '🌐 HTML原生', 'markdown': '🎨 Markdown', 'text': '📄 纯文本' };
+                    debugInfo.innerHTML = `
+                        <div style="background: #fef3c7; border: 2px solid #fbbf24; border-left: 4px solid #f59e0b; padding: 12px; border-radius: 8px; font-family: monospace; font-size: 13px;">
+                            <strong>🔍 诊断信息：</strong><br>
+                            • content 长度: ${data.content.length} 字符<br>
+                            • html 长度: ${data.html ? data.html.length : 0} 字符<br>
+                            • html 是否存在: ${data.html ? '✅ 是' : '❌ 否'}<br>
+                            • 当前视图模式: ${modeNames[viewMode]}
+                        </div>
+                    `;
+                    // ✅ 显示wrapper（让三角手柄可见），但不展开内容
+                    debugInfoWrapper.style.display = 'block';
+                    debugInfo.style.display = 'none';  // 内容默认隐藏
+                    
+                    console.log('[AI-Response-Viewer] 🔍 诊断信息已准备（点击左上角三角手柄可查看）');
+                }
+
+                if (viewMode === 'html') {
+                    // 🌐 HTML 原生模式（与 webview 一致，直接显示）
+                    console.log('[AI-Response-Viewer] 🌐 使用 HTML 原生模式');
+
+                    const contentToRender = data.html || data.content;
+                    container.innerHTML = `<div class="response-content" style="white-space: normal;">${renderHtmlRaw(contentToRender)}</div>`;
+
+                } else if (viewMode === 'markdown') {
+                    // 🎨 智能渲染模式（基于用户建议优化）
+                    console.log('[AI-Response-Viewer] 🎨 使用智能渲染模式（HTML+样式）');
+
+                    // ✅ 优先使用 innerHTML（包含完整结构），如果没有才用 textContent
+                    const contentToRender = data.html || data.content;
+                    const dataSource = data.html ? '📦 innerHTML (HTML)' : '📝 textContent (纯文本)';
+                    console.log('[AI-Response-Viewer] 🎨 数据来源:', dataSource);
+                    console.log('[AI-Response-Viewer] 🎨 数据长度:', contentToRender.length);
+
+                    container.innerHTML = `<div class="response-content markdown-container">${renderMarkdown(contentToRender)}</div>`;
+
+                } else {
+                    // 📄 纯文本视图（原始模式）
+                    console.log('[AI-Response-Viewer] 📄 使用纯文本视图');
+                    container.innerHTML = `<div class="response-content">${escapeHtml(cleanWhitespace(data.content))}</div>`;
+                }
+                
+                console.log('[AI-Response-Viewer] ✅ 显示完成！');
+                
+            } catch (error) {
+                console.error('[AI-Response-Viewer] ❌ displayResponse 执行错误:', error);
+                container.innerHTML = `
+                    <div class="empty-state">
+                        <div class="empty-icon">❌</div>
+                        <div class="empty-text">显示错误: ${error.message}</div>
+                        <pre style="text-align: left; background: #fee2e2; padding: 10px; border-radius: 6px; margin-top: 10px;">${error.stack}</pre>
+                    </div>
+                `;
+            }
+        }
+
+        function showError(errorMessage) {
+            const container = document.getElementById('responseContainer');
+            container.innerHTML = `
+                <div class="empty-state">
+                    <div class="empty-icon">❌</div>
+                    <div class="empty-text">${escapeHtml(errorMessage)}</div>
+                </div>
+            `;
+            document.getElementById('platformBadge').textContent = '获取失败';
+            document.getElementById('copyBtn').disabled = true;
+            document.getElementById('saveBtn').disabled = true;
+            document.getElementById('viewToggle').style.display = 'none';
+        }
+
+        async function copyContent() {
+            if (!currentResponseData || !currentResponseData.content) return;
+            
+            try {
+                await navigator.clipboard.writeText(currentResponseData.content);
+                const btn = document.getElementById('copyBtn');
+                const originalText = btn.textContent;
+                btn.textContent = '✅ 已复制';
+                setTimeout(() => {
+                    btn.textContent = originalText;
+                }, 1500);
+            } catch (e) {
+                console.error('复制失败:', e);
+                alert('复制失败，请手动复制');
+            }
+        }
+
+        async function saveToFile() {
+            if (!currentResponseData || !currentResponseData.content) return;
+            
+            try {
+                const { dialog, app } = require('electron').remote;
+                const result = await dialog.showSaveDialog({
+                    title: '保存 AI 回复',
+                    defaultPath: path.join(app.getPath('desktop'), `ai-response-${Date.now()}.txt`),
+                    filters: [
+                        { name: '文本文件', extensions: ['txt'] },
+                        { name: 'Markdown', extensions: ['md'] },
+                        { name: '所有文件', extensions: ['*'] }
+                    ]
+                });
+                
+                if (!result.canceled && result.filePath) {
+                    fs.writeFileSync(result.filePath, currentResponseData.content, 'utf-8');
+                    const btn = document.getElementById('saveBtn');
+                    const originalText = btn.textContent;
+                    btn.textContent = '✅ 已保存';
+                    setTimeout(() => {
+                        btn.textContent = originalText;
+                    }, 1500);
+                }
+            } catch (e) {
+                console.error('保存失败:', e);
+                alert('保存失败: ' + e.message);
+            }
+        }
+
+        function formatTimestamp(timestamp) {
+          if (!timestamp) return '-';
+          try {
+            const date = new Date(timestamp);
+            return date.toLocaleString('zh-CN', {
+              year: 'numeric',
+              month: '2-digit',
+              day: '2-digit',
+              hour: '2-digit',
+              minute: '2-digit',
+              second: '2-digit'
+            });
+          } catch (e) {
+            return '-';
+          }
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        // ========== 智能解析逻辑 ==========
+        
+        // 清理空白字符：清理每行的多余水平空白，保留换行
+        function cleanWhitespace(text) {
+            if (!text) return '';
+            
+            // 1. 替换 HTML 实体空格
+            let cleaned = text.replace(/&nbsp;/g, ' ');
+            // 2. 替换所有 Unicode 空白字符（包括不间断空格、全角空格等）为普通空格
+            cleaned = cleaned.replace(/[\u00A0\u2000-\u200B\u202F\u205F\u3000]/g, ' ');
+            
+            // 3. 按行处理，清理每行的多余水平空白
+            const lines = cleaned.split('\n');
+            const cleanedLines = lines.map(line => {
+                // 将制表符和多个空格替换为单个空格
+                return line.replace(/\t/g, ' ').replace(/ {2,}/g, ' ');
+            });
+            
+            // 4. 重新组合，保留换行符
+            let result = cleanedLines.join('\n').trim();
+            
+            // 5. 智能添加换行：在时间戳前添加换行
+            // 匹配模式：空格 + 时间戳（YYYY-MM-DD HH:MM:SS）
+            result = result.replace(/(\s+)(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2})/g, '\n$2');
+            // 如果时间戳前面没有空格，也添加换行
+            result = result.replace(/([^\n\d])(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2})/g, '$1\n$2');
+            
+            return result;
+        }
+        
+        // 解析内容：尝试识别时间戳+标题+正文的结构化数据
+        function parseContentToCards(content) {
+            // 先清理多余的空白字符
+            const cleanedContent = cleanWhitespace(content);
+            
+            // 模式 1: 时间戳 | 【标题】内容（如新闻列表）
+            // 匹配类似：2026-06-02 11:05:12 | 【标题】内容
+            const structuredRegex = /(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2})\s*\|?\s*(.*)/g;
+            const structuredMatches = [];
+            let match;
+            
+            while ((match = structuredRegex.exec(cleanedContent)) !== null) {
+                structuredMatches.push({
+                    time: match[1],
+                    rawContent: match[2].trim()
+                });
+            }
+            
+            if (structuredMatches.length > 1) {
+                // 解析标题和内容
+                const items = structuredMatches.map(item => {
+                    // 尝试提取【标题】格式
+                    const titleMatch = item.rawContent.match(/^【([^】]+)】\s*(.*)$/);
+                    if (titleMatch) {
+                        return {
+                            time: item.time,
+                            title: cleanWhitespace(titleMatch[1]),
+                            body: cleanWhitespace(titleMatch[2])
+                        };
+                    }
+                    return {
+                        time: item.time,
+                        title: '',
+                        body: cleanWhitespace(item.rawContent)
+                    };
+                });
+                
+                return { type: 'structured', items };
+            }
+            
+            // 模式 2: 只有时间戳开头的内容（无标题）
+            const simpleTimeRegex = /(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2})\s*(.*)/g;
+            const simpleMatches = [];
+            let simpleMatch;
+            
+            while ((simpleMatch = simpleTimeRegex.exec(cleanedContent)) !== null) {
+                const cleanedBody = cleanWhitespace(simpleMatch[2]);
+                if (cleanedBody.length > 20) {
+                    simpleMatches.push({
+                        time: simpleMatch[1],
+                        body: cleanedBody
+                    });
+                }
+            }
+            
+            if (simpleMatches.length > 1) {
+                return { type: 'simple', items: simpleMatches };
+            }
+            
+            // 不支持的格式
+            return { type: 'unsupported' };
+        }
+
+        // 渲染结构化卡片列表（带标题）
+        function renderCardList(container, items) {
+            let html = '<div class="card-list">';
+            
+            items.forEach((item, index) => {
+                const titleDisplay = item.title ? 
+                    `<div class="card-title">【${escapeHtml(item.title)}】</div>` : '';
+                const bodyDisplay = item.body ? 
+                    `<div class="card-body">${escapeHtml(item.body)}</div>` : '';
+                
+                html += `
+                    <div class="news-card">
+                        <div class="card-header">
+                            <span class="card-time">🕐 ${escapeHtml(item.time)}</span>
+                            ${titleDisplay}
+                        </div>
+                        ${bodyDisplay}
+                    </div>
+                `;
+                
+                if (index < items.length - 1) {
+                    html += '<hr class="card-divider">';
+                }
+            });
+            
+            html += '</div>';
+            container.innerHTML = html;
+        }
+
+        // 渲染简单卡片列表（无标题）
+        function renderSimpleCardList(container, items) {
+            let html = '<div class="card-list">';
+            
+            items.forEach((item, index) => {
+                html += `
+                    <div class="simple-card">
+                        <div class="card-time"> ${escapeHtml(item.time)}</div>
+                        <div class="card-body">${escapeHtml(item.body)}</div>
+                    </div>
+                `;
+                
+                if (index < items.length - 1) {
+                    html += '<hr class="card-divider">';
+                }
+            });
+            
+            html += '</div>';
+            container.innerHTML = html;
+        }
+        
+        // ✨ ========== Markdown 渲染功能（v3.0 内联样式注入版）==========
+        
+        // 全局变量：控制显示模式（三种模式：文本 / Markdown / HTML原生）
+        let viewMode = 'markdown';  // 默认使用 Markdown 模式（效果最佳，表格/JSON都能完美显示）
+        
+        /**
+         * 🔥 内联样式注入函数（核心功能）- 自然风格版
+         */
+        function injectInlineStyles(html) {
+            const styles = {
+                // 标题样式 - 保留美化但移除过度的卡片感
+                'h1': 'font-size: 26px !important; font-weight: 800 !important; color: var(--h1-color) !important; margin: 24px 0 16px 0 !important; padding-bottom: 8px !important; border-bottom: 3px solid var(--h3-color) !important;',
+                'h2': 'font-size: 22px !important; font-weight: 700 !important; color: var(--h2-color) !important; margin: 20px 0 12px 0 !important; padding-bottom: 6px !important; border-bottom: 2px solid var(--h4-color) !important;',
+                'h3': 'font-size: 18px !important; font-weight: 700 !important; color: var(--h3-color) !important; margin: 16px 0 10px 0 !important;',
+                'h4': 'font-size: 16px !important; font-weight: 600 !important; color: var(--h4-color) !important; margin: 14px 0 8px 0 !important;',
+
+                // 🔗 超链接 - 强制 inline + 左对齐，覆盖 DeepSeek 原始的 display:block/center 样式
+                'a': 'display: inline !important; text-align: left !important; color: var(--link-color) !important; text-decoration: underline !important; font-weight: 500 !important;',
+
+                // 🔢 引用数字（只包含1-2位纯数字的 <a>）- 圆形外框，无背景色
+                'a_citation': 'display: inline-block !important; text-align: center !important; border: 1.5px solid var(--citation-border) !important; border-radius: 50% !important; min-width: 18px !important; height: 18px !important; line-height: 15px !important; font-size: 10px !important; font-weight: 600 !important; color: var(--citation-color) !important; text-decoration: none !important; margin: 0 1px !important; vertical-align: baseline !important; background: transparent !important; padding: 0 !important;',
+
+                // 🔢 上标（引用数字 1/2/9）- 确保上标位置和合适的大小
+                'sup': 'font-size: 10px !important; vertical-align: super !important; line-height: 1 !important; color: var(--sup-color) !important;',
+
+                // 粗体 - 保留高亮但更柔和（移除 inline-block 避免换行）
+                'strong': 'background: var(--strong-bg) !important; color: var(--strong-color) !important; padding: 2px 6px !important; border-radius: 4px !important; font-weight: 700 !important;',
+
+                // 行内代码
+                'code': 'background: var(--code-bg) !important; color: var(--code-color) !important; padding: 2px 6px !important; border-radius: 4px !important; border: 1px solid var(--code-border) !important; font-family: "SFMono-Regular", Consolas, monospace !important; font-size: 13px !important; font-weight: 500 !important;',
+
+                // 代码块 - 浅色背景（与页面一致）
+                'pre': 'background: var(--pre-bg) !important; color: var(--pre-color) !important; padding: 16px !important; border-radius: 6px !important; border: 1px solid var(--pre-border) !important; overflow-x: auto !important; margin: 16px 0 !important; font-family: "SFMono-Regular", Consolas, monospace !important; font-size: 13px !important; line-height: 1.6 !important; white-space: pre-wrap !important; word-break: break-all !important;',
+
+                // ✨ 列表样式 - 移除卡片感，改为自然流畅的样式
+                'ul': 'padding-left: 28px !important; margin: 12px 0 !important;',  // ← 移除背景、边框、圆角
+                'ol': 'padding-left: 28px !important; margin: 12px 0 !important;',   // ← 同上
+
+                // 列表项 - 保持清晰但不夸张
+                'li': 'margin: 6px 0 !important; line-height: 1.7 !important; font-size: 14px !important; color: var(--li-color) !important;',
+
+                // 引用块 - 简化样式
+                'blockquote': 'border-left: 4px solid var(--blockquote-border) !important; padding: 10px 16px !important; margin: 16px 0 !important; background: var(--blockquote-bg) !important; color: var(--blockquote-color) !important; font-style: italic !important; border-radius: 0 6px 6px 0 !important;',
+
+                // 段落
+                'p': 'margin: 10px 0 !important; line-height: 1.7 !important; font-size: 14px !important;',
+
+                // ✨ 表格样式 - 美观的表格渲染
+                'table': 'width: 100% !important; border-collapse: collapse !important; margin: 16px 0 !important; background: var(--table-bg) !important; border-radius: 8px !important; overflow: hidden !important; box-shadow: 0 1px 3px rgba(0,0,0,0.1) !important; border: 1px solid var(--table-border) !important; table-layout: fixed !important;',
+                'thead': 'background: var(--thead-bg) !important; color: var(--thead-color) !important;',
+                'tbody': 'background: var(--tbody-bg) !important;',
+                'tr': 'border-bottom: 1px solid var(--tr-border) !important; transition: background 0.2s !important;',
+                'th': 'padding: 8px 10px !important; text-align: center !important; font-weight: 600 !important; font-size: 12px !important; letter-spacing: 0.3px !important; border-right: 1px solid var(--th-border-right) !important; word-break: break-all !important;',
+                'td': 'padding: 8px 10px !important; font-size: 12px !important; color: var(--td-color) !important; border-right: 1px solid var(--td-border-right) !important; text-align: center !important; vertical-align: middle !important; word-break: break-all !important;'
+            };
+
+            let result = html;
+
+            // 🔗 <a> 标签单独处理：先匹配完整的 <a ...>内容</a>，根据内容决定样式
+            // - 如果内容是 1-2 位纯数字，或带横线的数字（-1、-3、-8、-1-4）→ 引用数字（圆形外框）
+            // - 否则 → 普通蓝色下划线链接
+            // ✅ 重要：用 ([\s\S]*?) 允许 <a> 内部有 <span> 等嵌套标签
+            result = result.replace(/<a(\s[^>]*)?>([\s\S]*?)<\/a>/gi, (match, attrs, innerHtml) => {
+                let cleanedAttrs = (attrs || '').replace(/style\s*=\s*"[^"]*"/gi, '').trim();
+
+                // 从内部 HTML 中提取纯文本（移除 <span> 等所有标签）
+                const innerText = (innerHtml || '').replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ');
+                const trimmedText = innerText.trim();
+
+                // 情况1：纯 1-2 位数字  "3" "8" "1" "4"
+                const isSimpleDigit = /^\d{1,2}$/.test(trimmedText);
+                // 情况2：带前/后短横线的数字  "-1" "-3" "8-" "-8-"
+                const isHyphenDigit = /^-?\s*\d{1,2}\s*-?$/.test(trimmedText);
+                // 情况3："数字-数字" 形式（-1-4、1-4）
+                const isMultiDigit = /^-?\s*\d{1,2}\s*-\s*\d{1,2}\s*-?$/.test(trimmedText);
+
+                const isCitation = isSimpleDigit || isHyphenDigit || isMultiDigit;
+
+                // 选择样式和内容
+                let styleToUse;
+                let displayContent;
+                if (isCitation) {
+                    styleToUse = styles['a_citation'] || styles['a'];
+                    // 只保留数字字符（去掉 - 和空格）
+                    const digitsOnly = trimmedText.replace(/[-\s]/g, '');
+                    displayContent = digitsOnly || trimmedText;
+                } else {
+                    styleToUse = styles['a'];
+                    displayContent = innerHtml;  // 普通链接保留原始内容
+                }
+
+                // 重新组装 <a> 标签
+                if (cleanedAttrs && cleanedAttrs.length > 0) {
+                    return `<a style="${styleToUse}" ${cleanedAttrs}>${displayContent}</a>`;
+                } else {
+                    return `<a style="${styleToUse}">${displayContent}</a>`;
+                }
+            });
+
+            // 其他标签按原逻辑处理（注意跳过 'a' 和 'a_citation'，它们已单独处理过）
+            Object.keys(styles).forEach(tag => {
+                if (tag === 'a' || tag === 'a_citation') return;
+                const style = styles[tag];
+                const regex = new RegExp(`<${tag}(\\s[^>]*)?>`, 'gi');
+
+                result = result.replace(regex, (match, attrs) => {
+                    if (tag === 'sup') {
+                        return match.replace(/style\s*=\s*"[^"]*"/gi, '').replace(/<sup(\s|>)/i, (m, sep) => {
+                            return `<sup style="${style}"${sep === '>' ? '>' : sep}`;
+                        });
+                    }
+                    if (attrs && attrs.indexOf('style=') > -1) {
+                        return match.replace(/style="([^"]*)"/i, `style="$1 ${style}"`);
+                    } else {
+                        return `<${tag}${attrs || ''} style="${style}">`;
+                    }
+                });
+            });
+
+            return result;
+        }
+
+        /**
+         * 🧮 KaTeX 公式提取与重新渲染
+         * 
+         * 智能处理 HTML 中的数学公式：
+         * 1. 提取 <span class="katex"> 中的 LaTeX 公式
+         * 2. 提取 <math> 元素中的 MathML 公式
+         * 3. 提取 $...$ 和 $$...$$ LaTeX 文本公式
+         * 4. 用占位符替换原公式
+         * 5. 清理完成后用 KaTeX 重新渲染
+         */
+        function extractAndRenderKaTeX(html) {
+            const mathBlocks = [];
+            let result = html;
+
+            //  使用 DOMParser 正确解析 KaTeX HTML（避免正则表达式无法处理嵌套 span 的问题）
+            // KaTeX 生成结构: <span class="katex"><span class="katex-mathml"><math><annotation>...</annotation></math></span><span class="katex-html">...</span></span>
+            // 正则表达式 [\s\S]*? 会匹配到内层 </span>，导致提取到错误的 annotation 内容
+            try {
+                const parser = new DOMParser();
+                const doc = parser.parseFromString(`<div id="root">${result}</div>`, 'text/html');
+                const root = doc.getElementById('root');
+                
+                // 查找所有 .katex-display 容器（显示模式公式）
+                const displayFormulas = root.querySelectorAll('.katex-display');
+                displayFormulas.forEach(container => {
+                    const annotation = container.querySelector('annotation[encoding="application/x-tex"]');
+                    if (annotation && annotation.textContent) {
+                        const formula = annotation.textContent.trim();
+                        const idx = mathBlocks.length;
+                        mathBlocks.push({ formula, display: true });
+                        const placeholder = document.createElement('span');
+                        placeholder.textContent = `%%KATEX_${idx}%%`;
+                        container.parentNode.replaceChild(placeholder, container);
+                    }
+                });
+                
+                // 查找所有剩余的 .katex 元素（行内公式，不在 .katex-display 内）
+                const inlineFormulas = root.querySelectorAll('.katex');
+                inlineFormulas.forEach(katexEl => {
+                    if (katexEl.closest('.katex-display')) return;
+                    
+                    const annotation = katexEl.querySelector('annotation[encoding="application/x-tex"]');
+                    if (annotation && annotation.textContent) {
+                        const formula = annotation.textContent.trim();
+                        const idx = mathBlocks.length;
+                        mathBlocks.push({ formula, display: false });
+                        const placeholder = document.createElement('span');
+                        placeholder.textContent = `%%KATEX_${idx}%%`;
+                        katexEl.parentNode.replaceChild(placeholder, katexEl);
+                    }
+                });
+                
+                result = root.innerHTML;
+                
+                if (mathBlocks.length > 0) {
+                    console.log(`[AI Viewer] 🧮 通过 DOMParser 提取到 ${mathBlocks.length} 个 KaTeX 公式`);
+                }
+            } catch (e) {
+                console.warn('[AI Viewer] DOMParser 提取 KaTeX 失败，回退到正则表达式:', e.message);
+            }
+
+            // 如果 DOMParser 未提取到公式，回退到正则表达式方法
+            if (mathBlocks.length === 0 && result.includes('class="katex')) {
+                // 步骤1: 提取 <span class="katex"> 中的 LaTeX 公式
+                result = result.replace(/<span class="katex[^"]*"[^>]*>[\s\S]*?<annotation encoding="application\/x-tex">([\s\S]*?)<\/annotation>[\s\S]*?<\/span>/gi, 
+                    (match, latex) => {
+                        const idx = mathBlocks.length;
+                        mathBlocks.push({ formula: latex.trim(), display: false });
+                        return `%%KATEX_${idx}%%`;
+                    });
+
+                // 步骤2: 提取 <math> 元素（尝试从 MathML 中提取 annotation）
+                result = result.replace(/<math[^>]*>[\s\S]*?<annotation encoding="application\/x-tex">([\s\S]*?)<\/annotation>[\s\S]*?<\/math>/gi,
+                    (match, latex) => {
+                        const idx = mathBlocks.length;
+                        mathBlocks.push({ formula: latex.trim(), display: true });
+                        return `%%KATEX_${idx}%%`;
+                    });
+            }
+
+            // 步骤3: 提取 $$...$$ 显示模式公式
+            result = result.replace(/\$\$([\s\S]*?)\$\$/g, (match, formula) => {
+                const idx = mathBlocks.length;
+                mathBlocks.push({ formula: formula.trim(), display: true });
+                return `%%KATEX_${idx}%%`;
+            });
+
+            // 步骤4: 提取 $...$ 行内公式
+            result = result.replace(/(?<!\$)\$(?!\$)([^\$\n]+?)\$(?!\$)/g, (match, formula) => {
+                const idx = mathBlocks.length;
+                mathBlocks.push({ formula: formula.trim(), display: false });
+                return `%%KATEX_${idx}%%`;
+            });
+
+            // 步骤5: 提取 mrow/mn/mi 等 MathML 简化形式
+            result = result.replace(/<(mn|mi|mo|ms|mrow|mfenced|msup|msub|mfrac|msqrt|mroot|mstyle|mtable|mtr|mtd|mlabeledtr)[^>]*>([\s\S]*?)<\/\1>/gi,
+                (match, tag, content) => {
+                    // 简单的 MathML → 文本转换（保留原始文本）
+                    const textContent = content.replace(/<[^>]+>/g, '').trim();
+                    if (textContent && /^[\d\w+\-*/^_{}()=<>≤≥≠]+$/.test(textContent)) {
+                        const idx = mathBlocks.length;
+                        mathBlocks.push({ formula: textContent, display: false });
+                        return `%%KATEX_${idx}%%`;
+                    }
+                    return match;
+                });
+
+            // 返回提取信息和清理后的 HTML
+            return { html: result, mathBlocks };
+        }
+
+        /**
+         * 🔄 用 KaTeX 重新渲染占位符公式
+         */
+        function renderKaTeXPlaceholders(html, mathBlocks) {
+            if (!mathBlocks || mathBlocks.length === 0 || typeof katex === 'undefined') {
+                return html;
+            }
+
+            return html.replace(/%%KATEX_(\d+)%%/g, (match, idx) => {
+                const block = mathBlocks[parseInt(idx)];
+                if (!block) return match;
+
+                try {
+                    return katex.renderToString(block.formula, {
+                        displayMode: block.display,
+                        throwOnError: false,
+                        strict: false
+                    });
+                } catch (e) {
+                    console.warn('[AI-Response-Viewer] KaTeX 渲染失败:', block.formula, e.message);
+                    // 渲染失败时显示原始公式
+                    return `<code style="background:var(--code-bg);color:var(--code-color);padding:2px 6px;border-radius:4px;font-family:monospace;">${escapeHtml(block.formula)}</code>`;
+                }
+            });
+        }
+
+        /**
+         * 🧹 智能清理 HTML（增强版 v4.0 - 保留结构版）
+         *
+         * 解决智谱AI等平台包含大量SVG/MathJax/Tailwind代码导致显示异常的问题
+         * 
+         * ✅ 核心改进：不再提取纯文本，而是智能清理HTML但保留有用结构！
+         */
+        function cleanHtmlWhitespace(html) {
+            console.log('[AI-Response-Viewer] 🧹 cleanHtmlWhitespace() v5.0 开始');
+            console.log('[AI-Response-Viewer] 🧹 输入长度:', html.length);
+
+            // 🆕 步骤0: 提取 KaTeX 公式（在清理前先保存数学公式）
+            const { html: preCleanedHtml, mathBlocks } = extractAndRenderKaTeX(html);
+            if (mathBlocks.length > 0) {
+                console.log(`[AI-Response-Viewer] 🧮 提取到 ${mathBlocks.length} 个 KaTeX 公式`);
+            }
+
+            let cleaned = preCleanedHtml;
+
+            // 🔍 步骤1: 检测是否为"脏HTML"（包含大量Tailwind类名或框架特定标记）
+            const isDirtyHtml = /(?:dark:text-|max-w-|flex flex-|border-\[|rounded-|bg-\[|text-\[|p-\[|m-\[)/.test(cleaned);
+
+            if (isDirtyHtml) {
+                console.log('[AI-Response-Viewer] ⚠️ 检测到"脏HTML"（ProseMirror/Tailwind），启用智能清理模式');
+
+                // 步骤A: 移除所有 Tailwind 类名（但保留标签本身）
+                cleaned = cleaned.replace(/\s*class="[^"]*(?:dark:text-|max-w-|flex flex-|border-\[|rounded-|bg-\[|text-\[|p-\[|m-\[)[^"]*"/gi, '');
+                cleaned = cleaned.replace(/\s*class="[^"]*\b(?:text-|bg-|p-|m-|w-|h-|flex|grid|gap-|rounded|shadow|opacity|transform|transition|duration|ease|hover:|focus:|active:)[^"]*"/gi, '');
+                console.log('[AI-Response-Viewer] ✅ 已移除Tailwind类名');
+
+                // 步骤B: 移除非文本内容块（Tailwind专属）
+                // 🆕 注意：不再移除 <math> 和 <span class="katex">，因为已在步骤0中提取
+                const dirtyRemovePatterns = [
+                    /<svg[\s\S]*?<\/svg>/gi,
+                    /<canvas[^>]*><\/canvas>/gi,
+                    /<script[\s\S]*?<\/script>/gi,
+                    /<style[\s\S]*?<\/style>/gi,
+                    /<button[\s\S]*?<\/button>/gi,
+                    /<input[^>]*>/gi,
+                    /<i class="icon[\s\S]*?<\/i>/gi,
+                    /<animate[\s\S]*?<\/animate>/gi,
+                    /\s+d="[^"]*"/g,
+                    /data:image\/[^;]+;base64,[^"'\s]*/g,
+                    /(?:viewBox|d|path|points)="[^"]{50,}"/g
+                ];
+
+                let dirtyRemoved = 0;
+                dirtyRemovePatterns.forEach(function(pattern) {
+                    const before = cleaned.length;
+                    cleaned = cleaned.replace(pattern, '');
+                    if (cleaned.length < before) dirtyRemoved++;
+                });
+                if (dirtyRemoved > 0) console.log(`[AI-Response-Viewer] 🗑️ 已移除 ${dirtyRemoved} 类非文本内容`);
+
+                console.log('[AI-Response-Viewer] ✅ Tailwind清理完成，保留HTML结构:', cleaned.length, '字符');
+            }
+
+            // 🔧 步骤2: 对所有 style 属性进行基础安全清理（总是执行！）
+            cleaned = cleaned.replace(/style="[^"]*"/gi, 
+                function(match) {
+                    let newStyle = match
+                        .replace(/text-align:\s*[^;]+;?/gi, '')
+                        .replace(/background(?:-color)?\s*:\s*[^;]+;?/gi, '')
+                        .replace(/padding(?:-top|-bottom|-left|-right)?\s*:\s*[^;]+;?/gi, '')
+                        .replace(/margin(?:-top|-bottom|-left|-right)?\s*:\s*[^;]+;?/gi, '')
+                        .replace(/display:\s*(?:block|flex|inline-flex|grid|inline-block|table|inline-table)[^;]*;?/gi, '')
+                        .replace(/border(?:-top|-bottom|-left|-right)?\s*:\s*[^;]+;?/gi, '')
+                        .replace(/border-radius:\s*[^;]+;?/gi, '')
+                        .replace(/box-shadow:\s*[^;]+;?/gi, '')
+                        .replace(/(?:min-|max-)?width:\s*(?:\d+(?:\.\d+)?(?:px|em|rem|%)|auto)[^;]*;?/gi, '')
+                        .replace(/(?:min-|max-)?height:\s*(?:\d+(?:\.\d+)?(?:px|em|rem|%)|auto)[^;]*;?/gi, '')
+                        .replace(/position:\s*(?:absolute|relative|fixed|sticky)[^;]*;?/gi, '')
+                        .replace(/(?:top|bottom|left|right):\s*[^;]+;?/gi, '')
+                        .replace(/z-index:\s*[^;]+;?/gi, '')
+                        .replace(/float:\s*[^;]+;?/gi, '')
+                        .replace(/clear:\s*[^;]+;?/gi, '')
+                        .replace(/overflow(?:-x|-y)?:\s*[^;]+;?/gi, '')
+                        .replace(/opacity:\s*[^;]+;?/gi, '')
+                        .replace(/transform:\s*[^;]+;?/gi, '')
+                        .replace(/var\(--[^)]+\)/gi, '')
+                        .replace(/rgba?\([^)]+\)/gi, '');
+
+                    newStyle = newStyle.replace(/;\s*;/g, ';').replace(/^style="\s*;\s*/, 'style="').replace(/\s*;\s*"$/, '"');
+                    if (/^style="\s*"?$/.test(newStyle)) return '';
+                    return newStyle;
+                });
+            console.log('[AI-Response-Viewer] ✅ 已清理破坏性 style 属性');
+
+            // 🔍 步骤3: 移除非文本内容块（标准清理）
+            // 🆕 注意：不再移除 <math> 和 <span class="katex">，因为已在步骤0中提取
+            const standardRemovePatterns = [
+                /<svg[\s\S]*?<\/svg>/gi,
+                /<canvas[^>]*><\/canvas>/gi,
+                /<script[\s\S]*?<\/script>/gi,
+                /<style[\s\S]*?<\/style>/gi,
+                /<button[\s\S]*?<\/button>/gi,
+                /<input[^>]*>/gi,
+                /<i class="icon[\s\S]*?<\/i>/gi,
+                /<animate[\s\S]*?<\/animate>/gi,
+                /\s+d="[^"]*"/g,
+                /data:image\/[^;]+;base64,[^"'\s]*/g,
+                /(?:viewBox|d|path|points)="[^"]{50,}"/g
+            ];
+
+            let removedCount = 0;
+            standardRemovePatterns.forEach((pattern, index) => {
+                const before = cleaned.length;
+                cleaned = cleaned.replace(pattern, '');
+                if (cleaned.length < before) {
+                    removedCount++;
+                    console.log(`[AI-Response-Viewer] 🗑️ 已移除模式 ${index + 1}: 长度减少 ${before - cleaned.length}`);
+                }
+            });
+
+            if (removedCount > 0) {
+                console.log(`[AI-Response-Viewer] 🗑️ 总共移除了 ${removedCount} 类非文本内容`);
+            }
+
+            // 步骤4: 移除标签间的多余空白（但保留单个空格）
+            cleaned = cleaned
+                .replace(/>\s+</g, '><')
+                .replace(/\n\s*\n/g, '\n')
+                .replace(/^\s+|\s+$/g, '');
+
+            // 🆕 步骤5: 重新渲染 KaTeX 公式
+            if (mathBlocks.length > 0) {
+                cleaned = renderKaTeXPlaceholders(cleaned, mathBlocks);
+                console.log(`[AI-Response-Viewer] ✅ 已重新渲染 ${mathBlocks.length} 个 KaTeX 公式`);
+            }
+
+            console.log('[AI-Response-Viewer] 🧹 输出长度:', cleaned.length);
+            console.log('[AI-Response-Viewer] 🧹 压缩率:', ((1 - cleaned.length / html.length) * 100).toFixed(1), '%');
+
+            return cleaned;
+        }
+
+        /**
+         * 🆕 从"脏HTML"中提取纯文本（针对 ProseMirror/Tailwind 等框架生成的复杂HTML）
+         */
+        function extractPureTextFromDirtyHtml(dirtyHtml) {
+            console.log('[AI-Response-Viewer] 🔬 开始深度提取纯文本...');
+            
+            // 创建临时DOM元素来解析HTML
+            const tempDiv = document.createElement('div');
+            tempDiv.innerHTML = dirtyHtml;
+            
+            // 递归提取所有文本节点
+            let pureText = '';
+            
+            function extractTextNodes(node) {
+                if (node.nodeType === Node.TEXT_NODE) {
+                    // 文本节点：直接获取内容
+                    const text = node.textContent.trim();
+                    if (text) {
+                        pureText += text + '\n';
+                    }
+                } else if (node.nodeType === Node.ELEMENT_NODE) {
+                    // 元素节点：递归处理子节点
+                    // 跳过 script, style, svg, math 等标签
+                    const tagName = node.tagName.toLowerCase();
+                    if (!['script', 'style', 'svg', 'math', 'canvas', 'button', 'input'].includes(tagName)) {
+                        for (let i = 0; i < node.childNodes.length; i++) {
+                            extractTextNodes(node.childNodes[i]);
+                        }
+                        
+                        // 在块级元素后添加换行
+                        if (['p', 'div', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'li', 'tr'].includes(tagName)) {
+                            pureText += '\n';
+                        }
+                    }
+                }
+            }
+            
+            extractTextNodes(tempDiv);
+            
+            // 清理结果
+            pureText = pureText
+                .replace(/\n{3,}/g, '\n\n')  // 多个连续换行变两个
+                .replace(/^\s+|\s+$/g, '')   // 首尾空白
+                .trim();
+            
+            console.log('[AI-Response-Viewer] 🔬 提取完成，纯文本长度:', pureText.length);
+            console.log('[AI-Response-Viewer] 🔬 提取预览(前200字符):\n', pureText.substring(0, 200));
+            
+            return pureText;
+        }
+        
+        /**
+         * 🎨 智能渲染函数（核心改进版）
+         *
+         * 设计理念（基于用户的正确建议）：
+         * ✅ 优先使用 innerHTML（已有完整HTML结构）
+         * ✅ 直接给标准标签注入样式（不需要 marked 重新解析）
+         * ✅ 只有纯文本时才使用 marked 解析
+         */
+        function renderMarkdown(html) {
+            console.log('[AI-Response-Viewer] 🎨 renderMarkdown() 被调用');
+            console.log('[AI-Response-Viewer] 🎨 输入长度:', html ? html.length : 0);
+
+            if (!html) {
+                return '<span style="color: #999;">（空内容）</span>';
+            }
+
+            if (typeof window.marked === 'undefined' || typeof window.DOMPurify === 'undefined') {
+                console.warn('[AI-Response-Viewer] ⚠️ 库未加载，返回原始 HTML');
+                return html;
+            }
+
+            try {
+                let processedHtml = html;
+
+                // 🔍 判断输入类型
+                const hasHtmlTags = /<[a-z][\s\S]*>/i.test(html);
+                console.log('[AI-Response-Viewer] 🔍 是否包含HTML标签:', hasHtmlTags);
+
+                if (hasHtmlTags) {
+                    // ✅ 情况1: 输入已是HTML（如 innerHTML）
+                    console.log('[AI-Response-Viewer] ✅ 检测到HTML格式，直接优化+注入样式');
+
+                    // 步骤1: 清理多余空白（此函数已集成 KaTeX 保留与重渲染）
+                    processedHtml = cleanHtmlWhitespace(html);
+                    console.log('[AI-Response-Viewer] 🧹 清理后长度:', processedHtml.length);
+
+                    // 步骤2: 自动格式化JSON代码块
+                    processedHtml = formatJsonBlocks(processedHtml);
+
+                    // 步骤3: 直接注入样式到已有标签
+                    const styledHtml = injectInlineStyles(processedHtml);
+
+                    // 步骤4: 安全过滤（增加 KaTeX 所需标签和属性）
+                    const cleanHtml = DOMPurify.sanitize(styledHtml, {
+                        ALLOWED_TAGS: ['h1','h2','h3','h4','h5','h6','p','br','hr','ul','ol','li','strong','b','em','i','del','s','u','a','code','pre','blockquote','table','thead','tbody','tr','th','td','img','span','div','sup','sub','mark','kbd',
+                            // 🆕 KaTeX 数学公式标签
+                            'semantics','mrow','mi','mn','mo','ms','mfenced','msup','msub','mfrac','msqrt','mroot','mstyle','mtable','mtr','mtd','mlabeledtr','annotation'],
+                        ALLOWED_ATTR: ['href','target','rel','title','src','alt','style','class'],
+                        ADD_ATTR: ['target','style']
+                    });
+
+                    console.log('[AI-Response-Viewer] ✅ HTML直接渲染完成！');
+                    return cleanHtml;
+
+                } else {
+                    // ✅ 情况2: 输入是纯文本（如 textContent）
+                    console.log('[AI-Response-Viewer] 📝 检测到纯文本，使用 marked 解析');
+
+                    // 🆕 步骤0: 提取 LaTeX 公式（$...$ 和 $$...$$）
+                    const { html: preProcessedHtml, mathBlocks } = extractAndRenderKaTeX(html);
+                    if (mathBlocks.length > 0) {
+                        console.log(`[AI-Response-Viewer] 🧮 纯文本中提取到 ${mathBlocks.length} 个 KaTeX 公式`);
+                    }
+
+                    // 步骤1: 用 marked 将纯文本转成HTML
+                    marked.setOptions({
+                        breaks: true,
+                        gfm: true,
+                        renderer: {
+                            listitem(text) {
+                                if (text.startsWith('<p>')) {
+                                    text = text.replace(/^<p>/, '').replace(/<\/p>$/, '');
+                                }
+                                return '<li>' + text + '</li>\n';
+                            }
+                        }
+                    });
+                    processedHtml = marked.parse(preProcessedHtml);
+
+                    // 步骤2: 格式化JSON
+                    processedHtml = formatJsonBlocks(processedHtml);
+
+                    // 🆕 步骤3: 重新渲染 KaTeX 公式
+                    if (mathBlocks.length > 0) {
+                        processedHtml = renderKaTeXPlaceholders(processedHtml, mathBlocks);
+                    }
+
+                    // 步骤4: 注入样式
+                    const styledHtml = injectInlineStyles(processedHtml);
+
+                    // 步骤5: 安全过滤（增加 KaTeX 所需标签和属性）
+                    const cleanHtml = DOMPurify.sanitize(styledHtml, {
+                        ALLOWED_TAGS: ['h1','h2','h3','h4','h5','h6','p','br','hr','ul','ol','li','strong','b','em','i','del','s','u','a','code','pre','blockquote','table','thead','tbody','tr','th','td','img','span','div','sup','sub','mark','kbd',
+                            // 🆕 KaTeX 数学公式标签
+                            'semantics','mrow','mi','mn','mo','ms','mfenced','msup','msub','mfrac','msqrt','mroot','mstyle','mtable','mtr','mtd','mlabeledtr','annotation'],
+                        ALLOWED_ATTR: ['href','target','rel','title','src','alt','style','class'],
+                        ADD_ATTR: ['target','style']
+                    });
+
+                    console.log('[AI-Response-Viewer] ✅ 纯文本→Markdown 渲染完成！');
+                    return cleanHtml;
+                }
+
+            } catch (error) {
+                console.error('[AI-Response-Viewer] ❌ 渲染错误:', error);
+                return `<div style="color: red; padding: 10px; background: #fee2e2; border-radius: 6px;">❌ 渲染错误: ${error.message}</div>`;
+            }
+        }
+
+        /**
+         * ✨ 超级智能 JSON 格式化器（终极版 - 通用解决方案）
+         *
+         * 设计理念：
+         * 1. 不依赖特定平台的HTML结构
+         * 2. 自动检测内容类型（纯文本 / 已高亮HTML / 混合）
+         * 3. 多策略尝试，确保100%成功
+         */
+        function formatJsonBlocks(html) {
+            console.log('[AI-Response-Viewer] 🚀 超级智能 JSON 格式化器启动');
+            console.log('[AI-Response-Viewer] 🚀 输入长度:', html.length);
+
+            // 🔍 策略1: 查找 <pre><code> 标准结构
+            let result = html.replace(/<pre[^>]*><code[^>]*>([\s\S]*?)<\/code><\/pre>/gi, (match, codeContent) => {
+                return processCodeBlock(codeContent);
+            });
+
+            // 🔍 策略2: 如果没找到 <pre><code>，查找独立的 <pre> 或 <code>
+            if (result === html) {
+                console.log('[AI-Response-Viewer] 🔍 未找到<pre><code>，尝试其他结构...');
+                result = result.replace(/<pre[^>]*>([\s\S]*?)<\/pre>/gi, (match, content) => {
+                    return processCodeBlock(content);
+                });
+            }
+
+            // 🔍 策略3: 如果还是没有，查找可能包含JSON的文本块
+            if (result === html) {
+                console.log('[AI-Response-Viewer] 🔍 尝试检测内联JSON...');
+                result = result.replace(/(\[[\s\S]*?\])(?=\s*(?:<|$))/gi, (match, jsonStr) => {
+                    if (jsonStr.length > 50 && jsonStr.includes('{')) {
+                        return formatJsonString(jsonStr.trim());
+                    }
+                    return match;
+                });
+            }
+
+            console.log('[AI-Response-Viewer] ✅ 超级格式化完成');
+            return result;
+        }
+
+        /**
+         * 🛠️ 处理单个代码块（核心函数）
+         */
+        function processCodeBlock(codeContent) {
+            console.log('[AI-Response-Viewer] 🔧 处理代码块，原始长度:', codeContent.length);
+
+            // 步骤1: 解码 HTML 实体
+            let decoded = codeContent
+                .replace(/&lt;/g, '<')
+                .replace(/&gt;/g, '>')
+                .replace(/&amp;/g, '&')
+                .replace(/&quot;/g, '"')
+                .replace(/&#39;/g, "'")
+                .trim();
+
+            console.log('[AI-Response-Viewer] 🔧 解码后预览(前80字符):', decoded.substring(0, 80));
+            console.log('[AI-Response-Viewer] 🔧 是否包含<span>:', decoded.includes('<span'));
+
+            // 步骤2: 如果包含HTML标签（已高亮），提取纯文本
+            let plainText = decoded;
+            if (decoded.includes('<') && decoded.includes('>')) {
+                console.log('[AI-Response-Viewer] 🔄 检测到HTML标签，提取纯文本...');
+                plainText = extractPlainText(decoded);
+                console.log('[AI-Response-Viewer] 🔄 提取后长度:', plainText.length);
+                console.log('[AI-Response-Viewer] 🔄 提取后预览(前150字符):', plainText.substring(0, 150));
+            }
+
+            // 步骤3: 尝试解析和格式化JSON
+            const formatted = tryFormatJson(plainText);
+
+            if (formatted.success) {
+                console.log('[AI-Response-Viewer] ✅ JSON格式化成功！');
+                return formatted.html;
+            } else {
+                console.warn('[AI-Response-Viewer] ⚠️ JSON格式化失败:', formatted.error);
+                console.warn('[AI-Response-Viewer] ⚠️ 返回原始内容');
+                return `<pre style="background: #f8f9fa !important; color: #24292e !important; padding: 16px !important; border-radius: 6px !important; border: 1px solid #e1e4e8 !important; overflow-x: auto !important; margin: 16px 0 !important; font-family: 'SFMono-Regular', Consolas, monospace !important; font-size: 13px !important; line-height: 1.6 !important; white-space: pre-wrap !important; word-break: break-all !important;">${escapeHtml(codeContent)}</pre>`;
+            }
+        }
+
+        /**
+         * 🎯 尝试解析并格式化JSON（多策略）
+         */
+        function tryFormatJson(text) {
+            // 策略A: 直接解析
+            try {
+                const jsonObj = JSON.parse(text);
+                return { success: true, html: formatJsonString(JSON.stringify(jsonObj, null, 2)) };
+            } catch (e) {}
+
+            // 策略B: 清理后解析（移除可能的干扰字符）
+            try {
+                const cleaned = text
+                    .replace(/[\u0000-\u001F\u007F-\u009F]/g, '')  // 移除控制字符
+                    .replace(/^\s*```(?:json)?\s*/gm, '')             // 移除markdown代码块标记
+                    .replace(/\s*```\s*$/gm, '')
+                    .trim();
+
+                const jsonObj = JSON.parse(cleaned);
+                return { success: true, html: formatJsonString(JSON.stringify(jsonObj, null, 2)) };
+            } catch (e) {}
+
+            // 策略C: 查找JSON片段（如果文本很长，可能JSON只是其中一部分）
+            const jsonPattern = /\{[\s\S]*\}|\[[\s\S]*\]/;
+            const match = text.match(jsonPattern);
+            if (match && match[0].length > 20) {
+                try {
+                    const jsonObj = JSON.parse(match[0]);
+                    return { success: true, html: formatJsonString(JSON.stringify(jsonObj, null, 2)) };
+                } catch (e) {}
+            }
+
+            return { success: false, error: '所有策略均失败' };
+        }
+
+        /**
+         * 📝 格式化JSON字符串为美观的HTML
+         */
+        function formatJsonString(jsonStr) {
+            const escaped = jsonStr
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;');
+
+            return `<pre style="background: #f8f9fa !important; color: #24292e !important; padding: 16px !important; border-radius: 6px !important; border: 1px solid #e1e4e8 !important; margin: 16px 0 !important; font-family: 'SFMono-Regular', Consolas, monospace !important; font-size: 13px !important; line-height: 1.6 !important; white-space: pre !important; overflow-x: auto !important;"><code style="background: none !important; color: inherit !important; padding: 0 !important;">${escaped}</code></pre>`;
+        }
+
+        /**
+         * 🧹 从HTML中提取纯文本（增强版）
+         */
+        function extractPlainText(html) {
+            let text = html
+                // 处理换行
+                .replace(/<br\s*\/?>/gi, '\n')
+                .replace(/<\/p>/gi, '\n\n')
+                .replace(/<\/div>/gi, '\n')
+                // 移除所有标签
+                .replace(/<[^>]+>/g, '')
+                // 还原实体
+                .replace(/&nbsp;/g, ' ')
+                .replace(/&lt;/g, '<')
+                .replace(/&gt;/g, '>')
+                .replace(/&amp;/g, '&')
+                .replace(/&quot;/g, '"')
+                .replace(/&#39;/g, "'")
+                // 清理空白
+                .replace(/[ \t]+/g, ' ')
+                .replace(/\n\s*\n/g, '\n')
+                .trim();
+
+            return text;
+        }
+        
+        /**
+         * 🔄 切换视图模式（三种模式：Markdown美化 / 纯文本 / HTML原生）
+         */
+        function toggleViewMode() {
+            console.log('[AI-Response-Viewer] 🔄 toggleViewMode() 被点击！');
+            console.log('[AI-Response-Viewer] 🔄 当前模式:', viewMode);
+
+            // 循环切换三种模式：markdown → text → html → markdown
+            const modes = ['markdown', 'text', 'html'];
+            const currentIndex = modes.indexOf(viewMode);
+            const nextIndex = (currentIndex + 1) % modes.length;
+            viewMode = modes[nextIndex];
+
+            console.log('[AI-Response-Viewer] 🔄 切换后模式:', viewMode);
+
+            const btn = document.getElementById('markdownToggleBtn');
+            if (btn) {
+                const modeConfig = {
+                    'html': { text: '🌐 HTML原生', bg: '#059669', desc: '与webview一致' },
+                    'markdown': { text: '🎨 Markdown', bg: '#6366f1', desc: '美化渲染' },
+                    'text': { text: '📄 纯文本', bg: '#6b7280', desc: '原始文本' }
+                };
+
+                const config = modeConfig[viewMode];
+                btn.textContent = config.text;
+                btn.style.background = config.bg;
+                btn.title = `${config.desc}（点击切换）`;
+
+                console.log(`[AI-Response-Viewer] 🔄 按钮改为: ${config.text} (${config.desc})`);
+            } else {
+                console.error('[AI-Response-Viewer] ❌ 找不到按钮元素 #markdownToggleBtn！');
+            }
+
+            // 重新渲染当前数据
+            if (currentResponseData) {
+                console.log('[AI-Response-Viewer] 🔄 重新渲染当前数据...');
+                try {
+                    displayResponse(currentResponseData);
+                    console.log('[AI-Response-Viewer] ✅ displayResponse() 执行完成！');
+                } catch (error) {
+                    console.error('[AI-Response-Viewer] ❌ displayResponse() 执行出错:', error);
+                }
+            }
+
+            console.log('[AI-Response-Viewer] 🔄 ========== 切换完成 ==========');
+        }
+
+        /**
+         * 📐 HTML 格式化：给挤成一团的 innerHTML 自动加上换行和缩进（轻量级实现）
+         *
+         * 规则：
+         *   - 在块级标签的前后插入换行
+         *   - 遇到开标签 <xxx> 缩进 +1，遇到关标签 </xxx> 缩进 -1
+         *   - 自闭合标签（<br/>、<img/>、<hr/>）和内联标签（<span>、<strong>、<b>、<i>、<em>、<code>）不换行
+         *   - 文本内容不被拆散
+         *
+         * @param {string} html 原始 HTML
+         * @param {number} indentSize 每级缩进的空格数（默认 2）
+         * @returns {string} 格式化后的 HTML（带换行和缩进）
+         */
+        function formatHtml(html, indentSize) {
+            indentSize = indentSize || 2;
+
+            if (!html) return '';
+
+            // 内联/自闭合标签白名单：这些标签不触发换行
+            const inlineTags = new Set([
+                'span', 'strong', 'b', 'em', 'i', 'u', 's', 'code', 'a', 'br',
+                'img', 'input', 'small', 'mark', 'sup', 'sub', 'nobr', 'text'
+            ]);
+
+            // 自闭合标签：没有对应的关标签，不改变缩进深度
+            const selfClosingTags = new Set([
+                'br', 'img', 'hr', 'input', 'meta', 'link', 'wbr'
+            ]);
+
+            // 用正则把 HTML 切成 "文本片段" 和 "标签片段" 交替的数组
+            // 例如 "A<div>B</div>C"  →  ["A", "<div>", "B", "</div>", "C"]
+            const tokens = html.split(/(<[^>]+>)/g).filter(function (t) { return t.length > 0; });
+
+            let result = '';
+            let depth = 0;           // 当前缩进深度
+            let atLineStart = true;  // 下一个输出是否处于行首（需要先写缩进）
+            let lastWasOpenTag = false;  // 上一个 token 是否是"开标签"（用于优化关标签的位置）
+
+            for (let i = 0; i < tokens.length; i++) {
+                const token = tokens[i];
+                const isTag = token.charAt(0) === '<';
+
+                if (!isTag) {
+                    // --- 普通文本：直接追加，不做缩进处理
+                    const text = token;
+                    const trimmed = text.replace(/^[ \t\r\n]+/, '').replace(/[ \t\r\n]+$/, '');
+                    if (trimmed.length === 0) {
+                        // 纯空白（两个标签之间的换行/缩进），忽略它（我们会自己加）
+                        continue;
+                    }
+                    if (atLineStart) {
+                        result += ' '.repeat(depth * indentSize);
+                        atLineStart = false;
+                    }
+                    result += trimmed;
+                    lastWasOpenTag = false;
+                    continue;
+                }
+
+                // --- 是一个标签：判断是开标签、关标签、还是自闭合标签
+                // 匹配：<tagname ...> 或 </tagname> 或 <tagname/>
+                const closeMatch = token.match(/^<\/\s*([a-zA-Z][a-zA-Z0-9-]*)/);
+                const openMatch = token.match(/^<\s*([a-zA-Z][a-zA-Z0-9-]*)(?:\s[^>]*)?>/);
+
+                if (closeMatch) {
+                    // -- 关标签：</xxx>
+                    const tagName = closeMatch[1].toLowerCase();
+                    const isInline = inlineTags.has(tagName);
+
+                    if (isInline) {
+                        // 内联关标签：紧跟上一个内容，不换行
+                        if (atLineStart) {
+                            result += ' '.repeat(depth * indentSize);
+                            atLineStart = false;
+                        }
+                        result += token;
+                    } else {
+                        // 块级关标签：先缩进到 depth-1 的位置，再输出标签，然后换行
+                        // （缩进深度要在输出这一行之前就减）
+                        depth = Math.max(0, depth - 1);
+                        if (!atLineStart) {
+                            result += '\n';
+                            atLineStart = true;
+                        }
+                        if (atLineStart) {
+                            result += ' '.repeat(depth * indentSize);
+                            atLineStart = false;
+                        }
+                        result += token;
+                        result += '\n';
+                        atLineStart = true;
+                    }
+                    lastWasOpenTag = false;
+                    continue;
+                }
+
+                if (openMatch) {
+                    // -- 开标签：<xxx ...> 或自闭合 <xxx/>
+                    const tagName = openMatch[1].toLowerCase();
+                    const isSelfClose = selfClosingTags.has(tagName) || /\/\s*>$/.test(token);
+                    const isInline = inlineTags.has(tagName);
+
+                    if (isSelfClose || isInline) {
+                        // 自闭合标签 / 内联开标签：不换行，不改变缩进深度
+                        if (atLineStart) {
+                            result += ' '.repeat(depth * indentSize);
+                            atLineStart = false;
+                        }
+                        result += token;
+                    } else {
+                        // 块级开标签：先换行到当前 depth，输出标签，然后缩进 +1 再换行
+                        if (!atLineStart) {
+                            result += '\n';
+                            atLineStart = true;
+                        }
+                        if (atLineStart) {
+                            result += ' '.repeat(depth * indentSize);
+                            atLineStart = false;
+                        }
+                        result += token;
+                        result += '\n';
+                        atLineStart = true;
+                        depth += 1;
+                        lastWasOpenTag = true;
+                    }
+                    continue;
+                }
+
+                // -- 其他标签（注释 <!-- -->、<!DOCTYPE> 等）：当作块级元素处理
+                if (atLineStart) {
+                    result += ' '.repeat(depth * indentSize);
+                    atLineStart = false;
+                }
+                result += token;
+            }
+
+            // 收尾：去掉行尾多余空白 + 折叠连续 3+ 个空行
+            const lines = result.split('\n').map(function (ln) {
+                return ln.replace(/[ \t]+$/, '');
+            });
+
+            let formatted = '';
+            let blankRun = 0;
+            for (let j = 0; j < lines.length; j++) {
+                const ln = lines[j];
+                if (ln.trim().length === 0) {
+                    blankRun += 1;
+                    if (blankRun <= 1) formatted += '\n';
+                } else {
+                    blankRun = 0;
+                    formatted += ln + '\n';
+                }
+            }
+
+            return formatted.trim();
+        }
+
+        /**
+         * 🌐 HTML 原生模式：显示 innerHTML 的原始源码（自动缩进格式化，不渲染）
+         */
+        function renderHtmlRaw(html) {
+            console.log('[AI-Response-Viewer] 🌐 renderHtmlRaw() 被调用（带缩进格式化）');
+            console.log('[AI-Response-Viewer] 🌐 输入 HTML 长度:', html ? html.length : 0);
+
+            if (!html) {
+                return '<pre style="color: #999; padding: 16px;">（空内容）</pre>';
+            }
+
+            const preview = html.substring(0, 500);
+            console.log('[AI-Response-Viewer] 🔍 HTML 前 500 字符预览:', preview);
+
+            try {
+                // ✅ 1) 先做缩进格式化（把挤成一团的一行 HTML 变成有结构的多行）
+                const formatted = formatHtml(html, 2);
+
+                // ✅ 2) 再做实体转义（让 <tag> 以源码形式显示，不会被浏览器渲染）
+                const escapedSource = escapeHtml(formatted);
+
+                console.log('[AI-Response-Viewer] ✅ HTML 源码已格式化并转义');
+
+                return `
+                    <pre style="
+                        font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+                        font-size: 13px;
+                        line-height: 1.6;
+                        color: #1f2937;
+                        background: #f8fafc;
+                        border: 1px solid #e2e8f0;
+                        border-radius: 8px;
+                        padding: 16px;
+                        margin: 0;
+                        white-space: pre;
+                        word-break: normal;
+                        overflow-x: auto;
+                    ">${escapedSource}</pre>
+                `;
+
+            } catch (error) {
+                console.error('[AI-Response-Viewer] ❌ HTML 显示错误:', error);
+                return `<div style="color: red; padding: 10px; background: #fee2e2; border-radius: 6px;">❌ HTML 显示错误: ${error.message}</div>`;
+            }
+        }
+    </script>
+</body>
+</html>

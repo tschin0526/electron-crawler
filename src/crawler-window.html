@@ -1,0 +1,4904 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>无限空间·AI智控台 v1.0.0-18</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    html, body {
+      height: 100%;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 4px;
+    }
+
+    .container {
+      background: white;
+      border-radius: 16px;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+      width: calc(100% - 8px);
+      max-width: none;
+      overflow: hidden;
+      height: calc(100vh - 10px);
+      display: flex;
+      flex-direction: column;
+      overflow-y: auto;
+    }
+
+    .header {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      padding: 20px 24px;
+      text-align: center;
+    }
+
+    .header h1 {
+      font-size: 28px;
+      font-weight: 700;
+      margin-bottom: 8px;
+    }
+
+    .header p {
+      font-size: 14px;
+      opacity: 0.9;
+    }
+
+    .content {
+      padding: 8px 16px 8px 16px;
+    }
+
+    .input-section {
+      margin-bottom: 3px;
+      flex: 1;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      min-height: 0;
+    }
+
+    .input-group {
+      display: flex;
+      gap: 12px;
+      margin-bottom: 3px;
+    }
+
+    .input-group-inline {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex: 1;
+      min-width: 0;
+    }
+
+    .input-group-inline label {
+      font-size: 18px;
+      display: flex;
+      align-items: center;
+      white-space: nowrap;
+    }
+
+    .input-group-inline input {
+      flex: 1;
+      min-width: 0;
+      height: 40px;
+      padding: 8px 12px;
+    }
+
+    .btn-icon {
+      width: 38px;
+      height: 38px;
+      border-radius: 50%;
+      border: none;
+      cursor: pointer;
+      font-size: 16px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0;
+      transition: all 0.2s ease;
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+      flex-shrink: 0;
+    }
+
+    .btn-icon:hover {
+      transform: scale(1.1);
+      box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+    }
+
+    .btn-icon:active {
+      transform: scale(0.95);
+    }
+
+    .btn-icon.btn-primary {
+      background: linear-gradient(135deg, #e0e7ff 0%, #c7d2fe 100%);
+      color: #4338ca;
+      border: 1px solid #a5b4fc;
+    }
+
+    .btn-icon.btn-danger {
+      background: linear-gradient(135deg, #fce7f3 0%, #fbcfe8 100%);
+      color: #be185d;
+      border: 1px solid #f9a8d4;
+    }
+
+    .btn-icon.btn-success {
+      background: linear-gradient(135deg, #d1fae5 0%, #a7f3d0 100%);
+      color: #047857;
+      border: 1px solid #6ee7b7;
+    }
+
+    .input-group label {
+      font-size: 14px;
+      font-weight: 600;
+      color: #333;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      white-space: nowrap;
+    }
+
+    .input-group input[type="text"] {
+      flex: 1;
+      padding: 12px 16px;
+      border: 2px solid #e2e8f0;
+      border-radius: 8px;
+      font-size: 14px;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+
+    .input-group input[type="text"]:focus {
+      border-color: #667eea;
+    }
+
+    .btn {
+      padding: 8px 20px;
+      border: none;
+      border-radius: 50px;
+      font-size: 15px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1), 0 1px 2px rgba(0, 0, 0, 0.06);
+    }
+
+    .btn:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15), 0 2px 4px rgba(0, 0, 0, 0.1);
+    }
+
+    .btn:active {
+      transform: translateY(0);
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    }
+
+    .btn-primary {
+      background: linear-gradient(180deg, #e0e7ff 0%, #c7d2fe 100%);
+      color: #4338ca;
+      border: 1px solid #a5b4fc;
+    }
+
+    .btn-primary:hover {
+      background: linear-gradient(180deg, #c7d2fe 0%, #a5b4fc 100%);
+      color: #3730a3;
+    }
+
+    .btn-primary:disabled {
+      background: linear-gradient(180deg, #f1f5f9 0%, #e2e8f0 100%);
+      color: #94a3b8;
+      border-color: #cbd5e1;
+      cursor: not-allowed;
+      transform: none;
+      box-shadow: none;
+    }
+
+    .btn-success {
+      background: linear-gradient(180deg, #d1fae5 0%, #a7f3d0 100%);
+      color: #047857;
+      border: 1px solid #6ee7b7;
+    }
+
+    .btn-success:hover {
+      background: linear-gradient(180deg, #a7f3d0 0%, #6ee7b7 100%);
+      color: #065f46;
+    }
+
+    .btn-danger {
+      background: linear-gradient(180deg, #fee2e2 0%, #fecaca 100%);
+      color: #dc2626;
+      border: 1px solid #fca5a5;
+    }
+
+    .btn-danger:hover {
+      background: linear-gradient(180deg, #fecaca 0%, #fca5a5 100%);
+      color: #b91c1c;
+    }
+
+    .btn-secondary {
+      background: linear-gradient(180deg, #e0e7ff 0%, #c7d2fe 100%);
+      color: #4338ca;
+      border: 1px solid #a5b4fc;
+    }
+
+    .btn-secondary:hover {
+      background: linear-gradient(180deg, #c7d2fe 0%, #a5b4fc 100%);
+      color: #3730a3;
+    }
+
+    .status-box {
+      padding: 16px;
+      border-radius: 8px;
+      margin-bottom: 24px;
+      font-size: 14px;
+      display: none;
+    }
+
+    .status-box.info {
+      background: #eff6ff;
+      border: 1px solid #bfdbfe;
+      color: #1e40af;
+      display: block;
+    }
+
+    .status-box.success {
+      background: #ecfdf5;
+      border: 1px solid #a7f3d0;
+      color: #065f46;
+      display: block;
+    }
+
+    .status-box.error {
+      background: #fef2f2;
+      border: 1px solid #fecaca;
+      color: #991b1b;
+      display: block;
+    }
+
+    /* 🆕 浮动在画面顶端的状态提示框（带跑马灯效果） */
+    .status-box-floating {
+      position: fixed;
+      top: 10px;
+      left: 10px;
+      z-index: 9999;
+      padding: 8px 20px;
+      border-radius: 16px;
+      font-size: 13px;
+      font-weight: 500;
+      width: calc(100vw / 3);
+      min-width: 280px;
+      max-width: none;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      align-items: stretch;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+      transition: all 0.3s ease;
+      cursor: pointer;
+      animation: slideDownFadeInLeft 0.4s ease-out;
+    }
+
+    .status-box-floating.has-card {
+      border-radius: 14px;
+      padding: 12px 16px;
+    }
+
+    /* 展开状态（完整模式） */
+    .status-box-floating.expanded {
+      padding: 10px 16px;
+      width: calc(100vw / 3);
+      min-width: 280px;
+      flex-direction: column;
+      align-items: stretch;
+      gap: 0;
+    }
+
+    .status-box-floating.expanded.has-card {
+      width: calc(100vw / 3);
+    }
+    
+    /* 消息显示模式（紧凑模式）- 只显示消息，不显示作业区 */
+    .status-box-floating.msg-only {
+      padding: 8px 16px;
+      width: auto;
+      min-width: 200px;
+      max-width: 400px;
+      flex-direction: row;
+      align-items: center;
+      gap: 8px;
+    }
+    
+    .status-box-floating.msg-only .status-text-full {
+      display: flex;
+      flex-direction: row;
+      align-items: center;
+      gap: 8px;
+      width: auto;
+    }
+    
+    .status-box-floating.msg-only .status-msg-text {
+      white-space: normal;
+      overflow: visible;
+      text-overflow: clip;
+      flex: 1;
+      min-width: 0;
+    }
+
+    .status-box-floating.msg-only .status-msg-expand-btn {
+      display: flex !important;
+    }
+    
+    .status-box-floating.msg-only .status-tabs,
+    .status-box-floating.msg-only .status-tab-content,
+    .status-box-floating.msg-only .status-resize-handle {
+      display: none;
+    }
+
+    /* 出现动画（从左边滑入） */
+    @keyframes slideDownFadeInLeft {
+      0% {
+        opacity: 0;
+        transform: translateX(-20px);
+      }
+      100% {
+        opacity: 1;
+        transform: translateX(0);
+      }
+    }
+
+    .status-box-floating.expanded .status-text-full {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      width: 100%;
+    }
+
+    .status-msg-text {
+      display: block;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      cursor: pointer;
+    }
+
+    .status-msg-text.expanded {
+      white-space: normal;
+      overflow: visible;
+      text-overflow: clip;
+      word-break: break-word;
+    }
+
+    .status-expand-indicator {
+      display: inline;
+      font-size: 10px;
+      color: #94a3b8;
+    }
+
+    /* ====== 浮动视窗页签 ====== */
+    .status-tabs {
+      display: flex;
+      gap: 0;
+      border-bottom: 1.5px solid rgba(0,0,0,0.08);
+      margin-top: 2px;
+    }
+
+    .status-tab {
+      padding: 3px 12px;
+      border: none;
+      background: transparent;
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 600;
+      color: #94a3b8;
+      border-bottom: 2px solid transparent;
+      transition: all 0.15s;
+      line-height: 1.5;
+      border-radius: 4px 4px 0 0;
+    }
+
+    .status-tab:hover {
+      color: #64748b;
+      background: rgba(0,0,0,0.03);
+    }
+
+    .status-tab.active {
+      color: #1e40af;
+      border-bottom-color: #3b82f6;
+      background: rgba(59,130,246,0.06);
+    }
+
+    .status-history-toolbar {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      margin: 8px 0;
+    }
+
+    .status-history-toolbar input {
+      flex: 1;
+      padding: 8px 10px;
+      border: 1px solid #e2e8f0;
+      border-radius: 8px;
+      background: #f8fafc;
+      font-size: 13px;
+      outline: none;
+    }
+
+    .status-history-toolbar button {
+      padding: 8px 14px;
+      background: #fef2f2;
+      color: #dc2626;
+      border: 1px solid #fecaca;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 600;
+    }
+
+    .mini-history-list {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      max-height: 320px;
+      overflow-y: auto;
+      padding-right: 4px;
+    }
+
+    .mini-history-item {
+      border: 1px solid #e2e8f0;
+      border-radius: 10px;
+      padding: 10px 12px;
+      background: #fff;
+      box-shadow: 0 1px 3px rgba(15, 23, 42, 0.05);
+    }
+
+    .mini-history-item-header {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+      margin-bottom: 6px;
+      font-size: 12px;
+      color: #334155;
+    }
+
+    .mini-history-item-time {
+      color: #64748b;
+    }
+
+    .mini-history-item-source,
+    .mini-history-item-card,
+    .mini-history-item-detail {
+      background: #f1f5f9;
+      border-radius: 999px;
+      padding: 2px 8px;
+      color: #475569;
+    }
+
+    .mini-history-item-message {
+      white-space: pre-wrap;
+      word-break: break-word;
+      font-size: 13px;
+      color: #0f172a;
+      margin-bottom: 6px;
+    }
+
+    .mini-history-empty {
+      color: #64748b;
+      font-size: 13px;
+      text-align: center;
+      padding: 24px 0;
+    }
+
+    /* ====== 迷你卡片（浮动视窗中的完整卡片克隆）====== */
+    .status-mini-card {
+      background: #ffffff;
+      border: 1.5px solid #e2e8f0;
+      border-radius: 10px;
+      padding: 8px 12px;
+      margin-top: 4px;
+      box-shadow:
+        0 2px 8px rgba(0, 0, 0, 0.08),
+        0 1px 3px rgba(0, 0, 0, 0.05);
+      position: relative;
+    }
+
+    .status-mini-card::before {
+      content: '';
+      position: absolute;
+      top: -1px;
+      left: 12px;
+      right: 12px;
+      height: 3px;
+      background: linear-gradient(90deg, #6366f1, #8b5cf6, #a78bfa);
+      border-radius: 3px 3px 0 0;
+    }
+
+    .status-mini-card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 4px;
+    }
+
+    /* ====== 迷你卡片操作按钮行 ====== */
+    .status-mini-actions {
+      display: flex;
+      gap: 3px;
+      margin-top: 5px;
+      margin-bottom: 4px;
+      padding: 3px 0;
+      border-top: 1px solid #f1f5f9;
+      border-bottom: 1px solid #f1f5f9;
+    }
+
+    .mini-btn {
+      width: 28px;
+      height: 28px;
+      border: 1px solid #e2e8f0;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 13px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.15s ease;
+      background: #fafafa;
+      color: #475569;
+      padding: 0;
+      line-height: 1;
+      overflow: hidden;
+    }
+
+    .mini-btn > span {
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      font-size: 13px;
+      line-height: 1.15;
+    }
+
+    .mini-btn:hover {
+      transform: scale(1.08);
+      box-shadow: 0 1px 4px rgba(0,0,0,0.12);
+    }
+
+    .mini-btn span {
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      font-size: 12px;
+      line-height: 1.15;
+      white-space: nowrap;
+    }
+
+    .mini-btn-crawl { background: #fffbeb; color: #d97706; border-color: #fef3c7; }
+    .mini-btn-crawl:hover { background: #fef3c7; }
+
+    .mini-btn-webview { background: #f0fdf4; color: #059669; border-color: #dcfce7; }
+    .mini-btn-webview:hover { background: #dcfce7; }
+
+    .mini-btn-chat { background: #fef3c7; color: #d97706; border-color: #fde68a; }
+    .mini-btn-chat:hover { background: #fde68a; }
+
+    .mini-btn-check { background: #dbeafe; color: #2563eb; border-color: #bfdbfe; }
+    .mini-btn-check:hover { background: #bfdbfe; }
+
+    .mini-btn-edit { background: #fffbeb; color: #b45309; border-color: #fef3c7; }
+    .mini-btn-edit:hover { background: #fef3c7; }
+
+    .mini-btn-del { background: #fef2f2; color: #dc2626; border-color: #fee2e2; }
+    .mini-btn-del:hover { background: #fee2e2; }
+
+    .status-mini-card-title {
+      font-size: 13px;
+      font-weight: 700;
+      color: #0f172a;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .status-mini-card-category {
+      font-size: 9px;
+      color: #475569;
+      background: #f1f5f9;
+      padding: 2px 7px;
+      border-radius: 5px;
+      white-space: nowrap;
+      flex-shrink: 0;
+      font-weight: 500;
+      border: 1px solid #e2e8f0;
+    }
+
+    .status-mini-card-category.category-social { background: #fef3c7; color: #92400e; border-color: #fde68a; }
+    .status-mini-card-category.category-tech { background: #dbeafe; color: #1e40af; border-color: #bfdbfe; }
+    .status-mini-card-category.category-news { background: #fce7f3; color: #9d174d; border-color: #fbcfe8; }
+    .status-mini-card-category.category-finance { background: #d1fae5; color: #065f46; border-color: #a7f3d0; }
+    .status-mini-card-category.category-general { background: #f1f5f9; color: #475569; border-color: #e2e8f0; }
+
+    .status-mini-card-url {
+      font-size: 10.5px;
+      color: #64748b;
+      word-break: break-all;
+      margin-top: 4px;
+      line-height: 1.35;
+      background: #f8fafc;
+      padding: 4px 8px;
+      border-radius: 5px;
+      border: 1px solid #f1f5f9;
+    }
+
+    .status-mini-hint {
+      font-size: 9.5px;
+      margin-top: 4px;
+      padding: 2px 0;
+    }
+
+    .status-mini-preview { color: #059669; }
+    .status-mini-monitor { color: #059669; margin-top: 2px !important; }
+
+    .status-mini-preset {
+      font-size: 11px;
+      color: #7c3aed;
+      margin-top: 5px;
+      padding: 5px 8px;
+      background: linear-gradient(135deg, #faf5ff 0%, #f3e8ff 100%);
+      border-radius: 6px;
+      border: 1px solid #e9d5ff;
+      line-height: 1.4;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .status-mini-note {
+      font-size: 10px;
+      color: #94a3b8;
+      margin-top: 4px;
+      font-style: italic;
+    }
+
+    .status-mini-aichat {
+      font-size: 10.5px;
+      color: #0369a1;
+      margin-top: 4px;
+      font-weight: 500;
+    }
+
+    /* ====== 迷你卡片：可编辑讯息区域 ====== */
+    .status-mini-editable {
+      margin-top: 5px;
+      border: 1.5px solid #e2e8f0;
+      border-radius: 7px;
+      background: linear-gradient(135deg, #faf5ff 0%, #f5f0ff 100%);
+      overflow: hidden;
+    }
+
+    .mini-textarea {
+      width: 100%;
+      min-height: 44px;
+      max-height: 120px;
+      padding: 6px 10px;
+      padding-right: 32px;
+      border: none;
+      outline: none;
+      font-size: 13.5px;
+      line-height: 1.5;
+      color: #1a1a1a;
+      background: transparent;
+      resize: vertical;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      box-sizing: border-box;
+    }
+
+    .mini-textarea::placeholder {
+      color: #c4b5fd;
+    }
+
+    .mini-textarea.focused {
+      background: rgba(255,255,255,0.6);
+    }
+
+    .status-mini-editable {
+      position: relative;
+    }
+
+    .mini-editbar {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 8px;
+      border-top: 1px solid #e2e8f0;
+      background: rgba(241,245,249,0.6);
+    }
+
+    .mini-email-recipients {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 10px;
+      border-top: 1px dashed #d1d5db;
+      background: rgba(232,245,233,0.5);
+      font-size: 12px;
+      color: #6b7280;
+    }
+
+    .mini-email-label {
+      font-size: 11px;
+      font-weight: 500;
+      white-space: nowrap;
+      color: #059669;
+    }
+
+    .mini-email-input {
+      flex: 1;
+      padding: 4px 8px;
+      border: 1px solid #a7f3d0;
+      border-radius: 12px;
+      font-size: 11px;
+      background: rgba(255,255,255,0.8);
+      color: #1e293b;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+
+    .mini-email-input:focus {
+      border-color: #34d399;
+      background: #fff;
+    }
+
+    .mini-email-input::placeholder {
+      color: #9ca3af;
+      font-size: 10px;
+    }
+
+    .mini-toggle-container {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 6px 8px;
+      border-top: 1px dashed #d1d5db;
+      background: rgba(239,246,255,0.5);
+      font-size: 12px;
+      color: #6b7280;
+    }
+
+    .mini-toggle-label {
+      font-size: 11px;
+      font-weight: 500;
+    }
+
+    .mini-toggle-switch {
+      position: relative;
+      width: 44px;
+      height: 24px;
+      appearance: none;
+      background: #e5e7eb;
+      border-radius: 12px;
+      cursor: pointer;
+      outline: none;
+      transition: background 0.2s;
+    }
+
+    .mini-toggle-switch::before {
+      content: '';
+      position: absolute;
+      top: 2px;
+      left: 2px;
+      width: 20px;
+      height: 20px;
+      background: white;
+      border-radius: 50%;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.15);
+      transition: transform 0.2s;
+    }
+
+    .mini-toggle-switch:checked {
+      background: #6366f1;
+    }
+
+    .mini-toggle-switch:checked::before {
+      transform: translateX(20px);
+    }
+
+    .mini-path-btn {
+      font-size: 10px;
+      padding: 2px 6px;
+      background: #6366f1;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      margin-left: 8px;
+      white-space: nowrap;
+    }
+
+    .mini-path-btn:hover {
+      background: #4f46e5;
+    }
+
+    /* 🆕 通用页签下拉选单样式 */
+    .general-dropdown {
+      position: absolute;
+      z-index: 1000;
+      background: white;
+      border: 1px solid #e5e7eb;
+      border-radius: 6px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+      max-height: none;
+      overflow-y: visible;
+      min-width: 200px;
+    }
+
+    .general-dropdown .dropdown-item {
+      padding: 8px 12px;
+      cursor: pointer;
+      border-bottom: 1px solid #f3f4f6;
+      transition: background 0.2s;
+    }
+
+    .general-dropdown .dropdown-item:last-child {
+      border-bottom: none;
+    }
+
+    .general-dropdown .dropdown-item:hover {
+      background: #f9fafb;
+    }
+
+    .general-dropdown .dropdown-item.highlighted {
+      background: #e0e7ff;
+    }
+
+    .general-dropdown .dropdown-item-time {
+      font-size: 10px;
+      color: #9ca3af;
+      margin-bottom: 2px;
+    }
+
+    .general-dropdown .dropdown-item-content {
+      font-size: 12px;
+      color: #374151;
+      white-space: pre-wrap;
+      word-wrap: break-word;
+      max-height: 60px;
+      overflow-y: auto;
+    }
+    
+    .general-dropdown .dropdown-item-recipients {
+      font-size: 11px;
+      color: #6b7280;
+      margin-top: 4px;
+      padding-top: 4px;
+      border-top: 1px dashed #e5e7eb;
+    }
+
+    .general-dropdown .dropdown-empty {
+      padding: 12px;
+      text-align: center;
+      color: #9ca3af;
+      font-size: 12px;
+    }
+
+    .mini-file-btn {
+      width: 22px;
+      height: 22px;
+      border: 1px solid #cbd5e1;
+      border-radius: 4px;
+      background: #fff;
+      cursor: pointer;
+      font-size: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.15s;
+      padding: 0;
+      line-height: 1;
+    }
+
+    .mini-file-btn:hover {
+      background: #f1f5f9;
+      border-color: #94a3b8;
+      transform: scale(1.08);
+    }
+
+    .mini-att-count {
+      font-size: 9px;
+      color: #94a3b8;
+      margin-left: auto;
+      margin-right: 4px;
+    }
+
+    .mini-clear-btn {
+      width: 22px;
+      height: 22px;
+      border: 1px solid #fca5a5;
+      border-radius: 4px;
+      background: #fef2f2;
+      cursor: pointer;
+      font-size: 11px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.15s;
+      padding: 0;
+      line-height: 1;
+      color: #dc2626;
+    }
+
+    .mini-clear-btn:hover {
+      background: #fee2e2;
+      border-color: #dc2626;
+      transform: scale(1.08);
+    }
+
+    .mini-copy-btn {
+      width: 22px;
+      height: 22px;
+      border: 1px solid #93c5fd;
+      border-radius: 4px;
+      background: #eff6ff;
+      cursor: pointer;
+      font-size: 11px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.15s;
+      padding: 0;
+      line-height: 1;
+      color: #2563eb;
+    }
+
+    .mini-copy-btn:hover {
+      background: #dbeafe;
+      border-color: #3b82f6;
+      transform: scale(1.08);
+    }
+
+    .mini-send-btn {
+      padding: 2px 10px;
+      border: 1px solid #16a34a;
+      border-radius: 4px;
+      background: #dcfce7;
+      cursor: pointer;
+      font-size: 11px;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.15s;
+      line-height: 1;
+      color: #15803d;
+      white-space: nowrap;
+    }
+
+    .mini-send-btn:hover {
+      background: #bbf7d0;
+      border-color: #15803d;
+      transform: scale(1.05);
+    }
+
+    /* ====== 迷你卡片：附件缩略图 ====== */
+    .mini-attachments {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+      padding: 5px 8px;
+      border-top: 1px dashed #e2e8f0;
+      background: rgba(248,250,252,0.7);
+    }
+
+    .mini-att-thumb {
+      position: relative;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .mini-att-thumb img {
+      width: 36px;
+      height: 36px;
+      object-fit: cover;
+      border-radius: 5px;
+      border: 1.5px solid #0ea5e9;
+      cursor: pointer;
+      transition: transform 0.15s;
+    }
+
+    .mini-att-thumb img:hover {
+      transform: scale(1.12);
+    }
+
+    .mini-att-file {
+      width: auto;
+      height: 28px;
+      padding: 0 6px;
+      background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%);
+      border-radius: 5px;
+      border: 1.5px solid #0ea5e9;
+      font-size: 10px;
+      color: #0369a1;
+      cursor: pointer;
+    }
+
+    .mini-att-rm {
+      position: absolute;
+      top: -5px;
+      right: -5px;
+      width: 14px;
+      height: 14px;
+      background: #dc2626;
+      color: white;
+      border: none;
+      border-radius: 50%;
+      cursor: pointer;
+      font-size: 9px;
+      line-height: 14px;
+      text-align: center;
+      padding: 0;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.25);
+      transition: transform 0.12s;
+    }
+
+    .mini-att-rm:hover {
+      transform: scale(1.2);
+    }
+
+    /* ====== 浮动视窗：右下角拖拽调整大小手柄 ====== */
+    .status-resize-handle {
+      position: absolute;
+      right: 0;
+      bottom: 0;
+      width: 16px;
+      height: 16px;
+      cursor: nwse-resize;
+      z-index: 10;
+      opacity: 0.35;
+      transition: opacity 0.2s;
+    }
+
+    .status-resize-handle::before {
+      content: '';
+      position: absolute;
+      right: 3px;
+      bottom: 3px;
+      width: 8px;
+      height: 8px;
+      border-right: 2px solid currentColor;
+      border-bottom: 2px solid currentColor;
+      border-radius: 0 0 4px 0;
+    }
+
+    .status-resize-handle:hover {
+      opacity: 0.7;
+    }
+
+    .status-box-floating.collapsed .status-resize-handle {
+      display: none;
+    }
+
+    /* 展开态 — 左上角直角三角形（与正规卡片折叠按钮一致） */
+    .status-box-floating.expanded .status-toggle {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 18px;
+      height: 18px;
+      border: none;
+      background: transparent;
+      padding: 0;
+      margin: 0;
+      cursor: pointer;
+      z-index: 10;
+      overflow: hidden;
+      font-size: 0;
+      line-height: 0;
+    }
+
+    .status-box-floating.expanded .status-toggle::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 0;
+      height: 0;
+      border-top: 18px solid #fbbf24;
+      border-right: 18px solid transparent;
+      transition: opacity 0.2s ease;
+    }
+
+    .status-box-floating.expanded .status-toggle:hover::before {
+      opacity: 0.7;
+    }
+
+    /* 折叠状态 — 半透明蓝色立体小圆点（呼吸效果）+ 显示卡片名称 */
+    .status-box-floating.collapsed {
+      padding: 0 !important;
+      width: 48px !important;
+      height: 48px !important;
+      min-width: 48px !important;
+      border-radius: 50% !important;
+      overflow: visible;
+      cursor: grab;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: radial-gradient(circle at 35% 35%, rgba(147,197,253,0.5), rgba(59,130,246,0.35) 60%, rgba(29,78,216,0.2)) !important;
+      border: 1.5px solid rgba(147, 197, 253, 0.4) !important;
+      box-shadow:
+        inset 2px 2px 4px rgba(255,255,255,0.4),
+        inset -1px -1px 3px rgba(0,0,0,0.15);
+    }
+
+    /* 🆕 小圆球内的卡片名称显示 */
+    .status-box-floating.collapsed .collapsed-card-name {
+      display: block;
+      font-size: 7px;
+      line-height: 1.1;
+      color: rgba(30, 64, 175, 0.9);
+      text-align: center;
+      word-break: break-all;
+      max-width: 36px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      pointer-events: none;
+      font-weight: 600;
+    }
+
+    /* 展开状态时隐藏小圆球内的名称 */
+    .status-box-floating.expanded .collapsed-card-name {
+      display: none;
+    }
+
+    /* 呼吸光晕 — 用 ::after 伪元素独立动画，避免与主元素 transition/animation 冲突 */
+    .status-box-floating.collapsed::after {
+      content: '';
+      position: absolute;
+      top: -4px;
+      left: -4px;
+      right: -4px;
+      bottom: -4px;
+      border-radius: 50%;
+      z-index: -1;
+      animation: dotBreatheGlow 1.5s ease-in-out infinite;
+      pointer-events: none;
+    }
+
+    @keyframes dotBreatheGlow {
+      0%, 100% {
+        box-shadow: 0 0 6px rgba(96,165,250,0.25), 0 0 14px rgba(59,130,246,0.15);
+        transform: scale(1);
+        opacity: 0.6;
+      }
+      50% {
+        box-shadow: 0 0 18px rgba(96,165,250,0.65), 0 0 36px rgba(59,130,246,0.35);
+        transform: scale(1.3);
+        opacity: 1;
+      }
+    }
+
+    .status-box-floating.collapsed .status-text-full {
+      display: none;
+    }
+
+    .status-box-floating.collapsed .status-resize-handle {
+      display: none;
+    }
+
+    /* 折叠时 toggle 隐藏（圆点本身可点击展开） */
+    .status-box-floating.collapsed .status-toggle {
+      display: none;
+    }
+
+    /* 折叠态 tooltip */
+    .status-box-floating.collapsed::before {
+      content: "Shift+Cmd+F 展开/折叠\A点击展开 · 拖拽移动";
+      white-space: pre-line;
+      position: absolute;
+      left: 36px;
+      top: 50%;
+      transform: translateY(-50%);
+      background: rgba(30, 41, 59, 0.92);
+      color: #e2e8f0;
+      padding: 6px 10px;
+      border-radius: 6px;
+      font-size: 11px;
+      line-height: 1.5;
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 0.2s;
+      z-index: 10001;
+      white-space: pre;
+    }
+    .status-box-floating.collapsed:hover::before {
+      opacity: 1;
+    }
+
+    .status-box-floating.info {
+      background: linear-gradient(145deg, #bfdbfe 0%, #93c5fd 50%, #60a5fa 100%);
+      border: 1.5px solid #3b82f6;
+      color: #1e3a8a;
+      box-shadow:
+        inset 3px 3px 6px rgba(255,255,255,0.5),
+        inset -2px -2px 5px rgba(30,64,175,0.15),
+        0 8px 28px rgba(30, 64, 175, 0.35),
+        0 3px 10px rgba(0, 0, 0, 0.15);
+    }
+
+    .status-box-floating.success {
+      background: linear-gradient(145deg, #a7f3d0 0%, #6ee7b7 50%, #34d399 100%);
+      border: 1.5px solid #059669;
+      color: #064e3b;
+      box-shadow:
+        inset 3px 3px 6px rgba(255,255,255,0.5),
+        inset -2px -2px 5px rgba(6,95,70,0.15),
+        0 8px 28px rgba(6, 95, 70, 0.35),
+        0 3px 10px rgba(0, 0, 0, 0.15);
+    }
+
+    .status-box-floating.warning {
+      background: linear-gradient(145deg, #fde68a 0%, #fbbf24 50%, #f59e0b 100%);
+      border: 1.5px solid #d97706;
+      color: #78350f;
+      box-shadow:
+        inset 3px 3px 6px rgba(255,255,255,0.45),
+        inset -2px -2px 5px rgba(146,64,14,0.18),
+        0 8px 28px rgba(146, 64, 14, 0.35),
+        0 3px 10px rgba(0, 0, 0, 0.15);
+    }
+
+    .status-box-floating.error {
+      background: linear-gradient(145deg, #fca5a5 0%, #f87171 50%, #ef4444 100%);
+      border: 1.5px solid #dc2626;
+      color: #7f1d1d;
+      box-shadow:
+        inset 3px 3px 6px rgba(255,255,255,0.35),
+        inset -2px -2px 5px rgba(153,27,27,0.2),
+        0 8px 28px rgba(153, 27, 27, 0.35),
+        0 3px 10px rgba(0, 0, 0, 0.15);
+    }
+
+    .tabs {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 16px;
+      border-bottom: 2px solid #e2e8f0;
+      padding-bottom: 12px;
+      overflow-x: auto;
+      white-space: nowrap;
+      scrollbar-width: thin;
+    }
+    
+    .tabs::-webkit-scrollbar {
+      height: 6px;
+    }
+    
+    .tabs::-webkit-scrollbar-track {
+      background: #f1f5f9;
+      border-radius: 3px;
+    }
+    
+    .tabs::-webkit-scrollbar-thumb {
+      background: #cbd5e1;
+      border-radius: 3px;
+    }
+    
+    .tabs::-webkit-scrollbar-thumb:hover {
+      background: #94a3b8;
+    }
+
+    .tab {
+      padding: 8px 20px;
+      border: 1px solid #e2e8f0;
+      background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+      cursor: pointer;
+      font-size: 15px;
+      font-weight: 600;
+      color: #475569;
+      border-radius: 50px;
+      transition: all 0.3s ease;
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+    }
+
+    .tab:hover {
+      background: linear-gradient(180deg, #f1f5f9 0%, #e2e8f0 100%);
+      transform: translateY(-1px);
+      box-shadow: 0 3px 6px rgba(0, 0, 0, 0.1);
+    }
+
+    .tab.active {
+      background: linear-gradient(180deg, #e0e7ff 0%, #c7d2fe 100%);
+      color: #4338ca;
+      border-color: #a5b4fc;
+      font-weight: 700;
+      box-shadow: 0 3px 6px rgba(99, 102, 241, 0.25);
+    }
+
+    .data-container {
+      background: #f8fafc;
+      border-radius: 8px;
+      padding: 12px;
+      max-height: none;
+      overflow-y: auto;
+    }
+
+    .webview-container {
+      background: #ffffff;
+      border-radius: 8px;
+      border: 1px solid #e2e8f0;
+      overflow: hidden;
+      height: calc((100vh - 150px) * 1.15);
+      min-height: 670px;
+      position: relative;
+    }
+
+    .webview-container webview {
+      width: 100%;
+      height: 100%;
+      border: none;
+    }
+
+    .webview-toolbar {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      padding: 2px 6px;
+      background: #f1f5f9;
+      border-bottom: 1px solid #e2e8f0;
+      font-size: 12px;
+      height: 32px;
+    }
+
+    .webview-toolbar .toolbar-scroll-container {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      overflow-x: auto;
+      flex: 1;
+      scrollbar-width: none;
+      -ms-overflow-style: none;
+    }
+
+    .webview-toolbar .toolbar-scroll-container::-webkit-scrollbar {
+      display: none;
+    }
+
+    .webview-toolbar input {
+      flex-shrink: 0;
+      padding: 4px 8px;
+      border: 1px solid #cbd5e1;
+      border-radius: 4px;
+      font-size: 11px;
+      background: white;
+      width: 80px;
+    }
+
+    .webview-toolbar button {
+      padding: 4px 10px;
+      border: none;
+      border-radius: 4px;
+      background: #667eea;
+      color: white;
+      cursor: pointer;
+      font-size: 11px;
+      transition: all 0.2s ease;
+    }
+
+    .webview-toolbar button:hover {
+      background: #5568d3;
+    }
+
+    /* 小圆形工具栏按钮 */
+    .webview-toolbar .toolbar-btn {
+      width: 24px;
+      height: 24px;
+      padding: 0;
+      border-radius: 50%;
+      font-size: 9px;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+
+    .webview-toolbar .toolbar-btn:hover {
+      transform: scale(1.08);
+      box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+    }
+
+    .webview-toolbar .toolbar-btn-green {
+      background: #059669 !important;
+    }
+    .webview-toolbar .toolbar-btn-green:hover {
+      background: #047857 !important;
+    }
+
+    .webview-toolbar .toolbar-btn-gray {
+      background: #6b7280 !important;
+    }
+    .webview-toolbar .toolbar-btn-gray:hover {
+      background: #4b5563 !important;
+    }
+
+    .webview-toolbar .toolbar-btn-purple {
+      background: #6366f1 !important;
+    }
+    .webview-toolbar .toolbar-btn-purple:hover {
+      background: #4f46e5 !important;
+    }
+
+    .webview-toolbar .toolbar-btn-red {
+      background: #ef4444 !important;
+      color: white !important;
+    }
+    .webview-toolbar .toolbar-btn-red:hover {
+      background: #dc2626 !important;
+    }
+
+    .dropdown-item:hover {
+      background: #f1f5f9 !important;
+    }
+
+    .data-table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+
+    .data-table th,
+    .data-table td {
+      padding: 12px;
+      text-align: left;
+      border-bottom: 1px solid #e2e8f0;
+    }
+
+    .data-table th {
+      background: #f1f5f9;
+      font-weight: 600;
+      color: #333;
+      position: sticky;
+      top: 0;
+    }
+
+    .data-table tr:hover {
+      background: #f8fafc;
+    }
+
+    .empty-state {
+      text-align: center;
+      padding: 60px 20px;
+      color: #94a3b8;
+    }
+
+    /* 关键字提取样式 */
+    .keyword-extraction-container {
+      padding: 20px;
+    }
+
+    .keyword-input-section {
+      display: flex;
+      gap: 12px;
+      margin-bottom: 20px;
+      align-items: center;
+    }
+
+    .keyword-input-section input {
+      flex: 1;
+      padding: 10px 14px;
+      border: 1px solid #cbd5e1;
+      border-radius: 8px;
+      font-size: 14px;
+    }
+
+    .keyword-input-section button {
+      padding: 10px 20px;
+      border: none;
+      border-radius: 8px;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: 600;
+    }
+
+    .keyword-input-section button:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+    }
+
+    .keyword-options {
+      display: flex;
+      gap: 16px;
+      margin-bottom: 20px;
+      padding: 12px;
+      background: #f8fafc;
+      border-radius: 8px;
+    }
+
+    .keyword-options label {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 13px;
+      cursor: pointer;
+    }
+
+    .keyword-results {
+      max-height: 600px;
+      overflow-y: auto;
+    }
+
+    .keyword-result-item {
+      padding: 16px;
+      margin-bottom: 12px;
+      background: #ffffff;
+      border: 1px solid #e2e8f0;
+      border-radius: 8px;
+      border-left: 4px solid #667eea;
+    }
+
+    .keyword-result-item:hover {
+      background: #f8fafc;
+    }
+
+    .keyword-result-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+
+    .keyword-result-tag {
+      font-size: 12px;
+      padding: 4px 8px;
+      background: #e0e7ff;
+      color: #4338ca;
+      border-radius: 4px;
+      font-weight: 600;
+    }
+
+    .keyword-result-context {
+      font-size: 14px;
+      color: #333;
+      line-height: 1.6;
+    }
+
+    .keyword-highlight {
+      background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
+      color: #92400e;
+      padding: 2px 4px;
+      border-radius: 3px;
+      font-weight: 600;
+    }
+
+    .keyword-result-count {
+      font-size: 13px;
+      color: #64748b;
+      margin-bottom: 16px;
+    }
+
+    .empty-state-icon {
+      font-size: 48px;
+      margin-bottom: 16px;
+    }
+
+    .img-preview {
+      max-height: 50px;
+      max-width: 100px;
+      object-fit: cover;
+      border-radius: 4px;
+    }
+
+    .badge {
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: 12px;
+      font-weight: 600;
+    }
+
+    .badge.external {
+      background: #fee2e2;
+      color: #dc2626;
+    }
+
+    .badge.internal {
+      background: #dcfce7;
+      color: #166534;
+    }
+
+    .badge.anchor {
+      background: #fef3c7;
+      color: #d97706;
+    }
+
+    .badge.disabled {
+      background: #f3f4f6;
+      color: #6b7280;
+    }
+
+    .badge.enabled {
+      background: #dcfce7;
+      color: #166534;
+    }
+
+    .meta-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+      gap: 12px;
+    }
+
+    .meta-item {
+      background: #fff;
+      padding: 12px;
+      border-radius: 8px;
+      border: 1px solid #e2e8f0;
+    }
+
+    .meta-label {
+      display: block;
+      font-size: 12px;
+      color: #64748b;
+      margin-bottom: 4px;
+    }
+
+    .meta-value {
+      display: block;
+      font-size: 14px;
+      color: #1e293b;
+      font-weight: 500;
+    }
+
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+      gap: 12px;
+    }
+
+    .stat-card {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      padding: 16px;
+      border-radius: 8px;
+      text-align: center;
+      color: white;
+    }
+
+    .stat-value {
+      font-size: 28px;
+      font-weight: 700;
+      margin-bottom: 4px;
+    }
+
+    .stat-label {
+      font-size: 12px;
+      opacity: 0.9;
+    }
+
+    .section {
+      margin-bottom: 20px;
+      padding: 16px;
+      background: #fff;
+      border-radius: 8px;
+      border: 1px solid #e2e8f0;
+    }
+
+    .section h3 {
+      margin: 0 0 12px 0;
+      font-size: 14px;
+      color: #334155;
+    }
+
+    .data-table.compact th,
+    .data-table.compact td {
+      padding: 8px 12px;
+      font-size: 13px;
+    }
+
+    .table-card {
+      margin-bottom: 16px;
+      padding: 12px;
+      background: #fff;
+      border-radius: 8px;
+      border: 1px solid #e2e8f0;
+    }
+
+    .select-card {
+      margin-bottom: 12px;
+      padding: 12px;
+      background: #f8fafc;
+      border-radius: 8px;
+    }
+
+    .text-content {
+      white-space: pre-wrap;
+      line-height: 1.6;
+      color: #333;
+      font-family: monospace;
+      font-size: 13px;
+    }
+
+    .header-cell {
+      background: #f1f5f9;
+      font-weight: 600;
+    }
+
+    .loading {
+      display: inline-block;
+      width: 20px;
+      height: 20px;
+      border: 3px solid rgba(255, 255, 255, 0.3);
+      border-radius: 50%;
+      border-top-color: white;
+      animation: spin 0.8s linear infinite;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    .features {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 8px;
+      margin-bottom: 0;
+    }
+
+    .feature-card {
+      background: rgba(255, 255, 255, 0.18);
+      padding: 8px 12px;
+      border-radius: 6px;
+      border-left: 3px solid rgba(255, 255, 255, 0.5);
+    }
+
+    .feature-card h3 {
+      font-size: 12px;
+      font-weight: 600;
+      color: #ffffff;
+      margin-bottom: 2px;
+    }
+
+    .feature-card p {
+      font-size: 10px;
+      color: rgba(255, 255, 255, 0.85);
+      line-height: 1.4;
+    }
+
+    .bookmarks-section {
+      background: #f8fafc;
+      border-radius: 6px;
+      padding: 4px;
+      margin-bottom: 0;
+      border: 1px solid #e2e8f0;
+      position: relative;
+      transition: padding 0.3s ease;
+    }
+
+    /* ========== 黑夜模式：网点卡片区 ========== */
+    body.workspace-dark .container { background: #0f172a; }
+    body.workspace-dark .content { background: #0f172a; }
+    body.workspace-dark .bookmarks-section { background: #0f172a; border-color: #334155; }
+    body.workspace-dark .bookmarks-tabs { border-bottom-color: #334155; }
+    body.workspace-dark .bookmarks-tab { color: #94a3b8; }
+    body.workspace-dark .bookmarks-tab:hover { background: #1e293b; color: #e2e8f0; }
+    body.workspace-dark .bookmarks-tab.active { background: #1e293b; border-color: #334155; color: #93c5fd; }
+    body.workspace-dark .bm-search-input { background: #0f172a; color: #e2e8f0; border-color: #334155; }
+    body.workspace-dark .bm-search-input::placeholder { color: #64748b; }
+    body.workspace-dark .bm-btn-add { background: #1e3a8a; color: #93c5fd; border-color: #334155; }
+    body.workspace-dark .bm-btn-reset { background: #064e3b; color: #6ee7b7; border-color: #334155; }
+    body.workspace-dark .bm-btn-refresh { background: #1e293b; color: #e2e8f0; border-color: #334155; }
+    body.workspace-dark .bm-btn-clear-logs { background: #450a0a; color: #fca5a5; border-color: #334155; }
+
+    /* 网点卡片：忽略自定义背景色，使用默认深色 */
+    body.workspace-dark .bookmark-card {
+      background: #1e293b !important;
+      border-color: #334155 !important;
+      color: #e2e8f0;
+    }
+    body.workspace-dark .bookmark-card:hover {
+      border-color: #667eea;
+      box-shadow: 0 4px 12px rgba(102, 126, 234, 0.25);
+    }
+    body.workspace-dark .bookmark-card.collapsed {
+      border-right-color: #334155 !important;
+      border-bottom-color: #334155 !important;
+    }
+    body.workspace-dark .bookmarks-grid .bookmark-card.collapsed:nth-child(-n+6) { border-top-color: #334155; }
+    body.workspace-dark .bookmarks-grid .bookmark-card.collapsed:nth-child(6n+1) { border-left-color: #334155; }
+    body.workspace-dark .bookmark-card-title { color: #e2e8f0; }
+    body.workspace-dark .bookmark-card.collapsed .bookmark-card-title { color: #e2e8f0; }
+    body.workspace-dark .bookmark-card-fold-btn::before { border-top-color: #f59e0b; }
+    body.workspace-dark .bookmark-card.collapsed .bookmark-card-fold-btn::before { border-top-color: #3b82f6; }
+
+    /* 卡片按钮 */
+    body.workspace-dark .bookmark-card-btn {
+      background: #334155 !important;
+      color: #e2e8f0 !important;
+      border-color: #475569 !important;
+    }
+    body.workspace-dark .bookmark-card-btn.edit { background: #451a03 !important; color: #fbbf24 !important; }
+    body.workspace-dark .bookmark-card-btn.delete { background: #450a0a !important; color: #fca5a5 !important; }
+    body.workspace-dark .bookmark-card-btn.open-webview { background: #064e3b !important; color: #6ee7b7 !important; }
+    body.workspace-dark .bookmark-card-btn.continue-chat { background: #451a03 !important; color: #fbbf24 !important; }
+    body.workspace-dark .bookmark-card-btn.send-to-general,
+    body.workspace-dark .bookmark-card-btn.check-ai { background: #1e3a8a !important; color: #93c5fd !important; }
+    body.workspace-dark .bookmark-card-crawl { background: #451a03 !important; color: #fbbf24 !important; border-color: #475569 !important; }
+    body.workspace-dark .bookmark-card.collapsed:hover .bookmark-card-actions { background: rgba(15, 23, 42, 0.95) !important; }
+
+    /* 卡片内容区 */
+    body.workspace-dark .bookmark-card-url {
+      background: #0f172a !important;
+      color: #94a3b8 !important;
+    }
+    body.workspace-dark .bookmark-card-body { color: #e2e8f0; }
+    body.workspace-dark .bookmark-card-body > div[style*="color: #94a3b8"] { color: #94a3b8 !important; }
+    body.workspace-dark .bookmark-card-body > div[style*="color: #dc2626"] { color: #f87171 !important; }
+    body.workspace-dark .bookmark-card-body > div[style*="color: #059669"] { color: #34d399 !important; }
+
+    /* 预设消息输入框 */
+    body.workspace-dark textarea[id^="presetMsg_"] {
+      background: #0f172a !important;
+      color: #e2e8f0 !important;
+      border-color: #334155 !important;
+    }
+    body.workspace-dark textarea[id^="presetMsg_"]::placeholder { color: #64748b; }
+
+    /* 股票价格表格 */
+    body.workspace-dark div[id^="stockPriceTable_"] table { border-color: #334155; }
+    body.workspace-dark div[id^="stockPriceTable_"] th { background: #334155 !important; color: #e2e8f0 !important; border-color: #475569 !important; }
+    body.workspace-dark div[id^="stockPriceTable_"] td { background: #1e293b !important; color: #e2e8f0 !important; border-color: #475569 !important; }
+
+    /* 历史讯息下拉选单 */
+    body.workspace-dark .card-msg-dropdown { background: #1e293b !important; border-color: #334155 !important; box-shadow: 0 4px 12px rgba(0,0,0,0.4) !important; }
+
+    /* 附件显示区 */
+    body.workspace-dark div[id^="attachment_"] { background: #0f172a !important; border-color: #334155 !important; }
+    body.workspace-dark div[id^="attachment_"] span { color: #94a3b8 !important; }
+
+    /* 分类标签 */
+    body.workspace-dark .category-general { background: #1e3a8a; color: #93c5fd; }
+    body.workspace-dark .category-news { background: #064e3b; color: #6ee7b7; }
+    body.workspace-dark .category-shopping { background: #831843; color: #f9a8d4; }
+    body.workspace-dark .category-social { background: #4c1d95; color: #c4b5fd; }
+    body.workspace-dark .category-tech { background: #164e63; color: #67e8f9; }
+    body.workspace-dark .category-finance { background: #451a03; color: #fbbf24; }
+    body.workspace-dark .category-education { background: #581c87; color: #d8b4fe; }
+    body.workspace-dark .category-weather { background: #064e3b; color: #6ee7b7; }
+    body.workspace-dark .category-other { background: #334155; color: #cbd5e1; }
+
+    /* APP 下拉菜单 */
+    body.workspace-dark .app-dropdown-menu { background: #1e293b !important; border-color: #334155 !important; box-shadow: 0 2px 8px rgba(0,0,0,0.4) !important; }
+    body.workspace-dark .app-dropdown-item { color: #e2e8f0 !important; }
+    body.workspace-dark .app-dropdown-item:hover { background: #334155 !important; }
+
+    body.workspace-dark .empty-bookmarks { color: #94a3b8; }
+
+    .bookmarks-section.collapsed {
+      padding: 2px 6px 2px 20px;
+    }
+
+    .bookmarks-header-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 2px;
+    }
+
+    .bookmarks-tabs {
+      display: flex;
+      gap: 2px;
+      margin-bottom: 2px;
+      border-bottom: 1px solid #e2e8f0;
+      padding-bottom: 1px;
+      align-items: center;
+    }
+
+    .bookmarks-tab-group {
+      display: flex;
+      gap: 4px;
+    }
+
+    .bookmarks-tabs .bookmarks-header-btns {
+      margin-left: auto;
+    }
+
+    .bookmarks-btns-group {
+      display: flex;
+      gap: 4px;
+      align-items: center;
+    }
+
+    .bm-search-input {
+      height: 28px;
+      padding: 0 10px;
+      border: 1px solid #e2e8f0;
+      border-radius: 6px;
+      font-size: 12px;
+      width: 120px;
+      outline: none;
+      transition: all 0.2s;
+    }
+
+    .bm-search-input:focus {
+      border-color: #667eea;
+      box-shadow: 0 0 0 2px rgba(102, 126, 234, 0.2);
+      width: 160px;
+    }
+
+    .bookmarks-tab {
+      padding: 6px 16px;
+      border: 1px solid transparent;
+      background: transparent;
+      border-radius: 4px 4px 0 0;
+      font-size: 13px;
+      font-weight: 500;
+      color: #64748b;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+
+    .bookmarks-tab:hover {
+      background: #f1f5f9;
+      color: #334155;
+    }
+
+    .bookmarks-tab.active {
+      background: #fff;
+      border-color: #e2e8f0;
+      color: #667eea;
+      font-weight: 600;
+    }
+
+    .bookmarks-panel {
+      min-height: 0;
+    }
+
+    .bookmarks-section.collapsed .bookmarks-header-row {
+      margin-bottom: 0;
+    }
+
+    .bookmarks-title {
+      font-size: 16px;
+      font-weight: 600;
+      color: #333;
+      margin: 0;
+    }
+
+    .bookmarks-header-btns {
+      display: flex;
+      gap: 8px;
+    }
+
+    .bm-btn {
+      width: 36px;
+      height: 36px;
+      padding: 0;
+      border: none;
+      border-radius: 50%;
+      font-size: 11px;
+      font-weight: 600;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.2s ease;
+    }
+
+    .bm-btn:hover {
+      transform: scale(1.08);
+      box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+    }
+
+    .bm-btn-add {
+      background: #e0e7ff;
+      color: #4338ca;
+      border: 1px solid #a5b4fc;
+    }
+
+    .bm-btn-add:hover {
+      background: #c7d2fe;
+    }
+
+    .bm-btn-reset {
+      background: #d1fae5;
+      color: #047857;
+      border: 1px solid #6ee7b7;
+    }
+
+    .bm-btn-reset:hover {
+      background: #a7f3d0;
+    }
+
+    .bm-btn-refresh {
+      background: #f1f5f9;
+      color: #64748b;
+      border: 1px solid #e2e8f0;
+    }
+
+    .bm-btn-refresh:hover {
+      background: #e2e8f0;
+    }
+
+    .bm-btn-clear-logs {
+      background: #fee2e2;
+      color: #dc2626;
+      border: 1px solid #fca5a5;
+    }
+
+    .bm-btn-clear-logs:hover {
+      background: #fecaca;
+    }
+
+    .bookmarks-section-fold-btn {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 24px;
+      height: 24px;
+      border: none;
+      background: transparent;
+      padding: 0;
+      margin: 0;
+      cursor: pointer;
+      z-index: 10;
+      overflow: hidden;
+    }
+
+    .bookmarks-section-fold-btn::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 0;
+      height: 0;
+      border-top: 24px solid #fbbf24;
+      border-right: 24px solid transparent;
+      transition: all 0.2s ease;
+    }
+
+    .bookmarks-section-fold-btn:hover::before {
+      opacity: 0.8;
+    }
+
+    .bookmarks-section.collapsed .bookmarks-section-fold-btn::before {
+      border-top-color: #60a5fa;
+    }
+
+    #dataSection {
+      border: 2px solid #000000;
+      border-radius: 10px;
+      overflow: visible;
+    }
+
+    .ai-workspace-fold-btn {
+      position: absolute;
+      top: -4px;
+      left: -4px;
+      width: 26px;
+      height: 26px;
+      border: none;
+      background: transparent;
+      padding: 0;
+      margin: 0;
+      cursor: pointer;
+      z-index: 20;
+      overflow: visible;
+    }
+
+    .ai-workspace-fold-btn::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 0;
+      height: 0;
+      border-top: 26px solid #fbbf24;
+      border-right: 26px solid transparent;
+      transition: all 0.2s ease;
+    }
+
+    .ai-workspace-fold-btn:hover::before {
+      opacity: 0.8;
+    }
+
+    #dataSection.collapsed .ai-workspace-fold-btn::before {
+      border-top-color: #60a5fa;
+    }
+
+    #dataSection.collapsed .ai-workspace-header h3 {
+      opacity: 0.7;
+    }
+
+    #dataSection.collapsed .data-container,
+    #dataSection.collapsed #dataContainer {
+      display: none !important;
+    }
+
+    .ai-workspace-header {
+      display: flex;
+      justify-content: flex-start;
+      align-items: center;
+      padding: 0;
+      background: linear-gradient(135deg, #c7d2fe 0%, #ddd6fe 100%);
+      border-bottom: 2px solid #a5b4fc;
+    }
+
+    .ai-workspace-tabs {
+      display: flex;
+      align-items: stretch;
+      width: 100%;
+      overflow-x: auto;
+      overflow-y: hidden;
+      scrollbar-width: thin;
+    }
+
+    .ai-workspace-tabs::-webkit-scrollbar {
+      height: 4px;
+    }
+
+    .ai-workspace-tabs::-webkit-scrollbar-thumb {
+      background: rgba(0, 0, 0, 0.15);
+      border-radius: 2px;
+    }
+
+    .ai-workspace-tab {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 2px;
+      padding: 6px 14px;
+      border: none;
+      background: transparent;
+      color: #374151;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      border-right: 1px solid rgba(0, 0, 0, 0.1);
+      position: relative;
+      flex-shrink: 0;
+      min-width: 60px;
+    }
+
+    .ws-tab-header {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .ws-tab-name {
+      font-size: 10px;
+      color: #4b5563;
+      max-width: 90px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      min-height: 12px;
+      line-height: 12px;
+      text-align: center;
+    }
+
+    .ai-workspace-tab:hover {
+      background: rgba(0, 0, 0, 0.06);
+      color: #111827;
+    }
+
+    .ai-workspace-tab:hover .ws-tab-name {
+      color: #374151;
+    }
+
+    .ai-workspace-tab.active {
+      background: rgba(99, 102, 241, 0.08);
+      color: #1e1b4b;
+      font-weight: 600;
+    }
+
+    .ai-workspace-tab.active .ws-tab-name {
+      color: #3730a3;
+    }
+
+    .ai-workspace-tab.active::after {
+      content: '';
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      height: 3px;
+      background: #fbbf24;
+    }
+
+    .workspace-status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #94a3b8;
+      display: inline-block;
+      flex-shrink: 0;
+      border: 1px solid #000;
+    }
+
+    .workspace-status-dot.idle {
+      background: #94a3b8;
+    }
+
+    .workspace-status-dot.running {
+      background: #fbbf24;
+      animation: pulse-dot 1.5s ease-in-out infinite;
+    }
+
+    .workspace-status-dot.waiting {
+      background: #ef4444;
+      animation: pulse-dot 1s ease-in-out infinite;
+    }
+
+    .workspace-status-dot.done {
+      background: #22c55e;
+    }
+
+    .workspace-status-dot:hover {
+      cursor: pointer;
+      transform: scale(1.5);
+      box-shadow: 0 0 6px rgba(239, 68, 68, 0.6);
+      transition: all 0.2s ease;
+    }
+
+    /* 悬停缩图工具提示 */
+    .ws-thumbnail-tooltip {
+      position: fixed;
+      z-index: 10000;
+      background: #1e293b;
+      border: 2px solid #6366f1;
+      border-radius: 10px;
+      padding: 6px;
+      box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+      pointer-events: none;
+      display: none;
+      width: 240px;
+      max-height: 200px;
+      overflow: hidden;
+    }
+
+    .ws-thumbnail-tooltip img {
+      width: 100%;
+      border-radius: 6px;
+      display: block;
+    }
+
+    .ws-thumbnail-tooltip .ws-tooltip-label {
+      text-align: center;
+      color: #cbd5e1;
+      font-size: 11px;
+      padding: 4px 0 0 0;
+      margin-top: 4px;
+      border-top: 1px solid rgba(255,255,255,0.1);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    /* 展开显示模式 */
+    #dataContainer.expanded {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      overflow-y: auto;
+      flex: 1;
+    }
+
+    /* 2/2 模式和 3/3 模式：Masonry 布局由 JS 绝对定位控制，CSS 不干预 */
+    #dataContainer.expanded.ratio-2-2,
+    #dataContainer.expanded.ratio-3-3 {
+      display: block !important;
+      position: relative;
+    }
+
+    #dataContainer.expanded .workspace-panel {
+      display: block;
+      flex-shrink: 0;
+      border: 2px solid #334155;
+      border-radius: 8px;
+      overflow: hidden;
+      position: relative;
+      box-sizing: border-box;
+      transform-origin: top left;
+      transition: transform 0.15s ease;
+    }
+
+    #dataContainer.expanded .workspace-panel.active-ws {
+      /* 不再改变卡片边框颜色，仅手柄为金黄色 */
+    }
+
+    /* 右下角弧形粗线条描边（body 下，JS 同步位置跟随面板） */
+    .ws-corner-highlight {
+      position: fixed !important;
+      width: 20px !important;
+      height: 20px !important;
+      min-width: 20px !important;
+      min-height: 20px !important;
+      max-width: 20px !important;
+      max-height: 20px !important;
+      pointer-events: auto;
+      cursor: nwse-resize;
+      z-index: 9999;
+      display: none;
+      border-right: 3px solid #fbbf24 !important;
+      border-bottom: 3px solid #fbbf24 !important;
+      border-top: none !important;
+      border-left: none !important;
+      border-radius: 0 0 7px 0 !important;
+      box-shadow: 0 0 4px rgba(0, 0, 0, 0.3);
+      box-sizing: border-box;
+      background: transparent;
+    }
+
+    /* 拖动手柄样式 */
+    .resize-handle {
+      position: absolute;
+      bottom: 0;
+      right: 0;
+      width: 20px;
+      height: 20px;
+      cursor: nw-resize;
+      background: linear-gradient(135deg, transparent 50%, #667eea 50%);
+      border-radius: 0 0 8px 0;
+      opacity: 0;
+      transition: opacity 0.2s;
+      z-index: 10;
+    }
+
+    .resize-handle:hover,
+    .resize-handle.active {
+      opacity: 1;
+    }
+
+    /* 仅在缩放模式下显示手柄 */
+    .workspace-panel:not(.zoom-mode) .resize-handle {
+      display: none;
+    }
+
+    .ws-expand-header {
+      display: none;
+      background: #1e293b;
+      padding: 6px 12px;
+      font-size: 12px;
+      color: #e2e8f0;
+      border-bottom: 1px solid #334155;
+      align-items: center;
+      gap: 8px;
+      cursor: pointer;
+      user-select: none;
+    }
+
+    #dataContainer.expanded .ws-expand-header {
+      display: flex;
+    }
+
+    .ws-expand-header .ws-expand-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+
+    .ws-expand-header .ws-expand-dot.running { background: #fbbf24; animation: pulse-dot 1.5s ease-in-out infinite; }
+    .ws-expand-header .ws-expand-dot.waiting { background: #ef4444; animation: pulse-dot 1s ease-in-out infinite; }
+    .ws-expand-header .ws-expand-dot.idle { background: #94a3b8; }
+
+    .ws-expand-header .ws-expand-name {
+      flex: 1;
+      font-weight: 600;
+    }
+
+    .ws-expand-header .ws-expand-status {
+      color: #64748b;
+      font-size: 11px;
+    }
+
+    .ws-expand-header .ws-expand-close {
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      border: none;
+      background: rgba(255,255,255,0.1);
+      color: #94a3b8;
+      font-size: 12px;
+      line-height: 18px;
+      text-align: center;
+      cursor: pointer;
+      flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0;
+      transition: all 0.15s ease;
+    }
+
+    .ws-expand-header .ws-expand-close:hover {
+      background: #ef4444;
+      color: #fff;
+    }
+
+    /* 面板右上角浮动关闭按钮（始终可见） */
+    .ws-panel-close-btn {
+      position: absolute;
+      top: 4px;
+      right: 4px;
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      border: 1px solid rgba(0,0,0,0.15);
+      background: rgba(255,255,255,0.9);
+      color: #64748b;
+      font-size: 13px;
+      line-height: 20px;
+      text-align: center;
+      cursor: pointer;
+      z-index: 100;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0;
+      transition: all 0.15s ease;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    }
+
+    .ws-panel-close-btn:hover {
+      background: #ef4444;
+      color: #fff;
+      border-color: #ef4444;
+    }
+
+    @keyframes pulse-dot {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.4; }
+    }
+
+    .ai-workspace-actions {
+      display: flex;
+      gap: 8px;
+    }
+
+    .ai-workspace-empty {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      color: #64748b;
+      padding: 60px 20px;
+      background: #f8fafc;
+    }
+
+    .ai-workspace-empty span {
+      font-size: 48px;
+      margin-bottom: 12px;
+    }
+
+    .ai-workspace-empty p {
+      margin: 4px 0;
+      font-size: 14px;
+    }
+
+    .bookmarks-grid {
+      display: grid;
+      grid-template-columns: repeat(24, 1fr);
+      gap: 0;
+      grid-auto-flow: dense;
+      align-items: start;
+    }
+
+    /* 展开卡片：占 8 列 */
+    .bookmark-card:not(.collapsed) {
+      grid-column: span 8;
+    }
+
+    /* 折叠卡片：占 4 列（展开卡片的 1/2 宽度） */
+    .bookmark-card.collapsed {
+      grid-column: span 4;
+      min-height: auto;
+      height: auto;
+      padding: 6px 12px 6px 24px;
+      transition: all 0.3s ease;
+      border-width: 1px;
+      border-radius: 6px;
+      border-right: 1px solid #e2e8f0;
+      border-bottom: 1px solid #e2e8f0;
+      border-left: none;
+      border-top: none;
+      margin: 0;
+      overflow: hidden;
+      display: flex;
+      align-items: center;
+    }
+
+    /* 折叠卡片：强制隐藏内容区域，只显示标题行 */
+    .bookmark-card.collapsed > .bookmark-card-body {
+      display: none !important;
+      visibility: hidden !important;
+      height: 0 !important;
+      overflow: hidden !important;
+      margin: 0 !important;
+      padding: 0 !important;
+    }
+
+    /* 第一行折叠卡片：添加顶部边框 */
+    .bookmarks-grid .bookmark-card.collapsed:nth-child(-n+6) {
+      border-top: 1px solid #e2e8f0;
+      border-top-left-radius: 6px;
+    }
+
+    .bookmarks-grid .bookmark-card.collapsed:nth-child(6):not(:nth-child(-n+5)) {
+      border-top-right-radius: 6px;
+    }
+
+    /* 每行第一个折叠卡片：添加左边框 */
+    .bookmarks-grid .bookmark-card.collapsed:nth-child(6n+1) {
+      border-left: 1px solid #e2e8f0;
+    }
+
+    .bookmark-card {
+      background: white;
+      border-radius: 10px;
+      padding: 16px;
+      border: 2px solid #e2e8f0;
+      transition: all 0.3s ease;
+      position: relative;
+    }
+
+    .bookmark-card:hover {
+      border-color: #667eea;
+      box-shadow: 0 4px 12px rgba(102, 126, 234, 0.15);
+      transform: translateY(-2px);
+    }
+
+    .bookmark-card-fold-btn {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 20px;
+      height: 20px;
+      border: none;
+      background: transparent;
+      padding: 0;
+      margin: 0;
+      cursor: pointer;
+      z-index: 10;
+      overflow: hidden;
+    }
+
+    .bookmark-card-fold-btn::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 0;
+      height: 0;
+      border-top: 20px solid #fbbf24;
+      border-right: 20px solid transparent;
+      transition: all 0.2s ease;
+    }
+
+    .bookmark-card-fold-btn:hover::before {
+      opacity: 0.8;
+    }
+
+    .bookmark-card.collapsed .bookmark-card-fold-btn::before {
+      border-top-color: #60a5fa;
+    }
+
+    .bookmark-card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      margin-bottom: 8px;
+    }
+
+    .bookmark-card-title {
+      font-size: 14px;
+      font-weight: 600;
+      color: #1e293b;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+      flex: 1;
+      margin-right: 8px;
+    }
+
+    .bookmark-card-actions {
+      display: flex;
+      gap: 4px;
+    }
+
+    .bookmark-card-btn {
+      width: 26px;
+      height: 26px;
+      border: 1px solid #e5e7eb;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.2s;
+      background: #fafafa;
+      padding: 0;
+      min-width: 0;
+    }
+
+    .bookmark-card-btn.edit {
+      background: #fffbeb;
+      color: #d97706;
+      border-color: #d1d5db;
+    }
+
+    .bookmark-card-btn.edit:hover {
+      background: #fef3c7;
+      border-color: #9ca3af;
+    }
+
+    .bookmark-card-btn.delete {
+      background: #fef2f2;
+      color: #dc2626;
+      border-color: #d1d5db;
+    }
+
+    .bookmark-card-btn.delete:hover {
+      background: #fee2e2;
+      border-color: #9ca3af;
+    }
+
+    .bookmark-card-btn.open-webview {
+      background: #f0fdf4;
+      color: #059669;
+      border-color: #d1d5db;
+    }
+
+    .bookmark-card-btn.open-webview:hover {
+      background: #dcfce7;
+      border-color: #9ca3af;
+    }
+
+    .bookmark-card-btn.open-webview {
+      padding: 0;
+      line-height: 1;
+      overflow: hidden;
+    }
+
+    .open-webview-text {
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      font-size: 10px;
+      line-height: 1.15;
+      letter-spacing: 0;
+      white-space: nowrap;
+    }
+
+    .bookmark-card-btn.continue-chat {
+      background: #fef3c7;
+      color: #d97706;
+      border-color: #d1d5db;
+    }
+
+    .bookmark-card-btn.continue-chat:hover {
+      background: #fde68a;
+      border-color: #9ca3af;
+    }
+
+    .bookmark-card-btn.continue-chat {
+      padding: 0;
+      line-height: 1;
+      overflow: hidden;
+    }
+
+    .continue-chat-text {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .bookmark-card-btn.send-to-general {
+      background: #dbeafe;
+      color: #2563eb;
+      border-color: #d1d5db;
+    }
+
+    .bookmark-card-btn.send-to-general:hover {
+      background: #bfdbfe;
+      border-color: #9ca3af;
+    }
+
+    .bookmark-card-btn.send-to-general {
+      padding: 0;
+      line-height: 1;
+      overflow: hidden;
+    }
+
+    .send-to-general-text {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      font-size: 9px;
+      font-weight: 600;
+      line-height: 1.2;
+      letter-spacing: 0;
+      white-space: nowrap;
+    }
+
+    .bookmark-card-btn.check-ai {
+      background: #dbeafe;
+      color: #2563eb;
+      border-color: #d1d5db;
+    }
+
+    .bookmark-card-btn.check-ai:hover {
+      background: #bfdbfe;
+      border-color: #9ca3af;
+    }
+
+    .bookmark-card-btn.check-ai {
+      padding: 0;
+      line-height: 1;
+      overflow: hidden;
+    }
+
+    .check-ai-text {
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      font-size: 10px;
+      line-height: 1.15;
+      letter-spacing: 0;
+      white-space: nowrap;
+    }
+
+    .bookmark-card-url {
+      font-size: 12px;
+      color: #64748b;
+      word-break: break-all;
+      margin-bottom: 8px;
+      padding: 6px 8px;
+      background: #f8fafc;
+      border-radius: 6px;
+    }
+
+    .bookmark-card-footer {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .bookmark-card-category {
+      font-size: 11px;
+      padding: 4px 10px;
+      border-radius: 20px;
+      font-weight: 500;
+    }
+
+    .category-general { background: #dbeafe; color: #1d4ed8; }
+    .category-news { background: #dcfce7; color: #166534; }
+    .category-shopping { background: #fce7f3; color: #be185d; }
+    .category-social { background: #ede9fe; color: #7c3aed; }
+    .category-tech { background: #cffafe; color: #0e7490; }
+    .category-finance { background: #fef3c7; color: #b45309; }
+    .category-education { background: #f3e8ff; color: #9333ea; }
+    .category-weather { background: #ecfdf5; color: #059669; }
+    .category-other { background: #f1f5f9; color: #475569; }
+
+    .bookmark-card-crawl {
+      width: 26px;
+      height: 26px;
+      border: 1px solid #d1d5db;
+      border-radius: 4px;
+      font-size: 10px;
+      font-weight: 600;
+      cursor: pointer;
+      background: #fffbeb;
+      color: #d97706;
+      transition: all 0.2s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0;
+      min-width: 0;
+    }
+
+    .bookmark-card-crawl:hover {
+      transform: scale(1.1);
+      box-shadow: 0 2px 8px rgba(217, 119, 6, 0.3);
+      background: #fef3c7;
+      border-color: #9ca3af;
+    }
+
+    .crawl-text {
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      font-size: 10px;
+      line-height: 1.15;
+      letter-spacing: 0;
+      white-space: nowrap;
+    }
+
+    /* 折叠卡片：只显示1行标题 */
+
+    .bookmark-card.collapsed:hover {
+      border-color: #667eea;
+      box-shadow: 0 1px 4px rgba(102, 126, 234, 0.2);
+      z-index: 5;
+      position: relative;
+    }
+
+    .bookmark-card.collapsed .bookmark-card-header {
+      margin-bottom: 0;
+      display: flex;
+      align-items: center;
+      position: relative;
+      width: 100%;
+    }
+
+    .bookmark-card.collapsed .bookmark-card-title {
+      font-size: 12px;
+      line-height: 1.2;
+      margin-top: 0;
+      -webkit-line-clamp: 1;
+      display: -webkit-box;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+      flex: 1 1 auto;
+      min-width: 0;
+      white-space: nowrap;
+      text-overflow: ellipsis;
+      color: #334155;
+      font-weight: 500;
+    }
+
+    .bookmark-card.collapsed .bookmark-card-actions {
+      gap: 2px;
+      display: none;
+    }
+
+    .bookmark-card.collapsed:hover .bookmark-card-actions {
+      display: flex;
+      position: absolute;
+      right: 6px;
+      background: rgba(255, 255, 255, 0.95);
+      padding: 2px;
+      border-radius: 4px;
+      z-index: 5;
+    }
+
+    .bookmark-card.collapsed .bookmark-card-btn {
+      width: 20px;
+      height: 20px;
+      font-size: 10px;
+      padding: 0;
+    }
+
+    .bookmark-card.collapsed .bookmark-card-crawl {
+      width: 20px;
+      height: 20px;
+      font-size: 10px;
+    }
+
+    .bookmark-card-body {
+      transition: all 0.3s ease;
+    }
+
+    .empty-bookmarks {
+      grid-column: 1 / -1;
+      text-align: center;
+      padding: 40px 20px;
+      color: #94a3b8;
+    }
+
+    .modal-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0, 0, 0, 0.5);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+    }
+
+    .modal-content {
+      background: white;
+      border-radius: 16px;
+      width: 90%;
+      max-width: 480px;
+      max-height: 85vh;
+      box-shadow: 0 25px 50px rgba(0, 0, 0, 0.25);
+      animation: modalSlideIn 0.3s ease;
+      display: flex;
+      flex-direction: column;
+    }
+
+    @keyframes modalSlideIn {
+      from {
+        opacity: 0;
+        transform: translateY(-20px) scale(0.95);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+      }
+    }
+
+    .modal-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 20px 24px;
+      border-bottom: 1px solid #e2e8f0;
+    }
+
+    .modal-header h3 {
+      margin: 0;
+      font-size: 18px;
+      color: #1e293b;
+    }
+
+    .modal-close {
+      width: 32px;
+      height: 32px;
+      border: none;
+      background: #f1f5f9;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 24px;
+      line-height: 1;
+      color: #64748b;
+      transition: all 0.2s;
+    }
+
+    .modal-close:hover {
+      background: #e2e8f0;
+      color: #333;
+    }
+
+    .modal-body {
+      padding: 24px;
+      overflow-y: auto;
+      flex: 1;
+    }
+    
+    /* 自定义滚动条样式 */
+    .modal-body::-webkit-scrollbar {
+      width: 8px;
+    }
+    
+    .modal-body::-webkit-scrollbar-track {
+      background: #f1f5f9;
+      border-radius: 4px;
+    }
+    
+    .modal-body::-webkit-scrollbar-thumb {
+      background: #cbd5e1;
+      border-radius: 4px;
+    }
+    
+    .modal-body::-webkit-scrollbar-thumb:hover {
+      background: #94a3b8;
+    }
+
+    .modal-footer {
+      display: flex;
+      justify-content: flex-end;
+      gap: 12px;
+      padding: 16px 24px;
+      border-top: 1px solid #e2e8f0;
+    }
+
+    .schedule-header {
+      display: flex;
+      gap: 4px;
+      margin-bottom: 2px;
+      flex-wrap: wrap;
+    }
+
+    .schedule-btn {
+      width: 38px;
+      height: 38px;
+      border-radius: 50%;
+      border: none;
+      font-size: 16px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0;
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    }
+
+    .schedule-btn:hover {
+      transform: scale(1.1);
+      box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+    }
+
+    .schedule-btn:active {
+      transform: scale(0.95);
+    }
+
+    .schedule-btn-add {
+      background: #667eea;
+      color: white;
+    }
+
+    .schedule-btn-add:hover {
+      background: #5a67d8;
+    }
+
+    .schedule-btn-refresh {
+      background: #f1f5f9;
+      color: #64748b;
+      border: 1px solid #e2e8f0;
+    }
+
+    .schedule-btn-refresh:hover {
+      background: #e2e8f0;
+    }
+
+    .schedule-btn-clear-logs {
+      background: #fef2f2;
+      color: #dc2626;
+      border: 1px solid #fecaca;
+    }
+
+    .schedule-btn-clear-logs:hover {
+      background: #fee2e2;
+    }
+
+    .schedule-list {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 2px;
+    }
+
+    .schedule-list::-webkit-scrollbar {
+      width: 6px;
+    }
+
+    .schedule-list::-webkit-scrollbar-track {
+      background: #f1f5f9;
+      border-radius: 3px;
+    }
+
+    .schedule-list::-webkit-scrollbar-thumb {
+      background: #cbd5e1;
+      border-radius: 3px;
+    }
+
+    .schedule-card {
+      background: #ffffff;
+      border: 1px solid #333333;
+      border-radius: 3px;
+      padding: 2px;
+      transition: all 0.2s ease;
+      position: relative;
+      cursor: pointer;
+    }
+
+    .schedule-card:hover {
+      border-color: #667eea;
+      box-shadow: 0 2px 8px rgba(102, 126, 234, 0.15);
+    }
+
+    .schedule-card-tip {
+      display: none;
+      position: absolute;
+      top: 100%;
+      left: 50%;
+      transform: translateX(-50%);
+      background: #1e293b;
+      color: #ffffff;
+      padding: 8px 12px;
+      border-radius: 6px;
+      font-size: 12px;
+      line-height: 1.4;
+      white-space: pre-wrap;
+      max-width: 300px;
+      z-index: 100;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+      margin-top: 6px;
+    }
+
+    .schedule-card-tip::after {
+      content: '';
+      position: absolute;
+      bottom: 100%;
+      left: 50%;
+      transform: translateX(-50%);
+      border: 6px solid transparent;
+      border-bottom-color: #1e293b;
+    }
+
+    .schedule-card:hover .schedule-card-tip {
+      display: block;
+    }
+
+    .schedule-card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      margin-bottom: 1px;
+    }
+
+    .schedule-card-title {
+      display: flex;
+      align-items: center;
+      gap: 2px;
+      font-weight: 600;
+      color: #1e293b;
+      font-size: 10px;
+    }
+
+    .schedule-card-number {
+      background: #667eea;
+      color: white;
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 9px;
+      font-weight: 700;
+    }
+
+    .schedule-card-status {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #10b981;
+      box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.2);
+    }
+
+    .schedule-card-status.disabled {
+      background: #94a3b8;
+      box-shadow: none;
+    }
+
+    .schedule-card-actions {
+      display: flex;
+      gap: 3px;
+    }
+
+    .schedule-card .schedule-card-actions .schedule-card-action-btn {
+      width: 16px !important;
+      height: 16px !important;
+      border: none !important;
+      border-radius: 50% !important;
+      cursor: pointer !important;
+      font-size: 8px !important;
+      display: flex !important;
+      align-items: center !important;
+      justify-content: center !important;
+      transition: all 0.2s !important;
+      padding: 0 !important;
+      min-width: 0 !important;
+    }
+
+    .schedule-card-action-btn:hover {
+      transform: scale(1.1);
+    }
+
+    .schedule-card-action-btn.toggle {
+      background: #f0fdf4;
+      color: #10b981;
+    }
+
+    .schedule-card-action-btn.toggle.disabled {
+      background: #f1f5f9;
+      color: #94a3b8;
+    }
+
+    .schedule-card-action-btn.execute {
+      background: #fef3c7;
+      color: #d97706;
+    }
+
+    .schedule-card-action-btn.edit {
+      background: #eff6ff;
+      color: #3b82f6;
+    }
+
+    .schedule-card-action-btn.delete {
+      background: #fef2f2;
+      color: #dc2626;
+    }
+
+    .schedule-card-footer {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 2px;
+    }
+
+    .schedule-card-content {
+      flex: 1;
+      font-size: 9px;
+      color: #64748b;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .schedule-card-meta {
+      display: flex;
+      flex-wrap: nowrap;
+      gap: 2px;
+      font-size: 9px;
+      color: #94a3b8;
+    }
+
+    .schedule-card-meta-item {
+      display: flex;
+      align-items: center;
+      gap: 1px;
+      background: #f1f5f9;
+      padding: 0px 2px;
+      border-radius: 2px;
+    }
+
+    .schedule-card-notes {
+      margin-top: 1px;
+      padding-top: 2px;
+      border-top: 1px dashed #e2e8f0;
+      font-size: 9px;
+      color: #64748b;
+      font-style: italic;
+    }
+
+    .empty-schedule {
+      text-align: center;
+      padding: 40px 20px;
+      color: #94a3b8;
+    }
+
+    .schedule-preview-logs-row {
+      display: flex;
+      gap: 4px;
+      margin-top: 0;
+      border-top: 1px solid #e2e8f0;
+      padding-top: 1px;
+      margin-bottom: 0;
+    }
+
+    .schedule-preview-section {
+      flex: 1;
+    }
+
+    .schedule-preview {
+      margin-top: 8px;
+      max-height: 150px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .schedule-preview-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 12px;
+      background: #f8fafc;
+      border-radius: 6px;
+      font-size: 12px;
+    }
+
+    .schedule-preview-number {
+      background: #667eea;
+      color: white;
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 11px;
+      font-weight: 700;
+      flex-shrink: 0;
+    }
+
+    .schedule-preview-time {
+      color: #667eea;
+      font-weight: 600;
+      font-size: 13px;
+      flex-shrink: 0;
+    }
+
+    .schedule-preview-prompt {
+      color: #475569;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .empty-preview {
+      text-align: center;
+      padding: 16px;
+    }
+
+    .schedule-logs-section {
+      flex: 1;
+    }
+
+    .schedule-logs-toggle {
+      width: 100%;
+      padding: 8px 12px;
+      border: none;
+      border-radius: 6px;
+      background: #f1f5f9;
+      color: #64748b;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+      text-align: left;
+    }
+
+    .schedule-logs-toggle:hover {
+      background: #e2e8f0;
+    }
+
+    .schedule-logs {
+      margin-top: 8px;
+      max-height: 200px;
+      overflow-y: auto;
+      background: #f8fafc;
+      border-radius: 8px;
+      padding: 12px;
+    }
+
+    .schedule-logs::-webkit-scrollbar {
+      width: 6px;
+    }
+
+    .schedule-logs::-webkit-scrollbar-track {
+      background: #f1f5f9;
+      border-radius: 3px;
+    }
+
+    .schedule-logs::-webkit-scrollbar-thumb {
+      background: #cbd5e1;
+      border-radius: 3px;
+    }
+
+    .schedule-log-item {
+      padding: 8px 10px;
+      border-radius: 6px;
+      margin-bottom: 6px;
+      font-size: 12px;
+      line-height: 1.4;
+    }
+
+    .schedule-log-item.success {
+      background: #f0fdf4;
+      border-left: 3px solid #10b981;
+      color: #059669;
+    }
+
+    .schedule-log-item.error {
+      background: #fef2f2;
+      border-left: 3px solid #dc2626;
+      color: #dc2626;
+    }
+
+    .schedule-log-item.info {
+      background: #eff6ff;
+      border-left: 3px solid #3b82f6;
+      color: #1d4ed8;
+    }
+
+    .schedule-log-time {
+      font-weight: 600;
+      margin-right: 8px;
+    }
+
+    .empty-logs {
+      text-align: center;
+      padding: 20px;
+      color: #94a3b8;
+      font-size: 12px;
+    }
+
+    .schedule-modal {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0, 0, 0, 0.5);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 2000;
+      animation: fadeIn 0.2s ease;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; }
+      to { opacity: 1; }
+    }
+
+    .schedule-modal-content {
+      background: white;
+      border-radius: 16px;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.2);
+      width: 90%;
+      max-width: 520px;
+      max-height: 90vh;
+      display: flex;
+      flex-direction: column;
+      animation: slideUp 0.25s ease;
+    }
+
+    @keyframes slideUp {
+      from { transform: translateY(20px); opacity: 0; }
+      to { transform: translateY(0); opacity: 1; }
+    }
+
+    .schedule-modal-content-small {
+      max-width: 380px;
+    }
+
+    .schedule-modal-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 20px 24px;
+      border-bottom: 1px solid #e2e8f0;
+    }
+
+    .schedule-modal-header h3 {
+      margin: 0;
+      font-size: 18px;
+      font-weight: 700;
+      color: #1e293b;
+    }
+
+    .schedule-modal-close {
+      width: 32px;
+      height: 32px;
+      border: none;
+      background: #f1f5f9;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 18px;
+      color: #64748b;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.2s;
+    }
+
+    .schedule-modal-close:hover {
+      background: #e2e8f0;
+      color: #333;
+    }
+
+    .schedule-modal-body {
+      padding: 20px 24px;
+      overflow-y: auto;
+      flex: 1;
+    }
+
+    .schedule-modal-body::-webkit-scrollbar {
+      width: 6px;
+    }
+
+    .schedule-modal-body::-webkit-scrollbar-track {
+      background: #f1f5f9;
+      border-radius: 3px;
+    }
+
+    .schedule-modal-body::-webkit-scrollbar-thumb {
+      background: #cbd5e1;
+      border-radius: 3px;
+    }
+
+    .schedule-form-group {
+      margin-bottom: 16px;
+    }
+
+    .schedule-form-group label {
+      display: block;
+      font-size: 13px;
+      font-weight: 600;
+      color: #334155;
+      margin-bottom: 6px;
+    }
+
+    .schedule-input,
+    .schedule-select,
+    .schedule-textarea {
+      width: 100%;
+      padding: 10px 14px;
+      border: 1px solid #e2e8f0;
+      border-radius: 10px;
+      font-size: 14px;
+      color: #1e293b;
+      background: #f8fafc;
+      transition: all 0.2s;
+      box-sizing: border-box;
+    }
+
+    .schedule-input:focus,
+    .schedule-select:focus,
+    .schedule-textarea:focus {
+      outline: none;
+      border-color: #667eea;
+      box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+      background: white;
+    }
+
+    .schedule-textarea {
+      resize: vertical;
+      min-height: 60px;
+    }
+
+    .week-days-list,
+    .month-days-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      max-height: 120px;
+      overflow-y: auto;
+    }
+
+    .week-day-item,
+    .month-day-item {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      padding: 4px 10px;
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      border-radius: 20px;
+      cursor: pointer;
+      font-size: 12px;
+      color: #475569;
+      transition: all 0.2s;
+      user-select: none;
+    }
+
+    .week-day-item:hover,
+    .month-day-item:hover {
+      background: #e2e8f0;
+      border-color: #cbd5e1;
+    }
+
+    .week-day-item input[type="checkbox"],
+    .month-day-item input[type="checkbox"] {
+      display: none;
+    }
+
+    .week-day-item input[type="checkbox"]:checked + span,
+    .month-day-item input[type="checkbox"]:checked + span {
+      display: inline;
+    }
+
+    .week-day-item input[type="checkbox"]:checked ~ span,
+    .month-day-item input[type="checkbox"]:checked ~ span {
+      background: #667eea;
+      color: white;
+    }
+
+    .week-day-item:has(input:checked),
+    .month-day-item:has(input:checked) {
+      background: #667eea;
+      border-color: #667eea;
+      color: white;
+    }
+
+    .times-list {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      margin-bottom: 8px;
+    }
+
+    .hourly-minutes-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      max-height: 150px;
+      overflow-y: auto;
+    }
+
+    .hourly-minute-item {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 40px;
+      height: 32px;
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 12px;
+      color: #475569;
+      transition: all 0.2s;
+      user-select: none;
+    }
+
+    .hourly-minute-item:hover {
+      background: #e2e8f0;
+      border-color: #cbd5e1;
+    }
+
+    .hourly-minute-item input[type="checkbox"] {
+      display: none;
+    }
+
+    .hourly-minute-item:has(input:checked) {
+      background: #667eea;
+      border-color: #667eea;
+      color: white;
+    }
+
+    .time-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .time-item input[type="time"] {
+      flex: 1;
+      padding: 8px 12px;
+      border: 1px solid #e2e8f0;
+      border-radius: 8px;
+      font-size: 14px;
+      background: #f8fafc;
+    }
+
+    .time-item button {
+      padding: 6px 10px;
+      background: #ef4444;
+      color: white;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 12px;
+      transition: all 0.2s;
+    }
+
+    .time-item button:hover {
+      background: #dc2626;
+    }
+
+    .schedule-add-time-btn {
+      padding: 6px 12px;
+      background: #667eea;
+      color: white;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 12px;
+      transition: all 0.2s;
+    }
+
+    .schedule-add-time-btn:hover {
+      background: #5a67d8;
+    }
+
+    .schedule-form-hint {
+      margin-top: 6px;
+      font-size: 12px;
+      color: #94a3b8;
+      line-height: 1.4;
+    }
+
+    .schedule-modal-footer {
+      display: flex;
+      justify-content: flex-end;
+      gap: 10px;
+      padding: 16px 24px;
+      border-top: 1px solid #e2e8f0;
+      background: #f8fafc;
+      border-radius: 0 0 16px 16px;
+    }
+
+    .schedule-modal-btn {
+      padding: 10px 24px;
+      border: none;
+      border-radius: 10px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .schedule-modal-btn-cancel {
+      background: #f1f5f9;
+      color: #64748b;
+    }
+
+    .schedule-modal-btn-cancel:hover {
+      background: #e2e8f0;
+    }
+
+    .schedule-modal-btn-save {
+      background: #667eea;
+      color: white;
+    }
+
+    .schedule-modal-btn-save:hover {
+      background: #5a67d8;
+      transform: translateY(-1px);
+      box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3);
+    }
+
+    .schedule-modal-btn-danger {
+      background: #dc2626;
+      color: white;
+    }
+
+    .schedule-modal-btn-danger:hover {
+      background: #b91c1c;
+      transform: translateY(-1px);
+      box-shadow: 0 2px 8px rgba(220, 38, 38, 0.3);
+    }
+
+    @keyframes pulse-green {
+      0% { box-shadow: 0 0 0 0 rgba(22, 163, 74, 0.4); }
+      70% { box-shadow: 0 0 0 10px rgba(22, 163, 74, 0); }
+      100% { box-shadow: 0 0 0 0 rgba(22, 163, 74, 0); }
+    }
+
+    /* 🌙 工作区黑夜模式（基础样式） */
+    body.workspace-dark {
+      background: #0f172a;
+      color: #e2e8f0;
+    }
+    body.workspace-dark .content {
+      background: #0f172a;
+    }
+    body.workspace-dark .bookmarks-section {
+      background: #1e293b;
+      border-color: #334155;
+    }
+    body.workspace-dark .bookmarks-tab {
+      background: #334155;
+      color: #e2e8f0;
+      border-color: #475569;
+    }
+    body.workspace-dark .bookmarks-tab.active {
+      background: #4338ca;
+      color: white;
+    }
+    body.workspace-dark .bm-btn {
+      background: #334155;
+      color: #e2e8f0;
+      border-color: #475569;
+    }
+    body.workspace-dark .bm-search-input {
+      background: #0f172a;
+      color: #e2e8f0;
+      border-color: #475569;
+    }
+    body.workspace-dark .workspace-panel {
+      background: #1e293b;
+      border-color: #334155;
+    }
+    body.workspace-dark .ws-expand-header {
+      background: #334155;
+      border-bottom-color: #475569;
+    }
+    body.workspace-dark .ws-expand-body {
+      background: #0f172a;
+    }
+    body.workspace-dark .data-item,
+    body.workspace-dark .card {
+      background: #1e293b;
+      border-color: #334155;
+      color: #e2e8f0;
+    }
+  </style>
+  <!-- ✨ KaTeX 数学公式渲染库 -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+  <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+</head>
+<body>
+  <div class="container">
+    <!-- 🆕 浮动在顶端的跑马灯状态提示 -->
+    <div id="statusBoxInline" class="status-box-floating" style="display: none;"></div>
+
+    <!-- 统一功能区：标题 + API 服务器（左右布局） -->
+    <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 8px; padding: 8px 16px; margin-bottom: 6px; display: flex; gap: 16px; align-items: center;">
+      <!-- 左侧：标题区域 -->
+      <div style="flex: 1; display: flex; flex-direction: column; justify-content: center;">
+        <h1 style="font-size: 16px; font-weight: 700; color: white; margin: 0;">无限空间·AI智控台</h1>
+        <p style="font-size: 10px; color: rgba(255,255,255,0.85); margin: 1px 0 0 0;">无跨域限制 · 支持任何网站 · 基于 Electron</p>
+      </div>
+
+      <!-- 右侧：API 服务器控制 -->
+      <div id="apiServerControl" style="background: rgba(255, 255, 255, 0.18); border-radius: 6px; padding: 6px 10px; display: flex; flex-direction: column; justify-content: center; min-width: 380px;">
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+          <div style="display: flex; align-items: center; gap: 6px; flex: 1; min-width: 0;">
+            <span style="font-size: 14px;">⚡</span>
+            <div style="flex: 1; min-width: 0;">
+              <h3 style="font-size: 11px; font-weight: 600; color: #ffffff; margin: 0; white-space: nowrap;">无限空间·AI智控台 - API 服务器</h3>
+              <p id="apiInfo" style="font-size: 9px; color: rgba(255, 255, 255, 0.8); margin: 1px 0 0 0;">
+                API 端点: <code style="background: rgba(255,255,255,0.2); padding: 1px 3px; border-radius: 3px; color: #fff;">http://localhost:3000/api/crawl?url=目标网址</code>
+                <span style="margin-left: 6px; color: rgba(255, 255, 255, 0.65);">供网页版智控实验室调用</span>
+              </p>
+            </div>
+          </div>
+          <div style="display: flex; align-items: center; gap: 6px; margin-left: 10px;">
+            <span id="apiStatus" style="font-size: 10px; padding: 3px 8px; border-radius: 20px; background: #fef2f2; color: #dc2626; white-space: nowrap;">
+               检测中...
+            </span>
+            <button
+              id="apiToggleBtn"
+              class="btn btn-primary"
+              onclick="toggleAPIServer()">
+              启动
+            </button>
+            <button
+              id="refreshBtn"
+              class="btn btn-secondary"
+              onclick="refreshPage()"
+              title="刷新页面">
+              🔄 刷新
+            </button>
+            <button
+              id="workspaceThemeToggle"
+              class="btn btn-secondary"
+              onclick="toggleWorkspaceDarkMode()"
+              title="切换全局黑夜模式（工作区 + 网点卡片）">
+              🌙 黑夜
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="content">
+
+      <!-- 常用爬取网点 / 排程工作设定 -->
+      <div class="bookmarks-section" id="bookmarksSection">
+        <button class="bookmarks-section-fold-btn" onclick="toggleBookmarksSection()" title="收起/展开"></button>
+        <div class="bookmarks-tabs">
+          <div class="bookmarks-tab-group">
+            <button class="bookmarks-tab active" data-tab="bookmarks" onclick="switchBookmarksTab('bookmarks')">📌 爬取网点</button>
+            <button class="bookmarks-tab" data-tab="schedule" onclick="switchBookmarksTab('schedule')">⏰ 排程设定</button>
+          </div>
+          <div class="bookmarks-header-btns">
+            <div class="bookmarks-btns-group" id="bookmarksBtnsGroup">
+              <input type="text" id="bookmarkSearchInput" placeholder="搜索..." class="bm-search-input" oninput="filterBookmarks(this.value)" onkeyup="if(event.key==='Enter')filterBookmarks(this.value)">
+              <button class="bm-btn bm-btn-add" onclick="showAddBookmarkModal()" title="添加网点">添加</button>
+              <button class="bm-btn bm-btn-reset" onclick="resetToDefaultBookmarks()" title="重置为默认网点">重置</button>
+            </div>
+            <div class="bookmarks-btns-group" id="scheduleBtnsGroup" style="display: none;">
+              <button class="bm-btn bm-btn-add" onclick="showScheduleModal()" title="新增排程">➕</button>
+              <button class="bm-btn bm-btn-refresh" onclick="loadSchedules()" title="刷新排程">🔄</button>
+              <button class="bm-btn bm-btn-clear-logs" onclick="clearSchedulerLogsConfirm()" title="清空日志">🗑️</button>
+            </div>
+          </div>
+        </div>
+
+        <div id="bookmarksContainer" class="bookmarks-grid bookmarks-panel" style="display: grid;" data-active="true">
+          <div class="empty-bookmarks" id="emptyBookmarks">
+            <span style="font-size: 32px;">📌</span>
+            <p style="margin-top: 8px; color: #94a3b8;">暂无常用网点，点击"添加网点"保存常用网址</p>
+          </div>
+        </div>
+
+        <div id="scheduleContainer" class="bookmarks-panel" style="display: none;" data-active="false">
+          <div id="scheduleList" class="schedule-list">
+            <div class="empty-schedule">
+              <span style="font-size: 32px;">⏰</span>
+              <p style="margin-top: 8px; color: #94a3b8;">暂无排程任务</p>
+              <p style="font-size: 12px; color: #94a3b8; margin-top: 4px;">点击"新增排程"创建定时任务</p>
+            </div>
+          </div>
+          
+          <div class="schedule-preview-logs-row">
+            <div class="schedule-preview-section">
+              <button class="schedule-logs-toggle" onclick="toggleSchedulePreview()">📅 执行预览 ▼</button>
+              <div id="schedulePreview" class="schedule-preview" style="display: none;">
+                <div class="empty-preview">
+                  <p style="color: #94a3b8;">暂无执行计划</p>
+                </div>
+              </div>
+            </div>
+            
+            <div class="schedule-logs-section">
+              <button class="schedule-logs-toggle" onclick="toggleScheduleLogs()">📋 执行日志 ▼</button>
+              <div id="scheduleLogs" class="schedule-logs" style="display: none;">
+                <div class="empty-logs">
+                  <p style="color: #94a3b8;">暂无执行日志</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 输入区域 -->
+      <div class="input-section">
+        <div class="input-group-inline">
+          <label for="urlInput">🔗</label>
+          <input
+            type="text"
+            id="urlInput"
+            placeholder="请输入要爬取的网址，例如：https://baike.baidu.com/item/大同市/529184"
+          />
+          <button class="btn-icon btn-success" onclick="toggleWebPreview()" title="网页预览">
+            🌐
+          </button>
+          <button class="btn-icon btn-danger" onclick="clearResults()" title="清除结果">
+            🗑️
+          </button>
+        </div>
+        <button class="btn-icon btn-primary" onclick="checkWorkspacesStatus()" style="margin-left: 12px;" title="检查所有工作区状态">
+          🔍
+        </button>
+        <button class="btn-icon btn-primary" id="expandToggleBtn" onclick="toggleExpandView()" style="margin-left: 8px; font-size: 11px; font-weight: 700;" title="展开所有执行中工作区的页面">
+          页签
+        </button>
+        <button class="btn-icon btn-primary" id="expandRatioBtn" onclick="cycleExpandRatio()" style="margin-left: 4px; font-size: 11px; font-weight: 700; display: none;" title="切换展开比例">
+          1/4
+        </button>
+      </div>
+
+      <!-- 全局缩图面板已移除，改为展开模式 -->
+
+      <!-- AI 工作区 -->
+      <div id="dataSection" style="display: block; position: relative;">
+        <button class="ai-workspace-fold-btn" onclick="toggleAIWorkspace()" title="点击折叠/展开 AI 工作区"></button>
+        <div class="ai-workspace-header">
+          <div class="ai-workspace-tabs" id="aiWorkspaceTabs">
+            <button class="ai-workspace-tab active" data-workspace="MAIN" onclick="switchWorkspace('MAIN')">
+              <span class="ws-tab-header">
+                <span class="workspace-status-dot" id="ws-dot-MAIN"></span>
+                <span>🧠 MAIN</span>
+              </span>
+              <span class="ws-tab-name" id="ws-name-MAIN"></span>
+            </button>
+            <button class="ai-workspace-tab" data-workspace="01" onclick="switchWorkspace('01')">
+              <span class="ws-tab-header">
+                <span class="workspace-status-dot" id="ws-dot-01"></span>
+                <span>01</span>
+              </span>
+              <span class="ws-tab-name" id="ws-name-01"></span>
+            </button>
+            <button class="ai-workspace-tab" data-workspace="02" onclick="switchWorkspace('02')">
+              <span class="ws-tab-header">
+                <span class="workspace-status-dot" id="ws-dot-02"></span>
+                <span>02</span>
+              </span>
+              <span class="ws-tab-name" id="ws-name-02"></span>
+            </button>
+            <button class="ai-workspace-tab" data-workspace="03" onclick="switchWorkspace('03')">
+              <span class="ws-tab-header">
+                <span class="workspace-status-dot" id="ws-dot-03"></span>
+                <span>03</span>
+              </span>
+              <span class="ws-tab-name" id="ws-name-03"></span>
+            </button>
+            <button class="ai-workspace-tab" data-workspace="04" onclick="switchWorkspace('04')">
+              <span class="ws-tab-header">
+                <span class="workspace-status-dot" id="ws-dot-04"></span>
+                <span>04</span>
+              </span>
+              <span class="ws-tab-name" id="ws-name-04"></span>
+            </button>
+            <button class="ai-workspace-tab" data-workspace="05" onclick="switchWorkspace('05')">
+              <span class="ws-tab-header">
+                <span class="workspace-status-dot" id="ws-dot-05"></span>
+                <span>05</span>
+              </span>
+              <span class="ws-tab-name" id="ws-name-05"></span>
+            </button>
+            <button class="ai-workspace-tab" data-workspace="06" onclick="switchWorkspace('06')">
+              <span class="ws-tab-header">
+                <span class="workspace-status-dot" id="ws-dot-06"></span>
+                <span>06</span>
+              </span>
+              <span class="ws-tab-name" id="ws-name-06"></span>
+            </button>
+            <button class="ai-workspace-tab" data-workspace="07" onclick="switchWorkspace('07')">
+              <span class="ws-tab-header">
+                <span class="workspace-status-dot" id="ws-dot-07"></span>
+                <span>07</span>
+              </span>
+              <span class="ws-tab-name" id="ws-name-07"></span>
+            </button>
+            <button class="ai-workspace-tab" data-workspace="08" onclick="switchWorkspace('08')">
+              <span class="ws-tab-header">
+                <span class="workspace-status-dot" id="ws-dot-08"></span>
+                <span>08</span>
+              </span>
+              <span class="ws-tab-name" id="ws-name-08"></span>
+            </button>
+            <button class="ai-workspace-tab" data-workspace="09" onclick="switchWorkspace('09')">
+              <span class="ws-tab-header">
+                <span class="workspace-status-dot" id="ws-dot-09"></span>
+                <span>09</span>
+              </span>
+              <span class="ws-tab-name" id="ws-name-09"></span>
+            </button>
+            <button class="ai-workspace-tab" data-workspace="10" onclick="switchWorkspace('10')">
+              <span class="ws-tab-header">
+                <span class="workspace-status-dot" id="ws-dot-10"></span>
+                <span>10</span>
+              </span>
+              <span class="ws-tab-name" id="ws-name-10"></span>
+            </button>
+            <button class="ai-workspace-tab" data-workspace="11" onclick="switchWorkspace('11')">
+              <span class="ws-tab-header">
+                <span class="workspace-status-dot" id="ws-dot-11"></span>
+                <span>11</span>
+              </span>
+              <span class="ws-tab-name" id="ws-name-11"></span>
+            </button>
+            <button class="ai-workspace-tab" data-workspace="12" onclick="switchWorkspace('12')">
+              <span class="ws-tab-header">
+                <span class="workspace-status-dot" id="ws-dot-12"></span>
+                <span>12</span>
+              </span>
+              <span class="ws-tab-name" id="ws-name-12"></span>
+            </button>
+            <button class="ai-workspace-tab" data-workspace="13" onclick="switchWorkspace('13')">
+              <span class="ws-tab-header">
+                <span class="workspace-status-dot" id="ws-dot-13"></span>
+                <span>13</span>
+              </span>
+              <span class="ws-tab-name" id="ws-name-13"></span>
+            </button>
+            <button class="ai-workspace-tab" data-workspace="14" onclick="switchWorkspace('14')">
+              <span class="ws-tab-header">
+                <span class="workspace-status-dot" id="ws-dot-14"></span>
+                <span>14</span>
+              </span>
+              <span class="ws-tab-name" id="ws-name-14"></span>
+            </button>
+            <button class="ai-workspace-tab" data-workspace="15" onclick="switchWorkspace('15')">
+              <span class="ws-tab-header">
+                <span class="workspace-status-dot" id="ws-dot-15"></span>
+                <span>15</span>
+              </span>
+              <span class="ws-tab-name" id="ws-name-15"></span>
+            </button>
+            <button class="ai-workspace-tab" data-workspace="16" onclick="switchWorkspace('16')">
+              <span class="ws-tab-header">
+                <span class="workspace-status-dot" id="ws-dot-16"></span>
+                <span>16</span>
+              </span>
+              <span class="ws-tab-name" id="ws-name-16"></span>
+            </button>
+            <button class="ai-workspace-tab" data-workspace="17" onclick="switchWorkspace('17')">
+              <span class="ws-tab-header">
+                <span class="workspace-status-dot" id="ws-dot-17"></span>
+                <span>17</span>
+              </span>
+              <span class="ws-tab-name" id="ws-name-17"></span>
+            </button>
+            <button class="ai-workspace-tab" data-workspace="18" onclick="switchWorkspace('18')">
+              <span class="ws-tab-header">
+                <span class="workspace-status-dot" id="ws-dot-18"></span>
+                <span>18</span>
+              </span>
+              <span class="ws-tab-name" id="ws-name-18"></span>
+            </button>
+            <button class="ai-workspace-tab" data-workspace="19" onclick="switchWorkspace('19')">
+              <span class="ws-tab-header">
+                <span class="workspace-status-dot" id="ws-dot-19"></span>
+                <span>19</span>
+              </span>
+              <span class="ws-tab-name" id="ws-name-19"></span>
+            </button>
+            <button class="ai-workspace-tab" data-workspace="20" onclick="switchWorkspace('20')">
+              <span class="ws-tab-header">
+                <span class="workspace-status-dot" id="ws-dot-20"></span>
+                <span>20</span>
+              </span>
+              <span class="ws-tab-name" id="ws-name-20"></span>
+            </button>
+          </div>
+        </div>
+        <div class="data-container" id="dataContainer">
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <script src="modules/utils.js"></script>
+  <script src="modules/email.js"></script>
+  <script src="modules/scheduler.js"></script>
+  <script src="modules/bookmarks.js"></script>
+  <script src="modules/desktop-app.js"></script>
+  <script src="modules/ai-platforms.js"></script>
+  <script src="modules/floating-window.js"></script>
+  <script src="modules/workspace.js"></script>
+  <script src="modules/capture.js"></script>
+  <script src="modules/http-get.js"></script>
+  <script src="renderer.js"></script>
+
+<!-- 添加/编辑网点模态框 -->
+<div id="bookmarkModal" class="modal-overlay" style="display: none;">
+  <div class="modal-content">
+    <div class="modal-header">
+      <h3 id="modalTitle">➕ 添加常用网点</h3>
+      <button class="modal-close" onclick="closeBookmarkModal()">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div style="margin-bottom: 16px;">
+        <label style="display: block; font-size: 14px; font-weight: 600; color: #333; margin-bottom: 8px;">网点名称 *</label>
+        <input type="text" id="bookmarkName" placeholder="例如：百度百科-大同市" style="width: 100%; padding: 12px; border: 2px solid #e2e8f0; border-radius: 8px; font-size: 14px; outline: none;" />
+      </div>
+      <div id="cardTypeContainer" style="margin-bottom: 16px;">
+        <label style="display: block; font-size: 14px; font-weight: 600; color: #333; margin-bottom: 8px;">卡片类型</label>
+        <div style="display: flex; gap: 12px;">
+          <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; padding: 10px 16px; border: 2px solid #e2e8f0; border-radius: 8px; flex: 1;">
+            <input type="radio" name="bookmarkType" value="webview" checked style="accent-color: #667eea;">
+            <span style="font-size: 13px;">🌐 网页 WebView</span>
+          </label>
+          <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; padding: 10px 16px; border: 2px solid #e2e8f0; border-radius: 8px; flex: 1;">
+            <input type="radio" name="bookmarkType" value="desktop-app" style="accent-color: #667eea;">
+            <span style="font-size: 13px;">🖥️ 桌面 APP</span>
+          </label>
+        </div>
+        <p style="font-size: 11px; color: #94a3b8; margin-top: 6px; margin-bottom: 0;">💡 桌面APP模式仅支持 macOS，使用 AppleScript 自动化</p>
+      </div>
+      <div id="urlSectionContainer">
+      <div style="margin-bottom: 16px;">
+        <label style="display: block; font-size: 14px; font-weight: 600; color: #333; margin-bottom: 8px;">网址 URL *</label>
+        <input type="text" id="bookmarkUrl" placeholder="https://example.com 或 http://hq.sinajs.cn/list=sh600000" style="width: 100%; padding: 12px; border: 2px solid #e2e8f0; border-radius: 8px; font-size: 14px; outline: none;" />
+      </div>
+      <div style="margin-bottom: 16px;">
+        <label style="display: block; font-size: 14px; font-weight: 600; color: #333; margin-bottom: 8px;">🔐 自定义请求头（可选）</label>
+        <div style="background: #f8fafc; padding: 12px; border-radius: 8px; border: 1px solid #e2e8f0;">
+          <div style="margin-bottom: 10px;">
+            <label style="display: block; font-size: 12px; color: #64748b; margin-bottom: 4px;">Referer（来源网址）</label>
+            <input type="text" id="bookmarkReferer" placeholder="例如：https://finance.sina.com.cn/ （留空则不设置）" style="width: 100%; padding: 10px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px; outline: none;" />
+          </div>
+          <div>
+            <label style="display: block; font-size: 12px; color: #64748b; margin-bottom: 4px;">User-Agent（浏览器标识）</label>
+            <input type="text" id="bookmarkUserAgent" placeholder="留空使用默认值" style="width: 100%; padding: 10px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px; outline: none;" />
+          </div>
+        </div>
+        <p style="font-size: 11px; color: #94a3b8; margin-top: 6px; margin-bottom: 0;">💡 某些网站（如新浪财经）需要设置 Referer 才能正常访问</p>
+      </div>
+      </div>
+      <div id="desktopAppSectionContainer" style="display: none; margin-bottom: 16px;">
+        <div style="background: #f0f9ff; padding: 12px; border-radius: 8px; border: 1px solid #bae6fd;">
+          <div style="margin-bottom: 12px;">
+            <label style="display: block; font-size: 12px; font-weight: 600; color: #0369a1; margin-bottom: 4px;">APP 名称 *</label>
+            <div style="display: flex; gap: 8px;">
+              <input type="text" id="bookmarkAppName" placeholder="例如：豆包、微信、钉钉" style="flex: 1; padding: 10px; border: 1px solid #38bdf8; border-radius: 6px; font-size: 13px; outline: none;" />
+              <button onclick="testAppName()" style="padding: 10px 16px; background: #0ea5e9; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 12px; white-space: nowrap;">测试</button>
+            </div>
+            <p id="appNameTestResult" style="font-size: 11px; margin-top: 4px; margin-bottom: 0; min-height: 16px;"></p>
+            <p style="font-size: 11px; color: #0284c7; margin-top: 4px; margin-bottom: 0;">💡 必须与「应用程序」文件夹中的 APP 名称完全一致（可在 Launchpad 或 应用程序 中查看）</p>
+          </div>
+          <div style="margin-bottom: 12px;">
+            <label style="display: block; font-size: 12px; font-weight: 600; color: #0369a1; margin-bottom: 4px;">发送方式</label>
+            <select id="bookmarkSendMethod" style="width: 100%; padding: 10px; border: 1px solid #38bdf8; border-radius: 6px; font-size: 13px; outline: none; background: white;">
+              <option value="clipboard">📋 剪贴板粘贴（推荐，适合长文本）</option>
+              <option value="keystroke">⌨️ 逐键输入（适合短文本）</option>
+            </select>
+          </div>
+          <div>
+            <label style="display: block; font-size: 12px; font-weight: 600; color: #0369a1; margin-bottom: 4px;">激活后等待时间（毫秒）</label>
+            <input type="number" id="bookmarkActivateDelay" value="500" min="100" step="100" style="width: 100%; padding: 10px; border: 1px solid #38bdf8; border-radius: 6px; font-size: 13px; outline: none;" />
+            <p style="font-size: 11px; color: #0284c7; margin-top: 4px; margin-bottom: 0;">💡 APP启动后等待多久再输入文字，默认500ms</p>
+          </div>
+          <div>
+            <label style="display: block; font-size: 12px; font-weight: 600; color: #0369a1; margin-bottom: 4px;">等待回答时间（毫秒）</label>
+            <input type="number" id="bookmarkWaitAnswerDelay" value="15000" min="3000" step="1000" style="width: 100%; padding: 10px; border: 1px solid #38bdf8; border-radius: 6px; font-size: 13px; outline: none;" />
+            <p style="font-size: 11px; color: #0284c7; margin-top: 4px; margin-bottom: 0;">💡 发送消息后等待多久再复制回答，默认15000ms（15秒），AI回答慢可设更大</p>
+          </div>
+          <div style="margin-top: 12px; padding-top: 12px; border-top: 1px dashed #bae6fd;">
+            <label style="display: block; font-size: 12px; font-weight: 600; color: #0369a1; margin-bottom: 8px;">🎯 校准定位点（相对坐标，校准后自动填入，可手动调整）</label>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+              <div>
+                <label style="display: block; font-size: 11px; color: #0284c7; margin-bottom: 2px;">复制按钮 X 比例</label>
+                <input type="number" id="bookmarkCopyBtnX" step="0.001" min="0" max="1" style="width: 100%; padding: 8px; border: 1px solid #38bdf8; border-radius: 4px; font-size: 12px; outline: none;" />
+              </div>
+              <div>
+                <label style="display: block; font-size: 11px; color: #0284c7; margin-bottom: 2px;">复制按钮 Y 比例</label>
+                <input type="number" id="bookmarkCopyBtnY" step="0.001" min="0" max="1" style="width: 100%; padding: 8px; border: 1px solid #38bdf8; border-radius: 4px; font-size: 12px; outline: none;" />
+              </div>
+              <div>
+                <label style="display: block; font-size: 11px; color: #0284c7; margin-bottom: 2px;">Markdown项 X 比例</label>
+                <input type="number" id="bookmarkMdBtnX" step="0.001" min="0" max="1" style="width: 100%; padding: 8px; border: 1px solid #38bdf8; border-radius: 4px; font-size: 12px; outline: none;" />
+              </div>
+              <div>
+                <label style="display: block; font-size: 11px; color: #0284c7; margin-bottom: 2px;">Markdown项 Y 比例</label>
+                <input type="number" id="bookmarkMdBtnY" step="0.001" min="0" max="1" style="width: 100%; padding: 8px; border: 1px solid #38bdf8; border-radius: 4px; font-size: 12px; outline: none;" />
+              </div>
+            </div>
+            <p style="font-size: 11px; color: #0284c7; margin-top: 6px; margin-bottom: 0;">💡 相对坐标：0=左/上，1=右/下，例如 0.95,0.9 表示距右边5%、距下边10%的位置</p>
+          </div>
+          <div style="margin-top: 12px; padding-top: 12px; border-top: 1px dashed #bae6fd;">
+            <label style="display: block; font-size: 12px; font-weight: 600; color: #0369a1; margin-bottom: 8px;">🖥️ 窗口尺寸与位置（校准后自动填入，可手动调整）</label>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+              <div>
+                <label style="display: block; font-size: 11px; color: #0284c7; margin-bottom: 2px;">窗口宽度</label>
+                <input type="number" id="bookmarkWinWidth" value="950" min="400" step="10" style="width: 100%; padding: 8px; border: 1px solid #38bdf8; border-radius: 4px; font-size: 12px; outline: none;" />
+              </div>
+              <div>
+                <label style="display: block; font-size: 11px; color: #0284c7; margin-bottom: 2px;">窗口高度</label>
+                <input type="number" id="bookmarkWinHeight" value="920" min="300" step="10" style="width: 100%; padding: 8px; border: 1px solid #38bdf8; border-radius: 4px; font-size: 12px; outline: none;" />
+              </div>
+              <div>
+                <label style="display: block; font-size: 11px; color: #0284c7; margin-bottom: 2px;">窗口X位置</label>
+                <input type="number" id="bookmarkWinX" value="0" step="10" style="width: 100%; padding: 8px; border: 1px solid #38bdf8; border-radius: 4px; font-size: 12px; outline: none;" />
+              </div>
+              <div>
+                <label style="display: block; font-size: 11px; color: #0284c7; margin-bottom: 2px;">窗口Y位置</label>
+                <input type="number" id="bookmarkWinY" value="0" step="10" style="width: 100%; padding: 8px; border: 1px solid #38bdf8; border-radius: 4px; font-size: 12px; outline: none;" />
+              </div>
+            </div>
+            <p style="font-size: 11px; color: #0284c7; margin-top: 6px; margin-bottom: 0;">💡 校准后自动记录，发送消息时会自动调整APP窗口到指定尺寸和位置</p>
+          </div>
+        </div>
+      </div>
+      <div style="margin-bottom: 16px;">
+        <label style="display: block; font-size: 14px; font-weight: 600; color: #333; margin-bottom: 8px;">分类标签</label>
+        <select id="bookmarkCategory" style="width: 100%; padding: 12px; border: 2px solid #e2e8f0; border-radius: 8px; font-size: 14px; outline: none; background: white;">
+          <option value="general">📌 通用</option>
+          <option value="news">📰 新闻</option>
+          <option value="shopping">🛒 购物</option>
+          <option value="social">💬 社交</option>
+          <option value="tech">💻 科技</option>
+          <option value="finance">💰 金融</option>
+          <option value="education"> 教育</option>
+          <option value="weather">🌤️ 天气</option>
+          <option value="ai-chat">🤖 web版AI Chat</option>
+          <option value="ai-desktop">🖥️ 桌面版AI Chat</option>
+          <option value="plugin-web">🔌 内部插件web应用</option>
+          <option value="external-web">🌐 外部web应用</option>
+          <option value="http-get">📡 HTTP Get 调用</option>
+          <option value="api-call"> API 调用</option>
+          <option value="desktop-app">🖥️ 桌面版APP</option>
+          <option value="other">📁 其他</option>
+        </select>
+      </div>
+      <div style="margin-bottom: 16px;">
+        <label style="display: block; font-size: 14px; font-weight: 600; color: #333; margin-bottom: 8px;">🎨 卡片背景色</label>
+        <div id="bookmarkColorPicker" style="display: flex; flex-wrap: wrap; gap: 6px; align-items: center;">
+          <div class="bookmark-color-swatch" data-color="" style="width: 28px; height: 28px; border-radius: 6px; border: 2px solid #e2e8f0; cursor: pointer; background: #ffffff; display: flex; align-items: center; justify-content: center; font-size: 14px;" title="默认（白色）" onclick="selectBookmarkColor(this, '')">✓</div>
+          <div class="bookmark-color-swatch" data-color="#fef3c7" style="width: 28px; height: 28px; border-radius: 6px; border: 2px solid #e2e8f0; cursor: pointer; background: #fef3c7;" title="浅黄" onclick="selectBookmarkColor(this, '#fef3c7')"></div>
+          <div class="bookmark-color-swatch" data-color="#dbeafe" style="width: 28px; height: 28px; border-radius: 6px; border: 2px solid #e2e8f0; cursor: pointer; background: #dbeafe;" title="浅蓝" onclick="selectBookmarkColor(this, '#dbeafe')"></div>
+          <div class="bookmark-color-swatch" data-color="#dcfce7" style="width: 28px; height: 28px; border-radius: 6px; border: 2px solid #e2e8f0; cursor: pointer; background: #dcfce7;" title="浅绿" onclick="selectBookmarkColor(this, '#dcfce7')"></div>
+          <div class="bookmark-color-swatch" data-color="#fce7f3" style="width: 28px; height: 28px; border-radius: 6px; border: 2px solid #e2e8f0; cursor: pointer; background: #fce7f3;" title="浅粉" onclick="selectBookmarkColor(this, '#fce7f3')"></div>
+          <div class="bookmark-color-swatch" data-color="#f3e8ff" style="width: 28px; height: 28px; border-radius: 6px; border: 2px solid #e2e8f0; cursor: pointer; background: #f3e8ff;" title="浅紫" onclick="selectBookmarkColor(this, '#f3e8ff')"></div>
+          <div class="bookmark-color-swatch" data-color="#fed7aa" style="width: 28px; height: 28px; border-radius: 6px; border: 2px solid #e2e8f0; cursor: pointer; background: #fed7aa;" title="浅橙" onclick="selectBookmarkColor(this, '#fed7aa')"></div>
+          <div class="bookmark-color-swatch" data-color="#e0e7ff" style="width: 28px; height: 28px; border-radius: 6px; border: 2px solid #e2e8f0; cursor: pointer; background: #e0e7ff;" title="浅靛" onclick="selectBookmarkColor(this, '#e0e7ff')"></div>
+          <div class="bookmark-color-swatch" data-color="#d1fae5" style="width: 28px; height: 28px; border-radius: 6px; border: 2px solid #e2e8f0; cursor: pointer; background: #d1fae5;" title="浅青" onclick="selectBookmarkColor(this, '#d1fae5')"></div>
+          <div class="bookmark-color-swatch" data-color="#fee2e2" style="width: 28px; height: 28px; border-radius: 6px; border: 2px solid #e2e8f0; cursor: pointer; background: #fee2e2;" title="浅红" onclick="selectBookmarkColor(this, '#fee2e2')"></div>
+          <div class="bookmark-color-swatch" data-color="#f1f5f9" style="width: 28px; height: 28px; border-radius: 6px; border: 2px solid #e2e8f0; cursor: pointer; background: #f1f5f9;" title="浅灰" onclick="selectBookmarkColor(this, '#f1f5f9')"></div>
+          <div class="bookmark-color-swatch" data-color="#fef9c3" style="width: 28px; height: 28px; border-radius: 6px; border: 2px solid #e2e8f0; cursor: pointer; background: #fef9c3;" title="浅柠檬" onclick="selectBookmarkColor(this, '#fef9c3')"></div>
+        </div>
+        <p style="font-size: 11px; color: #94a3b8; margin-top: 4px; margin-bottom: 0;">💡 选择卡片的背景颜色，让常用网点更易区分</p>
+      </div>
+      <div>
+        <label style="display: flex; align-items: center; gap: 10px; font-size: 14px; font-weight: 600; color: #333; margin-bottom: 12px; cursor: pointer;">
+          <input type="checkbox" id="bookmarkPreviewOnly" style="width: 18px; height: 18px; accent-color: #667eea;">
+          🌐 只预览网页（不爬取资料）
+        </label>
+      </div>
+      <div id="externalBrowserContainer" style="margin-bottom: 16px; display: none;">
+        <label style="display: flex; align-items: center; gap: 10px; font-size: 13px; font-weight: 600; color: #dc2626; cursor: pointer;" title="启用后会在独立浏览器窗口中打开网页，可解决千问等网站的兼容性问题">
+          <input type="checkbox" id="bookmarkExternalBrowser" style="width: 18px; height: 18px; accent-color: #dc2626;">
+          🔓 使用外部浏览器（解决千问/SPA 兼容性问题）
+        </label>
+        <p style="font-size: 11px; color: #94a3b8; margin-top: 6px; margin-bottom: 0; margin-left: 28px;">⚠️ 仅在「只预览网页」模式下可用。适用于千问、通义千问等 SPA 网站</p>
+      </div>
+      <div id="presetMessageContainer" style="margin-bottom: 16px; display: none;">
+        <label style="display: block; font-size: 14px; font-weight: 600; color: #333; margin-bottom: 8px;">💬 预设消息（可选）</label>
+        <textarea id="bookmarkPresetMessage" placeholder="例如：请帮我分析今天的股市行情...&#10;&#10;💡 提示：设置后点击「只浏览网页」时会自动填入并发送此消息" rows="3" style="width: 100%; padding: 12px; border: 2px solid #e2e8f0; border-radius: 8px; font-size: 14px; outline: none; resize: vertical;"></textarea>
+        <p style="font-size: 11px; color: #94a3b8; margin-top: 6px; margin-bottom: 0;">💡 仅在「只预览网页」模式下生效，打开网页后会自动填入并发送</p>
+      </div>
+      <div id="autoMonitorContainer" style="margin-bottom: 16px; display: none;">
+        <label style="display: flex; align-items: center; gap: 10px; font-size: 13px; font-weight: 600; color: #6b7280; cursor: pointer;">
+          <input type="checkbox" id="bookmarkAutoMonitor" style="width: 18px; height: 18px; accent-color: #6b7280;" disabled>
+           自动监控 AI 回复（已取消，仅支持手动监控）
+        </label>
+        <p style="font-size: 11px; color: #94a3b8; margin-top: 6px; margin-bottom: 0; margin-left: 28px;">💡 请使用「📥 获取AI回复」按钮手动触发</p>
+      </div>
+      <div id="customSelectorContainer" style="margin-bottom: 16px; display: none;">
+        <label style="display: block; font-size: 14px; font-weight: 600; color: #333; margin-bottom: 8px;">🎯 自定义回复选择器（可选）</label>
+        <input type="text" id="bookmarkReplySelector" placeholder="例如：.custom-html.md-stream-desktop 或 .agent-markdown" style="width: 100%; padding: 12px; border: 2px solid #e2e8f0; border-radius: 8px; font-size: 14px; outline: none; font-family: monospace;" />
+        <p style="font-size: 11px; color: #94a3b8; margin-top: 6px; margin-bottom: 0;">💡 用元素查看器找到回复容器后，填入 CSS 选择器，留空则使用默认逻辑</p>
+      </div>
+      <div id="heartbeatSelectorContainer" style="margin-bottom: 16px; display: none;">
+        <label style="display: block; font-size: 14px; font-weight: 600; color: #333; margin-bottom: 8px;">💓 心跳监控回复选择器（可选）</label>
+        <input type="text" id="bookmarkHeartbeatSelector" placeholder="例如：.markdown-end-mark 或 [class*=end-mark]" style="width: 100%; padding: 12px; border: 2px solid #f59e0b; border-radius: 8px; font-size: 14px; outline: none; font-family: monospace; background: #fffbeb;" />
+        <p style="font-size: 11px; color: #94a3b8; margin-top: 6px; margin-bottom: 0;">💡 用于判断 AI 回复是否完成（解决 AI 思考时间导致误判）。有输入则优先用此选择器监控，留空则用上面的「自定义回复选择器」</p>
+      </div>
+      <div id="monitorTimeoutContainer" style="margin-bottom: 16px; display: none;">
+        <label style="display: block; font-size: 14px; font-weight: 600; color: #333; margin-bottom: 8px;">⏱️ 监控空闲超时时间（毫秒，可选）</label>
+        <input type="number" id="bookmarkMonitorTimeout" placeholder="例如：10000（表示 10 秒无变化才判定为稳定）" min="1000" step="1000" style="width: 100%; padding: 12px; border: 2px solid #9b59b6; border-radius: 8px; font-size: 14px; outline: none; font-family: monospace; background: #faf5fc;" />
+        <p style="font-size: 11px; color: #94a3b8; margin-top: 6px; margin-bottom: 0;">💡 AI 思考越慢的站点，设置越大的值。默认 3000（3 秒），建议慢 AI 设 10000~30000（10~30 秒）</p>
+      </div>
+      <div>
+        <label style="display: block; font-size: 14px; font-weight: 600; color: #333; margin-bottom: 8px;">备注说明</label>
+        <textarea id="bookmarkNote" placeholder="可选：添加一些备注信息..." rows="3" style="width: 100%; padding: 12px; border: 2px solid #e2e8f0; border-radius: 8px; font-size: 14px; outline: none; resize: vertical;"></textarea>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn" onclick="closeBookmarkModal()" style="background: #f1f5f9; color: #64748b;">取消</button>
+      <button class="btn btn-primary" onclick="saveBookmark()">保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- 录制定位点模态框 -->
+<div id="anchorRecordModal" class="modal-overlay" style="display: none;">
+  <div class="modal-content" style="max-width: 800px;">
+    <div class="modal-header">
+      <h3 id="anchorRecordModalTitle">📍 录制定位点</h3>
+      <button class="modal-close" onclick="closeAnchorRecordModal()">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div style="display: flex; gap: 16px;">
+        <div style="flex: 1;">
+          <div style="font-size: 12px; color: #64748b; margin-bottom: 8px;">选择要录制的定位点</div>
+          <div id="anchorList" style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px; max-height: 300px; overflow-y: auto;"></div>
+        </div>
+        <div style="flex: 1; border-left: 1px solid #e2e8f0; padding-left: 16px;">
+          <div style="font-size: 12px; color: #64748b; margin-bottom: 8px;">当前选中定位点</div>
+          <div id="anchorDetail" style="padding: 12px; background: #f8fafc; border-radius: 8px;">
+            <div style="font-size: 14px; font-weight: 600; margin-bottom: 8px;" id="anchorDetailName">请选择一个定位点</div>
+            <div style="font-size: 11px; color: #64748b; margin-bottom: 4px;">偏移坐标 (offsetX, offsetY)</div>
+            <div style="font-size: 13px; font-family: monospace; color: #334155;" id="anchorDetailCoords">--</div>
+            <div style="font-size: 11px; color: #64748b; margin-top: 8px;" id="anchorDetailStatus">未校准</div>
+          </div>
+          <div style="margin-top: 12px;">
+            <input type="text" id="anchorNameInput" placeholder="自定义名称" style="width: 100%; padding: 8px; border: 1px solid #e2e8f0; border-radius: 6px; font-size: 12px;">
+            <label style="display: flex; align-items: center; margin-top: 6px; font-size: 12px; cursor: pointer;">
+              <input type="checkbox" id="anchorIsCopyButton" style="margin-right: 6px;">
+              <span style="color: #64748b;">是否为复制按钮</span>
+            </label>
+            <button onclick="updateAnchorName()" style="margin-top: 6px; width: 100%; padding: 6px; font-size: 11px; border: none; background: #e0e7ff; color: #4338ca; border-radius: 4px; cursor: pointer;">保存</button>
+          </div>
+        </div>
+      </div>
+      <div style="margin-top: 16px; padding: 12px; background: #eff6ff; border-radius: 8px; border: 1px solid #dbeafe;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+          <div style="font-size: 12px; font-weight: 600; color: #1e40af;">🖥️ 窗口设置</div>
+          <div style="display: flex; gap: 6px;">
+            <button onclick="recordWindowSettings()" style="padding: 4px 10px; font-size: 11px; border: none; background: #3b82f6; color: white; border-radius: 4px; cursor: pointer;">录制窗口</button>
+            <button onclick="replayWindowSettings()" style="padding: 4px 10px; font-size: 11px; border: none; background: #10b981; color: white; border-radius: 4px; cursor: pointer;">应用窗口</button>
+          </div>
+        </div>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; font-size: 11px;">
+          <div>
+            <span style="color: #64748b;">位置 (X, Y):</span>
+            <span id="windowPosDisplay" style="font-family: monospace; color: #334155; margin-left: 4px;">--</span>
+          </div>
+          <div>
+            <span style="color: #64748b;">大小 (W × H):</span>
+            <span id="windowSizeDisplay" style="font-family: monospace; color: #334155; margin-left: 4px;">--</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- 🆕 截图区域设置 -->
+      <div style="margin-top: 12px; padding: 12px; background: #f0fdf4; border-radius: 8px; border: 1px solid #bbf7d0;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+          <div style="font-size: 12px; font-weight: 600; color: #15803d;">🖼️ 截图区域设置</div>
+          <div style="display: flex; gap: 6px;">
+            <button onclick="recordCaptureRegion()" style="padding: 4px 10px; font-size: 11px; border: none; background: #3b82f6; color: white; border-radius: 4px; cursor: pointer;">记录左上角</button>
+            <button onclick="captureCurrentRegion()" style="padding: 4px 10px; font-size: 11px; border: none; background: #10b981; color: white; border-radius: 4px; cursor: pointer;">截取当前区域</button>
+            <button onclick="previewCaptureRegion()" style="padding: 4px 10px; font-size: 11px; border: none; background: #8b5cf6; color: white; border-radius: 4px; cursor: pointer;">预览</button>
+          </div>
+        </div>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; font-size: 11px; margin-bottom: 8px; align-items: center;">
+          <div>
+            <span style="color: #64748b;">相对窗口位置 (X, Y):</span>
+            <span id="captureRegionPosDisplay" style="font-family: monospace; color: #334155; margin-left: 4px;">--</span>
+          </div>
+          <div style="display: flex; align-items: center; gap: 4px;">
+            <span style="color: #64748b;">大小 (W × H):</span>
+            <input id="captureRegionWidthInput" type="number" min="1" placeholder="宽" style="width: 50px; padding: 2px 4px; font-size: 11px; border: 1px solid #cbd5e1; border-radius: 4px; font-family: monospace;">
+            <span style="color: #64748b;">×</span>
+            <input id="captureRegionHeightInput" type="number" min="1" placeholder="高" style="width: 50px; padding: 2px 4px; font-size: 11px; border: 1px solid #cbd5e1; border-radius: 4px; font-family: monospace;">
+            <button onclick="saveCaptureRegionSize()" style="padding: 2px 8px; font-size: 10px; border: none; background: #15803d; color: white; border-radius: 4px; cursor: pointer;">保存</button>
+          </div>
+        </div>
+        <div style="display: none; justify-content: center; align-items: center; padding: 8px; background: white; border-radius: 6px; border: 1px dashed #86efac;" id="captureRegionPreviewContainer">
+          <img id="captureRegionPreview" style="max-width: 100%; max-height: 160px; border-radius: 4px; display: block;" src="" alt="截图预览">
+        </div>
+      </div>
+
+      <div id="recordingProgress" style="margin-top: 16px; display: none;">
+        <div style="font-size: 13px; font-weight: 600; color: #3b82f6; margin-bottom: 8px;" id="recordingStatus">⏳ 准备录制...</div>
+        <div style="height: 4px; background: #e2e8f0; border-radius: 2px; overflow: hidden;">
+          <div id="recordingProgressBar" style="height: 100%; background: #3b82f6; width: 0%; transition: width 1s linear;"></div>
+        </div>
+        <div style="font-size: 11px; color: #64748b; margin-top: 4px;" id="recordingCountdown">5秒</div>
+      </div>
+      <div style="font-size: 11px; color: #94a3b8; margin-top: 12px; padding: 8px; background: #fef3c7; border-radius: 4px;">
+        💡 提示：定位点使用偏移坐标（相对于窗口左上角），窗口移动后仍能准确定位。录制窗口设置可保存当前APP窗口的位置和大小。
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn" onclick="closeAnchorRecordModal()" style="background: #f1f5f9; color: #64748b;">取消</button>
+      <button class="btn" onclick="clearAllAnchors()" style="background: #fee2e2; color: #dc2626;">清除全部</button>
+      <button class="btn" onclick="replaySingleAnchor()" style="background: #dbeafe; color: #1d4ed8;">回放定位点</button>
+      <button class="btn btn-primary" onclick="startRecordingAnchors()">录制当前定位点</button>
+    </div>
+  </div>
+</div>
+
+<!-- 自动化脚本设定作业模态框 -->
+<div id="scriptSettingsModal" class="modal-overlay" style="display: none;">
+  <div class="modal-content" style="max-width: 1000px; max-height: 90vh;">
+    <div class="modal-header">
+      <h3 id="scriptSettingsModalTitle">📝 自动化脚本设定作业</h3>
+      <button class="modal-close" onclick="closeScriptSettingsModal()">&times;</button>
+    </div>
+    <div class="modal-body" style="overflow-y: auto;">
+      <div style="display: flex; gap: 12px; margin-bottom: 12px;">
+        <div style="flex: 1;">
+          <div style="font-size: 12px; color: #64748b; margin-bottom: 6px;">脚本列表</div>
+          <div style="display: flex; gap: 6px; align-items: center;">
+            <select id="scriptSelect" onchange="loadSelectedScript()" style="flex: 1; padding: 6px; border: 1px solid #e2e8f0; border-radius: 6px; font-size: 12px;">
+              <option value="">-- 新建脚本 --</option>
+            </select>
+            <button onclick="newScript()" style="padding: 6px 10px; font-size: 11px; border: none; background: #10b981; color: white; border-radius: 4px; cursor: pointer;">新建</button>
+            <button onclick="deleteCurrentScript()" style="padding: 6px 10px; font-size: 11px; border: none; background: #ef4444; color: white; border-radius: 4px; cursor: pointer;">删除</button>
+          </div>
+        </div>
+        <div style="flex: 1;">
+          <div style="font-size: 12px; color: #64748b; margin-bottom: 6px;">脚本名称</div>
+          <input type="text" id="scriptName" placeholder="例如：发送并获取回答" style="width: 100%; padding: 6px; border: 1px solid #e2e8f0; border-radius: 6px; font-size: 12px;">
+        </div>
+        <div style="flex: 0.6;">
+          <div style="font-size: 12px; color: #64748b; margin-bottom: 6px;">触发器</div>
+          <select id="scriptTrigger" style="width: 100%; padding: 6px; border: 1px solid #e2e8f0; border-radius: 6px; font-size: 12px;">
+            <option value="manual">手动触发</option>
+            <option value="send">发送按钮</option>
+            <option value="floatSend">浮动视窗发送按钮</option>
+            <option value="copyMarkdown">复制为Markdown</option>
+            <option value="activate">开启APP</option>
+          </select>
+        </div>
+      </div>
+      <div style="margin-bottom: 12px;">
+        <div style="font-size: 12px; color: #64748b; margin-bottom: 6px;">📮 讯息池（脚本消息队列）</div>
+        <div style="height: 160px; overflow-y: auto; border: 2px solid #e2e8f0; border-radius: 8px;">
+          <table id="messagePoolTable" style="width: 100%; border-collapse: collapse; font-size: 11px;">
+            <thead style="position: sticky; top: 0; background: #f1f5f9;">
+              <tr>
+                <th style="border: 1px solid #cbd5e1; padding: 4px 6px; text-align: center; width: 40px;">序号</th>
+                <th style="border: 1px solid #cbd5e1; padding: 4px 6px; text-align: center; width: 60px;">类型</th>
+                <th style="border: 1px solid #cbd5e1; padding: 4px 6px; text-align: center;">内容</th>
+                <th style="border: 1px solid #cbd5e1; padding: 4px 6px; text-align: center; width: 80px;">操作</th>
+              </tr>
+            </thead>
+            <tbody id="messagePoolTableBody">
+              <tr>
+                <td style="border: 1px solid #cbd5e1; padding: 4px 6px; text-align: center;">1</td>
+                <td style="border: 1px solid #cbd5e1; padding: 4px 6px;">
+                  <select class="message-type-select" onchange="handleMessageTypeChange(this)">
+                    <option value="text">文字</option>
+                    <option value="file">文件</option>
+                  </select>
+                </td>
+                <td style="border: 1px solid #cbd5e1; padding: 4px 6px;">
+                  <input type="text" class="message-content-input" placeholder="输入消息内容或文件路径" style="width: calc(100% - 70px); padding: 2px 4px; border: 1px solid #e2e8f0; border-radius: 3px; font-size: 11px;">
+                  <button onclick="selectMessageFile(this)" style="padding: 2px 4px; font-size: 10px; border: none; background: #3b82f6; color: white; border-radius: 2px; cursor: pointer; margin-left: 4px;">选择</button>
+                </td>
+                <td style="border: 1px solid #cbd5e1; padding: 2px 4px; text-align: center;">
+                  <button onclick="previewMessageFile(this)" style="padding: 2px 3px; font-size: 10px; border: none; background: #10b981; color: white; border-radius: 2px; cursor: pointer; margin-right: 2px;">👁</button>
+                  <button onclick="removeMessageRow(this)" style="padding: 2px 3px; font-size: 10px; border: none; background: #ef4444; color: white; border-radius: 2px; cursor: pointer;">×</button>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div style="margin-top: 6px; display: flex; gap: 6px;">
+          <button onclick="addMessageRow()" style="padding: 4px 10px; font-size: 11px; border: none; background: #10b981; color: white; border-radius: 4px; cursor: pointer;">+ 添加消息</button>
+          <button onclick="clearMessagePool()" style="padding: 4px 10px; font-size: 11px; border: none; background: #ef4444; color: white; border-radius: 4px; cursor: pointer;">清空</button>
+          <button onclick="pairMessageWithCmdV()" style="padding: 4px 10px; font-size: 11px; border: none; background: #f59e0b; color: white; border-radius: 4px; cursor: pointer;">🔗 配对 Command+V</button>
+        </div>
+      </div>
+      <div style="margin-bottom: 12px;">
+        <div style="font-size: 12px; color: #64748b; margin-bottom: 6px;">动作列表（表格建档）</div>
+        <div style="height: 320px; overflow-y: auto; border: 2px solid #e2e8f0; border-radius: 8px;">
+          <table id="scriptActionTable" style="width: 100%; border-collapse: collapse; font-size: 11px;">
+            <thead style="position: sticky; top: 0; background: #f1f5f9;">
+              <tr>
+                <th style="border: 1px solid #cbd5e1; padding: 4px 6px; text-align: center; width: 50px;">编号</th>
+                <th style="border: 1px solid #cbd5e1; padding: 4px 6px; text-align: center; width: 50px;">停用</th>
+                <th style="border: 1px solid #cbd5e1; padding: 4px 6px; text-align: center; width: 100px;">位移（定位点）</th>
+                <th style="border: 1px solid #cbd5e1; padding: 4px 6px; text-align: center; width: 100px;">鼠标动作</th>
+                <th style="border: 1px solid #cbd5e1; padding: 4px 6px; text-align: center; width: 120px;">键盘按键</th>
+                <th style="border: 1px solid #cbd5e1; padding: 4px 6px; text-align: center; width: 150px;">C+V内容</th>
+                <th style="border: 1px solid #cbd5e1; padding: 4px 6px; text-align: center; width: 70px;">等待(ms)</th>
+                <th style="border: 1px solid #cbd5e1; padding: 4px 6px; text-align: center; width: 80px;">备注</th>
+                <th style="border: 1px solid #cbd5e1; padding: 4px 6px; text-align: center; width: 40px;">操作</th>
+              </tr>
+            </thead>
+            <tbody id="scriptActionTableBody">
+              <tr>
+                <td style="border: 1px solid #cbd5e1; padding: 4px 6px; text-align: center;">1</td>
+                <td style="border: 1px solid #cbd5e1; padding: 4px 6px; text-align: center;">
+                  <input type="checkbox" class="disabled-checkbox" onchange="parseScriptLive()">
+                </td>
+                <td style="border: 1px solid #cbd5e1; padding: 4px 6px;">
+                  <select class="anchor-select" onchange="handleActionFieldChange(this)">
+                    <option value="">-- 无 --</option>
+                  </select>
+                </td>
+                <td style="border: 1px solid #cbd5e1; padding: 4px 6px;">
+                  <select class="mouse-select" onchange="handleActionFieldChange(this)">
+                    <option value="">-- 无 --</option>
+                    <optgroup label="点击操作">
+                      <option value="left">左键点击</option>
+                      <option value="right">右键点击</option>
+                      <option value="double">双击</option>
+                    </optgroup>
+                    <optgroup label="移动操作">
+                      <option value="hover">悬停</option>
+                    </optgroup>
+                    <optgroup label="向上滑动">
+                      <option value="scrollUp_5">向上滑动 5次</option>
+                      <option value="scrollUp_10">向上滑动 10次</option>
+                      <option value="scrollUp_20">向上滑动 20次</option>
+                      <option value="scrollUp_50">向上滑动 50次</option>
+                      <option value="scrollUp_200">向上滑动 200次</option>
+                    </optgroup>
+                    <optgroup label="向下滑动">
+                      <option value="scrollDown_5">向下滑动 5次</option>
+                      <option value="scrollDown_10">向下滑动 10次</option>
+                      <option value="scrollDown_20">向下滑动 20次</option>
+                      <option value="scrollDown_50">向下滑动 50次</option>
+                      <option value="scrollDown_200">向下滑动 200次</option>
+                    </optgroup>
+                    <optgroup label="向左滚动">
+                      <option value="scrollLeft_5">向左滚动 5次</option>
+                      <option value="scrollLeft_10">向左滚动 10次</option>
+                      <option value="scrollLeft_20">向左滚动 20次</option>
+                      <option value="scrollLeft_50">向左滚动 50次</option>
+                      <option value="scrollLeft_200">向左滚动 200次</option>
+                    </optgroup>
+                    <optgroup label="向右滚动">
+                      <option value="scrollRight_5">向右滚动 5次</option>
+                      <option value="scrollRight_10">向右滚动 10次</option>
+                      <option value="scrollRight_20">向右滚动 20次</option>
+                      <option value="scrollRight_50">向右滚动 50次</option>
+                      <option value="scrollRight_200">向右滚动 200次</option>
+                    </optgroup>
+                    <optgroup label="滚轮向上">
+                      <option value="scrollWheelUp_5">滚轮向上 5次</option>
+                      <option value="scrollWheelUp_10">滚轮向上 10次</option>
+                      <option value="scrollWheelUp_20">滚轮向上 20次</option>
+                      <option value="scrollWheelUp_50">滚轮向上 50次</option>
+                      <option value="scrollWheelUp_200">滚轮向上 200次</option>
+                    </optgroup>
+                    <optgroup label="滚轮向下">
+                      <option value="scrollWheelDown_5">滚轮向下 5次</option>
+                      <option value="scrollWheelDown_10">滚轮向下 10次</option>
+                      <option value="scrollWheelDown_20">滚轮向下 20次</option>
+                      <option value="scrollWheelDown_50">滚轮向下 50次</option>
+                      <option value="scrollWheelDown_200">滚轮向下 200次</option>
+                    </optgroup>
+                  </select>
+                </td>
+                <td style="border: 1px solid #cbd5e1; padding: 4px 6px;">
+                  <select class="keyboard-select" onchange="handleActionFieldChange(this)">
+                    <option value="">-- 无 --</option>
+                    <optgroup label="基础按键">
+                      <option value="enter">Enter</option>
+                      <option value="escape">ESC</option>
+                      <option value="tab">Tab</option>
+                      <option value="space">空格</option>
+                      <option value="backspace">Backspace</option>
+                      <option value="delete">Delete</option>
+                      <option value="return">Return</option>
+                    </optgroup>
+                    <optgroup label="功能键">
+                      <option value="f1">F1</option>
+                      <option value="f2">F2</option>
+                      <option value="f3">F3</option>
+                      <option value="f4">F4</option>
+                      <option value="f5">F5</option>
+                      <option value="f6">F6</option>
+                      <option value="f7">F7</option>
+                      <option value="f8">F8</option>
+                      <option value="f9">F9</option>
+                      <option value="f10">F10</option>
+                      <option value="f11">F11</option>
+                      <option value="f12">F12</option>
+                    </optgroup>
+                    <optgroup label="组合键">
+                      <option value="cmd+a">Cmd+A</option>
+                      <option value="cmd+c">Cmd+C</option>
+                      <option value="cmd+v">Cmd+V</option>
+                      <option value="cmd+x">Cmd+X</option>
+                      <option value="cmd+s">Cmd+S</option>
+                      <option value="cmd+f">Cmd+F</option>
+                      <option value="cmd+z">Cmd+Z</option>
+                      <option value="shift+tab">Shift+Tab</option>
+                      <option value="shift+enter">Shift+Enter</option>
+                    </optgroup>
+                  </select>
+                </td>
+                <td style="border: 1px solid #cbd5e1; padding: 4px 6px;">
+                  <input type="text" class="paste-content-input" placeholder="C+V内容" style="width: 100%; padding: 2px 4px; border: 1px solid #e2e8f0; border-radius: 3px; font-size: 11px; display: none;">
+                </td>
+                <td style="border: 1px solid #cbd5e1; padding: 4px 6px;">
+                  <input type="number" class="wait-input" placeholder="0" min="0" style="width: 100%; padding: 2px 4px; border: 1px solid #e2e8f0; border-radius: 3px; font-size: 11px;">
+                </td>
+                <td style="border: 1px solid #cbd5e1; padding: 4px 6px;">
+                  <input type="text" class="note-input" placeholder="备注" style="width: 100%; padding: 2px 4px; border: 1px solid #e2e8f0; border-radius: 3px; font-size: 11px;">
+                </td>
+                <td style="border: 1px solid #cbd5e1; padding: 2px 4px; text-align: center; white-space: nowrap;">
+                  <button onclick="previewActionFile(this)" style="padding: 2px 3px; font-size: 10px; border: none; background: #10b981; color: white; border-radius: 2px; cursor: pointer; margin-right: 2px;">👁</button>
+                  <button onclick="insertActionRow(this)" style="padding: 2px 3px; font-size: 10px; border: none; background: #3b82f6; color: white; border-radius: 2px; cursor: pointer; margin-right: 2px;">+</button>
+                  <button onclick="removeActionRow(this)" style="padding: 2px 3px; font-size: 10px; border: none; background: #ef4444; color: white; border-radius: 2px; cursor: pointer;">×</button>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div style="margin-top: 6px; display: flex; gap: 6px;">
+          <button onclick="addActionRow()" style="padding: 4px 10px; font-size: 11px; border: none; background: #10b981; color: white; border-radius: 4px; cursor: pointer;">+ 添加动作</button>
+          <button onclick="clearActionTable()" style="padding: 4px 10px; font-size: 11px; border: none; background: #ef4444; color: white; border-radius: 4px; cursor: pointer;">清空全部</button>
+        </div>
+      </div>
+      <div style="margin-bottom: 12px;">
+        <div style="font-size: 12px; color: #64748b; margin-bottom: 6px;">解析后的结构化 JSON（实时预览）</div>
+        <div id="scriptJsonPreview" style="padding: 8px; border: 2px solid #e2e8f0; border-radius: 8px; background: #f8fafc; max-height: 150px; overflow: auto; font-family: monospace; font-size: 11px; line-height: 1.5; white-space: pre-wrap;">--</div>
+      </div>
+      <div style="margin-bottom: 8px;">
+        <div style="font-size: 12px; color: #64748b; margin-bottom: 6px;">生成的 JXA 代码</div>
+        <div id="jxaCodeContainer" style="padding: 8px; border: 2px solid #e2e8f0; border-radius: 8px; background: #1e293b; color: #e2e8f0; max-height: 200px; overflow: auto; font-family: monospace; font-size: 11px; line-height: 1.5; white-space: pre-wrap;" id="jxaCodeDisplay">--</div>
+      </div>
+      <div style="margin-bottom: 8px;">
+        <div style="font-size: 12px; color: #64748b; margin-bottom: 6px;">剪贴板内容（最后一次 Cmd+C 结果）</div>
+        <div id="clipboardResultContainer" style="padding: 8px; border: 2px solid #e2e8f0; border-radius: 8px; background: #f0fdf4; color: #166534; max-height: 200px; overflow: auto; font-family: monospace; font-size: 11px; line-height: 1.5; white-space: pre-wrap;">--</div>
+      </div>
+      <div id="scriptParseErrors" style="margin-top: 8px; display: none; padding: 8px; background: #fef3c7; border-radius: 6px; font-size: 11px; color: #92400e; max-height: 100px; overflow-y: auto;"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn" onclick="recordAnchorsFromScriptModal()" style="background: #f0fdf4; color: #15803d;">录制定位点</button>
+      <button class="btn" onclick="closeScriptSettingsModal()" style="background: #f1f5f9; color: #64748b;">关闭</button>
+      <button class="btn" onclick="testRunScript()" style="background: #dbeafe; color: #1d4ed8;">测试执行</button>
+      <button class="btn btn-primary" onclick="saveCurrentScript()">保存脚本</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  document.addEventListener('DOMContentLoaded', function() {
+    const previewOnlyCheckbox = document.getElementById('bookmarkPreviewOnly');
+    const presetMessageContainer = document.getElementById('presetMessageContainer');
+
+    if (previewOnlyCheckbox && presetMessageContainer) {
+      previewOnlyCheckbox.addEventListener('change', function() {
+        presetMessageContainer.style.display = this.checked ? 'block' : 'none';
+        const externalBrowserContainer = document.getElementById('externalBrowserContainer');
+        if (externalBrowserContainer) {
+          externalBrowserContainer.style.display = this.checked ? 'block' : 'none';
+        }
+        const autoMonitorContainer = document.getElementById('autoMonitorContainer');
+        if (autoMonitorContainer) {
+          autoMonitorContainer.style.display = this.checked ? 'block' : 'none';
+        }
+        const customSelectorContainer = document.getElementById('customSelectorContainer');
+        if (customSelectorContainer) {
+          customSelectorContainer.style.display = this.checked ? 'block' : 'none';
+        }
+        const heartbeatSelectorContainer = document.getElementById('heartbeatSelectorContainer');
+        if (heartbeatSelectorContainer) {
+          heartbeatSelectorContainer.style.display = this.checked ? 'block' : 'none';
+        }
+        const monitorTimeoutContainer = document.getElementById('monitorTimeoutContainer');
+        if (monitorTimeoutContainer) {
+          monitorTimeoutContainer.style.display = this.checked ? 'block' : 'none';
+        }
+      });
+    }
+
+  });
+</script>
+
+<div id="scheduleModal" class="schedule-modal" style="display: none;">
+  <div class="schedule-modal-content">
+    <div class="schedule-modal-header">
+      <h3 id="scheduleModalTitle">新增排程任务</h3>
+      <button class="schedule-modal-close" onclick="closeScheduleModal()">✕</button>
+    </div>
+    <div class="schedule-modal-body">
+      <input type="hidden" id="scheduleId">
+      
+      <div class="schedule-form-group">
+        <label>📝 执行指令</label>
+        <textarea id="schedulePrompt" placeholder="例如：豆包 今天的天气" class="schedule-input" rows="6" style="resize: vertical;"></textarea>
+        <p class="schedule-form-hint">输入要执行的指令，与浮动视窗通用页签的输入方式相同</p>
+      </div>
+      
+      <div class="schedule-form-group">
+        <label>🔄 执行方式</label>
+        <select id="scheduleRecurrence" class="schedule-select">
+          <option value="startup">📂 启动时执行</option>
+          <option value="once">⏱️ 一次性执行</option>
+          <option value="daily">📅 每日执行</option>
+          <option value="weekly">📆 每周执行</option>
+          <option value="monthly">📆 每月执行</option>
+          <option value="repeating">🔁 重复执行</option>
+          <option value="hourly">⏰ 每小时执行</option>
+        </select>
+      </div>
+      
+      <div id="executeDateTimeContainer" class="schedule-form-group" style="display: none;">
+        <label>⏰ 执行日期时间</label>
+        <input type="datetime-local" id="scheduleExecuteDateTime" class="schedule-input">
+      </div>
+      
+      <div id="intervalContainer" class="schedule-form-group" style="display: none;">
+        <label>🔁 重复间隔（分钟）</label>
+        <input type="number" id="scheduleInterval" placeholder="间隔时间（分钟）" value="60" class="schedule-input" min="1">
+      </div>
+      
+      <div id="hourlyMinutesContainer" class="schedule-form-group" style="display: none;">
+        <label>⏰ 选择分钟（每小时的第几分钟执行，可多选）</label>
+        <div id="hourlyMinutesList" class="hourly-minutes-list"></div>
+      </div>
+      
+      <div id="weekDaysContainer" class="schedule-form-group" style="display: none;">
+        <label>📅 选择周几（可多选）</label>
+        <div id="weekDaysList" class="week-days-list">
+          <label class="week-day-item"><input type="checkbox" value="0"> 周日</label>
+          <label class="week-day-item"><input type="checkbox" value="1"> 周一</label>
+          <label class="week-day-item"><input type="checkbox" value="2"> 周二</label>
+          <label class="week-day-item"><input type="checkbox" value="3"> 周三</label>
+          <label class="week-day-item"><input type="checkbox" value="4"> 周四</label>
+          <label class="week-day-item"><input type="checkbox" value="5"> 周五</label>
+          <label class="week-day-item"><input type="checkbox" value="6"> 周六</label>
+        </div>
+      </div>
+      
+      <div id="monthDaysContainer" class="schedule-form-group" style="display: none;">
+        <label>📅 选择日期（可多选，最多10天）</label>
+        <div id="monthDaysList" class="month-days-list">
+          <label class="month-day-item"><input type="checkbox" value="1"> 1日</label>
+          <label class="month-day-item"><input type="checkbox" value="2"> 2日</label>
+          <label class="month-day-item"><input type="checkbox" value="3"> 3日</label>
+          <label class="month-day-item"><input type="checkbox" value="4"> 4日</label>
+          <label class="month-day-item"><input type="checkbox" value="5"> 5日</label>
+          <label class="month-day-item"><input type="checkbox" value="6"> 6日</label>
+          <label class="month-day-item"><input type="checkbox" value="7"> 7日</label>
+          <label class="month-day-item"><input type="checkbox" value="8"> 8日</label>
+          <label class="month-day-item"><input type="checkbox" value="9"> 9日</label>
+          <label class="month-day-item"><input type="checkbox" value="10"> 10日</label>
+          <label class="month-day-item"><input type="checkbox" value="11"> 11日</label>
+          <label class="month-day-item"><input type="checkbox" value="12"> 12日</label>
+          <label class="month-day-item"><input type="checkbox" value="13"> 13日</label>
+          <label class="month-day-item"><input type="checkbox" value="14"> 14日</label>
+          <label class="month-day-item"><input type="checkbox" value="15"> 15日</label>
+          <label class="month-day-item"><input type="checkbox" value="16"> 16日</label>
+          <label class="month-day-item"><input type="checkbox" value="17"> 17日</label>
+          <label class="month-day-item"><input type="checkbox" value="18"> 18日</label>
+          <label class="month-day-item"><input type="checkbox" value="19"> 19日</label>
+          <label class="month-day-item"><input type="checkbox" value="20"> 20日</label>
+          <label class="month-day-item"><input type="checkbox" value="21"> 21日</label>
+          <label class="month-day-item"><input type="checkbox" value="22"> 22日</label>
+          <label class="month-day-item"><input type="checkbox" value="23"> 23日</label>
+          <label class="month-day-item"><input type="checkbox" value="24"> 24日</label>
+          <label class="month-day-item"><input type="checkbox" value="25"> 25日</label>
+          <label class="month-day-item"><input type="checkbox" value="26"> 26日</label>
+          <label class="month-day-item"><input type="checkbox" value="27"> 27日</label>
+          <label class="month-day-item"><input type="checkbox" value="28"> 28日</label>
+          <label class="month-day-item"><input type="checkbox" value="29"> 29日</label>
+          <label class="month-day-item"><input type="checkbox" value="30"> 30日</label>
+          <label class="month-day-item"><input type="checkbox" value="31"> 31日</label>
+        </div>
+      </div>
+      
+      <div id="timesContainer" class="schedule-form-group" style="display: none;">
+        <label>⏰ 执行时间（最多10个，点击添加）</label>
+        <div id="timesList" class="times-list"></div>
+        <button class="schedule-add-time-btn" onclick="addScheduleTime()">+ 添加时间</button>
+      </div>
+      
+      <div class="schedule-form-group">
+        <label>⏳ 延迟时间（秒）</label>
+        <input type="number" id="scheduleDelay" placeholder="执行后等待时间" value="3" class="schedule-input" min="0">
+        <p class="schedule-form-hint">多个排程执行时，上一个完成后等待此时间再执行下一个</p>
+      </div>
+      
+      <div id="priorityContainer" class="schedule-form-group" style="display: none;">
+        <label>🎯 启动优先级</label>
+        <input type="number" id="schedulePriority" placeholder="优先级数值" value="100" class="schedule-input" min="0">
+        <p class="schedule-form-hint">数值越小优先级越高，0 为最高优先级。启动时按优先级从小到大执行。</p>
+      </div>
+      
+      <div class="schedule-form-group">
+        <label>📧 结果发送方式</label>
+        <select id="scheduleResultSend" class="schedule-select" onchange="toggleScheduleEmailRecipients()">
+          <option value="none">不发送</option>
+          <option value="clipboard">复制到剪贴板</option>
+          <option value="email">发送邮件</option>
+        </select>
+      </div>
+      <div id="scheduleEmailRecipientsContainer" class="schedule-form-group" style="display: none;">
+        <label> 收件人邮箱</label>
+        <input type="text" id="scheduleEmailRecipients" placeholder="输入收件人邮箱，多个用逗号分隔" class="schedule-input">
+        <p class="schedule-form-hint">多个收件人用逗号或分号分隔，如: a@qq.com, b@gmail.com</p>
+      </div>
+      
+      <div class="schedule-form-group">
+        <label>📝 备注</label>
+        <textarea id="scheduleNotes" placeholder="添加备注说明..." rows="3" class="schedule-textarea"></textarea>
+      </div>
+    </div>
+    <div class="schedule-modal-footer">
+      <button class="schedule-modal-btn schedule-modal-btn-cancel" onclick="closeScheduleModal()">取消</button>
+      <button class="schedule-modal-btn schedule-modal-btn-save" onclick="saveSchedule()">保存</button>
+    </div>
+  </div>
+</div>
+
+<div id="confirmModal" class="schedule-modal" style="display: none;">
+  <div class="schedule-modal-content schedule-modal-content-small">
+    <div class="schedule-modal-header">
+      <h3>确认操作</h3>
+    </div>
+    <div class="schedule-modal-body">
+      <p id="confirmMessage">确定要执行此操作吗？</p>
+    </div>
+    <div class="schedule-modal-footer">
+      <button class="schedule-modal-btn schedule-modal-btn-cancel" onclick="closeConfirmModal()">取消</button>
+      <button class="schedule-modal-btn schedule-modal-btn-danger" onclick="confirmAction()">确定</button>
+    </div>
+  </div>
+</div>
+
+<div id="scheduleConfirmModal" class="schedule-modal" style="display: none;">
+  <div class="schedule-modal-content schedule-modal-content-small">
+    <div class="schedule-modal-header">
+      <h3 id="scheduleConfirmTitle">确认操作</h3>
+      <button class="schedule-modal-close" onclick="closeScheduleConfirmModal()">✕</button>
+    </div>
+    <div class="schedule-modal-body">
+      <p id="scheduleConfirmMessage" style="font-size: 14px; line-height: 1.6; color: #475569;">确定要执行此操作吗？</p>
+    </div>
+    <div class="schedule-modal-footer">
+      <button class="schedule-modal-btn schedule-modal-btn-cancel" onclick="closeScheduleConfirmModal()">取消</button>
+      <button id="scheduleConfirmBtn" class="schedule-modal-btn schedule-modal-btn-danger">确定</button>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>

@@ -1,0 +1,2001 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DOM 树形结构查看器</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: #f0f2f5;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+        .header {
+            background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+            color: white;
+            padding: 12px 16px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+        .header h1 {
+            font-size: 16px;
+            font-weight: 600;
+        }
+        .header .url {
+            font-size: 12px;
+            opacity: 0.9;
+        }
+        .content {
+            flex: 1;
+            display: flex;
+            overflow: hidden;
+        }
+        .tree-panel {
+            width: 50%;
+            overflow-y: auto;
+            overflow-x: auto;
+            background: white;
+            border-right: 1px solid #e5e7eb;
+            padding: 12px;
+        }
+        .detail-panel {
+            width: 50%;
+            overflow-y: auto;
+            background: #f8fafc;
+            padding: 16px;
+        }
+        .tree-node {
+            cursor: pointer;
+            user-select: none;
+            min-width: fit-content;
+            white-space: nowrap;
+        }
+        .node-header {
+            display: flex;
+            align-items: center;
+            padding: 4px 8px;
+            border-radius: 4px;
+            transition: all 0.15s;
+            font-size: 13px;
+            white-space: nowrap;
+            flex-shrink: 0;
+        }
+        .node-header:hover {
+            background: #e5e7eb;
+        }
+        .node-header.selected {
+            background: #dbeafe;
+            border: 1px solid #3b82f6;
+        }
+        .toggle-icon {
+            width: 16px;
+            height: 16px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            margin-right: 4px;
+            font-size: 10px;
+            color: #6b7280;
+            flex-shrink: 0;
+        }
+        .tag-name {
+            color: #7c3aed;
+            font-weight: 500;
+        }
+        .node-attrs {
+            color: #6b7280;
+            font-size: 11px;
+            margin-left: 6px;
+            white-space: nowrap;
+        }
+        .node-children {
+            padding-left: 20px;
+            display: none;
+        }
+        .node-children.expanded {
+            display: block;
+        }
+        .detail-content {
+            background: white;
+            border: 1px solid #e5e7eb;
+            border-radius: 8px;
+            padding: 16px;
+            margin-bottom: 16px;
+        }
+        .detail-content h3 {
+            font-size: 14px;
+            color: #374151;
+            margin-bottom: 12px;
+            padding-bottom: 8px;
+            border-bottom: 1px solid #e5e7eb;
+        }
+        .selector-box {
+            background: #f3f4f6;
+            padding: 10px 12px;
+            border-radius: 6px;
+            font-family: 'Monaco', 'Menlo', monospace;
+            font-size: 12px;
+            word-break: break-all;
+            margin-bottom: 12px;
+            border: 1px solid #d1d5db;
+        }
+        .selector-list {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+        .selector-item {
+            background: #f9fafb;
+            padding: 8px 12px;
+            border-radius: 6px;
+            border: 1px solid #e5e7eb;
+        }
+        .selector-item code {
+            font-family: 'Monaco', 'Menlo', monospace;
+            font-size: 12px;
+            color: #1d4ed8;
+            word-break: break-all;
+        }
+        .btn {
+            padding: 6px 14px;
+            border-radius: 6px;
+            border: none;
+            cursor: pointer;
+            font-size: 12px;
+            font-weight: 500;
+            transition: all 0.15s;
+            margin-right: 6px;
+            margin-top: 6px;
+        }
+        .btn-primary {
+            background: #6366f1;
+            color: white;
+        }
+        .btn-primary:hover {
+            background: #4f46e5;
+        }
+        .btn-secondary {
+            background: #e5e7eb;
+            color: #374151;
+        }
+        .btn-secondary:hover {
+            background: #d1d5db;
+        }
+        .btn-success {
+            background: #10b981;
+            color: white;
+        }
+        .btn-error {
+            background: #ef4444;
+            color: white;
+        }
+        .btn-testing {
+            background: #f59e0b;
+            color: white;
+        }
+        .content-preview {
+            background: #f9fafb;
+            padding: 12px;
+            border-radius: 6px;
+            font-size: 12px;
+            color: #374151;
+            line-height: 1.6;
+            max-height: none;
+            overflow-y: auto;
+            border: 1px solid #e5e7eb;
+            white-space: pre-wrap;
+            word-break: break-word;
+            min-height: 50px;
+        }
+        mark.highlight {
+            background: #fde68a;
+            color: #92400e;
+            padding: 0 2px;
+            border-radius: 2px;
+        }
+        .empty-state {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 100%;
+            color: #9ca3af;
+            font-size: 14px;
+        }
+        .filter-bar {
+            padding: 8px 12px;
+            background: #f8fafc;
+            border-bottom: 1px solid #e5e7eb;
+            display: flex;
+            gap: 8px;
+            align-items: center;
+        }
+        .filter-bar input {
+            flex: 1;
+            padding: 6px 10px;
+            border: 1px solid #d1d5db;
+            border-radius: 6px;
+            font-size: 13px;
+        }
+        .filter-bar button {
+            padding: 6px 12px;
+            border-radius: 6px;
+            border: 1px solid #d1d5db;
+            background: white;
+            cursor: pointer;
+            font-size: 12px;
+        }
+        .match-count {
+            font-size: 11px;
+            color: #6b7280;
+        }
+        /* 自定义弹窗 */
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.7);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+        }
+        .modal-overlay.show {
+            display: flex;
+        }
+        .modal-content {
+            background: white;
+            border-radius: 12px;
+            padding: 20px;
+            max-width: 80%;
+            max-height: 80vh;
+            width: 600px;
+            display: flex;
+            flex-direction: column;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+        }
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 16px;
+            padding-bottom: 12px;
+            border-bottom: 2px solid #e5e7eb;
+        }
+        .modal-header h3 {
+            margin: 0;
+            font-size: 16px;
+            color: #374151;
+        }
+        .modal-close {
+            background: none;
+            border: none;
+            font-size: 24px;
+            cursor: pointer;
+            color: #6b7280;
+            padding: 0 8px;
+            line-height: 1;
+        }
+        .modal-close:hover {
+            color: #ef4444;
+        }
+        .modal-body {
+            flex: 1;
+            overflow-y: auto;
+            font-size: 13px;
+            line-height: 1.6;
+            color: #374151;
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+        /* 图片列表 */
+        .image-list {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 12px;
+        }
+        .image-item {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            padding: 8px;
+            background: #f9fafb;
+            border-radius: 6px;
+            border: 1px solid #e5e7eb;
+        }
+        .image-thumb img {
+            display: block;
+        }
+        .image-alt {
+            font-size: 11px;
+            color: #6b7280;
+            max-width: 150px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .image-src {
+            font-size: 10px;
+            color: #3b82f6;
+        }
+        .image-src a {
+            color: #3b82f6;
+            text-decoration: none;
+        }
+        .image-src a:hover {
+            text-decoration: underline;
+        }
+        /* 超链接列表 */
+        .link-list {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+        .link-item {
+            padding: 8px 12px;
+            background: #f9fafb;
+            border-radius: 6px;
+            border: 1px solid #e5e7eb;
+        }
+        .link-text {
+            font-size: 12px;
+            color: #374151;
+            margin-bottom: 4px;
+            font-weight: 500;
+        }
+        .link-href {
+            font-size: 11px;
+            color: #3b82f6;
+        }
+        .link-href a {
+            color: #3b82f6;
+            text-decoration: none;
+            word-break: break-all;
+        }
+        .link-href a:hover {
+            text-decoration: underline;
+        }
+        /* 输入框列表 */
+        .input-list {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+        .input-item {
+            padding: 10px 12px;
+            background: #f0fdf4;
+            border-radius: 6px;
+            border: 1px solid #bbf7d0;
+        }
+        .input-header {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 6px;
+        }
+        .input-type-badge {
+            display: inline-block;
+            padding: 2px 8px;
+            background: #10b981;
+            color: white;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+        .input-tag {
+            font-size: 11px;
+            color: #7c3aed;
+            font-weight: 500;
+        }
+        .input-name {
+            font-size: 12px;
+            color: #374151;
+            margin-bottom: 2px;
+        }
+        .input-name::before {
+            content: ' ';
+        }
+        .input-id {
+            font-size: 12px;
+            color: #6b7280;
+            margin-bottom: 2px;
+        }
+        .input-id::before {
+            content: '#️⃣ ';
+        }
+        .input-placeholder {
+            font-size: 12px;
+            color: #9ca3af;
+            font-style: italic;
+            margin-bottom: 2px;
+        }
+        .input-placeholder::before {
+            content: '💬 ';
+        }
+        .input-value {
+            font-size: 12px;
+            color: #1f2937;
+            font-weight: 500;
+            margin-bottom: 2px;
+            word-break: break-all;
+        }
+        .input-value::before {
+            content: '✏️ ';
+        }
+        .input-selector {
+            font-size: 11px;
+            color: #6b7280;
+            margin-top: 4px;
+        }
+        .input-selector code {
+            background: #f3f4f6;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: 'Monaco', 'Menlo', monospace;
+            color: #1d4ed8;
+        }
+        /* 按钮列表 */
+        .button-list {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+        .button-item {
+            padding: 10px 12px;
+            background: #eff6ff;
+            border-radius: 6px;
+            border: 1px solid #bfdbfe;
+        }
+        .button-header {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 6px;
+        }
+        .button-type-badge {
+            display: inline-block;
+            padding: 2px 8px;
+            background: #3b82f6;
+            color: white;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+        .button-tag {
+            font-size: 11px;
+            color: #7c3aed;
+            font-weight: 500;
+        }
+        .button-text {
+            font-size: 13px;
+            color: #1f2937;
+            font-weight: 600;
+            margin-bottom: 4px;
+            word-break: break-word;
+        }
+        .button-text::before {
+            content: '📝 ';
+        }
+        .button-name {
+            font-size: 12px;
+            color: #374151;
+            margin-bottom: 2px;
+        }
+        .button-name::before {
+            content: '📛 ';
+        }
+        .button-id {
+            font-size: 12px;
+            color: #6b7280;
+            margin-bottom: 2px;
+        }
+        .button-id::before {
+            content: '#️⃣ ';
+        }
+        .button-href {
+            font-size: 11px;
+            color: #3b82f6;
+            margin-bottom: 2px;
+            word-break: break-all;
+        }
+        .button-href::before {
+            content: '🔗 ';
+        }
+        .button-selector {
+            font-size: 11px;
+            color: #6b7280;
+            margin-top: 4px;
+        }
+        .button-selector code {
+            background: #f3f4f6;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: 'Monaco', 'Menlo', monospace;
+            color: #1d4ed8;
+        }
+        /* 表格列表 */
+        .table-list {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+        .table-item {
+            padding: 12px;
+            background: #fefce8;
+            border-radius: 6px;
+            border: 1px solid #fef08a;
+        }
+        .table-header {
+            margin-bottom: 8px;
+        }
+        .table-badge {
+            display: inline-block;
+            padding: 2px 8px;
+            background: #eab308;
+            color: white;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: 600;
+        }
+        .table-wrapper {
+            overflow-x: auto;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+        .data-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 12px;
+        }
+        .data-table th {
+            background: #fef9c3;
+            padding: 8px 10px;
+            text-align: left;
+            border: 1px solid #e5e7eb;
+            font-weight: 600;
+            color: #374151;
+            position: sticky;
+            top: 0;
+        }
+        .data-table td {
+            padding: 6px 10px;
+            border: 1px solid #e5e7eb;
+            color: #374151;
+            max-width: 200px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .data-table tr:nth-child(even) {
+            background: #fffbeb;
+        }
+        .table-selector {
+            font-size: 11px;
+            color: #6b7280;
+            margin-top: 8px;
+        }
+        .table-selector code {
+            background: #f3f4f6;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: 'Monaco', 'Menlo', monospace;
+            color: #1d4ed8;
+        }
+        /* JSON 列表 */
+        .json-list {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+        .json-item {
+            padding: 12px;
+            background: #f5f3ff;
+            border-radius: 6px;
+            border: 1px solid #c4b5fd;
+        }
+        .json-header {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 8px;
+            flex-wrap: wrap;
+        }
+        .json-badge {
+            display: inline-block;
+            padding: 2px 8px;
+            background: #8b5cf6;
+            color: white;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+        .json-source {
+            font-size: 11px;
+            color: #6b7280;
+            background: #f3f4f6;
+            padding: 2px 6px;
+            border-radius: 3px;
+        }
+        .json-length {
+            font-size: 11px;
+            color: #6b7280;
+        }
+        .json-truncated {
+            font-size: 11px;
+            color: #ef4444;
+            font-style: italic;
+        }
+        .json-content {
+            max-height: 400px;
+            overflow-y: auto;
+        }
+        .json-content pre {
+            background: #1e1b4b;
+            color: #e0e7ff;
+            padding: 12px;
+            border-radius: 6px;
+            font-size: 11px;
+            line-height: 1.5;
+            font-family: 'Monaco', 'Menlo', monospace;
+            white-space: pre-wrap;
+            word-break: break-word;
+            margin: 0;
+        }
+        .json-selector {
+            font-size: 11px;
+            color: #6b7280;
+            margin-top: 8px;
+        }
+        .json-selector code {
+            background: #f3f4f6;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: 'Monaco', 'Menlo', monospace;
+            color: #1d4ed8;
+        }
+    </style>
+
+    <!-- ✨ Markdown 渲染库（用于内容的美化显示） -->
+    <script src="https://unpkg.com/marked@12.0.0/marked.min.js"></script>
+    <script src="https://unpkg.com/dompurify@3.0.8/dist/purify.min.js"></script>
+</head>
+<body>
+    <div class="header">
+        <h1>🌳 DOM 树形结构查看器</h1>
+        <span class="url" id="pageUrl">加载中...</span>
+        <div style="display: flex; gap: 8px; align-items: center;">
+            <button id="markdownToggleBtn" onclick="toggleMarkdownView()" title="切换内容显示模式（Markdown 渲染 / 纯文本）" style="background: #6366f1; color: white; font-weight: 600; padding: 4px 12px; border: none; border-radius: 4px; cursor: pointer; font-size: 12px; white-space: nowrap;">🎨 Markdown</button>
+            <button onclick="refreshDomTree()" style="background: rgba(255,255,255,0.2); border: none; color: white; padding: 4px 12px; border-radius: 4px; cursor: pointer;"> 刷新</button>
+        </div>
+    </div>
+    
+    <div class="filter-bar">
+        <input type="text" id="filterInput" placeholder="搜索节点内容，支持标签名/class/id/文本...">
+        <button
+            onclick="applyFilter()"
+            title="基于当前可见节点过滤；仅保留匹配关键词的节点及其父节点路径，其他节点保持隐藏。"
+            onmouseover="setTip('基于当前可见节点过滤；仅保留匹配关键词的节点及其父节点路径，其他节点保持隐藏。')"
+            onmouseout="resetTip()">过滤</button>
+        <button onclick="clearFilter()">清除</button>
+        <button
+            onclick="extractKeyNodes1()"
+            title="基于当前可见节点，按每一深度分组，只保留该深度中文本最长的节点；若该深度所有节点均无文本，则全部隐藏。"
+            onmouseover="setTip('基于当前可见节点，按每一深度分组，只保留该深度中文本最长的节点；若该深度所有节点均无文本，则全部隐藏。')"
+            onmouseout="resetTip()"
+            style="background: #10b981; color: white; font-weight: 600;">读取关键节点1</button>
+        <button
+            onclick="extractKeyNodes2()"
+            title="基于当前可见节点，按相邻阶级比较；父阶与子阶内容相同则屏蔽只能生成 div 选择器的节点，否则屏蔽父阶。"
+            onmouseover="setTip('基于当前可见节点，按相邻阶级比较；父阶与子阶内容相同则屏蔽只能生成 div 选择器的节点，否则屏蔽父阶。')"
+            onmouseout="resetTip()"
+            style="background: #2563eb; color: white; font-weight: 600; margin-left: 8px;">读取关键节点2</button>
+        <span class="match-count" id="matchCount"></span>
+    </div>
+    <div class="tip-bar" style="padding: 8px 16px; color: #f3f4f6; font-size: 13px; background: rgba(255,255,255,0.08); border-top: 1px solid rgba(255,255,255,0.08);">
+        <strong>提示:</strong> <span id="tipText">“过滤”基于当前可见节点进行过滤；“读取关键节点1”基于当前可见节点按深度保留文本最长节点；“读取关键节点2”基于当前可见节点按相邻阶级对比屏蔽无效选择器节点。</span>
+    </div>
+    <div class="content">
+        <div class="tree-panel" id="treePanel">
+            <div class="empty-state">正在加载 DOM 树...</div>
+        </div>
+        <div class="detail-panel" id="detailPanel">
+            <div class="empty-state">点击左侧节点查看详情</div>
+        </div>
+    </div>
+    
+    <!-- 自定义弹窗 -->
+    <div class="modal-overlay" id="modalOverlay">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 id="modalTitle">提示</h3>
+                <button class="modal-close" onclick="closeModal()">×</button>
+            </div>
+            <div class="modal-body" id="modalBody"></div>
+        </div>
+    </div>
+
+    <script>
+        const { ipcRenderer } = require('electron');
+        let currentDomTree = null;
+        let currentFilter = '';
+        let selectedNodeData = null;
+        let nodeIdCounter = 0;
+
+        // ✨ 全局变量：控制是否启用 Markdown 渲染视图
+        let markdownViewMode = false;
+
+        console.log('[DOMTreeViewer] 脚本已加载');
+
+        // 接收数据
+        ipcRenderer.on('set-dom-tree-data', (event, data) => {
+            console.log('[DOMTreeViewer] 收到数据，数据类型:', typeof data);
+            console.log('[DOMTreeViewer] 数据 keys:', data ? Object.keys(data) : 'null');
+            
+            if (data && data.tree) {
+                console.log('[DOMTreeViewer] 数据存在，tree 类型:', typeof data.tree);
+                console.log('[DOMTreeViewer] tree 是否为 null:', data.tree === null);
+                console.log('[DOMTreeViewer] tree 是否为 undefined:', data.tree === undefined);
+                
+                if (data.tree === null || data.tree === undefined) {
+                    console.log('[DOMTreeViewer]  tree 是 null/undefined！');
+                    document.getElementById('treePanel').innerHTML = '<div class="empty-state">DOM 树数据为空</div>';
+                    return;
+                }
+                
+                currentDomTree = data.tree;
+                document.getElementById('pageUrl').textContent = data.url || '';
+                console.log('[DOMTreeViewer] 开始渲染树，tree.tag:', data.tree.tag);
+                console.log('[DOMTreeViewer] tree.children 数量:', data.tree.children ? data.tree.children.length : 0);
+                
+                try {
+                    renderTree(currentDomTree);
+                    console.log('[DOMTreeViewer] ✅ 渲染完成');
+                } catch (renderError) {
+                    console.error('[DOMTreeViewer] ❌ 渲染出错:', renderError);
+                    document.getElementById('treePanel').innerHTML = '<div class="empty-state">渲染出错: ' + renderError.message + '</div>';
+                }
+            } else {
+                console.log('[DOMTreeViewer]  数据无效:', data);
+                document.getElementById('treePanel').innerHTML = '<div class="empty-state">数据无效</div>';
+            }
+        });
+
+        // 刷新 DOM 树
+        async function refreshDomTree() {
+            console.log('[DOMTreeViewer] 请求刷新 DOM 树');
+            const result = await ipcRenderer.invoke('refresh-dom-tree');
+            if (result && result.success) {
+                console.log('[DOMTreeViewer] 刷新成功');
+            } else {
+                console.error('[DOMTreeViewer] 刷新失败:', result?.error);
+            }
+        }
+
+        // 渲染树
+        function renderTree(tree) {
+            nodeIdCounter = 0;
+            const panel = document.getElementById('treePanel');
+            if (!tree) {
+                panel.innerHTML = '<div class="empty-state">没有 DOM 数据</div>';
+                return;
+            }
+            
+            let html = '<div class="tree-node" data-node-id="0">';
+            html += renderNode(tree, 0);
+            html += '</div>';
+            panel.innerHTML = html;
+            
+            // 渲染完成后添加事件监听
+            setupEventListeners();
+        }
+
+        // 设置事件监听器
+        function setupEventListeners() {
+            console.log('[DOMTreeViewer] 设置事件监听器...');
+            
+            // 为所有节点头部添加点击事件
+            const headers = document.querySelectorAll('.node-header');
+            console.log('[DOMTreeViewer] 找到', headers.length, '个节点头部');
+            
+            headers.forEach(header => {
+                header.addEventListener('click', (e) => {
+                    const nodeId = parseInt(header.dataset.nodeId);
+                    console.log('[DOMTreeViewer] 点击节点头部, nodeId:', nodeId);
+                    selectNode(nodeId, e);
+                });
+            });
+            
+            // 为所有切换图标添加点击事件
+            const icons = document.querySelectorAll('.toggle-icon[data-toggle-id]');
+            console.log('[DOMTreeViewer] 找到', icons.length, '个切换图标');
+            
+            icons.forEach(icon => {
+                icon.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    const nodeId = parseInt(icon.dataset.toggleId);
+                    console.log('[DOMTreeViewer] 点击切换图标, nodeId:', nodeId);
+                    toggleNode(e, nodeId);
+                });
+            });
+        }
+
+        // 渲染单个节点
+        function renderNode(node, depth) {
+            if (!node) return '';
+            
+            const nodeId = nodeIdCounter++;
+            const tag = node.tag || 'unknown';
+            const hasChildren = node.children && node.children.length > 0;
+            const isExpanded = depth < 6; // 默认展开前 6 层
+            
+            let attrs = '';
+            if (node.id) {
+                attrs += ' id="' + node.id + '"';
+            }
+            if (node.className) {
+                const classes = typeof node.className === 'string' ? node.className.split(/\s+/).filter(c => c).slice(0, 3) : [];
+                if (classes.length > 0) {
+                    const classStr = classes.join(' ') + (node.className.split(/\s+/).length > 3 ? '...' : '');
+                    attrs += ' class="' + classStr + '"';
+                }
+            }
+            
+            let textPreview = '';
+            if (node.innerText && node.innerText.trim()) {
+                const txt = node.innerText.trim().substring(0, 200);
+                textPreview = ' "' + txt + (txt.length < node.innerText.trim().length ? '...' : '') + '"';
+            }
+            
+            let html = '';
+            
+            // 节点头部 - 使用 data 属性而非 inline onclick
+            html += '<div class="node-header" data-node-id="' + nodeId + '">';
+            
+            if (hasChildren) {
+                html += '<span class="toggle-icon" data-toggle-id="' + nodeId + '">' + (isExpanded ? '▼' : '▶') + '</span>';
+            } else {
+                html += '<span class="toggle-icon"></span>';
+            }
+            
+            html += '<span class="tag-name">&lt;' + tag + '&gt;</span>';
+            html += '<span class="node-attrs">' + buildHeaderContent(node) + '</span>';
+            html += '</div>';
+            
+            // 子节点
+            if (hasChildren) {
+                html += '<div class="node-children ' + (isExpanded ? 'expanded' : '') + '" data-children-of="' + nodeId + '">';
+                for (const child of node.children) {
+                    html += renderNode(child, depth + 1);
+                }
+                html += '</div>';
+            }
+            
+            return html;
+        }
+
+        // 切换节点展开/折叠
+        function toggleNode(event, nodeId) {
+            event.stopPropagation();
+            const childrenDiv = document.querySelector(`[data-children-of="${nodeId}"]`);
+            const toggleIcon = event.target;
+            
+            if (childrenDiv) {
+                const isExpanded = childrenDiv.classList.contains('expanded');
+                childrenDiv.classList.toggle('expanded');
+                toggleIcon.textContent = isExpanded ? '▶' : '▼';
+            }
+        }
+
+        // 选择节点
+        function selectNode(nodeId, event) {
+            event.stopPropagation();
+            
+            // 移除之前的选中状态
+            document.querySelectorAll('.node-header.selected').forEach(el => el.classList.remove('selected'));
+            
+            // 添加新的选中状态
+            const header = document.querySelector(`[data-node-id="${nodeId}"]`);
+            if (header) {
+                header.classList.add('selected');
+            }
+            
+            // 查找节点数据
+            const nodeData = findNodeById(currentDomTree, nodeId);
+            if (nodeData) {
+                selectedNodeData = nodeData;
+                renderDetail(nodeData);
+            }
+        }
+
+        // 根据 ID 查找节点
+        function findNodeById(tree, targetId) {
+            if (!tree) return null;
+            
+            nodeIdCounter = 0;
+            return searchNode(tree, targetId);
+        }
+
+        function searchNode(node, targetId) {
+            const nodeId = nodeIdCounter++;
+            if (nodeId === targetId) return node;
+            
+            if (node.children) {
+                for (const child of node.children) {
+                    const found = searchNode(child, targetId);
+                    if (found) return found;
+                }
+            }
+            
+            return null;
+        }
+
+        // 渲染详情面板
+        function renderDetail(node) {
+            const panel = document.getElementById('detailPanel');
+            const tag = node.tag || 'unknown';
+            
+            let html = '<div class="detail-content">';
+            html += '<h3>元素信息</h3>';
+            html += `<div style="font-size: 13px; margin-bottom: 8px;">`;
+            html += `<strong>标签:</strong> &lt;${highlightText(tag, currentFilter)}&gt;<br>`;
+            if (node.id) html += `<strong>ID:</strong> ${highlightText(node.id, currentFilter)}<br>`;
+            if (node.className) html += `<strong>Class:</strong> ${highlightText(node.className, currentFilter)}<br>`;
+            html += '</div>';
+            
+            html += '</div>';
+            
+            // 内容预览
+            if (node.innerText && node.innerText.trim()) {
+                html += '<div class="detail-content">';
+                html += '<h3>文本内容</h3>';
+
+                if (markdownViewMode) {
+                    // 🎨 Markdown 渲染模式
+                    const contentHtml = renderMarkdown(node.innerText.trim());
+                    html += `<div class="content-preview" style="white-space: normal;">${contentHtml}</div>`;
+                } else {
+                    // 📄 纯文本模式
+                    html += `<div class="content-preview">${highlightText(node.innerText.trim(), currentFilter)}</div>`;
+                }
+
+                html += '</div>';
+            }
+            
+            // 图片显示
+            if (node.images && node.images.length > 0) {
+                html += '<div class="detail-content">';
+                html += '<h3>图片 (' + node.images.length + ' 张)</h3>';
+                html += '<div class="image-list">';
+                node.images.forEach((img, idx) => {
+                    html += '<div class="image-item">';
+                    html += '<div class="image-thumb">';
+                    html += '<img src="' + escapeHtml(img.src) + '" alt="' + escapeHtml(img.alt) + '" style="max-width: 150px; max-height: 100px; object-fit: contain; border: 1px solid #e5e7eb; border-radius: 4px;" onerror="this.src=\'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%22150%22 height=%22100%22%3E%3Crect width=%22150%22 height=%22100%22 fill=%22%23f0f0f0%22/%3E%3Ctext x=%2275%22 y=%2250%22 text-anchor=%22middle%22 fill=%22%23999%22 font-size=%2212%22%3E图片加载失败%3C/text%3E%3C/svg%3E\'">';
+                    html += '</div>';
+                    if (img.alt) {
+                        html += '<div class="image-alt" title="' + escapeHtml(img.alt) + '">' + escapeHtml(img.alt) + '</div>';
+                    }
+                    html += '<div class="image-src" title="' + escapeHtml(img.src) + '">';
+                    html += '<a href="#" onclick="openExternalLink(\'' + escapeForAttr(img.src) + '\'); return false;">' + escapeHtml(img.src.substring(0, 60)) + '...</a>';
+                    html += '</div>';
+                    html += '</div>';
+                });
+                html += '</div>';
+                html += '</div>';
+            }
+            
+            // 超链接显示
+            if (node.links && node.links.length > 0) {
+                html += '<div class="detail-content">';
+                html += '<h3>超链接 (' + node.links.length + ' 个)</h3>';
+                html += '<div class="link-list">';
+                node.links.forEach((link, idx) => {
+                    html += '<div class="link-item">';
+                    html += '<div class="link-text">' + escapeHtml(link.text || '无文本') + '</div>';
+                    html += '<div class="link-href" title="' + escapeHtml(link.href) + '">';
+                    html += '<a href="#" onclick="openExternalLink(\'' + escapeForAttr(link.href) + '\'); return false;">' + escapeHtml(link.href) + '</a>';
+                    html += '</div>';
+                    html += '</div>';
+                });
+                html += '</div>';
+                html += '</div>';
+            }
+            
+            // 输入框显示
+            if (node.inputs && node.inputs.length > 0) {
+                html += '<div class="detail-content">';
+                html += '<h3>输入框 (' + node.inputs.length + ' 个)</h3>';
+                html += '<div class="input-list">';
+                node.inputs.forEach((inp, idx) => {
+                    html += '<div class="input-item">';
+                    html += '<div class="input-header">';
+                    html += '<span class="input-type-badge">' + escapeHtml(inp.type) + '</span>';
+                    html += '<span class="input-tag">&lt;' + escapeHtml(inp.tag) + '&gt;</span>';
+                    html += '</div>';
+                    if (inp.name) html += '<div class="input-name">name: ' + escapeHtml(inp.name) + '</div>';
+                    if (inp.id) html += '<div class="input-id">id: ' + escapeHtml(inp.id) + '</div>';
+                    if (inp.placeholder) html += '<div class="input-placeholder">placeholder: ' + escapeHtml(inp.placeholder) + '</div>';
+                    if (inp.value) html += '<div class="input-value">value: ' + escapeHtml(inp.value) + '</div>';
+                    if (inp.selector) html += '<div class="input-selector">selector: <code>' + escapeHtml(inp.selector) + '</code></div>';
+                    html += '</div>';
+                });
+                html += '</div>';
+                html += '</div>';
+            }
+            
+            // 按钮显示
+            if (node.buttons && node.buttons.length > 0) {
+                html += '<div class="detail-content">';
+                html += '<h3>按钮 (' + node.buttons.length + ' 个)</h3>';
+                html += '<div class="button-list">';
+                node.buttons.forEach((btn, idx) => {
+                    html += '<div class="button-item">';
+                    html += '<div class="button-header">';
+                    html += '<span class="button-type-badge">' + escapeHtml(btn.type) + '</span>';
+                    html += '<span class="button-tag">&lt;' + escapeHtml(btn.tag) + '&gt;</span>';
+                    html += '</div>';
+                    if (btn.text) html += '<div class="button-text">' + escapeHtml(btn.text) + '</div>';
+                    if (btn.name) html += '<div class="button-name">name: ' + escapeHtml(btn.name) + '</div>';
+                    if (btn.id) html += '<div class="button-id">id: ' + escapeHtml(btn.id) + '</div>';
+                    if (btn.href) html += '<div class="button-href">href: ' + escapeHtml(btn.href) + '</div>';
+                    if (btn.selector) html += '<div class="button-selector">selector: <code>' + escapeHtml(btn.selector) + '</code></div>';
+                    html += '</div>';
+                });
+                html += '</div>';
+                html += '</div>';
+            }
+            
+            // 表格显示
+            if (node.tables && node.tables.length > 0) {
+                html += '<div class="detail-content">';
+                html += '<h3>表格 (' + node.tables.length + ' 个)</h3>';
+                html += '<div class="table-list">';
+                node.tables.forEach((tbl, idx) => {
+                    html += '<div class="table-item">';
+                    html += '<div class="table-header">';
+                    html += '<span class="table-badge">' + tbl.rows + ' 行 × ' + tbl.cols + ' 列</span>';
+                    html += '</div>';
+                    html += '<div class="table-wrapper">';
+                    html += '<table class="data-table">';
+                    tbl.data.forEach((row, rIdx) => {
+                        html += '<tr>';
+                        row.forEach((cell, cIdx) => {
+                            if (rIdx === 0) {
+                                html += '<th>' + escapeHtml(cell) + '</th>';
+                            } else {
+                                html += '<td>' + escapeHtml(cell) + '</td>';
+                            }
+                        });
+                        html += '</tr>';
+                    });
+                    html += '</table>';
+                    html += '</div>';
+                    if (tbl.selector) {
+                        html += '<div class="table-selector">selector: <code>' + escapeHtml(tbl.selector) + '</code></div>';
+                    }
+                    html += '</div>';
+                });
+                html += '</div>';
+                html += '</div>';
+            }
+            
+            // JSON 数据显示
+            if (node.jsons && node.jsons.length > 0) {
+                html += '<div class="detail-content">';
+                html += '<h3>JSON 数据 (' + node.jsons.length + ' 个)</h3>';
+                html += '<div class="json-list">';
+                node.jsons.forEach((json, idx) => {
+                    html += '<div class="json-item">';
+                    html += '<div class="json-header">';
+                    html += '<span class="json-badge">' + json.type + '</span>';
+                    if (json.source) {
+                        html += '<span class="json-source">来源: ' + escapeHtml(json.source) + '</span>';
+                    }
+                    if (json.length) {
+                        html += '<span class="json-length">' + json.length + ' 字符</span>';
+                    }
+                    if (json.isTruncated) {
+                        html += '<span class="json-truncated">（已截断）</span>';
+                    }
+                    html += '</div>';
+                    html += '<div class="json-content">';
+                    try {
+                        var formattedJson = JSON.stringify(JSON.parse(json.full), null, 2);
+                        html += '<pre>' + escapeHtml(formattedJson) + '</pre>';
+                    } catch (e) {
+                        html += '<pre>' + escapeHtml(json.full) + '</pre>';
+                    }
+                    html += '</div>';
+                    if (json.selector) {
+                        html += '<div class="json-selector">selector: <code>' + escapeHtml(json.selector) + '</code></div>';
+                    }
+                    html += '</div>';
+                });
+                html += '</div>';
+                html += '</div>';
+            }
+            
+            // 选择器
+            html += '<div class="detail-content">';
+            html += '<h3>生成的选择器</h3>';
+            html += '<div class="selector-list">';
+            
+            const selectors = generateSelectors(node);
+            selectors.forEach((sel, idx) => {
+                html += '<div class="selector-item" data-selector="' + escapeForAttr(sel) + '">';
+                html += '<code>' + escapeHtml(sel) + '</code>';
+                html += '<div>';
+                html += '<button class="btn btn-primary" data-action="test">测试</button>';
+                html += '<button class="btn btn-secondary" data-action="copy">复制</button>';
+                html += '</div>';
+                html += '</div>';
+            });
+            
+            html += '</div>';
+            html += '</div>';
+            
+            panel.innerHTML = html;
+            
+            // 为选择器按钮添加事件监听
+            const testButtons = panel.querySelectorAll('.btn[data-action="test"]');
+            console.log('[DOMTreeViewer] 找到', testButtons.length, '个测试按钮');
+            
+            testButtons.forEach(btn => {
+                btn.addEventListener('click', () => {
+                    console.log('[DOMTreeViewer] ️ 测试按钮被点击');
+                    const selectorItem = btn.closest('.selector-item');
+                    const selector = selectorItem.dataset.selector;
+                    console.log('[DOMTreeViewer] 测试选择器:', selector);
+                    testSelectorInViewer(selector);
+                });
+            });
+            
+            const copyButtons = panel.querySelectorAll('.btn[data-action="copy"]');
+            console.log('[DOMTreeViewer] 找到', copyButtons.length, '个复制按钮');
+            
+            copyButtons.forEach(btn => {
+                btn.addEventListener('click', () => {
+                    console.log('[DOMTreeViewer]  复制按钮被点击');
+                    const selectorItem = btn.closest('.selector-item');
+                    const selector = selectorItem.dataset.selector;
+                    console.log('[DOMTreeViewer] 复制选择器:', selector);
+                    copyToClipboard(selector);
+                });
+            });
+        }
+
+        // 生成选择器
+        function generateSelectors(node) {
+            const selectors = [];
+            if (!node) return selectors;
+            
+            const tag = node.tag || 'unknown';
+            
+            // 1. 如果有 ID，使用 ID 选择器
+            if (node.id) {
+                selectors.push(`#${node.id}`);
+            }
+            
+            // 2. 如果有 data-* 属性，使用 data 选择器
+            if (node.dataset) {
+                for (const key in node.dataset) {
+                    const value = node.dataset[key];
+                    if (value) {
+                        selectors.push(`${tag}[data-${key}="${value}"]`);
+                    }
+                }
+            }
+            
+            // 3. 如果有 class，使用 class 选择器
+            if (node.className) {
+                const classes = node.className.trim().split(/\s+/).filter(c => c);
+                if (classes.length > 0) {
+                    selectors.push(`${tag}.${classes.slice(0, 2).join('.')}`);
+                }
+            }
+            
+            // 4. 标签选择器（最简单）
+            selectors.push(tag);
+            
+            return selectors.slice(0, 5); // 最多返回 5 个
+        }
+
+        // 测试选择器
+        async function testSelectorInViewer(selector) {
+            console.log('[DOMTreeViewer] 测试选择器:', selector);
+            
+            // 显示加载状态
+            showModal('测试中', '正在测试选择器...');
+            
+            try {
+                const result = await ipcRenderer.invoke('test-selector', {
+                    selector: selector
+                });
+                
+                if (result && result.success) {
+                    console.log('[DOMTreeViewer] 测试成功，内容长度:', (result.content || '').length);
+                    showModal('✅ 测试成功', result.content || '获取成功');
+                } else {
+                    showModal('❌ 测试失败', result?.error || '未知错误');
+                }
+            } catch (e) {
+                console.error('[DOMTreeViewer] 测试出错:', e);
+                showModal(' 测试出错', e.message || String(e));
+            }
+        }
+
+        // 复制到剪贴板
+        async function copyToClipboard(text) {
+            try {
+                await navigator.clipboard.writeText(text);
+                showModal('✅ 复制成功', '选择器已复制到剪贴板：\n' + text);
+            } catch (e) {
+                showModal(' 复制失败', e.message);
+            }
+        }
+
+        // 显示自定义弹窗
+        function showModal(title, content) {
+            const overlay = document.getElementById('modalOverlay');
+            const modalTitle = document.getElementById('modalTitle');
+            const modalBody = document.getElementById('modalBody');
+            
+            modalTitle.textContent = title;
+            modalBody.textContent = content;
+            overlay.classList.add('show');
+        }
+
+        // 关闭弹窗
+        function closeModal() {
+            const overlay = document.getElementById('modalOverlay');
+            overlay.classList.remove('show');
+        }
+
+        // 点击遮罩层关闭弹窗
+        document.addEventListener('DOMContentLoaded', () => {
+            const overlay = document.getElementById('modalOverlay');
+            if (overlay) {
+                overlay.addEventListener('click', (e) => {
+                    if (e.target === overlay) {
+                        closeModal();
+                    }
+                });
+            }
+        });
+
+        // 打开外部链接
+        async function openExternalLink(url) {
+            console.log('[DOMTreeViewer] 打开链接:', url);
+            try {
+                await ipcRenderer.invoke('openExternalBrowser', url);
+            } catch (e) {
+                console.error('[DOMTreeViewer] 打开链接失败:', e);
+                showModal(' 打开链接失败', e.message);
+            }
+        }
+
+        // 过滤节点（增强版：搜索所有节点内容，并展开匹配节点的路径）
+        function applyFilter() {
+            const filterText = document.getElementById('filterInput').value.trim();
+            currentFilter = filterText.toLowerCase();
+            
+            if (!currentFilter) {
+                clearFilter();
+                return;
+            }
+            
+            console.log('[DOMTreeViewer] 开始过滤，关键词:', currentFilter);
+            
+            // 获取所有节点头部
+            const allNodes = document.querySelectorAll('.node-header');
+            let matchCount = 0;
+            
+            // 收集所有匹配的节点 ID
+            const matchedNodeIds = new Set();
+            
+            allNodes.forEach(node => {
+                const nodeId = node.dataset.nodeId;
+                const text = node.textContent.toLowerCase();
+                
+                // 检查是否匹配
+                if (text.includes(currentFilter)) {
+                    matchedNodeIds.add(parseInt(nodeId));
+                    matchCount++;
+                }
+            });
+            
+            console.log('[DOMTreeViewer] 找到', matchCount, '个匹配节点');
+            
+            // 对于每个节点，检查它是否有匹配的后代节点，同时只对当前可见节点生效
+            let visibleMatchCount = 0;
+            allNodes.forEach(node => {
+                if (node.style.display === 'none') {
+                    return;
+                }
+
+                const nodeId = parseInt(node.dataset.nodeId);
+                const text = node.textContent.toLowerCase();
+                const isMatched = matchedNodeIds.has(nodeId);
+                
+                // 检查是否有匹配的后代
+                let hasMatchedDescendant = false;
+                const childrenContainer = document.querySelector(`[data-children-of="${nodeId}"]`);
+                if (childrenContainer) {
+                    const descendantHeaders = childrenContainer.querySelectorAll('.node-header');
+                    descendantHeaders.forEach(descendant => {
+                        const descId = parseInt(descendant.dataset.nodeId);
+                        if (matchedNodeIds.has(descId)) {
+                            hasMatchedDescendant = true;
+                        }
+                    });
+                }
+                
+                // 如果节点本身匹配，或者有匹配的后代，则保留显示，否则隐藏
+                if (isMatched || hasMatchedDescendant) {
+                    node.style.display = '';
+                    visibleMatchCount++;
+                    
+                    // 如果是匹配节点的后代路径，自动展开
+                    if (hasMatchedDescendant) {
+                        const childrenContainer = document.querySelector(`[data-children-of="${nodeId}"]`);
+                        if (childrenContainer && !childrenContainer.classList.contains('expanded')) {
+                            childrenContainer.classList.add('expanded');
+                            // 更新展开/折叠图标
+                            const toggleIcon = node.querySelector('.toggle-icon');
+                            if (toggleIcon) {
+                                toggleIcon.textContent = '▼';
+                            }
+                        }
+                    }
+                } else {
+                    node.style.display = 'none';
+                }
+            });
+            
+            document.getElementById('matchCount').textContent = `匹配 ${visibleMatchCount} 个节点`;
+        }
+
+        function clearFilter() {
+            document.getElementById('filterInput').value = '';
+            currentFilter = '';
+            document.querySelectorAll('.node-header').forEach(node => {
+                node.style.display = '';
+            });
+            document.getElementById('matchCount').textContent = '';
+        }
+
+        function isRenderedVisible(element) {
+            return element && element.style.display !== 'none' && element.offsetParent !== null;
+        }
+
+        // 将某个节点所在的所有祖先展开，确保该节点在左侧树中可见
+        function expandAncestorsOfHeader(header) {
+            if (!header) return;
+            // 从 header 向上查找包含它的 .node-children 容器，逐级展开
+            let el = header.parentElement;
+            while (el) {
+                const parentChildren = el.closest('.node-children');
+                if (!parentChildren) break;
+                if (!parentChildren.classList.contains('expanded')) {
+                    parentChildren.classList.add('expanded');
+                    const parentId = parentChildren.dataset.childrenOf;
+                    if (parentId) {
+                        const parentHeader = document.querySelector(`.node-header[data-node-id="${parentId}"]`);
+                        if (parentHeader) {
+                            const toggleIcon = parentHeader.querySelector('.toggle-icon');
+                            if (toggleIcon) toggleIcon.textContent = '▼';
+                        }
+                    }
+                }
+                // 上移一层继续处理
+                el = parentChildren.parentElement;
+            }
+        }
+
+        // 读取关键节点1：同一阶只保留内容最多的节点
+        function extractKeyNodes1() {
+            console.log('[DOMTreeViewer] ===== 开始读取关键节点1 =====');
+
+            if (!currentDomTree) {
+                showModal('提示', '请先加载 DOM 树数据');
+                return;
+            }
+
+            const allNodes = [];
+            const nodeDepthMap = new Map();
+            let maxDepth = 0;
+
+            function collectNodes(node, depth) {
+                if (!node) return;
+                allNodes.push(node);
+                nodeDepthMap.set(node, depth);
+                maxDepth = Math.max(maxDepth, depth);
+                if (node.children) {
+                    node.children.forEach(child => collectNodes(child, depth + 1));
+                }
+            }
+
+            collectNodes(currentDomTree, 0);
+
+            const visibleNodes = Array.from(document.querySelectorAll('.node-header'))
+                .filter(header => header.style.display !== 'none')
+                .map(header => findNodeById(currentDomTree, parseInt(header.dataset.nodeId)))
+                .filter(Boolean);
+
+            const hiddenNodes = new Set();
+
+            for (let depth = 0; depth <= maxDepth; depth++) {
+                const nodesAtDepth = visibleNodes.filter(node => nodeDepthMap.get(node) === depth);
+                if (nodesAtDepth.length === 0) continue;
+
+                // 如果该阶所有节点都没有文本，则屏蔽该阶所有节点
+                const allEmpty = nodesAtDepth.every(node => ((node.innerText || '').trim().length === 0));
+                if (allEmpty) {
+                    nodesAtDepth.forEach(node => hiddenNodes.add(node));
+                    continue;
+                }
+
+                if (nodesAtDepth.length <= 1) continue;
+
+                const sortedNodes = [...nodesAtDepth].sort((a, b) => {
+                    const lenA = (a.innerText || '').trim().length;
+                    const lenB = (b.innerText || '').trim().length;
+                    return lenB - lenA;
+                });
+
+                sortedNodes.slice(1).forEach(item => {
+                    hiddenNodes.add(item);
+                });
+            }
+
+            const allHeaders = document.querySelectorAll('.node-header');
+            let visibleCount = 0;
+            let hiddenCount = 0;
+
+            allHeaders.forEach(header => {
+                const nodeId = parseInt(header.dataset.nodeId);
+                const nodeData = findNodeById(currentDomTree, nodeId);
+                if (!nodeData) return;
+
+                if (nodeData && hiddenNodes.has(nodeData) && header.style.display !== 'none') {
+                    header.style.display = 'none';
+                    hiddenCount++;
+                } else if (header.style.display !== 'none') {
+                    // 已可见节点未被本次过滤命中，保持可见，展开其祖先
+                    expandAncestorsOfHeader(header);
+                    if (isRenderedVisible(header)) {
+                        visibleCount++;
+                    }
+                }
+            });
+
+            document.getElementById('matchCount').textContent = `显示 ${visibleCount} 个关键节点`;
+            showModal('读取关键节点1 完成', '逻辑：按同一阶保留内容最长节点，其他节点全部屏蔽。\n\n' +
+                `已从 ${allNodes.length} 个节点中提取出 ${visibleCount} 个关键节点\n（屏蔽 ${hiddenCount} 个非关键节点）`);
+        }
+
+        // 设置提示文字（用于按钮悬停显示更详细的逻辑说明）
+        function setTip(text) {
+            const el = document.getElementById('tipText');
+            if (el) el.textContent = text;
+        }
+
+        // 重置提示为默认说明
+        function resetTip() {
+            const el = document.getElementById('tipText');
+            if (el) el.textContent = '“过滤”基于当前可见节点进行过滤；“读取关键节点1”基于当前可见节点按深度保留文本最长节点；“读取关键节点2”基于当前可见节点按相邻阶级对比屏蔽无效选择器节点。';
+        }
+
+        function isOnlyDivSelector(node) {
+            const selectors = generateSelectors(node || {});
+            return selectors.length === 1 && selectors[0] === 'div';
+        }
+
+        // 读取关键节点2：按相邻阶父子比对，父阶与子阶内容相同则屏蔽父阶
+        function extractKeyNodes2() {
+            console.log('[DOMTreeViewer] ===== 开始读取关键节点2 =====');
+
+            if (!currentDomTree) {
+                showModal('提示', '请先加载 DOM 树数据');
+                return;
+            }
+
+            const allNodes = [];
+            const nodeDepthMap = new Map();
+            let maxDepth = 0;
+
+            function collectNodes(node, depth) {
+                if (!node) return;
+                allNodes.push(node);
+                nodeDepthMap.set(node, depth);
+                maxDepth = Math.max(maxDepth, depth);
+                if (node.children) {
+                    node.children.forEach(child => collectNodes(child, depth + 1));
+                }
+            }
+
+            collectNodes(currentDomTree, 0);
+
+            const allHeaders = Array.from(document.querySelectorAll('.node-header'));
+            const hiddenNodes = new Set();
+            const visibleNodes = [];
+
+            allHeaders.forEach(header => {
+                const nodeId = parseInt(header.dataset.nodeId);
+                const nodeData = findNodeById(currentDomTree, nodeId);
+                if (!nodeData) return;
+                if (header.style.display === 'none') {
+                    hiddenNodes.add(nodeData);
+                } else {
+                    visibleNodes.push(nodeData);
+                }
+            });
+
+            const nodesByDepth = new Map();
+            visibleNodes.forEach(node => {
+                const depth = nodeDepthMap.get(node);
+                if (depth === undefined) return;
+                if (!nodesByDepth.has(depth)) nodesByDepth.set(depth, []);
+                nodesByDepth.get(depth).push(node);
+            });
+
+            for (let depth = 0; depth < maxDepth; depth++) {
+                const currentLevel = nodesByDepth.get(depth) || [];
+                const nextLevel = nodesByDepth.get(depth + 1) || [];
+                if (currentLevel.length === 0 || nextLevel.length === 0) continue;
+
+                currentLevel.forEach(parent => {
+                    const parentText = (parent.innerText || '').trim();
+                    if (!parentText) return;
+
+                    nextLevel.forEach(child => {
+                        const childText = (child.innerText || '').trim();
+                        if (childText !== parentText) return;
+
+                        const parentOnlyDiv = isOnlyDivSelector(parent);
+                        const childOnlyDiv = isOnlyDivSelector(child);
+
+                        if (parentOnlyDiv) {
+                            hiddenNodes.add(parent);
+                        }
+                        if (childOnlyDiv) {
+                            hiddenNodes.add(child);
+                        }
+                        if (!parentOnlyDiv && !childOnlyDiv) {
+                            hiddenNodes.add(parent);
+                        }
+                    });
+                });
+            }
+
+            let visibleCount = 0;
+            let hiddenCount = 0;
+
+            allHeaders.forEach(header => {
+                const nodeId = parseInt(header.dataset.nodeId);
+                const nodeData = findNodeById(currentDomTree, nodeId);
+                if (!nodeData) return;
+
+                if (hiddenNodes.has(nodeData) && header.style.display !== 'none') {
+                    header.style.display = 'none';
+                    hiddenCount++;
+                } else if (header.style.display !== 'none') {
+                    // 已可见节点未被本次过滤命中，保持可见，展开其祖先
+                    expandAncestorsOfHeader(header);
+                    if (isRenderedVisible(header)) {
+                        visibleCount++;
+                    }
+                }
+            });
+
+            document.getElementById('matchCount').textContent = `显示 ${visibleCount} 个关键节点`;
+            showModal('读取关键节点2 完成', '逻辑：基于当前显示状态，按相邻阶比较；父阶与子阶内容相同，如果某节点只能生成 div 选择器，则屏蔽该节点，否则屏蔽父阶。\n\n' +
+                `已从当前可见节点中提取出 ${visibleCount} 个关键节点\n（总屏蔽 ${hiddenCount} 个节点，包含之前已隐藏节点）`);
+        }
+
+        // 工具函数
+        function escapeHtml(text) {
+            if (!text) return '';
+            return text
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;');
+        }
+
+        function escapeForAttr(text) {
+            if (!text) return '';
+            return text
+                .replace(/\\/g, '\\\\')
+                .replace(/'/g, "\\'")
+                .replace(/\n/g, '\\n')
+                .replace(/\r/g, '\\r');
+        }
+
+        function escapeRegExp(text) {
+            return text.replace(/[.*+?^${}()|[\\]\\]/g, '\\$&');
+        }
+
+        function highlightText(text, term) {
+            if (!term) return escapeHtml(text);
+            const escapedText = escapeHtml(text);
+            const escapedTerm = escapeRegExp(term);
+            const regex = new RegExp(`(${escapedTerm})`, 'gi');
+            return escapedText.replace(regex, '<mark class="highlight">$1</mark>');
+        }
+
+        function buildHeaderContent(node) {
+            let attrs = '';
+            if (node.id) {
+                attrs += ' id="' + node.id + '"';
+            }
+            if (node.className) {
+                const classes = typeof node.className === 'string' ? node.className.split(/\s+/).filter(c => c).slice(0, 3) : [];
+                if (classes.length > 0) {
+                    const classStr = classes.join(' ') + (node.className.split(/\s+/).length > 3 ? '...' : '');
+                    attrs += ' class="' + classStr + '"';
+                }
+            }
+            let textPreview = '';
+            if (node.innerText && node.innerText.trim()) {
+                const txt = node.innerText.trim().substring(0, 200);
+                textPreview = ' "' + txt + (txt.length < node.innerText.trim().length ? '...' : '') + '"';
+            }
+            const content = attrs + textPreview;
+            return currentFilter ? highlightText(content, currentFilter) : escapeHtml(content);
+        }
+
+        function updateHeaderHighlights() {
+            document.querySelectorAll('.node-header').forEach(header => {
+                const nodeId = parseInt(header.dataset.nodeId);
+                const nodeData = findNodeById(currentDomTree, nodeId);
+                if (!nodeData) return;
+                const nodeAttrs = header.querySelector('.node-attrs');
+                if (nodeAttrs) {
+                    nodeAttrs.innerHTML = buildHeaderContent(nodeData);
+                }
+            });
+        }
+
+        // ✨ ========== Markdown 渲染功能（与 ai-response-viewer.html 一致）==========
+
+        /**
+         * 🔥 内联样式注入函数（核心功能）- 自然风格版
+         */
+        function injectInlineStyles(html) {
+            const styles = {
+                'h1': 'font-size: 26px !important; font-weight: 800 !important; color: #1e40af !important; margin: 24px 0 16px 0 !important; padding-bottom: 8px !important; border-bottom: 3px solid #2563eb !important;',
+                'h2': 'font-size: 22px !important; font-weight: 700 !important; color: #1e3a8a !important; margin: 20px 0 12px 0 !important; padding-bottom: 6px !important; border-bottom: 2px solid #60a5fa !important;',
+                'h3': 'font-size: 18px !important; font-weight: 700 !important; color: #2563eb !important; margin: 16px 0 10px 0 !important;',
+                'h4': 'font-size: 16px !important; font-weight: 600 !important; color: #3b82f6 !important; margin: 14px 0 8px 0 !important;',
+                'strong': 'background: linear-gradient(120deg, #fef3c7 0%, #fde68a 100%) !important; color: #7c2d12 !important; padding: 2px 6px !important; border-radius: 4px !important; font-weight: 700 !important;',
+                'code': 'background: #fee2e2 !important; color: #dc2626 !important; padding: 2px 6px !important; border-radius: 4px !important; border: 1px solid #fca5a5 !important; font-family: "SFMono-Regular", Consolas, monospace !important; font-size: 13px !important; font-weight: 500 !important;',
+                'pre': 'background: #f8f9fa !important; color: #24292e !important; padding: 16px !important; border-radius: 6px !important; border: 1px solid #e1e4e8 !important; overflow-x: auto !important; margin: 16px 0 !important; font-family: "SFMono-Regular", Consolas, monospace !important; font-size: 13px !important; line-height: 1.6 !important; white-space: pre !important;',
+                'ul': 'padding-left: 28px !important; margin: 12px 0 !important;',
+                'ol': 'padding-left: 28px !important; margin: 12px 0 !important;',
+                'li': 'margin: 6px 0 !important; line-height: 1.7 !important; font-size: 14px !important; color: #1f2937 !important;',
+                'blockquote': 'border-left: 4px solid #3b82f6 !important; padding: 10px 16px !important; margin: 16px 0 !important; background: #f8fafc !important; color: #4b5563 !important; font-style: italic !important; border-radius: 0 6px 6px 0 !important;',
+                'p': 'margin: 10px 0 !important; line-height: 1.7 !important; font-size: 14px !important;',
+
+                // ✨ 表格样式 - 美观的表格渲染
+                'table': 'width: 100% !important; border-collapse: collapse !important; margin: 16px 0 !important; background: white !important; border-radius: 8px !important; overflow: hidden !important; box-shadow: 0 1px 3px rgba(0,0,0,0.1) !important; border: 1px solid #e5e7eb !important; table-layout: fixed !important;',
+                'thead': 'background: #f1f5f9 !important; color: #1e293b !important;',
+                'tbody': 'background: white !important;',
+                'tr': 'border-bottom: 1px solid #e5e7eb !important; transition: background 0.2s !important;',
+                'th': 'padding: 8px 10px !important; text-align: center !important; font-weight: 600 !important; font-size: 12px !important; letter-spacing: 0.3px !important; border-right: 1px solid rgba(255,255,255,0.2) !important; word-break: break-all !important;',
+                'td': 'padding: 8px 10px !important; font-size: 12px !important; color: #1e293b !important; border-right: 1px solid #f3f4f6 !important; text-align: center !important; vertical-align: middle !important; word-break: break-all !important;'
+            };
+
+            let result = html;
+            Object.keys(styles).forEach(tag => {
+                const style = styles[tag];
+                const regex = new RegExp(`<${tag}(\\s[^>]*)?>`, 'gi');
+
+                result = result.replace(regex, (match, attrs) => {
+                    if (attrs && attrs.indexOf('style=') > -1) {
+                        return match.replace(/style="([^"]*)"/i, `style="$1 ${style}"`);
+                    } else {
+                        return `<${tag}${attrs || ''} style="${style}">`;
+                    }
+                });
+            });
+
+            return result;
+        }
+
+        /**
+         * 🧹 智能清理 HTML（增强版 - 过滤非文本内容 + 清理空白）
+         *
+         * 解决智谱AI等平台包含大量SVG/MathJax/图表代码导致显示异常的问题
+         */
+        function cleanHtmlWhitespace(html) {
+            console.log('[DOMTreeViewer] 🧹 cleanHtmlWhitespace() v4.0 开始');
+            console.log('[DOMTreeViewer] 🧹 输入长度:', html.length);
+
+            let cleaned = html;
+
+            // 🔍 步骤0: 检测是否为"脏HTML"（包含大量Tailwind类名或框架特定标记）
+            const isDirtyHtml = /(?:dark:text-|max-w-|flex flex-|border-\[|rounded-|bg-\[|text-\[|p-\[|m-\[)/.test(cleaned);
+            
+            if (isDirtyHtml) {
+                console.log('[DOMTreeViewer] ⚠️ 检测到"脏HTML"（ProseMirror/Tailwind），启用智能清理模式');
+                
+                // ✅ 新策略：保留HTML结构，只清理垃圾内容
+                
+                // 步骤A: 移除所有 Tailwind 类名（但保留标签本身）
+                cleaned = cleaned.replace(/\s*class="[^"]*(?:dark:text-|max-w-|flex flex-|border-\[|rounded-|bg-\[|text-\[|p-\[|m-\[)[^"]*"/gi, '');
+                cleaned = cleaned.replace(/\s*class="[^"]*\b(?:text-|bg-|p-|m-|w-|h-|flex|grid|gap-|rounded|shadow|opacity|transform|transition|duration|ease|hover:|focus:|active:)[^"]*"/gi, '');
+                console.log('[DOMTreeViewer] ✅ 已移除Tailwind类名');
+                
+                // 步骤B: 移除非文本内容块
+                const dirtyRemovePatterns = [
+                    /<svg[\s\S]*?<\/svg>/gi,
+                    /<math[\s\S]*?<\/math>/gi,
+                    /<span class="katex[\s\S]*?<\/span>/gi,
+                    /<canvas[^>]*><\/canvas>/gi,
+                    /<script[\s\S]*?<\/script>/gi,
+                    /<style[\s\S]*?<\/style>/gi,
+                    /<button[\s\S]*?<\/button>/gi,
+                    /<input[^>]*>/gi,
+                    /<i class="icon[\s\S]*?<\/i>/gi,
+                    /<animate[\s\S]*?<\/animate>/gi,
+                    /\s+d="[^"]*"/g,
+                    /data:image\/[^;]+;base64,[^"'\s]*/g,
+                    /(?:viewBox|d|path|points)="[^"]{50,}"/g
+                ];
+
+                let removedCount = 0;
+                dirtyRemovePatterns.forEach((pattern, index) => {
+                    const before = cleaned.length;
+                    cleaned = cleaned.replace(pattern, '');
+                    if (cleaned.length < before) {
+                        removedCount++;
+                    }
+                });
+
+                if (removedCount > 0) {
+                    console.log(`[DOMTreeViewer] 🗑️ 已移除 ${removedCount} 类非文本内容`);
+                }
+                
+                console.log('[DOMTreeViewer] ✅ 智能清理完成，保留HTML结构:', cleaned.length, '字符');
+            }
+
+            // 🔍 步骤1: 移除非文本内容块（标准清理）
+            const removePatterns = [
+                /<svg[\s\S]*?<\/svg>/gi,
+                /<math[\s\S]*?<\/math>/gi,
+                /<span class="katex[\s\S]*?<\/span>/gi,
+                /<canvas[^>]*><\/canvas>/gi,
+                /<script[\s\S]*?<\/script>/gi,
+                /<style[\s\S]*?<\/style>/gi,
+                /<button[\s\S]*?<\/button>/gi,
+                /<input[^>]*>/gi,
+                /<i class="icon[\s\S]*?<\/i>/gi,
+                /<animate[\s\S]*?<\/animate>/gi,
+                /\s+d="[^"]*"/g,
+                /data:image\/[^;]+;base64,[^"'\s]*/g,
+                /(?:viewBox|d|path|points)="[^"]{50,}"/g
+            ];
+
+            let removedCount = 0;
+            removePatterns.forEach((pattern, index) => {
+                const before = cleaned.length;
+                cleaned = cleaned.replace(pattern, '');
+                if (cleaned.length < before) {
+                    removedCount++;
+                    console.log(`[DOMTreeViewer] 🗑️ 已移除模式 ${index + 1}: 长度减少 ${before - cleaned.length}`);
+                }
+            });
+
+            if (removedCount > 0) {
+                console.log(`[DOMTreeViewer] 🗑️ 总共移除了 ${removedCount} 类非文本内容`);
+            }
+
+            // 步骤2: 移除标签间的多余空白（但保留单个空格）
+            cleaned = cleaned
+                .replace(/>\s+</g, '><')
+                .replace(/\n\s*\n/g, '\n')
+                .replace(/^\s+|\s+$/g, '');
+
+            console.log('[DOMTreeViewer] 🧹 输出长度:', cleaned.length);
+            console.log('[DOMTreeViewer] 🧹 压缩率:', ((1 - cleaned.length / html.length) * 100).toFixed(1), '%');
+
+            return cleaned;
+        }
+
+        /**
+         * 🎨 Markdown 渲染函数
+         */
+        function renderMarkdown(html) {
+            console.log('[DOMTreeViewer] 🎨 renderMarkdown 被调用');
+
+            if (!html) {
+                return '<span style="color: #999;">（空内容）</span>';
+            }
+
+            if (typeof window.marked === 'undefined' || typeof window.DOMPurify === 'undefined') {
+                console.warn('[DOMTreeViewer] ⚠️ 库未加载，返回原始 HTML');
+                return html;
+            }
+
+            try {
+                let processedHtml = html;
+
+                // 🧹 先清理 HTML 中的多余空白（解决表格前大量空行问题）
+                if (/<[a-z][\s\S]*>/i.test(html)) {
+                    processedHtml = cleanHtmlWhitespace(html);
+                    console.log('[DOMTreeViewer] 🧹 已清理 HTML 空白，长度:', html.length, '→', processedHtml.length);
+                }
+
+                if (!/<[a-z][\s\S]*>/i.test(processedHtml)) {
+                    console.log('[DOMTreeViewer] 📝 检测到纯文本，使用 marked 解析');
+                    marked.setOptions({
+                        breaks: true,
+                        gfm: true,
+                        renderer: {
+                            listitem(text) {
+                                if (text.startsWith('<p>')) {
+                                    text = text.replace(/^<p>/, '').replace(/<\/p>$/, '');
+                                }
+                                return '<li>' + text + '</li>\n';
+                            }
+                        }
+                    });
+                    processedHtml = marked.parse(processedHtml);
+                } else {
+                    console.log('[DOMTreeViewer] 📝 检测到 HTML 格式，直接处理');
+                }
+
+                // ✨ 自动格式化 JSON 代码块（解决 JSON 不换行问题）
+                processedHtml = formatJsonBlocks(processedHtml);
+
+                const styledHtml = injectInlineStyles(processedHtml);
+
+                const cleanHtml = DOMPurify.sanitize(styledHtml, {
+                    ALLOWED_TAGS: ['h1','h2','h3','h4','h5','h6','p','br','hr','ul','ol','li','strong','b','em','i','del','s','u','a','code','pre','blockquote','table','thead','tbody','tr','th','td','img','span','div','sup','sub','mark','kbd'],
+                    ALLOWED_ATTR: ['href','target','rel','title','src','alt','style','class'],
+                    ADD_ATTR: ['target','style']
+                });
+
+                console.log('[DOMTreeViewer] ✅ 渲染完成！');
+                return cleanHtml;
+
+            } catch (error) {
+                console.error('[DOMTreeViewer] ❌ 渲染错误:', error);
+                return `<div style="color: red; padding: 10px; background: #fee2e2; border-radius: 6px;">❌ Markdown 渲染错误: ${error.message}</div>`;
+            }
+        }
+
+        /**
+         * 🔄 切换 Markdown 视图模式
+         */
+        function toggleMarkdownView() {
+            console.log('[DOMTreeViewer] 🔄 toggleMarkdownView() 被点击！');
+
+            markdownViewMode = !markdownViewMode;
+
+            const btn = document.getElementById('markdownToggleBtn');
+            if (btn) {
+                const newText = markdownViewMode ? '📄 文本' : '🎨 Markdown';
+                const newBg = markdownViewMode ? '#059669' : '#6366f1';
+
+                btn.textContent = newText;
+                btn.style.background = newBg;
+            }
+
+            if (selectedNodeData) {
+                console.log('[DOMTreeViewer] 🔄 重新渲染当前选中节点...');
+                renderDetail(selectedNodeData);
+            }
+
+            console.log('[DOMTreeViewer] 🔄 ========== 切换完成 ==========');
+        }
+
+        /**
+         * ✨ 自动检测并格式化 JSON 代码块（简洁版 - 只做格式化换行）
+         * 目标：实现 webview 中的段落分明效果
+         */
+        function formatJsonBlocks(html) {
+            // 匹配 <pre><code>...</code></pre> 块
+            const preCodeRegex = /<pre[^>]*><code[^>]*>([\s\S]*?)<\/code><\/pre>/gi;
+
+            console.log('[DOMTreeViewer] 🔍 formatJsonBlocks() 开始执行');
+            console.log('[DOMTreeViewer] 🔍 输入HTML长度:', html.length);
+            console.log('[DOMTreeViewer] 🔍 是否包含 <pre>:', html.includes('<pre'));
+            console.log('[DOMTreeViewer] 🔍 是否包含 <code>:', html.includes('<code'));
+
+            let matchCount = 0;
+            let jsonSuccessCount = 0;
+
+            const result = html.replace(preCodeRegex, (match, codeContent) => {
+                matchCount++;
+                console.log('[DOMTreeViewer] 🔍 找到第', matchCount, '个代码块');
+                console.log('[DOMTreeViewer] 🔍 代码块内容长度:', codeContent.length);
+
+                // 清理代码内容（移除 HTML 实体编码等）
+                let decodedContent = codeContent
+                    .replace(/&lt;/g, '<')
+                    .replace(/&gt;/g, '>')
+                    .replace(/&amp;/g, '&')
+                    .replace(/&quot;/g, '"')
+                    .replace(/&#39;/g, "'")
+                    .trim();
+
+                console.log('[DOMTreeViewer] 🔍 解码后内容预览(前100字符):', decodedContent.substring(0, 100));
+                console.log('[DOMTreeViewer] 🔍 是否包含 <span>:', decodedContent.includes('<span'));
+
+                // 🆕 如果内容已被语法高亮（包含 <span class="token ...">），先提取纯文本
+                if (decodedContent.includes('<span')) {
+                    console.log('[DOMTreeViewer] 🔄 检测到已高亮的HTML，正在提取纯文本...');
+                    decodedContent = extractTextFromHighlightedCode(decodedContent);
+                    console.log('[DOMTreeViewer] 🔄 提取后纯文本长度:', decodedContent.length);
+                    console.log('[DOMTreeViewer] 🔄 提取后预览(前200字符):', decodedContent.substring(0, 200));
+                }
+
+                // 尝试解析为 JSON
+                try {
+                    const jsonObj = JSON.parse(decodedContent);
+                    const formattedJson = JSON.stringify(jsonObj, null, 2);
+
+                    jsonSuccessCount++;
+                    console.log('[DOMTreeViewer] ✅ JSON解析成功！格式化后长度:', formattedJson.length);
+
+                    // 转义 HTML 特殊字符
+                    const escapedJson = formattedJson
+                        .replace(/&/g, '&amp;')
+                        .replace(/</g, '&lt;')
+                        .replace(/>/g, '&gt;')
+                        .replace(/"/g, '&quot;');
+
+                    return `<pre style="background: #f8f9fa !important; color: #24292e !important; padding: 16px !important; border-radius: 6px !important; border: 1px solid #e1e4e8 !important; margin: 16px 0 !important; font-family: 'SFMono-Regular', Consolas, monospace !important; font-size: 13px !important; line-height: 1.6 !important; white-space: pre !important; overflow-x: auto !important;"><code style="background: none !important; color: inherit !important; padding: 0 !important;">${escapedJson}</code></pre>`;
+                } catch (e) {
+                    console.warn('[DOMTreeViewer] ⚠️ JSON解析失败:', e.message);
+                    console.warn('[DOMTreeViewer] ⚠️ 原始内容前200字符:', decodedContent.substring(0, 200));
+                    return match;
+                }
+            });
+
+            console.log('[DOMTreeViewer] 📊 formatJsonBlocks() 完成: 找到', matchCount, '个代码块, 成功格式化', jsonSuccessCount, '个JSON');
+
+            return result;
+        }
+
+        /**
+         * 🆕 从已高亮的代码中提取纯文本
+         * 处理 Prism.js / highlight.js 等生成的 <span class="token ..."> 标签
+         */
+        function extractTextFromHighlightedCode(highlightedHtml) {
+            let plainText = highlightedHtml
+                .replace(/<br\s*\/?>/gi, '\n')
+                .replace(/<\/p>/gi, '\n')
+                .replace(/<[^>]+>/g, '')
+                .replace(/&nbsp;/g, ' ')
+                .replace(/&lt;/g, '<')
+                .replace(/&gt;/g, '>')
+                .replace(/&amp;/g, '&')
+                .replace(/&quot;/g, '"')
+                .trim();
+
+            plainText = plainText
+                .replace(/[ \t]+/g, ' ')
+                .replace(/\n\s*\n/g, '\n')
+                .trim();
+
+            return plainText;
+        }
+    </script>
+</body>
+</html>

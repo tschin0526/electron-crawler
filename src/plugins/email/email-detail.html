@@ -1,0 +1,384 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>邮件详情</title>
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <!-- KaTeX 数学公式渲染库（必须在 renderMarkdown 之前加载） -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+  <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+  <style>
+    :root {
+      --primary-color: #667eea;
+      --text-primary: #1e293b;
+      --text-secondary: #64748b;
+      --border-color: #e2e8f0;
+      --bg-color: #f8fafc;
+      --card-bg: #ffffff;
+    }
+
+    body.dark {
+      --primary-color: #818cf8;
+      --text-primary: #e2e8f0;
+      --text-secondary: #94a3b8;
+      --border-color: #334155;
+      --bg-color: #0f172a;
+      --card-bg: #1e293b;
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    html, body {
+      height: 100%;
+      width: 100vw;
+      margin: 0;
+      padding: 0;
+      overflow: hidden;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+      background: var(--bg-color);
+      color: var(--text-primary);
+      position: relative;
+      width: 100vw;
+    }
+
+    .detail-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 20px;
+      background: linear-gradient(180deg, #eff6ff 0%, #dbeafe 100%);
+      border-bottom: 2px solid #bfdbfe;
+      height: 50px;
+    }
+
+    .detail-header h1 {
+      font-size: 16px;
+      font-weight: 600;
+      color: #1e40af;
+    }
+
+    .detail-header .close-btn {
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      border: 1px solid var(--border-color);
+      background: #fff;
+      font-size: 14px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.2s;
+    }
+    .detail-header .close-btn:hover { background: #fee2e2; border-color: #fca5a5; color: #dc2626; }
+    body.dark .detail-header {
+      background: linear-gradient(180deg, #172554 0%, #1e3a8a 100%);
+      border-bottom-color: #1d4ed8;
+    }
+    body.dark .detail-header h1 { color: #93c5fd; }
+    body.dark .detail-header .close-btn { background: var(--card-bg); color: var(--text-primary); border-color: var(--border-color); }
+    body.dark .detail-header .close-btn:hover { background: #450a0a; border-color: #dc2626; color: #f87171; }
+
+    .detail-body {
+      position: absolute;
+      top: 50px;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      overflow-y: auto;
+      padding: 16px 20px;
+      display: block;
+      width: 100%;
+      min-width: 100%;
+      max-width: none;
+    }
+
+    .detail-field {
+      margin-bottom: 16px;
+      display: block;
+      width: 100%;
+      min-width: 100%;
+      max-width: none;
+    }
+
+    .detail-field-label {
+      font-size: 12px;
+      color: var(--text-secondary);
+      font-weight: 500;
+      margin-bottom: 4px;
+      user-select: none;
+    }
+
+    .detail-field-value {
+      font-size: 14px;
+      color: var(--text-primary);
+      padding: 8px 12px;
+      background: var(--card-bg);
+      border-radius: 8px;
+      border: 1px solid var(--border-color);
+      display: block;
+      width: 100%;
+      min-width: 100%;
+      max-width: none;
+    }
+
+    .detail-field-value.body-text {
+      line-height: 1.7;
+      font-size: 14px;
+      padding: 16px;
+      width: 100% !important;
+      min-width: 100% !important;
+      max-width: none !important;
+      display: block;
+      word-break: break-word;
+      overflow-wrap: break-word;
+    }
+
+    .detail-field-value.body-text * {
+      max-width: none !important;
+      width: auto !important;
+    }
+    
+    /* 🆕 KaTeX 數學公式元素例外：保留 KaTeX 原始佈局，不被 width:auto 破壞 */
+    .detail-field-value.body-text .katex,
+    .detail-field-value.body-text .katex *,
+    .detail-field-value.body-text .katex-display,
+    .detail-field-value.body-text .katex-display * {
+      width: auto !important;
+      max-width: none !important;
+      /* 不強制 display，讓 KaTeX CSS 自行控制（table-cell/inline/table 等） */
+    }
+    /* 🆕 KaTeX 分數線特殊處理：確保有寬度和邊框顯示 */
+    .detail-field-value.body-text .katex .frac-line,
+    .detail-field-value.body-text .katex-display .frac-line {
+      width: 100% !important;
+      border-top-style: solid !important;
+      min-width: 1em !important;
+    }
+    .detail-field-value.body-text .katex-display {
+      display: block !important;
+      text-align: center !important;
+      margin: 16px 0 !important;
+    }
+    
+    .detail-field-value.body-text table {
+      width: 100% !important;
+    }
+    .detail-field-value.body-text table * {
+      width: 100% !important;
+    }
+    /* KaTeX 內部表格不受影響 */
+    .detail-field-value.body-text .katex table,
+    .detail-field-value.body-text .katex table * {
+      width: initial !important;
+    }
+
+    .detail-field-value.body-text h1, .detail-field-value.body-text h2, .detail-field-value.body-text h3, .detail-field-value.body-text h4 { margin: 14px 0 8px; font-weight: 600; color: #1e293b; }
+    .detail-field-value.body-text h1 { font-size: 20px; border-bottom: 2px solid var(--border-color); padding-bottom: 6px; }
+    .detail-field-value.body-text h2 { font-size: 18px; border-bottom: 1px solid var(--border-color); padding-bottom: 4px; }
+    .detail-field-value.body-text h3 { font-size: 16px; }
+    .detail-field-value.body-text h4 { font-size: 15px; }
+    .detail-field-value.body-text p { margin: 8px 0; }
+    .detail-field-value.body-text ul,
+    .detail-field-value.body-text ol { margin: 8px 0; padding-left: 24px; }
+    .detail-field-value.body-text li { margin: 4px 0; }
+    .detail-field-value.body-text code { background: #e2e8f0; padding: 2px 6px; border-radius: 4px; font-size: 13px; font-family: 'SF Mono', Menlo, monospace; }
+    .detail-field-value.body-text pre { background: #1e293b; color: #e2e8f0; padding: 14px; border-radius: 8px; overflow-x: auto; margin: 10px 0; }
+    .detail-field-value.body-text pre code { background: none; color: inherit; padding: 0; font-size: 13px; }
+    .detail-field-value.body-text blockquote { border-left: 4px solid #667eea; padding: 8px 14px; margin: 10px 0; background: #eff6ff; border-radius: 0 6px 6px 0; color: #475569; }
+    .detail-field-value.body-text a { color: #667eea; text-decoration: underline; }
+    .detail-field-value.body-text table { border-collapse: collapse; margin: 10px 0; width: 100%; }
+    .detail-field-value.body-text th, .detail-field-value.body-text td { border: 1px solid var(--border-color); padding: 8px 12px; text-align: left; }
+    .detail-field-value.body-text th { background: #f1f5f9; font-weight: 600; }
+    .detail-field-value.body-text img { max-width: 100%; height: auto; border-radius: 6px; }
+    .detail-field-value.body-text hr { border: none; border-top: 1px solid var(--border-color); margin: 16px 0; }
+    .detail-field-value.body-text input[type="checkbox"] { margin-right: 6px; }
+
+    /* 黑夜模式：正文内容 - 使用颜色反转，避免 arbitrary HTML 内联样式无法覆盖 */
+    body.dark .detail-field-value.body-text {
+      filter: invert(1) hue-rotate(180deg);
+      background: #ffffff;
+    }
+    /* 图片/视频/公式不要反相，保持原色 */
+    body.dark .detail-field-value.body-text img,
+    body.dark .detail-field-value.body-text video,
+    body.dark .detail-field-value.body-text svg,
+    body.dark .detail-field-value.body-text canvas,
+    body.dark .detail-field-value.body-text .katex,
+    body.dark .detail-field-value.body-text .katex * {
+      filter: invert(1) hue-rotate(180deg);
+    }
+
+    .detail-time {
+      font-size: 12px;
+      color: #94a3b8;
+      margin-top: 20px;
+      text-align: right;
+      padding-top: 12px;
+      border-top: 1px solid var(--border-color);
+    }
+
+    .theme-toggle {
+      background: rgba(0,0,0,0.1);
+      border: none;
+      color: #1e40af;
+      padding: 6px 10px;
+      border-radius: 6px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.2s;
+      white-space: nowrap;
+    }
+    .theme-toggle:hover { background: rgba(0,0,0,0.2); }
+    body.dark .theme-toggle { color: #93c5fd; background: rgba(255,255,255,0.15); }
+    body.dark .theme-toggle:hover { background: rgba(255,255,255,0.25); }
+  </style>
+</head>
+<body>
+  <div class="detail-header">
+    <h1>📧 邮件详情</h1>
+    <div style="display: flex; align-items: center; gap: 10px;">
+      <!-- 黑夜模式由主程式统一控制，不单独显示按钮 -->
+      <button class="close-btn" onclick="window.close()" title="关闭">✕</button>
+    </div>
+  </div>
+  <div class="detail-body" id="detailBody">
+    <div style="text-align:center;padding:40px;color:#94a3b8;">加载中...</div>
+  </div>
+
+  <script>
+    function formatTime(timestamp) {
+      const date = new Date(timestamp);
+      const now = new Date();
+      const pad = (n) => String(n).padStart(2, '0');
+      const time = `${pad(date.getHours())}:${pad(date.getMinutes())}`;
+      if (date.toDateString() === now.toDateString()) {
+        return `今天 ${time}`;
+      }
+      const yesterday = new Date(now);
+      yesterday.setDate(yesterday.getDate() - 1);
+      if (date.toDateString() === yesterday.toDateString()) {
+        return `昨天 ${time}`;
+      }
+      return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${time}`;
+    }
+
+    function escapeHtml(text) {
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+    }
+
+    function renderMarkdown(text) {
+      if (!text) return '<span style="color:#94a3b8;">（无内容）</span>';
+
+      // 🆕 检测内容类型：如果已经是 HTML（包含 HTML 标签），直接渲染
+      const hasHtmlTags = /<[a-zA-Z][^>]*>/.test(text);
+      
+      // 🆕 如果内容包含已渲染的 KaTeX HTML，直接返回（不需要重新处理）
+      if (hasHtmlTags && (text.includes('class="katex"') || text.includes('class="katex-display"'))) {
+        return text;
+      }
+      
+      if (hasHtmlTags && !text.includes('$')) {
+        // 已是 HTML 且不含 LaTeX 标记，直接返回
+        return text;
+      }
+
+      // 🆕 如果是 HTML 但包含 LaTeX 标记（不应该发生，但处理一下）
+      // 提取 LaTeX 公式
+      const mathBlocks = [];
+      let processed = text;
+
+      // 如果是 HTML，先提取 body 内容中的 LaTeX
+      processed = processed.replace(/\$\$([\s\S]*?)\$\$/g, (_, formula) => {
+        const idx = mathBlocks.length;
+        mathBlocks.push({ formula, display: true });
+        return `%%MATHBLOCK_${idx}%%`;
+      });
+      processed = processed.replace(/(?<!\$)\$(?!\$)([^\$\n]+?)\$(?!\$)/g, (_, formula) => {
+        const idx = mathBlocks.length;
+        mathBlocks.push({ formula, display: false });
+        return `%%MATHBLOCK_${idx}%%`;
+      });
+
+      let html;
+      if (hasHtmlTags) {
+        // 已是 HTML，跳过 markdown 解析，直接处理
+        html = processed;
+      } else if (typeof marked !== 'undefined') {
+        marked.setOptions({ breaks: true, gfm: true });
+        html = marked.parse(processed);
+      } else {
+        html = escapeHtml(processed).replace(/\n/g, '<br>');
+      }
+
+      // 替换 KaTeX 公式
+      if (mathBlocks.length > 0) {
+        html = html.replace(/%%MATHBLOCK_(\d+)%%/g, (_, idx) => {
+          const { formula, display } = mathBlocks[parseInt(idx)];
+          if (typeof katex !== 'undefined') {
+            try {
+              return katex.renderToString(formula, { displayMode: display, throwOnError: false });
+            } catch (e) {
+              return `<code>${escapeHtml(formula)}</code>`;
+            }
+          }
+          return `<code>${escapeHtml(formula)}</code>`;
+        });
+      }
+
+      return html;
+    }
+
+    // 主题由主程式统一控制，通过 executeJavaScript 切换 body.dark 类
+    // 页面加载时从 localStorage 读取初始状态（兼容旧数据）
+    (function loadInitialTheme() {
+      const saved = localStorage.getItem('emailPluginTheme');
+      if (saved === 'dark') {
+        document.body.classList.add('dark');
+      }
+    })();
+
+    function init() {
+      const hash = window.location.hash.substring(1);
+      if (!hash) {
+        document.getElementById('detailBody').innerHTML = '<div style="text-align:center;padding:40px;color:#dc2626;">未找到邮件数据</div>';
+        return;
+      }
+
+      let data;
+      try {
+        const json = decodeURIComponent(escape(atob(hash)));
+        data = JSON.parse(json);
+      } catch (e) {
+        document.getElementById('detailBody').innerHTML = '<div style="text-align:center;padding:40px;color:#dc2626;">邮件数据解析失败</div>';
+        return;
+      }
+
+      document.getElementById('detailBody').innerHTML = `
+        <div class="detail-field">
+          <div class="detail-field-label">收件人</div>
+          <div class="detail-field-value">${escapeHtml(data.to || '')}</div>
+        </div>
+        <div class="detail-field">
+          <div class="detail-field-label">主题</div>
+          <div class="detail-field-value">${escapeHtml(data.subject || '')}</div>
+        </div>
+        <div class="detail-field">
+          <div class="detail-field-label">正文</div>
+          <div class="detail-field-value body-text">${renderMarkdown(data.body)}</div>
+        </div>
+        <div class="detail-time">发送时间：${formatTime(data.time)}</div>
+      `;
+    }
+
+    window.addEventListener('DOMContentLoaded', init);
+  </script>
+</body>
+</html>

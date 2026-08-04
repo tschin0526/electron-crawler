@@ -1,0 +1,1775 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>📝 ToDoList</title>
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+  <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+  <style>
+    :root {
+      --primary-color: #667eea;
+      --primary-light: #e0e7ff;
+      --primary-border: #a5b4fc;
+      --success-color: #10b981;
+      --success-light: #d1fae5;
+      --success-border: #6ee7b7;
+      --danger-color: #dc2626;
+      --danger-light: #fee2e2;
+      --danger-border: #fca5a5;
+      --warning-color: #f59e0b;
+      --warning-light: #fef3c7;
+      --warning-border: #fcd34d;
+      --bg-color: #f8fafc;
+      --card-bg: #ffffff;
+      --todo-bg: #f0fdf4;
+      --todo-border: #bbf7d0;
+      --text-primary: #1e293b;
+      --text-secondary: #64748b;
+      --border-color: #e2e8f0;
+      --shadow-sm: 0 2px 4px rgba(0, 0, 0, 0.1), 0 1px 2px rgba(0, 0, 0, 0.06);
+      --shadow-md: 0 4px 8px rgba(0, 0, 0, 0.15), 0 2px 4px rgba(0, 0, 0, 0.1);
+      --shadow-lg: 0 4px 12px rgba(102, 126, 234, 0.15);
+    }
+
+    body.dark {
+      --primary-color: #818cf8;
+      --primary-light: #312e81;
+      --primary-border: #4338ca;
+      --success-color: #34d399;
+      --success-light: #064e3b;
+      --success-border: #10b981;
+      --danger-color: #f87171;
+      --danger-light: #450a0a;
+      --danger-border: #dc2626;
+      --warning-color: #fbbf24;
+      --warning-light: #451a03;
+      --warning-border: #f59e0b;
+      --bg-color: #0f172a;
+      --card-bg: #1e293b;
+      --todo-bg: #14532d;
+      --todo-border: #22c55e;
+      --text-primary: #e2e8f0;
+      --text-secondary: #94a3b8;
+      --border-color: #334155;
+      --shadow-sm: 0 2px 4px rgba(0, 0, 0, 0.3), 0 1px 2px rgba(0, 0, 0, 0.2);
+      --shadow-md: 0 4px 8px rgba(0, 0, 0, 0.35), 0 2px 4px rgba(0, 0, 0, 0.25);
+      --shadow-lg: 0 4px 12px rgba(0, 0, 0, 0.35);
+    }
+
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    html, body {
+      height: 100vh;
+      overflow: hidden;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+      background-color: var(--bg-color);
+      color: var(--text-primary);
+      padding: 6px;
+      line-height: 1.6;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .todo-container {
+      width: 100%;
+      max-width: 100%;
+      margin: 0 auto;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      flex: 1;
+      min-height: 0;
+    }
+
+    .todo-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 16px;
+      background: linear-gradient(180deg, var(--todo-bg) 0%, #dcfce7 100%);
+      border-radius: 10px;
+      border: 2px solid var(--todo-border);
+      box-shadow: var(--shadow-sm);
+      height: 56px;
+    }
+    body.dark .todo-header {
+      background: linear-gradient(180deg, var(--todo-bg) 0%, #14532d 100%);
+    }
+
+    .todo-header h1 {
+      font-size: 16px;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: #166534;
+    }
+
+    .stats {
+      display: flex;
+      gap: 16px;
+      font-size: 13px;
+    }
+
+    .stat-item {
+      text-align: center;
+      padding: 4px 12px;
+      background: rgba(255, 255, 255, 0.6);
+      border-radius: 20px;
+    }
+
+    .stat-value {
+      font-size: 16px;
+      font-weight: 700;
+      display: block;
+      color: #15803d;
+    }
+
+    .stat-label {
+      font-size: 11px;
+      color: #166534;
+      opacity: 0.8;
+    }
+
+    .todo-toolbar {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+
+    .btn-group {
+      display: flex;
+      gap: 6px;
+    }
+
+    .btn {
+      width: 36px;
+      height: 36px;
+      padding: 0;
+      border: none;
+      border-radius: 50%;
+      font-size: 11px;
+      font-weight: 600;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 4px;
+      transition: all 0.2s ease;
+    }
+
+    .btn:hover {
+      transform: scale(1.08);
+      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
+    }
+
+    .btn:active {
+      transform: scale(0.95);
+    }
+
+    .btn-primary {
+      background: var(--primary-light);
+      color: #4338ca;
+      border: 1px solid var(--primary-border);
+    }
+
+    .btn-primary:hover {
+      background: #c7d2fe;
+    }
+
+    .btn-secondary {
+      background: #f1f5f9;
+      color: var(--text-secondary);
+      border: 1px solid var(--border-color);
+    }
+
+    .btn-secondary:hover {
+      background: #e2e8f0;
+    }
+
+    .btn-danger {
+      background: var(--danger-light);
+      color: var(--danger-color);
+      border: 1px solid var(--danger-border);
+    }
+
+    .btn-danger:hover {
+      background: #fecaca;
+    }
+
+    .btn-text {
+      width: auto;
+      padding: 0 14px;
+      border-radius: 50px;
+      font-size: 13px;
+    }
+
+    .search-box {
+      flex: 1;
+      min-width: 150px;
+      padding: 6px 12px;
+      border: 1px solid var(--border-color);
+      border-radius: 50px;
+      font-size: 13px;
+      background-color: var(--card-bg);
+      transition: border-color 0.2s;
+    }
+
+    .search-box:focus {
+      outline: none;
+      border-color: var(--primary-color);
+      box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+    }
+
+    .filter-section {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+
+    .filter-label {
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--text-secondary);
+      white-space: nowrap;
+    }
+
+    .tag-filter {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+
+    .tag-chip {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      font-size: 12px;
+      cursor: pointer;
+      transition: all 0.2s;
+      border: 1px solid transparent;
+      font-weight: 500;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .tag-chip:hover {
+      transform: scale(1.08);
+    }
+
+    .tag-chip.active {
+      background: var(--primary-light);
+      color: #4338ca;
+      border: 1px solid var(--primary-border);
+    }
+
+    .tag-chip.inactive {
+      background: var(--card-bg);
+      color: var(--text-secondary);
+      border: 1px solid var(--border-color);
+    }
+
+    .status-filter {
+      display: flex;
+      gap: 6px;
+    }
+
+    .status-btn {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      font-size: 12px;
+      border: 1px solid var(--border-color);
+      background: var(--card-bg);
+      color: var(--text-secondary);
+      cursor: pointer;
+      transition: all 0.2s;
+      font-weight: 500;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .status-btn.active {
+      background: var(--primary-light);
+      color: #4338ca;
+      border: 1px solid var(--primary-border);
+    }
+
+    .status-btn:hover {
+      transform: scale(1.08);
+    }
+
+    .todo-list {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+      gap: 10px;
+      flex: 1;
+      min-height: 0;
+      overflow-y: auto;
+      padding-right: 4px;
+    }
+
+    .todo-list::-webkit-scrollbar {
+      width: 6px;
+    }
+
+    .todo-list::-webkit-scrollbar-track {
+      background: transparent;
+    }
+
+    .todo-list::-webkit-scrollbar-thumb {
+      background: var(--border-color);
+      border-radius: 3px;
+    }
+
+    .todo-list::-webkit-scrollbar-thumb:hover {
+      background: var(--text-secondary);
+    }
+
+    .todo-item {
+      background: var(--card-bg);
+      border-radius: 10px;
+      padding: 14px;
+      border: 2px solid var(--border-color);
+      transition: all 0.3s ease;
+      position: relative;
+      max-height: 33vh;
+      overflow: auto;
+    }
+
+    .todo-item:hover {
+      border-color: var(--primary-color);
+      box-shadow: var(--shadow-lg);
+      transform: translateY(-2px);
+    }
+
+    .todo-item.completed {
+      opacity: 0.6;
+    }
+
+    .todo-item.completed .todo-text {
+      text-decoration: line-through;
+      color: var(--text-secondary);
+    }
+
+    .todo-item-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      margin-bottom: 8px;
+    }
+
+    .checkbox-wrapper {
+      position: relative;
+      margin-right: 10px;
+      flex-shrink: 0;
+    }
+
+    .checkbox {
+      width: 16px;
+      height: 16px;
+      border: 2px solid var(--border-color);
+      border-radius: 4px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.2s;
+      background-color: white;
+    }
+
+    .checkbox:hover {
+      border-color: var(--primary-color);
+    }
+
+    .checkbox.checked {
+      background-color: var(--success-color);
+      border-color: var(--success-color);
+    }
+
+    .checkbox.checked::after {
+      content: '✓';
+      color: white;
+      font-size: 10px;
+      font-weight: bold;
+    }
+
+    .todo-text input[type="checkbox"] {
+      width: 14px;
+      height: 14px;
+      margin-right: 6px;
+      cursor: pointer;
+      accent-color: var(--accent-color);
+    }
+
+    .todo-text input[type="checkbox"]:checked + span {
+      text-decoration: line-through;
+      color: var(--text-secondary);
+    }
+
+    .todo-content {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .todo-text {
+      font-size: 14px;
+      color: var(--text-primary);
+      margin-bottom: 6px;
+      word-break: break-word;
+      font-weight: 500;
+      line-height: 1.6;
+    }
+
+    .todo-text h1 { font-size: 16px; margin: 8px 0 4px; }
+    .todo-text h2 { font-size: 15px; margin: 6px 0 4px; }
+    .todo-text h3 { font-size: 14px; margin: 4px 0 2px; }
+    .todo-text p { margin: 4px 0; }
+    .todo-text ul, .todo-text ol { margin: 4px 0; padding-left: 20px; }
+    .todo-text code {
+      background: #f1f5f9;
+      padding: 1px 4px;
+      border-radius: 3px;
+      font-size: 12px;
+      font-family: 'SF Mono', Monaco, monospace;
+    }
+    .todo-text pre {
+      background: #f8fafc;
+      padding: 8px;
+      border-radius: 6px;
+      overflow-x: auto;
+      margin: 6px 0;
+    }
+    .todo-text pre code { background: none; padding: 0; }
+    .todo-text blockquote {
+      border-left: 3px solid var(--border-color);
+      padding-left: 10px;
+      margin: 6px 0;
+      color: var(--text-secondary);
+    }
+    .todo-text a { color: var(--primary-color); text-decoration: underline; }
+    .todo-text table { border-collapse: collapse; margin: 6px 0; }
+    .todo-text th, .todo-text td { border: 1px solid var(--border-color); padding: 4px 8px; }
+    .todo-text th { background: #f8fafc; }
+    .todo-text img { max-width: 100%; border-radius: 6px; margin: 4px 0; }
+    .todo-text hr { border: none; border-top: 1px solid var(--border-color); margin: 8px 0; }
+    .todo-text del { color: var(--text-secondary); }
+
+    /* 黑夜模式下忽略自定义卡片背景色，使用默认深色卡片背景 */
+    body.dark .todo-item {
+      background-color: var(--card-bg) !important;
+    }
+    /* 黑夜模式：任务内容 */
+    body.dark .todo-text,
+    body.dark .todo-text *:not(a):not(code):not(pre) {
+      color: var(--text-primary) !important;
+    }
+    body.dark .todo-text a { color: var(--primary-color) !important; }
+    body.dark .todo-text code { background: #334155 !important; color: var(--text-primary) !important; }
+    body.dark .todo-text pre { background: #0f172a !important; color: var(--text-primary) !important; }
+    body.dark .todo-text pre code { background: transparent !important; }
+    body.dark .todo-text blockquote { background: #172554 !important; border-left-color: #60a5fa !important; }
+    body.dark .todo-text th { background: #334155 !important; }
+    body.dark .todo-text tr:nth-child(even) { background: #1e293b !important; }
+
+    .todo-meta {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .todo-tags {
+      display: flex;
+      gap: 4px;
+    }
+
+    .tag {
+      padding: 2px 6px;
+      border-radius: 10px;
+      font-size: 10px;
+      font-weight: 500;
+    }
+
+    .tag-color-1 { background: #dbeafe; color: #1d4ed8; }
+    .tag-color-2 { background: #fce7f3; color: #be185d; }
+    .tag-color-3 { background: #fee2e2; color: #dc2626; }
+    .tag-color-4 { background: #dcfce7; color: #166534; }
+    .tag-color-5 { background: #fef3c7; color: #d97706; }
+    .tag-color-6 { background: #e0e7ff; color: #6366f1; }
+    .tag-color-7 { background: #d1fae5; color: #059669; }
+    .tag-color-8 { background: #f3e8ff; color: #9333ea; }
+    .tag-color-9 { background: #fed7aa; color: #ea580c; }
+    .tag-color-10 { background: #e2e8f0; color: #475569; }
+    .tag-color-11 { background: #fef9c3; color: #ca8a04; }
+    .tag-color-12 { background: #ede9fe; color: #7c3aed; }
+
+    .todo-date {
+      font-size: 11px;
+      color: var(--text-secondary);
+    }
+
+    .todo-attachments {
+      display: flex;
+      gap: 4px;
+      flex-wrap: wrap;
+      margin-top: 6px;
+    }
+
+    .attachment-item {
+      display: flex;
+      align-items: center;
+      gap: 3px;
+      padding: 3px 6px;
+      background-color: #f1f5f9;
+      border-radius: 4px;
+      font-size: 11px;
+      color: var(--text-secondary);
+    }
+
+    .todo-actions {
+      display: flex;
+      gap: 4px;
+      flex-shrink: 0;
+    }
+
+    .action-btn {
+      width: 28px;
+      height: 28px;
+      border: none;
+      border-radius: 50%;
+      background-color: transparent;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 12px;
+      transition: all 0.2s;
+    }
+
+    .action-btn:hover {
+      background-color: #f1f5f9;
+      transform: scale(1.1);
+    }
+
+    .action-btn.edit:hover {
+      background-color: var(--primary-light);
+      color: var(--primary-color);
+    }
+
+    .action-btn.delete:hover {
+      background-color: var(--danger-light);
+      color: var(--danger-color);
+    }
+
+    .empty-state {
+      grid-column: 1 / -1;
+      text-align: center;
+      padding: 30px 16px;
+      color: var(--text-secondary);
+    }
+
+    .empty-state-icon {
+      font-size: 32px;
+      margin-bottom: 8px;
+      opacity: 0.5;
+    }
+
+    .empty-state-title {
+      font-size: 14px;
+      font-weight: 500;
+      margin-bottom: 4px;
+    }
+
+    .empty-state-desc {
+      font-size: 12px;
+    }
+
+    .modal-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background-color: rgba(0, 0, 0, 0.5);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+      animation: fadeIn 0.2s;
+    }
+
+    .modal {
+      background-color: var(--card-bg);
+      border-radius: 12px;
+      box-shadow: var(--shadow-lg);
+      width: 92%;
+      max-width: 1000px;
+      max-height: 92vh;
+      overflow-y: auto;
+      animation: slideUp 0.2s;
+      border: 2px solid var(--border-color);
+    }
+
+    .modal-header {
+      padding: 14px 18px;
+      border-bottom: 1px solid var(--border-color);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .modal-header-actions {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .modal-title {
+      font-size: 16px;
+      font-weight: 600;
+    }
+
+    .modal-close {
+      width: 28px;
+      height: 28px;
+      border: none;
+      background-color: transparent;
+      border-radius: 50%;
+      cursor: pointer;
+      font-size: 18px;
+      color: var(--text-secondary);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.2s;
+    }
+
+    .modal-close:hover {
+      background-color: #f1f5f9;
+    }
+
+    .modal-body {
+      padding: 16px 18px;
+    }
+
+    .form-group {
+      margin-bottom: 14px;
+    }
+
+    .form-label {
+      display: block;
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--text-primary);
+      margin-bottom: 6px;
+    }
+
+    .form-textarea {
+      width: 100%;
+      padding: 12px 14px;
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      font-size: 15px;
+      resize: vertical;
+      min-height: 200px;
+      height: 350px;
+      max-height: 60vh;
+      transition: border-color 0.2s;
+      line-height: 1.6;
+    }
+
+    .form-textarea:focus {
+      outline: none;
+      border-color: var(--primary-color);
+      box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+    }
+
+    .tags-selector {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      align-items: center;
+    }
+
+    .tag-input {
+      padding: 6px 12px;
+      border: 1px solid var(--border-color);
+      border-radius: 50px;
+      font-size: 12px;
+      width: 100px;
+      transition: border-color 0.2s;
+    }
+
+    .tag-input:focus {
+      outline: none;
+      border-color: var(--primary-color);
+    }
+
+    .tag-option {
+      padding: 6px 12px;
+      border-radius: 50px;
+      font-size: 12px;
+      border: 1px solid var(--border-color);
+      background: var(--card-bg);
+      color: var(--text-secondary);
+      cursor: pointer;
+      transition: all 0.2s;
+      font-weight: 500;
+      user-select: none;
+    }
+
+    .tag-option:hover {
+      border-color: var(--primary-color);
+      color: var(--primary-color);
+    }
+
+    .tag-option.selected {
+      background: var(--primary-light);
+      color: #4338ca;
+      border: 1px solid var(--primary-border);
+    }
+
+    .attachments-section {
+      margin-top: 12px;
+    }
+
+    .attachments-list {
+      margin-top: 8px;
+    }
+
+    .attachment-list-item {
+      display: flex;
+      align-items: center;
+      padding: 8px 10px;
+      background-color: #f8fafc;
+      border-radius: 8px;
+      margin-bottom: 6px;
+    }
+
+    .attachment-list-item:last-child {
+      margin-bottom: 0;
+    }
+
+    .attachment-list-icon {
+      font-size: 16px;
+      margin-right: 8px;
+    }
+
+    .attachment-list-info {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .attachment-list-name {
+      font-size: 13px;
+      color: var(--text-primary);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .attachment-list-size {
+      font-size: 11px;
+      color: var(--text-secondary);
+    }
+
+    .attachment-list-remove {
+      color: var(--danger-color);
+      cursor: pointer;
+      padding: 4px;
+    }
+
+    .file-upload-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 8px 14px;
+      border: 2px dashed var(--border-color);
+      border-radius: 50px;
+      background-color: #f8fafc;
+      color: var(--text-secondary);
+      cursor: pointer;
+      transition: all 0.2s;
+      font-size: 13px;
+      font-weight: 500;
+    }
+
+    .file-upload-btn:hover {
+      border-color: var(--primary-color);
+      color: var(--primary-color);
+      background-color: rgba(102, 126, 234, 0.05);
+    }
+
+    .file-input {
+      display: none;
+    }
+
+    /* Markdown toolbar */
+    .md-toolbar {
+      display: flex;
+      align-items: center;
+      gap: 1px;
+      padding: 4px 10px;
+      border-bottom: 1px solid var(--border-color);
+      background: #fafafa;
+      flex-wrap: nowrap;
+      overflow-x: auto;
+      min-height: 32px;
+    }
+
+    .md-tool-btn {
+      padding: 3px 6px;
+      border: 1px solid transparent;
+      border-radius: 3px;
+      background: transparent;
+      font-size: 11px;
+      color: var(--text-secondary);
+      cursor: pointer;
+      transition: all 0.15s;
+      min-width: 24px;
+      text-align: center;
+      flex-shrink: 0;
+    }
+
+    .md-tool-btn:hover {
+      background: var(--primary-light);
+      color: #4338ca;
+      border-color: var(--primary-border);
+    }
+
+    .md-tool-sep {
+      width: 1px;
+      height: 16px;
+      background: var(--border-color);
+      margin: 0 4px;
+    }
+
+    /* Markdown preview toggle */
+    .md-toggle-bar {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      padding: 4px 14px;
+      border-top: 1px solid var(--border-color);
+      background: #fafafa;
+    }
+
+    .md-toggle-btn {
+      font-size: 12px;
+      color: var(--text-secondary);
+      cursor: pointer;
+      padding: 3px 10px;
+      border-radius: 50px;
+      border: 1px solid var(--border-color);
+      background: #fff;
+      transition: all 0.2s;
+    }
+
+    .md-toggle-btn:hover {
+      background: var(--primary-light);
+      color: #4338ca;
+      border-color: var(--primary-border);
+    }
+
+    .md-toggle-btn.active {
+      background: var(--primary-light);
+      color: #4338ca;
+      border-color: var(--primary-border);
+    }
+
+    /* Markdown preview area */
+    .md-preview {
+      display: none;
+      padding: 0 14px 12px;
+      font-size: 14px;
+      line-height: 1.7;
+      color: var(--text-primary);
+      min-height: 180px;
+      overflow-y: auto;
+      max-height: 400px;
+    }
+    .md-preview.show { display: block; }
+    .md-preview > * { margin-top: 0 !important; margin-bottom: 6px !important; }
+    .md-preview > *:first-child { margin-top: 0 !important; }
+    .md-preview > *:last-child { margin-bottom: 0 !important; }
+
+    .md-preview h1 { font-size: 18px; margin: 12px 0 6px !important; }
+    .md-preview h2 { font-size: 16px; margin: 10px 0 6px !important; }
+    .md-preview h3 { font-size: 15px; margin: 8px 0 4px !important; }
+    .md-preview p { margin: 6px 0 !important; }
+    .md-preview ul, .md-preview ol { margin: 6px 0; padding-left: 24px; }
+    .md-preview code {
+      background: #f1f5f9;
+      padding: 2px 6px;
+      border-radius: 3px;
+      font-size: 13px;
+      font-family: 'SF Mono', Monaco, monospace;
+    }
+    .md-preview pre {
+      background: #f8fafc;
+      padding: 10px;
+      border-radius: 6px;
+      overflow-x: auto;
+      margin: 8px 0;
+    }
+    .md-preview pre code { background: none; padding: 0; }
+    .md-preview blockquote {
+      border-left: 3px solid var(--border-color);
+      padding-left: 12px;
+      margin: 8px 0;
+      color: var(--text-secondary);
+    }
+    .md-preview a { color: var(--primary-color); }
+    .md-preview table { border-collapse: collapse; margin: 8px 0; }
+    .md-preview th, .md-preview td { border: 1px solid var(--border-color); padding: 6px 10px; }
+    .md-preview th { background: #f8fafc; }
+    .md-preview img { max-width: 100%; border-radius: 6px; margin: 8px 0; }
+    .md-preview hr { border: none; border-top: 1px solid var(--border-color); margin: 12px 0; }
+    .md-preview del { color: var(--text-secondary); }
+
+    /* 黑夜模式：编辑预览 */
+    body.dark .md-preview,
+    body.dark .md-preview *:not(a):not(code):not(pre) {
+      color: var(--text-primary) !important;
+    }
+    body.dark .md-preview a { color: var(--primary-color) !important; }
+    body.dark .md-preview code { background: #334155 !important; color: var(--text-primary) !important; }
+    body.dark .md-preview pre { background: #0f172a !important; color: var(--text-primary) !important; }
+    body.dark .md-preview pre code { background: transparent !important; }
+    body.dark .md-preview blockquote { background: #172554 !important; border-left-color: #60a5fa !important; }
+    body.dark .md-preview th { background: #334155 !important; }
+    body.dark .md-preview tr:nth-child(even) { background: #1e293b !important; }
+    body.dark .form-textarea {
+      background: #0f172a;
+      color: #e2e8f0;
+      border-color: #334155;
+    }
+    body.dark .form-textarea::placeholder { color: #64748b; }
+
+    @keyframes fadeIn {
+      from { opacity: 0; }
+      to { opacity: 1; }
+    }
+
+    @keyframes slideUp {
+      from {
+        opacity: 0;
+        transform: translateY(10px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    .delete-all-btn {
+      margin-left: auto;
+    }
+
+    @media (max-width: 640px) {
+      body {
+        padding: 4px;
+      }
+
+      .todo-header {
+        flex-direction: column;
+        gap: 8px;
+        text-align: center;
+        height: auto;
+        padding: 10px 12px;
+      }
+
+      .stats {
+        gap: 12px;
+      }
+
+      .todo-toolbar {
+        flex-direction: column;
+      }
+
+      .search-box {
+        min-width: 100%;
+      }
+
+      .filter-section {
+        flex-direction: column;
+        align-items: flex-start;
+      }
+
+      .todo-list {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .theme-toggle {
+      background: rgba(0,0,0,0.1);
+      border: none;
+      color: var(--text-primary);
+      padding: 6px 10px;
+      border-radius: 6px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.2s;
+      white-space: nowrap;
+    }
+    .theme-toggle:hover {
+      background: rgba(0,0,0,0.2);
+    }
+    body.dark .theme-toggle {
+      color: var(--text-primary);
+      background: rgba(255,255,255,0.15);
+    }
+    body.dark .theme-toggle:hover {
+      background: rgba(255,255,255,0.25);
+    }
+  </style>
+</head>
+<body>
+  <div class="todo-container">
+    <div class="todo-header">
+      <h1>📝 ToDoList</h1>
+      <div style="display: flex; align-items: center; gap: 10px;">
+        <!-- 黑夜模式由主程式统一控制，不单独显示按钮 -->
+        <div class="stats">
+        <div class="stat-item">
+          <span class="stat-value" id="totalCount">0</span>
+          <span class="stat-label">总任务</span>
+        </div>
+        <div class="stat-item">
+          <span class="stat-value" id="pendingCount">0</span>
+          <span class="stat-label">待完成</span>
+        </div>
+        <div class="stat-item">
+          <span class="stat-value" id="completedCount">0</span>
+          <span class="stat-label">已完成</span>
+        </div>
+      </div>
+    </div>
+    </div>
+
+    <div class="todo-toolbar">
+      <div class="btn-group">
+        <button class="btn btn-primary" onclick="openAddModal()" title="添加任务">➕</button>
+        <button class="btn btn-secondary" onclick="clearCompleted()" title="清空已完成">🗑️</button>
+        <button class="btn btn-danger" onclick="clearAll()" title="删除全部">🚮</button>
+      </div>
+      <input type="text" class="search-box" id="searchInput" placeholder="搜索任务..." oninput="handleSearch()">
+    </div>
+
+    <div class="filter-section">
+      <span class="filter-label">状态:</span>
+      <div class="status-filter">
+        <button class="status-btn active" onclick="setFilter('all')" title="全部">全</button>
+        <button class="status-btn" onclick="setFilter('pending')" title="待完成">待</button>
+        <button class="status-btn" onclick="setFilter('completed')" title="已完成">完</button>
+      </div>
+      <span class="filter-label" style="margin-left: 16px;">标签:</span>
+      <div class="tag-filter" id="tagFilter"></div>
+    </div>
+
+    <div class="todo-list" id="todoList"></div>
+  </div>
+
+  <div class="modal-overlay" id="modalOverlay" style="display: none;" onclick="closeModal(event)">
+    <div class="modal" onclick="event.stopPropagation()">
+      <div class="modal-header">
+        <h2 class="modal-title" id="modalTitle">添加任务</h2>
+        <div class="modal-header-actions">
+          <button class="btn btn-text btn-secondary" onclick="closeModal()">取消</button>
+          <button class="btn btn-text btn-primary" onclick="saveTask()">保存</button>
+          <button class="modal-close" onclick="closeModal()">✕</button>
+        </div>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label class="form-label">任务内容</label>
+          <div class="md-toolbar" id="mdToolbar">
+            <button class="md-tool-btn" onclick="insertMd('**', '**')" title="粗体"><b>B</b></button>
+            <button class="md-tool-btn" onclick="insertMd('*', '*')" title="斜体"><i>I</i></button>
+            <button class="md-tool-btn" onclick="insertMd('<u>', '</u>')" title="下划线"><u>U</u></button>
+            <button class="md-tool-btn" onclick="insertMd('~~', '~~')" title="删除线"><s>S</s></button>
+            <span class="md-tool-sep"></span>
+            <button class="md-tool-btn" onclick="insertMd('# ', '')" title="标题1">H1</button>
+            <button class="md-tool-btn" onclick="insertMd('## ', '')" title="标题2">H2</button>
+            <button class="md-tool-btn" onclick="insertMd('### ', '')" title="标题3">H3</button>
+            <button class="md-tool-btn" onclick="insertMd('#### ', '')" title="标题4">H4</button>
+            <span class="md-tool-sep"></span>
+            <button class="md-tool-btn" onclick="insertMd('- ', '')" title="无序列表">•</button>
+            <button class="md-tool-btn" onclick="insertMd('1. ', '')" title="有序列表">1.</button>
+            <button class="md-tool-btn" onclick="insertMd('- [ ] ', '')" title="任务列表">☐</button>
+            <button class="md-tool-btn" onclick="insertMd('> ', '')" title="引用">❝</button>
+            <span class="md-tool-sep"></span>
+            <button class="md-tool-btn" onclick="insertMd('`', '`')" title="行内代码">&lt;/&gt;</button>
+            <button class="md-tool-btn" onclick="insertMd('```\n', '\n```')" title="代码块">{ }</button>
+            <button class="md-tool-btn" onclick="insertMd('[', '](url)')" title="链接">🔗</button>
+            <button class="md-tool-btn" onclick="insertMd('![', '](url)')" title="图片">🖼️</button>
+            <button class="md-tool-btn" onclick="insertMd('---\n', '')" title="分隔线">—</button>
+            <span class="md-tool-sep"></span>
+            <button class="md-tool-btn" onclick="insertMd('| 列1 | 列2 | 列3 |\n| --- | --- | --- |\n| 数据 | 数据 | 数据 |', '')" title="表格"></button>
+            <button class="md-tool-btn" onclick="insertMd('^', '^')" title="上标">X²</button>
+            <button class="md-tool-btn" onclick="insertMd('~', '~')" title="下标">X₂</button>
+            <span style="flex:1"></span>
+            <span class="md-toggle-btn" id="mdToggleBtn" onclick="toggleMdPreview()">预览 Markdown</span>
+          </div>
+          <textarea class="form-textarea" id="taskText" placeholder="输入任务内容（支持 Markdown）..." style="border-top:none;border-radius:0 0 8px 8px;"></textarea>
+          <div class="md-preview" id="mdPreview"></div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">标签</label>
+          <div class="tags-selector" id="tagsSelector">
+            <input type="text" class="tag-input" id="tagInput" placeholder="#标签" onkeydown="handleTagInput(event)">
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">🎨 卡片背景色</label>
+          <div id="todoColorPicker" style="display: flex; flex-wrap: wrap; gap: 6px; align-items: center;">
+            <div class="todo-color-swatch" data-color="" style="width: 28px; height: 28px; border-radius: 6px; border: 2px solid #e2e8f0; cursor: pointer; background: #ffffff; display: flex; align-items: center; justify-content: center; font-size: 14px;" title="默认（白色）" onclick="selectTodoColor(this, '')">✓</div>
+            <div class="todo-color-swatch" data-color="#fef3c7" style="width: 28px; height: 28px; border-radius: 6px; border: 2px solid #e2e8f0; cursor: pointer; background: #fef3c7;" title="浅黄" onclick="selectTodoColor(this, '#fef3c7')"></div>
+            <div class="todo-color-swatch" data-color="#dbeafe" style="width: 28px; height: 28px; border-radius: 6px; border: 2px solid #e2e8f0; cursor: pointer; background: #dbeafe;" title="浅蓝" onclick="selectTodoColor(this, '#dbeafe')"></div>
+            <div class="todo-color-swatch" data-color="#dcfce7" style="width: 28px; height: 28px; border-radius: 6px; border: 2px solid #e2e8f0; cursor: pointer; background: #dcfce7;" title="浅绿" onclick="selectTodoColor(this, '#dcfce7')"></div>
+            <div class="todo-color-swatch" data-color="#fce7f3" style="width: 28px; height: 28px; border-radius: 6px; border: 2px solid #e2e8f0; cursor: pointer; background: #fce7f3;" title="浅粉" onclick="selectTodoColor(this, '#fce7f3')"></div>
+            <div class="todo-color-swatch" data-color="#f3e8ff" style="width: 28px; height: 28px; border-radius: 6px; border: 2px solid #e2e8f0; cursor: pointer; background: #f3e8ff;" title="浅紫" onclick="selectTodoColor(this, '#f3e8ff')"></div>
+            <div class="todo-color-swatch" data-color="#fed7aa" style="width: 28px; height: 28px; border-radius: 6px; border: 2px solid #e2e8f0; cursor: pointer; background: #fed7aa;" title="浅橙" onclick="selectTodoColor(this, '#fed7aa')"></div>
+            <div class="todo-color-swatch" data-color="#e0e7ff" style="width: 28px; height: 28px; border-radius: 6px; border: 2px solid #e2e8f0; cursor: pointer; background: #e0e7ff;" title="浅靛" onclick="selectTodoColor(this, '#e0e7ff')"></div>
+            <div class="todo-color-swatch" data-color="#d1fae5" style="width: 28px; height: 28px; border-radius: 6px; border: 2px solid #e2e8f0; cursor: pointer; background: #d1fae5;" title="浅青" onclick="selectTodoColor(this, '#d1fae5')"></div>
+            <div class="todo-color-swatch" data-color="#fee2e2" style="width: 28px; height: 28px; border-radius: 6px; border: 2px solid #e2e8f0; cursor: pointer; background: #fee2e2;" title="浅红" onclick="selectTodoColor(this, '#fee2e2')"></div>
+            <div class="todo-color-swatch" data-color="#f1f5f9" style="width: 28px; height: 28px; border-radius: 6px; border: 2px solid #e2e8f0; cursor: pointer; background: #f1f5f9;" title="浅灰" onclick="selectTodoColor(this, '#f1f5f9')"></div>
+            <div class="todo-color-swatch" data-color="#fef9c3" style="width: 28px; height: 28px; border-radius: 6px; border: 2px solid #e2e8f0; cursor: pointer; background: #fef9c3;" title="浅柠檬" onclick="selectTodoColor(this, '#fef9c3')"></div>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">附件</label>
+          <div class="attachments-section">
+            <label class="file-upload-btn">
+              📎 点击上传附件
+              <input type="file" class="file-input" id="fileInput" multiple onchange="handleFileSelect(event)">
+            </label>
+            <div class="attachments-list" id="attachmentsList"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const STORAGE_KEY = 'electron-todolist-data';
+    const PLUGIN_NAME = 'todolist';
+    let todos = [];
+    let currentFilter = 'all';
+    let currentTagFilter = null;
+    let searchQuery = '';
+    let editingId = null;
+    let pendingAttachments = [];
+
+    const TAG_COLORS = {};
+
+    const DEFAULT_TAG_LIST = [];
+
+    const TAG_COLOR_CLASSES = [
+      'tag-color-1', 'tag-color-2', 'tag-color-3', 'tag-color-4', 
+      'tag-color-5', 'tag-color-6', 'tag-color-7', 'tag-color-8',
+      'tag-color-9', 'tag-color-10', 'tag-color-11', 'tag-color-12'
+    ];
+
+    function getTagColorClass(tag) {
+      if (TAG_COLORS[tag]) return TAG_COLORS[tag];
+      let hash = 0;
+      for (let i = 0; i < tag.length; i++) {
+        hash = tag.charCodeAt(i) + ((hash << 5) - hash);
+      }
+      const colorIndex = Math.abs(hash) % TAG_COLOR_CLASSES.length;
+      return TAG_COLOR_CLASSES[colorIndex];
+    }
+
+    async function loadTodos() {
+      try {
+        if (!window.electronAPI) {
+          console.warn('[TodoList] electronAPI 不可用，使用 localStorage 作为后备');
+          loadTodosFromLocalStorage();
+          return;
+        }
+
+        const result = await window.electronAPI.loadPluginData(PLUGIN_NAME);
+        if (result.success && result.data && result.data.length > 0) {
+          todos = result.data;
+          console.log(`[TodoList] 从 JSON 文件加载数据: ${todos.length} 条`);
+        } else {
+          todos = [];
+          console.log(`[TodoList] JSON 文件为空或不存在，尝试从 localStorage 迁移...`);
+          await migrateFromLocalStorage();
+        }
+      } catch (error) {
+        console.error('[TodoList] 加载数据失败:', error);
+        todos = [];
+        await migrateFromLocalStorage();
+      }
+    }
+
+    async function saveTodos() {
+      try {
+        if (!window.electronAPI) {
+          console.warn('[TodoList] electronAPI 不可用，使用 localStorage 作为后备');
+          saveTodosToLocalStorage();
+          return;
+        }
+
+        const result = await window.electronAPI.savePluginData(PLUGIN_NAME, todos);
+        if (result.success) {
+          console.log(`[TodoList] 数据已保存到 JSON 文件: ${todos.length} 条`);
+        } else {
+          console.error('[TodoList] 保存数据失败:', result.error);
+        }
+      } catch (error) {
+        console.error('[TodoList] 保存数据异常:', error);
+        saveTodosToLocalStorage();
+      }
+      renderTodos();
+      updateStats();
+    }
+
+    function loadTodosFromLocalStorage() {
+      const saved = localStorage.getItem(STORAGE_KEY);
+      if (saved) {
+        try {
+          todos = JSON.parse(saved);
+        } catch (e) {
+          todos = [];
+        }
+      }
+    }
+
+    function saveTodosToLocalStorage() {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(todos));
+    }
+
+    async function migrateFromLocalStorage() {
+      try {
+        const saved = localStorage.getItem(STORAGE_KEY);
+        if (saved) {
+          try {
+            const oldData = JSON.parse(saved);
+            if (oldData && oldData.length > 0) {
+              todos = oldData;
+              await window.electronAPI.savePluginData(PLUGIN_NAME, todos);
+              localStorage.removeItem(STORAGE_KEY);
+              console.log(`[TodoList] ✅ 已从 localStorage 迁移 ${todos.length} 条数据到 JSON 文件`);
+            }
+          } catch (e) {
+            console.warn('[TodoList] localStorage 数据解析失败，跳过迁移');
+          }
+        }
+      } catch (error) {
+        console.warn('[TodoList] 迁移失败:', error);
+      }
+    }
+
+    function updateStats() {
+      const total = todos.length;
+      const completed = todos.filter(t => t.completed).length;
+      const pending = total - completed;
+
+      document.getElementById('totalCount').textContent = total;
+      document.getElementById('completedCount').textContent = completed;
+      document.getElementById('pendingCount').textContent = pending;
+    }
+
+    function getUniqueTags() {
+      const tags = new Set();
+      todos.forEach(todo => {
+        if (todo.tags && Array.isArray(todo.tags)) {
+          todo.tags.forEach(tag => tags.add(tag));
+        } else if (todo.tag) {
+          tags.add(todo.tag);
+        }
+      });
+      return Array.from(tags);
+    }
+
+    function renderTagFilter() {
+      const container = document.getElementById('tagFilter');
+      const tags = getUniqueTags();
+
+      let html = `<button class="tag-chip ${currentTagFilter === null ? 'active' : 'inactive'}" onclick="setTagFilter(null)" title="全部标签">全</button>`;
+      tags.forEach(tag => {
+        const isActive = currentTagFilter === tag;
+        const tagShort = tag.length > 1 ? tag.charAt(0) : tag;
+        html += `<button class="tag-chip ${isActive ? 'active' : 'inactive'}" onclick="setTagFilter('${tag}')" title="${tag}">${tagShort}</button>`;
+      });
+      container.innerHTML = html;
+    }
+
+    function renderTagsSelector(selectedTags = []) {
+      const container = document.getElementById('tagsSelector');
+      const inputHtml = '<input type="text" class="tag-input" id="tagInput" placeholder="#标签" onkeydown="handleTagInput(event)">';
+      let html = '';
+      const allTags = getUniqueTags();
+      allTags.forEach(tag => {
+        const isSelected = selectedTags.includes(tag);
+        html += `<span class="tag-option ${isSelected ? 'selected' : ''}" onclick="toggleTag('${tag}')">${tag}</span>`;
+      });
+      container.innerHTML = inputHtml + html;
+      selectedTagsForModal = selectedTags || [];
+    }
+
+    let selectedTagsForModal = [];
+    let selectedTodoColor = '';
+    let mdPreviewMode = false;
+
+    // Markdown 工具函数
+    function insertMd(before, after) {
+      const textarea = document.getElementById('taskText');
+      const start = textarea.selectionStart;
+      const end = textarea.selectionEnd;
+      const selected = textarea.value.substring(start, end);
+      const replacement = before + (selected || '文本') + after;
+      textarea.value = textarea.value.substring(0, start) + replacement + textarea.value.substring(end);
+      textarea.focus();
+      const newCursor = start + before.length + (selected ? selected.length : 2);
+      textarea.setSelectionRange(newCursor, newCursor + (selected ? 0 : 2));
+    }
+
+    function toggleMdPreview() {
+      mdPreviewMode = !mdPreviewMode;
+      const preview = document.getElementById('mdPreview');
+      const textarea = document.getElementById('taskText');
+      const btn = document.getElementById('mdToggleBtn');
+      if (mdPreviewMode) {
+        preview.classList.add('show');
+        preview.innerHTML = renderMarkdown(textarea.value);
+        textarea.style.display = 'none';
+        btn.classList.add('active');
+      } else {
+        preview.classList.remove('show');
+        textarea.style.display = '';
+        btn.classList.remove('active');
+      }
+    }
+
+    // 色卡选择
+    function selectTodoColor(el, color) {
+      selectedTodoColor = color;
+      document.querySelectorAll('.todo-color-swatch').forEach(s => {
+        s.style.borderColor = '#e2e8f0';
+        s.style.boxShadow = 'none';
+        s.textContent = '';
+      });
+      el.style.borderColor = '#667eea';
+      el.style.boxShadow = '0 0 0 2px rgba(102,126,234,0.3)';
+      if (!color) el.textContent = '✓';
+    }
+
+    function getSelectedTodoColor() {
+      return selectedTodoColor;
+    }
+
+    function setTodoColorPicker(color) {
+      selectedTodoColor = color;
+      const swatches = document.querySelectorAll('.todo-color-swatch');
+      swatches.forEach(s => {
+        s.style.borderColor = '#e2e8f0';
+        s.style.boxShadow = 'none';
+        s.textContent = '';
+      });
+      let target = null;
+      if (color) {
+        for (const s of swatches) {
+          if (s.getAttribute('data-color') === color) { target = s; break; }
+        }
+      }
+      if (!target) target = swatches[0];
+      if (target) {
+        target.style.borderColor = '#667eea';
+        target.style.boxShadow = '0 0 0 2px rgba(102,126,234,0.3)';
+        if (!color) target.textContent = '✓';
+      }
+    }
+
+    function toggleTag(tag) {
+      const index = selectedTagsForModal.indexOf(tag);
+      if (index === -1) {
+        selectedTagsForModal.push(tag);
+      } else {
+        selectedTagsForModal.splice(index, 1);
+      }
+      renderTagsSelector(selectedTagsForModal);
+    }
+
+    function handleTagInput(event) {
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        const input = document.getElementById('tagInput');
+        let tag = input.value.trim();
+        if (tag.startsWith('#')) {
+          tag = tag.substring(1);
+        }
+        if (tag && !selectedTagsForModal.includes(tag)) {
+          selectedTagsForModal.push(tag);
+          input.value = '';
+          renderTagsSelector(selectedTagsForModal);
+        }
+      }
+    }
+
+    function setFilter(filter) {
+      currentFilter = filter;
+      document.querySelectorAll('.status-btn').forEach(btn => {
+        btn.classList.toggle('active', btn.textContent.trim() === (filter === 'all' ? '全' : filter === 'pending' ? '待' : '完'));
+      });
+      renderTodos();
+    }
+
+    function setTagFilter(tag) {
+      currentTagFilter = tag;
+      renderTagFilter();
+      renderTodos();
+    }
+
+    function handleSearch() {
+      searchQuery = document.getElementById('searchInput').value.toLowerCase();
+      renderTodos();
+    }
+
+    function filterTodos() {
+      return todos.filter(todo => {
+        if (currentFilter === 'completed' && !todo.completed) return false;
+        if (currentFilter === 'pending' && todo.completed) return false;
+        if (currentTagFilter !== null) {
+          const tags = todo.tags && Array.isArray(todo.tags) ? todo.tags : (todo.tag ? [todo.tag] : []);
+          if (!tags.includes(currentTagFilter)) return false;
+        }
+        if (searchQuery && !todo.text.toLowerCase().includes(searchQuery)) return false;
+        return true;
+      });
+    }
+
+    function formatDate(timestamp) {
+      const date = new Date(timestamp);
+      const now = new Date();
+      const isToday = date.toDateString() === now.toDateString();
+      const isYesterday = new Date(now - 86400000).toDateString() === date.toDateString();
+
+      if (isToday) return '今天 ' + date.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+      if (isYesterday) return '昨天 ' + date.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+      return date.toLocaleDateString('zh-CN', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+    }
+
+    function renderAttachments(attachments) {
+      if (!attachments || attachments.length === 0) return '';
+      return `
+        <div class="todo-attachments">
+          ${attachments.map((att, idx) => `
+            <div class="attachment-item">
+              <span>📎</span>
+              <span title="${att.name}">${att.name}</span>
+            </div>
+          `).join('')}
+        </div>
+      `;
+    }
+
+    function renderTodos() {
+      const container = document.getElementById('todoList');
+      const filtered = filterTodos();
+
+      if (filtered.length === 0) {
+        container.innerHTML = `
+          <div class="empty-state">
+            <div class="empty-state-icon">📋</div>
+            <div class="empty-state-title">暂无任务</div>
+            <div class="empty-state-desc">点击上方按钮添加新任务</div>
+          </div>
+        `;
+        return;
+      }
+
+      container.innerHTML = filtered.map(todo => {
+        const tags = todo.tags && Array.isArray(todo.tags) ? todo.tags : (todo.tag ? [todo.tag] : []);
+        const tagsHtml = tags.map(tag => `<span class="tag ${getTagColorClass(tag)}">#${tag}</span>`).join('');
+        const todoBgStyle = todo.bgColor ? `background-color: ${todo.bgColor};` : '';
+        return `
+        <div class="todo-item ${todo.completed ? 'completed' : ''}" data-id="${todo.id}" ondblclick="openEditModal('${todo.id}')" style="${todoBgStyle}">
+          <div class="todo-item-header">
+            <div class="checkbox-wrapper" onclick="toggleComplete('${todo.id}')">
+              <div class="checkbox ${todo.completed ? 'checked' : ''}"></div>
+            </div>
+            <div class="todo-actions">
+              <button class="action-btn edit" onclick="openEditModal('${todo.id}')" title="编辑">✏️</button>
+              <button class="action-btn delete" onclick="deleteTodo('${todo.id}')" title="删除">🗑️</button>
+            </div>
+          </div>
+          <div class="todo-content">
+            <div class="todo-text">${renderMarkdown(todo.text)}</div>
+            <div class="todo-meta">
+              <div class="todo-tags">
+                ${tagsHtml}
+              </div>
+              <span class="todo-date">${formatDate(todo.createdAt)}</span>
+            </div>
+            ${renderAttachments(todo.attachments)}
+          </div>
+        </div>
+      `;
+      }).join('');
+    }
+
+    function escapeHtml(text) {
+      if (!text) return '';
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+    }
+
+    function renderMarkdown(text) {
+      if (!text) return '';
+      // 提取 LaTeX 公式，避免 marked 破坏
+      const mathBlocks = [];
+      let processed = text;
+      // 块级公式 $$...$$
+      processed = processed.replace(/\$\$([\s\S]*?)\$\$/g, (_, formula) => {
+        const idx = mathBlocks.length;
+        mathBlocks.push({ formula, display: true });
+        return `%%MATHBLOCK_${idx}%%`;
+      });
+      // 行内公式 $...$（排除 $$）
+      processed = processed.replace(/(?<!\$)\$(?!\$)([^\$\n]+?)\$(?!\$)/g, (_, formula) => {
+        const idx = mathBlocks.length;
+        mathBlocks.push({ formula, display: false });
+        return `%%MATHBLOCK_${idx}%%`;
+      });
+
+      let html;
+      if (typeof marked !== 'undefined') {
+        marked.setOptions({ breaks: true, gfm: true });
+        html = marked.parse(processed);
+      } else {
+        html = escapeHtml(processed);
+      }
+
+      // 替换回 KaTeX 渲染结果
+      html = html.replace(/%%MATHBLOCK_(\d+)%%/g, (_, idx) => {
+        const { formula, display } = mathBlocks[parseInt(idx)];
+        if (typeof katex !== 'undefined') {
+          try {
+            return katex.renderToString(formula, { displayMode: display, throwOnError: false });
+          } catch (e) {
+            return `<code>${escapeHtml(formula)}</code>`;
+          }
+        }
+        return `<code>${escapeHtml(formula)}</code>`;
+      });
+
+      return html;
+    }
+
+    function toggleComplete(id) {
+      const todo = todos.find(t => t.id === id);
+      if (todo) {
+        todo.completed = !todo.completed;
+        todo.completedAt = todo.completed ? Date.now() : null;
+        saveTodos();
+      }
+    }
+
+    function deleteTodo(id) {
+      if (!confirm('确定删除这个任务吗？')) return;
+      todos = todos.filter(t => t.id !== id);
+      saveTodos();
+    }
+
+    function clearCompleted() {
+      const completed = todos.filter(t => t.completed);
+      if (completed.length === 0) {
+        alert('没有已完成的任务可删除');
+        return;
+      }
+      if (!confirm(`确定删除 ${completed.length} 个已完成任务吗？`)) return;
+      todos = todos.filter(t => !t.completed);
+      saveTodos();
+    }
+
+    function clearAll() {
+      if (todos.length === 0) {
+        alert('没有任务可删除');
+        return;
+      }
+      if (!confirm(`确定删除全部 ${todos.length} 个任务吗？此操作不可恢复！`)) return;
+      todos = [];
+      saveTodos();
+    }
+
+    function openAddModal() {
+      editingId = null;
+      document.getElementById('modalTitle').textContent = '添加任务';
+      document.getElementById('taskText').value = '';
+      pendingAttachments = [];
+      selectedTagsForModal = [];
+      renderTagsSelector([]);
+      renderPendingAttachments();
+      setTodoColorPicker('');
+      mdPreviewMode = false;
+      document.getElementById('mdPreview').classList.remove('show');
+      document.getElementById('taskText').style.display = '';
+      document.getElementById('mdToggleBtn').classList.remove('active');
+      document.getElementById('modalOverlay').style.display = 'flex';
+      document.getElementById('taskText').focus();
+    }
+
+    function openEditModal(id) {
+      const todo = todos.find(t => t.id === id);
+      if (!todo) return;
+
+      editingId = id;
+      document.getElementById('modalTitle').textContent = '编辑任务';
+      document.getElementById('taskText').value = todo.text;
+      pendingAttachments = todo.attachments || [];
+      const tags = todo.tags && Array.isArray(todo.tags) ? todo.tags : (todo.tag ? [todo.tag] : []);
+      selectedTagsForModal = tags;
+      renderTagsSelector(tags);
+      renderPendingAttachments();
+      setTodoColorPicker(todo.bgColor || '');
+      mdPreviewMode = false;
+      document.getElementById('mdPreview').classList.remove('show');
+      document.getElementById('taskText').style.display = '';
+      document.getElementById('mdToggleBtn').classList.remove('active');
+      document.getElementById('modalOverlay').style.display = 'flex';
+      document.getElementById('taskText').focus();
+    }
+
+    function closeModal(event) {
+      if (event && event.target !== event.currentTarget) return;
+      document.getElementById('modalOverlay').style.display = 'none';
+      mdPreviewMode = false;
+      document.getElementById('mdPreview').classList.remove('show');
+      document.getElementById('taskText').style.display = '';
+      document.getElementById('mdToggleBtn').classList.remove('active');
+    }
+
+    function handleFileSelect(event) {
+      const files = Array.from(event.target.files);
+      files.forEach(file => {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          pendingAttachments.push({
+            name: file.name,
+            size: formatFileSize(file.size),
+            type: file.type,
+            data: e.target.result
+          });
+          renderPendingAttachments();
+        };
+        reader.readAsDataURL(file);
+      });
+      event.target.value = '';
+    }
+
+    function formatFileSize(bytes) {
+      if (bytes === 0) return '0 B';
+      const k = 1024;
+      const sizes = ['B', 'KB', 'MB', 'GB'];
+      const i = Math.floor(Math.log(bytes) / Math.log(k));
+      return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+    }
+
+    function removePendingAttachment(index) {
+      pendingAttachments.splice(index, 1);
+      renderPendingAttachments();
+    }
+
+    function renderPendingAttachments() {
+      const container = document.getElementById('attachmentsList');
+      if (pendingAttachments.length === 0) {
+        container.innerHTML = '';
+        return;
+      }
+
+      container.innerHTML = pendingAttachments.map((att, idx) => `
+        <div class="attachment-list-item">
+          <span class="attachment-list-icon">📄</span>
+          <div class="attachment-list-info">
+            <div class="attachment-list-name" title="${att.name}">${att.name}</div>
+            <div class="attachment-list-size">${att.size}</div>
+          </div>
+          <span class="attachment-list-remove" onclick="removePendingAttachment(${idx})">✕</span>
+        </div>
+      `).join('');
+    }
+
+    async function saveTask() {
+      const text = document.getElementById('taskText').value.trim();
+      if (!text) {
+        alert('请输入任务内容');
+        return;
+      }
+
+      if (editingId) {
+        const todo = todos.find(t => t.id === editingId);
+        if (todo) {
+          todo.text = text;
+          todo.tags = selectedTagsForModal;
+          delete todo.tag;
+          todo.attachments = pendingAttachments;
+          todo.bgColor = getSelectedTodoColor();
+          todo.updatedAt = Date.now();
+        }
+      } else {
+        const newTodo = {
+          id: Date.now().toString(),
+          text: text,
+          tags: selectedTagsForModal,
+          attachments: pendingAttachments,
+          bgColor: getSelectedTodoColor(),
+          completed: false,
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+          completedAt: null
+        };
+        todos.unshift(newTodo);
+      }
+
+      await saveTodos();
+      closeModal();
+    }
+
+    async function init() {
+      await loadTodos();
+      renderTagFilter();
+      renderTodos();
+      updateStats();
+    }
+
+    // 主题由主程式统一控制，通过 CSS 注入实现（主程式 insertCSS 添加 body.dark）
+    // 页面加载时从 localStorage 读取初始状态（兼容旧数据）
+    (function loadInitialTheme() {
+      const saved = localStorage.getItem('todoListTheme');
+      if (saved === 'dark') {
+        document.body.classList.add('dark');
+      }
+    })();
+    init();
+
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        closeModal();
+      }
+    });
+  </script>
+</body>
+</html>

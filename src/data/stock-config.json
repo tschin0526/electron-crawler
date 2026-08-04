@@ -1,0 +1,1840 @@
+{
+  "stocks": [
+    {
+      "code": "2891",
+      "name": "中信金",
+      "market": "台股",
+      "sina_code": "tw2891"
+    },
+    {
+      "code": "2885",
+      "name": "元大金",
+      "market": "台股",
+      "sina_code": "tw2885"
+    },
+    {
+      "code": "1303",
+      "name": "南亚",
+      "market": "台股",
+      "sina_code": "tw1303"
+    },
+    {
+      "code": "2882",
+      "name": "国泰金",
+      "market": "台股",
+      "sina_code": "tw2882"
+    },
+    {
+      "code": "2881",
+      "name": "富邦金",
+      "market": "台股",
+      "sina_code": "tw2881"
+    },
+    {
+      "code": "2886",
+      "name": "兆丰金",
+      "market": "台股",
+      "sina_code": "tw2886"
+    },
+    {
+      "code": "2892",
+      "name": "第一金",
+      "market": "台股",
+      "sina_code": "tw2892"
+    },
+    {
+      "code": "00639",
+      "name": "富邦深100",
+      "market": "台股",
+      "sina_code": "tw00639"
+    },
+    {
+      "code": "00919",
+      "name": "群台精",
+      "market": "台股",
+      "sina_code": "tw00919"
+    },
+    {
+      "code": "00878",
+      "name": "国永高",
+      "market": "台股",
+      "sina_code": "tw00878"
+    },
+    {
+      "code": "00929",
+      "name": "复华科",
+      "market": "台股",
+      "sina_code": "tw00929"
+    },
+    {
+      "code": "00907",
+      "name": "永丰优息",
+      "market": "台股",
+      "sina_code": "tw00907"
+    },
+    {
+      "code": "0052",
+      "name": "富邦科技",
+      "market": "台股",
+      "sina_code": "tw0052"
+    },
+    {
+      "code": "1216",
+      "name": "统一",
+      "market": "台股",
+      "sina_code": "tw1216"
+    },
+    {
+      "code": "2912",
+      "name": "统一超",
+      "market": "台股",
+      "sina_code": "tw2912"
+    },
+    {
+      "code": "3045",
+      "name": "台哥大",
+      "market": "台股",
+      "sina_code": "tw3045"
+    },
+    {
+      "code": "4904",
+      "name": "远传",
+      "market": "台股",
+      "sina_code": "tw4904"
+    },
+    {
+      "code": "600519",
+      "name": "贵州茅台",
+      "market": "A股",
+      "sina_code": "sh600519"
+    },
+    {
+      "code": "000858",
+      "name": "五粮液",
+      "market": "A股",
+      "sina_code": "sz000858"
+    },
+    {
+      "code": "601318",
+      "name": "中国平安",
+      "market": "A股",
+      "sina_code": "sh601318"
+    },
+    {
+      "code": "600036",
+      "name": "招商银行",
+      "market": "A股",
+      "sina_code": "sh600036"
+    },
+    {
+      "code": "000001",
+      "name": "平安银行",
+      "market": "A股",
+      "sina_code": "sz000001"
+    },
+    {
+      "code": "601166",
+      "name": "兴业银行",
+      "market": "A股",
+      "sina_code": "sh601166"
+    },
+    {
+      "code": "601398",
+      "name": "工商银行",
+      "market": "A股",
+      "sina_code": "sh601398"
+    },
+    {
+      "code": "601988",
+      "name": "中国银行",
+      "market": "A股",
+      "sina_code": "sh601988"
+    },
+    {
+      "code": "601288",
+      "name": "农业银行",
+      "market": "A股",
+      "sina_code": "sh601288"
+    },
+    {
+      "code": "601939",
+      "name": "建设银行",
+      "market": "A股",
+      "sina_code": "sh601939"
+    },
+    {
+      "code": "601628",
+      "name": "中国人寿",
+      "market": "A股",
+      "sina_code": "sh601628"
+    },
+    {
+      "code": "601088",
+      "name": "神华",
+      "market": "A股",
+      "sina_code": "sh601088"
+    },
+    {
+      "code": "002969",
+      "name": "嘉美包装",
+      "market": "A股",
+      "sina_code": "sz002969"
+    },
+    {
+      "code": "000523",
+      "name": "红棉股份",
+      "market": "A股",
+      "sina_code": "sz000523"
+    },
+    {
+      "code": "510720",
+      "name": "红利50ETF",
+      "market": "A股",
+      "sina_code": "sh510720"
+    },
+    {
+      "code": "588000",
+      "name": "科创50",
+      "market": "A股",
+      "sina_code": "sh588000"
+    },
+    {
+      "code": "512880",
+      "name": "证券ETF",
+      "market": "A股",
+      "sina_code": "sh512880"
+    },
+    {
+      "code": "159601",
+      "name": "陆股A50",
+      "market": "A股",
+      "sina_code": "sz159601"
+    },
+    {
+      "code": "159852",
+      "name": "软件ETF",
+      "market": "A股",
+      "sina_code": "sz159852"
+    },
+    {
+      "code": "159887",
+      "name": "银行ETF",
+      "market": "A股",
+      "sina_code": "sz159887"
+    },
+    {
+      "code": "512480",
+      "name": "半导体",
+      "market": "A股",
+      "sina_code": "sh512480"
+    },
+    {
+      "code": "159995",
+      "name": "芯片ETF华夏",
+      "market": "A股",
+      "sina_code": "sz159995"
+    },
+    {
+      "code": "159819",
+      "name": "人工智能",
+      "market": "A股",
+      "sina_code": "sz159819"
+    },
+    {
+      "code": "159526",
+      "name": "机器人",
+      "market": "A股",
+      "sina_code": "sz159526"
+    },
+    {
+      "code": "513130",
+      "name": "恒生科技ETF",
+      "market": "A股",
+      "sina_code": "sh513130"
+    },
+    {
+      "code": "688449",
+      "name": "联芸科技",
+      "market": "A股",
+      "sina_code": "sh688449"
+    },
+    {
+      "code": "002738",
+      "name": "中矿",
+      "market": "A股",
+      "sina_code": "sz002738"
+    },
+    {
+      "code": "688825",
+      "name": "长鑫科技",
+      "market": "A股",
+      "sina_code": "sh688825"
+    },
+    {
+      "code": "000001",
+      "name": "平安银行",
+      "market": "A股",
+      "sina_code": "sz000001"
+    },
+    {
+      "code": "000002",
+      "name": "万科A",
+      "market": "A股",
+      "sina_code": "sz000002"
+    },
+    {
+      "code": "000651",
+      "name": "格力电器",
+      "market": "A股",
+      "sina_code": "sz000651"
+    },
+    {
+      "code": "000858",
+      "name": "五粮液",
+      "market": "A股",
+      "sina_code": "sz000858"
+    },
+    {
+      "code": "000895",
+      "name": "双汇发展",
+      "market": "A股",
+      "sina_code": "sz000895"
+    },
+    {
+      "code": "002024",
+      "name": "苏宁易购",
+      "market": "A股",
+      "sina_code": "sz002024"
+    },
+    {
+      "code": "002142",
+      "name": "宁波银行",
+      "market": "A股",
+      "sina_code": "sz002142"
+    },
+    {
+      "code": "002157",
+      "name": "正邦科技",
+      "market": "A股",
+      "sina_code": "sz002157"
+    },
+    {
+      "code": "002202",
+      "name": "金风科技",
+      "market": "A股",
+      "sina_code": "sz002202"
+    },
+    {
+      "code": "002230",
+      "name": "科大讯飞",
+      "market": "A股",
+      "sina_code": "sz002230"
+    },
+    {
+      "code": "002252",
+      "name": "上海莱士",
+      "market": "A股",
+      "sina_code": "sz002252"
+    },
+    {
+      "code": "002269",
+      "name": "美邦服饰",
+      "market": "A股",
+      "sina_code": "sz002269"
+    },
+    {
+      "code": "002304",
+      "name": "洋河股份",
+      "market": "A股",
+      "sina_code": "sz002304"
+    },
+    {
+      "code": "002311",
+      "name": "海大集团",
+      "market": "A股",
+      "sina_code": "sz002311"
+    },
+    {
+      "code": "002352",
+      "name": "顺丰控股",
+      "market": "A股",
+      "sina_code": "sz002352"
+    },
+    {
+      "code": "002384",
+      "name": "东山精密",
+      "market": "A股",
+      "sina_code": "sz002384"
+    },
+    {
+      "code": "002415",
+      "name": "海康威视",
+      "market": "A股",
+      "sina_code": "sz002415"
+    },
+    {
+      "code": "002456",
+      "name": "欧菲光",
+      "market": "A股",
+      "sina_code": "sz002456"
+    },
+    {
+      "code": "002460",
+      "name": "赣锋锂业",
+      "market": "A股",
+      "sina_code": "sz002460"
+    },
+    {
+      "code": "002463",
+      "name": "沪电股份",
+      "market": "A股",
+      "sina_code": "sz002463"
+    },
+    {
+      "code": "002555",
+      "name": "三七互娱",
+      "market": "A股",
+      "sina_code": "sz002555"
+    },
+    {
+      "code": "002594",
+      "name": "比亚迪",
+      "market": "A股",
+      "sina_code": "sz002594"
+    },
+    {
+      "code": "002607",
+      "name": "中公教育",
+      "market": "A股",
+      "sina_code": "sz002607"
+    },
+    {
+      "code": "002624",
+      "name": "完美世界",
+      "market": "A股",
+      "sina_code": "sz002624"
+    },
+    {
+      "code": "002635",
+      "name": "安洁科技",
+      "market": "A股",
+      "sina_code": "sz002635"
+    },
+    {
+      "code": "002681",
+      "name": "奋达科技",
+      "market": "A股",
+      "sina_code": "sz002681"
+    },
+    {
+      "code": "002736",
+      "name": "国信证券",
+      "market": "A股",
+      "sina_code": "sz002736"
+    },
+    {
+      "code": "002797",
+      "name": "第一创业",
+      "market": "A股",
+      "sina_code": "sz002797"
+    },
+    {
+      "code": "002841",
+      "name": "视源股份",
+      "market": "A股",
+      "sina_code": "sz002841"
+    },
+    {
+      "code": "300015",
+      "name": "爱尔眼科",
+      "market": "A股",
+      "sina_code": "sz300015"
+    },
+    {
+      "code": "300014",
+      "name": "亿纬锂能",
+      "market": "A股",
+      "sina_code": "sz300014"
+    },
+    {
+      "code": "300033",
+      "name": "同花顺",
+      "market": "A股",
+      "sina_code": "sz300033"
+    },
+    {
+      "code": "300059",
+      "name": "东方财富",
+      "market": "A股",
+      "sina_code": "sz300059"
+    },
+    {
+      "code": "300122",
+      "name": "智飞生物",
+      "market": "A股",
+      "sina_code": "sz300122"
+    },
+    {
+      "code": "300124",
+      "name": "汇川技术",
+      "market": "A股",
+      "sina_code": "sz300124"
+    },
+    {
+      "code": "300142",
+      "name": "沃森生物",
+      "market": "A股",
+      "sina_code": "sz300142"
+    },
+    {
+      "code": "300251",
+      "name": "光线传媒",
+      "market": "A股",
+      "sina_code": "sz300251"
+    },
+    {
+      "code": "300274",
+      "name": "阳光电源",
+      "market": "A股",
+      "sina_code": "sz300274"
+    },
+    {
+      "code": "300296",
+      "name": "利亚德",
+      "market": "A股",
+      "sina_code": "sz300296"
+    },
+    {
+      "code": "300315",
+      "name": "掌趣科技",
+      "market": "A股",
+      "sina_code": "sz300315"
+    },
+    {
+      "code": "300347",
+      "name": "泰格医药",
+      "market": "A股",
+      "sina_code": "sz300347"
+    },
+    {
+      "code": "300373",
+      "name": "扬杰科技",
+      "market": "A股",
+      "sina_code": "sz300373"
+    },
+    {
+      "code": "300433",
+      "name": "光环新网",
+      "market": "A股",
+      "sina_code": "sz300433"
+    },
+    {
+      "code": "300438",
+      "name": "鹏辉能源",
+      "market": "A股",
+      "sina_code": "sz300438"
+    },
+    {
+      "code": "300474",
+      "name": "景嘉微",
+      "market": "A股",
+      "sina_code": "sz300474"
+    },
+    {
+      "code": "300498",
+      "name": "温氏股份",
+      "market": "A股",
+      "sina_code": "sz300498"
+    },
+    {
+      "code": "300502",
+      "name": "新易盛",
+      "market": "A股",
+      "sina_code": "sz300502"
+    },
+    {
+      "code": "300598",
+      "name": "诚迈科技",
+      "market": "A股",
+      "sina_code": "sz300598"
+    },
+    {
+      "code": "300618",
+      "name": "寒锐钴业",
+      "market": "A股",
+      "sina_code": "sz300618"
+    },
+    {
+      "code": "300628",
+      "name": "亿联网络",
+      "market": "A股",
+      "sina_code": "sz300628"
+    },
+    {
+      "code": "300632",
+      "name": "光莆股份",
+      "market": "A股",
+      "sina_code": "sz300632"
+    },
+    {
+      "code": "300676",
+      "name": "华大基因",
+      "market": "A股",
+      "sina_code": "sz300676"
+    },
+    {
+      "code": "300750",
+      "name": "宁德时代",
+      "market": "A股",
+      "sina_code": "sz300750"
+    },
+    {
+      "code": "300760",
+      "name": "迈瑞医疗",
+      "market": "A股",
+      "sina_code": "sz300760"
+    },
+    {
+      "code": "300799",
+      "name": "左江科技",
+      "market": "A股",
+      "sina_code": "sz300799"
+    },
+    {
+      "code": "300800",
+      "name": "力合科技",
+      "market": "A股",
+      "sina_code": "sz300800"
+    },
+    {
+      "code": "300816",
+      "name": "艾可蓝",
+      "market": "A股",
+      "sina_code": "sz300816"
+    },
+    {
+      "code": "300824",
+      "name": "北鼎股份",
+      "market": "A股",
+      "sina_code": "sz300824"
+    },
+    {
+      "code": "300832",
+      "name": "新产业",
+      "market": "A股",
+      "sina_code": "sz300832"
+    },
+    {
+      "code": "300866",
+      "name": "安克创新",
+      "market": "A股",
+      "sina_code": "sz300866"
+    },
+    {
+      "code": "300957",
+      "name": "贝泰妮",
+      "market": "A股",
+      "sina_code": "sz300957"
+    },
+    {
+      "code": "301000",
+      "name": "中际联合",
+      "market": "A股",
+      "sina_code": "sz301000"
+    },
+    {
+      "code": "301018",
+      "name": "申菱环境",
+      "market": "A股",
+      "sina_code": "sz301018"
+    },
+    {
+      "code": "301075",
+      "name": "多瑞医药",
+      "market": "A股",
+      "sina_code": "sz301075"
+    },
+    {
+      "code": "600000",
+      "name": "浦发银行",
+      "market": "A股",
+      "sina_code": "sh600000"
+    },
+    {
+      "code": "600010",
+      "name": "包钢股份",
+      "market": "A股",
+      "sina_code": "sh600010"
+    },
+    {
+      "code": "600011",
+      "name": "华能国际",
+      "market": "A股",
+      "sina_code": "sh600011"
+    },
+    {
+      "code": "600015",
+      "name": "华夏银行",
+      "market": "A股",
+      "sina_code": "sh600015"
+    },
+    {
+      "code": "600016",
+      "name": "民生银行",
+      "market": "A股",
+      "sina_code": "sh600016"
+    },
+    {
+      "code": "600018",
+      "name": "上港集团",
+      "market": "A股",
+      "sina_code": "sh600018"
+    },
+    {
+      "code": "600028",
+      "name": "中国石化",
+      "market": "A股",
+      "sina_code": "sh600028"
+    },
+    {
+      "code": "600029",
+      "name": "南方航空",
+      "market": "A股",
+      "sina_code": "sh600029"
+    },
+    {
+      "code": "600030",
+      "name": "中信证券",
+      "market": "A股",
+      "sina_code": "sh600030"
+    },
+    {
+      "code": "600031",
+      "name": "三一重工",
+      "market": "A股",
+      "sina_code": "sh600031"
+    },
+    {
+      "code": "600036",
+      "name": "招商银行",
+      "market": "A股",
+      "sina_code": "sh600036"
+    },
+    {
+      "code": "600038",
+      "name": "中直股份",
+      "market": "A股",
+      "sina_code": "sh600038"
+    },
+    {
+      "code": "600048",
+      "name": "保利发展",
+      "market": "A股",
+      "sina_code": "sh600048"
+    },
+    {
+      "code": "600050",
+      "name": "中国联通",
+      "market": "A股",
+      "sina_code": "sh600050"
+    },
+    {
+      "code": "600051",
+      "name": "宁波联合",
+      "market": "A股",
+      "sina_code": "sh600051"
+    },
+    {
+      "code": "600058",
+      "name": "五矿发展",
+      "market": "A股",
+      "sina_code": "sh600058"
+    },
+    {
+      "code": "600062",
+      "name": "华润双鹤",
+      "market": "A股",
+      "sina_code": "sh600062"
+    },
+    {
+      "code": "600066",
+      "name": "宇通客车",
+      "market": "A股",
+      "sina_code": "sh600066"
+    },
+    {
+      "code": "600068",
+      "name": "葛洲坝",
+      "market": "A股",
+      "sina_code": "sh600068"
+    },
+    {
+      "code": "600079",
+      "name": "人福医药",
+      "market": "A股",
+      "sina_code": "sh600079"
+    },
+    {
+      "code": "600085",
+      "name": "同仁堂",
+      "market": "A股",
+      "sina_code": "sh600085"
+    },
+    {
+      "code": "600088",
+      "name": "中视传媒",
+      "market": "A股",
+      "sina_code": "sh600088"
+    },
+    {
+      "code": "600096",
+      "name": "云天化",
+      "market": "A股",
+      "sina_code": "sh600096"
+    },
+    {
+      "code": "600100",
+      "name": "同方股份",
+      "market": "A股",
+      "sina_code": "sh600100"
+    },
+    {
+      "code": "600104",
+      "name": "上汽集团",
+      "market": "A股",
+      "sina_code": "sh600104"
+    },
+    {
+      "code": "600111",
+      "name": "北方稀土",
+      "market": "A股",
+      "sina_code": "sh600111"
+    },
+    {
+      "code": "600123",
+      "name": "兰花科创",
+      "market": "A股",
+      "sina_code": "sh600123"
+    },
+    {
+      "code": "600125",
+      "name": "铁龙物流",
+      "market": "A股",
+      "sina_code": "sh600125"
+    },
+    {
+      "code": "600132",
+      "name": "重庆啤酒",
+      "market": "A股",
+      "sina_code": "sh600132"
+    },
+    {
+      "code": "600143",
+      "name": "金发科技",
+      "market": "A股",
+      "sina_code": "sh600143"
+    },
+    {
+      "code": "600150",
+      "name": "中国船舶",
+      "market": "A股",
+      "sina_code": "sh600150"
+    },
+    {
+      "code": "600151",
+      "name": "航天机电",
+      "market": "A股",
+      "sina_code": "sh600151"
+    },
+    {
+      "code": "600153",
+      "name": "建发股份",
+      "market": "A股",
+      "sina_code": "sh600153"
+    },
+    {
+      "code": "600161",
+      "name": "天坛生物",
+      "market": "A股",
+      "sina_code": "sh600161"
+    },
+    {
+      "code": "600162",
+      "name": "香江控股",
+      "market": "A股",
+      "sina_code": "sh600162"
+    },
+    {
+      "code": "600166",
+      "name": "福田汽车",
+      "market": "A股",
+      "sina_code": "sh600166"
+    },
+    {
+      "code": "600170",
+      "name": "上海建工",
+      "market": "A股",
+      "sina_code": "sh600170"
+    },
+    {
+      "code": "600171",
+      "name": "上海贝岭",
+      "market": "A股",
+      "sina_code": "sh600171"
+    },
+    {
+      "code": "600175",
+      "name": "美都能源",
+      "market": "A股",
+      "sina_code": "sh600175"
+    },
+    {
+      "code": "600176",
+      "name": "中国巨石",
+      "market": "A股",
+      "sina_code": "sh600176"
+    },
+    {
+      "code": "600188",
+      "name": "兖州煤业",
+      "market": "A股",
+      "sina_code": "sh600188"
+    },
+    {
+      "code": "600196",
+      "name": "复星医药",
+      "market": "A股",
+      "sina_code": "sh600196"
+    },
+    {
+      "code": "600198",
+      "name": "大唐电信",
+      "market": "A股",
+      "sina_code": "sh600198"
+    },
+    {
+      "code": "600208",
+      "name": "新湖中宝",
+      "market": "A股",
+      "sina_code": "sh600208"
+    },
+    {
+      "code": "600219",
+      "name": "南山铝业",
+      "market": "A股",
+      "sina_code": "sh600219"
+    },
+    {
+      "code": "600221",
+      "name": "海南航空",
+      "market": "A股",
+      "sina_code": "sh600221"
+    },
+    {
+      "code": "600227",
+      "name": "赤天化",
+      "market": "A股",
+      "sina_code": "sh600227"
+    },
+    {
+      "code": "600236",
+      "name": "桂冠电力",
+      "market": "A股",
+      "sina_code": "sh600236"
+    },
+    {
+      "code": "600256",
+      "name": "广汇能源",
+      "market": "A股",
+      "sina_code": "sh600256"
+    },
+    {
+      "code": "600259",
+      "name": "广晟有色",
+      "market": "A股",
+      "sina_code": "sh600259"
+    },
+    {
+      "code": "600266",
+      "name": "北京城建",
+      "market": "A股",
+      "sina_code": "sh600266"
+    },
+    {
+      "code": "600276",
+      "name": "恒瑞医药",
+      "market": "A股",
+      "sina_code": "sh600276"
+    },
+    {
+      "code": "600282",
+      "name": "南钢股份",
+      "market": "A股",
+      "sina_code": "sh600282"
+    },
+    {
+      "code": "600285",
+      "name": "羚锐制药",
+      "market": "A股",
+      "sina_code": "sh600285"
+    },
+    {
+      "code": "600299",
+      "name": "安迪苏",
+      "market": "A股",
+      "sina_code": "sh600299"
+    },
+    {
+      "code": "600300",
+      "name": "维维股份",
+      "market": "A股",
+      "sina_code": "sh600300"
+    },
+    {
+      "code": "600309",
+      "name": "万华化学",
+      "market": "A股",
+      "sina_code": "sh600309"
+    },
+    {
+      "code": "600315",
+      "name": "上海家化",
+      "market": "A股",
+      "sina_code": "sh600315"
+    },
+    {
+      "code": "600316",
+      "name": "洪都航空",
+      "market": "A股",
+      "sina_code": "sh600316"
+    },
+    {
+      "code": "600320",
+      "name": "振华重工",
+      "market": "A股",
+      "sina_code": "sh600320"
+    },
+    {
+      "code": "600325",
+      "name": "华发股份",
+      "market": "A股",
+      "sina_code": "sh600325"
+    },
+    {
+      "code": "600332",
+      "name": "白云山",
+      "market": "A股",
+      "sina_code": "sh600332"
+    },
+    {
+      "code": "600340",
+      "name": "华夏幸福",
+      "market": "A股",
+      "sina_code": "sh600340"
+    },
+    {
+      "code": "600352",
+      "name": "浙江龙盛",
+      "market": "A股",
+      "sina_code": "sh600352"
+    },
+    {
+      "code": "600362",
+      "name": "江西铜业",
+      "market": "A股",
+      "sina_code": "sh600362"
+    },
+    {
+      "code": "600369",
+      "name": "西南证券",
+      "market": "A股",
+      "sina_code": "sh600369"
+    },
+    {
+      "code": "600372",
+      "name": "中航电子",
+      "market": "A股",
+      "sina_code": "sh600372"
+    },
+    {
+      "code": "600373",
+      "name": "中文传媒",
+      "market": "A股",
+      "sina_code": "sh600373"
+    },
+    {
+      "code": "600375",
+      "name": "华菱星马",
+      "market": "A股",
+      "sina_code": "sh600375"
+    },
+    {
+      "code": "600383",
+      "name": "金地集团",
+      "market": "A股",
+      "sina_code": "sh600383"
+    },
+    {
+      "code": "600386",
+      "name": "北巴传媒",
+      "market": "A股",
+      "sina_code": "sh600386"
+    },
+    {
+      "code": "600388",
+      "name": "龙净环保",
+      "market": "A股",
+      "sina_code": "sh600388"
+    },
+    {
+      "code": "600392",
+      "name": "盛和资源",
+      "market": "A股",
+      "sina_code": "sh600392"
+    },
+    {
+      "code": "600399",
+      "name": "抚顺特钢",
+      "market": "A股",
+      "sina_code": "sh600399"
+    },
+    {
+      "code": "600406",
+      "name": "国电南瑞",
+      "market": "A股",
+      "sina_code": "sh600406"
+    },
+    {
+      "code": "600408",
+      "name": "安泰集团",
+      "market": "A股",
+      "sina_code": "sh600408"
+    },
+    {
+      "code": "600410",
+      "name": "华胜天成",
+      "market": "A股",
+      "sina_code": "sh600410"
+    },
+    {
+      "code": "600415",
+      "name": "小商品城",
+      "market": "A股",
+      "sina_code": "sh600415"
+    },
+    {
+      "code": "600426",
+      "name": "华鲁恒升",
+      "market": "A股",
+      "sina_code": "sh600426"
+    },
+    {
+      "code": "600436",
+      "name": "片仔癀",
+      "market": "A股",
+      "sina_code": "sh600436"
+    },
+    {
+      "code": "600438",
+      "name": "通威股份",
+      "market": "A股",
+      "sina_code": "sh600438"
+    },
+    {
+      "code": "600456",
+      "name": "宝钛股份",
+      "market": "A股",
+      "sina_code": "sh600456"
+    },
+    {
+      "code": "600458",
+      "name": "时代新材",
+      "market": "A股",
+      "sina_code": "sh600458"
+    },
+    {
+      "code": "600460",
+      "name": "士兰微",
+      "market": "A股",
+      "sina_code": "sh600460"
+    },
+    {
+      "code": "600475",
+      "name": "华光股份",
+      "market": "A股",
+      "sina_code": "sh600475"
+    },
+    {
+      "code": "600485",
+      "name": "信威集团",
+      "market": "A股",
+      "sina_code": "sh600485"
+    },
+    {
+      "code": "600489",
+      "name": "中金黄金",
+      "market": "A股",
+      "sina_code": "sh600489"
+    },
+    {
+      "code": "600498",
+      "name": "烽火通信",
+      "market": "A股",
+      "sina_code": "sh600498"
+    },
+    {
+      "code": "600500",
+      "name": "中化国际",
+      "market": "A股",
+      "sina_code": "sh600500"
+    },
+    {
+      "code": "600507",
+      "name": "方大特钢",
+      "market": "A股",
+      "sina_code": "sh600507"
+    },
+    {
+      "code": "600509",
+      "name": "天富能源",
+      "market": "A股",
+      "sina_code": "sh600509"
+    },
+    {
+      "code": "600516",
+      "name": "方大炭素",
+      "market": "A股",
+      "sina_code": "sh600516"
+    },
+    {
+      "code": "600517",
+      "name": "置信电气",
+      "market": "A股",
+      "sina_code": "sh600517"
+    },
+    {
+      "code": "600522",
+      "name": "中天科技",
+      "market": "A股",
+      "sina_code": "sh600522"
+    },
+    {
+      "code": "600528",
+      "name": "中铁工业",
+      "market": "A股",
+      "sina_code": "sh600528"
+    },
+    {
+      "code": "600535",
+      "name": "天士力",
+      "market": "A股",
+      "sina_code": "sh600535"
+    },
+    {
+      "code": "600547",
+      "name": "山东黄金",
+      "market": "A股",
+      "sina_code": "sh600547"
+    },
+    {
+      "code": "600548",
+      "name": "深高速",
+      "market": "A股",
+      "sina_code": "sh600548"
+    },
+    {
+      "code": "600550",
+      "name": "保变电气",
+      "market": "A股",
+      "sina_code": "sh600550"
+    },
+    {
+      "code": "600556",
+      "name": "慧球科技",
+      "market": "A股",
+      "sina_code": "sh600556"
+    },
+    {
+      "code": "600569",
+      "name": "安阳钢铁",
+      "market": "A股",
+      "sina_code": "sh600569"
+    },
+    {
+      "code": "600570",
+      "name": "恒生电子",
+      "market": "A股",
+      "sina_code": "sh600570"
+    },
+    {
+      "code": "600571",
+      "name": "信雅达",
+      "market": "A股",
+      "sina_code": "sh600571"
+    },
+    {
+      "code": "600572",
+      "name": "康恩贝",
+      "market": "A股",
+      "sina_code": "sh600572"
+    },
+    {
+      "code": "600578",
+      "name": "京能电力",
+      "market": "A股",
+      "sina_code": "sh600578"
+    },
+    {
+      "code": "600583",
+      "name": "海油工程",
+      "market": "A股",
+      "sina_code": "sh600583"
+    },
+    {
+      "code": "600584",
+      "name": "中芯国际",
+      "market": "A股",
+      "sina_code": "sh600584"
+    },
+    {
+      "code": "600585",
+      "name": "海螺水泥",
+      "market": "A股",
+      "sina_code": "sh600585"
+    },
+    {
+      "code": "600588",
+      "name": "用友网络",
+      "market": "A股",
+      "sina_code": "sh600588"
+    },
+    {
+      "code": "600594",
+      "name": "益佰制药",
+      "market": "A股",
+      "sina_code": "sh600594"
+    },
+    {
+      "code": "600601",
+      "name": "方正科技",
+      "market": "A股",
+      "sina_code": "sh600601"
+    },
+    {
+      "code": "600606",
+      "name": "绿地控股",
+      "market": "A股",
+      "sina_code": "sh600606"
+    },
+    {
+      "code": "600612",
+      "name": "老凤祥",
+      "market": "A股",
+      "sina_code": "sh600612"
+    },
+    {
+      "code": "600616",
+      "name": "金枫酒业",
+      "market": "A股",
+      "sina_code": "sh600616"
+    },
+    {
+      "code": "600637",
+      "name": "东方明珠",
+      "market": "A股",
+      "sina_code": "sh600637"
+    },
+    {
+      "code": "600639",
+      "name": "浦东金桥",
+      "market": "A股",
+      "sina_code": "sh600639"
+    },
+    {
+      "code": "600642",
+      "name": "申能股份",
+      "market": "A股",
+      "sina_code": "sh600642"
+    },
+    {
+      "code": "600644",
+      "name": "乐山电力",
+      "market": "A股",
+      "sina_code": "sh600644"
+    },
+    {
+      "code": "600648",
+      "name": "外高桥",
+      "market": "A股",
+      "sina_code": "sh600648"
+    },
+    {
+      "code": "600655",
+      "name": "豫园股份",
+      "market": "A股",
+      "sina_code": "sh600655"
+    },
+    {
+      "code": "600657",
+      "name": "信达地产",
+      "market": "A股",
+      "sina_code": "sh600657"
+    },
+    {
+      "code": "600660",
+      "name": "福耀玻璃",
+      "market": "A股",
+      "sina_code": "sh600660"
+    },
+    {
+      "code": "600661",
+      "name": "新南洋",
+      "market": "A股",
+      "sina_code": "sh600661"
+    },
+    {
+      "code": "600663",
+      "name": "陆家嘴",
+      "market": "A股",
+      "sina_code": "sh600663"
+    },
+    {
+      "code": "600674",
+      "name": "川投能源",
+      "market": "A股",
+      "sina_code": "sh600674"
+    },
+    {
+      "code": "600688",
+      "name": "上海石化",
+      "market": "A股",
+      "sina_code": "sh600688"
+    },
+    {
+      "code": "600690",
+      "name": "海尔智家",
+      "market": "A股",
+      "sina_code": "sh600690"
+    },
+    {
+      "code": "600703",
+      "name": "三安光电",
+      "market": "A股",
+      "sina_code": "sh600703"
+    },
+    {
+      "code": "600705",
+      "name": "中航资本",
+      "market": "A股",
+      "sina_code": "sh600705"
+    },
+    {
+      "code": "600717",
+      "name": "天津港",
+      "market": "A股",
+      "sina_code": "sh600717"
+    },
+    {
+      "code": "600723",
+      "name": "首商股份",
+      "market": "A股",
+      "sina_code": "sh600723"
+    },
+    {
+      "code": "600729",
+      "name": "重庆百货",
+      "market": "A股",
+      "sina_code": "sh600729"
+    },
+    {
+      "code": "600736",
+      "name": "苏州高新",
+      "market": "A股",
+      "sina_code": "sh600736"
+    },
+    {
+      "code": "600739",
+      "name": "辽宁成大",
+      "market": "A股",
+      "sina_code": "sh600739"
+    },
+    {
+      "code": "600741",
+      "name": "华域汽车",
+      "market": "A股",
+      "sina_code": "sh600741"
+    },
+    {
+      "code": "600745",
+      "name": "闻泰科技",
+      "market": "A股",
+      "sina_code": "sh600745"
+    },
+    {
+      "code": "600755",
+      "name": "厦门国贸",
+      "market": "A股",
+      "sina_code": "sh600755"
+    },
+    {
+      "code": "600760",
+      "name": "中航沈飞",
+      "market": "A股",
+      "sina_code": "sh600760"
+    },
+    {
+      "code": "600764",
+      "name": "中国海防",
+      "market": "A股",
+      "sina_code": "sh600764"
+    },
+    {
+      "code": "600770",
+      "name": "综艺股份",
+      "market": "A股",
+      "sina_code": "sh600770"
+    },
+    {
+      "code": "600779",
+      "name": "水井坊",
+      "market": "A股",
+      "sina_code": "sh600779"
+    },
+    {
+      "code": "600783",
+      "name": "鲁信创投",
+      "market": "A股",
+      "sina_code": "sh600783"
+    },
+    {
+      "code": "600795",
+      "name": "国电电力",
+      "market": "A股",
+      "sina_code": "sh600795"
+    },
+    {
+      "code": "600801",
+      "name": "华新水泥",
+      "market": "A股",
+      "sina_code": "sh600801"
+    },
+    {
+      "code": "600804",
+      "name": "鹏博士",
+      "market": "A股",
+      "sina_code": "sh600804"
+    },
+    {
+      "code": "600808",
+      "name": "马钢股份",
+      "market": "A股",
+      "sina_code": "sh600808"
+    },
+    {
+      "code": "600812",
+      "name": "华北制药",
+      "market": "A股",
+      "sina_code": "sh600812"
+    },
+    {
+      "code": "600816",
+      "name": "安信信托",
+      "market": "A股",
+      "sina_code": "sh600816"
+    },
+    {
+      "code": "600820",
+      "name": "隧道股份",
+      "market": "A股",
+      "sina_code": "sh600820"
+    },
+    {
+      "code": "600823",
+      "name": "世茂股份",
+      "market": "A股",
+      "sina_code": "sh600823"
+    },
+    {
+      "code": "600827",
+      "name": "百联股份",
+      "market": "A股",
+      "sina_code": "sh600827"
+    },
+    {
+      "code": "600828",
+      "name": "茂业商业",
+      "market": "A股",
+      "sina_code": "sh600828"
+    },
+    {
+      "code": "600837",
+      "name": "海通证券",
+      "market": "A股",
+      "sina_code": "sh600837"
+    },
+    {
+      "code": "600839",
+      "name": "四川长虹",
+      "market": "A股",
+      "sina_code": "sh600839"
+    },
+    {
+      "code": "600845",
+      "name": "宝信软件",
+      "market": "A股",
+      "sina_code": "sh600845"
+    },
+    {
+      "code": "600848",
+      "name": "上海临港",
+      "market": "A股",
+      "sina_code": "sh600848"
+    },
+    {
+      "code": "600859",
+      "name": "王府井",
+      "market": "A股",
+      "sina_code": "sh600859"
+    },
+    {
+      "code": "600867",
+      "name": "通化东宝",
+      "market": "A股",
+      "sina_code": "sh600867"
+    },
+    {
+      "code": "600873",
+      "name": "*ST航发",
+      "market": "A股",
+      "sina_code": "sh600873"
+    },
+    {
+      "code": "600875",
+      "name": "东方电气",
+      "market": "A股",
+      "sina_code": "sh600875"
+    },
+    {
+      "code": "600879",
+      "name": "航天电子",
+      "market": "A股",
+      "sina_code": "sh600879"
+    },
+    {
+      "code": "600887",
+      "name": "伊利股份",
+      "market": "A股",
+      "sina_code": "sh600887"
+    },
+    {
+      "code": "600888",
+      "name": "新疆众和",
+      "market": "A股",
+      "sina_code": "sh600888"
+    },
+    {
+      "code": "600893",
+      "name": "航发动力",
+      "market": "A股",
+      "sina_code": "sh600893"
+    },
+    {
+      "code": "600900",
+      "name": "长江电力",
+      "market": "A股",
+      "sina_code": "sh600900"
+    },
+    {
+      "code": "600909",
+      "name": "华安证券",
+      "market": "A股",
+      "sina_code": "sh600909"
+    },
+    {
+      "code": "600919",
+      "name": "江苏银行",
+      "market": "A股",
+      "sina_code": "sh600919"
+    },
+    {
+      "code": "600926",
+      "name": "杭州银行",
+      "market": "A股",
+      "sina_code": "sh600926"
+    },
+    {
+      "code": "600939",
+      "name": "重庆建工",
+      "market": "A股",
+      "sina_code": "sh600939"
+    },
+    {
+      "code": "600958",
+      "name": "东方证券",
+      "market": "A股",
+      "sina_code": "sh600958"
+    },
+    {
+      "code": "600963",
+      "name": "岳阳林纸",
+      "market": "A股",
+      "sina_code": "sh600963"
+    },
+    {
+      "code": "600967",
+      "name": "内蒙一机",
+      "market": "A股",
+      "sina_code": "sh600967"
+    },
+    {
+      "code": "600977",
+      "name": "中国电影",
+      "market": "A股",
+      "sina_code": "sh600977"
+    },
+    {
+      "code": "600986",
+      "name": "科达利",
+      "market": "A股",
+      "sina_code": "sh600986"
+    },
+    {
+      "code": "600999",
+      "name": "招商证券",
+      "market": "A股",
+      "sina_code": "sh600999"
+    },
+    {
+      "code": "601006",
+      "name": "大秦铁路",
+      "market": "A股",
+      "sina_code": "sh601006"
+    },
+    {
+      "code": "601018",
+      "name": "宁波港",
+      "market": "A股",
+      "sina_code": "sh601018"
+    },
+    {
+      "code": "601021",
+      "name": "春秋航空",
+      "market": "A股",
+      "sina_code": "sh601021"
+    },
+    {
+      "code": "601028",
+      "name": "玉龙股份",
+      "market": "A股",
+      "sina_code": "sh601028"
+    },
+    {
+      "code": "601058",
+      "name": "赛轮轮胎",
+      "market": "A股",
+      "sina_code": "sh601058"
+    },
+    {
+      "code": "601066",
+      "name": "中信建投",
+      "market": "A股",
+      "sina_code": "sh601066"
+    },
+    {
+      "code": "601088",
+      "name": "神华",
+      "market": "A股",
+      "sina_code": "sh601088"
+    },
+    {
+      "code": "601107",
+      "name": "四川成渝",
+      "market": "A股",
+      "sina_code": "sh601107"
+    },
+    {
+      "code": "601127",
+      "name": "小康股份",
+      "market": "A股",
+      "sina_code": "sh601127"
+    },
+    {
+      "code": "601138",
+      "name": "工业富联",
+      "market": "A股",
+      "sina_code": "sh601138"
+    },
+    {
+      "code": "601166",
+      "name": "兴业银行",
+      "market": "A股",
+      "sina_code": "sh601166"
+    },
+    {
+      "code": "601186",
+      "name": "中国铁建",
+      "market": "A股",
+      "sina_code": "sh601186"
+    },
+    {
+      "code": "601211",
+      "name": "国泰君安",
+      "market": "A股",
+      "sina_code": "sh601211"
+    },
+    {
+      "code": "601216",
+      "name": "君正集团",
+      "market": "A股",
+      "sina_code": "sh601216"
+    },
+    {
+      "code": "601225",
+      "name": "陕西煤业",
+      "market": "A股",
+      "sina_code": "sh601225"
+    },
+    {
+      "code": "601229",
+      "name": "上海银行",
+      "market": "A股",
+      "sina_code": "sh601229"
+    },
+    {
+      "code": "601236",
+      "name": "红塔证券",
+      "market": "A股",
+      "sina_code": "sh601236"
+    },
+    {
+      "code": "601238",
+      "name": "广汽集团",
+      "market": "A股",
+      "sina_code": "sh601238"
+    },
+    {
+      "code": "601258",
+      "name": "庞大集团",
+      "market": "A股",
+      "sina_code": "sh601258"
+    },
+    {
+      "code": "601288",
+      "name": "农业银行",
+      "market": "A股",
+      "sina_code": "sh601288"
+    },
+    {
+      "code": "562550",
+      "name": "绿电ETF华夏",
+      "market": "A股",
+      "sina_code": "sh562550"
+    },
+    {
+      "code": "159611",
+      "name": "电力ETF广发",
+      "market": "A股",
+      "sina_code": "sz159611"
+    }
+  ]
+}

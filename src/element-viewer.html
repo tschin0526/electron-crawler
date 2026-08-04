@@ -1,0 +1,1836 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>元素结构查看器</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: #f0f2f5;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+        .header {
+            background: #6366f1;
+            color: white;
+            padding: 12px 16px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+        .header h1 {
+            font-size: 16px;
+            font-weight: 600;
+        }
+        .header .url {
+            font-size: 12px;
+            opacity: 0.9;
+        }
+        .search-bar {
+            display: flex;
+            gap: 8px;
+            flex: 1;
+            max-width: 500px;
+        }
+        .search-bar input {
+            flex: 1;
+            padding: 6px 12px;
+            border: none;
+            border-radius: 6px;
+            font-size: 13px;
+        }
+        .search-bar button {
+            background: rgba(255,255,255,0.2);
+            border: none;
+            color: white;
+            padding: 6px 10px;
+            border-radius: 6px;
+            cursor: pointer;
+        }
+        .search-bar button:hover {
+            background: rgba(255,255,255,0.3);
+        }
+        .main-content {
+            display: flex;
+            flex: 1;
+            overflow: hidden;
+            gap: 0;
+        }
+        .resize-handle {
+            width: 6px;
+            background: #e2e8f0;
+            cursor: col-resize;
+            position: relative;
+            flex-shrink: 0;
+            transition: background 0.2s;
+        }
+        .resize-handle:hover,
+        .resize-handle.dragging {
+            background: #6366f1;
+        }
+        .resize-handle::after {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 2px;
+            height: 40px;
+            background: #94a3b8;
+            border-radius: 1px;
+        }
+        .resize-handle:hover::after,
+        .resize-handle.dragging::after {
+            background: white;
+        }
+        .panel {
+            flex: 1;
+            padding: 12px;
+            overflow-y: auto;
+        }
+        .panel:first-child {
+            border-right: 1px solid #e5e7eb;
+            background: #f8fafc;
+        }
+        .panel-title {
+            font-weight: 600;
+            font-size: 13px;
+            color: #475569;
+            margin-bottom: 8px;
+            padding-bottom: 8px;
+            border-bottom: 1px solid #e5e7eb;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .panel-title .count {
+            font-size: 12px;
+            color: #94a3b8;
+        }
+        .element-item {
+            background: white;
+            border: 1px solid #e5e7eb;
+            border-radius: 8px;
+            padding: 10px;
+            margin-bottom: 8px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .element-item:hover {
+            border-color: #6366f1;
+            box-shadow: 0 0 0 2px rgba(99,102,241,0.1);
+        }
+        .element-item.matched {
+            border-color: #f59e0b;
+            background: #fffbeb;
+        }
+        .element-item.current-match {
+            border-color: #dc2626;
+            background: #fef2f2;
+            box-shadow: 0 0 0 3px rgba(220,38,38,0.2);
+        }
+        .element-tag {
+            font-family: monospace;
+            font-weight: 600;
+            color: #dc2626;
+            font-size: 13px;
+            margin-bottom: 6px;
+        }
+        .element-class {
+            color: #16a34a;
+            font-family: monospace;
+            font-size: 11px;
+            margin-left: 6px;
+        }
+        .element-id {
+            color: #2563eb;
+            font-family: monospace;
+            font-size: 11px;
+            margin-left: 6px;
+        }
+        .element-content {
+            color: #475569;
+            font-size: 11px;
+            max-height: 120px;
+            overflow-y: auto;
+            background: #fafafa;
+            padding: 8px;
+            border-radius: 4px;
+            margin-top: 6px;
+            line-height: 1.5;
+        }
+        .element-stats {
+            margin-top: 6px;
+            font-size: 11px;
+            color: #94a3b8;
+        }
+        .tree-node {
+            margin-left: 16px;
+        }
+        .tree-node.matched {
+            background: #fffbeb;
+            border-left: 2px solid #f59e0b;
+        }
+        .tree-node.current-match {
+            background: #fef2f2;
+            border-left: 3px solid #dc2626;
+            box-shadow: 0 0 0 2px rgba(220,38,38,0.15);
+        }
+        .tree-header {
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 6px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+        }
+        .tree-header:hover {
+            background: #eff6ff;
+        }
+        .tree-expander {
+            font-size: 10px;
+            width: 14px;
+            text-align: center;
+        }
+        .tree-children {
+            display: block;
+        }
+        .tree-children.collapsed {
+            display: none;
+        }
+        .empty-state {
+            text-align: center;
+            color: #94a3b8;
+            padding: 40px 20px;
+            font-size: 13px;
+        }
+
+        .search-highlight {
+            background: #fef08a;
+            padding: 0 2px;
+            border-radius: 2px;
+            color: #854d0e;
+            font-weight: 600;
+        }
+        .selector-display {
+            background: #f0f9ff;
+            border: 1px solid #0ea5e9;
+            border-radius: 6px;
+            padding: 8px 10px;
+            margin-top: 8px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .selector-text {
+            flex: 1;
+            font-family: monospace;
+            font-size: 12px;
+            color: #0369a1;
+            word-break: break-all;
+            user-select: text;
+        }
+        .copy-btn {
+            background: #0ea5e9;
+            color: white;
+            border: none;
+            padding: 4px 10px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 11px;
+            font-weight: 600;
+            flex-shrink: 0;
+            transition: all 0.2s;
+        }
+        .copy-btn:hover {
+            background: #0284c7;
+        }
+        .copy-btn.copied {
+            background: #22c55e;
+        }
+        .test-btn {
+            background: #8b5cf6;
+            color: white;
+            border: none;
+            padding: 4px 10px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 11px;
+            font-weight: 600;
+            flex-shrink: 0;
+            transition: all 0.2s;
+            margin-right: 4px;
+        }
+        .test-btn:hover {
+            background: #7c3aed;
+        }
+        .test-btn.testing {
+            background: #f59e0b;
+            cursor: wait;
+        }
+        .test-btn.success {
+            background: #22c55e;
+        }
+        .test-btn.error {
+            background: #ef4444;
+        }
+        .search-toggle {
+            display: flex;
+            background: rgba(255,255,255,0.2);
+            border-radius: 4px;
+            overflow: hidden;
+            font-size: 11px;
+        }
+        .search-toggle-btn {
+            background: transparent;
+            color: rgba(255,255,255,0.7);
+            border: none;
+            padding: 4px 8px;
+            cursor: pointer;
+            font-size: 11px;
+            font-weight: 600;
+            transition: all 0.2s;
+        }
+        .search-toggle-btn.active {
+            background: rgba(255,255,255,0.9);
+            color: #6366f1;
+        }
+        .search-toggle-btn:hover:not(.active) {
+            background: rgba(255,255,255,0.3);
+            color: white;
+        }
+        .view-toggle-btn.small {
+            padding: 3px 8px;
+            font-size: 11px;
+            background: rgba(255,255,255,0.2);
+            color: white;
+            border: 1px solid rgba(255,255,255,0.3);
+        }
+        .view-toggle-btn.small.active {
+            background: rgba(255,255,255,0.9);
+            color: #6366f1;
+        }
+        /* 表格视图样式 */
+        .table-container {
+            overflow: auto;
+            max-height: calc(100vh - 160px);
+        }
+        .data-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 11px;
+            table-layout: fixed;
+        }
+        .data-table thead {
+            position: sticky;
+            top: 0;
+            z-index: 10;
+        }
+        .data-table th {
+            background: #bae6fd;
+            color: #0f172a;
+            padding: 8px 10px;
+            text-align: left;
+            font-weight: 700;
+            white-space: nowrap;
+            border-right: 1px solid #94a3b8;
+            font-size: 11px;
+        }
+        .data-table th:last-child {
+            border-right: none;
+        }
+        .data-table th:last-child .col-resize-handle {
+            display: none;
+        }
+        .data-table th {
+            position: relative;
+        }
+        /* 表格栏位分隔拖动手柄 */
+        .col-resize-handle {
+            position: absolute;
+            right: -3px;
+            top: 0;
+            bottom: 0;
+            width: 6px;
+            cursor: col-resize;
+            z-index: 100;
+            background: transparent;
+        }
+        .col-resize-handle:hover,
+        .col-resize-handle.dragging {
+            background: rgba(99, 102, 241, 0.5);
+        }
+        .col-resize-handle::after {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 2px;
+            height: 60%;
+            background: #cbd5e1;
+            border-radius: 1px;
+        }
+        .col-resize-handle:hover::after,
+        .col-resize-handle.dragging::after {
+            background: white;
+        }
+        .data-table .col-node {
+            width: 10ch;
+            min-width: 10ch;
+            max-width: 10ch;
+            font-family: monospace;
+            font-weight: 600;
+            color: #dc2626;
+        }
+        .data-table .col-id {
+            width: 80px;
+            min-width: 80px;
+            max-width: 80px;
+            font-family: monospace;
+            font-weight: 600;
+            color: #2563eb;
+            font-size: 10px;
+        }
+        .data-table .col-children {
+            width: auto;
+            color: #475569;
+            font-size: 10px;
+        }
+        .data-table td {
+            padding: 6px 10px;
+            border-bottom: 1px solid #e5e7eb;
+            vertical-align: top;
+        }
+        .data-table tr:hover {
+            background: #f8fafc;
+        }
+        .data-table tr.matched {
+            background: #fef9c3;
+        }
+        .data-table tr.current-match {
+            background: #fef2f2;
+            box-shadow: inset 0 0 0 2px #dc2626;
+        }
+        .table-cell-content {
+            max-height: 120px;
+            overflow-y: auto;
+            overflow-x: hidden;
+            line-height: 1.4;
+            word-wrap: break-word;
+            white-space: pre-wrap;
+            background: #fafafa;
+            padding: 8px;
+            border-radius: 4px;
+        }
+        
+        .table-cell-content::-webkit-scrollbar {
+            width: 4px;
+        }
+        
+        .table-cell-content::-webkit-scrollbar-thumb {
+            background: #cbd5e1;
+            border-radius: 2px;
+        }
+        
+        .table-cell-content::-webkit-scrollbar-track {
+            background: #f1f5f9;
+        }
+        .filter-button {
+            background: #10b981;
+            color: white;
+            border: none;
+            padding: 6px 12px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 12px;
+            font-weight: 600;
+            transition: background 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+        .filter-button:hover {
+            background: #059669;
+        }
+        .filter-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0,0,0,0.5);
+            display: none;
+            z-index: 1000;
+            justify-content: center;
+            align-items: center;
+        }
+        .filter-overlay.active {
+            display: flex;
+        }
+        .filter-modal {
+            background: white;
+            border-radius: 12px;
+            width: 500px;
+            max-height: 80vh;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            box-shadow: 0 20px 25px -5px rgba(0,0,0,0.1), 0 10px 10px -5px rgba(0,0,0,0.04);
+        }
+        .filter-modal-header {
+            background: #6366f1;
+            color: white;
+            padding: 16px 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .filter-modal-header h2 {
+            font-size: 16px;
+            font-weight: 600;
+            margin: 0;
+        }
+        .filter-modal-close {
+            background: transparent;
+            border: none;
+            color: white;
+            font-size: 24px;
+            cursor: pointer;
+            line-height: 1;
+            padding: 0;
+            width: 28px;
+            height: 28px;
+            border-radius: 4px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .filter-modal-close:hover {
+            background: rgba(255,255,255,0.2);
+        }
+        .filter-modal-body {
+            padding: 20px;
+            overflow-y: auto;
+            flex: 1;
+        }
+        .filter-section {
+            margin-bottom: 20px;
+        }
+        .filter-section-title {
+            font-size: 13px;
+            font-weight: 600;
+            color: #1f2937;
+            margin-bottom: 12px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .filter-option {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 0;
+            font-size: 12px;
+            color: #4b5563;
+        }
+        .filter-option input[type="checkbox"] {
+            width: 16px;
+            height: 16px;
+            cursor: pointer;
+        }
+        .filter-input-group {
+            margin-top: 8px;
+        }
+        .filter-input-group label {
+            display: block;
+            font-size: 11px;
+            color: #6b7280;
+            margin-bottom: 4px;
+        }
+        .filter-input-group input[type="text"],
+        .filter-input-group input[type="number"] {
+            width: 100%;
+            padding: 8px 10px;
+            border: 1px solid #d1d5db;
+            border-radius: 6px;
+            font-size: 12px;
+        }
+        .filter-tags {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+            margin-top: 8px;
+        }
+        .filter-tag {
+            background: #e0e7ff;
+            color: #4f46e5;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 11px;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+        .filter-tag-remove {
+            background: none;
+            border: none;
+            color: #4f46e5;
+            font-size: 14px;
+            cursor: pointer;
+            padding: 0;
+            line-height: 1;
+        }
+        .filter-modal-footer {
+            padding: 16px 20px;
+            border-top: 1px solid #e5e7eb;
+            display: flex;
+            gap: 10px;
+            justify-content: flex-end;
+        }
+        .filter-modal-btn {
+            padding: 8px 16px;
+            border-radius: 6px;
+            font-size: 12px;
+            font-weight: 600;
+            cursor: pointer;
+            border: none;
+            transition: all 0.2s;
+        }
+        .filter-modal-btn-cancel {
+            background: #f3f4f6;
+            color: #374151;
+        }
+        .filter-modal-btn-cancel:hover {
+            background: #e5e7eb;
+        }
+        .filter-modal-btn-reset {
+            background: #fef3c7;
+            color: #92400e;
+        }
+        .filter-modal-btn-reset:hover {
+            background: #fde68a;
+        }
+        .filter-modal-btn-apply {
+            background: #10b981;
+            color: white;
+        }
+        .filter-modal-btn-apply:hover {
+            background: #059669;
+        }
+        .filter-stats {
+            background: #f0fdf4;
+            border: 1px solid #86efac;
+            border-radius: 8px;
+            padding: 10px 14px;
+            margin-bottom: 12px;
+            font-size: 12px;
+            color: #166534;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .filter-stats strong {
+            color: #16a34a;
+        }
+
+        /* 🌙 黑夜模式 */
+        body.dark {
+            background: #0f172a;
+            color: #e2e8f0;
+        }
+        body.dark .header {
+            background: #4338ca;
+        }
+        body.dark .search-bar input {
+            background: #1e293b;
+            color: #e2e8f0;
+        }
+        body.dark .search-bar input::placeholder {
+            color: #94a3b8;
+        }
+        body.dark .url {
+            color: #cbd5e1;
+        }
+        body.dark .main-content {
+            background: #0f172a;
+        }
+        body.dark .panel {
+            background: #1e293b;
+        }
+        body.dark .panel:first-child {
+            background: #1e293b;
+            border-right-color: #334155;
+        }
+        body.dark .panel-title {
+            color: #94a3b8;
+            border-bottom-color: #334155;
+        }
+        body.dark .panel-title .count,
+        body.dark .element-stats {
+            color: #64748b;
+        }
+        body.dark .resize-handle {
+            background: #334155;
+        }
+        body.dark .resize-handle::after {
+            background: #475569;
+        }
+        body.dark .element-item {
+            background: #1e293b;
+            border-color: #334155;
+        }
+        body.dark .element-item:hover {
+            border-color: #6366f1;
+            box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.25);
+        }
+        body.dark .element-item.matched {
+            background: #451a03;
+            border-color: #f59e0b;
+        }
+        body.dark .element-item.current-match {
+            background: #450a0a;
+            border-color: #dc2626;
+        }
+        body.dark .element-tag {
+            color: #f87171;
+        }
+        body.dark .element-class {
+            color: #4ade80;
+        }
+        body.dark .element-id {
+            color: #60a5fa;
+        }
+        body.dark .element-content {
+            background: #0f172a;
+            color: #cbd5e1;
+        }
+        body.dark .tree-header:hover {
+            background: #334155;
+        }
+        body.dark .tree-node.matched {
+            background: #451a03;
+        }
+        body.dark .tree-node.current-match {
+            background: #450a0a;
+        }
+        body.dark .empty-state {
+            color: #64748b;
+        }
+        body.dark .search-highlight {
+            background: #854d0e;
+            color: #fef08a;
+        }
+        body.dark .selector-display {
+            background: #172554;
+            border-color: #1d4ed8;
+        }
+        body.dark .selector-text {
+            color: #93c5fd;
+        }
+        body.dark .copy-btn {
+            background: #0284c7;
+        }
+        body.dark .copy-btn:hover {
+            background: #0369a1;
+        }
+        body.dark .test-btn {
+            background: #7c3aed;
+        }
+        body.dark .test-btn:hover {
+            background: #6d28d9;
+        }
+        body.dark .filter-button {
+            background: #059669;
+        }
+        body.dark .filter-button:hover {
+            background: #047857;
+        }
+        body.dark .filter-overlay {
+            background: rgba(0, 0, 0, 0.7);
+        }
+        body.dark .filter-modal {
+            background: #1e293b;
+            color: #e2e8f0;
+        }
+        body.dark .filter-modal-header {
+            background: #4338ca;
+        }
+        body.dark .filter-modal-body {
+            background: #1e293b;
+        }
+        body.dark .filter-section-title {
+            color: #e2e8f0;
+        }
+        body.dark .filter-option {
+            color: #cbd5e1;
+        }
+        body.dark .filter-input-group label {
+            color: #94a3b8;
+        }
+        body.dark .filter-input-group input[type="text"],
+        body.dark .filter-input-group input[type="number"] {
+            background: #0f172a;
+            border-color: #334155;
+            color: #e2e8f0;
+        }
+        body.dark .filter-tag {
+            background: #312e81;
+            color: #c7d2fe;
+        }
+        body.dark .filter-modal-footer {
+            border-top-color: #334155;
+        }
+        body.dark .filter-modal-btn-cancel {
+            background: #334155;
+            color: #e2e8f0;
+        }
+        body.dark .filter-modal-btn-cancel:hover {
+            background: #475569;
+        }
+        body.dark .filter-modal-btn-reset {
+            background: #451a03;
+            color: #fde68a;
+        }
+        body.dark .filter-modal-btn-reset:hover {
+            background: #78350f;
+        }
+        body.dark .filter-stats {
+            background: #064e3b;
+            border-color: #10b981;
+            color: #6ee7b7;
+        }
+        body.dark .filter-stats strong {
+            color: #34d399;
+        }
+        body.dark .filter-modal-body > div {
+            background: #1e293b !important;
+            border-color: #334155 !important;
+        }
+        body.dark .filter-modal-body h3,
+        body.dark .filter-modal-body ol,
+        body.dark .filter-modal-body ul {
+            color: #e2e8f0 !important;
+        }
+        body.dark .filter-modal-body strong {
+            color: #93c5fd;
+        }
+        body.dark .data-table th {
+            background: #1e40af;
+            color: #e2e8f0;
+            border-right-color: #334155;
+        }
+        body.dark .data-table td {
+            border-bottom-color: #334155;
+            color: #cbd5e1;
+        }
+        body.dark .data-table tr:hover {
+            background: #334155;
+        }
+        body.dark .data-table tr.matched {
+            background: #451a03;
+        }
+        body.dark .data-table tr.current-match {
+            background: #450a0a;
+        }
+        body.dark .table-cell-content {
+            background: #0f172a;
+        }
+        body.dark .col-resize-handle::after {
+            background: #475569;
+        }
+        body.dark .table-cell-content::-webkit-scrollbar-thumb {
+            background: #475569;
+        }
+        body.dark .table-cell-content::-webkit-scrollbar-track {
+            background: #1e293b;
+        }
+        body.dark .view-toggle-btn.small {
+            background: rgba(255,255,255,0.15);
+            border-color: rgba(255,255,255,0.25);
+        }
+        body.dark .view-toggle-btn.small.active {
+            background: rgba(255,255,255,0.9);
+            color: #4338ca;
+        }
+
+        /* 主题切换按钮 */
+        .theme-toggle {
+            background: rgba(255,255,255,0.2);
+            border: none;
+            color: white;
+            padding: 6px 10px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 12px;
+            font-weight: 600;
+            transition: background 0.2s;
+        }
+        .theme-toggle:hover {
+            background: rgba(255,255,255,0.3);
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1> Webview 元素结构查看器</h1>
+        <div class="search-bar">
+            <div class="search-toggle">
+                <button id="searchLeftBtn" class="search-toggle-btn active" title="搜索找到的元素"> 元素</button>
+                <button id="searchRightBtn" class="search-toggle-btn" title="搜索 DOM 树节点">🌳 树</button>
+            </div>
+            <input type="text" id="searchInput" placeholder=" 搜索元素内容...">
+            <button id="prevBtn" title="上一个">▲</button>
+            <button id="nextBtn" title="下一个">▼</button>
+        </div>
+        <span id="urlDisplay" class="url"></span>
+        <button id="themeToggle" class="theme-toggle" title="切换黑夜/白天模式">🌙 黑夜</button>
+    </div>
+
+    <div class="main-content">
+        <div class="panel" id="leftPanel">
+            <div class="panel-title">
+                🎯 找到的元素
+                <span id="elementCount" class="count">0 个</span>
+            </div>
+            <div id="elementList" class="element-list">
+                <div class="empty-state">正在加载...</div>
+            </div>
+        </div>
+
+        <div class="resize-handle" id="resizeHandle"></div>
+
+        <div class="panel" id="rightPanel">
+            <div class="panel-title">
+                 完整 DOM 树
+                <div class="view-toggle" id="rightViewToggle" style="margin-left: auto; display: flex; gap: 4px;">
+                    <button class="filter-button" id="smartFilterBtn" title="智能筛选（类似左边卡片）">🎯 智能筛选</button>
+                </div>
+                <span id="treeInfo" class="count"></span>
+            </div>
+            <div id="filterStats" class="filter-stats" style="display: none;"></div>
+            
+            <div id="tableContainer" class="table-container">
+                <div class="empty-state">正在加载...</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const { ipcRenderer } = require('electron');
+        let currentData = null;
+        let currentTextElements = []; // 使用与左边卡片相同的数据源
+        let currentAllTextElements = []; // 右边表格使用：所有 DOM 元素
+        let currentMatchIndex = -1;
+        let matchingIndices = [];
+        let searchTarget = 'left'; // 'left' = 元素列表, 'right' = DOM 表格
+        let filterApplied = false;
+        let currentBodyTree = null; // 保存完整的 DOM 树
+
+        document.addEventListener('DOMContentLoaded', () => {
+            const searchInput = document.getElementById('searchInput');
+            const prevBtn = document.getElementById('prevBtn');
+            const nextBtn = document.getElementById('nextBtn');
+            const searchLeftBtn = document.getElementById('searchLeftBtn');
+            const searchRightBtn = document.getElementById('searchRightBtn');
+            const resizeHandle = document.getElementById('resizeHandle');
+            const leftPanel = document.getElementById('leftPanel');
+            const rightPanel = document.getElementById('rightPanel');
+
+            // 拖拽调整左右面板宽度
+            if (resizeHandle && leftPanel && rightPanel) {
+                let isResizing = false;
+                
+                resizeHandle.addEventListener('mousedown', (e) => {
+                    isResizing = true;
+                    resizeHandle.classList.add('dragging');
+                    document.body.style.cursor = 'col-resize';
+                    document.body.style.userSelect = 'none';
+                    e.preventDefault();
+                });
+                
+                document.addEventListener('mousemove', (e) => {
+                    if (!isResizing) return;
+                    
+                    const mainContent = document.querySelector('.main-content');
+                    const mainRect = mainContent.getBoundingClientRect();
+                    const newLeftWidth = e.clientX - mainRect.left;
+                    const minWidth = 200;
+                    const maxWidth = mainRect.width - 200;
+                    
+                    if (newLeftWidth >= minWidth && newLeftWidth <= maxWidth) {
+                        leftPanel.style.flex = 'none';
+                        leftPanel.style.width = newLeftWidth + 'px';
+                        rightPanel.style.flex = '1';
+                    }
+                });
+                
+                document.addEventListener('mouseup', () => {
+                    if (isResizing) {
+                        isResizing = false;
+                        resizeHandle.classList.remove('dragging');
+                        document.body.style.cursor = '';
+                        document.body.style.userSelect = '';
+                    }
+                });
+            }
+
+            // 表格栏位宽度拖拽调整
+            let colResizing = false;
+            let colResizeStartX = 0;
+            let colResizeStartWidth = 0;
+            let currentResizeCol = null;
+            
+            document.addEventListener('mousedown', (e) => {
+                if (e.target.classList.contains('col-resize-handle')) {
+                    colResizing = true;
+                    currentResizeCol = e.target.dataset.col;
+                    colResizeStartX = e.clientX;
+                    
+                    const th = e.target.closest('th');
+                    colResizeStartWidth = th.offsetWidth;
+                    
+                    e.target.classList.add('dragging');
+                    document.body.style.cursor = 'col-resize';
+                    document.body.style.userSelect = 'none';
+                    e.preventDefault();
+                }
+            });
+            
+            document.addEventListener('mousemove', (e) => {
+                if (!colResizing) return;
+                
+                const table = document.getElementById('dataTable');
+                if (!table) return;
+                
+                const diff = e.clientX - colResizeStartX;
+                const newWidth = Math.max(50, colResizeStartWidth + diff);
+                
+                // 更新 th 的宽度
+                const th = table.querySelector(`th[data-col="${currentResizeCol}"]`);
+                if (th) {
+                    th.style.width = newWidth + 'px';
+                    th.style.minWidth = newWidth + 'px';
+                    th.style.maxWidth = newWidth + 'px';
+                }
+                
+                // 更新 col 的宽度（用于 table-layout: fixed）
+                const col = table.querySelector(`col[data-col="${currentResizeCol}"]`);
+                if (col) {
+                    col.style.width = newWidth + 'px';
+                }
+            });
+            
+            document.addEventListener('mouseup', () => {
+                if (colResizing) {
+                    colResizing = false;
+                    document.querySelectorAll('.col-resize-handle.dragging').forEach(h => {
+                        h.classList.remove('dragging');
+                    });
+                    currentResizeCol = null;
+                    document.body.style.cursor = '';
+                    document.body.style.userSelect = '';
+                }
+            });
+
+            // 搜索目标切换
+            searchLeftBtn.addEventListener('click', () => {
+                searchTarget = 'left';
+                searchLeftBtn.classList.add('active');
+                searchRightBtn.classList.remove('active');
+                searchInput.placeholder = ' 搜索元素内容...';
+                // 清除表格高亮
+                clearTableHighlight();
+                // 重置搜索状态
+                matchingIndices = [];
+                currentMatchIndex = -1;
+                // 重新搜索
+                if (searchInput.value) {
+                    handleSearch();
+                }
+            });
+
+            searchRightBtn.addEventListener('click', () => {
+                searchTarget = 'right';
+                searchRightBtn.classList.add('active');
+                searchLeftBtn.classList.remove('active');
+                searchInput.placeholder = ' 搜索 DOM 树节点...';
+                // 清除元素列表高亮
+                clearElementHighlight();
+                // 清除表格高亮
+                clearTableHighlight();
+                // 重置搜索状态
+                matchingIndices = [];
+                currentMatchIndex = -1;
+                // 重新搜索
+                if (searchInput.value) {
+                    handleSearch();
+                }
+            });
+
+            searchInput.addEventListener('input', debounce(handleSearch, 300));
+            prevBtn.addEventListener('click', prevMatch);
+            nextBtn.addEventListener('click', nextMatch);
+
+            // 智能筛选相关
+            const smartFilterBtn = document.getElementById('smartFilterBtn');
+            const smartFilterModal = document.getElementById('smartFilterModal');
+            const smartFilterApplyBtn = document.getElementById('smartFilterApply');
+            const smartFilterResetBtn = document.getElementById('smartFilterReset');
+            const smartFilterCloseBtn = document.getElementById('smartFilterClose');
+            const filterMinLengthCheckbox = document.getElementById('filterMinLength');
+            const filterVisibleCheckbox = document.getElementById('filterVisible');
+            const themeToggle = document.getElementById('themeToggle');
+
+            // 主题切换
+            function updateThemeButton(isDark) {
+                if (!themeToggle) return;
+                themeToggle.textContent = isDark ? '☀️ 白天' : '🌙 黑夜';
+            }
+            function loadTheme() {
+                const saved = localStorage.getItem('elementViewerTheme');
+                const isDark = saved === 'dark';
+                if (isDark) {
+                    document.body.classList.add('dark');
+                } else {
+                    document.body.classList.remove('dark');
+                }
+                updateThemeButton(isDark);
+            }
+            if (themeToggle) {
+                themeToggle.addEventListener('click', () => {
+                    const isDark = document.body.classList.toggle('dark');
+                    localStorage.setItem('elementViewerTheme', isDark ? 'dark' : 'light');
+                    updateThemeButton(isDark);
+                });
+            }
+            loadTheme();
+
+            // 绑定事件
+            if (smartFilterBtn) {
+                smartFilterBtn.addEventListener('click', () => {
+                    smartFilterModal.classList.add('active');
+                });
+            }
+
+            if (smartFilterCloseBtn) {
+                smartFilterCloseBtn.addEventListener('click', () => {
+                    smartFilterModal.classList.remove('active');
+                });
+            }
+
+            if (smartFilterModal) {
+                smartFilterModal.addEventListener('click', (e) => {
+                    if (e.target === smartFilterModal) {
+                        smartFilterModal.classList.remove('active');
+                    }
+                });
+            }
+
+            if (smartFilterApplyBtn) {
+                smartFilterApplyBtn.addEventListener('click', () => {
+                    applySmartFilter();
+                    smartFilterModal.classList.remove('active');
+                });
+            }
+
+            if (smartFilterResetBtn) {
+                smartFilterResetBtn.addEventListener('click', () => {
+                    resetFilter();
+                    smartFilterModal.classList.remove('active');
+                });
+            }
+        });
+
+        function applySmartFilter() {
+            if (!currentAllTextElements || currentAllTextElements.length === 0) {
+                alert('没有数据可筛选！');
+                return;
+            }
+
+            const originalCount = currentAllTextElements.length;
+            const useMinLength = document.getElementById('filterMinLength').checked;
+            
+            // 应用与左边卡片相同的过滤逻辑
+            let filtered = applyElementFilter(currentAllTextElements);
+            
+            filterApplied = true;
+            
+            // 同步渲染左右两边
+            renderElementList(filtered);
+            renderTableFromTextElements(filtered);
+            
+            // 显示筛选统计
+            document.getElementById('filterStats').innerHTML = `
+                <span> 智能筛选完成 | 原始数据 ${originalCount} 个 | 筛选结果 ${filtered.length} 个</span>
+                <button style="background: #fef3c7; color: #92400e; border: none; padding: 4px 10px; border-radius: 4px; font-size: 11px; cursor: pointer;" onclick="resetFilter()">重置过滤</button>
+            `;
+            document.getElementById('filterStats').style.display = 'flex';
+        }
+
+        function resetFilter() {
+            if (!currentAllTextElements) return;
+            filterApplied = false;
+            document.getElementById('filterStats').style.display = 'none';
+            // 重置：左边应用过滤，右边显示所有
+            const filteredElements = applyElementFilter(currentAllTextElements);
+            renderElementList(filteredElements);
+            renderTableFromTextElements(currentAllTextElements);
+        }
+
+        function renderFilteredTable(rows) {
+            const container = document.getElementById('tableContainer');
+            
+            if (rows.length === 0) {
+                container.innerHTML = '<div class="empty-state">没有数据</div>';
+                return;
+            }
+
+            let html = '<table class="data-table" id="dataTable"><colgroup><col data-col="0"><col data-col="1"><col data-col="2"></colgroup><thead><tr>';
+            html += '<th class="col-id" data-col="0" title="层级节点编号">层级节点编号<div class="col-resize-handle" data-col="0"></div></th>';
+            html += '<th class="col-node" data-col="1" title="本阶选择器">本阶选择器<div class="col-resize-handle" data-col="1"></div></th>';
+            html += '<th class="col-children" data-col="2" title="本阶内容（含下阶）">本阶内容（含下阶）</th>';
+            html += '</tr></thead><tbody>';
+            
+            rows.forEach((row, idx) => {
+                const selfSelector = row.selfSelector;
+                const allContent = row.allContent || '(无)';
+                
+                html += `<tr data-row-index="${idx}" title="">`;
+                html += `<td class="col-id">${escapeHtml(row.nodeId)}</td>`;
+                html += `<td class="col-node"><div class="table-cell-content">${escapeHtml(selfSelector)}</div></td>`;
+                html += `<td class="col-children"><div class="table-cell-content">${escapeHtml(allContent)}</div></td>`;
+                html += '</tr>';
+            });
+            
+            html += '</tbody></table>';
+            container.innerHTML = html;
+        }
+
+        function debounce(func, wait) {
+            let timeout;
+            return function executedFunction(...args) {
+                const later = () => {
+                    clearTimeout(timeout);
+                    func(...args);
+                };
+                clearTimeout(timeout);
+                timeout = setTimeout(later, wait);
+            };
+        }
+
+        ipcRenderer.on('set-element-data', (event, data) => {
+            console.log('[ElementViewer] 收到数据:', data);
+            currentData = data;
+            currentBodyTree = data.bodyTree;
+            currentAllTextElements = data.allTextElements || [];
+            console.log('[ElementViewer] allTextElements 数量:', currentAllTextElements.length);
+            if (currentAllTextElements.length > 0) {
+                console.log('[ElementViewer] 第一个元素:', currentAllTextElements[0]);
+            }
+            filterApplied = false;
+            // 清空搜索词和搜索状态
+            currentSearchQuery = '';
+            document.getElementById('searchInput').value = '';
+            matchingIndices = [];
+            currentMatchIndex = -1;
+            updateSearchInfo(0, 0);
+            // 隐藏过滤统计
+            document.getElementById('filterStats').style.display = 'none';
+            // 重新渲染
+            document.getElementById('urlDisplay').textContent = data.url || '';
+            
+            // 左边卡片：应用过滤逻辑（文本 > 200，去重，前 30 个）
+            const filteredElements = applyElementFilter(currentAllTextElements);
+            console.log('[ElementViewer] 过滤后元素数量:', filteredElements.length);
+            renderElementList(filteredElements);
+            
+            // 右边表格：显示所有元素，不过滤
+            renderTableFromTextElements(currentAllTextElements);
+        });
+        
+        // 应用元素过滤逻辑（与 renderer.js 中的逻辑一致）
+        function applyElementFilter(elements) {
+            if (!elements || elements.length === 0) return [];
+            
+            // 1. 筛选：文本长度 > 200
+            let filtered = elements.filter(el => {
+                return el.textLength > 200;
+            });
+            
+            // 2. 去重：取前 100 个字符作为指纹
+            const seenTexts = new Set();
+            filtered = filtered.filter(el => {
+                const fingerprint = (el.innerText || '').substring(0, 100);
+                if (seenTexts.has(fingerprint)) {
+                    return false;
+                }
+                seenTexts.add(fingerprint);
+                return true;
+            });
+            
+            // 3. 按文本长度排序（从长到短）
+            filtered.sort((a, b) => b.textLength - a.textLength);
+            
+            // 4. 只保留前 30 个
+            return filtered.slice(0, 30);
+        }
+
+        let currentSearchQuery = '';
+        
+        // 生成 CSS 选择器
+        function generateCssSelector(el) {
+            // 如果上游已经提供可用的 selector，优先使用它
+            if (el && el.selector) return el.selector;
+
+            let selector = el.tag;
+
+            // 优先使用 id
+            if (el.id) {
+                return `#${el.id}`;
+            }
+
+            // 然后使用 class
+            if (el.className) {
+                // 把空格分隔的 class 变成点号连接
+                const classes = el.className.trim().split(/\s+/).filter(c => c);
+                if (classes.length > 0) {
+                    selector = classes.map(c => `.${c}`).join('');
+                }
+            }
+
+            return selector;
+        }
+        
+        // 复制选择器到剪贴板
+        function copySelector(selector, button) {
+            navigator.clipboard.writeText(selector).then(() => {
+                const originalText = button.textContent;
+                button.textContent = '已复制';
+                button.classList.add('copied');
+                setTimeout(() => {
+                    button.textContent = originalText;
+                    button.classList.remove('copied');
+                }, 1500);
+            });
+        }
+        
+        // 测试选择器获取元素内容
+        async function testSelector(selector, button, expectedContent) {
+            const originalText = button.textContent;
+            button.textContent = '测试中...';
+            button.classList.add('testing');
+            button.disabled = true;
+            
+            try {
+                // 通过 IPC 发送测试请求到主进程，传递选择器和期望内容
+                const result = await ipcRenderer.invoke('test-selector', {
+                    selector: selector,
+                    expectedContent: expectedContent
+                });
+                
+                if (result.success) {
+                    button.textContent = '成功';
+                    button.classList.remove('testing');
+                    button.classList.add('success');
+                } else {
+                    button.textContent = '失败';
+                    button.classList.remove('testing');
+                    button.classList.add('error');
+                }
+            } catch (e) {
+                console.error('[ElementViewer] 测试失败:', e);
+                button.textContent = '错误';
+                button.classList.remove('testing');
+                button.classList.add('error');
+            }
+            
+            // 2秒后恢复按钮状态
+            setTimeout(() => {
+                button.textContent = originalText;
+                button.classList.remove('success', 'error');
+                button.disabled = false;
+            }, 2000);
+        }
+        
+        function renderElementList(elements) {
+            const container = document.getElementById('elementList');
+            const countSpan = document.getElementById('elementCount');
+            
+            if (!elements || elements.length === 0) {
+                container.innerHTML = '<div class="empty-state">没有找到符合条件的元素</div>';
+                countSpan.textContent = '0 个';
+                return;
+            }
+
+            countSpan.textContent = elements.length + ' 个';
+            container.innerHTML = elements.map((el, idx) => {
+                let contentHtml = escapeHtml(el.innerText);
+                
+                // 如果有搜索词，添加高亮
+                if (currentSearchQuery) {
+                    const regex = new RegExp('(' + escapeRegExp(currentSearchQuery) + ')', 'gi');
+                    contentHtml = contentHtml.replace(regex, '<mark class="search-highlight">$1</mark>');
+                }
+                
+                // 直接使用 DOM 提取时保存的 selector
+                let cssSelector = el.selector || '';
+                let displayId = el.id;
+                let displayClassName = el.className;
+                
+                // 如果没有 selector，回退生成
+                if (!cssSelector) {
+                    cssSelector = generateCssSelector({
+                        tag: el.tag,
+                        id: el.id,
+                        className: el.className || ''
+                    });
+                }
+                
+                                // 主选择器：优先使用已验证的 workingSelector，其次为 upstream selector，再次为候选第一个
+                                const primarySelector = el.workingSelector || el.selector || (el.candidates && el.candidates[0]) || '';
+                                const candidatesList = el.candidates && el.candidates.length ? el.candidates.slice(0, 6) : [];
+
+                                const candidateHtml = candidatesList.map((c, ci) => {
+                                    // 对选择器进行完整转义，处理所有可能破坏 onclick 的字符
+                                    const escaped = c
+                                        .replace(/\\/g, '\\\\')      // 反斜杠
+                                        .replace(/'/g, "\\'")        // 单引号
+                                        .replace(/\n/g, '\\n')       // 换行符
+                                        .replace(/\r/g, '\\r');      // 回车符
+                                    const escapedContent = (el.innerText || '')
+                                        .replace(/\\/g, '\\\\')
+                                        .replace(/'/g, "\\'")
+                                        .replace(/\n/g, '\\n')
+                                        .replace(/\r/g, '\\r');
+                                    return `<div style="display:flex; gap:8px; align-items:center; margin-top:6px;">
+                                                        <div style="flex:1; font-family: monospace; font-size: 12px; color: #0369a1; word-break: break-all;">${escapeHtml(c)}</div>
+                                                        <button class="test-btn" onclick="testSelector('${escaped}', this, '${escapedContent}')">测试</button>
+                                                        <button class="copy-btn" onclick="copySelector('${escaped}', this)">复制</button>
+                                                    </div>`;
+                                }).join('');
+
+                                return `
+                                <div class="element-item" data-index="${idx}">
+                                    <div class="element-tag">
+                                        &lt;${escapeHtml(el.tag)}&gt;
+                                        ${displayId ? `<span class="element-id">#${escapeHtml(displayId)}</span>` : ''}
+                                        ${displayClassName ? `<span class="element-class">.${escapeHtml(displayClassName)}</span>` : ''}
+                                    </div>
+                                    <div class="element-content">${contentHtml}</div>
+                                    <div class="selector-display">
+                                        <span class="selector-text">${escapeHtml(primarySelector)}</span>
+                                        <button class="test-btn ${el.workingSelector ? 'success' : ''}" 
+                                                onclick="testSelector('${(primarySelector||'').replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/\n/g, '\\n')}', this, '${(el.innerText||'').replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/\n/g, '\\n')}')" 
+                                                title="测试主选择器"> ${el.workingSelector ? '已验证' : '测试'}</button>
+                                        <button class="copy-btn" onclick="copySelector('${(primarySelector||'').replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/\n/g, '\\n')}', this)"> 复制</button>
+                                    </div>
+                                    ${candidateHtml ? `<div style="margin-top:8px;">候选选择器：${candidateHtml}</div>` : ''}
+                                </div>
+                                `;
+            }).join('');
+        }
+        
+        function escapeRegExp(string) {
+            return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        }
+
+        // 在 bodyTree 里根据内容查找匹配的元素
+        function findMatchingElementInTree(content) {
+            if (!currentBodyTree) return null;
+            
+            let bestMatch = null;
+            let bestMatchScore = 0;
+            let bestMatchDepth = -1; // 记录最佳匹配的深度
+            const targetContent = content.trim();
+            
+            function traverse(node, depth = 0) {
+                if (!node) return;
+                
+                const nodeContent = (node.innerText || '').trim();
+                
+                if (nodeContent && targetContent) {
+                    // 计算匹配分数
+                    let score = 0;
+                    
+                    // 检查是否有一段长的相同文本（至少30个字符）
+                    const maxCheckLength = Math.min(nodeContent.length, targetContent.length, 200);
+                    for (let start = 0; start < maxCheckLength - 30; start++) {
+                        const targetSub = targetContent.substr(start, 50);
+                        if (nodeContent.includes(targetSub)) {
+                            score += 50;
+                            break;
+                        }
+                    }
+                    
+                    // 也检查前缀匹配
+                    let commonPrefix = 0;
+                    const minLength = Math.min(nodeContent.length, targetContent.length);
+                    for (let i = 0; i < minLength; i++) {
+                        if (nodeContent[i] === targetContent[i]) {
+                            commonPrefix++;
+                        } else {
+                            break;
+                        }
+                    }
+                    score += commonPrefix;
+                    
+                    // 如果分数足够高，考虑匹配
+                    if (score > 30) {
+                        // 优先选择更深层的节点（更精确的匹配）
+                        // 如果分数更高，或者分数相近但深度更深
+                        if (score > bestMatchScore + 50 || (score > bestMatchScore && depth > bestMatchDepth) || (Math.abs(score - bestMatchScore) <= 50 && depth > bestMatchDepth)) {
+                            bestMatchScore = score;
+                            bestMatch = node;
+                            bestMatchDepth = depth;
+                        }
+                    }
+                }
+                
+                // 递归遍历子节点
+                if (node.children) {
+                    for (const child of node.children) {
+                        traverse(child, depth + 1);
+                    }
+                }
+            }
+            
+            traverse(currentBodyTree, 0);
+            return bestMatch;
+        }
+
+        // ========== 表格视图 ==========
+        
+        // 将 DOM 树转换为表格数据
+        function flattenTreeToRows(node, parentPath, depth, nodeId) {
+            let rows = [];
+            
+            // 构建当前节点的 CSS 选择器（优先使用 ID）
+            let selfSelector = node.tag;
+            if (node.id) {
+                // 有 ID：使用 ID 选择器（最精确）
+                selfSelector = '#' + node.id;
+            } else if (node.classList && node.classList.length > 0) {
+                // 有 class：使用 class 选择器
+                selfSelector = '.' + node.classList.slice(0, 3).join('.');
+            }
+            
+            // 构建父阶选择器路径（用于递归，虽然表格不显示，但用于构建层级关系）
+            const currentPath = parentPath ? parentPath + ' > ' + selfSelector : selfSelector;
+            
+            // 本阶内容（含下阶）：直接使用 node.innerText，它已经包含所有子孙节点内容
+            const allText = node.innerText ? node.innerText.trim() : '';
+            
+            // 检查是否是叶子节点（无子节点）
+            const isLeaf = !node.children || node.children.length === 0;
+            
+            // 获取可见性信息
+            const isVisible = node.isVisible !== undefined ? node.isVisible : true;
+            
+            rows.push({
+                nodeId: nodeId + (isLeaf ? 'e' : ''),
+                selfSelector: selfSelector,
+                allContent: allText,
+                depth: depth,
+                isVisible: isVisible
+            });
+            
+            // 递归处理子节点
+            if (node.children && node.children.length > 0) {
+                node.children.forEach((child, idx) => {
+                    const childNodeId = nodeId ? nodeId + '.' + (idx + 1) : '1';
+                    rows = rows.concat(flattenTreeToRows(child, currentPath, depth + 1, childNodeId));
+                });
+            }
+            
+            return rows;
+        }
+
+        // 渲染右边表格：直接使用 textElements 数据，与左边卡片使用同一套数据源
+        function renderTableFromTextElements(elements) {
+            const container = document.getElementById('tableContainer');
+            
+            if (!elements || elements.length === 0) {
+                container.innerHTML = '<div class="empty-state">没有数据</div>';
+                return;
+            }
+
+            let html = '<table class="data-table" id="dataTable"><colgroup><col data-col="0"><col data-col="1"><col data-col="2"></colgroup><thead><tr>';
+            html += '<th class="col-id" data-col="0" title="层级节点编号">层级节点编号<div class="col-resize-handle" data-col="0"></div></th>';
+            html += '<th class="col-node" data-col="1" title="本阶选择器">本阶选择器<div class="col-resize-handle" data-col="1"></div></th>';
+            html += '<th class="col-children" data-col="2" title="本阶内容（含下阶）">本阶内容（含下阶）</th>';
+            html += '</tr></thead><tbody>';
+            
+            elements.forEach((el, idx) => {
+                const nodeId = (idx + 1).toString();
+                const selector = el.selector || el.tag || 'unknown';
+                const content = el.innerText || '(无)';
+                
+                html += `<tr data-row-index="${idx}" title="">`;
+                html += `<td class="col-id">${escapeHtml(nodeId)}</td>`;
+                html += `<td class="col-node"><div class="table-cell-content">${escapeHtml(selector)}</div></td>`;
+                html += `<td class="col-children"><div class="table-cell-content">${escapeHtml(content)}</div></td>`;
+                html += '</tr>';
+            });
+            
+            html += '</tbody></table>';
+            container.innerHTML = html;
+        }
+
+        function clearTableHighlight() {
+            document.querySelectorAll('.data-table tr.matched, .data-table tr.current-match').forEach(row => {
+                row.classList.remove('matched', 'current-match');
+            });
+            // 清除表格中的高亮标记
+            document.querySelectorAll('.data-table mark.search-highlight').forEach(mark => {
+                const parent = mark.parentNode;
+                if (parent) {
+                    parent.replaceChild(document.createTextNode(mark.textContent), mark);
+                    parent.normalize();
+                }
+            });
+        }
+
+        // 搜索表格
+        function searchTable(queryLower) {
+            // 清除元素列表高亮
+            clearElementHighlight();
+            
+            currentMatchIndex = -1;
+            matchingIndices = [];
+            
+            if (!queryLower) {
+                updateSearchInfo(0, 0);
+                // 清除表格高亮
+                clearTableHighlight();
+                return;
+            }
+            
+            // 查找所有匹配的行
+            const rows = document.querySelectorAll('.data-table tbody tr');
+            rows.forEach((row, idx) => {
+                const text = row.textContent.toLowerCase();
+                if (text.includes(queryLower)) {
+                    matchingIndices.push(idx);
+                    row.classList.add('matched');
+                    // 高亮匹配的文字
+                    highlightTextInTableRow(row, currentSearchQuery);
+                } else {
+                    row.classList.remove('matched', 'current-match');
+                }
+            });
+            
+            if (matchingIndices.length > 0) {
+                currentMatchIndex = 0;
+                highlightCurrentTableRow();
+            }
+            
+            updateSearchInfo(matchingIndices.length, currentMatchIndex + 1);
+        }
+        
+        // 在表格行中高亮匹配的文字
+        function highlightTextInTableRow(row, query) {
+            const queryLower = query.toLowerCase();
+            const cells = row.querySelectorAll('td');
+            
+            cells.forEach(cell => {
+                const contentDiv = cell.querySelector('.table-cell-content');
+                if (!contentDiv) return;
+                
+                // 获取原始文本（从 title 属性或 textContent）
+                const originalText = cell.getAttribute('title') || cell.textContent;
+                
+                // 如果文本中包含搜索词，进行高亮
+                if (originalText.toLowerCase().includes(queryLower)) {
+                    const regex = new RegExp('(' + escapeRegExp(query) + ')', 'gi');
+                    const highlighted = escapeHtml(originalText).replace(regex, '<mark class="search-highlight">$1</mark>');
+                    contentDiv.innerHTML = highlighted;
+                }
+            });
+        }
+        
+        // 高亮当前表格行
+        function highlightCurrentTableRow() {
+            // 清除之前的高亮
+            document.querySelectorAll('.data-table tr.current-match').forEach(row => {
+                row.classList.remove('current-match');
+            });
+            
+            if (currentMatchIndex >= 0 && currentMatchIndex < matchingIndices.length) {
+                const rows = document.querySelectorAll('.data-table tr.matched');
+                if (rows[currentMatchIndex]) {
+                    rows[currentMatchIndex].classList.add('current-match');
+                    rows[currentMatchIndex].scrollIntoView({ behavior: 'smooth', block: 'center' });
+                }
+            }
+        }
+
+        function handleSearch(e) {
+            const query = e ? e.target.value.trim() : document.getElementById('searchInput').value.trim();
+            currentSearchQuery = query;
+            const queryLower = query.toLowerCase();
+            
+            // 根据搜索目标执行不同的搜索逻辑
+            if (searchTarget === 'left') {
+                // 搜索元素列表
+                searchElementList(queryLower);
+            } else {
+                // 搜索右侧表格
+                searchTable(queryLower);
+            }
+        }
+        
+        // 搜索元素列表
+        function searchElementList(queryLower) {
+            // 重新渲染列表（带高亮）
+            renderElementList(currentData.textElements);
+            
+            const items = document.querySelectorAll('.element-item');
+            currentMatchIndex = -1;
+            matchingIndices = [];
+
+            if (!queryLower) {
+                updateSearchInfo(0, 0);
+                return;
+            }
+
+            items.forEach((item, idx) => {
+                const text = currentData.textElements[idx].innerText.toLowerCase();
+                if (text.includes(queryLower)) {
+                    matchingIndices.push(idx);
+                    item.classList.add('matched');
+                } else {
+                    item.classList.remove('matched', 'current-match');
+                }
+            });
+
+            if (matchingIndices.length > 0) {
+                currentMatchIndex = 0;
+                highlightCurrentMatch();
+            }
+            
+            updateSearchInfo(matchingIndices.length, currentMatchIndex + 1);
+        }
+        
+        // 清除元素列表高亮
+        function clearElementHighlight() {
+            document.querySelectorAll('.element-item.matched, .element-item.current-match').forEach(item => {
+                item.classList.remove('matched', 'current-match');
+            });
+        }
+
+        function highlightCurrentMatch() {
+            const items = document.querySelectorAll('.element-item');
+            items.forEach(item => item.classList.remove('current-match'));
+            
+            if (matchingIndices[currentMatchIndex] !== undefined) {
+                const currentItem = items[matchingIndices[currentMatchIndex]];
+                currentItem.classList.add('current-match');
+                currentItem.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }
+        }
+
+        function prevMatch() {
+            if (matchingIndices.length === 0) return;
+            currentMatchIndex = (currentMatchIndex - 1 + matchingIndices.length) % matchingIndices.length;
+            
+            if (searchTarget === 'left') {
+                highlightCurrentMatch();
+            } else {
+                highlightCurrentTableRow();
+            }
+            updateSearchInfo(matchingIndices.length, currentMatchIndex + 1);
+        }
+
+        function nextMatch() {
+            if (matchingIndices.length === 0) return;
+            currentMatchIndex = (currentMatchIndex + 1) % matchingIndices.length;
+            
+            if (searchTarget === 'left') {
+                highlightCurrentMatch();
+            } else {
+                highlightCurrentTableRow();
+            }
+            updateSearchInfo(matchingIndices.length, currentMatchIndex + 1);
+        }
+
+        function updateSearchInfo(total, current) {
+            document.getElementById('treeInfo').textContent = total > 0 ? `第 ${current}/${total} 个匹配` : '';
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+
+    </script>
+
+    <!-- 智能筛选弹出视窗 -->
+    <div class="filter-overlay" id="smartFilterModal">
+        <div class="filter-modal" style="max-width: 700px;">
+            <div class="filter-modal-header">
+                <h2 style="margin: 0;">🎯 智能筛选设置</h2>
+                <button class="filter-modal-close" id="smartFilterClose">&times;</button>
+            </div>
+            <div class="filter-modal-body" style="max-height: 70vh; overflow-y: auto;">
+                <!-- 筛选逻辑说明 -->
+                <div style="background: #f0f9ff; border: 1px solid #bae6fd; border-radius: 8px; padding: 12px; margin-bottom: 16px;">
+                    <h3 style="margin: 0 0 8px 0; color: #0369a1; font-size: 14px;">📋 筛选逻辑说明（与左边卡片完全一致）</h3>
+                    <ol style="margin: 0; padding-left: 20px; color: #374151; font-size: 12px; line-height: 1.8;">
+                        <li><strong>步骤1：获取所有DOM节点</strong> - 遍历页面所有元素，收集节点树结构</li>
+                        <li><strong>步骤2：可见性筛选</strong> - 检查 style.display !== 'none' 且 style.visibility !== 'hidden'，过滤掉隐藏元素</li>
+                        <li><strong>步骤3：内容长度筛选</strong> - 只保留 innerText 长度 > 200 的节点</li>
+                        <li><strong>步骤4：指纹去重</strong> - 取内容前100个字符作为指纹，相同指纹只保留一个（优先保留内容最长的）</li>
+                        <li><strong>步骤5：内容长度排序</strong> - 按 innerText 长度从长到短排序</li>
+                        <li><strong>步骤6：取前30个</strong> - 只保留内容最长的30个节点</li>
+                        <li><strong>步骤7：节点编号排序</strong> - 最后按层级节点编号从小到大显示</li>
+                    </ol>
+                </div>
+
+                <!-- 数据来源说明 -->
+                <div style="background: #f0fdf4; border: 1px solid #86efac; border-radius: 8px; padding: 12px; margin-bottom: 16px;">
+                    <h3 style="margin: 0 0 8px 0; color: #15803d; font-size: 14px;">📄 数据来源说明</h3>
+                    <ul style="margin: 0; padding-left: 20px; color: #374151; font-size: 12px; line-height: 1.8;">
+                        <li><strong>innerText 的取用：</strong>每个节点的 innerText 直接来自 DOM，包含该节点及所有子节点的完整文本内容</li>
+                        <li><strong>不截断内容：</strong>保存完整的 innerText，不进行任何截断处理</li>
+                        <li><strong>表格中的"本阶内容（含下阶）"：</strong>就是该节点的完整 innerText</li>
+                        <li><strong>表格中的"本阶内容（单阶）"：</strong>仅保留该节点直接文本（不包含子节点文本，较难准确获取）</li>
+                    </ul>
+                </div>
+
+                <!-- 筛选条件设置 -->
+                <div class="filter-section">
+                    <div class="filter-section-title">⚙️ 筛选条件设置</div>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px;">
+                        <label class="filter-option">
+                            <input type="checkbox" id="filterMinLength" checked>
+                            <span>筛选内容 > 200 字</span>
+                        </label>
+                        <label class="filter-option">
+                            <input type="checkbox" id="filterVisible" checked>
+                            <span>只显示可见元素</span>
+                        </label>
+                    </div>
+                </div>
+            </div>
+            <div class="filter-modal-footer">
+                <button class="filter-modal-btn filter-modal-btn-reset" id="smartFilterReset">重置</button>
+                <button class="filter-modal-btn filter-modal-btn-cancel" id="smartFilterClose">取消</button>
+                <button class="filter-modal-btn filter-modal-btn-apply" id="smartFilterApply">应用筛选</button>
+            </div>
+        </div>
+    </div>
+</body>
+</html>
