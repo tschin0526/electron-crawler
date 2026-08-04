@@ -288,6 +288,14 @@ function stocksToMarkdown(stocks, userPrices) {
     return val.toFixed(2);
   }
 
+  // 根据原始价格字符串推断小数位数，用于 change/changePercent 显示
+  function getDecimalPlaces(rawVal) {
+    if (typeof rawVal === 'string' && rawVal.includes('.')) {
+      return rawVal.split('.')[1].length;
+    }
+    return 2;
+  }
+
   // 判断是否有用户输入的价格
   const hasUserPrices = userPrices && Object.keys(userPrices).length > 0;
 
@@ -303,7 +311,10 @@ function stocksToMarkdown(stocks, userPrices) {
   for (const s of stocks) {
     const sign = s.change >= 0 ? '+' : '';
     const r = s._raw || {};
-    let row = `| ${s.name} | ${s.code} | ${fmt(s.currentPrice, r.currentPrice)} | ${sign}${s.change.toFixed(2)} | ${sign}${s.changePercent.toFixed(2)}% | ${fmt(s.open, r.open)} | ${fmt(s.high, r.high)} | ${fmt(s.low, r.low)} | ${fmt(s.prevClose, r.prevClose)} | ${s.volume.toLocaleString()} |`;
+    const dp = getDecimalPlaces(r.currentPrice);
+    const changeStr = s.change.toFixed(dp);
+    const changePercentStr = s.changePercent.toFixed(dp);
+    let row = `| ${s.name} | ${s.code} | ${fmt(s.currentPrice, r.currentPrice)} | ${sign}${changeStr} | ${sign}${changePercentStr}% | ${fmt(s.open, r.open)} | ${fmt(s.high, r.high)} | ${fmt(s.low, r.low)} | ${fmt(s.prevClose, r.prevClose)} | ${s.volume.toLocaleString()} |`;
 
     if (hasUserPrices) {
       // 查找匹配的用户价格（通过代码、名称、包含关系匹配）
@@ -344,9 +355,10 @@ function stocksToMarkdown(stocks, userPrices) {
 
   for (const s of stocks) {
     const r = s._raw || {};
+    const dp = getDecimalPlaces(r.currentPrice);
     md += `#### ${s.name} (${s.code})\n\n`;
     md += `- **当前价格**: ${fmt(s.currentPrice, r.currentPrice)}\n`;
-    md += `- **涨跌**: ${s.change >= 0 ? '+' : ''}${s.change.toFixed(2)} (${s.changePercent >= 0 ? '+' : ''}${s.changePercent.toFixed(2)}%)\n`;
+    md += `- **涨跌**: ${s.change >= 0 ? '+' : ''}${s.change.toFixed(dp)} (${s.changePercent >= 0 ? '+' : ''}${s.changePercent.toFixed(dp)}%)\n`;
     md += `- **今开**: ${fmt(s.open, r.open)} | **最高**: ${fmt(s.high, r.high)} | **最低**: ${fmt(s.low, r.low)}\n`;
     md += `- **昨收**: ${fmt(s.prevClose, r.prevClose)}\n`;
     md += `- **成交量**: ${s.volume.toLocaleString()} 手\n`;
