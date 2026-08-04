@@ -605,23 +605,21 @@
       right: 0;
       bottom: 0;
       background-color: rgba(0, 0, 0, 0.5);
-      display: flex;
-      align-items: center;
-      justify-content: center;
       z-index: 1000;
       animation: fadeIn 0.2s;
     }
 
     .modal {
       background-color: var(--card-bg);
-      border-radius: 12px;
-      box-shadow: var(--shadow-lg);
-      width: 92%;
-      max-width: 1000px;
-      max-height: 92vh;
+      border-radius: 0;
+      box-shadow: none;
+      width: 100%;
+      max-width: 100%;
+      height: 100%;
+      max-height: 100vh;
       overflow-y: auto;
-      animation: slideUp 0.2s;
-      border: 2px solid var(--border-color);
+      animation: none;
+      border: none;
     }
 
     .modal-header {
@@ -685,9 +683,9 @@
       border-radius: 8px;
       font-size: 15px;
       resize: vertical;
-      min-height: 200px;
-      height: 350px;
-      max-height: 60vh;
+      min-height: 300px;
+      height: 525px;
+      max-height: 90vh;
       transition: border-color 0.2s;
       line-height: 1.6;
     }
@@ -898,9 +896,9 @@
       font-size: 14px;
       line-height: 1.7;
       color: var(--text-primary);
-      min-height: 180px;
+      min-height: 525px;
       overflow-y: auto;
-      max-height: 400px;
+      max-height: 90vh;
     }
     .md-preview.show { display: block; }
     .md-preview > * { margin-top: 0 !important; margin-bottom: 6px !important; }
