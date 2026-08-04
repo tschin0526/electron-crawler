@@ -46,7 +46,7 @@
 ║                                                           ║
 ╚═══════════════════════════════════════════════════════════╝
 
-快速启动命令（复制粘贴到终端）：
+快速启动命令（复制粘贴到终端）*** ：
 
 sh /Users/chincharles/Desktop/myProgram/electron-crawler/start.sh
 
