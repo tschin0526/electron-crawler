@@ -252,6 +252,84 @@
       display: none;
     }
 
+    .topbar {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      transition: background 0.3s ease, border-color 0.3s ease;
+    }
+
+    .workspace-toolbar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px;
+      border-radius: 12px;
+      background: rgba(255, 255, 255, 0.18);
+      border: 1px solid rgba(203, 213, 225, 0.8);
+      transition: background 0.3s ease, border-color 0.3s ease, color 0.3s ease;
+    }
+
+    body.workspace-dark .topbar {
+      background: linear-gradient(135deg, #0f172a 0%, #111827 100%);
+    }
+
+    body.workspace-dark .workspace-toolbar {
+      background: #111827;
+      border-color: #334155;
+    }
+
+    body.workspace-dark .workspace-toolbar button,
+    body.workspace-dark .workspace-toolbar .btn-icon {
+      background: rgba(255,255,255,0.08);
+      color: #e2e8f0;
+      border-color: rgba(148,163,184,0.3);
+    }
+
+    body.workspace-dark .workspace-toolbar button:hover,
+    body.workspace-dark .workspace-toolbar .btn-icon:hover {
+      background: rgba(255,255,255,0.12);
+    }
+
+    body.workspace-dark .ai-workspace-header {
+      background: #111827;
+      border-bottom-color: #334155;
+    }
+
+    body.workspace-dark .ai-workspace-tabs {
+      background: rgba(255,255,255,0.03);
+    }
+
+    body.workspace-dark .ai-workspace-tab {
+      color: #cbd5e1;
+      border-color: rgba(148,163,184,0.15);
+    }
+
+    body.workspace-dark .ai-workspace-tab:hover {
+      background: rgba(148,163,184,0.12);
+      color: #e2e8f0;
+    }
+
+    body.workspace-dark .ai-workspace-tab.active {
+      background: rgba(96, 165, 250, 0.12);
+      color: #bfdbfe;
+      box-shadow: 0 0 0 1px rgba(96, 165, 250, 0.18);
+    }
+
+    body.workspace-dark .ai-workspace-tab.active::after {
+      background: #60a5fa;
+    }
+
+    body.workspace-dark .ws-tab-name {
+      color: #cbd5e1;
+    }
+
+    body.workspace-dark .workspace-status-dot {
+      border-color: #94a3b8;
+    }
+
+    body.workspace-dark .workspace-status-dot:hover {
+      box-shadow: 0 0 6px rgba(148,163,184,0.7);
+    }
+
     .status-box.info {
       background: #eff6ff;
       border: 1px solid #bfdbfe;
@@ -3951,7 +4029,7 @@
     <div id="statusBoxInline" class="status-box-floating" style="display: none;"></div>
 
     <!-- 统一功能区：标题 + API 服务器（左右布局） -->
-    <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 8px; padding: 8px 16px; margin-bottom: 6px; display: flex; gap: 16px; align-items: center;">
+    <div class="topbar" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 8px; padding: 8px 16px; margin-bottom: 6px; display: flex; gap: 16px; align-items: center;">
       <!-- 左侧：标题区域 -->
       <div style="flex: 1; display: flex; flex-direction: column; justify-content: center;">
         <h1 style="font-size: 16px; font-weight: 700; color: white; margin: 0;">无限空间·AI智控台</h1>
@@ -3959,7 +4037,7 @@
       </div>
 
       <!-- 右侧：API 服务器控制 -->
-      <div id="apiServerControl" style="background: rgba(255, 255, 255, 0.18); border-radius: 6px; padding: 6px 10px; display: flex; flex-direction: column; justify-content: center; min-width: 380px;">
+      <div id="apiServerControl" class="workspace-toolbar" style="border-radius: 6px; padding: 6px 10px; display: flex; flex-direction: column; justify-content: center; min-width: 380px;">
         <div style="display: flex; justify-content: space-between; align-items: center;">
           <div style="display: flex; align-items: center; gap: 6px; flex: 1; min-width: 0;">
             <span style="font-size: 14px;">⚡</span>
