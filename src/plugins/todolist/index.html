@@ -1710,7 +1710,7 @@
       `).join('');
     }
 
-    async function saveTask() {
+    async function saveTask(closeAfterSave = true) {
       const text = document.getElementById('taskText').value.trim();
       if (!text) {
         alert('请输入任务内容');
@@ -1743,7 +1743,9 @@
       }
 
       await saveTodos();
-      closeModal();
+      if (closeAfterSave) {
+        closeModal();
+      }
     }
 
     async function init() {
@@ -1766,6 +1768,11 @@
     document.addEventListener('keydown', (e) => {
       if (e.key === 'Escape') {
         closeModal();
+      }
+      // Cmd+S / Ctrl+S 保存但不关闭编辑窗口
+      if ((e.metaKey || e.ctrlKey) && e.key === 's') {
+        e.preventDefault();
+        saveTask(false);
       }
     });
   </script>
