@@ -142,6 +142,42 @@
       border: 1px solid #6ee7b7;
     }
 
+    .attachment-btn {
+      position: absolute;
+      bottom: 8px;
+      right: 8px;
+      background: #f1f5f9;
+      border: 1px solid #e2e8f0;
+      color: #111827;
+      border-radius: 4px;
+      padding: 4px 8px;
+      cursor: pointer;
+      font-size: 14px;
+      transition: all 0.2s ease;
+    }
+
+    .attachment-btn:hover {
+      background: #e2e8f0;
+    }
+
+    .attachment-btn:active {
+      transform: scale(0.95);
+    }
+
+    body.workspace-dark .attachment-btn {
+      background: #111827;
+      color: #e2e8f0;
+      border-color: #334155;
+    }
+
+    body.workspace-dark .attachment-btn:hover {
+      background: #1e293b;
+    }
+
+    body.workspace-dark .attachment-btn:active {
+      transform: scale(0.95);
+    }
+
     .input-group label {
       font-size: 14px;
       font-weight: 600;
@@ -279,14 +315,21 @@
 
     body.workspace-dark .workspace-toolbar button,
     body.workspace-dark .workspace-toolbar .btn-icon {
-      background: rgba(255,255,255,0.08);
+      background: rgba(148,163,184,0.08);
       color: #e2e8f0;
-      border-color: rgba(148,163,184,0.3);
+      border-color: rgba(148,163,184,0.25);
     }
 
     body.workspace-dark .workspace-toolbar button:hover,
     body.workspace-dark .workspace-toolbar .btn-icon:hover {
-      background: rgba(255,255,255,0.12);
+      background: rgba(148,163,184,0.16);
+    }
+
+    body.workspace-dark .workspace-toolbar button.active,
+    body.workspace-dark .workspace-toolbar .btn-icon.active {
+      background: rgba(96,165,250,0.18);
+      color: #f8fbff;
+      border-color: rgba(96,165,250,0.35);
     }
 
     body.workspace-dark .ai-workspace-header {
@@ -295,7 +338,7 @@
     }
 
     body.workspace-dark .ai-workspace-tabs {
-      background: rgba(255,255,255,0.03);
+      background: rgba(255,255,255,0.06);
     }
 
     body.workspace-dark .ai-workspace-tab {
@@ -304,18 +347,23 @@
     }
 
     body.workspace-dark .ai-workspace-tab:hover {
-      background: rgba(148,163,184,0.12);
-      color: #e2e8f0;
+      background: rgba(148,163,184,0.14);
+      color: #f8fafc;
     }
 
     body.workspace-dark .ai-workspace-tab.active {
-      background: rgba(96, 165, 250, 0.12);
-      color: #bfdbfe;
-      box-shadow: 0 0 0 1px rgba(96, 165, 250, 0.18);
+      background: rgba(96,165,250,0.22);
+      color: #eff6ff;
+      box-shadow: 0 0 0 1px rgba(96,165,250,0.30);
+      border-color: rgba(96,165,250,0.35);
     }
 
     body.workspace-dark .ai-workspace-tab.active::after {
-      background: #60a5fa;
+      background: #7dd3fc;
+    }
+
+    body.workspace-dark .ai-workspace-tab.active .ws-tab-name {
+      color: #e0f2fe;
     }
 
     body.workspace-dark .ws-tab-name {
@@ -1536,6 +1584,94 @@
       background: #dc2626 !important;
     }
 
+    body.workspace-dark .webview-toolbar {
+      background: #111827;
+      border-color: #334155;
+    }
+
+    body.workspace-dark .webview-toolbar input {
+      background: #0f172a;
+      color: #e2e8f0;
+      border-color: #334155;
+    }
+
+    body.workspace-dark .webview-toolbar button {
+      background: rgba(148,163,184,0.16);
+      color: #e2e8f0;
+      border: 1px solid rgba(148,163,184,0.2);
+    }
+
+    body.workspace-dark .webview-toolbar button:hover {
+      background: rgba(148,163,184,0.26);
+    }
+
+    body.workspace-dark .webview-toolbar .toolbar-btn {
+      background: rgba(148,163,184,0.14) !important;
+      color: #e2e8f0 !important;
+      box-shadow: none;
+    }
+
+    body.workspace-dark .webview-toolbar .toolbar-btn-green {
+      background: #047857 !important;
+    }
+
+    body.workspace-dark .webview-toolbar .toolbar-btn-gray {
+      background: #4b5563 !important;
+    }
+
+    body.workspace-dark .webview-toolbar .toolbar-btn-purple {
+      background: #4338ca !important;
+    }
+
+    body.workspace-dark .webview-toolbar .toolbar-btn-red {
+      background: #dc2626 !important;
+    }
+
+    body.workspace-dark .webview-toolbar .toolbar-btn-red:hover {
+      background: #b91c1c !important;
+    }
+
+    body.workspace-dark .input-group-inline input,
+    body.workspace-dark .input-group input[type="text"] {
+      background: #0f172a;
+      color: #e2e8f0;
+      border-color: #334155;
+    }
+
+    body.workspace-dark .input-group-inline label,
+    body.workspace-dark .input-group label {
+      color: #cbd5e1;
+    }
+
+    body.workspace-dark .btn-icon {
+      background: rgba(148,163,184,0.14);
+      color: #e2e8f0;
+      border: 1px solid rgba(148,163,184,0.2);
+      box-shadow: none;
+    }
+
+    body.workspace-dark .btn-icon.btn-primary {
+      background: rgba(59,130,246,0.18);
+      color: #eff6ff;
+      border-color: rgba(96,165,250,0.4);
+    }
+
+    body.workspace-dark .btn-icon.btn-danger {
+      background: rgba(239,68,68,0.18);
+      color: #fee2e2;
+      border-color: rgba(244,63,94,0.35);
+    }
+
+    body.workspace-dark .btn-icon.btn-success {
+      background: rgba(16,185,129,0.18);
+      color: #d1fae5;
+      border-color: rgba(34,197,94,0.35);
+    }
+
+    body.workspace-dark .btn-icon:hover {
+      background: rgba(148,163,184,0.22);
+    }
+
     .dropdown-item:hover {
       background: #f1f5f9 !important;
     }
@@ -1952,6 +2088,104 @@
     /* 附件显示区 */
     body.workspace-dark div[id^="attachment_"] { background: #0f172a !important; border-color: #334155 !important; }
     body.workspace-dark div[id^="attachment_"] span { color: #94a3b8 !important; }
+    body.workspace-dark div[id^="attachment_"] button {
+      background: rgba(148,163,184,0.16) !important;
+      color: #e2e8f0 !important;
+      border: 1px solid rgba(148,163,184,0.25) !important;
+      box-shadow: none !important;
+    }
+    body.workspace-dark div[id^="attachment_"] button:hover {
+      background: rgba(148,163,184,0.26) !important;
+    }
+    body.workspace-dark div[id^="attachment_"] button:active {
+      transform: scale(0.95) !important;
+    }
+    body.workspace-dark div[id^="attachment_"] img {
+      border-color: #60a5fa !important;
+    }
+    body.workspace-dark div[id^="attachmentContainer_"] button,
+    body.workspace-dark div[id^="dropZone_"] button {
+      background: rgba(148,163,184,0.16) !important;
+      color: #e2e8f0 !important;
+      border: 1px solid rgba(148,163,184,0.25) !important;
+      box-shadow: none !important;
+    }
+    body.workspace-dark div[id^="attachmentContainer_"] button:hover,
+    body.workspace-dark div[id^="dropZone_"] button:hover {
+      background: rgba(148,163,184,0.26) !important;
+    }
+    body.workspace-dark div[id^="attachmentContainer_"] button:active,
+    body.workspace-dark div[id^="dropZone_"] button:active {
+      transform: scale(0.95) !important;
+    }
+
+    .attachment-thumb {
+      position: relative;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      margin: 2px;
+      width: 60px;
+      height: 60px;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+
+    .attachment-thumb:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    }
+
+    .attachment-thumb-file {
+      background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%);
+      border: 2px solid #0ea5e9;
+    }
+
+    .attachment-thumb-image {
+      border: 2px solid #0ea5e9;
+    }
+
+    .attachment-remove-btn {
+      position: absolute;
+      top: -6px;
+      right: -6px;
+      width: 18px;
+      height: 18px;
+      background: #dc2626;
+      color: white;
+      border: none;
+      border-radius: 50%;
+      cursor: pointer;
+      font-size: 12px;
+      line-height: 18px;
+      text-align: center;
+      padding: 0;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+    }
+
+    body.workspace-dark .attachment-thumb {
+      background: #111827 !important;
+      border-color: #334155 !important;
+    }
+
+    body.workspace-dark .attachment-thumb-file {
+      background: #111827 !important;
+      border-color: #334155 !important;
+    }
+
+    body.workspace-dark .attachment-thumb-image {
+      border-color: #60a5fa !important;
+    }
+
+    body.workspace-dark .attachment-remove-btn {
+      background: rgba(148,163,184,0.2) !important;
+      color: #e2e8f0 !important;
+    }
+
+    body.workspace-dark .attachment-remove-btn:hover {
+      background: rgba(148,163,184,0.3) !important;
+    }
 
     /* 分类标签 */
     body.workspace-dark .category-general { background: #1e3a8a; color: #93c5fd; }
@@ -2352,7 +2586,7 @@
     }
 
     .ai-workspace-tabs::-webkit-scrollbar-thumb {
-      background: rgba(0, 0, 0, 0.15);
+      background: rgba(148,163,184,0.4);
       border-radius: 2px;
     }
 
@@ -2364,12 +2598,12 @@
       padding: 6px 14px;
       border: none;
       background: transparent;
-      color: #374151;
+      color: #cbd5e1;
       font-size: 13px;
       font-weight: 500;
       cursor: pointer;
       transition: all 0.2s ease;
-      border-right: 1px solid rgba(0, 0, 0, 0.1);
+      border-right: 1px solid rgba(148,163,184,0.15);
       position: relative;
       flex-shrink: 0;
       min-width: 60px;
@@ -2383,7 +2617,7 @@
 
     .ws-tab-name {
       font-size: 10px;
-      color: #4b5563;
+      color: #cbd5e1;
       max-width: 90px;
       overflow: hidden;
       text-overflow: ellipsis;
@@ -2394,22 +2628,24 @@
     }
 
     .ai-workspace-tab:hover {
-      background: rgba(0, 0, 0, 0.06);
-      color: #111827;
+      background: rgba(148,163,184,0.12);
+      color: #f8fafc;
     }
 
     .ai-workspace-tab:hover .ws-tab-name {
-      color: #374151;
+      color: #e2e8f0;
     }
 
     .ai-workspace-tab.active {
-      background: rgba(99, 102, 241, 0.08);
-      color: #1e1b4b;
+      background: rgba(96,165,250,0.22);
+      color: #eff6ff;
       font-weight: 600;
+      border-right-color: rgba(96,165,250,0.35);
+      box-shadow: inset 0 0 0 1px rgba(96,165,250,0.22);
     }
 
     .ai-workspace-tab.active .ws-tab-name {
-      color: #3730a3;
+      color: #e0f2fe;
     }
 
     .ai-workspace-tab.active::after {
@@ -2419,7 +2655,7 @@
       left: 0;
       right: 0;
       height: 3px;
-      background: #fbbf24;
+      background: #7dd3fc;
     }
 
     .workspace-status-dot {

@@ -122,7 +122,7 @@ function renderBookmarks() {
           const tooltipText = `${att.name}\n大小: ${(att.size / 1024).toFixed(1)} KB\n类型: ${att.type || '未知'}`;
 
           if (isImage) {
-            return `<div style="position: relative; display: inline-block; margin: 2px;">
+            return `<div class="attachment-thumb attachment-thumb-image" style="position: relative; display: inline-block; margin: 2px;">
               <img src="${att.data}"
                    alt="${escapeHtml(att.name)}"
                    style="width: 60px; height: 60px; object-fit: cover; border-radius: 6px; border: 2px solid #0ea5e9; cursor: pointer; transition: all 0.2s;"
@@ -130,15 +130,15 @@ function renderBookmarks() {
                    onmouseout="this.style.transform='scale(1)'; this.style.boxShadow='none'"
                    title="${escapeHtml(tooltipText)}"
                    onclick="previewAttachment(${index}, ${attIndex})" />
-              <button onclick="removeAttachment(${index}, ${attIndex}); event.stopPropagation();"
+              <button class="attachment-remove-btn" onclick="removeAttachment(${index}, ${attIndex}); event.stopPropagation();"
                       style="position: absolute; top: -6px; right: -6px; width: 18px; height: 18px; background: #dc2626; color: white; border: none; border-radius: 50%; cursor: pointer; font-size: 12px; line-height: 18px; text-align: center; padding: 0; box-shadow: 0 2px 4px rgba(0,0,0,0.2);"
                       title="移除此附件">✕</button>
             </div>`;
           } else {
-            return `<div style="position: relative; display: inline-flex; align-items: center; justify-content: center; margin: 2px; width: 60px; height: 60px; background: linear-gradient(135deg, #f0f9ff 0%,#e0f2fe 100%); border-radius: 6px; border: 2px solid #0ea5e9; cursor: pointer;"
+            return `<div class="attachment-thumb attachment-thumb-file" style="position: relative; display: inline-flex; align-items: center; justify-content: center; margin: 2px; width: 60px; height: 60px; background: linear-gradient(135deg, #f0f9ff 0%,#e0f2fe 100%); border-radius: 6px; border: 2px solid #0ea5e9; cursor: pointer;"
                  title="${escapeHtml(tooltipText)}">
               <span style="font-size: 24px;">📎</span>
-              <button onclick="removeAttachment(${index}, ${attIndex}); event.stopPropagation();"
+              <button class="attachment-remove-btn" onclick="removeAttachment(${index}, ${attIndex}); event.stopPropagation();"
                       style="position: absolute; top: -6px; right: -6px; width: 18px; height: 18px; background: #dc2626; color: white; border: none; border-radius: 50%; cursor: pointer; font-size: 12px; line-height: 18px; text-align: center; padding: 0; box-shadow: 0 2px 4px rgba(0,0,0,0.2);"
                       title="移除此附件">✕</button>
             </div>`;
@@ -191,10 +191,7 @@ function renderBookmarks() {
             ondragleave="handleDragLeave(event, ${index})"
             ondrop="handleDrop(event, ${index})"
           >${escapeHtml(presetValue)}</textarea>
-          <button onclick="selectAttachment(${index})"
-            style="position: absolute; bottom: 8px; right: 8px; background: #f1f5f9; border: 1px solid #e2e8f0; border-radius: 4px; padding: 4px 8px; cursor: pointer; font-size: 14px; transition: all 0.2s;"
-            onmouseover="this.style.background='#e2e8f0'"
-            onmouseout="this.style.background='#f1f5f9'"
+          <button class="attachment-btn" onclick="selectAttachment(${index})"
             title="添加附件（或粘贴图片/拖拽文件）\n最多支持10个附件">📎</button>
         </div>
         ${cardMsgDropdown}
