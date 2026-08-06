@@ -3731,10 +3731,14 @@ function initWebviewEvents(webviewId, loadingId) {
       const wsId = wsMatch[1] || 'MAIN';
       setTimeout(() => applyWebviewZoom(wsId), 200);
     }
-    // 如果黑夜模式已开启，重新为插件页面应用 dark 类（页面刷新后会丢失）
-    if (workspaceDarkModeEnabled && isOurWebview(webview)) {
+    // 黑夜模式或白天模式切换后，确保插件页面 body.dark 状态正确
+    if (isOurWebview(webview)) {
       setTimeout(() => {
-        webview.executeJavaScript(`document.body.classList.add('dark');`).catch(() => {});
+        if (workspaceDarkModeEnabled) {
+          webview.executeJavaScript(`document.body.classList.add('dark');`).catch(() => {});
+        } else {
+          webview.executeJavaScript(`document.body.classList.remove('dark');`).catch(() => {});
+        }
       }, 500);
     }
   });

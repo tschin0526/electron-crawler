@@ -651,6 +651,12 @@
     body.dark .attachment-drop-zone,
     body.dark .attachment-item,
     body.dark .btn-secondary,
+    body.dark .btn-success,
+    body.dark .mail-compose-actions,
+    body.dark .md-toolbar,
+    body.dark .md-tool-btn,
+    body.dark .md-toggle-bar,
+    body.dark .md-toggle-btn,
     body.dark .status-badge-info,
     body.dark .status-badge-success,
     body.dark .status-badge-error,
@@ -658,8 +664,37 @@
       background: var(--card-bg);
       color: var(--text-primary);
     }
-    body.dark .recipient-dropdown-item:hover { background: #1e293b; }
-    body.dark .tag-item { background: var(--primary-light); color: var(--primary-color); }
+    body.dark .mail-compose-actions,
+    body.dark .md-toolbar,
+    body.dark .md-toggle-bar {
+      background: #111827;
+      border-color: #334155;
+    }
+    body.dark .md-toolbar { border-bottom-color: #334155; }
+    body.dark .md-toggle-bar { border-top-color: #334155; }
+    body.dark .md-tool-btn,
+    body.dark .md-toggle-btn {
+      background: transparent;
+      color: #e2e8f0;
+      border-color: transparent;
+    }
+    body.dark .md-tool-btn:hover {
+      background: rgba(99,102,241,0.12);
+      color: #eff6ff;
+      border-color: #4338ca;
+    }
+    body.dark .md-toggle-btn:hover,
+    body.dark .md-toggle-btn.active {
+      background: rgba(99,102,241,0.14);
+      color: #eff6ff;
+      border-color: #4338ca;
+    }
+    body.dark .btn-success {
+      background: #1f2937;
+      color: #a7f3d0;
+      border-color: #334155;
+    }
+    body.dark .btn-success:hover { background: #374151; }
     body.dark .attachment-item { border-color: var(--border-color); }
     body.dark .attachment-name { color: var(--text-primary); }
 
