@@ -101,7 +101,7 @@ function getCardScripts(index) {
 }
 
 function initAnchorsForCard(index) {
-  if (!bookmarks[index].anchors) {
+  if (!bookmarks[index].anchors || bookmarks[index].anchors.length === 0) {
     bookmarks[index].anchors = [];
     for (let i = 1; i <= 10; i++) {
       bookmarks[index].anchors.push({
