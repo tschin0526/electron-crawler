@@ -1491,7 +1491,7 @@ function appendChatMessage(workspaceId, bookmark, message, answer, attachments =
   }).join('') : '';
 
   sentDiv.innerHTML = `
-    <div style="
+    <div class="sent-bubble" style="
       background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
       color: white;
       padding: 10px 14px;
@@ -1504,7 +1504,7 @@ function appendChatMessage(workspaceId, bookmark, message, answer, attachments =
     ">
       <div style="margin-bottom: 4px;">${escapeHtml(message)}</div>
       ${attachmentHtml}
-      <div style="font-size: 10px; opacity: 0.8; text-align: right; margin-top: 4px;">${timestamp}</div>
+      <div class="sent-time" style="font-size: 10px; opacity: 0.8; text-align: right; margin-top: 4px;">${timestamp}</div>
     </div>
     <div style="
       width: 32px;
@@ -1539,7 +1539,7 @@ function appendChatMessage(workspaceId, bookmark, message, answer, attachments =
       font-size: 16px;
       flex-shrink: 0;
     ">🤖</div>
-    <div style="
+    <div class="received-bubble" style="
       background: white;
       color: #1e293b;
       padding: 10px 14px;
@@ -1552,7 +1552,7 @@ function appendChatMessage(workspaceId, bookmark, message, answer, attachments =
       border: 1px solid #e2e8f0;
     ">
       <div style="margin-bottom: 4px;">${renderMarkdown(incrementalAnswer)}</div>
-      <div style="font-size: 10px; color: #94a3b8; text-align: right;">${timestamp}</div>
+      <div class="received-time" style="font-size: 10px; color: #94a3b8; text-align: right;">${timestamp}</div>
     </div>
   `;
   
@@ -1561,7 +1561,7 @@ function appendChatMessage(workspaceId, bookmark, message, answer, attachments =
   messagesContainer.appendChild(messageBubble);
 
   // 🆕 右键菜单：在 AI 回复气泡上右键弹出菜单
-  const answerBubble = receivedDiv.querySelector('div[style*="background: white"]');
+  const answerBubble = receivedDiv.querySelector('.received-bubble');
   if (answerBubble) {
     answerBubble.style.cursor = 'context-menu';
     answerBubble.addEventListener('contextmenu', (e) => {
@@ -4506,7 +4506,7 @@ function updateWorkspaceThemeButton() {
 function isOurWebview(webview) {
   if (!webview) return false;
   const url = (typeof webview.getURL === 'function' ? webview.getURL() : webview.src) || '';
-  return url.includes('/src/plugins/') || url.includes('/plugins/');
+  return url.includes('/src/plugins/') || url.includes('/plugins/') || url.includes('desktop-app-viewer.html');
 }
 
 async function applyWorkspaceDarkModeToWebview(webview) {
@@ -4573,6 +4573,27 @@ async function applyWorkspaceDarkModeToAll() {
   for (const webview of webviews) {
     await applyWorkspaceDarkModeToWebview(webview);
   }
+  // 桌面APP对话面板黑夜模式
+  document.querySelectorAll('.desktop-app-chat-panel').forEach(panel => {
+    panel.style.setProperty('background', '#0f172a', 'important');
+    const header = panel.querySelector('.chat-header');
+    if (header) header.style.setProperty('background', 'linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%)', 'important');
+    const msgs = panel.querySelector('.chat-messages');
+    if (msgs) msgs.style.setProperty('background', '#0f172a', 'important');
+    panel.querySelectorAll('.sent-bubble').forEach(b => {
+      b.style.setProperty('background', 'linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%)', 'important');
+    });
+    panel.querySelectorAll('.received-bubble').forEach(b => {
+      b.style.setProperty('background', '#1e293b', 'important');
+      b.style.setProperty('color', '#e2e8f0', 'important');
+      b.style.setProperty('border-color', '#334155', 'important');
+    });
+    panel.querySelectorAll('.sent-time, .received-time').forEach(t => {
+      t.style.setProperty('color', '#64748b', 'important');
+    });
+    const emptyHint = panel.querySelector('.chat-messages > div[style*="text-align: center"]');
+    if (emptyHint) emptyHint.style.setProperty('color', '#64748b', 'important');
+  });
 }
 
 async function removeWorkspaceDarkModeFromAll() {
@@ -4581,6 +4602,27 @@ async function removeWorkspaceDarkModeFromAll() {
   for (const webview of webviews) {
     await removeWorkspaceDarkModeFromWebview(webview);
   }
+  // 桌面APP对话面板恢复白天模式
+  document.querySelectorAll('.desktop-app-chat-panel').forEach(panel => {
+    panel.style.setProperty('background', 'linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%)', 'important');
+    const header = panel.querySelector('.chat-header');
+    if (header) header.style.setProperty('background', 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', 'important');
+    const msgs = panel.querySelector('.chat-messages');
+    if (msgs) msgs.style.setProperty('background', '', 'important');
+    panel.querySelectorAll('.sent-bubble').forEach(b => {
+      b.style.setProperty('background', 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', 'important');
+    });
+    panel.querySelectorAll('.received-bubble').forEach(b => {
+      b.style.setProperty('background', 'white', 'important');
+      b.style.setProperty('color', '#1e293b', 'important');
+      b.style.setProperty('border-color', '#e2e8f0', 'important');
+    });
+    panel.querySelectorAll('.sent-time, .received-time').forEach(t => {
+      t.style.setProperty('color', '', 'important');
+    });
+    const emptyHint = panel.querySelector('.chat-messages > div[style*="text-align: center"]');
+    if (emptyHint) emptyHint.style.setProperty('color', '#94a3b8', 'important');
+  });
 }
 
 async function toggleWorkspaceDarkMode() {

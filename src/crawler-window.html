@@ -4254,6 +4254,32 @@
       border-color: #334155;
       color: #e2e8f0;
     }
+
+    /* ========== 黑夜模式：桌面APP对话面板 ========== */
+    body.workspace-dark .desktop-app-chat-panel {
+      background: #0f172a !important;
+    }
+    body.workspace-dark .desktop-app-chat-panel .chat-header {
+      background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%) !important;
+    }
+    body.workspace-dark .desktop-app-chat-panel .chat-messages {
+      background: #0f172a !important;
+    }
+    body.workspace-dark .desktop-app-chat-panel .chat-messages > div[style*="text-align: center"] {
+      color: #64748b !important;
+    }
+    body.workspace-dark .desktop-app-chat-panel .sent-bubble {
+      background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%) !important;
+      color: white !important;
+    }
+    body.workspace-dark .desktop-app-chat-panel .received-bubble {
+      background: #1e293b !important;
+      color: #e2e8f0 !important;
+    }
+    body.workspace-dark .desktop-app-chat-panel .sent-time,
+    body.workspace-dark .desktop-app-chat-panel .received-time {
+      color: #64748b !important;
+    }
   </style>
   <!-- ✨ KaTeX 数学公式渲染库 -->
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">

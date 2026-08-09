@@ -136,6 +136,33 @@
             font-size: 32px;
             margin-bottom: 8px;
         }
+
+        /* ===== 黑夜模式 ===== */
+        body.dark {
+            background: #0f172a;
+        }
+        body.dark .header {
+            background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%);
+        }
+        body.dark .sent-bubble {
+            background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%);
+            color: white;
+            box-shadow: 0 2px 8px rgba(79, 70, 229, 0.3);
+        }
+        body.dark .sent-avatar {
+            background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%);
+        }
+        body.dark .received-bubble {
+            background: #1e293b;
+            color: #e2e8f0;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+        }
+        body.dark .received-time {
+            color: #64748b;
+        }
+        body.dark .empty-hint {
+            color: #64748b;
+        }
     </style>
 </head>
 <body>
