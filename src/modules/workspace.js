@@ -4594,6 +4594,149 @@ async function applyWorkspaceDarkModeToAll() {
     const emptyHint = panel.querySelector('.chat-messages > div[style*="text-align: center"]');
     if (emptyHint) emptyHint.style.setProperty('color', '#64748b', 'important');
   });
+  // 网点编辑弹窗黑夜模式
+  const bookmarkModal = document.getElementById('bookmarkModal');
+  if (bookmarkModal) {
+    const overlay = bookmarkModal.querySelector('.modal-overlay');
+    if (overlay) overlay.style.setProperty('background', 'rgba(0,0,0,0.7)', 'important');
+    const content = bookmarkModal.querySelector('.modal-content');
+    if (content) content.style.setProperty('background', '#1e293b', 'important');
+    const header = bookmarkModal.querySelector('.modal-header');
+    if (header) {
+      header.style.setProperty('border-bottom-color', '#334155', 'important');
+      const h3 = header.querySelector('h3');
+      if (h3) h3.style.setProperty('color', '#e2e8f0', 'important');
+    }
+    const body = bookmarkModal.querySelector('.modal-body');
+    if (body) {
+      body.style.setProperty('background', '#1e293b', 'important');
+      // 所有 label 文字颜色
+      body.querySelectorAll('label').forEach(l => {
+        const s = l.getAttribute('style') || '';
+        if (s.includes('color: #333') || s.includes('font-weight: 600')) {
+          l.style.setProperty('color', '#e2e8f0', 'important');
+        }
+        if (s.includes('color: #64748b')) {
+          l.style.setProperty('color', '#94a3b8', 'important');
+        }
+        if (s.includes('color: #0369a1')) {
+          l.style.setProperty('color', '#93c5fd', 'important');
+        }
+        if (s.includes('border: 2px solid #e2e8f0')) {
+          l.style.setProperty('border-color', '#334155', 'important');
+          l.style.setProperty('color', '#e2e8f0', 'important');
+        }
+      });
+      // 输入框
+      body.querySelectorAll('input[type="text"], input[type="number"], textarea, select').forEach(el => {
+        el.style.setProperty('background', '#0f172a', 'important');
+        el.style.setProperty('color', '#e2e8f0', 'important');
+        el.style.setProperty('border-color', '#334155', 'important');
+      });
+      // 提示文字
+      body.querySelectorAll('p').forEach(p => {
+        const s = p.getAttribute('style') || '';
+        if (s.includes('color: #94a3b8')) p.style.setProperty('color', '#64748b', 'important');
+        if (s.includes('color: #0284c7')) p.style.setProperty('color', '#60a5fa', 'important');
+      });
+      // 请求头区域背景
+      body.querySelectorAll('div').forEach(d => {
+        const s = d.getAttribute('style') || '';
+        if (s.includes('background: #f8fafc')) {
+          d.style.setProperty('background', '#0f172a', 'important');
+          d.style.setProperty('border-color', '#334155', 'important');
+        }
+        if (s.includes('background: #f0f9ff')) {
+          d.style.setProperty('background', '#1e3a5f', 'important');
+          d.style.setProperty('border-color', '#1e40af', 'important');
+        }
+        if (s.includes('border-top: 1px dashed #bae6fd')) {
+          d.style.setProperty('border-top-color', '#334155', 'important');
+        }
+      });
+    }
+    const footer = bookmarkModal.querySelector('.modal-footer');
+    if (footer) {
+      footer.style.setProperty('border-top-color', '#334155', 'important');
+      footer.style.setProperty('background', '#1e293b', 'important');
+    }
+    const closeBtn = bookmarkModal.querySelector('.modal-close');
+    if (closeBtn) {
+      closeBtn.style.setProperty('background', '#334155', 'important');
+      closeBtn.style.setProperty('color', '#94a3b8', 'important');
+    }
+  }
+}
+
+// 对网点编辑弹窗应用黑夜模式（独立函数，供弹窗打开时调用）
+function applyBookmarkModalDarkMode() {
+  if (!workspaceDarkModeEnabled) return;
+  const bookmarkModal = document.getElementById('bookmarkModal');
+  if (!bookmarkModal) return;
+  const overlay = bookmarkModal.querySelector('.modal-overlay');
+  if (overlay) overlay.style.setProperty('background', 'rgba(0,0,0,0.7)', 'important');
+  const content = bookmarkModal.querySelector('.modal-content');
+  if (content) content.style.setProperty('background', '#1e293b', 'important');
+  const header = bookmarkModal.querySelector('.modal-header');
+  if (header) {
+    header.style.setProperty('border-bottom-color', '#334155', 'important');
+    const h3 = header.querySelector('h3');
+    if (h3) h3.style.setProperty('color', '#e2e8f0', 'important');
+  }
+  const body = bookmarkModal.querySelector('.modal-body');
+  if (body) {
+    body.style.setProperty('background', '#1e293b', 'important');
+    body.querySelectorAll('label').forEach(l => {
+      const s = l.getAttribute('style') || '';
+      if (s.includes('color: #333') || s.includes('font-weight: 600')) {
+        l.style.setProperty('color', '#e2e8f0', 'important');
+      }
+      if (s.includes('color: #64748b')) {
+        l.style.setProperty('color', '#94a3b8', 'important');
+      }
+      if (s.includes('color: #0369a1')) {
+        l.style.setProperty('color', '#93c5fd', 'important');
+      }
+      if (s.includes('border: 2px solid #e2e8f0')) {
+        l.style.setProperty('border-color', '#334155', 'important');
+        l.style.setProperty('color', '#e2e8f0', 'important');
+      }
+    });
+    body.querySelectorAll('input[type="text"], input[type="number"], select').forEach(el => {
+      el.style.setProperty('background', '#0f172a', 'important');
+      el.style.setProperty('color', '#e2e8f0', 'important');
+      el.style.setProperty('border-color', '#334155', 'important');
+    });
+    body.querySelectorAll('p').forEach(p => {
+      const s = p.getAttribute('style') || '';
+      if (s.includes('color: #94a3b8')) p.style.setProperty('color', '#64748b', 'important');
+      if (s.includes('color: #0284c7')) p.style.setProperty('color', '#60a5fa', 'important');
+    });
+    body.querySelectorAll('div').forEach(d => {
+      const s = d.getAttribute('style') || '';
+      if (s.includes('background: #f8fafc')) {
+        d.style.setProperty('background', '#0f172a', 'important');
+        d.style.setProperty('border-color', '#334155', 'important');
+      }
+      if (s.includes('background: #f0f9ff')) {
+        d.style.setProperty('background', '#1e3a5f', 'important');
+        d.style.setProperty('border-color', '#1e40af', 'important');
+      }
+      if (s.includes('border-top: 1px dashed #bae6fd')) {
+        d.style.setProperty('border-top-color', '#334155', 'important');
+      }
+    });
+  }
+  const footer = bookmarkModal.querySelector('.modal-footer');
+  if (footer) {
+    footer.style.setProperty('border-top-color', '#334155', 'important');
+    footer.style.setProperty('background', '#1e293b', 'important');
+  }
+  const closeBtn = bookmarkModal.querySelector('.modal-close');
+  if (closeBtn) {
+    closeBtn.style.setProperty('background', '#334155', 'important');
+    closeBtn.style.setProperty('color', '#94a3b8', 'important');
+  }
 }
 
 async function removeWorkspaceDarkModeFromAll() {
@@ -4623,6 +4766,74 @@ async function removeWorkspaceDarkModeFromAll() {
     const emptyHint = panel.querySelector('.chat-messages > div[style*="text-align: center"]');
     if (emptyHint) emptyHint.style.setProperty('color', '#94a3b8', 'important');
   });
+  // 网点编辑弹窗恢复白天模式
+  const bookmarkModal = document.getElementById('bookmarkModal');
+  if (bookmarkModal) {
+    const overlay = bookmarkModal.querySelector('.modal-overlay');
+    if (overlay) overlay.style.setProperty('background', 'rgba(0,0,0,0.5)', 'important');
+    const content = bookmarkModal.querySelector('.modal-content');
+    if (content) content.style.setProperty('background', 'white', 'important');
+    const header = bookmarkModal.querySelector('.modal-header');
+    if (header) {
+      header.style.setProperty('border-bottom-color', '#e2e8f0', 'important');
+      const h3 = header.querySelector('h3');
+      if (h3) h3.style.setProperty('color', '#1e293b', 'important');
+    }
+    const body = bookmarkModal.querySelector('.modal-body');
+    if (body) {
+      body.style.setProperty('background', 'white', 'important');
+      body.querySelectorAll('label').forEach(l => {
+        const s = l.getAttribute('style') || '';
+        if (s.includes('color: #333') || s.includes('font-weight: 600')) {
+          l.style.setProperty('color', '#333', 'important');
+        }
+        if (s.includes('color: #64748b')) {
+          l.style.setProperty('color', '#64748b', 'important');
+        }
+        if (s.includes('color: #0369a1')) {
+          l.style.setProperty('color', '#0369a1', 'important');
+        }
+        if (s.includes('border: 2px solid #e2e8f0')) {
+          l.style.setProperty('border-color', '#e2e8f0', 'important');
+          l.style.setProperty('color', '#333', 'important');
+        }
+      });
+      body.querySelectorAll('input[type="text"], input[type="number"], textarea, select').forEach(el => {
+        el.style.setProperty('background', 'white', 'important');
+        el.style.setProperty('color', '#1e293b', 'important');
+        el.style.setProperty('border-color', '#cbd5e1', 'important');
+      });
+      body.querySelectorAll('p').forEach(p => {
+        const s = p.getAttribute('style') || '';
+        if (s.includes('color: #94a3b8')) p.style.setProperty('color', '#94a3b8', 'important');
+        if (s.includes('color: #0284c7')) p.style.setProperty('color', '#0284c7', 'important');
+      });
+      body.querySelectorAll('div').forEach(d => {
+        const s = d.getAttribute('style') || '';
+        if (s.includes('background: #f8fafc')) {
+          d.style.setProperty('background', '#f8fafc', 'important');
+          d.style.setProperty('border-color', '#e2e8f0', 'important');
+        }
+        if (s.includes('background: #f0f9ff')) {
+          d.style.setProperty('background', '#f0f9ff', 'important');
+          d.style.setProperty('border-color', '#bae6fd', 'important');
+        }
+        if (s.includes('border-top: 1px dashed #bae6fd')) {
+          d.style.setProperty('border-top-color', '#bae6fd', 'important');
+        }
+      });
+    }
+    const footer = bookmarkModal.querySelector('.modal-footer');
+    if (footer) {
+      footer.style.setProperty('border-top-color', '#e2e8f0', 'important');
+      footer.style.setProperty('background', 'white', 'important');
+    }
+    const closeBtn = bookmarkModal.querySelector('.modal-close');
+    if (closeBtn) {
+      closeBtn.style.setProperty('background', '#f1f5f9', 'important');
+      closeBtn.style.setProperty('color', '#64748b', 'important');
+    }
+  }
 }
 
 async function toggleWorkspaceDarkMode() {

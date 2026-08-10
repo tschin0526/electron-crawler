@@ -378,6 +378,11 @@ function showAddBookmarkModal(editIndex) {
   }
   
   modal.style.display = 'flex';
+  
+  // 应用黑夜模式（如果已开启）
+  if (typeof applyBookmarkModalDarkMode === 'function') {
+    applyBookmarkModalDarkMode();
+  }
 }
 
 // 编辑网点
