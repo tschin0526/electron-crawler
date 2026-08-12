@@ -1147,6 +1147,12 @@ function sendToGeneralTab(index) {
   const bookmark = bookmarks[index];
   if (!bookmark) return;
 
+  //  大模型 API 类型：通过 API Key 直接调用大模型
+  if (bookmark.type === 'llm-api') {
+    crawlBookmarkByIndex(index);
+    return;
+  }
+
   // HTTP Get 分类：保存股票代号并执行 HTTP GET 请求
   if (bookmark.category === 'http-get') {
     const cardTextarea = document.getElementById(`presetMsg_${index}`);

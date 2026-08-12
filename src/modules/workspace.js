@@ -620,18 +620,26 @@ function showDesktopAppChatPanel(workspaceId, bookmark) {
     return;
   }
 
-  // 隐藏空状态提示和 webview 容器
+  // 隐藏空状态提示
   const emptyDiv = panel.querySelector(`#empty-${workspaceId}`);
   if (emptyDiv) emptyDiv.style.display = 'none';
 
+  // ✅ 显示 webview 容器（仅保留工具栏，隐藏 webview 内容区）
+  //    保持与邮件/ToDoList/HTTP Get 插件一致的标准工具栏显示
   const webviewContainer = panel.querySelector('.webview-container');
-  if (webviewContainer) webviewContainer.style.display = 'none';
+  if (webviewContainer) {
+    webviewContainer.style.display = 'block';
+    webviewContainer.style.height = '32px';
+    webviewContainer.style.overflow = 'hidden';
+    const webviewWrapper = webviewContainer.querySelector('[id^="webviewWrapper"]');
+    if (webviewWrapper) webviewWrapper.style.display = 'none';
+  }
 
-  // 隐藏展开模式的 header 和 body（对话面板自带 header）
+  // 隐藏展开模式的 header 和 body
   const wsExpandHeader = panel.querySelector('.ws-expand-header');
   if (wsExpandHeader) wsExpandHeader.style.display = 'none';
   const wsExpandBody = panel.querySelector('.ws-expand-body');
-  if (wsExpandBody) wsExpandBody.style.display = 'none';
+  if (wsExpandBody) wsExpandBody.style.display = 'block';
 
   // 检查是否已有对话面板
   let chatPanel = panel.querySelector('.desktop-app-chat-panel');
@@ -641,14 +649,14 @@ function showDesktopAppChatPanel(workspaceId, bookmark) {
     chatPanel.className = 'desktop-app-chat-panel';
     chatPanel.style.cssText = `
       width: 100%;
-      height: 100%;
+      height: calc(100% - 32px);
       background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
       display: flex;
       flex-direction: column;
       overflow: hidden;
       position: absolute;
       left: 0;
-      top: 0;
+      top: 32px;
       z-index: 10;
     `;
 
@@ -689,12 +697,12 @@ function showDesktopAppChatPanel(workspaceId, bookmark) {
     console.log(`[DesktopApp] ✅ 对话历史面板已存在`);
   }
 
-  // 确保对话面板始终正确显示
+  // 确保对话面板始终正确显示（下方32px留给标准工具栏）
   chatPanel.style.setProperty('position', 'absolute', 'important');
   chatPanel.style.setProperty('left', '0', 'important');
-  chatPanel.style.setProperty('top', '0', 'important');
+  chatPanel.style.setProperty('top', '32px', 'important');
   chatPanel.style.setProperty('width', '100%', 'important');
-  chatPanel.style.setProperty('height', '100%', 'important');
+  chatPanel.style.setProperty('height', 'calc(100% - 32px)', 'important');
   chatPanel.style.setProperty('display', 'flex', 'important');
   chatPanel.style.setProperty('flex-direction', 'column', 'important');
   chatPanel.style.setProperty('z-index', '10', 'important');
@@ -1436,14 +1444,26 @@ function appendChatMessage(workspaceId, bookmark, message, answer, attachments =
     return;
   }
 
-  // 🔑 确保聊天面板可见
+  // 🔑 确保聊天面板可见（下方32px留给标准工具栏，与其他插件一致）
   chatPanel.style.setProperty('display', 'flex', 'important');
   chatPanel.style.setProperty('position', 'absolute', 'important');
   chatPanel.style.setProperty('left', '0', 'important');
-  chatPanel.style.setProperty('top', '0', 'important');
+  chatPanel.style.setProperty('top', '32px', 'important');
   chatPanel.style.setProperty('width', '100%', 'important');
-  chatPanel.style.setProperty('height', '100%', 'important');
+  chatPanel.style.setProperty('height', 'calc(100% - 32px)', 'important');
   chatPanel.style.setProperty('z-index', '10', 'important');
+
+  // 🔑 同时确保 webview 工具栏始终可见（结果返回后也不丢失）
+  const webviewContainer = panel.querySelector('.webview-container');
+  if (webviewContainer) {
+    webviewContainer.style.display = 'block';
+    webviewContainer.style.height = '32px';
+    webviewContainer.style.overflow = 'hidden';
+    const webviewWrapper = webviewContainer.querySelector('[id^="webviewWrapper"]');
+    if (webviewWrapper) webviewWrapper.style.display = 'none';
+  }
+  const wsExpandBody = panel.querySelector('.ws-expand-body');
+  if (wsExpandBody) wsExpandBody.style.display = 'block';
 
   const messagesContainer = chatPanel.querySelector('.chat-messages');
   if (!messagesContainer) {

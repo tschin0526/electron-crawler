@@ -6,6 +6,7 @@
  * 通过 init(shared) 注入 main.js 中的外部依赖。
  */
 const http = require('http');
+const https = require('https');
 const url = require('url');
 const { ipcMain } = require('electron');
 
@@ -14,6 +15,110 @@ let apiServerRunning = false;
 const API_PORT = 3000;
 
 let shared = {};
+
+// 大模型 API 调用函数
+function callLLMAPI(provider, model, apiKey, messages) {
+  return new Promise((resolve, reject) => {
+    let apiUrl, headers, body;
+
+    if (provider === 'tongyi') {
+      // 阿里云百炼
+      apiUrl = 'https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions';
+      headers = {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`
+      };
+      body = JSON.stringify({
+        model: model || 'qwen-turbo',
+        messages: messages
+      });
+    } else if (provider === 'zhipu') {
+      // 智谱AI
+      apiUrl = 'https://open.bigmodel.cn/api/paas/v4/chat/completions';
+      headers = {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`
+      };
+      body = JSON.stringify({
+        model: model || 'glm-4-flash',
+        messages: messages
+      });
+    } else if (provider === 'fangzhou') {
+      // 火山方舟
+      apiUrl = 'https://ark.cn-beijing.volces.com/api/v3/chat/completions';
+      headers = {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`
+      };
+      body = JSON.stringify({
+        model: model || 'doubao-seed-2-0-lite-260428',
+        messages: messages
+      });
+    } else if (provider === 'deepseek') {
+      // DeepSeek (OpenAI 兼容接口)
+      apiUrl = 'https://api.deepseek.com/v1/chat/completions';
+      headers = {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`
+      };
+      body = JSON.stringify({
+        model: model || 'deepseek-chat',
+        messages: messages
+      });
+    } else if (provider === 'hunyuan') {
+      // 腾讯云·混元大模型 (OpenAI 兼容接口)
+      apiUrl = 'https://api.hunyuan.cloud.tencent.com/v1/chat/completions';
+      headers = {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`
+      };
+      body = JSON.stringify({
+        model: model || 'hunyuan-turbo-latest',
+        messages: messages
+      });
+    } else {
+      reject(new Error('不支持的提供商: ' + provider));
+      return;
+    }
+
+    const urlObj = new URL(apiUrl);
+    const options = {
+      hostname: urlObj.hostname,
+      port: urlObj.port || 443,
+      path: urlObj.pathname,
+      method: 'POST',
+      headers: headers
+    };
+
+    const req = https.request(options, (res) => {
+      let data = '';
+      res.on('data', (chunk) => { data += chunk; });
+      res.on('end', () => {
+        try {
+          const result = JSON.parse(data);
+          if (res.statusCode === 200) {
+            resolve({
+              content: result.choices?.[0]?.message?.content || '无响应内容',
+              usage: result.usage || {},
+              raw: result
+            });
+          } else {
+            reject(new Error(result.error?.message || `HTTP ${res.statusCode}: ${data}`));
+          }
+        } catch (e) {
+          reject(new Error('解析响应失败: ' + e.message));
+        }
+      });
+    });
+
+    req.on('error', (e) => {
+      reject(new Error('请求失败: ' + e.message));
+    });
+
+    req.write(body);
+    req.end();
+  });
+}
 
 // 通过 init(shared) 注入的依赖：
 //   shared.APP_VERSION                 - 版本号字符串
@@ -286,6 +391,39 @@ function startAPIServer() {
               })
               .catch((error) => {
                 console.error('[Main] [API] 发送邮件失败:', error);
+                res.writeHead(500);
+                res.end(JSON.stringify({ success: false, error: error.message }));
+              });
+          } catch (parseError) {
+            res.writeHead(400);
+            res.end(JSON.stringify({ success: false, error: '请求体 JSON 解析失败: ' + parseError.message }));
+          }
+        });
+
+      } else if (pathname === '/api/call-llm' && req.method === 'POST') {
+        // 大模型 API 调用端点
+        console.log('[Main] [API] 收到大模型 API 调用请求');
+        let body = '';
+        req.on('data', chunk => { body += chunk; });
+        req.on('end', () => {
+          try {
+            const payload = body ? JSON.parse(body) : {};
+            const { provider, model, apiKey, messages, test } = payload;
+
+            if (!provider || !model || !apiKey || !messages) {
+              res.writeHead(400);
+              res.end(JSON.stringify({ success: false, error: '缺少必要参数：provider, model, apiKey, messages' }));
+              return;
+            }
+
+            // 调用大模型 API
+            callLLMAPI(provider, model, apiKey, messages)
+              .then((result) => {
+                res.writeHead(200);
+                res.end(JSON.stringify({ success: true, data: result }));
+              })
+              .catch((error) => {
+                console.error('[Main] [API] 大模型调用失败:', error);
                 res.writeHead(500);
                 res.end(JSON.stringify({ success: false, error: error.message }));
               });

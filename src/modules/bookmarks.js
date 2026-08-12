@@ -215,8 +215,12 @@ function renderBookmarks() {
     
     const cardType = bookmark.type || 'webview';
     const isDesktopApp = cardType === 'desktop-app';
+    const isLlmApi = cardType === 'llm-api';
     const cardBgStyle = bookmark.bgColor ? `background-color: ${bookmark.bgColor};` : '';
-    
+
+    // LLM API 卡片显示信息
+    const llmApiInfo = isLlmApi ? `<div class="bookmark-card-url" title="大模型 API">🤖 ${escapeHtml(bookmark.llmProvider || 'tongyi')} · ${escapeHtml(bookmark.llmModel || '')}</div>` : '';
+
     html += `
       <div class="bookmark-card ${isBookmarkCollapsed(index) ? 'collapsed' : ''} ${isDesktopApp ? 'desktop-app-card' : ''}" data-id="${index}" data-type="${cardType}" style="${cardBgStyle}">
         <button class="bookmark-card-fold-btn" onclick="toggleBookmarkCard(${index})" title="折叠/展开"></button>
@@ -233,13 +237,13 @@ function renderBookmarks() {
           </div>
           <div class="bookmark-card-actions">
             ${!isDesktopApp ? `<button class="bookmark-card-btn send-to-general" onclick="sendToGeneralTab(${index})" title="发送到通用页签执行（继续对话/新开对话自动判断）"><span class="send-to-general-text">发送</span></button>` : `<button class="bookmark-card-crawl" onclick="crawlBookmarkByIndex(${index})" title="⚡ 发送到APP"><span class="crawl-text">发送</span></button>`}
-            ${!isDesktopApp ? `<button class="bookmark-card-btn check-ai" onclick="checkAIBtnClickHandler(${index})" title="✓ 检查当前对话AI（对比卡片AI与webview中的AI是否相同）"><span class="check-ai-text">一致<br>检查</span></button>` : ''}
+            ${!isDesktopApp && !isLlmApi ? `<button class="bookmark-card-btn check-ai" onclick="checkAIBtnClickHandler(${index})" title="✓ 检查当前对话AI（对比卡片AI与webview中的AI是否相同）"><span class="check-ai-text">一致<br>检查</span></button>` : ''}
             <button class="bookmark-card-btn edit" onclick="editBookmark(${index})" title="编辑">✏️</button>
             <button class="bookmark-card-btn delete" onclick="deleteBookmark(${index})" title="删除">🗑️</button>
           </div>
         </div>
         <div class="bookmark-card-body">
-          ${!isDesktopApp ? `<div class="bookmark-card-url" title="${escapeHtml(bookmark.url)}">🔗 ${escapeHtml(truncatedUrl)}</div>` : `<div class="bookmark-card-url" title="桌面APP">🖥️ 桌面APP · ${escapeHtml(bookmark.appName || bookmark.name)}</div>`}
+          ${isLlmApi ? llmApiInfo : (!isDesktopApp ? `<div class="bookmark-card-url" title="${escapeHtml(bookmark.url)}"> ${escapeHtml(truncatedUrl)}</div>` : `<div class="bookmark-card-url" title="桌面APP">🖥️ 桌面APP · ${escapeHtml(bookmark.appName || bookmark.name)}</div>`)}
           ${headersHint}
           ${previewHint}
           ${presetMessageInput}
@@ -287,6 +291,10 @@ function showAddBookmarkModal(editIndex) {
   document.getElementById('bookmarkCopyBtnY').value = '';
   document.getElementById('bookmarkMdBtnX').value = '';
   document.getElementById('bookmarkMdBtnY').value = '';
+  document.getElementById('bookmarkLlmProvider').value = 'tongyi';
+  if (typeof updateLlmModelOptions === 'function') updateLlmModelOptions();
+  document.getElementById('bookmarkLlmModel').value = '';
+  document.getElementById('bookmarkLlmApiKey').value = '';
   
   // 默认选中 webview 类型
   const typeRadios = document.querySelectorAll('input[name="bookmarkType"]');
@@ -335,6 +343,11 @@ function showAddBookmarkModal(editIndex) {
     document.getElementById('bookmarkCopyBtnY').value = (bookmark.copyBtnRatio && bookmark.copyBtnRatio.y) || '';
     document.getElementById('bookmarkMdBtnX').value = (bookmark.mdBtnRatio && bookmark.mdBtnRatio.x) || '';
     document.getElementById('bookmarkMdBtnY').value = (bookmark.mdBtnRatio && bookmark.mdBtnRatio.y) || '';
+    document.getElementById('bookmarkLlmProvider').value = bookmark.llmProvider || 'tongyi';
+    // ✅ 程序化赋值后必须刷新模型下拉，否则仍然显示上一次提供商的模型列表（导致填错模型名）
+    if (typeof updateLlmModelOptions === 'function') updateLlmModelOptions();
+    document.getElementById('bookmarkLlmModel').value = bookmark.llmModel || '';
+    document.getElementById('bookmarkLlmApiKey').value = bookmark.llmApiKey || '';
     
     typeRadios.forEach(radio => {
       radio.checked = radio.value === cardType;
@@ -425,6 +438,11 @@ async function saveBookmark() {
   const copyBtnY = parseFloat(document.getElementById('bookmarkCopyBtnY')?.value);
   const mdBtnX = parseFloat(document.getElementById('bookmarkMdBtnX')?.value);
   const mdBtnY = parseFloat(document.getElementById('bookmarkMdBtnY')?.value);
+
+  // 获取大模型 API 相关配置
+  const llmProvider = document.getElementById('bookmarkLlmProvider')?.value || 'tongyi';
+  const llmModel = document.getElementById('bookmarkLlmModel')?.value?.trim() || '';
+  const llmApiKey = document.getElementById('bookmarkLlmApiKey')?.value?.trim() || '';
   
   // 验证必填字段
   if (!name) {
@@ -446,6 +464,11 @@ async function saveBookmark() {
   
   if (cardType === 'desktop-app' && !appName) {
     showStatus('❌ 请输入 APP 名称', 'error');
+    return;
+  }
+
+  if (cardType === 'llm-api' && (!llmApiKey || !llmModel)) {
+    showStatus('❌ 请输入 API Key 和模型', 'error');
     return;
   }
   
@@ -479,6 +502,9 @@ async function saveBookmark() {
     appWindowPos: { x: winX, y: winY },
     copyBtnRatio: (copyBtnX !== undefined && copyBtnY !== undefined) ? { x: copyBtnX, y: copyBtnY } : undefined,
     mdBtnRatio: (mdBtnX !== undefined && mdBtnY !== undefined) ? { x: mdBtnX, y: mdBtnY } : undefined,
+    llmProvider: llmProvider,
+    llmModel: llmModel,
+    llmApiKey: llmApiKey,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString()
   };

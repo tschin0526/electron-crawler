@@ -2574,15 +2574,113 @@ function closeCapturedResponse() {
 }
 
 // ========== 查看 DOM 树形结构（全新实现）==========
+// 本地版 DOM 树构建（从当前渲染层 DOM 构建，适合 LLM/desktop-app 对话面板等非 webview 内容）
+function buildDomTreeLocal(rootNode, sourceUrl) {
+  try {
+    function buildSimpleSelector(el) {
+      if (!el || !el.tagName) return '';
+      var tag = el.tagName.toLowerCase();
+      if (el.id) return '#' + el.id;
+      if (el.className && typeof el.className === 'string') {
+        var c = el.className.trim().split(/\s+/).filter(x => x);
+        if (c.length) return tag + '.' + c.slice(0, 3).join('.');
+      }
+      return tag;
+    }
+    function buildDomTree(node, depth, maxD) {
+      if (!node || node.nodeType !== 1 || depth >= maxD) return null;
+      var tag = node.tagName.toLowerCase();
+      if (/^(script|style|noscript|meta|link)$/i.test(tag)) return null;
+      var tree = { tag: tag, id: node.id || '', className: '', innerText: '', dataset: {}, images: [], links: [], inputs: [], buttons: [], tables: [], jsons: [], children: [] };
+      if (node.className && typeof node.className === 'string') tree.className = node.className.trim();
+      var txt = (node.innerText || '').trim();
+      if (txt) tree.innerText = txt;
+      if (node.attributes) for (var i = 0; i < node.attributes.length; i++) {
+        var at = node.attributes[i];
+        if (at && at.name && at.name.indexOf('data-') === 0 && at.value) tree.dataset[at.name.replace(/^data-/, '')] = at.value;
+      }
+      if (tag === 'img') {
+        var s = node.getAttribute('src') || '', a = node.getAttribute('alt') || '';
+        if (s) tree.images.push({ src: s, alt: a });
+      } else {
+        var ci = node.querySelectorAll('img');
+        for (var g = 0; g < Math.min(ci.length, 10); g++) tree.images.push({ src: ci[g].getAttribute('src') || '', alt: ci[g].getAttribute('alt') || '' });
+      }
+      if (tag === 'a') {
+        var h = node.getAttribute('href') || '', t = (node.innerText || '').trim(), tg = node.getAttribute('target') || '';
+        if (h) tree.links.push({ href: h, text: t, target: tg, selector: buildSimpleSelector(node) });
+      } else {
+        var cl = node.querySelectorAll('a[href]');
+        for (var l = 0; l < Math.min(cl.length, 10); l++) tree.links.push({ href: cl[l].getAttribute('href') || '', text: (cl[l].innerText || '').trim(), target: cl[l].getAttribute('target') || '', selector: buildSimpleSelector(cl[l]) });
+      }
+      if (tag === 'input' || tag === 'textarea' || tag === 'select') {
+        tree.inputs.push({ tag: tag, type: tag === 'input' ? (node.getAttribute('type') || 'text') : tag, name: node.getAttribute('name') || '', id: node.id || '', value: (node.value || '').trim(), placeholder: node.getAttribute('placeholder') || '', selector: buildSimpleSelector(node) });
+      } else {
+        var ci2 = node.querySelectorAll('input, textarea, select');
+        for (var inp = 0; inp < Math.min(ci2.length, 10); inp++) { var c = ci2[inp], ct = c.tagName.toLowerCase(); tree.inputs.push({ tag: ct, type: ct === 'input' ? (c.getAttribute('type') || 'text') : ct, name: c.getAttribute('name') || '', id: c.id || '', value: (c.value || '').trim(), placeholder: c.getAttribute('placeholder') || '', selector: buildSimpleSelector(c) }); }
+      }
+      if (tag === 'button' || (tag === 'input' && /^(button|submit|reset)$/i.test(node.getAttribute('type') || ''))) {
+        tree.buttons.push({ tag: tag, type: tag === 'input' ? (node.getAttribute('type') || 'button') : 'button', name: node.getAttribute('name') || '', id: node.id || '', text: (node.innerText || node.getAttribute('value') || '').trim(), selector: buildSimpleSelector(node) });
+      } else if (tag === 'a' && node.className && /(button|btn)/i.test(String(node.className))) {
+        tree.buttons.push({ tag: 'a', type: 'link-button', name: node.getAttribute('name') || '', id: node.id || '', text: (node.innerText || '').trim(), href: node.getAttribute('href') || '', selector: buildSimpleSelector(node) });
+      } else {
+        var cb = node.querySelectorAll('button, input[type="button"], input[type="submit"], input[type="reset"]');
+        for (var btn = 0; btn < Math.min(cb.length, 10); btn++) tree.buttons.push({ tag: cb[btn].tagName.toLowerCase(), type: cb[btn].tagName.toLowerCase() === 'input' ? (cb[btn].getAttribute('type') || 'button') : 'button', name: cb[btn].getAttribute('name') || '', id: cb[btn].id || '', text: (cb[btn].innerText || cb[btn].getAttribute('value') || '').trim(), selector: buildSimpleSelector(cb[btn]) });
+      }
+      if (tag === 'table') {
+        var td_ = [], r_ = node.querySelectorAll('tr');
+        for (var tr = 0; tr < Math.min(r_.length, 20); tr++) { var rd = [], cs = r_[tr].querySelectorAll('td, th'); for (var td = 0; td < Math.min(cs.length, 10); td++) rd.push((cs[td].innerText || cs[td].textContent || '').trim().substring(0, 50)); if (rd.length) td_.push(rd); }
+        if (td_.length) tree.tables.push({ rows: td_, selector: buildSimpleSelector(node) });
+      } else {
+        var ct_ = node.querySelectorAll('table');
+        for (var tb = 0; tb < Math.min(ct_.length, 5); tb++) { var cd = [], r2 = ct_[tb].querySelectorAll('tr'); for (var tr2 = 0; tr2 < Math.min(r2.length, 20); tr2++) { var rd2 = [], c2 = r2[tr2].querySelectorAll('td, th'); for (var td2 = 0; td2 < Math.min(c2.length, 10); td2++) rd2.push((c2[td2].innerText || c2[td2].textContent || '').trim().substring(0, 50)); if (rd2.length) cd.push(rd2); } if (cd.length) tree.tables.push({ rows: cd, selector: buildSimpleSelector(ct_[tb]) }); }
+      }
+      var nt_ = (node.innerText || node.textContent || '').trim(), fs_ = new Set();
+      function tryParseJson(text, src) {
+        if (!text || text.length < 10) return; text = text.trim();
+        if ((text.startsWith('{') || text.startsWith('[')) && !fs_.has(text.substring(0, 50))) {
+          try { var p = JSON.parse(text); fs_.add(text.substring(0, 50)); tree.jsons.push({ type: typeof p, source: src, preview: text.substring(0, 500), full: text.length > 2000 ? text.substring(0, 2000) : text, isTruncated: text.length > 2000, length: text.length, selector: buildSimpleSelector(node) }); return true; }
+          catch (e) { var rx = /\{[\s\S]*?"[^"]*"\s*:[\s\S]*?\}|\[[\s\S]*?\]/g, mx = text.match(rx); if (mx) for (var m = 0; m < Math.min(mx.length, 5); m++) { if (mx[m].length > 20 && !fs_.has(mx[m].substring(0, 50))) { try { fs_.add(mx[m].substring(0, 50)); tree.jsons.push({ type: 'object', source: src + ' (片段)', preview: mx[m].substring(0, 500), full: mx[m].length > 2000 ? mx[m].substring(0, 2000) : mx[m], isTruncated: mx[m].length > 2000, length: mx[m].length, selector: buildSimpleSelector(node) }); JSON.parse(mx[m]); } catch (_) {} } } }
+        }
+      }
+      tryParseJson(nt_, 'innerText');
+      if (/^(script|pre|code)$/i.test(tag)) { tryParseJson(node.textContent || '', tag); }
+      else { var st_ = node.querySelectorAll('script, pre, code'); for (var st = 0; st < Math.min(st_.length, 10); st++) tryParseJson(st_[st].textContent || '', st_[st].tagName.toLowerCase()); }
+      var kids = node.children || [];
+      for (var i = 0; i < kids.length; i++) { var ch = buildDomTree(kids[i], depth + 1, maxD); if (ch) tree.children.push(ch); }
+      return tree;
+    }
+    var dom = buildDomTree(rootNode, 0, 50);
+    return { success: true, tree: dom, url: sourceUrl || 'desktop-app-chat-panel' };
+  } catch (e) { return { success: false, error: e.stack || String(e) }; }
+}
+
 async function openDomTreeView() {
   console.log('[DomTreeView] === 开始获取 DOM 树形结构 ===');
-  
+
+  // ✅ 优先检测：若当前工作区显示的是 LLM/桌面APP对话面板（非 webview 内容），直接从渲染层 DOM 构建
+  var activeWsPanel = document.querySelector('.workspace-panel[data-ws="' + currentWorkspaceId + '"].active-ws') || document.querySelector('.workspace-panel[data-ws="' + currentWorkspaceId + '"]');
+  var chatPanel = activeWsPanel && activeWsPanel.querySelector('.desktop-app-chat-panel');
+  if (chatPanel && getComputedStyle(chatPanel).display !== 'none') {
+    try {
+      showStatus(' 正在获取对话面板 DOM 树...', 'info');
+      var d = buildDomTreeLocal(chatPanel, 'desktop-app-chat-panel');
+      if (d && d.success) {
+        await window.electronAPI.openDomTreeView({ tree: d.tree, url: d.url });
+        showStatus(' 已打开对话面板 DOM 树查看器', 'success');
+        return;
+      }
+    } catch (err) {
+      console.error('[DomTreeView] ❌ 对话面板 DOM 失败:', err);
+    }
+  }
+
   const webview = getCurrentWebview();
   if (!webview) {
     showStatus(' 未找到网页预览组件', 'error');
     return;
   }
-  
+
   try {
     showStatus(' 正在获取 DOM 树...', 'info');
     

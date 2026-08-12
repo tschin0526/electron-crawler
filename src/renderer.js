@@ -2646,6 +2646,7 @@ async function loadBookmarks() {
 function updateBookmarkModalVisibility(cardType) {
   const urlSection = document.getElementById('urlSectionContainer');
   const desktopAppSection = document.getElementById('desktopAppSectionContainer');
+  const llmApiSection = document.getElementById('llmApiSectionContainer');
   const externalBrowserContainer = document.getElementById('externalBrowserContainer');
   const presetMessageContainer = document.getElementById('presetMessageContainer');
   const customSelectorContainer = document.getElementById('customSelectorContainer');
@@ -2656,7 +2657,19 @@ function updateBookmarkModalVisibility(cardType) {
   if (cardType === 'desktop-app') {
     if (urlSection) urlSection.style.display = 'none';
     if (desktopAppSection) desktopAppSection.style.display = 'block';
+    if (llmApiSection) llmApiSection.style.display = 'none';
     if (externalBrowserContainer) externalBrowserContainer.style.display = 'none';
+    if (customSelectorContainer) customSelectorContainer.style.display = 'none';
+    if (heartbeatSelectorContainer) heartbeatSelectorContainer.style.display = 'none';
+    if (monitorTimeoutContainer) monitorTimeoutContainer.style.display = 'none';
+    if (autoMonitorContainer) autoMonitorContainer.style.display = 'none';
+  } else if (cardType === 'llm-api') {
+    // 大模型 API 类型：显示 LLM 配置区域，隐藏 URL 和其他网页相关设置
+    if (urlSection) urlSection.style.display = 'none';
+    if (desktopAppSection) desktopAppSection.style.display = 'none';
+    if (llmApiSection) llmApiSection.style.display = 'block';
+    if (externalBrowserContainer) externalBrowserContainer.style.display = 'none';
+    if (presetMessageContainer) presetMessageContainer.style.display = 'none';
     if (customSelectorContainer) customSelectorContainer.style.display = 'none';
     if (heartbeatSelectorContainer) heartbeatSelectorContainer.style.display = 'none';
     if (monitorTimeoutContainer) monitorTimeoutContainer.style.display = 'none';
@@ -2986,6 +2999,108 @@ async function crawlBookmarkByIndex(index) {
     } catch (err) {
       console.error('[Renderer] ❌ 桌面APP发送异常:', err);
       showStatus(` 发送异常: ${err.message}`, 'error');
+    }
+
+    return;
+  }
+
+  //  大模型 API 类型：通过 API Key 直接调用大模型
+  if (cardType === 'llm-api') {
+    console.log('[Renderer] 🤖 大模型 API 类型，使用 API Key 调用');
+
+    let prompt = bookmarks[index].presetMessage || '';
+    const presetMessageInput = document.getElementById(`presetMsg_${index}`);
+    if (presetMessageInput && presetMessageInput.value.trim()) {
+      prompt = presetMessageInput.value.trim();
+    }
+
+    if (!prompt) {
+      showStatus('⚠️ 请先输入提示词', 'warning');
+      return;
+    }
+
+    const llmProvider = bookmark.llmProvider || 'tongyi';
+    const llmModel = bookmark.llmModel || '';
+    const llmApiKey = bookmark.llmApiKey || '';
+
+    if (!llmApiKey || !llmModel) {
+      showStatus('⚠️ 请先编辑网点，填写 API Key 和模型', 'warning');
+      return;
+    }
+
+    // 工作区强制使用页签模式（全屏显示对话历史）
+    const wasExpandView = expandViewEnabled;
+    if (wasExpandView) {
+      expandViewEnabled = false;
+    }
+
+    const targetWorkspaceId = findOrCreateWorkspaceForAI(bookmark);
+    const targetWs = workspaces[targetWorkspaceId];
+    if (targetWs) {
+      targetWs.bookmarkIndex = index;
+      targetWs.title = bookmark.name;
+    }
+
+    if (targetWorkspaceId !== currentWorkspaceId) {
+      switchWorkspaceWithoutRestore(targetWorkspaceId);
+    }
+
+    // 确保目标工作区面板可见
+    const targetPanel = document.querySelector(`.workspace-panel[data-ws="${targetWorkspaceId}"]`);
+    if (targetPanel) {
+      targetPanel.style.display = 'block';
+      targetPanel.classList.add('active-ws');
+    }
+
+    // 创建聊天面板（类似 desktop-app 的处理方式）
+    setTimeout(() => {
+      showDesktopAppChatPanel(targetWorkspaceId, bookmark);
+      if (wasExpandView) {
+        toggleExpandView();
+        setTimeout(() => {
+          const tp = document.querySelector(`.workspace-panel[data-ws="${targetWorkspaceId}"]`);
+          if (tp) { tp.style.display = 'block'; tp.classList.add('active-ws'); }
+        }, 50);
+      }
+    }, 100);
+
+    try {
+      showStatus(` 正在调用「${bookmark.name}」...`, 'info', index);
+
+      const response = await fetch('http://localhost:3000/api/call-llm', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          provider: llmProvider,
+          model: llmModel,
+          apiKey: llmApiKey,
+          messages: [{ role: 'user', content: prompt }]
+        })
+      });
+
+      const result = await response.json();
+
+      if (result.success) {
+        const answer = result.data.content || '(无响应内容)';
+        showStatus(`✅ 「${bookmark.name}」调用成功`, 'success', index);
+        // 等待面板创建完成后再追加消息
+        setTimeout(() => {
+          appendChatMessage(targetWorkspaceId, bookmark, prompt, answer, []);
+        }, 300);
+        sendEmailAfterReply(bookmark.name, prompt, answer);
+      } else {
+        const errorMsg = result.error || '未知错误';
+        showStatus(`❌ 「${bookmark.name}」调用失败: ${errorMsg}`, 'error', index);
+        setTimeout(() => {
+          appendChatMessage(targetWorkspaceId, bookmark, prompt, '❌ 错误: ' + errorMsg, []);
+        }, 300);
+      }
+    } catch (err) {
+      console.error('[Renderer]  大模型 API 调用异常:', err);
+      showStatus(`❌ 「${bookmark.name}」调用异常: ${err.message}`, 'error', index);
+      setTimeout(() => {
+        appendChatMessage(targetWorkspaceId, bookmark, prompt, '❌ 异常: ' + err.message, []);
+      }, 300);
     }
 
     return;
@@ -3356,7 +3471,105 @@ async function continueConversation(index) {
 
     return;
   }
-  
+
+  // 🔑 大模型 API 类型：通过 API Key 直接调用大模型
+  if (cardType === 'llm-api') {
+    console.log('[Renderer] 💬 🤖 检测到大模型 API 类型，使用 API Key 调用');
+
+    // 读取提示词（优先从卡片输入框获取）
+    let prompt = bookmarks[index].presetMessage || '';
+    const presetMessageInput = document.getElementById(`presetMsg_${index}`);
+    if (presetMessageInput && presetMessageInput.value.trim()) {
+      prompt = presetMessageInput.value.trim();
+    }
+
+    if (!prompt) {
+      showStatus('⚠️ 请先输入提示词', 'warning');
+      return;
+    }
+
+    const llmProvider = bookmark.llmProvider || 'tongyi';
+    const llmModel = bookmark.llmModel || '';
+    const llmApiKey = bookmark.llmApiKey || '';
+
+    if (!llmApiKey || !llmModel) {
+      showStatus('⚠️ 请先编辑网点，填写 API Key 和模型', 'warning');
+      return;
+    }
+
+    // 工作区强制使用页签模式（全屏显示对话历史）
+    const wasExpandView = expandViewEnabled;
+    if (wasExpandView) {
+      expandViewEnabled = false;
+    }
+
+    // 创建/切换工作区
+    const targetWorkspaceId = findOrCreateWorkspaceForAI(bookmark);
+    const targetWs = workspaces[targetWorkspaceId];
+    if (targetWs) {
+      targetWs.bookmarkIndex = index;
+      targetWs.title = bookmark.name;
+    }
+
+    // 切换到目标工作区
+    if (targetWorkspaceId !== currentWorkspaceId) {
+      switchWorkspaceWithoutRestore(targetWorkspaceId);
+    }
+
+    // 确保目标工作区面板可见
+    const targetPanel = document.querySelector(`.workspace-panel[data-ws="${targetWorkspaceId}"]`);
+    if (targetPanel) {
+      targetPanel.style.display = 'block';
+      targetPanel.classList.add('active-ws');
+    }
+
+    // 创建聊天面板
+    setTimeout(() => {
+      showDesktopAppChatPanel(targetWorkspaceId, bookmark);
+      if (wasExpandView) {
+        toggleExpandView();
+        setTimeout(() => {
+          const tp = document.querySelector(`.workspace-panel[data-ws="${targetWorkspaceId}"]`);
+          if (tp) { tp.style.display = 'block'; tp.classList.add('active-ws'); }
+        }, 50);
+      }
+    }, 100);
+
+    try {
+      showStatus(` 正在调用「${bookmark.name}」...`, 'info', index);
+
+      const response = await fetch('http://localhost:3000/api/call-llm', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          provider: llmProvider,
+          model: llmModel,
+          apiKey: llmApiKey,
+          messages: [{ role: 'user', content: prompt }]
+        })
+      });
+
+      const result = await response.json();
+
+      if (result.success) {
+        const answer = result.data.content || '(无响应内容)';
+        showStatus(`✅ 「${bookmark.name}」调用成功`, 'success', index);
+        setTimeout(() => appendChatMessage(targetWorkspaceId, bookmark, prompt, answer, []), 300);
+        sendEmailAfterReply(bookmark.name, prompt, answer);
+      } else {
+        const errorMsg = result.error || '未知错误';
+        showStatus(`❌ 「${bookmark.name}」调用失败: ${errorMsg}`, 'error', index);
+        setTimeout(() => appendChatMessage(targetWorkspaceId, bookmark, prompt, '❌ 错误: ' + errorMsg, []), 300);
+      }
+    } catch (err) {
+      console.error('[Renderer] 💬 大模型 API 调用异常:', err);
+      showStatus(`❌ 「${bookmark.name}」调用异常: ${err.message}`, 'error', index);
+      setTimeout(() => appendChatMessage(targetWorkspaceId, bookmark, prompt, '❌ 异常: ' + err.message, []), 300);
+    }
+
+    return;
+  }
+
   // 🔑 自动调度模式：保存工作区设定（确保切换工作区后能正确保存设定）
   updateWorkspaceStatus(currentWorkspaceId, 'running');
   workspaces[currentWorkspaceId].bookmarkIndex = index;
