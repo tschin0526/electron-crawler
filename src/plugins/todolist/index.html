@@ -313,8 +313,10 @@
     }
 
     .todo-list {
-      column-count: 3;
-      column-gap: 10px;
+      display: flex;
+      flex-wrap: wrap;
+      align-items: flex-start;
+      gap: 12px;
       flex: 1;
       min-height: 0;
       overflow-y: auto;
@@ -339,16 +341,19 @@
     }
 
     .todo-item {
+      flex: 1 1 calc(33.333% - 8px);
+      min-width: 0;
+      box-sizing: border-box;
       background: var(--card-bg);
       border-radius: 10px;
-      padding: 14px;
+      padding: 6px 6px 4px 6px;
       border: 2px solid var(--border-color);
-      transition: all 0.3s ease;
+      transition: border-color 0.3s ease, box-shadow 0.3s ease, transform 0.3s ease, opacity 0.3s ease;
       position: relative;
       max-height: 33vh;
-      overflow: auto;
-      break-inside: avoid;
-      margin-bottom: 10px;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
     }
 
     .todo-item:hover {
@@ -370,7 +375,7 @@
       display: flex;
       align-items: flex-start;
       justify-content: space-between;
-      margin-bottom: 8px;
+      margin-bottom: 6px;
     }
 
     .checkbox-wrapper {
@@ -422,8 +427,23 @@
     }
 
     .todo-content {
-      flex: 1;
+      flex: 0 1 auto;
       min-width: 0;
+      min-height: 0;
+      overflow: auto;
+      background: rgba(0, 0, 0, 0.1);
+      border: 1px solid rgba(0, 0, 0, 0.12);
+      border-radius: 8px;
+      padding: 6px;
+    }
+
+    .todo-item[data-height] .todo-content {
+      flex: 1 1 auto;
+    }
+
+    body.dark .todo-content {
+      background: rgba(0, 0, 0, 0.22);
+      border-color: rgba(0, 0, 0, 0.3);
     }
 
     .todo-text {
@@ -439,7 +459,9 @@
     .todo-text h2 { font-size: 15px; margin: 6px 0 4px; }
     .todo-text h3 { font-size: 14px; margin: 4px 0 2px; }
     .todo-text p { margin: 4px 0; }
+    .todo-text p:last-child { margin-bottom: 0; }
     .todo-text ul, .todo-text ol { margin: 4px 0; padding-left: 20px; }
+    .todo-text ul:last-child, .todo-text ol:last-child { margin-bottom: 0; }
     .todo-text code {
       background: #f1f5f9;
       padding: 1px 4px;
@@ -547,6 +569,42 @@
       flex-shrink: 0;
     }
 
+    .resize-handle {
+      position: absolute;
+      bottom: 4px;
+      right: 4px;
+      width: 14px;
+      height: 14px;
+      cursor: ns-resize;
+      display: flex;
+      align-items: flex-end;
+      justify-content: flex-end;
+      padding: 2px;
+      opacity: 0.35;
+      transition: opacity 0.2s;
+      z-index: 2;
+      border-radius: 8px 0 8px 0;
+    }
+
+    .resize-handle:hover {
+      opacity: 1;
+      background: rgba(0, 0, 0, 0.06);
+    }
+
+    .resize-handle::after {
+      content: '';
+      width: 6px;
+      height: 6px;
+      border-right: 1px solid var(--text-secondary);
+      border-bottom: 1px solid var(--text-secondary);
+      border-radius: 0 0 2px 0;
+      margin: 0 2px 2px 0;
+    }
+
+    body.dark .resize-handle:hover {
+      background: rgba(255, 255, 255, 0.08);
+    }
+
     .action-btn {
       width: 28px;
       height: 28px;
@@ -577,7 +635,7 @@
     }
 
     .empty-state {
-      grid-column: 1 / -1;
+      width: 100%;
       text-align: center;
       padding: 30px 16px;
       color: var(--text-secondary);
@@ -1035,7 +1093,11 @@
       }
 
       .todo-list {
-        column-count: 1;
+        flex-direction: column;
+      }
+
+      .todo-item {
+        flex-basis: 100%;
       }
     }
 
@@ -1202,6 +1264,11 @@
     let searchQuery = '';
     let editingId = null;
     let pendingAttachments = [];
+    let resizingId = null;
+    let resizingEl = null;
+    let resizingStartY = 0;
+    let resizingStartH = 0;
+    const MIN_CARD_HEIGHT = 120;
 
     const TAG_COLORS = {};
 
@@ -1527,9 +1594,12 @@
       container.innerHTML = filtered.map(todo => {
         const tags = todo.tags && Array.isArray(todo.tags) ? todo.tags : (todo.tag ? [todo.tag] : []);
         const tagsHtml = tags.map(tag => `<span class="tag ${getTagColorClass(tag)}">#${tag}</span>`).join('');
+        const heightStyle = todo.height ? `height: ${todo.height}px; max-height: none;` : '';
+        const heightAttr = todo.height ? 'data-height="true"' : '';
         const todoBgStyle = todo.bgColor ? `background-color: ${todo.bgColor};` : '';
+        const cardStyle = [heightStyle, todoBgStyle].filter(Boolean).join(' ');
         return `
-        <div class="todo-item ${todo.completed ? 'completed' : ''}" data-id="${todo.id}" ondblclick="openEditModal('${todo.id}')" style="${todoBgStyle}">
+        <div class="todo-item ${todo.completed ? 'completed' : ''}" data-id="${todo.id}" ${heightAttr} ondblclick="openEditModal('${todo.id}')" style="${cardStyle}">
           <div class="todo-item-header">
             <div class="checkbox-wrapper" onclick="toggleComplete('${todo.id}')">
               <div class="checkbox ${todo.completed ? 'checked' : ''}"></div>
@@ -1549,6 +1619,7 @@
             </div>
             ${renderAttachments(todo.attachments)}
           </div>
+          <div class="resize-handle" onmousedown="startResize(event, '${todo.id}')" ondblclick="resetHeight(event, '${todo.id}')" title="拖动调整高度，双击重置"></div>
         </div>
       `;
       }).join('');
@@ -1771,6 +1842,56 @@
       await saveTodos();
       if (closeAfterSave) {
         closeModal();
+      }
+    }
+
+    function startResize(event, id) {
+      event.preventDefault();
+      event.stopPropagation();
+      resizingId = id;
+      resizingEl = document.querySelector(`.todo-item[data-id="${id}"]`);
+      if (!resizingEl) return;
+      resizingStartY = event.clientY;
+      resizingStartH = resizingEl.getBoundingClientRect().height;
+      resizingEl.setAttribute('data-height', 'true');
+      document.body.style.userSelect = 'none';
+      document.body.style.cursor = 'ns-resize';
+      document.addEventListener('mousemove', onResize);
+      document.addEventListener('mouseup', stopResize);
+    }
+
+    function onResize(event) {
+      if (!resizingEl) return;
+      const delta = event.clientY - resizingStartY;
+      const newHeight = Math.max(MIN_CARD_HEIGHT, resizingStartH + delta);
+      resizingEl.style.height = newHeight + 'px';
+      resizingEl.style.maxHeight = 'none';
+    }
+
+    async function stopResize() {
+      if (resizingEl && resizingId) {
+        const newHeight = Math.round(resizingEl.getBoundingClientRect().height);
+        const todo = todos.find(t => t.id === resizingId);
+        if (todo) {
+          todo.height = newHeight;
+          await saveTodos();
+        }
+      }
+      resizingId = null;
+      resizingEl = null;
+      document.body.style.userSelect = '';
+      document.body.style.cursor = '';
+      document.removeEventListener('mousemove', onResize);
+      document.removeEventListener('mouseup', stopResize);
+    }
+
+    async function resetHeight(event, id) {
+      event.preventDefault();
+      event.stopPropagation();
+      const todo = todos.find(t => t.id === id);
+      if (todo && todo.height) {
+        delete todo.height;
+        await saveTodos();
       }
     }
 
