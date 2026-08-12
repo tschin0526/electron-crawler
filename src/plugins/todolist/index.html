@@ -313,9 +313,8 @@
     }
 
     .todo-list {
-      display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-      gap: 10px;
+      column-count: 3;
+      column-gap: 10px;
       flex: 1;
       min-height: 0;
       overflow-y: auto;
@@ -348,6 +347,8 @@
       position: relative;
       max-height: 33vh;
       overflow: auto;
+      break-inside: avoid;
+      margin-bottom: 10px;
     }
 
     .todo-item:hover {
@@ -1034,7 +1035,7 @@
       }
 
       .todo-list {
-        grid-template-columns: 1fr;
+        column-count: 1;
       }
     }
 
