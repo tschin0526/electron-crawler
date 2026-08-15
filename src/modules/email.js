@@ -52,6 +52,21 @@ function findEmailPluginWebview() {
   return null;
 }
 
+//  查找 TodoList 插件 webview
+function findTodoListPluginWebview() {
+  const panels = document.querySelectorAll('.workspace-panel');
+  for (const panel of panels) {
+    const webview = panel.querySelector('webview');
+    if (webview && webview.src) {
+      if (webview.src.includes('todolist') || webview.src.includes('plugins/todolist')) {
+        console.log(`[TodoList] 📝 找到 ToDoList 插件 webview: ${webview.src}`);
+        return webview;
+      }
+    }
+  }
+  return null;
+}
+
 // 🆕 通过邮件插件的 webview 调用 sendEmailByPlugin 函数（确保记录发送历史）
 async function sendEmailViaPlugin(recipients, subject, body) {
   const recipientList = Array.isArray(recipients) ? recipients : recipients.split(/[,，;]/).map(e => e.trim()).filter(e => e);

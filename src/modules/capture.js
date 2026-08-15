@@ -595,8 +595,21 @@ function toggleMonitorDropdown(wsId) {
     startManualMonitoringAndEmail(wsId);
   });
 
+  const item3 = document.createElement('div');
+  item3.textContent = '📝 建立 ToDo 卡片 (获取内容)';
+  item3.style.cssText = 'padding: 8px 16px; cursor: pointer; transition: background 0.15s;';
+  item3.addEventListener('mouseenter', () => { item3.style.background = hoverBg; });
+  item3.addEventListener('mouseleave', () => { item3.style.background = 'transparent'; });
+  item3.addEventListener('click', (e) => {
+    e.stopPropagation();
+    menu.remove();
+    _monitorDropdownEl = null;
+    startManualMonitoringAndTodo(wsId);
+  });
+
   menu.appendChild(item1);
   menu.appendChild(item2);
+  menu.appendChild(item3);
   document.body.appendChild(menu);
   _monitorDropdownEl = menu;
 }
@@ -789,6 +802,201 @@ async function startManualMonitoringAndEmail(wsId) {
     const statusMsg = '❌ 获取内容并发送邮件失败: ' + error.message;
     showStatus(statusMsg, 'error', undefined, true);
     addFloatHistoryEntry({ source: '系统', type: 'error', message: statusMsg, recipients: '' });
+  }
+}
+
+// 🆕 获取内容并建立 ToDo 卡片
+async function startManualMonitoringAndTodo(wsId) {
+  console.log('[Renderer]  === 开始获取内容并建立 ToDo 卡片流程 ===');
+
+  const webview = getCurrentWebview();
+  if (!webview) {
+    showStatus('❌ 未找到网页预览组件', 'error');
+    return;
+  }
+
+  // 获取当前URL
+  let currentUrl = '';
+  try {
+    currentUrl = await webview.getURL();
+  } catch (e) {
+    console.warn('[Renderer] 获取URL失败:', e);
+  }
+
+  // 清除旧结果
+  const oldResponseContainer = document.getElementById('capturedResponseContainer');
+  if (oldResponseContainer) {
+    oldResponseContainer.remove();
+  }
+
+  showStatus('📝 正在获取内容...', 'info');
+
+  // 通过 IPC 重新加载最新的书签数据
+  let customSelector = '';
+  let heartbeatSelector = '';
+  let monitorTimeout = 0;
+  let debugMsg = '';
+  let freshBookmarks = [];
+
+  try {
+    freshBookmarks = await window.electronAPI.loadBookmarks();
+
+    const wsBookmarkIndex = workspaces[currentWorkspaceId]?.bookmarkIndex;
+    const currentIndex = (wsBookmarkIndex !== null && wsBookmarkIndex !== undefined) ? wsBookmarkIndex : window.currentBookmarkIndex;
+
+    // 方法 1：通过索引查找
+    if (freshBookmarks && currentIndex !== undefined && currentIndex !== null && freshBookmarks[currentIndex]) {
+      customSelector = freshBookmarks[currentIndex].replySelector || '';
+      heartbeatSelector = freshBookmarks[currentIndex].heartbeatSelector || '';
+      monitorTimeout = freshBookmarks[currentIndex].monitorTimeout || 0;
+      debugMsg = `书签：${freshBookmarks[currentIndex].name || '未知'}（索引 ${currentIndex}）`;
+    }
+
+    // 方法 2：通过 URL 匹配
+    if (!customSelector && !heartbeatSelector && currentUrl && freshBookmarks && freshBookmarks.length > 0) {
+      const getCurrentHostname = () => {
+        try { return new URL(currentUrl).hostname.toLowerCase(); } catch { return currentUrl.toLowerCase().split('/')[2] || ''; }
+      };
+      const currentHostname = getCurrentHostname();
+
+      for (const bm of freshBookmarks) {
+        if (!bm.url) continue;
+        try {
+          const bookmarkHostname = new URL(bm.url).hostname.toLowerCase();
+          if (currentHostname === bookmarkHostname) {
+            customSelector = bm.replySelector || '';
+            heartbeatSelector = bm.heartbeatSelector || '';
+            monitorTimeout = bm.monitorTimeout || 0;
+            debugMsg = `书签：${bm.name || '未知'}（域名匹配）`;
+            break;
+          }
+        } catch (e) {}
+      }
+    }
+
+    if (!customSelector) {
+      customSelector = window.currentReplySelector || '';
+    }
+  } catch (e) {
+    debugMsg = `加载失败：${e.message}`;
+  }
+
+  // 更新监控全局变量
+  if (heartbeatSelector) window.__monitorHeartbeatSelector = heartbeatSelector;
+  if (customSelector) window.__monitorReplySelector = customSelector;
+  if (monitorTimeout && monitorTimeout > 0) window.__monitorTimeout = monitorTimeout;
+
+  const selectorValue = customSelector || '(空)';
+  const heartbeatValue = heartbeatSelector || '(空)';
+  const fullDebugMsg = `${debugMsg} | 选择器：${selectorValue}${heartbeatSelector ? ` | 监控：${heartbeatValue}` : ''}`;
+  showStatus(fullDebugMsg, customSelector ? 'success' : 'warning');
+
+  let capturedContent = '';
+  let capturedHtml = '';
+
+  try {
+    // 优先使用自定义选择器
+    if (customSelector) {
+      const customResult = await captureWithCustomSelector(webview, customSelector);
+      if (customResult && customResult.success) {
+        capturedContent = customResult.content;
+        capturedHtml = customResult.html || '';
+      } else {
+        showStatus(` 自定义选择器未找到内容: ${customResult?.error || '未知错误'}`, 'error');
+        return;
+      }
+    } else {
+      // 没有自定义选择器，使用默认逻辑
+      const isAIPlatform = currentUrl.includes('yiyan.baidu.com') ||
+                          currentUrl.includes('doubao.com') || currentUrl.includes('doubao.cn') ||
+                          currentUrl.includes('chatglm.cn') || currentUrl.includes('deepseek.com');
+
+      if (isAIPlatform) {
+        let result = null;
+        if (currentUrl.includes('yiyan.baidu.com')) {
+          result = await wenXinCaptureAIResponse(webview, 180000);
+        } else if (currentUrl.includes('doubao.com') || currentUrl.includes('doubao.cn')) {
+          result = await doubaoCaptureAIResponse(webview, 180000);
+        } else {
+          result = await captureAIResponse(webview, 180000);
+        }
+        if (result && result.content) {
+          capturedContent = result.content;
+        }
+      } else {
+        showStatus('⚠️ 当前不是 AI 平台，请在书签编辑中设置「自定义回复选择器」', 'warning');
+        return;
+      }
+    }
+
+    if (!capturedContent) {
+      showStatus('⚠️ 未获取到内容', 'warning');
+      return;
+    }
+
+    // 获取成功，发送到 ToDoList 插件
+    const charCount = capturedContent.length;
+    showStatus(`✅ 成功获取内容（${charCount} 字符），正在建立 ToDo 卡片...`, 'success');
+
+    // 构建带来源/时间信息的 HTML 内容（与邮件插件一致）
+    const now = new Date();
+    const timeStr = `${now.getFullYear()}/${now.getMonth()+1}/${now.getDate()} ${now.getHours()}:${String(now.getMinutes()).padStart(2,'0')}:${String(now.getSeconds()).padStart(2,'0')}`;
+    const sourceUrl = currentUrl || '';
+
+    // 优先使用 HTML 格式，否则使用纯文本
+    let htmlContent = '';
+    if (capturedHtml) {
+      htmlContent = `<div style="background:#1e293b;border-radius:8px;padding:16px;margin-bottom:16px;font-size:13px;color:#94a3b8;">
+        <div style="margin-bottom:4px;"><strong style="color:#e2e8f0;">【来源】</strong> <a href="${sourceUrl}" style="color:#60a5fa;text-decoration:none;">${sourceUrl}</a></div>
+        <div><strong style="color:#e2e8f0;">【获取时间】</strong> ${timeStr}</div>
+      </div>
+      ${capturedHtml}`;
+    } else {
+      htmlContent = `<div style="background:#1e293b;border-radius:8px;padding:16px;margin-bottom:16px;font-size:13px;color:#94a3b8;">
+        <div style="margin-bottom:4px;"><strong style="color:#e2e8f0;">【来源】</strong> ${sourceUrl}</div>
+        <div><strong style="color:#e2e8f0;">【获取时间】</strong> ${timeStr}</div>
+      </div>
+      <div style="white-space:pre-wrap;">${capturedContent}</div>`;
+    }
+
+    // 查找 TodoList 插件 webview
+    const panels = document.querySelectorAll('.workspace-panel');
+    let todoWebview = null;
+    for (const panel of panels) {
+      const wv = panel.querySelector('webview');
+      if (wv && wv.src && (wv.src.includes('todolist') || wv.src.includes('plugins/todolist'))) {
+        todoWebview = wv;
+        break;
+      }
+    }
+
+    if (!todoWebview) {
+      showStatus('❌ 未找到 ToDoList 插件，请先在某个页签中加载 ToDoList 插件', 'error');
+      return;
+    }
+
+    // 通过 webview.executeJavaScript 调用 TodoList 插件的全局函数
+    const result = await todoWebview.executeJavaScript(`
+      (async () => {
+        try {
+          const result = await window.addTodoFromExternal(${JSON.stringify(capturedContent)}, [], ${JSON.stringify(htmlContent)});
+          return JSON.stringify(result);
+        } catch (err) {
+          return JSON.stringify({ success: false, message: err.message });
+        }
+      })()
+    `);
+
+    const parsed = JSON.parse(result);
+    if (parsed.success) {
+      showStatus(`✅ 已建立 ToDo 卡片（${charCount} 字符）`, 'success');
+    } else {
+      showStatus(`❌ 建立 ToDo 卡片失败: ${parsed.message}`, 'error');
+    }
+  } catch (error) {
+    console.error('[Renderer] ❌ 获取内容并建立 ToDo 卡片失败:', error);
+    const statusMsg = '❌ 获取内容并建立 ToDo 卡片失败: ' + error.message;
+    showStatus(statusMsg, 'error', undefined, true);
   }
 }
 

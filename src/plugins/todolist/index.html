@@ -333,7 +333,14 @@
 
     .todo-list::-webkit-scrollbar-thumb {
       background: var(--border-color);
-      border-radius: 3px;
+    }
+
+    .search-highlight {
+      background-color: #fbbf24;
+      color: #000;
+      padding: 1px 2px;
+      border-radius: 2px;
+      font-weight: bold;
     }
 
     .todo-list::-webkit-scrollbar-thumb:hover {
@@ -1210,9 +1217,14 @@
             <button class="md-tool-btn" onclick="insertMd('^', '^')" title="上标">X²</button>
             <button class="md-tool-btn" onclick="insertMd('~', '~')" title="下标">X₂</button>
             <span style="flex:1"></span>
-            <span class="md-toggle-btn" id="mdToggleBtn" onclick="toggleMdPreview()">预览 Markdown</span>
+            <input type="text" id="editSearchInput" placeholder="搜索内容..." style="width:120px;padding:4px 8px;border:1px solid #334155;border-radius:4px;background:#1e293b;color:#e2e8f0;font-size:12px;outline:none;margin-right:4px;" oninput="doSearch()" onkeydown="if(event.key==='Enter'){event.preventDefault();doSearchEnter();}">
+            <span id="searchCount" style="font-size:11px;color:#94a3b8;margin-right:4px;min-width:50px;display:inline-block;"></span>
+            <button id="searchPrevBtn" onmouseover="this.style.background='#334155';this.style.color='#e2e8f0'" onmouseout="this.style.background='#1e293b';this.style.color='#94a3b8'" onclick="findPrev()" title="上一笔" style="display:none;padding:2px 6px;border:1px solid #334155;border-radius:4px;background:#1e293b;color:#94a3b8;font-size:11px;cursor:pointer;margin-right:2px;">◀</button>
+            <button id="searchNextBtn" onmouseover="this.style.background='#334155';this.style.color='#e2e8f0'" onmouseout="this.style.background='#1e293b';this.style.color='#94a3b8'" onclick="findNext()" title="下一笔" style="display:none;padding:2px 6px;border:1px solid #334155;border-radius:4px;background:#1e293b;color:#94a3b8;font-size:11px;cursor:pointer;margin-right:8px;">▶</button>
+            <span class="md-toggle-btn" id="mdToggleBtn" onclick="toggleMdPreview()">编辑文本</span>
           </div>
           <textarea class="form-textarea" id="taskText" placeholder="输入任务内容（支持 Markdown）..." style="border-top:none;border-radius:0 0 8px 8px;"></textarea>
+          <textarea class="form-textarea" id="htmlText" placeholder="HTML 源码编辑..." style="display:none;border-top:none;border-radius:0 0 8px 8px;font-family:'Monaco','Consolas',monospace;font-size:13px;white-space:pre;overflow-x:auto;"></textarea>
           <div class="md-preview" id="mdPreview"></div>
         </div>
 
@@ -1422,7 +1434,8 @@
 
     let selectedTagsForModal = [];
     let selectedTodoColor = '';
-    let mdPreviewMode = false;
+    // 预览模式：0=文本编辑, 1=Markdown预览, 2=HTML文本编辑, 3=HTML预览（仅当有htmlContent时）
+    let previewMode = 0;
 
     // Markdown 工具函数
     function insertMd(before, after) {
@@ -1438,20 +1451,435 @@
     }
 
     function toggleMdPreview() {
-      mdPreviewMode = !mdPreviewMode;
+      // 切换模式时重置搜索状态
+      clearSearchHighlights();
+      searchMatches = [];
+      currentMatchIndex = -1;
+      lastSearchEnterQuery = '';
+      document.getElementById('editSearchInput').value = '';
+      document.getElementById('searchCount').textContent = '';
+      updateSearchNavButtons();
+
       const preview = document.getElementById('mdPreview');
       const textarea = document.getElementById('taskText');
+      const htmlTextarea = document.getElementById('htmlText');
       const btn = document.getElementById('mdToggleBtn');
-      if (mdPreviewMode) {
+
+      // 检查当前卡片是否有 htmlContent
+      let hasHtmlContent = false;
+      if (editingId) {
+        const todo = todos.find(t => t.id === editingId);
+        hasHtmlContent = !!(todo && todo.htmlContent);
+      }
+
+      // 循环切换：0(文本编辑) -> 1(MD预览) -> 2(HTML文本编辑) -> 3(HTML预览，仅当有htmlContent) -> 0
+      if (previewMode === 0) {
+        previewMode = 1;
+      } else if (previewMode === 1) {
+        previewMode = 2;
+      } else if (previewMode === 2) {
+        previewMode = hasHtmlContent ? 3 : 0;
+      } else {
+        previewMode = 0;
+      }
+
+      // 应用模式
+      if (previewMode === 0) {
+        // 文本编辑模式
+        preview.classList.remove('show');
+        textarea.style.display = '';
+        htmlTextarea.style.display = 'none';
+        btn.textContent = '编辑文本';
+        btn.title = '点击切换到 Markdown 预览';
+        btn.classList.remove('active');
+      } else if (previewMode === 1) {
+        // Markdown 预览
         preview.classList.add('show');
         preview.innerHTML = renderMarkdown(textarea.value);
         textarea.style.display = 'none';
+        htmlTextarea.style.display = 'none';
+        btn.textContent = 'Markdown 预览';
+        btn.title = hasHtmlContent ? '点击切换到 HTML 文本编辑' : '点击切换到 HTML 文本编辑';
+        btn.classList.add('active');
+      } else if (previewMode === 2) {
+        // HTML 文本编辑模式
+        preview.classList.remove('show');
+        textarea.style.display = 'none';
+        htmlTextarea.style.display = '';
+        // 加载当前 HTML 内容到编辑器
+        const todo = todos.find(t => t.id === editingId);
+        htmlTextarea.value = (todo && todo.htmlContent) ? todo.htmlContent : markdownToHtml(textarea.value);
+        btn.textContent = 'HTML 文本编辑';
+        btn.title = hasHtmlContent ? '点击切换到 HTML 预览' : '点击切换到文本编辑';
         btn.classList.add('active');
       } else {
-        preview.classList.remove('show');
-        textarea.style.display = '';
-        btn.classList.remove('active');
+        // HTML 预览（优先使用当前 HTML 编辑器的内容，其次用原始 htmlContent）
+        preview.classList.add('show');
+        const htmlValue = htmlTextarea.value.trim();
+        if (htmlValue) {
+          preview.innerHTML = htmlValue;
+        } else {
+          const todo = todos.find(t => t.id === editingId);
+          if (todo && todo.htmlContent) {
+            preview.innerHTML = todo.htmlContent;
+          } else {
+            preview.innerHTML = markdownToHtml(textarea.value);
+          }
+        }
+        textarea.style.display = 'none';
+        htmlTextarea.style.display = 'none';
+        btn.textContent = 'HTML 预览';
+        btn.title = '点击切换到文本编辑';
+        btn.classList.add('active');
       }
+    }
+
+    // 搜索功能
+    let searchMatches = [];
+    let currentMatchIndex = -1;
+
+    function doSearch(shouldNavigate) {
+      shouldNavigate = !!shouldNavigate;
+      const query = document.getElementById('editSearchInput').value.trim();
+      const preview = document.getElementById('mdPreview');
+      const textarea = document.getElementById('taskText');
+      const htmlTextarea = document.getElementById('htmlText');
+      const countSpan = document.getElementById('searchCount');
+
+      // 清除之前的高亮
+      clearSearchHighlights();
+
+      if (!query) {
+        searchMatches = [];
+        currentMatchIndex = -1;
+        lastSearchEnterQuery = '';
+        countSpan.textContent = '';
+        updateSearchNavButtons();
+        return;
+      }
+
+      // 根据当前模式搜索
+      if (previewMode === 0) {
+        highlightInTextarea(textarea, query, shouldNavigate);
+      } else if (previewMode === 1) {
+        highlightInElement(preview, query, shouldNavigate);
+      } else if (previewMode === 2) {
+        highlightInTextarea(htmlTextarea, query, shouldNavigate);
+      } else {
+        highlightInElement(preview, query, shouldNavigate);
+      }
+
+      // 显示匹配计数
+      if (searchMatches.length > 0) {
+        countSpan.textContent = `${currentMatchIndex + 1}/${searchMatches.length}`;
+      } else {
+        countSpan.textContent = '无匹配';
+      }
+      updateSearchNavButtons();
+    }
+
+    function highlightInTextarea(textarea, query, shouldNavigate) {
+      shouldNavigate = !!shouldNavigate;
+      const text = textarea.value;
+      const lowerText = text.toLowerCase();
+      const lowerQuery = query.toLowerCase();
+      let startIndex = 0;
+
+      searchMatches = [];
+      while ((startIndex = lowerText.indexOf(lowerQuery, startIndex)) !== -1) {
+        searchMatches.push({ start: startIndex, end: startIndex + query.length });
+        startIndex += query.length;
+      }
+
+      if (searchMatches.length > 0) {
+        currentMatchIndex = 0;
+        if (shouldNavigate) {
+          // 只有显式触发（Enter/按钮）时才选中并滚动聚焦
+          textarea.focus();
+          textarea.setSelectionRange(searchMatches[0].start, searchMatches[0].end);
+          scrollToMatchInTextarea(textarea, searchMatches[0].start, text);
+        }
+      } else {
+        currentMatchIndex = -1;
+      }
+    }
+
+    function scrollToMatchInTextarea(textarea, pos, text) {
+      const linesBefore = text.substring(0, pos).split('\n').length;
+      const lineHeight = parseInt(getComputedStyle(textarea).lineHeight) || 20;
+      textarea.scrollTop = Math.max(0, (linesBefore - 2) * lineHeight);
+    }
+
+    function highlightInElement(element, query, shouldNavigate) {
+      shouldNavigate = !!shouldNavigate;
+      const lowerQuery = query.toLowerCase();
+
+      // 只处理文本节点，不破坏 HTML 标签结构
+      const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT, {
+        acceptNode: function (node) {
+          // 跳过 style/script/noscript 等非内容节点，以及已经是 mark 内部的文本
+          const parent = node.parentNode;
+          if (!parent) return NodeFilter.FILTER_REJECT;
+          const tag = parent.nodeName.toLowerCase();
+          if (tag === 'style' || tag === 'script' || tag === 'noscript' ||
+              (tag === 'mark' && parent.classList.contains('search-highlight'))) {
+            return NodeFilter.FILTER_REJECT;
+          }
+          if (!node.nodeValue || node.nodeValue.trim().length === 0) {
+            return NodeFilter.FILTER_SKIP;
+          }
+          return NodeFilter.FILTER_ACCEPT;
+        }
+      });
+
+      const textNodes = [];
+      let n;
+      while ((n = walker.nextNode())) textNodes.push(n);
+
+      // 逐个文本节点：按匹配位置拆分，用 <mark> 包裹命中片段
+      for (let i = 0; i < textNodes.length; i++) {
+        const textNode = textNodes[i];
+        const text = textNode.nodeValue;
+        const lowerText = text.toLowerCase();
+
+        const hitPositions = [];
+        let idx = 0;
+        while ((idx = lowerText.indexOf(lowerQuery, idx)) !== -1) {
+          hitPositions.push({ start: idx, end: idx + query.length });
+          idx += query.length;
+        }
+        if (hitPositions.length === 0) continue;
+
+        const parent = textNode.parentNode;
+        const frag = document.createDocumentFragment();
+        let cursor = 0;
+
+        for (let h = 0; h < hitPositions.length; h++) {
+          const hit = hitPositions[h];
+          if (hit.start > cursor) {
+            frag.appendChild(document.createTextNode(text.substring(cursor, hit.start)));
+          }
+          const mark = document.createElement('mark');
+          mark.className = 'search-highlight';
+          mark.textContent = text.substring(hit.start, hit.end);
+          frag.appendChild(mark);
+          cursor = hit.end;
+        }
+        if (cursor < text.length) {
+          frag.appendChild(document.createTextNode(text.substring(cursor)));
+        }
+
+        parent.replaceChild(frag, textNode);
+      }
+
+      const highlights = element.querySelectorAll('.search-highlight');
+      searchMatches = Array.from(highlights);
+
+      if (searchMatches.length > 0) {
+        currentMatchIndex = 0;
+        if (shouldNavigate) {
+          searchMatches[0].scrollIntoView({ behavior: 'smooth', block: 'center' });
+          searchMatches[0].style.outline = '2px solid #ef4444';
+          searchMatches[0].style.outlineOffset = '1px';
+        }
+      } else {
+        currentMatchIndex = -1;
+      }
+    }
+
+    function clearSearchHighlights() {
+      const preview = document.getElementById('mdPreview');
+      const highlights = preview.querySelectorAll('.search-highlight');
+      highlights.forEach(mark => {
+        const parent = mark.parentNode;
+        parent.replaceChild(document.createTextNode(mark.textContent), mark);
+        parent.normalize();
+      });
+    }
+
+    function findNext() {
+      if (searchMatches.length === 0) return;
+
+      // 清除上一个的红色边框
+      if (previewMode >= 1 && previewMode <= 3) {
+        const preview = document.getElementById('mdPreview');
+        const highlights = preview.querySelectorAll('.search-highlight');
+        highlights.forEach(h => { h.style.outline = ''; h.style.outlineOffset = ''; });
+      }
+
+      currentMatchIndex = (currentMatchIndex + 1) % searchMatches.length;
+      const countSpan = document.getElementById('searchCount');
+      countSpan.textContent = `${currentMatchIndex + 1}/${searchMatches.length}`;
+
+      if (previewMode === 0 || previewMode === 2) {
+        const textarea = previewMode === 0 ? document.getElementById('taskText') : document.getElementById('htmlText');
+        const match = searchMatches[currentMatchIndex];
+        textarea.focus();
+        textarea.setSelectionRange(match.start, match.end);
+        scrollToMatchInTextarea(textarea, match.start, textarea.value);
+      } else {
+        const preview = document.getElementById('mdPreview');
+        const highlights = preview.querySelectorAll('.search-highlight');
+        if (highlights[currentMatchIndex]) {
+          highlights[currentMatchIndex].style.outline = '2px solid #ef4444';
+          highlights[currentMatchIndex].style.outlineOffset = '1px';
+          highlights[currentMatchIndex].scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+      }
+    }
+
+    function findPrev() {
+      if (searchMatches.length === 0) return;
+
+      // 清除上一个的红色边框
+      if (previewMode >= 1 && previewMode <= 3) {
+        const preview = document.getElementById('mdPreview');
+        const highlights = preview.querySelectorAll('.search-highlight');
+        highlights.forEach(h => { h.style.outline = ''; h.style.outlineOffset = ''; });
+      }
+
+      currentMatchIndex = (currentMatchIndex - 1 + searchMatches.length) % searchMatches.length;
+      const countSpan = document.getElementById('searchCount');
+      countSpan.textContent = `${currentMatchIndex + 1}/${searchMatches.length}`;
+
+      if (previewMode === 0 || previewMode === 2) {
+        const textarea = previewMode === 0 ? document.getElementById('taskText') : document.getElementById('htmlText');
+        const match = searchMatches[currentMatchIndex];
+        textarea.focus();
+        textarea.setSelectionRange(match.start, match.end);
+        scrollToMatchInTextarea(textarea, match.start, textarea.value);
+      } else {
+        const preview = document.getElementById('mdPreview');
+        const highlights = preview.querySelectorAll('.search-highlight');
+        if (highlights[currentMatchIndex]) {
+          highlights[currentMatchIndex].style.outline = '2px solid #ef4444';
+          highlights[currentMatchIndex].style.outlineOffset = '1px';
+          highlights[currentMatchIndex].scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+      }
+    }
+
+    function updateSearchNavButtons() {
+      const prevBtn = document.getElementById('searchPrevBtn');
+      const nextBtn = document.getElementById('searchNextBtn');
+      const hasMatches = searchMatches.length > 0;
+      prevBtn.style.display = hasMatches ? 'inline-block' : 'none';
+      nextBtn.style.display = hasMatches ? 'inline-block' : 'none';
+    }
+
+    let lastSearchEnterQuery = '';
+
+    function doSearchEnter() {
+      const query = document.getElementById('editSearchInput').value.trim();
+
+      if (!query) {
+        clearSearchHighlights();
+        searchMatches = [];
+        currentMatchIndex = -1;
+        lastSearchEnterQuery = '';
+        document.getElementById('searchCount').textContent = '';
+        updateSearchNavButtons();
+        return;
+      }
+
+      if (query !== lastSearchEnterQuery || searchMatches.length === 0) {
+        doSearch(true);
+        lastSearchEnterQuery = query;
+        return;
+      }
+
+      findNext();
+    }
+
+    function escapeRegex(string) {
+      return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    }
+
+    //  智能更新 htmlContent：在原始 HTML 中逐行替换文本，保留所有样式标签
+    function updateHtmlContent(oldText, newText, oldHtml) {
+      if (!oldHtml || !oldText || !newText) return markdownToHtml(newText);
+
+      const oldLines = oldText.split('\n');
+      const newLines = newText.split('\n');
+
+      let result = oldHtml;
+
+      // 逐行替换：在 HTML 中找到旧文本，替换为新文本（保留包裹的 HTML 标签）
+      const maxLen = Math.max(oldLines.length, newLines.length);
+      for (let i = 0; i < maxLen; i++) {
+        const oldLine = (oldLines[i] || '').trim();
+        const newLine = (newLines[i] || '').trim();
+        if (!oldLine || !newLine || oldLine === newLine) continue;
+
+        // 转义正则特殊字符
+        const escapedOld = oldLine.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        // 在 HTML 标签内容中查找并替换（不破坏标签结构）
+        const regex = new RegExp(`(?<=>)([^<]*?)${escapedOld}`, 'g');
+        if (regex.test(result)) {
+          result = result.replace(regex, (match, before) => {
+            return '>' + before + newLine;
+          });
+        }
+      }
+
+      return result;
+    }
+
+    // 专业 Markdown → HTML 转换器（与邮件插件一致，保留样式）
+    function markdownToHtml(md) {
+      const mathBlocks = [];
+      let preProcessed = md;
+      preProcessed = preProcessed.replace(/\$\$([\s\S]*?)\$\$/g, (match, formula) => {
+        const idx = mathBlocks.length;
+        mathBlocks.push({ formula: formula.trim(), display: true });
+        return `%%MATHBLOCK_${idx}%%`;
+      });
+      preProcessed = preProcessed.replace(/(?<!\$)\$(?!\$)([^\$\n]+?)\$(?!\$)/g, (match, formula) => {
+        const idx = mathBlocks.length;
+        mathBlocks.push({ formula: formula.trim(), display: false });
+        return `%%MATHBLOCK_${idx}%%`;
+      });
+      const lines = preProcessed.split('\n');
+      let html = '';
+      let inTable = false;
+      let tableHeaderDone = false;
+      function processInline(text) {
+        return text.replace(/\*\*(.+?)\*\*/g, '<strong style="background: linear-gradient(120deg, #fef3c7 0%, #fde68a 100%); color: #7c2d12; padding: 2px 6px; border-radius: 4px; font-weight: 700;">$1</strong>');
+      }
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i].trim();
+        if (line.startsWith('|') && line.endsWith('|') && line.split('|').length > 2) {
+          const cells = line.split('|').slice(1, -1).map(c => c.trim());
+          if (cells.every(c => /^[-:]+$/.test(c))) continue;
+          if (!inTable) { html += '<table style="border-collapse: collapse; width: 100%; margin: 12px 0; font-size: 12px; table-layout: fixed;">'; inTable = true; tableHeaderDone = false; }
+          if (!tableHeaderDone) {
+            const colCount = cells.length;
+            const colWidths = [];
+            if (colCount >= 2) { colWidths.push('18%'); colWidths.push('12%'); const remaining = 100 - 18 - 12; const eachWidth = (remaining / (colCount - 2)).toFixed(1) + '%'; for (let j = 2; j < colCount; j++) colWidths.push(eachWidth); }
+            html += '<colgroup>'; colWidths.forEach(w => { html += `<col style="width: ${w};">`; }); html += '</colgroup>';
+            html += '<thead><tr>'; cells.forEach(c => { html += `<th style="border: 1px solid #d1d5db; padding: 5px 6px; background: #f1f5f9; text-align: center; font-weight: 600; color: #1e293b; word-break: break-all;">${processInline(c)}</th>`; }); html += '</tr></thead><tbody>'; tableHeaderDone = true;
+          } else { html += '<tr>'; cells.forEach((c, ci) => { const align = ci === 0 ? 'left' : 'center'; html += `<td style="border: 1px solid #d1d5db; padding: 5px 6px; color: #1e293b; text-align: ${align}; word-break: break-all;">${processInline(c)}</td>`; }); html += '</tr>'; }
+        } else {
+          if (inTable) { html += '</tbody></table>'; inTable = false; }
+          if (line.startsWith('## ')) { html += `<h3 style="margin: 16px 0 8px 0; color: #2563eb; font-size: 15px;">${processInline(line.replace(/^##\s*/, ''))}</h3>`; }
+          else if (line.startsWith('### ')) { html += `<h4 style="margin: 12px 0 6px 0; color: #3b82f6; font-size: 14px;">${processInline(line.replace(/^###\s*/, ''))}</h4>`; }
+          else if (line.startsWith('#### ')) { html += `<h5 style="margin: 10px 0 5px 0; color: #2563eb; font-size: 13px; font-weight: 600;">${processInline(line.replace(/^####\s*/, ''))}</h5>`; }
+          else if (line.startsWith('- ') || line.startsWith('* ')) { html += `<p style="margin: 4px 0 4px 16px; color: #1e293b;">• ${processInline(line.replace(/^[-*]\s*/, ''))}</p>`; }
+          else if (line === '') { html += '<br>'; }
+          else { html += `<p style="margin: 4px 0; color: #1e293b;">${processInline(line)}</p>`; }
+        }
+      }
+      if (inTable) html += '</tbody></table>';
+      if (mathBlocks.length > 0 && typeof katex !== 'undefined') {
+        html = html.replace(/%%MATHBLOCK_(\d+)%%/g, (match, idx) => {
+          const block = mathBlocks[parseInt(idx)]; if (!block) return match;
+          try { const rendered = katex.renderToString(block.formula, { displayMode: block.display, throwOnError: false, strict: false }); return block.display ? `<div style="text-align:center;margin:12px 0;padding:8px 0;background:#f8fafc;border-radius:6px;">${rendered}</div>` : `<span style="display:inline-block;vertical-align:middle;margin:0 2px;">${rendered}</span>`; }
+          catch (e) { return `<code style="background:#fee2e2;color:#dc2626;padding:2px 6px;border-radius:4px;font-family:monospace;">${block.formula}</code>`; }
+        });
+      } else if (mathBlocks.length > 0) {
+        html = html.replace(/%%MATHBLOCK_(\d+)%%/g, (match, idx) => { const block = mathBlocks[parseInt(idx)]; return block ? `<code>${block.formula}</code>` : match; });
+      }
+      return html;
     }
 
     // 色卡选择
@@ -1610,7 +2038,7 @@
             </div>
           </div>
           <div class="todo-content">
-            <div class="todo-text">${renderMarkdown(todo.text)}</div>
+            <div class="todo-text">${todo.htmlContent ? todo.htmlContent : renderMarkdown(todo.text)}</div>
             <div class="todo-meta">
               <div class="todo-tags">
                 ${tagsHtml}
@@ -1714,15 +2142,25 @@
       editingId = null;
       document.getElementById('modalTitle').textContent = '添加任务';
       document.getElementById('taskText').value = '';
+      document.getElementById('htmlText').value = '';
+      document.getElementById('editSearchInput').value = '';
       pendingAttachments = [];
       selectedTagsForModal = [];
       renderTagsSelector([]);
       renderPendingAttachments();
       setTodoColorPicker('');
-      mdPreviewMode = false;
+      previewMode = 0;
       document.getElementById('mdPreview').classList.remove('show');
       document.getElementById('taskText').style.display = '';
+      document.getElementById('htmlText').style.display = 'none';
       document.getElementById('mdToggleBtn').classList.remove('active');
+      document.getElementById('mdToggleBtn').textContent = '编辑文本';
+      document.getElementById('mdToggleBtn').title = '点击切换到 Markdown 预览';
+      searchMatches = [];
+      currentMatchIndex = -1;
+      lastSearchEnterQuery = '';
+      document.getElementById('searchCount').textContent = '';
+      updateSearchNavButtons();
       document.getElementById('modalOverlay').style.display = 'flex';
       document.getElementById('taskText').focus();
     }
@@ -1734,16 +2172,23 @@
       editingId = id;
       document.getElementById('modalTitle').textContent = '编辑任务';
       document.getElementById('taskText').value = todo.text;
+      document.getElementById('htmlText').value = todo.htmlContent || '';
+      document.getElementById('editSearchInput').value = '';
       pendingAttachments = todo.attachments || [];
       const tags = todo.tags && Array.isArray(todo.tags) ? todo.tags : (todo.tag ? [todo.tag] : []);
       selectedTagsForModal = tags;
       renderTagsSelector(tags);
       renderPendingAttachments();
       setTodoColorPicker(todo.bgColor || '');
-      mdPreviewMode = false;
+      previewMode = 0;
       document.getElementById('mdPreview').classList.remove('show');
       document.getElementById('taskText').style.display = '';
       document.getElementById('mdToggleBtn').classList.remove('active');
+      searchMatches = [];
+      currentMatchIndex = -1;
+      lastSearchEnterQuery = '';
+      document.getElementById('searchCount').textContent = '';
+      updateSearchNavButtons();
       document.getElementById('modalOverlay').style.display = 'flex';
       document.getElementById('taskText').focus();
     }
@@ -1751,10 +2196,18 @@
     function closeModal(event) {
       if (event && event.target !== event.currentTarget) return;
       document.getElementById('modalOverlay').style.display = 'none';
-      mdPreviewMode = false;
+      previewMode = 0;
       document.getElementById('mdPreview').classList.remove('show');
       document.getElementById('taskText').style.display = '';
+      document.getElementById('htmlText').style.display = 'none';
       document.getElementById('mdToggleBtn').classList.remove('active');
+      document.getElementById('mdToggleBtn').textContent = '编辑文本';
+      document.getElementById('mdToggleBtn').title = '点击切换到 Markdown 预览';
+      clearSearchHighlights();
+      searchMatches = [];
+      currentMatchIndex = -1;
+      lastSearchEnterQuery = '';
+      updateSearchNavButtons();
     }
 
     function handleFileSelect(event) {
@@ -1808,7 +2261,24 @@
     }
 
     async function saveTask(closeAfterSave = true) {
-      const text = document.getElementById('taskText').value.trim();
+      const textarea = document.getElementById('taskText');
+      const htmlTextarea = document.getElementById('htmlText');
+      let text = textarea.value.trim();
+
+      // 如果在 HTML 编辑模式下保存，同步 HTML 内容到 htmlContent
+      if (previewMode === 2) {
+        const htmlValue = htmlTextarea.value.trim();
+        if (!htmlValue) {
+          alert('请输入 HTML 内容');
+          return;
+        }
+        // 从 HTML 中提取纯文本作为 text
+        const tempDiv = document.createElement('div');
+        tempDiv.innerHTML = htmlValue;
+        text = tempDiv.textContent.trim() || text;
+        textarea.value = text;
+      }
+
       if (!text) {
         alert('请输入任务内容');
         return;
@@ -1818,6 +2288,13 @@
         const todo = todos.find(t => t.id === editingId);
         if (todo) {
           todo.text = text;
+          // 如果在 HTML 编辑模式，直接保存 HTML 内容
+          if (previewMode === 2) {
+            todo.htmlContent = htmlTextarea.value.trim();
+          } else if (todo.htmlContent) {
+            // 智能更新 htmlContent：保留原始样式，只替换文本内容
+            todo.htmlContent = updateHtmlContent(todo.text, text, todo.htmlContent);
+          }
           todo.tags = selectedTagsForModal;
           delete todo.tag;
           todo.attachments = pendingAttachments;
@@ -1836,6 +2313,10 @@
           updatedAt: Date.now(),
           completedAt: null
         };
+        // 如果在 HTML 编辑模式，也保存 HTML 内容
+        if (previewMode === 2) {
+          newTodo.htmlContent = htmlTextarea.value.trim();
+        }
         todos.unshift(newTodo);
       }
 
@@ -1844,6 +2325,32 @@
         closeModal();
       }
     }
+
+    //  从外部创建 todo 卡片（供 capture.js 调用）
+    window.addTodoFromExternal = async function(text, tags = [], htmlContent = '') {
+      if (!text || !text.trim()) return { success: false, message: '内容为空' };
+      try {
+        const newTodo = {
+          id: Date.now().toString(),
+          text: text.trim(),
+          htmlContent: htmlContent || '',
+          tags: tags,
+          attachments: [],
+          bgColor: '',
+          completed: false,
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+          completedAt: null
+        };
+        todos.unshift(newTodo);
+        await saveTodos();
+        renderTodos();
+        updateStats();
+        return { success: true, message: '已建立 ToDo 卡片' };
+      } catch (err) {
+        return { success: false, message: err.message };
+      }
+    };
 
     function startResize(event, id) {
       event.preventDefault();
