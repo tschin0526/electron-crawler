@@ -316,3 +316,255 @@ window.sendEmailViaPlugin = sendEmailViaPlugin;
 window.markdownToHtml = markdownToHtml;
 window.sendUnifiedEmail = sendUnifiedEmail;
 window.showEmailRecipientDialog = showEmailRecipientDialog;
+
+// ========== 与 ToDoList <webview> 插件通信：Electron sendToHost / ipc-message 邮件通道 ==========
+// ToDoList 插件运行在 Electron <webview>（独立渲染进程）中，没有 window.parent，无法直接访问主窗口函数
+// 因此使用标准的 Electron webview 通信：
+//   Webview(TodoList) → ipcRenderer.sendToHost('todolist-email-request', data) → 主窗口监听 'ipc-message' 事件
+//   主窗口处理完 → webview.executeJavaScript('window.__resolveTodoEmailRequest(id, payload)') → 回传给 Webview
+(function installTodoListEmailBridge() {
+  if (window.__todoListEmailBridgeInstalled) return;
+  window.__todoListEmailBridgeInstalled = true;
+
+  function escapeHtml(text) {
+    if (!text) return '';
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+  }
+
+  // 移除 HTML 标签，只保留纯文本
+  function stripHtmlTags(html) {
+    if (!html) return '';
+    const tmp = document.createElement('div');
+    tmp.innerHTML = html;
+    return (tmp.textContent || tmp.innerText || '').trim();
+  }
+
+  function buildTodoEmailHtml(todo) {
+    const rawText = (todo.text || '').replace(/\r/g, '');
+    const firstLineWithTags = rawText.split('\n').map(s => s.trim()).find(s => s.length > 0)
+                         ?.replace(/^[#>\-*\d\.\)\s]+/, '').trim() || '（无标题）';
+    // 移除 HTML 标签，只保留纯文本用于主题和查询行
+    const firstLine = stripHtmlTags(firstLineWithTags);
+
+    const tags = (todo.tags && Array.isArray(todo.tags)) ? todo.tags : (todo.tag ? [todo.tag] : []);
+    const tagHtml = tags.map(t => `<span style="display:inline-block;padding:2px 8px;margin:0 4px 4px 0;background:#ede9fe;color:#6d28d9;border-radius:999px;font-size:12px;">#${escapeHtml(t)}</span>`).join('');
+    const created = todo.createdAt ? new Date(todo.createdAt).toLocaleString('zh-CN') : '';
+    const statusText = todo.completed ? '✅ 已完成' : '⏳ 进行中';
+    const header = `
+      <div style="background:#f8fafc;border-left:4px solid #667eea;padding:12px 16px;border-radius:0 8px 8px 0;margin-bottom:16px;">
+        <div style="font-size:14px;font-weight:600;color:#1e293b;margin-bottom:6px;">ToDo 卡片摘要</div>
+        <div style="font-size:12px;color:#475569;line-height:1.8;">
+          <div>📌 状态：${statusText}</div>
+          <div>🕒 创建：${escapeHtml(created)}</div>
+          ${tagHtml ? `<div>🏷️ 标签：${tagHtml}</div>` : ''}
+        </div>
+      </div>
+    `;
+
+    let body = '';
+    if (todo.htmlContent && String(todo.htmlContent).trim().length > 0) {
+      body = todo.htmlContent;
+    } else if (typeof window.markdownToHtml === 'function') {
+      body = window.markdownToHtml(todo.text || '');
+    } else {
+      const escaped = escapeHtml(todo.text || '');
+      body = `<pre style="background:#f8fafc;padding:12px 16px;border-radius:8px;font-size:13px;line-height:1.6;color:#1e293b;white-space:pre-wrap;word-break:break-all;">${escaped}</pre>`;
+    }
+
+    let baseHtml = header + body;
+
+    if (typeof cleanHtmlWhitespace === 'function') {
+      try {
+        const { html: cleanedHtml, mathBlocks } = cleanHtmlWhitespace(baseHtml);
+        let styled = cleanedHtml;
+        if (typeof formatJsonBlocks === 'function') styled = formatJsonBlocks(styled);
+        if (typeof injectInlineStyles === 'function') styled = injectInlineStyles(styled);
+        if (typeof renderKaTeXPlaceholders === 'function') styled = renderKaTeXPlaceholders(styled, mathBlocks || []);
+        baseHtml = styled;
+      } catch (e) {
+        console.warn('[email-bridge] HTML 管线处理失败，使用原始内容:', e);
+      }
+    }
+
+    const charCount = (todo.text || todo.htmlContent || '').length;
+    return { subject: `[ToDo 卡片] ${firstLine}`, contentHtml: baseHtml, charCount, firstLine };
+  }
+
+  // 给指定的 webview 挂邮件请求监听器（所有 webview 都统一挂，内部靠 channel 过滤，避免 webview 先创建后设 src 导致遗漏）
+  function attachListenerToTodoWebview(todoWebview) {
+    if (!todoWebview || todoWebview.__emailBridgeAttached) return;
+    todoWebview.__emailBridgeAttached = true;
+
+    todoWebview.addEventListener('ipc-message', async (event) => {
+      // 🆕 邮件 → ToDoList 通道：邮件插件请求建立 ToDo 卡片
+      if (event.channel === 'create-todo-from-email') {
+        const [emailPayload] = event.args || [];
+        if (!emailPayload || !emailPayload.requestId) return;
+
+        const emailRequestId = emailPayload.requestId;
+        const sourceWebview = todoWebview; // 发送消息的 webview（即邮件插件）
+
+        const replyToEmail = (resultPayload) => {
+          try {
+            const script = `
+              (function() {
+                try {
+                  if (typeof window.__resolveEmailTodoRequest === 'function') {
+                    window.__resolveEmailTodoRequest(${JSON.stringify(emailRequestId)}, ${JSON.stringify(resultPayload)});
+                  }
+                } catch (e) { /* ignore */ }
+              })();
+            `;
+            sourceWebview.executeJavaScript(script);
+          } catch (e) {
+            console.error('[email-todo-bridge] 回传响应失败:', e);
+          }
+        };
+
+        try {
+          const targetTodoWebview = findTodoListPluginWebview();
+          if (!targetTodoWebview) {
+            replyToEmail({ success: false, message: '未找到 ToDoList 插件，请先在某个页签中加载 ToDoList 插件' });
+            return;
+          }
+
+          const execResult = await targetTodoWebview.executeJavaScript(`
+            (async () => {
+              try {
+                const result = await window.addTodoFromExternal(${JSON.stringify(emailPayload.text)}, ${JSON.stringify(emailPayload.tags || [])}, ${JSON.stringify(emailPayload.htmlContent || '')});
+                return JSON.stringify(result);
+              } catch (err) {
+                return JSON.stringify({ success: false, message: err.message });
+              }
+            })()
+          `);
+
+          const parsed = JSON.parse(execResult);
+          replyToEmail(parsed);
+        } catch (err) {
+          console.error('[email-todo-bridge] 处理邮件→ToDo请求失败:', err);
+          replyToEmail({ success: false, message: err?.message || String(err) });
+        }
+        return;
+      }
+
+      if (event.channel !== 'todolist-email-request') return;
+      const [payload] = event.args || [];
+      if (!payload || !payload.requestId || !payload.todo) return;
+
+      const requestId = payload.requestId;
+      const todo = payload.todo;
+
+      const reply = (resultPayload) => {
+        try {
+          const script = `
+            (function() {
+              try {
+                if (typeof window.__resolveTodoEmailRequest === 'function') {
+                  window.__resolveTodoEmailRequest(${JSON.stringify(requestId)}, ${JSON.stringify(resultPayload)});
+                }
+              } catch (e) { /* ignore */ }
+            })();
+          `;
+          todoWebview.executeJavaScript(script);
+        } catch (e) {
+          console.error('[email-bridge] 回传响应失败:', e);
+        }
+      };
+
+      // 来自 ToDoList 插件的健康检查 ping：立即回包，不弹任何对话框
+      if (payload.__ping) {
+        reply({ ok: true });
+        return;
+      }
+
+      try {
+        // 步骤 1：弹收件人对话框（与截图一「获取内容→发邮件」完全相同）
+        const recipients = await showEmailRecipientDialog('');
+        if (!recipients || !String(recipients).trim()) {
+          reply({ cancelled: true });
+          return;
+        }
+
+        // 步骤 2：构建主题 + 内容 HTML（走完整渲染管线）
+        const { subject, contentHtml, charCount, firstLine } = buildTodoEmailHtml(todo);
+
+        // 步骤 3：调用统一邮件发送函数（浮动视窗/状态条记录都复用）
+        // 注意：queryText 传空字符串，因为 contentHtml 已包含完整内容，避免重复显示
+        const result = await sendUnifiedEmail(recipients, subject, 'ToDo 卡片', '', contentHtml, charCount);
+        reply({ success: true, result });
+      } catch (err) {
+        console.error('[email-bridge] 处理 todolist 邮件请求失败:', err);
+        reply({ success: false, error: err?.message || String(err) });
+      }
+    });
+  }
+
+  // 扫描当前页面所有已存在的 <webview>，全部挂监听（不区分 src，内部靠 channel 过滤）
+  function scanAndAttachAll() {
+    try {
+      const webviews = document.querySelectorAll('webview');
+      webviews.forEach(attachListenerToTodoWebview);
+    } catch (e) {
+      console.warn('[email-bridge] 扫描 webview 失败:', e);
+    }
+  }
+
+  // 用 MutationObserver 监听未来加入 DOM 的 <webview>（新增页签/切换页签时）
+  // 同时观察 src 属性变化：防止 workspace 先加空 src 的 webview，再后来赋值 src
+  function startObserver() {
+    scanAndAttachAll();
+
+    const observer = new MutationObserver((mutations) => {
+      let changed = false;
+      for (const m of mutations) {
+        if (m.type === 'childList') {
+          for (const node of m.addedNodes) {
+            if (!node || node.nodeType !== 1) continue;
+            if (node.tagName && node.tagName.toLowerCase() === 'webview') {
+              changed = true;
+              setTimeout(() => attachListenerToTodoWebview(node), 0);
+            } else {
+              const innerWebviews = node.querySelectorAll && node.querySelectorAll('webview');
+              if (innerWebviews && innerWebviews.length) {
+                changed = true;
+                innerWebviews.forEach(wv => setTimeout(() => attachListenerToTodoWebview(wv), 0));
+              }
+            }
+          }
+        } else if (m.type === 'attributes' && m.attributeName === 'src') {
+          if (m.target && m.target.tagName && m.target.tagName.toLowerCase() === 'webview') {
+            changed = true;
+            setTimeout(() => attachListenerToTodoWebview(m.target), 0);
+          }
+        }
+      }
+      if (changed) {
+        // 保险：再扫一次所有现存 webview
+        setTimeout(scanAndAttachAll, 50);
+      }
+    });
+
+    try {
+      observer.observe(document.documentElement, {
+        childList: true,
+        subtree: true,
+        attributes: true,
+        attributeFilter: ['src'],
+      });
+    } catch (e) {
+      console.error('[email-bridge] MutationObserver 启动失败:', e);
+    }
+
+    // 兜底：周期性重扫（用户可能打开多个 workspace 页面或迟加载 webview）
+    setInterval(scanAndAttachAll, 1500);
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', startObserver);
+  } else {
+    startObserver();
+  }
+})();

@@ -7,6 +7,7 @@
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
   <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/turndown/dist/turndown.min.js"></script>
   <style>
     :root {
       --primary-color: #667eea;
@@ -765,6 +766,24 @@
     .history-item-subject { font-size: 12px; color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .history-item-time { font-size: 11px; color: #94a3b8; flex-shrink: 0; }
 
+    .history-todo-btn {
+      background: rgba(102, 126, 234, 0.12);
+      border: 1px solid rgba(102, 126, 234, 0.3);
+      cursor: pointer;
+      font-size: 13px;
+      padding: 3px 8px;
+      border-radius: 6px;
+      transition: all 0.2s;
+      flex-shrink: 0;
+      line-height: 1;
+      margin-left: 4px;
+    }
+    .history-todo-btn:hover {
+      background: rgba(102, 126, 234, 0.25);
+      border-color: rgba(102, 126, 234, 0.6);
+      transform: scale(1.05);
+    }
+
     .empty-history {
       text-align: center;
       padding: 20px;
@@ -1450,6 +1469,7 @@
                 </div>
               </div>
               <span class="history-item-time">${formatTime(item.time)}</span>
+              <button class="history-todo-btn" onclick="createTodoFromEmail(${index}, event)" title="建立 ToDo 卡片">📝</button>
             </div>
           </div>
         `;
@@ -1715,6 +1735,147 @@
         }
       }
     });
+
+    // ========== 邮件 → ToDoList 插件：建立 ToDo 卡片 ==========
+    // 通信流程：
+    //   邮件插件 → electronAPI.sendToHost('create-todo-from-email', payload) → 主窗口
+    //   主窗口 → todoWebview.executeJavaScript('window.addTodoFromExternal(...)') → ToDoList 插件
+    //   主窗口 → emailWebview.executeJavaScript('window.__resolveEmailTodoRequest(id, result)') → 回传结果
+
+    // 全局回调函数（由主窗口通过 executeJavaScript 调用，回传 ToDo 创建结果）
+    window.__resolveEmailTodoRequest = function(requestId, result) {
+      window.dispatchEvent(new CustomEvent('email-todo-response', { detail: { requestId, result } }));
+    };
+
+    // 检测字符串是否包含 HTML 标签
+    function isHtmlContent(str) {
+      if (!str) return false;
+      return /<[a-z][\s\S]*>/i.test(str);
+    }
+
+    // HTML → Markdown 转换（使用 Turndown）
+    function htmlToMarkdown(html) {
+      if (!html) return '';
+      if (typeof TurndownService !== 'undefined') {
+        try {
+          const turndownService = new TurndownService({
+            headingStyle: 'atx',
+            codeBlockStyle: 'fenced',
+            bulletListMarker: '-',
+            emDelimiter: '*',
+            strongDelimiter: '**'
+          });
+          // 保留 <br> 标签的转换
+          turndownService.addRule('br', {
+            filter: 'br',
+            replacement: function() { return '\n'; }
+          });
+          return turndownService.turndown(html);
+        } catch (e) {
+          console.warn('[Email] Turndown 转换失败，降级为纯文本:', e.message);
+        }
+      }
+      // 降级：去除 HTML 标签，保留基本换行
+      return html.replace(/<br\s*\/?>/gi, '\n')
+                 .replace(/<p[^>]*>/gi, '\n\n')
+                 .replace(/<\/p>/gi, '\n')
+                 .replace(/<div[^>]*>/gi, '\n')
+                 .replace(/<\/div>/gi, '\n')
+                 .replace(/<[^>]+>/g, '')
+                 .replace(/&nbsp;/g, ' ')
+                 .replace(/&lt;/g, '<')
+                 .replace(/&gt;/g, '>')
+                 .replace(/&amp;/g, '&')
+                 .replace(/&quot;/g, '"')
+                 .replace(/&#\d+;/g, '')
+                 .replace(/\n{3,}/g, '\n\n')
+                 .trim();
+    }
+
+    // 将指定历史邮件建立为 ToDo 卡片
+    async function createTodoFromEmail(index, event) {
+      if (event) event.stopPropagation(); // 防止触发双击打开详情
+
+      const item = emailHistory[index];
+      if (!item) return;
+
+      const recipients = Array.isArray(item.to) ? item.to : [item.to];
+      const toDisplay = recipients.join(', ');
+      const timeStr = item.time ? new Date(item.time).toLocaleString('zh-CN') : '';
+      const body = item.body || '';
+
+      //  建立前确认：显示邮件主题，让用户确认后再建立 ToDo 卡片
+      const subject = item.subject || '(无主题)';
+      if (!confirm('确定要将以下邮件内容建立为 ToDo 卡片吗？\n\n主题：' + subject + '\n收件人：' + toDisplay)) {
+        return;
+      }
+
+      let todoText, htmlContent;
+
+      if (isHtmlContent(body)) {
+        // HTML 内容：转换为 Markdown 作为文本，保留原始 HTML 作为 htmlContent
+        const markdownText = htmlToMarkdown(body);
+        todoText = '【邮件待办】收件人: ' + toDisplay + '\n主题: ' + (item.subject || '') + '\n\n' + markdownText;
+        htmlContent = body; // 保留原始 HTML
+        console.log('[Email] 检测到 HTML 内容，已转换为 Markdown');
+      } else {
+        // 纯文本内容：保持原有逻辑
+        todoText = '【邮件待办】收件人: ' + toDisplay + '\n主题: ' + (item.subject || '') + '\n\n' + body;
+        htmlContent = '<div style="background:#f8fafc;border-left:4px solid #667eea;padding:12px 16px;border-radius:0 8px 8px 0;margin-bottom:16px;">' +
+          '<div style="font-size:14px;font-weight:600;color:#1e293b;margin-bottom:6px;">邮件摘要</div>' +
+          '<div style="font-size:12px;color:#475569;line-height:1.8;">' +
+          '<div>📧 收件人：' + escapeHtml(toDisplay) + '</div>' +
+          '<div> 主题：' + escapeHtml(item.subject || '') + '</div>' +
+          '<div> 发送时间：' + escapeHtml(timeStr) + '</div>' +
+          '</div></div>' +
+          '<div style="white-space:pre-wrap;font-size:13px;line-height:1.8;color:#1e293b;">' + escapeHtml(body) + '</div>';
+      }
+
+      showStatus('📝 正在建立 ToDo 卡片...', 'info');
+
+      var requestId = 'email-todo-' + Date.now() + '-' + Math.random().toString(36).substr(2, 6);
+
+      try {
+        var result = await new Promise(function(resolve, reject) {
+          var timeout = setTimeout(function() {
+            window.removeEventListener('email-todo-response', handler);
+            reject(new Error('建立 ToDo 卡片超时（10秒），请确保 ToDoList 插件已加载'));
+          }, 10000);
+
+          function handler(e) {
+            if (e.detail && e.detail.requestId === requestId) {
+              clearTimeout(timeout);
+              window.removeEventListener('email-todo-response', handler);
+              resolve(e.detail.result);
+            }
+          }
+          window.addEventListener('email-todo-response', handler);
+
+          // 通过 IPC 发送请求到主窗口
+          if (window.electronAPI && window.electronAPI.sendToHost) {
+            window.electronAPI.sendToHost('create-todo-from-email', {
+              requestId: requestId,
+              text: todoText,
+              tags: ['邮件'],
+              htmlContent: htmlContent
+            });
+          } else {
+            clearTimeout(timeout);
+            window.removeEventListener('email-todo-response', handler);
+            reject(new Error('electronAPI 不可用'));
+          }
+        });
+
+        if (result && result.success) {
+          showStatus('✅ 已建立 ToDo 卡片', 'success');
+        } else {
+          showStatus('❌ 建立 ToDo 卡片失败：' + (result && (result.message || result.error) || '未知错误'), 'error');
+        }
+      } catch (error) {
+        console.error('[Email] 建立 ToDo 卡片失败:', error);
+        showStatus('❌ ' + error.message, 'error');
+      }
+    }
 
     init();
   </script>

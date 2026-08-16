@@ -580,14 +580,14 @@
       position: absolute;
       bottom: 4px;
       right: 4px;
-      width: 14px;
-      height: 14px;
-      cursor: ns-resize;
+      width: 16px;
+      height: 16px;
+      cursor: nwse-resize;
       display: flex;
       align-items: flex-end;
       justify-content: flex-end;
       padding: 2px;
-      opacity: 0.35;
+      opacity: 0.4;
       transition: opacity 0.2s;
       z-index: 2;
       border-radius: 8px 0 8px 0;
@@ -600,12 +600,25 @@
 
     .resize-handle::after {
       content: '';
-      width: 6px;
-      height: 6px;
-      border-right: 1px solid var(--text-secondary);
-      border-bottom: 1px solid var(--text-secondary);
+      width: 10px;
+      height: 10px;
+      border-right: 2px solid var(--text-secondary);
+      border-bottom: 2px solid var(--text-secondary);
       border-radius: 0 0 2px 0;
       margin: 0 2px 2px 0;
+    }
+
+    /* 卡片自定义宽度：关闭 flex 自动分配，使用显式宽度（高度 data-height 规则保留） */
+    .todo-item[data-width] {
+      flex: 0 0 auto;
+      min-width: 0;
+    }
+    .todo-item[data-width][data-height] .todo-content {
+      flex: 1 1 auto;
+    }
+    /* 仅有自定义宽度时（无自定义高度），内容区继续保持 auto */
+    .todo-item[data-width]:not([data-height]) .todo-content {
+      flex: 0 1 auto;
     }
 
     body.dark .resize-handle:hover {
@@ -639,6 +652,16 @@
     .action-btn.delete:hover {
       background-color: var(--danger-light);
       color: var(--danger-color);
+    }
+
+    .action-btn.email:hover {
+      background-color: #ede9fe;
+      color: #6d28d9;
+    }
+
+    body.dark .action-btn.email:hover {
+      background-color: #312e81;
+      color: #c4b5fd;
     }
 
     .empty-state {
@@ -1183,6 +1206,7 @@
       <div class="modal-header">
         <h2 class="modal-title" id="modalTitle">添加任务</h2>
         <div class="modal-header-actions">
+          <button class="btn btn-text btn-secondary" onclick="emailTodoFromModal()" style="background:transparent;color:#8b5cf6;border:1px solid #8b5cf6;" title="将当前任务内容发送邮件">📧 发邮件</button>
           <button class="btn btn-text btn-secondary" onclick="closeModal()">取消</button>
           <button class="btn btn-text btn-primary" onclick="saveTask()">保存</button>
           <button class="modal-close" onclick="closeModal()">✕</button>
@@ -1272,7 +1296,7 @@
     const PLUGIN_NAME = 'todolist';
     let todos = [];
     let currentFilter = 'all';
-    let currentTagFilter = null;
+    let currentTagFilter = []; // 多选标签数组，空数组 = 全部
     let searchQuery = '';
     let editingId = null;
     let pendingAttachments = [];
@@ -1280,7 +1304,10 @@
     let resizingEl = null;
     let resizingStartY = 0;
     let resizingStartH = 0;
+    let resizingStartX = 0;
+    let resizingStartW = 0;
     const MIN_CARD_HEIGHT = 120;
+    const MIN_CARD_WIDTH = 220;
 
     const TAG_COLORS = {};
 
@@ -1410,9 +1437,10 @@
       const container = document.getElementById('tagFilter');
       const tags = getUniqueTags();
 
-      let html = `<button class="tag-chip ${currentTagFilter === null ? 'active' : 'inactive'}" onclick="setTagFilter(null)" title="全部标签">全</button>`;
+      const allActive = currentTagFilter.length === 0;
+      let html = `<button class="tag-chip ${allActive ? 'active' : 'inactive'}" onclick="setTagFilter(null)" title="全部标签">全</button>`;
       tags.forEach(tag => {
-        const isActive = currentTagFilter === tag;
+        const isActive = currentTagFilter.includes(tag);
         const tagShort = tag.length > 1 ? tag.charAt(0) : tag;
         html += `<button class="tag-chip ${isActive ? 'active' : 'inactive'}" onclick="setTagFilter('${tag}')" title="${tag}">${tagShort}</button>`;
       });
@@ -1517,11 +1545,11 @@
         preview.classList.add('show');
         const htmlValue = htmlTextarea.value.trim();
         if (htmlValue) {
-          preview.innerHTML = htmlValue;
+          preview.innerHTML = adaptHtmlForTheme(htmlValue);
         } else {
           const todo = todos.find(t => t.id === editingId);
           if (todo && todo.htmlContent) {
-            preview.innerHTML = todo.htmlContent;
+            preview.innerHTML = adaptHtmlForTheme(todo.htmlContent);
           } else {
             preview.innerHTML = markdownToHtml(textarea.value);
           }
@@ -1956,7 +1984,18 @@
     }
 
     function setTagFilter(tag) {
-      currentTagFilter = tag;
+      if (tag === null) {
+        // 点击「全」：清除所有选择
+        currentTagFilter = [];
+      } else {
+        // toggle：已选中则取消，未选中则加入
+        const idx = currentTagFilter.indexOf(tag);
+        if (idx === -1) {
+          currentTagFilter.push(tag);
+        } else {
+          currentTagFilter.splice(idx, 1);
+        }
+      }
       renderTagFilter();
       renderTodos();
     }
@@ -1970,9 +2009,10 @@
       return todos.filter(todo => {
         if (currentFilter === 'completed' && !todo.completed) return false;
         if (currentFilter === 'pending' && todo.completed) return false;
-        if (currentTagFilter !== null) {
+        if (currentTagFilter.length > 0) {
           const tags = todo.tags && Array.isArray(todo.tags) ? todo.tags : (todo.tag ? [todo.tag] : []);
-          if (!tags.includes(currentTagFilter)) return false;
+          // OR 逻辑：只要匹配任一选中标签就保留
+          if (!currentTagFilter.some(t => tags.includes(t))) return false;
         }
         if (searchQuery && !todo.text.toLowerCase().includes(searchQuery)) return false;
         return true;
@@ -2024,21 +2064,24 @@
         const tagsHtml = tags.map(tag => `<span class="tag ${getTagColorClass(tag)}">#${tag}</span>`).join('');
         const heightStyle = todo.height ? `height: ${todo.height}px; max-height: none;` : '';
         const heightAttr = todo.height ? 'data-height="true"' : '';
+        const widthStyle = todo.width ? `width: ${todo.width}px;` : '';
+        const widthAttr = todo.width ? 'data-width="true"' : '';
         const todoBgStyle = todo.bgColor ? `background-color: ${todo.bgColor};` : '';
-        const cardStyle = [heightStyle, todoBgStyle].filter(Boolean).join(' ');
+        const cardStyle = [heightStyle, widthStyle, todoBgStyle].filter(Boolean).join(' ');
         return `
-        <div class="todo-item ${todo.completed ? 'completed' : ''}" data-id="${todo.id}" ${heightAttr} ondblclick="openEditModal('${todo.id}')" style="${cardStyle}">
+        <div class="todo-item ${todo.completed ? 'completed' : ''}" data-id="${todo.id}" ${heightAttr} ${widthAttr} ondblclick="openEditModal('${todo.id}')" style="${cardStyle}">
           <div class="todo-item-header">
             <div class="checkbox-wrapper" onclick="toggleComplete('${todo.id}')">
               <div class="checkbox ${todo.completed ? 'checked' : ''}"></div>
             </div>
             <div class="todo-actions">
+              <button class="action-btn email" onclick="emailTodo('${todo.id}')" title="发邮件">📧</button>
               <button class="action-btn edit" onclick="openEditModal('${todo.id}')" title="编辑">✏️</button>
               <button class="action-btn delete" onclick="deleteTodo('${todo.id}')" title="删除">🗑️</button>
             </div>
           </div>
           <div class="todo-content">
-            <div class="todo-text">${todo.htmlContent ? todo.htmlContent : renderMarkdown(todo.text)}</div>
+            <div class="todo-text">${todo.htmlContent ? adaptHtmlForTheme(todo.htmlContent) : renderMarkdown(todo.text)}</div>
             <div class="todo-meta">
               <div class="todo-tags">
                 ${tagsHtml}
@@ -2047,10 +2090,136 @@
             </div>
             ${renderAttachments(todo.attachments)}
           </div>
-          <div class="resize-handle" onmousedown="startResize(event, '${todo.id}')" ondblclick="resetHeight(event, '${todo.id}')" title="拖动调整高度，双击重置"></div>
+          <div class="resize-handle" onmousedown="startResize(event, '${todo.id}')" ondblclick="resetCardSize(event, '${todo.id}')" title="拖动调整宽度和高度，双击重置"></div>
         </div>
       `;
       }).join('');
+    }
+
+    // 检测 HTML 内容是否已经是暗色主题（黑色/深色背景 + 浅色文字）
+    function isDarkThemedHtml(html) {
+      if (!html) return false;
+      var hasDarkBg = /background(?:-color)?\s*:\s*#(?:000000|0a0a0a|0d0d0d|111111|1a1a1a|1e1e1e|222222|2d2d2d|333333|18181b|1c1c1e|09090b)/i.test(html);
+      var hasLightText = /color\s*:\s*#(?:ffffff|f8f9fa|f1f5f9|e2e8f0|f0f0f0|fafafa|fff(?![a-f0-9]))/i.test(html);
+      return hasDarkBg && hasLightText;
+    }
+
+    // 根据当前显示模式（白天/黑夜）适配外部传入的 HTML 内容颜色
+    // 只在渲染时调用，不影响数据存储
+    // 使用声明级别解析，逐个处理每个 CSS 属性，避免正则匹配遗漏
+    function adaptHtmlForTheme(html) {
+      if (!html) return html;
+      var isDark = document.body.classList.contains('dark');
+
+      var temp = document.createElement('div');
+      temp.innerHTML = html;
+      var allElements = temp.querySelectorAll('*');
+
+      for (var i = 0; i < allElements.length; i++) {
+        var el = allElements[i];
+        var style = el.getAttribute('style') || '';
+        if (!style) continue;
+
+        // 按分号拆分每个 CSS 声明，逐个处理（保留 !important）
+        var declarations = style.split(';');
+        var modified = false;
+
+        for (var j = 0; j < declarations.length; j++) {
+          var decl = declarations[j].trim();
+          if (!decl) continue;
+
+          var colonIdx = decl.indexOf(':');
+          if (colonIdx === -1) continue;
+
+          var prop = decl.substring(0, colonIdx).trim().toLowerCase();
+          var rest = decl.substring(colonIdx + 1).trim();
+
+          // 分离 !important 标记
+          var important = '';
+          if (rest.match(/!important\s*$/i)) {
+            important = ' !important';
+            rest = rest.replace(/\s*!important\s*$/, '').trim();
+          }
+
+          if (isDark) {
+            // === 黑夜模式 ===
+
+            // 1. 浅色背景 → 暗色背景 (#1e293b)
+            //    匹配: #fff, #ffffff, white, #f8fafc, #f1f5f9 等浅色值
+            if (prop === 'background' || prop === 'background-color') {
+              if (/^(?:#(?:ffffff|fff(?!\w)|f8fafc|f0f4ff|eff6ff|f1f5f9|fafafa|f9fafb|f8f9fa|fffbe6|fefce8)\b|white\b)/i.test(rest)) {
+                rest = '#1e293b';
+                modified = true;
+              }
+            }
+
+            // 2. 深色文字 → 亮色文字 (#e2e8f0)
+            //    匹配: #1e293b, #1f2937, #334155, #000000 等深色值
+            if (prop === 'color') {
+              if (/^#(?:1e293b|1f2937|334155|475569|64748b|000000|111111|222222|333333|cccccc|bbbbbb|aaaaaa|999999|888888|777777|666666|d1d5db)\b/i.test(rest)) {
+                rest = '#e2e8f0';
+                modified = true;
+              }
+            }
+
+            // 3. 暗色边框 → 可见边框 (#475569)
+            if (prop.indexOf('border') !== -1) {
+              if (/#(?:000000|111111|222222|333333|444444)\b/i.test(rest)) {
+                rest = rest.replace(/#(?:000000|111111|222222|333333|444444)\b/gi, '#475569');
+                modified = true;
+              }
+            }
+
+          } else {
+            // === 白天模式：暗色主题 → 亮色主题 ===
+
+            // 1. 暗色背景 → 白色背景
+            if (prop === 'background' || prop === 'background-color') {
+              if (/^#(?:000000|0a0a0a|0d0d0d|111111|1a1a1a|1e1e1e|222222|2d2d2d|333333|18181b|1c1c1e|09090b)\b/i.test(rest)) {
+                rest = '#ffffff';
+                modified = true;
+              }
+            }
+
+            // 2. 浅色文字 → 深色文字
+            if (prop === 'color') {
+              if (/^#(?:ffffff|fff(?!\w)|f8f9fa|f1f5f9|e2e8f0|f0f0f0|fafafa)\b/i.test(rest)) {
+                rest = '#1e293b';
+                modified = true;
+              }
+            }
+
+            // 3. 暗色边框 → 亮色边框
+            if (prop.indexOf('border') !== -1) {
+              if (/#(?:222222|333333|444444)\b/i.test(rest)) {
+                rest = rest.replace(/#(?:222222|333333|444444)\b/gi, '#cbd5e1');
+                modified = true;
+              }
+            }
+          }
+
+          // 重组声明（恢复 !important）
+          declarations[j] = decl.substring(0, colonIdx + 1) + ' ' + rest + important;
+        }
+
+        if (modified) {
+          el.setAttribute('style', declarations.join('; '));
+        }
+      }
+
+      return temp.innerHTML;
+    }
+
+    // 检测 HTML 中是否有在黑夜模式下不可读的颜色组合
+    function hasProblematicLightElements(html) {
+      if (!html) return false;
+      // 问题1：白色/浅色背景 + 浅色文字（白底+浅字=不可读）
+      var hasLightBg = /background(?:-color)?\s*:\s*#(?:ffffff|fff(?!\w)|f8fafc|f0f4ff|eff6ff|f1f5f9|fafafa|f9fafb)/i.test(html);
+      var hasLightText = /color\s*:\s*#(?:cccccc|bbbbbb|aaaaaa|999999|888888|777777|666666|d1d5db)/i.test(html);
+      // 问题2：暗色背景 + 暗色文字（暗底+暗字=不可读，斑马纹表格常见）
+      var hasDarkBg = /background(?:-color)?\s*:\s*#(?:000000|0a0a0a|0d0d0d|111111|1a1a1a|1e1e1e|222222|2d2d2d|333333|18181b|1c1c1e|09090b)/i.test(html);
+      var hasDarkText = /color\s*:\s*#(?:1e293b|334155|475569|64748b|000000|111111|222222|333333)/i.test(html);
+      return (hasLightBg && hasLightText) || (hasDarkBg && hasDarkText);
     }
 
     function escapeHtml(text) {
@@ -2115,6 +2284,176 @@
       if (!confirm('确定删除这个任务吗？')) return;
       todos = todos.filter(t => t.id !== id);
       saveTodos();
+    }
+
+    // 📧 在编辑弹窗内点击「发邮件」按钮：直接发送已保存的 ToDo 内容（若为新增任务则提示先保存）
+    async function emailTodoFromModal() {
+      if (!editingId) {
+        alert('当前是新增任务，请先「保存」后再发送邮件');
+        return;
+      }
+      await emailTodo(editingId);
+    }
+
+    // 📧 将 ToDo 卡片内容发送邮件（通过 electronAPI.sendToHost 发请求给主窗口 email 模块处理，与截图一完全一致的弹窗+发送链路）
+    (function initTodoEmailClient() {
+      const pending = new Map(); // requestId -> { resolve, timeoutId }
+      let seq = 1;
+      let bridgeHealthy = false; // 启动时 ping 成功后置为 true
+      let bridgeCheckDone = false;
+
+      // 主窗口处理完邮件流程后，通过 webview.executeJavaScript 调用这个全局函数回传结果
+      window.__resolveTodoEmailRequest = function(requestId, payload) {
+        const entry = pending.get(requestId);
+        if (!entry) return;
+        pending.delete(requestId);
+        if (entry.timeoutId) clearTimeout(entry.timeoutId);
+        try { entry.resolve(payload); } catch (e) { /* ignore */ }
+      };
+
+      // 启动检测：发一个 ping 请求看主窗口监听器是否挂好，5 秒内回不来提示用户可能需重启
+      function checkBridgeHealth() {
+        if (bridgeCheckDone) return Promise.resolve(bridgeHealthy);
+        bridgeCheckDone = true;
+
+        return new Promise((resolve) => {
+          if (!window.electronAPI || typeof window.electronAPI.sendToHost !== 'function') {
+            resolve(false);
+            return;
+          }
+
+          const pingId = 'todo-ping-' + Date.now() + '-' + (seq++);
+          const timeoutId = setTimeout(() => {
+            if (pending.has(pingId)) {
+              pending.delete(pingId);
+              bridgeHealthy = false;
+              resolve(false);
+            }
+          }, 5000);
+
+          pending.set(pingId, {
+            resolve: (payload) => {
+              clearTimeout(timeoutId);
+              bridgeHealthy = !!(payload && (payload.ok || payload.cancelled !== undefined || payload.success !== undefined || payload.error));
+              resolve(bridgeHealthy);
+            },
+            timeoutId,
+          });
+
+          try {
+            window.electronAPI.sendToHost('todolist-email-request', {
+              requestId: pingId,
+              __ping: true,
+              todo: { id: '__ping__', text: '', htmlContent: '', tags: [], createdAt: null, completed: false },
+            });
+          } catch (e) {
+            pending.delete(pingId);
+            clearTimeout(timeoutId);
+            bridgeHealthy = false;
+            resolve(false);
+          }
+        });
+      }
+
+      window.__sendTodoEmailRequest = function(todo) {
+        return new Promise(async (resolve, reject) => {
+          if (!window.electronAPI || typeof window.electronAPI.sendToHost !== 'function') {
+            reject(new Error('preload.js 未暴露 electronAPI.sendToHost（请检查 Electron 配置）'));
+            return;
+          }
+
+          // 首次调用先做健康检查（快速失败）
+          if (!bridgeCheckDone) {
+            const ok = await checkBridgeHealth();
+            if (!ok) {
+              reject(new Error('主窗口邮件桥接未启动（建议重启整个应用后重试，或确认 email.js 已加载）'));
+              return;
+            }
+          }
+          if (bridgeCheckDone && !bridgeHealthy) {
+            reject(new Error('主窗口邮件桥接不可用（建议重启整个应用后重试）'));
+            return;
+          }
+
+          const requestId = 'todo-email-' + Date.now() + '-' + (seq++);
+          const timeoutId = setTimeout(() => {
+            if (pending.has(requestId)) {
+              pending.delete(requestId);
+              reject(new Error('邮件请求超时（主窗口未响应。请确认已在主窗口加载 email.js，或尝试完全重启应用）'));
+            }
+          }, 60 * 1000); // 最长 1 分钟（用户输入邮箱+点发送都应该在这时间内完成）
+
+          pending.set(requestId, { resolve, timeoutId });
+
+          try {
+            // 发送 Todo 的基础数据（tags/htmlContent/text/completed/createdAt），主窗口负责构建+渲染+发送
+            window.electronAPI.sendToHost('todolist-email-request', {
+              requestId,
+              todo: {
+                id: todo.id,
+                text: todo.text || '',
+                htmlContent: todo.htmlContent || '',
+                tags: (todo.tags && Array.isArray(todo.tags)) ? todo.tags : (todo.tag ? [todo.tag] : []),
+                createdAt: todo.createdAt || null,
+                completed: !!todo.completed,
+                bgColor: todo.bgColor || '',
+              },
+            });
+          } catch (e) {
+            pending.delete(requestId);
+            clearTimeout(timeoutId);
+            reject(e);
+          }
+        });
+      };
+
+      // DOM 加载后立即发起一次健康检查，早发现问题早提示
+      if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', () => setTimeout(checkBridgeHealth, 1000));
+      } else {
+        setTimeout(checkBridgeHealth, 1000);
+      }
+    })();
+
+    async function emailTodo(id) {
+      try {
+        const todo = todos.find(t => t.id === id);
+        if (!todo) { alert('找不到对应的 ToDo 卡片'); return; }
+
+        if (typeof window.__sendTodoEmailRequest !== 'function') {
+          alert('邮件客户端初始化失败，请刷新 ToDoList 插件页签后再试');
+          return;
+        }
+
+        //  发送前确认：显示任务标题，让用户确认后再发送
+        const firstLine = (todo.text || '').split('\n')[0].trim().substring(0, 80) || '(无标题)';
+        if (!confirm('确定要将以下 ToDo 卡片内容发送邮件吗？\n\n「' + firstLine + '」')) {
+          return;
+        }
+
+        const result = await window.__sendTodoEmailRequest(todo);
+
+        if (!result) {
+          alert('邮件发送无响应');
+          return;
+        }
+        if (result.cancelled) {
+          // 用户取消（收件人对话框点取消/关闭/Esc）
+          return;
+        }
+        if (result.success) {
+          if (!result.result || result.result.success) {
+            // 发送成功提示（浮动视窗和主窗口状态栏已经由 sendUnifiedEmail 做了）
+          } else {
+            alert('邮件发送失败：' + (result.result?.message || '未知错误'));
+          }
+        } else {
+          alert('邮件发送失败：' + (result.error || '未知错误'));
+        }
+      } catch (err) {
+        console.error('[toDoList] 发送邮件失败:', err);
+        alert('发送邮件失败：' + (err?.message || err));
+      }
     }
 
     function clearCompleted() {
@@ -2358,29 +2697,42 @@
       resizingId = id;
       resizingEl = document.querySelector(`.todo-item[data-id="${id}"]`);
       if (!resizingEl) return;
+      const rect = resizingEl.getBoundingClientRect();
+      // 记录起始坐标和尺寸（宽高都处理）
       resizingStartY = event.clientY;
-      resizingStartH = resizingEl.getBoundingClientRect().height;
+      resizingStartH = rect.height;
+      resizingStartX = event.clientX;
+      resizingStartW = rect.width;
       resizingEl.setAttribute('data-height', 'true');
+      resizingEl.setAttribute('data-width', 'true');
       document.body.style.userSelect = 'none';
-      document.body.style.cursor = 'ns-resize';
+      document.body.style.cursor = 'nwse-resize';
       document.addEventListener('mousemove', onResize);
       document.addEventListener('mouseup', stopResize);
     }
 
     function onResize(event) {
       if (!resizingEl) return;
-      const delta = event.clientY - resizingStartY;
-      const newHeight = Math.max(MIN_CARD_HEIGHT, resizingStartH + delta);
+      // 高度调整
+      const deltaY = event.clientY - resizingStartY;
+      const newHeight = Math.max(MIN_CARD_HEIGHT, resizingStartH + deltaY);
       resizingEl.style.height = newHeight + 'px';
       resizingEl.style.maxHeight = 'none';
+      // 宽度调整
+      const deltaX = event.clientX - resizingStartX;
+      const newWidth = Math.max(MIN_CARD_WIDTH, resizingStartW + deltaX);
+      resizingEl.style.width = newWidth + 'px';
     }
 
     async function stopResize() {
       if (resizingEl && resizingId) {
-        const newHeight = Math.round(resizingEl.getBoundingClientRect().height);
+        const rect = resizingEl.getBoundingClientRect();
+        const newHeight = Math.round(rect.height);
+        const newWidth = Math.round(rect.width);
         const todo = todos.find(t => t.id === resizingId);
         if (todo) {
           todo.height = newHeight;
+          todo.width = newWidth;
           await saveTodos();
         }
       }
@@ -2392,13 +2744,15 @@
       document.removeEventListener('mouseup', stopResize);
     }
 
-    async function resetHeight(event, id) {
+    async function resetCardSize(event, id) {
       event.preventDefault();
       event.stopPropagation();
       const todo = todos.find(t => t.id === id);
-      if (todo && todo.height) {
-        delete todo.height;
-        await saveTodos();
+      if (todo) {
+        let changed = false;
+        if (todo.height) { delete todo.height; changed = true; }
+        if (todo.width) { delete todo.width; changed = true; }
+        if (changed) await saveTodos();
       }
     }
 
