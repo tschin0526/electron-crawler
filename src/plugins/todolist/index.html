@@ -549,12 +549,30 @@
       margin-top: 4px;
       border-top: 1px solid rgba(0, 0, 0, 0.08);
     }
+    .todo-footer-left {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex: 1;
+      min-width: 0;
+    }
     .todo-footer .todo-tags {
       display: flex;
       gap: 4px;
       flex-wrap: wrap;
       min-width: 0;
-      flex: 1;
+    }
+    .pinned-badge {
+      flex-shrink: 0;
+      font-size: 11px;
+      color: #b45309;
+      background: #fef3c7;
+      padding: 1px 6px;
+      border-radius: 4px;
+    }
+    body.dark .pinned-badge {
+      color: #fcd34d;
+      background: #78350f;
     }
 
     .todo-tags {
@@ -686,9 +704,28 @@
       color: #6d28d9;
     }
 
+    .action-btn.pin {
+      opacity: 0.5;
+    }
+    .action-btn.pin:hover {
+      background-color: #fef3c7;
+    }
+    .action-btn.pin.active {
+      opacity: 1;
+    }
+    .action-btn.pin.active:hover {
+      background-color: #fde68a;
+    }
+
     body.dark .action-btn.email:hover {
       background-color: #312e81;
       color: #c4b5fd;
+    }
+    body.dark .action-btn.pin:hover {
+      background-color: #78350f;
+    }
+    body.dark .action-btn.pin.active:hover {
+      background-color: #92400e;
     }
 
     .empty-state {
@@ -2058,8 +2095,12 @@
         if (searchQuery && !todo.text.toLowerCase().includes(searchQuery)) return false;
         return true;
       });
-      // 按最后异动时间降序排列（最新的在前）
+      // 排序：置顶卡片优先，然后按最后异动时间降序
       return filtered.sort((a, b) => {
+        // 置顶的排在前面
+        if (a.pinned && !b.pinned) return -1;
+        if (!a.pinned && b.pinned) return 1;
+        // 都置顶或都不置顶，按时间排序
         const timeA = a.updatedAt || a.createdAt || 0;
         const timeB = b.updatedAt || b.createdAt || 0;
         return timeB - timeA;
@@ -2116,13 +2157,15 @@
         const widthAttr = todo.width ? 'data-width="true"' : '';
         const todoBgStyle = todo.bgColor ? `background-color: ${todo.bgColor};` : '';
         const cardStyle = [heightStyle, widthStyle, todoBgStyle].filter(Boolean).join(' ');
+        const pinnedAttr = todo.pinned ? 'data-pinned="true"' : '';
         return `
-        <div class="todo-item ${todo.completed ? 'completed' : ''}" data-id="${todo.id}" ${heightAttr} ${widthAttr} ondblclick="openEditModal('${todo.id}')" style="${cardStyle}">
+        <div class="todo-item ${todo.completed ? 'completed' : ''} ${todo.pinned ? 'pinned' : ''}" data-id="${todo.id}" ${heightAttr} ${widthAttr} ${pinnedAttr} ondblclick="openEditModal('${todo.id}')" style="${cardStyle}">
           <div class="todo-item-header">
             <div class="checkbox-wrapper" onclick="toggleComplete('${todo.id}')">
               <div class="checkbox ${todo.completed ? 'checked' : ''}"></div>
             </div>
             <div class="todo-actions">
+              <button class="action-btn pin ${todo.pinned ? 'active' : ''}" onclick="togglePin('${todo.id}')" title="${todo.pinned ? '取消置顶' : '置顶'}">📌</button>
               <button class="action-btn email" onclick="emailTodo('${todo.id}')" title="发邮件">📧</button>
               <button class="action-btn edit" onclick="openEditModal('${todo.id}')" title="编辑">✏️</button>
               <button class="action-btn delete" onclick="deleteTodo('${todo.id}')" title="删除">🗑️</button>
@@ -2133,8 +2176,11 @@
             ${renderAttachments(todo.attachments)}
           </div>
           <div class="todo-footer">
-            <div class="todo-tags">
-              ${tagsHtml}
+            <div class="todo-footer-left">
+              ${todo.pinned ? '<span class="pinned-badge">📌 置顶</span>' : ''}
+              <div class="todo-tags">
+                ${tagsHtml}
+              </div>
             </div>
             <span class="todo-date" title="最后异动时间">${formatDate(todo.updatedAt || todo.createdAt)}</span>
           </div>
@@ -2324,6 +2370,16 @@
       if (todo) {
         todo.completed = !todo.completed;
         todo.completedAt = todo.completed ? Date.now() : null;
+        todo.updatedAt = Date.now();
+        saveTodos();
+      }
+    }
+
+    function togglePin(id) {
+      const todo = todos.find(t => t.id === id);
+      if (todo) {
+        todo.pinned = !todo.pinned;
+        // 置顶/取消置顶视为内容异动，更新时间
         todo.updatedAt = Date.now();
         saveTodos();
       }
