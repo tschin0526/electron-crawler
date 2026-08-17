@@ -198,7 +198,124 @@ function init(shared) {
     }
   });
 
-  // 🆕 脚本数据持久化（独立于 bookmarks.json，避免互相影响）
+  // ========== ToDo 卡片独立文件存储（每个卡片一个 JSON） ==========
+  // 文件命名：todo-{id}.json，存放在 PLUGINS_DATA_DIR 下
+
+  // 从旧的 todolist.json 迁移到独立文件
+  async function migrateOldTodolistFile() {
+    const oldFile = path.join(PLUGINS_DATA_DIR, 'todolist.json');
+    if (!fs.existsSync(oldFile)) return;
+    try {
+      const data = fs.readFileSync(oldFile, 'utf8');
+      const oldTodos = JSON.parse(data);
+      if (!Array.isArray(oldTodos) || oldTodos.length === 0) return;
+
+      if (!fs.existsSync(PLUGINS_DATA_DIR)) {
+        fs.mkdirSync(PLUGINS_DATA_DIR, { recursive: true });
+      }
+      for (const todo of oldTodos) {
+        if (!todo.id) continue;
+        const filePath = path.join(PLUGINS_DATA_DIR, `todo-${todo.id}.json`);
+        if (!fs.existsSync(filePath)) {
+          fs.writeFileSync(filePath, JSON.stringify(todo, null, 2), 'utf8');
+        }
+      }
+      // 重命名旧文件为备份，避免重复迁移
+      const backupFile = path.join(PLUGINS_DATA_DIR, 'todolist.json.bak');
+      fs.renameSync(oldFile, backupFile);
+      console.log(`[Main] ✅ 已从 todolist.json 迁移 ${oldTodos.length} 条到独立文件，旧文件备份为 todolist.json.bak`);
+    } catch (error) {
+      console.error('[Main] 旧 todolist.json 迁移失败:', error);
+    }
+  }
+  ipcMain.handle('load-todos', async () => {
+    try {
+      // 确保目录存在
+      if (!fs.existsSync(PLUGINS_DATA_DIR)) {
+        fs.mkdirSync(PLUGINS_DATA_DIR, { recursive: true });
+      }
+      // 尝试从旧的 todolist.json 迁移
+      await migrateOldTodolistFile();
+      const files = fs.readdirSync(PLUGINS_DATA_DIR)
+        .filter(f => f.startsWith('todo-') && f.endsWith('.json'));
+      const todos = [];
+      for (const file of files) {
+        try {
+          const filePath = path.join(PLUGINS_DATA_DIR, file);
+          const data = fs.readFileSync(filePath, 'utf8');
+          const todo = JSON.parse(data);
+          if (todo && todo.id) todos.push(todo);
+        } catch (e) {
+          console.warn(`[Main] 读取 todo 文件失败：${file}`, e.message);
+        }
+      }
+      // 按最近活动时间排序（最新的在前）：优先 updatedAt，其次 createdAt
+      todos.sort((a, b) => {
+        const aTime = a.updatedAt || a.createdAt || 0;
+        const bTime = b.updatedAt || b.createdAt || 0;
+        return bTime - aTime;
+      });
+      console.log(`[Main] ToDo 加载成功：${todos.length} 条（${files.length} 个文件）`);
+      return { success: true, data: todos };
+    } catch (error) {
+      console.error('[Main] 加载 ToDo 数据失败:', error);
+      return { success: false, error: error.message, data: [] };
+    }
+  });
+
+  ipcMain.handle('save-todos', async (event, todos) => {
+    try {
+      if (!fs.existsSync(PLUGINS_DATA_DIR)) {
+        fs.mkdirSync(PLUGINS_DATA_DIR, { recursive: true });
+      }
+      const currentIds = new Set((todos || []).map(t => t.id));
+      let writeCount = 0;
+      // 只写入有变化的文件（对比内容，避免不必要的写入）
+      for (const todo of todos) {
+        if (!todo.id) continue;
+        const filePath = path.join(PLUGINS_DATA_DIR, `todo-${todo.id}.json`);
+        const newContent = JSON.stringify(todo, null, 2);
+        // 如果文件已存在且内容相同，跳过写入
+        if (fs.existsSync(filePath)) {
+          const existingContent = fs.readFileSync(filePath, 'utf8');
+          if (existingContent === newContent) continue;
+        }
+        fs.writeFileSync(filePath, newContent, 'utf8');
+        writeCount++;
+      }
+      // 清理孤儿文件（磁盘上有但数据中已不存在的）
+      const files = fs.readdirSync(PLUGINS_DATA_DIR)
+        .filter(f => f.startsWith('todo-') && f.endsWith('.json'));
+      for (const file of files) {
+        const fileId = file.replace('todo-', '').replace('.json', '');
+        if (!currentIds.has(fileId)) {
+          fs.unlinkSync(path.join(PLUGINS_DATA_DIR, file));
+          console.log(`[Main] 清理孤儿 todo 文件: ${file}`);
+        }
+      }
+      console.log(`[Main] ToDo 已保存: ${todos.length} 条（实际写入 ${writeCount} 个文件）`);
+      return { success: true };
+    } catch (error) {
+      console.error('[Main] 保存 ToDo 数据失败:', error);
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('delete-todo-file', async (event, todoId) => {
+    try {
+      const filePath = path.join(PLUGINS_DATA_DIR, `todo-${todoId}.json`);
+      if (fs.existsSync(filePath)) {
+        fs.unlinkSync(filePath);
+        console.log(`[Main] 已删除 todo 文件: todo-${todoId}.json`);
+      }
+      return { success: true };
+    } catch (error) {
+      console.error(`[Main] 删除 todo 文件失败: ${todoId}`, error);
+      return { success: false, error: error.message };
+    }
+  });
+
+  //  脚本数据持久化（独立于 bookmarks.json，避免互相影响）
   const SCRIPTS_FILE = path.join(PLUGINS_DATA_DIR, 'scripts.json');
 
   ipcMain.handle('load-scripts-data', () => {

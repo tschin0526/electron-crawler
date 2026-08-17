@@ -209,6 +209,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
   loadPluginData: (pluginName) => ipcRenderer.invoke('load-plugin-data', pluginName),
   savePluginData: (pluginName, data) => ipcRenderer.invoke('save-plugin-data', pluginName, data),
 
+  // ToDo 卡片独立文件存储
+  loadTodos: () => ipcRenderer.invoke('load-todos'),
+  saveTodos: (todos) => ipcRenderer.invoke('save-todos', todos),
+  deleteTodoFile: (todoId) => ipcRenderer.invoke('delete-todo-file', todoId),
+
   // 读取股票配置（HTTP Get 智能识别用）
   readStockConfig: () => ipcRenderer.invoke('read-stock-config'),
 

@@ -383,6 +383,7 @@
       align-items: flex-start;
       justify-content: space-between;
       margin-bottom: 6px;
+      flex-shrink: 0;
     }
 
     .checkbox-wrapper {
@@ -434,7 +435,7 @@
     }
 
     .todo-content {
-      flex: 0 1 auto;
+      flex: 1 1 auto;
       min-width: 0;
       min-height: 0;
       overflow: auto;
@@ -444,13 +445,35 @@
       padding: 6px;
     }
 
-    .todo-item[data-height] .todo-content {
-      flex: 1 1 auto;
+    /* 内容区滚动条样式：横向和纵向都清晰可见 */
+    .todo-content::-webkit-scrollbar {
+      width: 8px;
+      height: 8px;
+    }
+    .todo-content::-webkit-scrollbar-track {
+      background: rgba(0, 0, 0, 0.05);
+      border-radius: 4px;
+    }
+    .todo-content::-webkit-scrollbar-thumb {
+      background: var(--text-secondary);
+      border-radius: 4px;
+      opacity: 0.5;
+    }
+    .todo-content::-webkit-scrollbar-thumb:hover {
+      background: var(--text-primary);
+    }
+    /* Firefox 滚动条 */
+    .todo-content {
+      scrollbar-width: thin;
+      scrollbar-color: var(--text-secondary) transparent;
     }
 
     body.dark .todo-content {
       background: rgba(0, 0, 0, 0.22);
       border-color: rgba(0, 0, 0, 0.3);
+    }
+    body.dark .todo-footer {
+      border-top-color: rgba(255, 255, 255, 0.08);
     }
 
     .todo-text {
@@ -515,11 +538,23 @@
     body.dark .todo-text th { background: #334155 !important; }
     body.dark .todo-text tr:nth-child(even) { background: #1e293b !important; }
 
-    .todo-meta {
+    /* 卡片底部固定区域：显示标签和最后异动时间 */
+    .todo-footer {
       display: flex;
       align-items: center;
+      justify-content: space-between;
       gap: 8px;
+      flex-shrink: 0;
+      padding-top: 6px;
+      margin-top: 4px;
+      border-top: 1px solid rgba(0, 0, 0, 0.08);
+    }
+    .todo-footer .todo-tags {
+      display: flex;
+      gap: 4px;
       flex-wrap: wrap;
+      min-width: 0;
+      flex: 1;
     }
 
     .todo-tags {
@@ -608,17 +643,9 @@
       margin: 0 2px 2px 0;
     }
 
-    /* 卡片自定义宽度：关闭 flex 自动分配，使用显式宽度（高度 data-height 规则保留） */
+    /* 卡片自定义宽度：使用 width 固定宽度，flex 不参与弹性分配 */
     .todo-item[data-width] {
       flex: 0 0 auto;
-      min-width: 0;
-    }
-    .todo-item[data-width][data-height] .todo-content {
-      flex: 1 1 auto;
-    }
-    /* 仅有自定义宽度时（无自定义高度），内容区继续保持 auto */
-    .todo-item[data-width]:not([data-height]) .todo-content {
-      flex: 0 1 auto;
     }
 
     body.dark .resize-handle:hover {
@@ -1337,17 +1364,31 @@
           return;
         }
 
-        const result = await window.electronAPI.loadPluginData(PLUGIN_NAME);
-        if (result.success && result.data && result.data.length > 0) {
-          todos = result.data;
-          console.log(`[TodoList] 从 JSON 文件加载数据: ${todos.length} 条`);
+        const result = await window.electronAPI.loadTodos();
+        if (result.success) {
+          // success=true 表示加载成功（即使 data 为空数组也是正常状态）
+          todos = result.data || [];
+          // 数据迁移：给没有 updatedAt 的旧数据补充 updatedAt（使用 createdAt 作为默认值）
+          let needSave = false;
+          todos.forEach(todo => {
+            if (!todo.updatedAt) {
+              todo.updatedAt = todo.createdAt || Date.now();
+              needSave = true;
+            }
+          });
+          if (needSave) {
+            await saveTodos();
+            console.log('[TodoList] 已为旧数据补充 updatedAt 字段');
+          }
+          console.log(`[TodoList] 从独立 JSON 文件加载数据: ${todos.length} 条`);
         } else {
+          // 只有 result.success=false 才视为失败，尝试从 localStorage 迁移
           todos = [];
-          console.log(`[TodoList] JSON 文件为空或不存在，尝试从 localStorage 迁移...`);
+          console.log(`[TodoList] 加载失败，尝试从 localStorage 迁移...`);
           await migrateFromLocalStorage();
         }
       } catch (error) {
-        console.error('[TodoList] 加载数据失败:', error);
+        console.error('[TodoList] 加载数据异常:', error);
         todos = [];
         await migrateFromLocalStorage();
       }
@@ -1361,9 +1402,9 @@
           return;
         }
 
-        const result = await window.electronAPI.savePluginData(PLUGIN_NAME, todos);
+        const result = await window.electronAPI.saveTodos(todos);
         if (result.success) {
-          console.log(`[TodoList] 数据已保存到 JSON 文件: ${todos.length} 条`);
+          console.log(`[TodoList] 数据已保存到独立 JSON 文件: ${todos.length} 条`);
         } else {
           console.error('[TodoList] 保存数据失败:', result.error);
         }
@@ -1398,9 +1439,9 @@
             const oldData = JSON.parse(saved);
             if (oldData && oldData.length > 0) {
               todos = oldData;
-              await window.electronAPI.savePluginData(PLUGIN_NAME, todos);
+              await window.electronAPI.saveTodos(todos);
               localStorage.removeItem(STORAGE_KEY);
-              console.log(`[TodoList] ✅ 已从 localStorage 迁移 ${todos.length} 条数据到 JSON 文件`);
+              console.log(`[TodoList] ✅ 已从 localStorage 迁移 ${todos.length} 条数据到独立 JSON 文件`);
             }
           } catch (e) {
             console.warn('[TodoList] localStorage 数据解析失败，跳过迁移');
@@ -2006,7 +2047,7 @@
     }
 
     function filterTodos() {
-      return todos.filter(todo => {
+      const filtered = todos.filter(todo => {
         if (currentFilter === 'completed' && !todo.completed) return false;
         if (currentFilter === 'pending' && todo.completed) return false;
         if (currentTagFilter.length > 0) {
@@ -2016,6 +2057,12 @@
         }
         if (searchQuery && !todo.text.toLowerCase().includes(searchQuery)) return false;
         return true;
+      });
+      // 按最后异动时间降序排列（最新的在前）
+      return filtered.sort((a, b) => {
+        const timeA = a.updatedAt || a.createdAt || 0;
+        const timeB = b.updatedAt || b.createdAt || 0;
+        return timeB - timeA;
       });
     }
 
@@ -2064,6 +2111,7 @@
         const tagsHtml = tags.map(tag => `<span class="tag ${getTagColorClass(tag)}">#${tag}</span>`).join('');
         const heightStyle = todo.height ? `height: ${todo.height}px; max-height: none;` : '';
         const heightAttr = todo.height ? 'data-height="true"' : '';
+        // 使用 width 而非 min-width，配合 flex: 0 0 auto 实现固定宽度
         const widthStyle = todo.width ? `width: ${todo.width}px;` : '';
         const widthAttr = todo.width ? 'data-width="true"' : '';
         const todoBgStyle = todo.bgColor ? `background-color: ${todo.bgColor};` : '';
@@ -2082,13 +2130,13 @@
           </div>
           <div class="todo-content">
             <div class="todo-text">${todo.htmlContent ? adaptHtmlForTheme(todo.htmlContent) : renderMarkdown(todo.text)}</div>
-            <div class="todo-meta">
-              <div class="todo-tags">
-                ${tagsHtml}
-              </div>
-              <span class="todo-date">${formatDate(todo.createdAt)}</span>
-            </div>
             ${renderAttachments(todo.attachments)}
+          </div>
+          <div class="todo-footer">
+            <div class="todo-tags">
+              ${tagsHtml}
+            </div>
+            <span class="todo-date" title="最后异动时间">${formatDate(todo.updatedAt || todo.createdAt)}</span>
           </div>
           <div class="resize-handle" onmousedown="startResize(event, '${todo.id}')" ondblclick="resetCardSize(event, '${todo.id}')" title="拖动调整宽度和高度，双击重置"></div>
         </div>
@@ -2276,6 +2324,7 @@
       if (todo) {
         todo.completed = !todo.completed;
         todo.completedAt = todo.completed ? Date.now() : null;
+        todo.updatedAt = Date.now();
         saveTodos();
       }
     }
@@ -2283,6 +2332,10 @@
     function deleteTodo(id) {
       if (!confirm('确定删除这个任务吗？')) return;
       todos = todos.filter(t => t.id !== id);
+      // 立即删除对应的独立 JSON 文件
+      if (window.electronAPI && window.electronAPI.deleteTodoFile) {
+        window.electronAPI.deleteTodoFile(id).catch(e => console.warn('[TodoList] 删除 todo 文件失败:', e));
+      }
       saveTodos();
     }
 
@@ -2705,6 +2758,13 @@
       resizingStartW = rect.width;
       resizingEl.setAttribute('data-height', 'true');
       resizingEl.setAttribute('data-width', 'true');
+      // 拖拽时强制脱离 flex 弹性分配，使用固定像素宽度
+      // 无论卡片之前是否有自定义宽度，都统一使用 width 固定尺寸
+      resizingEl.style.flex = '0 0 auto';
+      resizingEl.style.minWidth = '0';
+      resizingEl.style.width = rect.width + 'px';
+      resizingEl.style.height = rect.height + 'px';
+      resizingEl.style.maxHeight = 'none';
       document.body.style.userSelect = 'none';
       document.body.style.cursor = 'nwse-resize';
       document.addEventListener('mousemove', onResize);
@@ -2717,8 +2777,7 @@
       const deltaY = event.clientY - resizingStartY;
       const newHeight = Math.max(MIN_CARD_HEIGHT, resizingStartH + deltaY);
       resizingEl.style.height = newHeight + 'px';
-      resizingEl.style.maxHeight = 'none';
-      // 宽度调整
+      // 宽度调整：直接使用 width，更直观可靠
       const deltaX = event.clientX - resizingStartX;
       const newWidth = Math.max(MIN_CARD_WIDTH, resizingStartW + deltaX);
       resizingEl.style.width = newWidth + 'px';
@@ -2733,8 +2792,15 @@
         if (todo) {
           todo.height = newHeight;
           todo.width = newWidth;
+          // 调整卡片尺寸不视为内容异动，不更新 updatedAt
           await saveTodos();
         }
+        // 清除所有拖拽时的内联样式，交由 renderTodos 重新渲染时应用持久化的尺寸
+        resizingEl.style.flex = '';
+        resizingEl.style.minWidth = '';
+        resizingEl.style.width = '';
+        resizingEl.style.height = '';
+        resizingEl.style.maxHeight = '';
       }
       resizingId = null;
       resizingEl = null;
@@ -2752,7 +2818,10 @@
         let changed = false;
         if (todo.height) { delete todo.height; changed = true; }
         if (todo.width) { delete todo.width; changed = true; }
-        if (changed) await saveTodos();
+        if (changed) {
+          // 重置卡片尺寸不视为内容异动，不更新 updatedAt
+          await saveTodos();
+        }
       }
     }
 
