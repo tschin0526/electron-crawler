@@ -104,6 +104,18 @@
     body.dark .todo-header {
       background: linear-gradient(180deg, var(--todo-bg) 0%, #14532d 100%);
     }
+    body.dark .search-box {
+      background-color: rgba(0, 0, 0, 0.3);
+      border-color: rgba(255, 255, 255, 0.1);
+      color: var(--text-primary);
+    }
+    body.dark .search-box::placeholder {
+      color: var(--text-secondary);
+    }
+    body.dark .search-box:focus {
+      border-color: var(--primary-color);
+      box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.2);
+    }
 
     .todo-header h1 {
       font-size: 16px;
@@ -341,6 +353,10 @@
       padding: 1px 2px;
       border-radius: 2px;
       font-weight: bold;
+    }
+    body.dark .search-highlight {
+      background-color: #f59e0b;
+      color: #000;
     }
 
     .todo-list::-webkit-scrollbar-thumb:hover {
@@ -2083,6 +2099,19 @@
       renderTodos();
     }
 
+    // 高亮文本中的搜索关键字
+    function highlightText(text) {
+      if (!searchQuery || !text) return escapeHtml(text);
+      const escaped = escapeHtml(text);
+      const regex = new RegExp(`(${escapeRegExp(searchQuery)})`, 'gi');
+      return escaped.replace(regex, '<mark class="search-highlight">$1</mark>');
+    }
+
+    // 转义正则特殊字符
+    function escapeRegExp(string) {
+      return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    }
+
     function filterTodos() {
       const filtered = todos.filter(todo => {
         if (currentFilter === 'completed' && !todo.completed) return false;
@@ -2172,7 +2201,7 @@
             </div>
           </div>
           <div class="todo-content">
-            <div class="todo-text">${todo.htmlContent ? adaptHtmlForTheme(todo.htmlContent) : renderMarkdown(todo.text)}</div>
+            <div class="todo-text">${todo.htmlContent ? adaptHtmlForTheme(todo.htmlContent) : (searchQuery ? highlightText(todo.text) : renderMarkdown(todo.text))}</div>
             ${renderAttachments(todo.attachments)}
           </div>
           <div class="todo-footer">
