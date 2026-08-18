@@ -59,6 +59,7 @@ function initWorkspaceContainers() {
               <button class="toolbar-btn" id="zoomModeBtn${wsSuffix}" onclick="toggleWorkspaceZoomMode('${wsId}')" title="切换显示模式：视口/缩放" style="background: #fce7f3; color: #be185d;">视口</button>
               <button class="toolbar-btn" onclick="zoomWorkspace('${wsId}', 1.1)" title="放大窗口">+</button>
               <button class="toolbar-btn" onclick="zoomWorkspace('${wsId}', 0.9)" title="缩小窗口">−</button>
+              <button class="toolbar-btn toolbar-btn-orange" id="scrollLockBtn${wsSuffix}" onclick="toggleScrollLock('${wsId}')" title="切换滚动锁定：锁定后只允许在当前应用中滚动">🔓</button>
               <button class="toolbar-btn toolbar-btn-red" onclick="closeWorkspace('${wsId}')" title="关闭工作区">✕</button>
             </div>
           </div>
@@ -3819,12 +3820,92 @@ function initWebviewEvents(webviewId, loadingId) {
       await applyWorkspaceDarkModeToWebview(webview);
     }
 
+    // 注入滚动锁定脚本（阻止滚动传播到父容器）
+    // 从 webviewId 提取工作区 ID
+    const wsMatch = webviewId.match(/^previewWebview(?:-(.+))?$/);
+    const wsId = wsMatch ? (wsMatch[1] || 'MAIN') : 'MAIN';
+    const savedScrollLock = localStorage.getItem(`scrollLock_${wsId}`);
+    const initialLockState = savedScrollLock === '1';
+
+    await webview.executeJavaScript(`
+      (function() {
+        // 滚动锁定状态（根据 localStorage 恢复）
+        window.__scrollLockEnabled = ${initialLockState};
+
+        // 获取实际滚动的元素
+        function getScrollableElement(e) {
+          // 从事件目标向上查找可滚动的元素
+          let el = e.target;
+          while (el && el !== document.body) {
+            const style = window.getComputedStyle(el);
+            const overflowY = style.overflowY;
+            const hasScroll = (overflowY === 'auto' || overflowY === 'scroll') && el.scrollHeight > el.clientHeight;
+            if (hasScroll) return el;
+            el = el.parentElement;
+          }
+          return document.documentElement;
+        }
+
+        // 检查元素是否滚动到边界
+        function isAtScrollBoundary(el, deltaY) {
+          const scrollTop = el.scrollTop || window.scrollY || 0;
+          const scrollHeight = el.scrollHeight || document.body.scrollHeight;
+          const clientHeight = el.clientHeight || window.innerHeight;
+
+          const atTop = scrollTop <= 1;
+          const atBottom = scrollTop + clientHeight >= scrollHeight - 1;
+
+          // 向上滚动且已在顶部，或向下滚动且已在底部
+          return (deltaY < 0 && atTop) || (deltaY > 0 && atBottom);
+        }
+
+        // 监听 wheel 事件，阻止滚动传播
+        document.addEventListener('wheel', function(e) {
+          if (!window.__scrollLockEnabled) return;
+
+          const scrollableEl = getScrollableElement(e);
+          const atBoundary = isAtScrollBoundary(scrollableEl, e.deltaY);
+
+          if (atBoundary) {
+            e.preventDefault();
+            e.stopPropagation();
+            e.stopImmediatePropagation();
+            console.log('[ScrollLock] 已阻止滚动传播');
+          }
+        }, { passive: false, capture: true });
+
+        // 监听 touchmove 事件（移动端）
+        document.addEventListener('touchmove', function(e) {
+          if (!window.__scrollLockEnabled) return;
+
+          const touch = e.touches[0];
+          const scrollableEl = getScrollableElement(e);
+          const scrollTop = scrollableEl.scrollTop || window.scrollY || 0;
+          const scrollHeight = scrollableEl.scrollHeight || document.body.scrollHeight;
+          const clientHeight = scrollableEl.clientHeight || window.innerHeight;
+
+          const atTop = scrollTop <= 1;
+          const atBottom = scrollTop + clientHeight >= scrollHeight - 1;
+
+          if (atTop || atBottom) {
+            e.preventDefault();
+            e.stopPropagation();
+            e.stopImmediatePropagation();
+          }
+        }, { passive: false, capture: true });
+
+        console.log('[ScrollLock] 滚动锁定脚本已注入，初始状态:', ${initialLockState ? '已锁定' : '未锁定'});
+      })();
+    `).catch(err => {
+      console.log('[ScrollLock] 注入滚动锁定脚本失败:', err.message);
+    });
+
     // 更新地址栏
     const urlInput = getCurrentWebviewUrlInput();
     if (urlInput) {
       urlInput.value = webview.getURL();
     }
-    
+
     // 自动滚动到 webview 容器（确保 AI Chat 能正常执行）
     setTimeout(() => {
       const webviewContainer = getCurrentWebviewContainer();
@@ -4856,6 +4937,98 @@ async function removeWorkspaceDarkModeFromAll() {
   }
 }
 
+// ========== 滚动锁定功能 ==========
+let scrollLockEnabled = {};
+let scrollLockHandler = null;
+
+// 切换滚动锁定
+function toggleScrollLock(wsId) {
+  const wsSuffix = wsId !== 'MAIN' ? `-${wsId}` : '';
+  const scrollLockBtn = document.getElementById(`scrollLockBtn${wsSuffix}`);
+  const dataContainer = document.getElementById('dataContainer');
+  const workspacePanel = document.querySelector(`.workspace-panel[data-ws="${wsId}"]`);
+  const webviewWrapper = document.getElementById(`webviewWrapper${wsSuffix}`);
+  const webviewContainer = document.querySelector(`.workspace-panel[data-ws="${wsId}"] .webview-container`);
+  const wsExpandBody = document.querySelector(`.workspace-panel[data-ws="${wsId}"] .ws-expand-body`);
+  const webview = document.getElementById(`previewWebview${wsSuffix}`);
+
+  // 切换状态
+  scrollLockEnabled[wsId] = !scrollLockEnabled[wsId];
+  const isLocked = scrollLockEnabled[wsId];
+
+  // 更新按钮状态和图标
+  if (scrollLockBtn) {
+    scrollLockBtn.textContent = '🔒';
+    scrollLockBtn.classList.toggle('active', isLocked);
+    scrollLockBtn.title = isLocked ? '点击解除滚动锁定' : '点击启用滚动锁定：锁定后只允许在当前应用中滚动';
+  }
+
+  // 应用滚动锁定样式到所有层级
+  document.body.classList.toggle('scroll-locked', isLocked);
+  if (dataContainer) {
+    dataContainer.classList.toggle('scroll-locked', isLocked);
+  }
+  if (workspacePanel) {
+    workspacePanel.classList.toggle('scroll-locked', isLocked);
+  }
+  if (webviewWrapper) {
+    webviewWrapper.classList.toggle('scroll-locked', isLocked);
+  }
+  if (webviewContainer) {
+    webviewContainer.classList.toggle('scroll-locked', isLocked);
+  }
+  if (wsExpandBody) {
+    wsExpandBody.classList.toggle('scroll-locked', isLocked);
+  }
+
+  // 向 webview 发送消息来切换滚动锁定状态
+  if (webview) {
+    webview.executeJavaScript(`
+      window.__scrollLockEnabled = ${isLocked};
+      console.log('[ScrollLock] 状态切换: ${isLocked ? '已锁定' : '已解锁'}');
+    `).catch(err => {
+      console.log('[ScrollLock] 切换状态失败:', err.message);
+    });
+  }
+
+  // 保存状态到 localStorage
+  localStorage.setItem(`scrollLock_${wsId}`, isLocked ? '1' : '0');
+
+  showStatus(isLocked ? `🔒 已启用滚动锁定 (${wsId})` : `🔓 已解除滚动锁定 (${wsId})`, 'info');
+}
+
+// 加载滚动锁定状态
+function loadScrollLockStates() {
+  getSortedWorkspaceIds().forEach(wsId => {
+    const saved = localStorage.getItem(`scrollLock_${wsId}`);
+    scrollLockEnabled[wsId] = saved === '1';
+
+    const wsSuffix = wsId !== 'MAIN' ? `-${wsId}` : '';
+    const scrollLockBtn = document.getElementById(`scrollLockBtn${wsSuffix}`);
+
+    if (scrollLockBtn) {
+      scrollLockBtn.textContent = '🔒';
+      scrollLockBtn.classList.toggle('active', scrollLockEnabled[wsId]);
+    }
+
+    // 应用 CSS 样式（webview 内部的锁定状态在 dom-ready 时恢复）
+    if (scrollLockEnabled[wsId]) {
+      const dataContainer = document.getElementById('dataContainer');
+      const workspacePanel = document.querySelector(`.workspace-panel[data-ws="${wsId}"]`);
+      const webviewWrapper = document.getElementById(`webviewWrapper${wsSuffix}`);
+      const webviewContainer = document.querySelector(`.workspace-panel[data-ws="${wsId}"] .webview-container`);
+      const wsExpandBody = document.querySelector(`.workspace-panel[data-ws="${wsId}"] .ws-expand-body`);
+
+      document.body.classList.add('scroll-locked');
+      if (dataContainer) dataContainer.classList.add('scroll-locked');
+      if (workspacePanel) workspacePanel.classList.add('scroll-locked');
+      if (webviewWrapper) webviewWrapper.classList.add('scroll-locked');
+      if (webviewContainer) webviewContainer.classList.add('scroll-locked');
+      if (wsExpandBody) wsExpandBody.classList.add('scroll-locked');
+    }
+  });
+}
+
 async function toggleWorkspaceDarkMode() {
   workspaceDarkModeEnabled = !workspaceDarkModeEnabled;
   localStorage.setItem('workspaceDarkMode', workspaceDarkModeEnabled ? '1' : '0');
@@ -4932,6 +5105,8 @@ window.showWorkspaceStatusTable = showWorkspaceStatusTable;
 window.renderMarkdown = renderMarkdown;
 window.toggleWorkspaceDarkMode = toggleWorkspaceDarkMode;
 window.loadWorkspaceDarkMode = loadWorkspaceDarkMode;
+window.toggleScrollLock = toggleScrollLock;
+window.loadScrollLockStates = loadScrollLockStates;
 
 // 共享变量挂载到 window（getter/setter 闭包持有真实变量引用，确保跨模组读写一致）
 Object.defineProperty(window, 'currentWorkspaceId', { get: () => currentWorkspaceId, set: v => { currentWorkspaceId = v; }, configurable: true });

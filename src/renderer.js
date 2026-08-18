@@ -189,6 +189,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     loadWorkspaceDarkMode();
   }
 
+  // 加载滚动锁定状态
+  if (typeof loadScrollLockStates === 'function') {
+    loadScrollLockStates();
+  }
+
   // 初始化拖动手柄（包括弧形描边拖拽）
   initResizeHandles();
 
