@@ -654,6 +654,20 @@
       background: #78350f;
     }
 
+    /* 置底标记样式 */
+    .bottom-badge {
+      flex-shrink: 0;
+      font-size: 11px;
+      color: #1e40af;
+      background: #dbeafe;
+      padding: 1px 6px;
+      border-radius: 4px;
+    }
+    body.dark .bottom-badge {
+      color: #93c5fd;
+      background: #1e3a8a;
+    }
+
     .todo-tags {
       display: flex;
       gap: 4px;
@@ -2291,12 +2305,15 @@
         }
         return true;
       });
-      // 排序：置顶卡片优先，然后按最后异动时间降序
+      // 排序：置顶卡片优先，置底卡片排最后，中间按最后异动时间降序
       return filtered.sort((a, b) => {
         // 置顶的排在前面
         if (a.pinned && !b.pinned) return -1;
         if (!a.pinned && b.pinned) return 1;
-        // 都置顶或都不置顶，按时间排序
+        // 置底的排在后面
+        if (a.bottom && !b.bottom) return 1;
+        if (!a.bottom && b.bottom) return -1;
+        // 都置顶或都不置顶，都置底或都不置底，按时间排序
         const timeA = a.updatedAt || a.createdAt || 0;
         const timeB = b.updatedAt || b.createdAt || 0;
         return timeB - timeA;
@@ -2364,7 +2381,8 @@
               <div class="checkbox ${todo.completed ? 'checked' : ''}"></div>
             </div>
             <div class="todo-actions">
-              <button class="action-btn pin ${todo.pinned ? 'active' : ''}" onclick="togglePin('${todo.id}')" title="${todo.pinned ? '取消置顶' : '置顶'}">📌</button>
+              <button class="action-btn pin ${todo.pinned ? 'active' : ''}" onclick="togglePin('${todo.id}')" title="${todo.pinned ? '取消置顶' : '置顶'}">⬆️</button>
+              <button class="action-btn bottom ${todo.bottom ? 'active' : ''}" onclick="toggleBottom('${todo.id}')" title="${todo.bottom ? '取消置底' : '置底'}">⬇️</button>
               <button class="action-btn email" onclick="emailTodo('${todo.id}')" title="发邮件">📧</button>
               <button class="action-btn edit" onclick="openEditModal('${todo.id}')" title="编辑">✏️</button>
               <button class="action-btn delete" onclick="deleteTodo('${todo.id}')" title="删除">🗑️</button>
@@ -2377,6 +2395,7 @@
           <div class="todo-footer">
             <div class="todo-footer-left">
               ${todo.pinned ? '<span class="pinned-badge">📌 置顶</span>' : ''}
+              ${todo.bottom ? '<span class="bottom-badge">📍 置底</span>' : ''}
               <div class="todo-tags">
                 ${tagsHtml}
               </div>
@@ -2622,6 +2641,16 @@
       if (todo) {
         todo.pinned = !todo.pinned;
         // 置顶/取消置顶视为内容异动，更新时间
+        todo.updatedAt = Date.now();
+        saveTodos();
+      }
+    }
+
+    function toggleBottom(id) {
+      const todo = todos.find(t => t.id === id);
+      if (todo) {
+        todo.bottom = !todo.bottom;
+        // 置底/取消置底视为内容异动，更新时间
         todo.updatedAt = Date.now();
         saveTodos();
       }
