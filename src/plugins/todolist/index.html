@@ -243,6 +243,57 @@
       box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
     }
 
+    .search-wrapper {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex: 1;
+    }
+
+    .search-nav {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .search-count {
+      font-size: 12px;
+      color: var(--text-secondary);
+      padding: 0 8px;
+    }
+
+    .nav-btn {
+      width: 24px;
+      height: 24px;
+      border: 1px solid var(--border-color);
+      border-radius: 4px;
+      background: var(--card-bg);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 10px;
+      color: var(--text-secondary);
+      transition: all 0.2s;
+    }
+
+    .nav-btn:hover {
+      background: var(--primary-light);
+      border-color: var(--primary-color);
+      color: var(--primary-color);
+    }
+
+    body.dark .nav-btn {
+      background: rgba(0, 0, 0, 0.3);
+      border-color: rgba(255, 255, 255, 0.1);
+    }
+
+    body.dark .nav-btn:hover {
+      background: rgba(102, 126, 234, 0.3);
+      border-color: var(--primary-color);
+      color: var(--primary-color);
+    }
+
     .filter-section {
       display: flex;
       gap: 8px;
@@ -357,6 +408,18 @@
     body.dark .search-highlight {
       background-color: #f59e0b;
       color: #000;
+    }
+
+    /* 搜索导航时当前匹配的样式 */
+    .search-highlight.current {
+      background-color: #ef4444 !important;
+      color: #fff !important;
+      box-shadow: 0 0 0 2px #ef4444;
+    }
+
+    /* 搜索导航时当前卡片的样式 */
+    .todo-item.search-current {
+      box-shadow: 0 0 0 3px var(--primary-color), 0 4px 12px rgba(102, 126, 234, 0.3);
     }
 
     .todo-list::-webkit-scrollbar-thumb:hover {
@@ -1264,7 +1327,14 @@
         <button class="btn btn-secondary" onclick="clearCompleted()" title="清空已完成">🗑️</button>
         <button class="btn btn-danger" onclick="clearAll()" title="删除全部">🚮</button>
       </div>
-      <input type="text" class="search-box" id="searchInput" placeholder="搜索任务..." oninput="handleSearch()">
+      <div class="search-wrapper">
+        <input type="text" class="search-box" id="searchInput" placeholder="搜索任务..." oninput="handleSearch()">
+        <div class="search-nav" id="searchNav" style="display: none;">
+          <span class="search-count" id="searchResultCount">0/0</span>
+          <button class="nav-btn" onclick="navigateSearch(-1)" title="上一个">▲</button>
+          <button class="nav-btn" onclick="navigateSearch(1)" title="下一个">▼</button>
+        </div>
+      </div>
     </div>
 
     <div class="filter-section">
@@ -1378,6 +1448,8 @@
     let currentFilter = 'all';
     let currentTagFilter = []; // 多选标签数组，空数组 = 全部
     let searchQuery = '';
+    let currentSearchIndex = -1;  // 当前搜索结果索引
+    let matchedHighlights = [];   // 匹配的高亮元素列表
     let editingId = null;
     let pendingAttachments = [];
     let resizingId = null;
@@ -2096,15 +2168,106 @@
 
     function handleSearch() {
       searchQuery = document.getElementById('searchInput').value.toLowerCase();
+      currentSearchIndex = -1;
+      matchedHighlights = [];
       renderTodos();
+      updateSearchNav();
     }
 
-    // 高亮文本中的搜索关键字
-    function highlightText(text) {
-      if (!searchQuery || !text) return escapeHtml(text);
-      const escaped = escapeHtml(text);
+    // 更新搜索导航状态
+    function updateSearchNav() {
+      const nav = document.getElementById('searchNav');
+      const count = document.getElementById('searchResultCount');
+      
+      if (!searchQuery) {
+        nav.style.display = 'none';
+        return;
+      }
+      
+      // 获取所有高亮的元素
+      const highlights = document.querySelectorAll('.search-highlight');
+      matchedHighlights = [];
+      
+      highlights.forEach(el => {
+        // 找到该元素所属的卡片
+        const card = el.closest('.todo-item');
+        if (card) {
+          matchedHighlights.push({
+            element: el,
+            cardId: card.dataset.id
+          });
+        }
+      });
+      
+      if (matchedHighlights.length > 0) {
+        nav.style.display = 'flex';
+        currentSearchIndex = 0;
+        updateSearchCount();
+        scrollToHighlight(0);
+      } else {
+        nav.style.display = 'flex';
+        count.textContent = '0/0';
+      }
+    }
+
+    // 更新搜索计数显示
+    function updateSearchCount() {
+      const count = document.getElementById('searchResultCount');
+      count.textContent = `${currentSearchIndex + 1}/${matchedHighlights.length}`;
+    }
+
+    // 导航到上一个/下一个搜索结果
+    function navigateSearch(direction) {
+      if (matchedHighlights.length === 0) return;
+      
+      // 清除当前高亮元素的特殊样式
+      clearCurrentHighlight();
+      
+      // 计算新索引
+      currentSearchIndex += direction;
+      if (currentSearchIndex < 0) currentSearchIndex = matchedHighlights.length - 1;
+      if (currentSearchIndex >= matchedHighlights.length) currentSearchIndex = 0;
+      
+      updateSearchCount();
+      scrollToHighlight(currentSearchIndex);
+    }
+
+    // 清除当前高亮元素的特殊样式
+    function clearCurrentHighlight() {
+      const current = document.querySelectorAll('.search-highlight.current');
+      current.forEach(el => el.classList.remove('current'));
+    }
+
+    // 滚动到指定高亮元素并标记
+    function scrollToHighlight(index) {
+      const item = matchedHighlights[index];
+      if (!item) return;
+      
+      const { element, cardId } = item;
+      const card = document.querySelector(`.todo-item[data-id="${cardId}"]`);
+      
+      // 清除卡片高亮
+      const currentCards = document.querySelectorAll('.todo-item.search-current');
+      currentCards.forEach(c => c.classList.remove('search-current'));
+      
+      // 添加当前高亮样式
+      clearCurrentHighlight();
+      element.classList.add('current');
+      if (card) card.classList.add('search-current');
+      
+      // 滚动到元素
+      element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+
+    // 在已渲染的 HTML 中高亮搜索关键字（避免在标签内替换）
+    function highlightInHtml(html) {
+      if (!searchQuery || !html) return html;
       const regex = new RegExp(`(${escapeRegExp(searchQuery)})`, 'gi');
-      return escaped.replace(regex, '<mark class="search-highlight">$1</mark>');
+      // 匹配 HTML 标签或文本内容，只替换文本部分
+      return html.replace(/<[^>]*>|[^<]+/g, (match) => {
+        if (match.startsWith('<')) return match; // 标签不处理
+        return match.replace(regex, '<mark class="search-highlight">$1</mark>');
+      });
     }
 
     // 转义正则特殊字符
@@ -2121,7 +2284,11 @@
           // OR 逻辑：只要匹配任一选中标签就保留
           if (!currentTagFilter.some(t => tags.includes(t))) return false;
         }
-        if (searchQuery && !todo.text.toLowerCase().includes(searchQuery)) return false;
+        if (searchQuery && !todo.text.toLowerCase().includes(searchQuery)) {
+          // 文本不匹配时，检查标签是否匹配
+          const tags = todo.tags && Array.isArray(todo.tags) ? todo.tags : (todo.tag ? [todo.tag] : []);
+          if (!tags.some(tag => tag.toLowerCase().includes(searchQuery))) return false;
+        }
         return true;
       });
       // 排序：置顶卡片优先，然后按最后异动时间降序
@@ -2178,7 +2345,10 @@
 
       container.innerHTML = filtered.map(todo => {
         const tags = todo.tags && Array.isArray(todo.tags) ? todo.tags : (todo.tag ? [todo.tag] : []);
-        const tagsHtml = tags.map(tag => `<span class="tag ${getTagColorClass(tag)}">#${tag}</span>`).join('');
+        const tagsHtml = tags.map(tag => {
+          const displayTag = searchQuery ? highlightInHtml(tag) : tag;
+          return `<span class="tag ${getTagColorClass(tag)}">#${displayTag}</span>`;
+        }).join('');
         const heightStyle = todo.height ? `height: ${todo.height}px; max-height: none;` : '';
         const heightAttr = todo.height ? 'data-height="true"' : '';
         // 使用 width 而非 min-width，配合 flex: 0 0 auto 实现固定宽度
@@ -2201,7 +2371,7 @@
             </div>
           </div>
           <div class="todo-content">
-            <div class="todo-text">${todo.htmlContent ? adaptHtmlForTheme(todo.htmlContent) : (searchQuery ? highlightText(todo.text) : renderMarkdown(todo.text))}</div>
+            <div class="todo-text">${todo.htmlContent ? adaptHtmlForTheme(todo.htmlContent) : (searchQuery ? highlightInHtml(renderMarkdown(todo.text)) : renderMarkdown(todo.text))}</div>
             ${renderAttachments(todo.attachments)}
           </div>
           <div class="todo-footer">
@@ -2391,6 +2561,49 @@
         return `<code>${escapeHtml(formula)}</code>`;
       });
 
+      // 平衡未闭合的 HTML 标签，防止破坏布局
+      html = balanceHtmlTags(html);
+
+      return html;
+    }
+
+    // 平衡 HTML 标签：自动闭合未闭合的标签
+    function balanceHtmlTags(html) {
+      // 允许的标签列表（白名单）
+      const allowedTags = ['big', 'small', 'b', 'strong', 'i', 'em', 'u', 's', 'del', 'ins', 'sub', 'sup', 'mark', 'span', 'div', 'p', 'br', 'code', 'pre', 'a', 'ul', 'ol', 'li', 'blockquote', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'table', 'tr', 'td', 'th', 'thead', 'tbody'];
+      
+      const tagStack = [];
+      const tagPattern = /<\/?([a-zA-Z][a-zA-Z0-9]*)[^>]*>/g;
+      let match;
+      
+      // 遍历所有标签
+      while ((match = tagPattern.exec(html)) !== null) {
+        const fullMatch = match[0];
+        const tagName = match[1].toLowerCase();
+        
+        // 跳过不在白名单中的标签
+        if (!allowedTags.includes(tagName)) continue;
+        
+        // 跳过自闭合标签
+        if (fullMatch.match(/\/\s*>$/) || tagName === 'br') continue;
+        
+        if (fullMatch.startsWith('</')) {
+          // 闭合标签：检查是否匹配栈顶
+          if (tagStack.length > 0 && tagStack[tagStack.length - 1] === tagName) {
+            tagStack.pop();
+          }
+        } else {
+          // 开始标签：压入栈
+          tagStack.push(tagName);
+        }
+      }
+      
+      // 闭合所有未闭合的标签
+      while (tagStack.length > 0) {
+        const unclosedTag = tagStack.pop();
+        html += `</${unclosedTag}>`;
+      }
+      
       return html;
     }
 

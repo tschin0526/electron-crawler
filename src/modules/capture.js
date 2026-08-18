@@ -934,9 +934,30 @@ async function startManualMonitoringAndTodo(wsId) {
       return;
     }
 
-    // 获取成功，发送到 ToDoList 插件
+    // 获取成功，显示确认对话框
     const charCount = capturedContent.length;
-    showStatus(`✅ 成功获取内容（${charCount} 字符），正在建立 ToDo 卡片...`, 'success');
+    const previewContent = capturedContent.length > 200 ? capturedContent.substring(0, 200) + '...' : capturedContent;
+    
+    const confirmMsg = `📝 已成功获取内容（${charCount} 字符）\n\n` +
+      `来源：${currentUrl || '未知'}\n` +
+      `内容预览：\n${previewContent}\n\n` +
+      `确认要建立 ToDo 卡片吗？\n` +
+      `（将自动添加标签 #DOM获取）`;
+    
+    // 使用自定义确认对话框（如果存在）或原生 confirm
+    let confirmed = false;
+    if (typeof window.showCustomConfirm === 'function') {
+      confirmed = await window.showCustomConfirm(confirmMsg);
+    } else {
+      confirmed = confirm(confirmMsg);
+    }
+    
+    if (!confirmed) {
+      showStatus('⏹️ 已取消建立 ToDo 卡片', 'info');
+      return;
+    }
+
+    showStatus(`📝 正在建立 ToDo 卡片（${charCount} 字符）...`, 'info');
 
     // 构建带来源/时间信息的 HTML 内容（与邮件插件一致）
     const now = new Date();
@@ -976,10 +997,11 @@ async function startManualMonitoringAndTodo(wsId) {
     }
 
     // 通过 webview.executeJavaScript 调用 TodoList 插件的全局函数
+    // 自动添加 #DOM获取 标签
     const result = await todoWebview.executeJavaScript(`
       (async () => {
         try {
-          const result = await window.addTodoFromExternal(${JSON.stringify(capturedContent)}, [], ${JSON.stringify(htmlContent)});
+          const result = await window.addTodoFromExternal(${JSON.stringify(capturedContent)}, ['DOM获取'], ${JSON.stringify(htmlContent)});
           return JSON.stringify(result);
         } catch (err) {
           return JSON.stringify({ success: false, message: err.message });
