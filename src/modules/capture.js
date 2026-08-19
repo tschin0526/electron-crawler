@@ -959,6 +959,40 @@ async function startManualMonitoringAndTodo(wsId) {
 
     showStatus(`📝 正在建立 ToDo 卡片（${charCount} 字符）...`, 'info');
 
+    // 🆕 处理引用链接：将数字链接转换为圆圈样式（不加颜色，主题由 CSS 负责）
+    // 与 injectInlineStyles 中的 a_citation 逻辑一致，但只处理 <a> 标签
+    function styleCitationLinks(html) {
+      if (!html) return html;
+      // 引用链接样式（只含结构性样式，不含颜色）
+      const citationStyle = 'display:inline-block;text-align:center;border:1.5px solid currentColor;border-radius:50%;min-width:18px;height:18px;line-height:15px;font-size:10px;font-weight:600;text-decoration:none;margin:0 1px;vertical-align:baseline;padding:0;';
+
+      // 匹配 <a> 标签，判断内容是否为数字引用
+      return html.replace(/<a(\s[^>]*)?>([\s\S]*?)<\/a>/gi, (match, attrs, innerHtml) => {
+        const innerText = (innerHtml || '').replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ');
+        const trimmedText = innerText.trim();
+        // 判断是否为引用数字：纯数字、-数字-、数字-数字 等
+        const isSimpleDigit = /^\d{1,2}$/.test(trimmedText);
+        const isHyphenDigit = /^-?\s*\d{1,2}\s*-?$/.test(trimmedText);
+        const isMultiDigit = /^-?\s*\d{1,2}\s*-\s*\d{1,2}\s*-?$/.test(trimmedText);
+        const isCitation = isSimpleDigit || isHyphenDigit || isMultiDigit;
+
+        if (isCitation) {
+          // 提取纯数字显示
+          const digitsOnly = trimmedText.replace(/[-\s]/g, '');
+          const displayContent = digitsOnly || trimmedText;
+          // 保留 href 等属性，替换 style
+          let cleanedAttrs = (attrs || '').replace(/style\s*=\s*"[^"]*"/gi, '').trim();
+          if (cleanedAttrs) {
+            return `<a style="${citationStyle}" ${cleanedAttrs}>${displayContent}</a>`;
+          } else {
+            return `<a style="${citationStyle}">${displayContent}</a>`;
+          }
+        }
+        // 非引用链接，保持不变
+        return match;
+      });
+    }
+
     // 构建带来源/时间信息的 HTML 内容（与邮件插件一致）
     const now = new Date();
     const timeStr = `${now.getFullYear()}/${now.getMonth()+1}/${now.getDate()} ${now.getHours()}:${String(now.getMinutes()).padStart(2,'0')}:${String(now.getSeconds()).padStart(2,'0')}`;
@@ -967,15 +1001,24 @@ async function startManualMonitoringAndTodo(wsId) {
     // 优先使用 HTML 格式，否则使用纯文本
     let htmlContent = '';
     if (capturedHtml) {
-      htmlContent = `<div style="background:#1e293b;border-radius:8px;padding:16px;margin-bottom:16px;font-size:13px;color:#94a3b8;">
-        <div style="margin-bottom:4px;"><strong style="color:#e2e8f0;">【来源】</strong> <a href="${sourceUrl}" style="color:#60a5fa;text-decoration:none;">${sourceUrl}</a></div>
-        <div><strong style="color:#e2e8f0;">【获取时间】</strong> ${timeStr}</div>
+      // 🆕 使用HTML格式，清理但不加颜色样式（主题由 todoList 负责）
+      const { html: cleanedHtml, mathBlocks } = cleanHtmlWhitespace(capturedHtml);
+      let styledHtml = cleanedHtml;
+      styledHtml = formatJsonBlocks(styledHtml);
+      // 🆕 只处理引用链接（圆圈样式），不加颜色样式
+      styledHtml = styleCitationLinks(styledHtml);
+      // 🆕 不调用 injectInlineStyles（避免加颜色样式），只渲染 KaTeX
+      styledHtml = renderKaTeXPlaceholders(styledHtml, mathBlocks);
+
+      htmlContent = `<div style="border-radius:8px;padding:12px;margin-bottom:12px;font-size:13px;border:1px solid #e5e7eb;">
+        <div style="margin-bottom:4px;"><strong>【来源】</strong> <a href="${sourceUrl}" style="text-decoration:none;">${sourceUrl}</a></div>
+        <div><strong>【获取时间】</strong> ${timeStr}</div>
       </div>
-      ${capturedHtml}`;
+      ${styledHtml}`;
     } else {
-      htmlContent = `<div style="background:#1e293b;border-radius:8px;padding:16px;margin-bottom:16px;font-size:13px;color:#94a3b8;">
-        <div style="margin-bottom:4px;"><strong style="color:#e2e8f0;">【来源】</strong> ${sourceUrl}</div>
-        <div><strong style="color:#e2e8f0;">【获取时间】</strong> ${timeStr}</div>
+      htmlContent = `<div style="border-radius:8px;padding:12px;margin-bottom:12px;font-size:13px;border:1px solid #e5e7eb;">
+        <div style="margin-bottom:4px;"><strong>【来源】</strong> ${sourceUrl}</div>
+        <div><strong>【获取时间】</strong> ${timeStr}</div>
       </div>
       <div style="white-space:pre-wrap;">${capturedContent}</div>`;
     }
