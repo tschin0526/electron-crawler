@@ -689,9 +689,28 @@
       background: #f3f4f6;
       padding: 1px 6px;
       border-radius: 4px;
+      cursor: pointer;
+      user-select: none;
+      transition: background 0.15s;
+    }
+    .render-mode-badge:hover {
+      background: #e5e7eb;
+    }
+    .render-mode-badge.disabled {
+      cursor: default;
+      opacity: 0.6;
+    }
+    .render-mode-badge.disabled:hover {
+      background: #f3f4f6;
     }
     body.dark .render-mode-badge {
       color: #94a3b8;
+      background: #334155;
+    }
+    body.dark .render-mode-badge:hover {
+      background: #475569;
+    }
+    body.dark .render-mode-badge.disabled:hover {
       background: #334155;
     }
 
@@ -1231,6 +1250,17 @@
     }
     body.dark .form-textarea::placeholder { color: #64748b; }
 
+    /* 撤销/重做按钮不可用状态 */
+    .md-tool-btn:disabled {
+      opacity: 0.35;
+      cursor: default;
+    }
+
+    .md-tool-btn:disabled:hover {
+      background: transparent;
+      border-color: transparent;
+    }
+
     body.dark .md-toolbar,
     body.dark .md-toggle-bar,
     body.dark .attachment-area,
@@ -1407,6 +1437,9 @@
         <div class="form-group">
           <label class="form-label">任务内容</label>
           <div class="md-toolbar" id="mdToolbar">
+            <button class="md-tool-btn" id="undoBtn" onclick="editorUndo()" onmousedown="event.preventDefault()" title="撤销 (Cmd/Ctrl+Z)" disabled>↩</button>
+            <button class="md-tool-btn" id="redoBtn" onclick="editorRedo()" onmousedown="event.preventDefault()" title="重做 (Cmd/Ctrl+Shift+Z)" disabled>↪</button>
+            <span class="md-tool-sep"></span>
             <button class="md-tool-btn" onclick="insertMd('**', '**')" title="粗体"><b>B</b></button>
             <button class="md-tool-btn" onclick="insertMd('*', '*')" title="斜体"><i>I</i></button>
             <button class="md-tool-btn" onclick="insertMd('<u>', '</u>')" title="下划线"><u>U</u></button>
@@ -1435,7 +1468,9 @@
             <input type="text" id="editSearchInput" placeholder="搜索内容..." style="width:120px;padding:4px 8px;border:1px solid #334155;border-radius:4px;background:#1e293b;color:#e2e8f0;font-size:12px;outline:none;margin-right:4px;" oninput="doSearch()" onkeydown="if(event.key==='Enter'){event.preventDefault();doSearchEnter();}">
             <span id="searchCount" style="font-size:11px;color:#94a3b8;margin-right:4px;min-width:50px;display:inline-block;"></span>
             <button id="searchPrevBtn" onmouseover="this.style.background='#334155';this.style.color='#e2e8f0'" onmouseout="this.style.background='#1e293b';this.style.color='#94a3b8'" onclick="findPrev()" title="上一笔" style="display:none;padding:2px 6px;border:1px solid #334155;border-radius:4px;background:#1e293b;color:#94a3b8;font-size:11px;cursor:pointer;margin-right:2px;">◀</button>
-            <button id="searchNextBtn" onmouseover="this.style.background='#334155';this.style.color='#e2e8f0'" onmouseout="this.style.background='#1e293b';this.style.color='#94a3b8'" onclick="findNext()" title="下一笔" style="display:none;padding:2px 6px;border:1px solid #334155;border-radius:4px;background:#1e293b;color:#94a3b8;font-size:11px;cursor:pointer;margin-right:8px;">▶</button>
+            <button id="searchNextBtn" onmouseover="this.style.background='#334155';this.style.color='#e2e8f0'" onmouseout="this.style.background='#1e293b';this.style.color='#94a3b8'" onclick="findNext()" title="下一笔" style="display:none;padding:2px 6px;border:1px solid #334155;border-radius:4px;background:#1e293b;color:#94a3b8;font-size:11px;cursor:pointer;margin-right:2px;">▶</button>
+            <button id="genMdBtn" onclick="generateMdFromHtml()" title="将当前 HTML 转为 Markdown 文本" style="display:none;padding:2px 8px;border:1px solid #334155;border-radius:4px;background:#1e293b;color:#fbbf24;font-size:11px;cursor:pointer;margin-right:2px;">生成MD</button>
+            <button id="genHtmlBtn" onclick="generateHtmlFromMd()" title="将当前 Markdown 转为 HTML 文本" style="display:none;padding:2px 8px;border:1px solid #334155;border-radius:4px;background:#1e293b;color:#34d399;font-size:11px;cursor:pointer;margin-right:8px;">生成HTML</button>
             <span class="md-toggle-btn" id="mdToggleBtn" onclick="toggleMdPreview()">编辑文本</span>
           </div>
           <textarea class="form-textarea" id="taskText" placeholder="输入任务内容（支持 Markdown）..." style="border-top:none;border-radius:0 0 8px 8px;"></textarea>
@@ -1683,7 +1718,118 @@
       textarea.focus();
       const newCursor = start + before.length + (selected ? selected.length : 2);
       textarea.setSelectionRange(newCursor, newCursor + (selected ? 0 : 2));
+      // 工具栏插入属于程序化修改，手动记入撤销历史
+      pushEditorHistory(textarea, true);
     }
+
+    // ========== 撤销/重做（undo/redo）历史管理 ==========
+    const editorHistories = new WeakMap();
+    const HISTORY_MAX = 200;
+    const HISTORY_DEBOUNCE = 500; // 连续输入 500ms 内合并为一步
+
+    function getEditorHistory(textarea) {
+      let h = editorHistories.get(textarea);
+      if (!h) {
+        h = { stack: [], index: -1, lastTime: 0 };
+        editorHistories.set(textarea, h);
+      }
+      return h;
+    }
+
+    function updateHistoryButtons() {
+      const overlay = document.getElementById('modalOverlay');
+      if (!overlay || overlay.style.display === 'none') return;
+      const active = (document.activeElement && editorHistories.has(document.activeElement))
+        ? document.activeElement
+        : (document.getElementById('htmlText').style.display !== 'none'
+            ? document.getElementById('htmlText')
+            : document.getElementById('taskText'));
+      const h = getEditorHistory(active);
+      const undoBtn = document.getElementById('undoBtn');
+      const redoBtn = document.getElementById('redoBtn');
+      if (undoBtn) undoBtn.disabled = h.index <= 0;
+      if (redoBtn) redoBtn.disabled = h.index >= h.stack.length - 1;
+    }
+
+    // 记录一步历史。merge=true 时若距上次记录不足 debounce 时间则合并（连续输入算一步）
+    function pushEditorHistory(textarea, merge) {
+      const h = getEditorHistory(textarea);
+      const value = textarea.value;
+      const now = Date.now();
+      if (merge && h.index >= 0 && h.stack[h.index].value === value) {
+        h.lastTime = now;
+        return;
+      }
+      if (merge && h.index >= 0 && (now - h.lastTime) < HISTORY_DEBOUNCE) {
+        h.stack[h.index] = { value, selStart: textarea.selectionStart, selEnd: textarea.selectionEnd };
+        h.lastTime = now;
+      } else {
+        h.stack = h.stack.slice(0, h.index + 1);
+        h.stack.push({ value, selStart: textarea.selectionStart, selEnd: textarea.selectionEnd });
+        if (h.stack.length > HISTORY_MAX) h.stack.shift();
+        h.index = h.stack.length - 1;
+        h.lastTime = now;
+      }
+      updateHistoryButtons();
+    }
+
+    // 重置历史（打开弹窗 / 程序化整体替换内容时调用）
+    function resetEditorHistory(textarea) {
+      const h = getEditorHistory(textarea);
+      h.stack = [{ value: textarea.value, selStart: textarea.selectionStart, selEnd: textarea.selectionEnd }];
+      h.index = 0;
+      h.lastTime = 0;
+      updateHistoryButtons();
+    }
+
+    function editorUndo() {
+      const el = document.activeElement;
+      const textarea = (el && editorHistories.has(el)) ? el
+        : (document.getElementById('htmlText').style.display !== 'none'
+            ? document.getElementById('htmlText')
+            : document.getElementById('taskText'));
+      const h = getEditorHistory(textarea);
+      if (h.index <= 0) return;
+      h.index--;
+      const entry = h.stack[h.index];
+      textarea.value = entry.value;
+      textarea.focus();
+      textarea.setSelectionRange(entry.selStart, entry.selEnd);
+      updateHistoryButtons();
+    }
+
+    function editorRedo() {
+      const el = document.activeElement;
+      const textarea = (el && editorHistories.has(el)) ? el
+        : (document.getElementById('htmlText').style.display !== 'none'
+            ? document.getElementById('htmlText')
+            : document.getElementById('taskText'));
+      const h = getEditorHistory(textarea);
+      if (h.index >= h.stack.length - 1) return;
+      h.index++;
+      const entry = h.stack[h.index];
+      textarea.value = entry.value;
+      textarea.focus();
+      textarea.setSelectionRange(entry.selStart, entry.selEnd);
+      updateHistoryButtons();
+    }
+
+    // 绑定输入监听与快捷键（Markdown 编辑器和 HTML 编辑器共用）
+    ['taskText', 'htmlText'].forEach(id => {
+      const ta = document.getElementById(id);
+      ta.addEventListener('input', () => pushEditorHistory(ta, true));
+      ta.addEventListener('keydown', (e) => {
+        if (!(e.metaKey || e.ctrlKey) || e.altKey) return;
+        const key = (e.key || '').toLowerCase();
+        if (key === 'z' && !e.shiftKey) {
+          e.preventDefault();
+          editorUndo();
+        } else if ((key === 'z' && e.shiftKey) || key === 'y') {
+          e.preventDefault();
+          editorRedo();
+        }
+      });
+    });
 
     function toggleMdPreview() {
       // 切换模式时重置搜索状态
@@ -1719,6 +1865,8 @@
       }
 
       // 应用模式
+      const genMdBtn = document.getElementById('genMdBtn');
+      const genHtmlBtn = document.getElementById('genHtmlBtn');
       if (previewMode === 0) {
         // 文本编辑模式
         preview.classList.remove('show');
@@ -1727,6 +1875,8 @@
         btn.textContent = '编辑文本';
         btn.title = '点击切换到 Markdown 预览';
         btn.classList.remove('active');
+        genMdBtn.style.display = 'none';
+        genHtmlBtn.style.display = '';
       } else if (previewMode === 1) {
         // Markdown 预览
         preview.classList.add('show');
@@ -1736,6 +1886,8 @@
         btn.textContent = 'Markdown 预览';
         btn.title = hasHtmlContent ? '点击切换到 HTML 文本编辑' : '点击切换到 HTML 文本编辑';
         btn.classList.add('active');
+        genMdBtn.style.display = 'none';
+        genHtmlBtn.style.display = 'none';
       } else if (previewMode === 2) {
         // HTML 文本编辑模式
         preview.classList.remove('show');
@@ -1744,9 +1896,12 @@
         // 加载当前 HTML 内容到编辑器
         const todo = todos.find(t => t.id === editingId);
         htmlTextarea.value = (todo && todo.htmlContent) ? todo.htmlContent : markdownToHtml(textarea.value);
+        resetEditorHistory(htmlTextarea);
         btn.textContent = 'HTML 文本编辑';
         btn.title = hasHtmlContent ? '点击切换到 HTML 预览' : '点击切换到文本编辑';
         btn.classList.add('active');
+        genMdBtn.style.display = '';
+        genHtmlBtn.style.display = 'none';
       } else {
         // HTML 预览（优先使用当前 HTML 编辑器的内容，其次用原始 htmlContent）
         preview.classList.add('show');
@@ -1766,6 +1921,8 @@
         btn.textContent = 'HTML 预览';
         btn.title = '点击切换到文本编辑';
         btn.classList.add('active');
+        genMdBtn.style.display = 'none';
+        genHtmlBtn.style.display = 'none';
       }
     }
 
@@ -2117,6 +2274,148 @@
       return html;
     }
 
+    // HTML 转 Markdown
+    function htmlToMarkdown(html) {
+      if (!html || !html.trim()) return '';
+      const tempDiv = document.createElement('div');
+      tempDiv.innerHTML = html;
+
+      function processNode(node, listDepth) {
+        listDepth = listDepth || 0;
+        let result = '';
+        const indent = '  '.repeat(listDepth);
+
+        node.childNodes.forEach(child => {
+          if (child.nodeType === Node.TEXT_NODE) {
+            result += child.textContent;
+          } else if (child.nodeType === Node.ELEMENT_NODE) {
+            const tag = child.tagName.toLowerCase();
+            const inner = processNode(child, listDepth);
+
+            if (tag === 'br') {
+              result += '\n';
+            } else if (['h1','h2','h3','h4','h5','h6'].includes(tag)) {
+              const level = parseInt(tag[1]);
+              const prefix = '#'.repeat(Math.min(level + 1, 4));
+              result += `\n${prefix} ${child.textContent.trim()}\n`;
+            } else if (tag === 'p') {
+              result += `${inner}\n`;
+            } else if (tag === 'strong' || tag === 'b') {
+              result += `**${child.textContent}**`;
+            } else if (tag === 'em' || tag === 'i') {
+              result += `*${child.textContent}*`;
+            } else if (tag === 'code') {
+              result += `\`${child.textContent}\``;
+            } else if (tag === 'pre') {
+              result += `\n\`\`\`\n${child.textContent}\n\`\`\`\n`;
+            } else if (tag === 'a') {
+              const href = child.getAttribute('href') || '';
+              result += `[${child.textContent}](${href})`;
+            } else if (tag === 'img') {
+              const src = child.getAttribute('src') || '';
+              const alt = child.getAttribute('alt') || '';
+              result += `![${alt}](${src})`;
+            } else if (tag === 'ul' || tag === 'ol') {
+              let items = [];
+              child.querySelectorAll(':scope > li').forEach((li, idx) => {
+                const marker = tag === 'ol' ? `${idx + 1}. ` : '- ';
+                items.push(indent + marker + processNode(li, listDepth + 1).trim());
+              });
+              if (items.length) result += `\n${items.join('\n')}\n`;
+            } else if (tag === 'li') {
+              result += inner;
+            } else if (tag === 'table') {
+              const rows = [];
+              child.querySelectorAll('tr').forEach(tr => {
+                const cells = [];
+                tr.querySelectorAll('th, td').forEach(cell => {
+                  cells.push(cell.textContent.trim());
+                });
+                rows.push(`| ${cells.join(' | ')} |`);
+              });
+              if (rows.length > 0 && rows[0]) {
+                const sep = rows[0].split('|').map(() => '---').join('|').replace(/^\||\|$/g, '');
+                rows.splice(1, 0, `| ${sep} |`);
+              }
+              if (rows.length) result += `\n${rows.join('\n')}\n`;
+            } else if (tag === 'blockquote') {
+              const lines = processNode(child, listDepth).trim().split('\n');
+              result += '\n' + lines.map(l => `> ${l}`).join('\n') + '\n';
+            } else if (tag === 'hr') {
+              result += '\n---\n';
+            } else if (tag === 'input') {
+              const checked = child.checked || child.getAttribute('checked') !== null;
+              result += `[${checked ? 'x' : ' '}] `;
+            } else if (['span','div','small','big','sub','sup','font'].includes(tag)) {
+              result += child.textContent;
+            } else {
+              result += inner;
+            }
+          }
+        });
+        return result;
+      }
+
+      let md = processNode(tempDiv, 0);
+      // 清理多余空行
+      md = md.replace(/\n{3,}/g, '\n\n').trim();
+      return md;
+    }
+
+    // "生成MD"按钮：将 HTML 编辑器内容转为 Markdown，填入 Markdown 编辑器
+    function generateMdFromHtml() {
+      const htmlTextarea = document.getElementById('htmlText');
+      const textarea = document.getElementById('taskText');
+      const htmlValue = htmlTextarea.value.trim();
+      if (!htmlValue) {
+        alert('HTML 内容为空，无法转换');
+        return;
+      }
+      const md = htmlToMarkdown(htmlValue);
+      if (!md.trim()) {
+        alert('转换后的 Markdown 内容为空');
+        return;
+      }
+      textarea.value = md;
+      resetEditorHistory(textarea);
+      // 保存到 todo.text（不更新 updatedAt）
+      if (editingId) {
+        const todo = todos.find(t => t.id === editingId);
+        if (todo) {
+          todo.text = md;
+          saveTodosSilent();
+        }
+      }
+      alert('已从 HTML 生成 Markdown 文本');
+    }
+
+    // "生成HTML"按钮：将 Markdown 编辑器内容转为 HTML，填入 HTML 编辑器
+    function generateHtmlFromMd() {
+      const textarea = document.getElementById('taskText');
+      const htmlTextarea = document.getElementById('htmlText');
+      const mdValue = textarea.value.trim();
+      if (!mdValue) {
+        alert('Markdown 内容为空，无法转换');
+        return;
+      }
+      const html = markdownToHtml(mdValue);
+      if (!html.trim()) {
+        alert('转换后的 HTML 内容为空');
+        return;
+      }
+      htmlTextarea.value = html;
+      resetEditorHistory(htmlTextarea);
+      // 保存到 todo.htmlContent（不更新 updatedAt）
+      if (editingId) {
+        const todo = todos.find(t => t.id === editingId);
+        if (todo) {
+          todo.htmlContent = html;
+          saveTodosSilent();
+        }
+      }
+      alert('已从 Markdown 生成 HTML 文本');
+    }
+
     // 色卡选择
     function selectTodoColor(el, color) {
       selectedTodoColor = color;
@@ -2372,6 +2671,64 @@
       `;
     }
 
+    // 判断卡片当前应使用的渲染模式：'html' 或 'md'
+    function getEffectiveRenderMode(todo) {
+      const hasHtml = !!todo.htmlContent;
+      const hasText = !!todo.text;
+      // 优先使用持久化的 renderMode 字段
+      if (todo.renderMode === 'html' && hasHtml) return 'html';
+      if (todo.renderMode === 'md' && hasText) return 'md';
+      // 默认：有 htmlContent 就用 HTML，否则用 Markdown
+      return hasHtml ? 'html' : 'md';
+    }
+
+    // 渲染卡片内容
+    function renderTodoContent(todo) {
+      const mode = getEffectiveRenderMode(todo);
+      if (mode === 'html' && todo.htmlContent) {
+        return adaptHtmlForTheme(todo.htmlContent);
+      }
+      // Markdown 模式
+      if (searchQuery) {
+        return highlightInHtml(renderMarkdown(todo.text || ''));
+      }
+      return renderMarkdown(todo.text || '');
+    }
+
+    // 渲染模式标识 badge
+    function renderModeBadge(todo) {
+      const hasHtml = !!todo.htmlContent;
+      const hasText = !!todo.text;
+      const canToggle = hasHtml && hasText;
+      const mode = getEffectiveRenderMode(todo);
+      const label = mode === 'html' ? '📄 HTML' : '📝 MD';
+      if (canToggle) {
+        return `<span class="render-mode-badge" onclick="toggleRenderMode('${todo.id}')" title="点击切换 ${mode === 'html' ? 'Markdown' : 'HTML'} 渲染">${label}</span>`;
+      }
+      return `<span class="render-mode-badge disabled">${label}</span>`;
+    }
+
+    // 切换卡片的渲染模式（持久化到 JSON，不更新 updatedAt）
+    async function toggleRenderMode(todoId) {
+      const todo = todos.find(t => t.id === todoId);
+      if (!todo) return;
+      const current = getEffectiveRenderMode(todo);
+      todo.renderMode = current === 'html' ? 'md' : 'html';
+      // 只保存，不更新 updatedAt
+      await saveTodosSilent();
+      renderTodos();
+    }
+
+    // 静默保存：不更新 updatedAt，不触发全量重渲染
+    async function saveTodosSilent() {
+      try {
+        if (!window.electronAPI) return;
+        await window.electronAPI.saveTodos(todos);
+      } catch (error) {
+        console.error('[TodoList] 静默保存失败:', error);
+      }
+    }
+
     function renderTodos() {
       const container = document.getElementById('todoList');
       const filtered = filterTodos();
@@ -2416,14 +2773,14 @@
             </div>
           </div>
           <div class="todo-content">
-            <div class="todo-text">${todo.htmlContent ? adaptHtmlForTheme(todo.htmlContent) : (searchQuery ? highlightInHtml(renderMarkdown(todo.text)) : renderMarkdown(todo.text))}</div>
+            <div class="todo-text">${renderTodoContent(todo)}</div>
             ${renderAttachments(todo.attachments)}
           </div>
           <div class="todo-footer">
             <div class="todo-footer-left">
               ${todo.pinned ? '<span class="pinned-badge">📌 置顶</span>' : ''}
               ${todo.bottom ? '<span class="bottom-badge">📍 置底</span>' : ''}
-              <span class="render-mode-badge">${todo.htmlContent ? '📄 HTML' : '📝 MD'}</span>
+              ${renderModeBadge(todo)}
               <div class="todo-tags">
                 ${tagsHtml}
               </div>
@@ -2877,6 +3234,8 @@
       document.getElementById('mdToggleBtn').classList.remove('active');
       document.getElementById('mdToggleBtn').textContent = '编辑文本';
       document.getElementById('mdToggleBtn').title = '点击切换到 Markdown 预览';
+      document.getElementById('genMdBtn').style.display = 'none';
+      document.getElementById('genHtmlBtn').style.display = '';
       searchMatches = [];
       currentMatchIndex = -1;
       lastSearchEnterQuery = '';
@@ -2884,6 +3243,8 @@
       updateSearchNavButtons();
       document.getElementById('modalOverlay').style.display = 'flex';
       document.getElementById('taskText').focus();
+      resetEditorHistory(document.getElementById('taskText'));
+      resetEditorHistory(document.getElementById('htmlText'));
     }
 
     function openEditModal(id) {
@@ -2905,6 +3266,8 @@
       document.getElementById('mdPreview').classList.remove('show');
       document.getElementById('taskText').style.display = '';
       document.getElementById('mdToggleBtn').classList.remove('active');
+      document.getElementById('genMdBtn').style.display = 'none';
+      document.getElementById('genHtmlBtn').style.display = '';
       searchMatches = [];
       currentMatchIndex = -1;
       lastSearchEnterQuery = '';
@@ -2912,6 +3275,8 @@
       updateSearchNavButtons();
       document.getElementById('modalOverlay').style.display = 'flex';
       document.getElementById('taskText').focus();
+      resetEditorHistory(document.getElementById('taskText'));
+      resetEditorHistory(document.getElementById('htmlText'));
     }
 
     function closeModal(event) {
