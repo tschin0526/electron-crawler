@@ -682,6 +682,19 @@
       background: #1e3a8a;
     }
 
+    .render-mode-badge {
+      flex-shrink: 0;
+      font-size: 11px;
+      color: #6b7280;
+      background: #f3f4f6;
+      padding: 1px 6px;
+      border-radius: 4px;
+    }
+    body.dark .render-mode-badge {
+      color: #94a3b8;
+      background: #334155;
+    }
+
     .todo-tags {
       display: flex;
       gap: 4px;
@@ -2410,6 +2423,7 @@
             <div class="todo-footer-left">
               ${todo.pinned ? '<span class="pinned-badge">📌 置顶</span>' : ''}
               ${todo.bottom ? '<span class="bottom-badge">📍 置底</span>' : ''}
+              <span class="render-mode-badge">${todo.htmlContent ? '📄 HTML' : '📝 MD'}</span>
               <div class="todo-tags">
                 ${tagsHtml}
               </div>
