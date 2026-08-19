@@ -2984,37 +2984,31 @@
     async function saveTask(closeAfterSave = true) {
       const textarea = document.getElementById('taskText');
       const htmlTextarea = document.getElementById('htmlText');
-      let text = textarea.value.trim();
+      const text = textarea.value.trim();
+      const htmlValue = htmlTextarea.value.trim();
 
-      // 如果在 HTML 编辑模式下保存，同步 HTML 内容到 htmlContent
+      // HTML 编辑模式与 Markdown 编辑模式各自独立保存，互不影响
       if (previewMode === 2) {
-        const htmlValue = htmlTextarea.value.trim();
         if (!htmlValue) {
           alert('请输入 HTML 内容');
           return;
         }
-        // 从 HTML 中提取纯文本作为 text
-        const tempDiv = document.createElement('div');
-        tempDiv.innerHTML = htmlValue;
-        text = tempDiv.textContent.trim() || text;
-        textarea.value = text;
-      }
-
-      if (!text) {
-        alert('请输入任务内容');
-        return;
+      } else {
+        if (!text) {
+          alert('请输入任务内容');
+          return;
+        }
       }
 
       if (editingId) {
         const todo = todos.find(t => t.id === editingId);
         if (todo) {
-          todo.text = text;
-          // 如果在 HTML 编辑模式，直接保存 HTML 内容
           if (previewMode === 2) {
-            todo.htmlContent = htmlTextarea.value.trim();
-          } else if (todo.htmlContent) {
-            // 智能更新 htmlContent：保留原始样式，只替换文本内容
-            todo.htmlContent = updateHtmlContent(todo.text, text, todo.htmlContent);
+            // HTML 编辑模式：只更新 htmlContent，不更动 text
+            todo.htmlContent = htmlValue;
+          } else {
+            // Markdown 编辑模式：只更新 text，不更动 htmlContent
+            todo.text = text;
           }
           todo.tags = selectedTagsForModal;
           delete todo.tag;
@@ -3025,7 +3019,8 @@
       } else {
         const newTodo = {
           id: Date.now().toString(),
-          text: text,
+          text: previewMode === 2 ? '' : text,
+          htmlContent: previewMode === 2 ? htmlValue : undefined,
           tags: selectedTagsForModal,
           attachments: pendingAttachments,
           bgColor: getSelectedTodoColor(),
@@ -3034,10 +3029,6 @@
           updatedAt: Date.now(),
           completedAt: null
         };
-        // 如果在 HTML 编辑模式，也保存 HTML 内容
-        if (previewMode === 2) {
-          newTodo.htmlContent = htmlTextarea.value.trim();
-        }
         todos.unshift(newTodo);
       }
 
