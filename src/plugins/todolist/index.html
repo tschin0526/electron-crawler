@@ -466,6 +466,21 @@
       box-shadow: var(--shadow-lg);
     }
 
+    /* 拖拽调整完卡片尺寸后：金边 + 心跳呼吸高亮 3 秒，便于在重排后快速定位卡片 */
+    .todo-item.resize-focus {
+      border-color: #f5b301 !important;
+      z-index: 50;
+      animation: resizeFocusPulse 1s ease-in-out 3;
+    }
+    @keyframes resizeFocusPulse {
+      0%   { border-color: #f5b301; box-shadow: 0 0 0 0 rgba(245,179,1,0.0), 0 0 8px 1px rgba(245,179,1,0.45); }
+      10%  { border-color: #ffcf3f; box-shadow: 0 0 0 3px rgba(245,179,1,0.6), 0 0 20px 7px rgba(245,179,1,0.9); }
+      25%  { border-color: #f5b301; box-shadow: 0 0 0 0 rgba(245,179,1,0.0), 0 0 8px 1px rgba(245,179,1,0.45); }
+      40%  { border-color: #ffcf3f; box-shadow: 0 0 0 3px rgba(245,179,1,0.6), 0 0 20px 7px rgba(245,179,1,0.9); }
+      60%  { border-color: #f5b301; box-shadow: 0 0 0 0 rgba(245,179,1,0.0), 0 0 8px 1px rgba(245,179,1,0.45); }
+      100% { border-color: #f5b301; box-shadow: 0 0 0 0 rgba(245,179,1,0.0), 0 0 8px 1px rgba(245,179,1,0.45); }
+    }
+
     .todo-item.completed {
       opacity: 0.6;
     }
@@ -3631,14 +3646,17 @@
           // 调整卡片尺寸不视为内容异动，不更新 updatedAt
           await saveTodos();
         }
-        // 清除所有拖拽时的内联样式，交由 renderTodos 重新渲染时应用持久化的尺寸
+        const cardId = resizingId;
+        // 清除所有拖拽时的内联样式，交由 renderTodos 重新渲染时应用持久化的新尺寸
         resizingEl.style.flex = '';
         resizingEl.style.minWidth = '';
         resizingEl.style.width = '';
         resizingEl.style.height = '';
         resizingEl.style.maxHeight = '';
-        // 清除内联尺寸后卡片尺寸可能变化，重新计算 tiny 态
-        applyTinyStates();
+        // 重建网格：应用新尺寸 + Muuri 重新填空隙排版（卡片会落到最终位置）
+        renderTodos();
+        // 等 Muuri 布局动画稳定后，把卡片滚入可视区并金边呼吸 3 秒
+        setTimeout(() => focusResizedCard(cardId), 320);
       }
       resizingId = null;
       resizingEl = null;
@@ -3646,6 +3664,35 @@
       document.body.style.cursor = '';
       document.removeEventListener('mousemove', onResize);
       document.removeEventListener('mouseup', stopResize);
+    }
+
+    // 拖拽调整完卡片尺寸后：把卡片自动滚入可视区，并加金边心跳高亮 3 秒
+    function focusResizedCard(id) {
+      const card = document.querySelector(`.todo-item[data-id="${id}"]`);
+      if (!card) return;
+      scrollCardIntoView(card);
+      card.classList.add('resize-focus');
+      setTimeout(() => card.classList.remove('resize-focus'), 3000);
+    }
+
+    // 将卡片滚动到 .todo-list 滚动容器的可视区域内（能居中则居中，过高则顶部对齐）
+    function scrollCardIntoView(card) {
+      const container = document.getElementById('todoList');
+      if (!container || !card) return;
+      const cRect = container.getBoundingClientRect();
+      const cardRect = card.getBoundingClientRect();
+      const cardH = cardRect.height;
+      const contH = container.clientHeight;
+      const delta = cardRect.top - cRect.top; // 卡片相对容器可视顶部的偏移
+      // 已在可视区内则不动
+      if (delta >= 0 && delta + cardH <= contH) return;
+      let target;
+      if (cardH <= contH) {
+        target = container.scrollTop + delta - (contH - cardH) / 2; // 居中显示
+      } else {
+        target = container.scrollTop + delta - 12; // 顶部留 12px
+      }
+      container.scrollTop = Math.max(0, target);
     }
 
     async function resetCardSize(event, id) {
