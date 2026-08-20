@@ -638,9 +638,24 @@
       justify-content: space-between;
       gap: 8px;
       flex-shrink: 0;
+      min-width: 0;
       padding-top: 6px;
       margin-top: 4px;
       border-top: 1px solid rgba(0, 0, 0, 0.08);
+      /* 底部讯息条：内容超出时横向滚动，不再撑大卡片宽度 */
+      overflow-x: auto;
+      overflow-y: hidden;
+      scrollbar-width: thin;
+    }
+    .todo-footer::-webkit-scrollbar {
+      height: 6px;
+    }
+    .todo-footer::-webkit-scrollbar-track {
+      background: transparent;
+    }
+    .todo-footer::-webkit-scrollbar-thumb {
+      background: var(--text-secondary);
+      border-radius: 3px;
     }
     .todo-footer-left {
       display: flex;
@@ -652,7 +667,7 @@
     .todo-footer .todo-tags {
       display: flex;
       gap: 4px;
-      flex-wrap: wrap;
+      flex-wrap: nowrap;
       min-width: 0;
     }
     .pinned-badge {
@@ -724,6 +739,10 @@
       border-radius: 10px;
       font-size: 10px;
       font-weight: 500;
+      /* 标签保持自然宽度与单行布局：讯息条窄时由 .todo-footer 横向滚动，
+         避免被压缩成 1 字符宽、CJK 文本纵向排列 */
+      flex-shrink: 0;
+      white-space: nowrap;
     }
 
     .tag-color-1 { background: #dbeafe; color: #1d4ed8; }
@@ -742,6 +761,8 @@
     .todo-date {
       font-size: 11px;
       color: var(--text-secondary);
+      flex-shrink: 0;
+      white-space: nowrap;
     }
 
     .todo-attachments {
@@ -765,7 +786,23 @@
     .todo-actions {
       display: flex;
       gap: 4px;
+      min-width: 0;
+      /* 操作按钮保持固定尺寸，空间不足时在此横向滚动，而非撑大卡片 */
+      overflow-x: auto;
+      scrollbar-width: thin;
+    }
+    .todo-actions .action-btn {
       flex-shrink: 0;
+    }
+    .todo-actions::-webkit-scrollbar {
+      height: 6px;
+    }
+    .todo-actions::-webkit-scrollbar-track {
+      background: transparent;
+    }
+    .todo-actions::-webkit-scrollbar-thumb {
+      background: var(--text-secondary);
+      border-radius: 3px;
     }
 
     .resize-handle {
@@ -1535,7 +1572,7 @@
     let resizingStartX = 0;
     let resizingStartW = 0;
     const MIN_CARD_HEIGHT = 120;
-    const MIN_CARD_WIDTH = 220;
+    const MIN_CARD_WIDTH = 60;
 
     const TAG_COLORS = {};
 
@@ -2890,6 +2927,14 @@
       const div = document.createElement('div');
       div.textContent = text;
       return div.innerHTML;
+    }
+
+    // 解码 HTML 实体（如 &amp; &lt; &#39; 等），用于小圆球纯文本提取
+    function decodeEntities(text) {
+      if (!text) return '';
+      const ta = document.createElement('textarea');
+      ta.innerHTML = text;
+      return ta.value;
     }
 
     function renderMarkdown(text) {
