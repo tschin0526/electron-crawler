@@ -376,10 +376,7 @@
     }
 
     .todo-list {
-      display: flex;
-      flex-wrap: wrap;
-      align-items: flex-start;
-      gap: 12px;
+      position: relative;
       flex: 1;
       min-height: 0;
       overflow-y: auto;
@@ -427,15 +424,16 @@
     }
 
     .todo-item {
-      flex: 1 1 calc(33.333% - 8px);
-      min-width: 0;
+      position: absolute;
+      width: 300px;
+      max-width: calc(100% - 12px);
+      margin: 6px;
       box-sizing: border-box;
       background: var(--card-bg);
       border-radius: 10px;
       padding: 6px 6px 4px 6px;
       border: 2px solid var(--border-color);
-      transition: border-color 0.3s ease, box-shadow 0.3s ease, transform 0.3s ease, opacity 0.3s ease;
-      position: relative;
+      transition: border-color 0.3s ease, box-shadow 0.3s ease;
       max-height: 33vh;
       overflow: hidden;
       display: flex;
@@ -466,7 +464,6 @@
     .todo-item:hover {
       border-color: var(--primary-color);
       box-shadow: var(--shadow-lg);
-      transform: translateY(-2px);
     }
 
     .todo-item.completed {
@@ -1393,14 +1390,6 @@
         flex-direction: column;
         align-items: flex-start;
       }
-
-      .todo-list {
-        flex-direction: column;
-      }
-
-      .todo-item {
-        flex-basis: 100%;
-      }
     }
 
     .theme-toggle {
@@ -1575,6 +1564,7 @@
     </div>
   </div>
 
+  <script src="vendor/muuri.min.js"></script>
   <script>
     const STORAGE_KEY = 'electron-todolist-data';
     const PLUGIN_NAME = 'todolist';
@@ -2799,9 +2789,16 @@
             <div class="empty-state-desc">点击上方按钮添加新任务</div>
           </div>
         `;
+        // 清空列表时一并销毁旧 Muuri 实例，避免 resize 时调用已失效实例
+        if (todoGrid) {
+          todoGrid.destroy();
+          todoGrid = null;
+        }
         return;
       }
 
+      // 无自定义宽的卡片给一个约 1/3 列的默认宽（Muuri 需要每张卡都有显式宽度才能测量装箱）
+      const defW = Math.max(MIN_CARD_WIDTH, Math.floor((container.clientWidth - 24) / 3)) || 300;
       container.innerHTML = filtered.map(todo => {
         const tags = todo.tags && Array.isArray(todo.tags) ? todo.tags : (todo.tag ? [todo.tag] : []);
         const tagsHtml = tags.map(tag => {
@@ -2810,8 +2807,8 @@
         }).join('');
         const heightStyle = todo.height ? `height: ${todo.height}px; max-height: none;` : '';
         const heightAttr = todo.height ? 'data-height="true"' : '';
-        // 使用 width 而非 min-width，配合 flex: 0 0 auto 实现固定宽度
-        const widthStyle = todo.width ? `width: ${todo.width}px;` : '';
+        // 每张卡片都给显式宽度：自定义宽优先，否则用默认列宽（配合 Muuri 绝对定位装箱）
+        const widthStyle = `width: ${todo.width ? todo.width : defW}px;`;
         const widthAttr = todo.width ? 'data-width="true"' : '';
         const todoBgStyle = todo.bgColor ? `background-color: ${todo.bgColor};` : '';
         const cardStyle = [heightStyle, widthStyle, todoBgStyle].filter(Boolean).join(' ');
@@ -2851,8 +2848,8 @@
         </div>
       `;
       }).join('');
-      // 渲染后根据「卡片面积 / 父窗口面积」自动切换 tiny 态
-      applyTinyStates();
+      // 用 Muuri 做紧凑网格（保留自定义宽 + 严格 DOM 顺序 + 自动填空隙），再判断 tiny 态
+      buildGrid();
     }
 
     // 根据卡片实际面积与父窗口（#todoList 容器）面积的比例，自动切换「tiny」态：
@@ -2887,6 +2884,37 @@
         }
         el.classList.toggle('tiny', tiny);
       });
+    }
+
+    // Muuri 紧凑网格实例（模块级，便于 resize / 重渲染时复用与销毁）
+    let todoGrid = null;
+
+    // 用 Muuri 做紧凑网格布局：保留自定义宽、严格 DOM 顺序、自动填空隙（fillGaps）。
+    // 每次渲染先把旧实例销毁再重建（renderTodos 会整体替换 innerHTML），重建后重判 tiny 态。
+    function buildGrid() {
+      const container = document.getElementById('todoList');
+      if (!container) return;
+      if (todoGrid) {
+        todoGrid.destroy();
+        todoGrid = null;
+      }
+      todoGrid = new Muuri(container, {
+        items: '.todo-item',
+        layout: {
+          fillGaps: true,
+          rounding: true,
+          horizontal: false,
+          alignRight: false,
+          alignBottom: false
+        },
+        layoutOnResize: 150,
+        dragEnabled: false,
+        layoutDuration: 0.25,
+        showDuration: 0,
+        hideDuration: 0
+      });
+      // 布局完成后，按卡片面积判断 tiny 微缩态
+      applyTinyStates();
     }
 
     // 在 #todoList 中找一张未用户自定义宽高的卡片，读取它的 offsetWidth/offsetHeight
