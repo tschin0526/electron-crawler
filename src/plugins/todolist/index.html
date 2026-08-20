@@ -448,17 +448,17 @@
       width: 100%;
       min-height: 0;
     }
-    /* 卡片面积小于父窗口 1/20 时，把「完整卡片」当作微缩图铺满当前卡片（cover 居中裁切） */
+    /* 卡片面积小于父窗口 1/20 时，把「完整卡片」当作微缩图铺满当前卡片（cover） */
+    /* 关键：缩放原点用 top left（而非 center），内容永远从卡左上角开始显示，
+       避免短内容卡片居中裁切时正好切到 inner 中段的空白区 → 整卡看似空白 */
     .todo-item.tiny .todo-inner {
       position: absolute;
-      top: 50%;
-      left: 50%;
+      top: 0;
+      left: 0;
       width: var(--nat-w, 100%);
       height: var(--nat-h, 100%);
-      margin-top: calc(var(--nat-h, 0px) / -2);
-      margin-left: calc(var(--nat-w, 0px) / -2);
       transform: scale(var(--tiny-s, 1));
-      transform-origin: center center;
+      transform-origin: top left;
     }
 
     .todo-item:hover {
