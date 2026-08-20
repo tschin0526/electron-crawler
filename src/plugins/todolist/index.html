@@ -442,6 +442,27 @@
       flex-direction: column;
     }
 
+    /* 包裹卡片头部/内容/底部，便于整体等比缩放（tiny 态） */
+    .todo-inner {
+      flex: 1 1 auto;
+      display: flex;
+      flex-direction: column;
+      width: 100%;
+      min-height: 0;
+    }
+    /* 卡片面积小于父窗口 1/20 时，把「完整卡片」当作微缩图铺满当前卡片（cover 居中裁切） */
+    .todo-item.tiny .todo-inner {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      width: var(--nat-w, 100%);
+      height: var(--nat-h, 100%);
+      margin-top: calc(var(--nat-h, 0px) / -2);
+      margin-left: calc(var(--nat-w, 0px) / -2);
+      transform: scale(var(--tiny-s, 1));
+      transform-origin: center center;
+    }
+
     .todo-item:hover {
       border-color: var(--primary-color);
       box-shadow: var(--shadow-lg);
@@ -2797,6 +2818,7 @@
         const pinnedAttr = todo.pinned ? 'data-pinned="true"' : '';
         return `
         <div class="todo-item ${todo.completed ? 'completed' : ''} ${todo.pinned ? 'pinned' : ''}" data-id="${todo.id}" ${heightAttr} ${widthAttr} ${pinnedAttr} ondblclick="openEditModal('${todo.id}')" style="${cardStyle}">
+          <div class="todo-inner">
           <div class="todo-item-header">
             <div class="checkbox-wrapper" onclick="toggleComplete('${todo.id}')">
               <div class="checkbox ${todo.completed ? 'checked' : ''}"></div>
@@ -2824,10 +2846,59 @@
             </div>
             <span class="todo-date" title="最后异动时间">${formatDate(todo.updatedAt || todo.createdAt)}</span>
           </div>
+          </div>
           <div class="resize-handle" onmousedown="startResize(event, '${todo.id}')" ondblclick="resetCardSize(event, '${todo.id}')" title="拖动调整宽度和高度，双击重置"></div>
         </div>
       `;
       }).join('');
+      // 渲染后根据「卡片面积 / 父窗口面积」自动切换 tiny 态
+      applyTinyStates();
+    }
+
+    // 根据卡片实际面积与父窗口（#todoList 容器）面积的比例，自动切换「tiny」态：
+    // 当卡片面积 < 父窗口面积的 1/20 时，给卡片加 .tiny，并把完整卡片当作「微缩图」
+    // 等比 cover 铺满当前卡片（居中裁切，充满整个卡片面积）
+    function applyTinyStates() {
+      const container = document.getElementById('todoList');
+      if (!container) return;
+      const parentArea = container.clientWidth * container.clientHeight;
+      if (parentArea <= 0) return;
+      const threshold = parentArea / 20;
+      // 取一张「自然尺寸」的卡片（未用户自定义宽高）作为微缩图的参考尺寸
+      // 找不到时用容器尺寸估算一个合理默认值
+      const ref = measureNaturalCardSize(container) || {
+        w: Math.max(220, Math.round(container.clientWidth / 3)),
+        h: Math.max(160, Math.min(Math.round(window.innerHeight * 0.33), 320))
+      };
+      container.querySelectorAll('.todo-item').forEach(el => {
+        const rect = el.getBoundingClientRect();
+        const area = rect.width * rect.height;
+        const tiny = area > 0 && area < threshold;
+        if (tiny) {
+          // cover：取较大缩放比，保证铺满（多出的部分居中裁切）
+          const scale = Math.max(rect.width / ref.w, rect.height / ref.h);
+          el.style.setProperty('--nat-w', ref.w + 'px');
+          el.style.setProperty('--nat-h', ref.h + 'px');
+          el.style.setProperty('--tiny-s', scale);
+        } else {
+          el.style.removeProperty('--nat-w');
+          el.style.removeProperty('--nat-h');
+          el.style.removeProperty('--tiny-s');
+        }
+        el.classList.toggle('tiny', tiny);
+      });
+    }
+
+    // 在 #todoList 中找一张未用户自定义宽高的卡片，读取它的 offsetWidth/offsetHeight
+    // 作为「完整卡片」的参考尺寸（微缩图以此为基准等比缩放铺满）
+    function measureNaturalCardSize(container) {
+      const cards = container.querySelectorAll('.todo-item:not([data-width]):not([data-height])');
+      for (const c of cards) {
+        const w = c.offsetWidth;
+        const h = c.offsetHeight;
+        if (w > 120 && h > 80) return { w, h };
+      }
+      return null;
     }
 
     // 检测 HTML 内容是否已经是暗色主题（黑色/深色背景 + 浅色文字）
@@ -3511,6 +3582,13 @@
       const deltaX = event.clientX - resizingStartX;
       const newWidth = Math.max(MIN_CARD_WIDTH, resizingStartW + deltaX);
       resizingEl.style.width = newWidth + 'px';
+      // 实时切换 tiny 态：卡片面积 < 父窗口 1/20 时，内容等比缩小为 1/4
+      const container = document.getElementById('todoList');
+      if (container) {
+        const parentArea = container.clientWidth * container.clientHeight;
+        const tiny = parentArea > 0 && (newWidth * newHeight) < parentArea / 20;
+        resizingEl.classList.toggle('tiny', tiny);
+      }
     }
 
     async function stopResize() {
@@ -3531,6 +3609,8 @@
         resizingEl.style.width = '';
         resizingEl.style.height = '';
         resizingEl.style.maxHeight = '';
+        // 清除内联尺寸后卡片尺寸可能变化，重新计算 tiny 态
+        applyTinyStates();
       }
       resizingId = null;
       resizingEl = null;
@@ -3560,6 +3640,8 @@
       renderTagFilter();
       renderTodos();
       updateStats();
+      // 父窗口尺寸变化时，重新判断各卡片是否进入 tiny 态
+      window.addEventListener('resize', applyTinyStates);
     }
 
     // 主题由主程式统一控制，通过 CSS 注入实现（主程式 insertCSS 添加 body.dark）
