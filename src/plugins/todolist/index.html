@@ -3438,8 +3438,11 @@
       resetEditorHistory(document.getElementById('htmlText'));
     }
 
-    function closeModal(event) {
+    function closeModal(event, focusId) {
       if (event && event.target !== event.currentTarget) return;
+      // focusId 未显式传入时默认聚焦当前编辑中的卡片（取消/✕/ESC 场景）；
+      // 保存场景由调用方显式传入，以同时覆盖「编辑」与「新增」两种卡片
+      const fid = (focusId !== undefined) ? focusId : editingId;
       document.getElementById('modalOverlay').style.display = 'none';
       previewMode = 0;
       document.getElementById('mdPreview').classList.remove('show');
@@ -3453,6 +3456,10 @@
       currentMatchIndex = -1;
       lastSearchEnterQuery = '';
       updateSearchNavButtons();
+      // 回到卡片画面：把刚操作（编辑/新增）的卡片滚入可视区 + 金边心跳 3 秒（与拖拽尺寸后聚焦同源）
+      if (fid) {
+        setTimeout(() => focusResizedCard(fid), 320);
+      }
     }
 
     function handleFileSelect(event) {
@@ -3556,9 +3563,12 @@
         todos.unshift(newTodo);
       }
 
+      const isEdit = !!editingId;
       await saveTodos();
       if (closeAfterSave) {
-        closeModal();
+        // 保存后自动关闭：编辑场景聚焦原卡片，新增场景聚焦刚插入队首的卡片
+        const focusCardId = isEdit ? editingId : (todos[0] && todos[0].id);
+        closeModal(undefined, focusCardId);
       }
     }
 
