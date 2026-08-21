@@ -448,17 +448,53 @@
       width: 100%;
       min-height: 0;
     }
-    /* 卡片面积小于父窗口 1/20 时，把「完整卡片」当作微缩图铺满当前卡片（cover） */
-    /* 关键：缩放原点用 top left（而非 center），内容永远从卡左上角开始显示，
-       避免短内容卡片居中裁切时正好切到 inner 中段的空白区 → 整卡看似空白 */
+    /* tiny 态：卡片面积 < 父窗口 1/16 时，隐藏全部正文（header/content/footer），
+       只显示「缩略标签」（内容第一行的前 30 字），字号按卡片尺寸动态缩小。
+       这么小的卡片已不可能浏览内容，只需让人一眼识别是哪张卡。 */
     .todo-item.tiny .todo-inner {
-      position: absolute;
-      top: 0;
-      left: 0;
-      width: var(--nat-w, 100%);
-      height: var(--nat-h, 100%);
-      transform: scale(var(--tiny-s, 1));
-      transform-origin: top left;
+      position: static;
+      transform: none;
+      align-items: center;
+      justify-content: center;
+    }
+    .todo-item.tiny .todo-item-header,
+    .todo-item.tiny .todo-content,
+    .todo-item.tiny .todo-footer {
+      display: none;
+    }
+    .todo-tiny-label {
+      display: none;
+    }
+    .todo-item.tiny .todo-tiny-label {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      width: 100%;
+      padding: 4px;
+      font-size: var(--tiny-font-size, 10px);
+      line-height: 1.25;
+      word-break: break-word;
+      overflow: hidden;
+      color: var(--text-primary);
+    }
+    /* tiny-label 内 markdown 渲染出的 <p>/<h1~h6> 默认带 margin 且字号大，需统一以保持居中紧凑 */
+    .todo-item.tiny .todo-tiny-label p,
+    .todo-item.tiny .todo-tiny-label h1,
+    .todo-item.tiny .todo-tiny-label h2,
+    .todo-item.tiny .todo-tiny-label h3,
+    .todo-item.tiny .todo-tiny-label h4,
+    .todo-item.tiny .todo-tiny-label h5,
+    .todo-item.tiny .todo-tiny-label h6 {
+      margin: 0;
+      font-size: inherit;
+    }
+    /* 但保留 <BIG>/<SMALL> 等相对字号标签的语义：相对当前字号放大/缩小，不强制 inherit */
+    .todo-item.tiny .todo-tiny-label big {
+      font-size: larger;
+    }
+    .todo-item.tiny .todo-tiny-label small {
+      font-size: smaller;
     }
 
     .todo-item:hover {
@@ -2792,6 +2828,48 @@
       }
     }
 
+    // 提取卡片的「缩略标签」：取内容第一个「有可见文字」的非空行，截前 30 个可见字符
+    // （超出加省略号）。保留 HTML 标签（<BIG> 等）和 markdown 符号，让 renderMarkdown 渲染。
+    // 关键：
+    //  1. 跳过"只有 HTML 标签没有文字"的行（如 <BIG></BIG>、<center></center>）—— 否则会显示 "..."
+    //  2. 按完整 HTML 标签边界截取前 30 个可见字符 —— 否则截到 <big 中间时 marked 会转义成 &lt;big
+    //  3. 截断后用 balanceHtmlTags 补全未闭合的标签
+    function getTinyLabel(todo) {
+      let text = todo.text || '';
+      const lines = text.split('\n');
+      let firstLine = '';
+      for (const l of lines) {
+        // 去掉 HTML 标签后看是否还有可见文字
+        const visible = l.replace(/<[^>]*>/g, '').trim();
+        if (visible) { firstLine = l; break; }
+      }
+      if (!firstLine) return '';
+      // 按完整 HTML 标签边界截取前 30 个"可见字符"（HTML 标签内的字符不计入）
+      let result = '';
+      let visibleCount = 0;
+      let i = 0;
+      const len = firstLine.length;
+      while (i < len && visibleCount < 30) {
+        if (firstLine[i] === '<') {
+          // 找匹配的 '>'，标签整体保留（不计入可见字符数）
+          const closeIdx = firstLine.indexOf('>', i);
+          if (closeIdx === -1) break; // 不完整标签，截断
+          result += firstLine.slice(i, closeIdx + 1);
+          i = closeIdx + 1;
+        } else {
+          result += firstLine[i];
+          visibleCount++;
+          i++;
+        }
+      }
+      // 补全截断后未闭合的标签（balanceHtmlTags 在白名单 big/center 等内自动闭合）
+      if (typeof balanceHtmlTags === 'function') {
+        result = balanceHtmlTags(result);
+      }
+      if (i < len) result += '…';
+      return result;
+    }
+
     function renderTodos() {
       const container = document.getElementById('todoList');
       const filtered = filterTodos();
@@ -2831,6 +2909,7 @@
         return `
         <div class="todo-item ${todo.completed ? 'completed' : ''} ${todo.pinned ? 'pinned' : ''}" data-id="${todo.id}" ${heightAttr} ${widthAttr} ${pinnedAttr} ondblclick="openEditModal('${todo.id}')" style="${cardStyle}">
           <div class="todo-inner">
+          <div class="todo-tiny-label">${renderMarkdown(getTinyLabel(todo))}</div>
           <div class="todo-item-header">
             <div class="checkbox-wrapper" onclick="toggleComplete('${todo.id}')">
               <div class="checkbox ${todo.completed ? 'checked' : ''}"></div>
@@ -2867,35 +2946,35 @@
       buildGrid();
     }
 
-    // 根据卡片实际面积与父窗口（#todoList 容器）面积的比例，自动切换「tiny」态：
-    // 当卡片面积 < 父窗口面积的 1/20 时，给卡片加 .tiny，并把完整卡片当作「微缩图」
-    // 等比 cover 铺满当前卡片（居中裁切，充满整个卡片面积）
+    // 根据卡片面积与「可视父窗口」面积的比例，自动切换「tiny」态：
+    //  - 卡片面积 < 父窗口 1/16：进入 tiny，隐藏全部正文，只显示「缩略标签」（第一行前30字）
+    //  - 卡片面积 < 父窗口 1/20：字号更小（极小卡）
+    // 字号按卡片尺寸动态算（用 font-size，而非 transform scale），保证字号真的缩小。
+    // 用 window.innerHeight 作为父窗口高度基准（而非容器内容总高），避免卡片数量影响触发阈值。
     function applyTinyStates() {
       const container = document.getElementById('todoList');
       if (!container) return;
-      const parentArea = container.clientWidth * container.clientHeight;
+      const parentArea = container.clientWidth * window.innerHeight; // 可视父窗口面积
       if (parentArea <= 0) return;
-      const threshold = parentArea / 20;
-      // 取一张「自然尺寸」的卡片（未用户自定义宽高）作为微缩图的参考尺寸
-      // 找不到时用容器尺寸估算一个合理默认值
-      const ref = measureNaturalCardSize(container) || {
-        w: Math.max(220, Math.round(container.clientWidth / 3)),
-        h: Math.max(160, Math.min(Math.round(window.innerHeight * 0.33), 320))
-      };
+      const tinyThreshold = parentArea / 32;    // 进入 tiny 的面积上限（1/32）
+      const quarterThreshold = parentArea / 40; // 更小则字号更小（1/40）
       container.querySelectorAll('.todo-item').forEach(el => {
         const rect = el.getBoundingClientRect();
         const area = rect.width * rect.height;
-        const tiny = area > 0 && area < threshold;
+        const tiny = area > 0 && area < tinyThreshold;
         if (tiny) {
-          // cover：取较大缩放比，保证铺满（多出的部分居中裁切）
-          const scale = Math.max(rect.width / ref.w, rect.height / ref.h);
-          el.style.setProperty('--nat-w', ref.w + 'px');
-          el.style.setProperty('--nat-h', ref.h + 'px');
-          el.style.setProperty('--tiny-s', scale);
+          // 字号不再按短边「等比例无限缩小」（再缩就看不见了），改为固定档位：
+          //   中小卡（1/32 ~ 1/40）：11px
+          //   极小卡（< 1/40）：    8px（最小下限，不再缩小）
+          let fontSize;
+          if (area < quarterThreshold) {
+            fontSize = 8;
+          } else {
+            fontSize = 11;
+          }
+          el.style.setProperty('--tiny-font-size', fontSize + 'px');
         } else {
-          el.style.removeProperty('--nat-w');
-          el.style.removeProperty('--nat-h');
-          el.style.removeProperty('--tiny-s');
+          el.style.removeProperty('--tiny-font-size');
         }
         el.classList.toggle('tiny', tiny);
       });
@@ -2930,18 +3009,6 @@
       });
       // 布局完成后，按卡片面积判断 tiny 微缩态
       applyTinyStates();
-    }
-
-    // 在 #todoList 中找一张未用户自定义宽高的卡片，读取它的 offsetWidth/offsetHeight
-    // 作为「完整卡片」的参考尺寸（微缩图以此为基准等比缩放铺满）
-    function measureNaturalCardSize(container) {
-      const cards = container.querySelectorAll('.todo-item:not([data-width]):not([data-height])');
-      for (const c of cards) {
-        const w = c.offsetWidth;
-        const h = c.offsetHeight;
-        if (w > 120 && h > 80) return { w, h };
-      }
-      return null;
     }
 
     // 检测 HTML 内容是否已经是暗色主题（黑色/深色背景 + 浅色文字）
@@ -3635,13 +3702,8 @@
       const deltaX = event.clientX - resizingStartX;
       const newWidth = Math.max(MIN_CARD_WIDTH, resizingStartW + deltaX);
       resizingEl.style.width = newWidth + 'px';
-      // 实时切换 tiny 态：卡片面积 < 父窗口 1/20 时，内容等比缩小为 1/4
-      const container = document.getElementById('todoList');
-      if (container) {
-        const parentArea = container.clientWidth * container.clientHeight;
-        const tiny = parentArea > 0 && (newWidth * newHeight) < parentArea / 20;
-        resizingEl.classList.toggle('tiny', tiny);
-      }
+      // 实时切换 tiny 态（与 applyTinyStates 一致：1/16 进 tiny 用 cover 铺满，1/20 固定缩到 1/4）
+      applyTinyStates();
     }
 
     async function stopResize() {
