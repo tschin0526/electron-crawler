@@ -2956,16 +2956,16 @@
       if (!container) return;
       const parentArea = container.clientWidth * window.innerHeight; // 可视父窗口面积
       if (parentArea <= 0) return;
-      const tinyThreshold = parentArea / 26;    // 进入 tiny 的面积上限（1/26）
-      const quarterThreshold = parentArea / 40; // 更小则字号更小（1/40）
+      const tinyThreshold = parentArea / 32;    // 进入 tiny 的面积上限（1/32）
+      const quarterThreshold = parentArea / 46; // 更小则字号更小（1/46）
       container.querySelectorAll('.todo-item').forEach(el => {
         const rect = el.getBoundingClientRect();
         const area = rect.width * rect.height;
         const tiny = area > 0 && area < tinyThreshold;
         if (tiny) {
           // 字号不再按短边「等比例无限缩小」（再缩就看不见了），改为固定档位：
-          //   中小卡（1/26 ~ 1/40）：14px
-          //   极小卡（< 1/40）：    11px（最小下限，不再缩小）
+          //   中小卡（1/32 ~ 1/46）：14px
+          //   极小卡（< 1/46）：    11px（最小下限，不再缩小）
           let fontSize;
           if (area < quarterThreshold) {
             fontSize = 11;
