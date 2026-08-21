@@ -244,7 +244,12 @@ function init(shared) {
           const filePath = path.join(PLUGINS_DATA_DIR, file);
           const data = fs.readFileSync(filePath, 'utf8');
           const todo = JSON.parse(data);
-          if (todo && todo.id) todos.push(todo);
+          if (todo && typeof todo === 'object') {
+            // 文件名即唯一标识：JSON 内部的 id 字段一律对齐到文件名，
+            // 这样在 Finder 改文件名、或通过 app 重命名，均以磁盘文件名为准。
+            todo.id = file.replace('todo-', '').replace('.json', '');
+            todos.push(todo);
+          }
         } catch (e) {
           console.warn(`[Main] 读取 todo 文件失败：${file}`, e.message);
         }
@@ -394,6 +399,18 @@ function init(shared) {
         return { success: false, error: `目标文件已存在: todo-${newId}.json（先删除或换个名字）` };
       }
       fs.renameSync(srcPath, dstPath);
+      // 同步 JSON 内容里的 id 字段，使其与文件名一致（文件名即唯一标识）
+      try {
+        const content = fs.readFileSync(dstPath, 'utf8');
+        const obj = JSON.parse(content);
+        if (obj && typeof obj === 'object') {
+          obj.id = newId;
+          obj.updatedAt = Date.now();
+          fs.writeFileSync(dstPath, JSON.stringify(obj, null, 2), 'utf8');
+        }
+      } catch (e) {
+        console.warn(`[Main] 同步重命名后的 JSON id 失败: ${dstPath}`, e.message);
+      }
       console.log(`[Main] 已重命名 todo 文件: ${srcPath} -> ${dstPath}`);
       return { success: true, newId };
     } catch (error) {

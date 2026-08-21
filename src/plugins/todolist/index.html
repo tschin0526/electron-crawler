@@ -933,6 +933,40 @@
     .todo-actions .action-btn {
       flex-shrink: 0;
     }
+    /* JSON 文件名徽章（位于操作条最左边） */
+    .todo-actions-label {
+      flex-shrink: 0;
+      font-size: 10px;
+      font-family: 'SF Mono', 'Menlo', 'Monaco', 'Consolas', monospace;
+      color: var(--text-secondary);
+      background: rgba(148, 163, 184, 0.12);
+      border: 1px solid rgba(148, 163, 184, 0.28);
+      border-radius: 4px;
+      padding: 0 6px;
+      height: 22px;
+      display: inline-flex;
+      align-items: center;
+      max-width: 140px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      cursor: text;
+      user-select: text;
+      transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+    }
+    .todo-actions-label:hover {
+      background: rgba(148, 163, 184, 0.22);
+      color: var(--text-primary);
+    }
+    body.dark .todo-actions-label {
+      background: rgba(148, 163, 184, 0.08);
+      border-color: rgba(148, 163, 184, 0.22);
+      color: #94a3b8;
+    }
+    body.dark .todo-actions-label:hover {
+      background: rgba(148, 163, 184, 0.18);
+      color: #e2e8f0;
+    }
     .todo-actions::-webkit-scrollbar {
       height: 6px;
     }
@@ -1090,6 +1124,45 @@
       background-color: rgba(0, 0, 0, 0.5);
       z-index: 1000;
       animation: fadeIn 0.2s;
+    }
+
+    /* 重命名确认框（独立的居中小弹窗，复用 .modal-overlay 背景） */
+    #renameConfirmOverlay {
+      align-items: center;
+      justify-content: center;
+      z-index: 2000;
+      background-color: rgba(0, 0, 0, 0.45);
+    }
+    .rename-confirm-box {
+      background-color: var(--card-bg);
+      border: 1px solid var(--border-color);
+      border-radius: 12px;
+      box-shadow: 0 12px 40px rgba(0, 0, 0, 0.28);
+      max-width: 380px;
+      width: calc(100% - 48px);
+      padding: 20px 22px;
+      margin: auto;
+      animation: scaleIn 0.15s ease;
+    }
+    .rename-confirm-msg {
+      margin: 0 0 18px;
+      font-size: 14px;
+      line-height: 1.65;
+      color: var(--text-primary);
+      word-break: break-all;
+    }
+    .rename-confirm-actions {
+      display: flex;
+      gap: 10px;
+      justify-content: flex-end;
+    }
+    body.dark .rename-confirm-box {
+      background-color: #1e293b;
+      border-color: rgba(148, 163, 184, 0.22);
+      box-shadow: 0 12px 40px rgba(0, 0, 0, 0.6);
+    }
+    body.dark .rename-confirm-msg {
+      color: #e2e8f0;
     }
 
     .modal {
@@ -1564,6 +1637,11 @@
       to { opacity: 1; }
     }
 
+    @keyframes scaleIn {
+      from { opacity: 0; transform: scale(0.94); }
+      to { opacity: 1; transform: scale(1); }
+    }
+
     @keyframes slideUp {
       from {
         opacity: 0;
@@ -1796,6 +1874,17 @@
             <div class="attachments-list" id="attachmentsList"></div>
           </div>
         </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 重命名确认框（回车后弹出，让用户确认「保存」或「放弃」） -->
+  <div class="modal-overlay" id="renameConfirmOverlay" style="display: none;" onclick="if(event.target===event.currentTarget) confirmRenameDiscard()">
+    <div class="rename-confirm-box" onclick="event.stopPropagation()">
+      <p class="rename-confirm-msg" id="renameConfirmMsg"></p>
+      <div class="rename-confirm-actions">
+        <button class="btn btn-secondary" onclick="confirmRenameDiscard()">放弃</button>
+        <button class="btn btn-primary" onclick="confirmRenameSave()">保存</button>
       </div>
     </div>
   </div>
@@ -3133,6 +3222,7 @@
               <div class="checkbox ${todo.completed ? 'checked' : ''}"></div>
             </div>
             <div class="todo-actions">
+              <span class="todo-actions-label" title="todo-${todo.id}.json">todo-${todo.id}.json</span>
               <button class="action-btn pin ${todo.pinned ? 'active' : ''}" onclick="togglePin('${todo.id}')" title="${todo.pinned ? '取消置顶' : '置顶'}">⬆️</button>
               <button class="action-btn bottom ${todo.bottom ? 'active' : ''}" onclick="toggleBottom('${todo.id}')" title="${todo.bottom ? '取消置底' : '置底'}">⬇️</button>
               <button class="action-btn email" onclick="emailTodo('${todo.id}')" title="发邮件">📧</button>
@@ -3796,7 +3886,11 @@
       input.select();
     }
 
-    // ✓ 确认重命名：本地校验 → 调 IPC → 成功则更新内存 id + editingId + 刷新显示
+    // 重命名待确认数据（回车后暂存，确认框「保存」才真正执行磁盘改名）
+    let pendingRenameOldId = null;
+    let pendingRenameNewId = null;
+
+    // ✓ 回车提交：本地校验 → 暂存 → 弹确认框（不直接改磁盘）
     async function commitRenameJsonFile() {
       const input = document.getElementById('jsonFileRenameInput');
       if (!input) return;
@@ -3822,15 +3916,40 @@
         alert('重命名功能不可用（IPC 缺失）');
         return;
       }
+      // 校验通过 → 暂存待确认数据，弹出确认框
+      pendingRenameOldId = oldId;
+      pendingRenameNewId = newId;
+      showRenameConfirm(newId);
+    }
+
+    // 显示重命名确认框
+    function showRenameConfirm(newId) {
+      const overlay = document.getElementById('renameConfirmOverlay');
+      const msg = document.getElementById('renameConfirmMsg');
+      if (msg) msg.textContent = `确认将 JSON 文件改名为 todo-${newId}.json 吗？`;
+      if (overlay) overlay.style.display = 'flex';
+    }
+
+    // 确认框「保存」：真正执行磁盘改名 + 同步内存
+    async function confirmRenameSave() {
+      const overlay = document.getElementById('renameConfirmOverlay');
+      const oldId = pendingRenameOldId;
+      const newId = pendingRenameNewId;
+      if (overlay) overlay.style.display = 'none';
+      pendingRenameOldId = null;
+      pendingRenameNewId = null;
+      if (!oldId || !newId) return;
       try {
         const result = await window.electronAPI.renameTodoFile(oldId, newId);
         if (!result || !result.success) {
           alert('重命名失败：' + (result?.error || '未知错误'));
+          cancelRenameJsonFile(); // 恢复 UI，让用户可重试
           return;
         }
       } catch (e) {
         console.error('[TodoList] 重命名 todo 文件失败:', e);
         alert('重命名失败：' + (e?.message || e));
+        cancelRenameJsonFile();
         return;
       }
       // 主进程重命名成功 → 同步更新内存
@@ -3843,7 +3962,20 @@
       // 退出重命名 UI + 刷新文件名显示
       cancelRenameJsonFile();
       updateJsonFileDisplay();
-      console.log(`[TodoList] todo id 已从 ${oldId} 改为 ${newId}，下次保存会写入 todo-${newId}.json`);
+      // 关键：重渲染画廊卡片，使卡片的 data-id 与功能条 JSON 名同步为新 id。
+      // 否则卡片 DOM 仍保留旧 id → 双击 openEditModal(旧id) 找不到 todo（无法进入编辑），且名称不刷新。
+      renderTodos();
+      console.log(`[TodoList] todo id 已从 ${oldId} 改为 ${newId}`);
+    }
+
+    // 确认框「放弃」：取消重命名，不执行任何磁盘改动（内存/文件均不变）
+    function confirmRenameDiscard() {
+      const overlay = document.getElementById('renameConfirmOverlay');
+      if (overlay) overlay.style.display = 'none';
+      pendingRenameOldId = null;
+      pendingRenameNewId = null;
+      // 恢复文件名显示，保持编辑模态框打开（回到可继续编辑状态）
+      cancelRenameJsonFile();
     }
 
     // ✕ 取消重命名：恢复 span + 按钮初始态
