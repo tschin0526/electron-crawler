@@ -315,6 +315,41 @@ function init(shared) {
     }
   });
 
+  // 📁 归档：将 todo-{id}.json 从 data 移动到 data/archived/（同名子目录）
+  // 用 fs.renameSync 一步完成「移动 = 复制到子目录 + 删原文件」原子操作；archived/ 不存在则递归创建。
+  // 子目录被 save-todos 的孤儿清理逻辑忽略（只扫描 PLUGINS_DATA_DIR 顶层 todo-*.json），
+  // 所以归档后即使该 todo 不在内存列表里、save-todos 也不会误删归档文件。
+  ipcMain.handle('archive-todo', async (event, todoId) => {
+    try {
+      if (!todoId || typeof todoId !== 'string') {
+        return { success: false, error: 'todoId 非法' };
+      }
+      // 只允许字母数字横线下划线，防止路径穿越
+      if (!/^[a-zA-Z0-9_-]+$/.test(todoId)) {
+        return { success: false, error: 'todoId 含非法字符' };
+      }
+      const archivedDir = path.join(PLUGINS_DATA_DIR, 'archived');
+      if (!fs.existsSync(archivedDir)) {
+        fs.mkdirSync(archivedDir, { recursive: true });
+      }
+      const srcPath = path.join(PLUGINS_DATA_DIR, `todo-${todoId}.json`);
+      const dstPath = path.join(archivedDir, `todo-${todoId}.json`);
+      if (!fs.existsSync(srcPath)) {
+        return { success: false, error: '源文件不存在（可能已归档或删除）' };
+      }
+      // 若目标已存在，先删掉避免覆盖失败
+      if (fs.existsSync(dstPath)) {
+        fs.unlinkSync(dstPath);
+      }
+      fs.renameSync(srcPath, dstPath);
+      console.log(`[Main] 已归档 todo: ${srcPath} -> ${dstPath}`);
+      return { success: true };
+    } catch (error) {
+      console.error(`[Main] 归档 todo 失败: ${todoId}`, error);
+      return { success: false, error: error.message };
+    }
+  });
+
   //  脚本数据持久化（独立于 bookmarks.json，避免互相影响）
   const SCRIPTS_FILE = path.join(PLUGINS_DATA_DIR, 'scripts.json');
 

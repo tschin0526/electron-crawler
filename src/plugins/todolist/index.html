@@ -981,6 +981,11 @@
       color: var(--danger-color);
     }
 
+    .action-btn.archive:hover {
+      background-color: var(--warning-light);
+      color: var(--warning-color);
+    }
+
     .action-btn.email:hover {
       background-color: #ede9fe;
       color: #6d28d9;
@@ -2954,6 +2959,7 @@
               <button class="action-btn bottom ${todo.bottom ? 'active' : ''}" onclick="toggleBottom('${todo.id}')" title="${todo.bottom ? '取消置底' : '置底'}">⬇️</button>
               <button class="action-btn email" onclick="emailTodo('${todo.id}')" title="发邮件">📧</button>
               <button class="action-btn edit" onclick="openEditModal('${todo.id}')" title="编辑">✏️</button>
+              <button class="action-btn archive" onclick="archiveTodo('${todo.id}')" title="归档（移动到 archived/ 子目录）">🗄️</button>
               <button class="action-btn delete" onclick="deleteTodo('${todo.id}')" title="删除">🗑️</button>
             </div>
           </div>
@@ -3284,6 +3290,35 @@
         window.electronAPI.deleteTodoFile(id).catch(e => console.warn('[TodoList] 删除 todo 文件失败:', e));
       }
       saveTodos();
+    }
+
+    // 📁 归档：把 todo-{id}.json 从 data 移动到 data/archived/（原子操作 = 复制到子目录 + 删原文件）
+    // 流程：用户确认 → 主进程 fs.renameSync 移动文件 → 内存列表移除该 todo → saveTodos 触发孤儿清理（但 archived/ 子目录不在扫描范围，安全）→ 画面刷新。
+    // ⚠️ 注意：saveTodos 重建网格时会清掉 tiny 态字号设置，但归档后该卡已不在列表中，不影响。
+    async function archiveTodo(id) {
+      if (!confirm('确定归档这个任务吗？\n归档后将从列表移除，文件移动到 archived/ 子目录（不删除）。')) return;
+      try {
+        if (window.electronAPI && window.electronAPI.archiveTodo) {
+          const result = await window.electronAPI.archiveTodo(id);
+          if (!result || !result.success) {
+            alert('归档失败：' + (result?.error || '未知错误'));
+            return;
+          }
+        } else {
+          // 没有 IPC（如纯浏览器调试）时降级为直接删除
+          console.warn('[TodoList] electronAPI.archiveTodo 不可用，降级为 deleteTodo');
+          deleteTodo(id);
+          return;
+        }
+      } catch (e) {
+        console.error('[TodoList] 归档 todo 失败:', e);
+        alert('归档失败：' + (e?.message || e));
+        return;
+      }
+      // 归档成功：从内存列表移除
+      todos = todos.filter(t => t.id !== id);
+      // saveTodos 会重建网格，孤儿清理只扫描 PLUGINS_DATA_DIR 顶层（archived/ 是子目录，安全）
+      await saveTodos();
     }
 
     // 📧 在编辑弹窗内点击「发邮件」按钮：直接发送已保存的 ToDo 内容（若为新增任务则提示先保存）
