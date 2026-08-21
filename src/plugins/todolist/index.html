@@ -1159,6 +1159,88 @@
       margin-bottom: 6px;
     }
 
+    /* 📄 JSON 文件名显示 + 重命名行（编辑任务时显示，新增时隐藏） */
+    .json-file-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 12px;
+      margin-bottom: 14px;
+      background: linear-gradient(180deg, #f8fafc 0%, #f1f5f9 100%);
+      border: 1px solid rgba(148, 163, 184, 0.35);
+      border-radius: 8px;
+      font-size: 12px;
+      color: var(--text-secondary);
+    }
+    body.dark .json-file-row {
+      background: linear-gradient(180deg, #1e293b 0%, #0f172a 100%);
+      border-color: rgba(148, 163, 184, 0.3);
+      color: #94a3b8;
+    }
+    .json-file-label {
+      flex-shrink: 0;
+      font-weight: 600;
+      color: var(--text-primary);
+    }
+    body.dark .json-file-label {
+      color: #e2e8f0;
+    }
+    .json-file-name {
+      flex: 1;
+      min-width: 0;
+      font-family: 'Monaco', 'Consolas', monospace;
+      font-size: 12px;
+      color: #6366f1;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      user-select: all;
+    }
+    body.dark .json-file-name {
+      color: #a5b4fc;
+    }
+    .json-file-rename-btn {
+      flex-shrink: 0;
+      padding: 3px 10px;
+      font-size: 11px;
+      border-radius: 4px;
+      border: 1px solid #6366f1;
+      background: transparent;
+      color: #6366f1;
+      cursor: pointer;
+      transition: background-color 0.15s ease, color 0.15s ease;
+    }
+    .json-file-rename-btn:hover {
+      background-color: #6366f1;
+      color: #ffffff;
+    }
+    body.dark .json-file-rename-btn {
+      border-color: #a5b4fc;
+      color: #a5b4fc;
+    }
+    body.dark .json-file-rename-btn:hover {
+      background-color: #a5b4fc;
+      color: #0f172a;
+    }
+    /* 重命名 inline 输入框（替换按钮位置） */
+    .json-file-rename-input {
+      flex: 1;
+      min-width: 0;
+      padding: 3px 8px;
+      font-family: 'Monaco', 'Consolas', monospace;
+      font-size: 12px;
+      border: 1px solid #6366f1;
+      border-radius: 4px;
+      background: #ffffff;
+      color: #0f172a;
+      outline: none;
+    }
+    body.dark .json-file-rename-input {
+      background: #0f172a;
+      color: #e2e8f0;
+      border-color: #a5b4fc;
+    }
+
     .form-textarea {
       width: 100%;
       padding: 12px 14px;
@@ -1629,6 +1711,12 @@
         </div>
       </div>
       <div class="modal-body">
+        <!-- 📄 JSON 文件名显示 + 重命名（仅编辑模式；新增任务时通过 JS 隐藏） -->
+        <div class="json-file-row" id="jsonFileRow" style="display: none;">
+          <span class="json-file-label">📄 JSON</span>
+          <span class="json-file-name" id="jsonFileName" title="data 目录下的 JSON 文件名">todo-0.json</span>
+          <button class="json-file-rename-btn" id="jsonFileRenameBtn" onclick="startRenameJsonFile()" title="重命名 JSON 文件（ID）">✏️ 重命名</button>
+        </div>
         <div class="form-group">
           <label class="form-label">任务内容</label>
           <div class="md-toolbar" id="mdToolbar">
@@ -3608,6 +3696,12 @@
       lastSearchEnterQuery = '';
       document.getElementById('searchCount').textContent = '';
       updateSearchNavButtons();
+      // 新增任务：没有 JSON 文件，隐藏文件名行
+      const jsonRow = document.getElementById('jsonFileRow');
+      if (jsonRow) {
+        jsonRow.style.display = 'none';
+        cancelRenameJsonFile();
+      }
       document.getElementById('modalOverlay').style.display = 'flex';
       document.getElementById('taskText').focus();
       resetEditorHistory(document.getElementById('taskText'));
@@ -3640,10 +3734,132 @@
       lastSearchEnterQuery = '';
       document.getElementById('searchCount').textContent = '';
       updateSearchNavButtons();
+      // 📄 显示 JSON 文件名（编辑模式）
+      updateJsonFileDisplay();
       document.getElementById('modalOverlay').style.display = 'flex';
       document.getElementById('taskText').focus();
       resetEditorHistory(document.getElementById('taskText'));
       resetEditorHistory(document.getElementById('htmlText'));
+    }
+
+    // 📄 刷新 JSON 文件名显示区（编辑模式专用）
+    //  - 显示「📄 JSON  todo-{id}.json  [✏️ 重命名]」
+    //  - 处于"重命名中"状态时不打断（输入框还在编辑）
+    function updateJsonFileDisplay() {
+      const row = document.getElementById('jsonFileRow');
+      if (!row) return;
+      if (!editingId) {
+        row.style.display = 'none';
+        return;
+      }
+      row.style.display = '';
+      // 如果当前在重命名输入中，不覆盖输入框
+      if (document.getElementById('jsonFileRenameInput')) return;
+      const nameEl = document.getElementById('jsonFileName');
+      if (nameEl) nameEl.textContent = `todo-${editingId}.json`;
+    }
+
+    // ✏️ 点击「重命名」按钮 → 把文件名 span 替换为 input
+    function startRenameJsonFile() {
+      if (!editingId) return;
+      const nameEl = document.getElementById('jsonFileName');
+      const btn = document.getElementById('jsonFileRenameBtn');
+      if (!nameEl || !btn) return;
+      // 已经是 input 中就不重复进入
+      if (document.getElementById('jsonFileRenameInput')) return;
+      const input = document.createElement('input');
+      input.type = 'text';
+      input.id = 'jsonFileRenameInput';
+      input.className = 'json-file-rename-input';
+      input.value = editingId;
+      input.maxLength = 64;
+      input.title = '仅允许字母、数字、横线、下划线';
+      input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') { e.preventDefault(); commitRenameJsonFile(); }
+        else if (e.key === 'Escape') { e.preventDefault(); cancelRenameJsonFile(); }
+      });
+      // 替换 nameEl 为 input，btn 文案改「确定」
+      nameEl.style.display = 'none';
+      nameEl.parentNode.insertBefore(input, nameEl);
+      btn.textContent = '✓ 确定';
+      btn.title = '确认重命名（Enter）';
+      btn.onclick = commitRenameJsonFile;
+      // 同时插入一个取消按钮（紧挨 btn 后面）
+      const cancelBtn = document.createElement('button');
+      cancelBtn.className = 'json-file-rename-btn';
+      cancelBtn.id = 'jsonFileRenameCancelBtn';
+      cancelBtn.textContent = '✕';
+      cancelBtn.title = '取消（Esc）';
+      cancelBtn.onclick = cancelRenameJsonFile;
+      btn.parentNode.insertBefore(cancelBtn, btn.nextSibling);
+      input.focus();
+      input.select();
+    }
+
+    // ✓ 确认重命名：本地校验 → 调 IPC → 成功则更新内存 id + editingId + 刷新显示
+    async function commitRenameJsonFile() {
+      const input = document.getElementById('jsonFileRenameInput');
+      if (!input) return;
+      const oldId = editingId;
+      const newId = input.value.trim();
+      if (!newId) {
+        alert('新 ID 不能为空');
+        input.focus();
+        return;
+      }
+      // 白名单校验：字母数字横线下划线
+      if (!/^[a-zA-Z0-9_-]+$/.test(newId)) {
+        alert('新 ID 只能包含字母、数字、横线、下划线');
+        input.focus();
+        return;
+      }
+      if (newId === oldId) {
+        // 没变，直接退出重命名态
+        cancelRenameJsonFile();
+        return;
+      }
+      if (!window.electronAPI || !window.electronAPI.renameTodoFile) {
+        alert('重命名功能不可用（IPC 缺失）');
+        return;
+      }
+      try {
+        const result = await window.electronAPI.renameTodoFile(oldId, newId);
+        if (!result || !result.success) {
+          alert('重命名失败：' + (result?.error || '未知错误'));
+          return;
+        }
+      } catch (e) {
+        console.error('[TodoList] 重命名 todo 文件失败:', e);
+        alert('重命名失败：' + (e?.message || e));
+        return;
+      }
+      // 主进程重命名成功 → 同步更新内存
+      const todo = todos.find(t => t.id === oldId);
+      if (todo) {
+        todo.id = newId;
+        todo.updatedAt = Date.now();
+      }
+      editingId = newId;
+      // 退出重命名 UI + 刷新文件名显示
+      cancelRenameJsonFile();
+      updateJsonFileDisplay();
+      console.log(`[TodoList] todo id 已从 ${oldId} 改为 ${newId}，下次保存会写入 todo-${newId}.json`);
+    }
+
+    // ✕ 取消重命名：恢复 span + 按钮初始态
+    function cancelRenameJsonFile() {
+      const input = document.getElementById('jsonFileRenameInput');
+      const cancelBtn = document.getElementById('jsonFileRenameCancelBtn');
+      const btn = document.getElementById('jsonFileRenameBtn');
+      const nameEl = document.getElementById('jsonFileName');
+      if (input) input.remove();
+      if (cancelBtn) cancelBtn.remove();
+      if (btn) {
+        btn.textContent = '✏️ 重命名';
+        btn.title = '重命名 JSON 文件（ID）';
+        btn.onclick = startRenameJsonFile;
+      }
+      if (nameEl) nameEl.style.display = '';
     }
 
     function closeModal(event, focusId) {
@@ -3651,6 +3867,8 @@
       // focusId 未显式传入时默认聚焦当前编辑中的卡片（取消/✕/ESC 场景）；
       // 保存场景由调用方显式传入，以同时覆盖「编辑」与「新增」两种卡片
       const fid = (focusId !== undefined) ? focusId : editingId;
+      // 关闭时清理重命名输入态（避免残留 input 元素）
+      if (typeof cancelRenameJsonFile === 'function') cancelRenameJsonFile();
       document.getElementById('modalOverlay').style.display = 'none';
       previewMode = 0;
       document.getElementById('mdPreview').classList.remove('show');

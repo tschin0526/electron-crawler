@@ -215,6 +215,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   deleteTodoFile: (todoId) => ipcRenderer.invoke('delete-todo-file', todoId),
   archiveTodo: (todoId) => ipcRenderer.invoke('archive-todo', todoId),
   getArchivedCount: () => ipcRenderer.invoke('get-archived-count'),
+  renameTodoFile: (oldId, newId) => ipcRenderer.invoke('rename-todo-file', oldId, newId),
 
   // 读取股票配置（HTTP Get 智能识别用）
   readStockConfig: () => ipcRenderer.invoke('read-stock-config'),

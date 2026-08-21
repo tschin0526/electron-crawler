@@ -368,6 +368,40 @@ function init(shared) {
     }
   });
 
+  // 🏷️ 重命名 todo JSON 文件：todo-{oldId}.json → todo-{newId}.json
+  // - oldId / newId 都走白名单校验（仅字母数字横线下划线），防路径穿越
+  // - 源文件不存在 → 报错
+  // - 目标文件已存在 → 报错（避免覆盖丢失数据）
+  // - 用 fs.renameSync 一步完成；同盘下原子操作
+  ipcMain.handle('rename-todo-file', async (event, oldId, newId) => {
+    try {
+      const idRe = /^[a-zA-Z0-9_-]+$/;
+      if (!oldId || !newId || typeof oldId !== 'string' || typeof newId !== 'string') {
+        return { success: false, error: 'oldId / newId 非法' };
+      }
+      if (!idRe.test(oldId) || !idRe.test(newId)) {
+        return { success: false, error: 'ID 含非法字符（只允许字母数字横线下划线）' };
+      }
+      if (oldId === newId) {
+        return { success: false, error: '新旧 ID 相同，无需重命名' };
+      }
+      const srcPath = path.join(PLUGINS_DATA_DIR, `todo-${oldId}.json`);
+      const dstPath = path.join(PLUGINS_DATA_DIR, `todo-${newId}.json`);
+      if (!fs.existsSync(srcPath)) {
+        return { success: false, error: `源文件不存在: todo-${oldId}.json` };
+      }
+      if (fs.existsSync(dstPath)) {
+        return { success: false, error: `目标文件已存在: todo-${newId}.json（先删除或换个名字）` };
+      }
+      fs.renameSync(srcPath, dstPath);
+      console.log(`[Main] 已重命名 todo 文件: ${srcPath} -> ${dstPath}`);
+      return { success: true, newId };
+    } catch (error) {
+      console.error(`[Main] 重命名 todo 文件失败: ${oldId} -> ${newId}`, error);
+      return { success: false, error: error.message };
+    }
+  });
+
   //  脚本数据持久化（独立于 bookmarks.json，避免互相影响）
   const SCRIPTS_FILE = path.join(PLUGINS_DATA_DIR, 'scripts.json');
 
