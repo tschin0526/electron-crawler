@@ -963,12 +963,16 @@
       align-items: center;
       justify-content: center;
       font-size: 12px;
-      transition: all 0.2s;
+      /* 限定 transition 范围，避免 transform/width/height 等触发隐式动画导致 hover 闪动 */
+      transition: background-color 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
     }
 
     .action-btn:hover {
       background-color: #f1f5f9;
-      transform: scale(1.1);
+      /* 用 box-shadow 做"浮起"效果替代 transform: scale：
+         - transform 会改变视觉边界，密集排列（gap:4px）下容易触发 hover 进出循环闪动
+         - box-shadow 是纯绘制层，不影响布局/不外扩边界，hover 状态稳定 */
+      box-shadow: 0 2px 6px rgba(15, 23, 42, 0.15);
     }
 
     .action-btn.edit:hover {
