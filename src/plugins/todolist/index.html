@@ -145,6 +145,28 @@
       font-size: 13px;
     }
 
+    .stat-divider {
+      /* lite 风格分隔竖线：上下渐隐，与 stat-item 高度协调 */
+      width: 1px;
+      height: 26px;
+      align-self: center;
+      margin: 0 2px;
+      background: linear-gradient(
+        180deg,
+        rgba(148, 163, 184, 0)   0%,
+        rgba(148, 163, 184, 0.55) 50%,
+        rgba(148, 163, 184, 0)   100%
+      );
+    }
+    body.dark .stat-divider {
+      background: linear-gradient(
+        180deg,
+        rgba(148, 163, 184, 0)   0%,
+        rgba(203, 213, 225, 0.35) 50%,
+        rgba(148, 163, 184, 0)   100%
+      );
+    }
+
     .stat-item {
       text-align: center;
       padding: 5px 14px;
@@ -406,6 +428,17 @@
       background: var(--primary-light);
       color: #4338ca;
       border: 1px solid var(--primary-border);
+    }
+    /* 暗色模式 active 态：深紫底 + 深紫字同色系融合看不清，
+       改为亮紫边框 + 金黄色字，对比强烈 */
+    body.dark .status-btn.active,
+    body.dark .tag-chip.active,
+    body.dark .btn-primary,
+    body.dark .tag-option.selected {
+      background: #312e81;
+      color: #fbbf24;          /* 金黄，明亮 */
+      border-color: #818cf8;   /* 亮紫边框，立体感 */
+      font-weight: 600;
     }
 
     .status-btn:hover {
@@ -1008,15 +1041,21 @@
       background-color: #fde68a;
     }
 
-    body.dark .action-btn.email:hover {
-      background-color: #312e81;
-      color: #c4b5fd;
-    }
-    body.dark .action-btn.pin:hover {
-      background-color: #78350f;
-    }
-    body.dark .action-btn.pin.active:hover {
-      background-color: #92400e;
+    /* 暗色模式：action 按钮 hover 统一「浅白底 + 深色图标」，
+       覆盖原本各色（email 紫 / pin 棕 / pin.active 深棕），
+       与置底按钮 hover（继承通用 .action-btn:hover）保持一致。
+       原因：dark 模式下颜色对比度参差不齐、五花八门，统一为高对比度的浅底 */
+    body.dark .action-btn:hover,
+    body.dark .action-btn.edit:hover,
+    body.dark .action-btn.delete:hover,
+    body.dark .action-btn.archive:hover,
+    body.dark .action-btn.email:hover,
+    body.dark .action-btn.pin:hover,
+    body.dark .action-btn.pin.active:hover,
+    body.dark .action-btn.bottom:hover {
+      background-color: #f1f5f9;
+      color: #1e293b;
+      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.5);
     }
 
     .empty-state {
@@ -1532,6 +1571,20 @@
           <span class="stat-value" id="completedCount">0</span>
           <span class="stat-label">已完成</span>
         </div>
+        <div class="stat-divider" aria-hidden="true"></div>
+        <div class="stat-item">
+          <span class="stat-value" id="pinnedCount">0</span>
+          <span class="stat-label">📌 置顶</span>
+        </div>
+        <div class="stat-item">
+          <span class="stat-value" id="bottomCount">0</span>
+          <span class="stat-label">📍 置底</span>
+        </div>
+        <div class="stat-divider" aria-hidden="true"></div>
+        <div class="stat-item">
+          <span class="stat-value" id="archivedCount">0</span>
+          <span class="stat-label">🗄️ 已归档</span>
+        </div>
       </div>
     </div>
     </div>
@@ -1736,6 +1789,8 @@
         todos = [];
         await migrateFromLocalStorage();
       }
+      // 加载完成后统计 archived/ 子目录文件数（不依赖 todos 内存列表）
+      refreshArchivedCount();
     }
 
     async function saveTodos() {
@@ -1800,10 +1855,37 @@
       const total = todos.length;
       const completed = todos.filter(t => t.completed).length;
       const pending = total - completed;
+      // 置顶/置底：两者都是独立 boolean；理论上不会同时为 true，
+      // 这里直接按字段计数，与排序逻辑保持一致。
+      const pinned = todos.filter(t => t.pinned).length;
+      const bottom = todos.filter(t => t.bottom).length;
 
       document.getElementById('totalCount').textContent = total;
       document.getElementById('completedCount').textContent = completed;
       document.getElementById('pendingCount').textContent = pending;
+      const pinnedEl = document.getElementById('pinnedCount');
+      const bottomEl = document.getElementById('bottomCount');
+      if (pinnedEl) pinnedEl.textContent = pinned;
+      if (bottomEl) bottomEl.textContent = bottom;
+    }
+
+    // 📊 刷新「已归档」计数（数据在 archived/ 子目录里，不在内存 todos，
+    // 所以单独从主进程读盘统计）。
+    // 安全降级：IPC 不可用或失败时显示 ? 不报错。
+    async function refreshArchivedCount() {
+      const el = document.getElementById('archivedCount');
+      if (!el) return;
+      if (!window.electronAPI || !window.electronAPI.getArchivedCount) {
+        el.textContent = '?';
+        return;
+      }
+      try {
+        const result = await window.electronAPI.getArchivedCount();
+        el.textContent = (result && result.success) ? (result.count ?? 0) : '?';
+      } catch (e) {
+        console.warn('[TodoList] 获取 archived 数量失败:', e);
+        el.textContent = '?';
+      }
     }
 
     function getUniqueTags() {
@@ -2860,6 +2942,10 @@
       // 只保存，不更新 updatedAt
       await saveTodosSilent();
       renderTodos();
+      // 切换后给卡片金边心跳 3 秒（与拉动尺寸后同款反馈）。
+      // renderTodos() 不改 todo.height/width，卡片大小保持不变；
+      // focusResizedCard 也只滚入可视区 + 加 .resize-focus class，不影响布局。
+      setTimeout(() => focusResizedCard(todoId), 320);
     }
 
     // 静默保存：不更新 updatedAt，不触发全量重渲染
@@ -3323,6 +3409,8 @@
       todos = todos.filter(t => t.id !== id);
       // saveTodos 会重建网格，孤儿清理只扫描 PLUGINS_DATA_DIR 顶层（archived/ 是子目录，安全）
       await saveTodos();
+      // 归档后 archived/ 多了一个文件，刷新归档计数
+      await refreshArchivedCount();
     }
 
     // 📧 在编辑弹窗内点击「发邮件」按钮：直接发送已保存的 ToDo 内容（若为新增任务则提示先保存）

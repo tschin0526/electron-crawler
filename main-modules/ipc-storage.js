@@ -350,6 +350,24 @@ function init(shared) {
     }
   });
 
+  // 📊 统计：返回 archived/ 子目录下 todo-*.json 的数量
+  // - 目录不存在时返回 0（不算错误）
+  // - 只数 todo-*.json 前缀的文件，忽略可能的非 todo 文件
+  ipcMain.handle('get-archived-count', async () => {
+    try {
+      const archivedDir = path.join(PLUGINS_DATA_DIR, 'archived');
+      if (!fs.existsSync(archivedDir)) {
+        return { success: true, count: 0 };
+      }
+      const files = fs.readdirSync(archivedDir);
+      const count = files.filter(f => /^todo-.*\.json$/i.test(f)).length;
+      return { success: true, count };
+    } catch (error) {
+      console.error('[Main] 统计 archived 数量失败:', error);
+      return { success: false, count: 0, error: error.message };
+    }
+  });
+
   //  脚本数据持久化（独立于 bookmarks.json，避免互相影响）
   const SCRIPTS_FILE = path.join(PLUGINS_DATA_DIR, 'scripts.json');
 
