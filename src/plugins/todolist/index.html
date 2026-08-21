@@ -1530,8 +1530,6 @@
     <div class="todo-toolbar">
       <div class="btn-group">
         <button class="btn btn-primary" onclick="openAddModal()" title="添加任务">➕</button>
-        <button class="btn btn-secondary" onclick="clearCompleted()" title="清空已完成">🗑️</button>
-        <button class="btn btn-danger" onclick="clearAll()" title="删除全部">🚮</button>
       </div>
       <div class="search-wrapper">
         <input type="text" class="search-box" id="searchInput" placeholder="搜索任务..." oninput="handleSearch()">
@@ -3456,27 +3454,6 @@
         console.error('[toDoList] 发送邮件失败:', err);
         alert('发送邮件失败：' + (err?.message || err));
       }
-    }
-
-    function clearCompleted() {
-      const completed = todos.filter(t => t.completed);
-      if (completed.length === 0) {
-        alert('没有已完成的任务可删除');
-        return;
-      }
-      if (!confirm(`确定删除 ${completed.length} 个已完成任务吗？`)) return;
-      todos = todos.filter(t => !t.completed);
-      saveTodos();
-    }
-
-    function clearAll() {
-      if (todos.length === 0) {
-        alert('没有任务可删除');
-        return;
-      }
-      if (!confirm(`确定删除全部 ${todos.length} 个任务吗？此操作不可恢复！`)) return;
-      todos = [];
-      saveTodos();
     }
 
     function openAddModal() {
