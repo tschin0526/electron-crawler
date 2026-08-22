@@ -3333,6 +3333,13 @@
     // 🆕 策略：黑夜模式下移除所有内联 color/background 样式，让 CSS 完全控制
     function adaptHtmlForTheme(html) {
       if (!html) return html;
+      // 🆕 平衡未闭合的 HTML 标签（包括孤立 close tag），
+      // 否则浏览器对 inline-block 边界修正（如 BIG 跨 P）会让某些
+      // 主题下出现 layout 错位（「白天乱、黑夜对」的根因）。
+      // 与 renderMarkdown 共用同一个 balanceHtmlTags，保证两条路径输出一致。
+      html = balanceHtmlTags(html);
+      // 归一化 style 里的非 ASCII 连字符（font‑weight 等），两条渲染路径共用
+      html = normalizeStyleHyphens(html);
       var isDark = document.body.classList.contains('dark');
 
       // 白天模式：直接返回，CSS 会处理
@@ -3432,7 +3439,7 @@
 
       // 如果内容包含已渲染的 KaTeX HTML，直接返回（不需要重新处理）
       if (text.includes('class="katex"') || text.includes('class="katex-display"')) {
-        return balanceHtmlTags(text);
+        return normalizeStyleHyphens(balanceHtmlTags(text));
       }
 
       // 提取 LaTeX 公式，避免 marked 破坏
@@ -3450,6 +3457,20 @@
         mathBlocks.push({ formula, display: false });
         return `%%MATHBLOCK_${idx}%%`;
       });
+
+      // 折叠 raw HTML 标签之间、紧邻的空行
+      // 根因：marked 看到 raw HTML（如 <BIG>）跟内容之间有空行时，
+      //   会把它们拆成 <p> 包装：
+      //     <BIG>\n\n内容\n\n</BIG>
+      //   → <p><BIG></p><p>内容</p><p></BIG></p>
+      //   inline 标签 BIG 与 block 标签 <p> 互斥，浏览器会强行关闭 BIG，
+      //   导致 <BIG>...</BIG> 跨段时包裹关系断裂，「BIG 不生效」。
+      // 折叠后 marked 才会把它识别成同一个 raw HTML 块，包裹关系保留。
+      processed = processed
+        // 紧跟在 raw HTML 打开标签后面的空行折叠
+        .replace(/((?:<[a-zA-Z][^>\/]*>)+)\n\n+/g, '$1\n')
+        // 紧贴在 raw HTML 关闭标签前面的空行折叠
+        .replace(/\n\n+((?:<\/[a-zA-Z][^>]*>)+)/g, '\n$1');
 
       let html;
       if (typeof marked !== 'undefined') {
@@ -3474,9 +3495,54 @@
         });
       }
 
+      // 处理 BIG/big 内部的 markdown（**bold**、*italic*）
+      // 因为 marked 在 raw HTML 块内不处理 markdown，会以字面量输出
+      html = processMarkdownInsideBig(html);
+
       // 平衡未闭合的 HTML 标签，防止破坏布局
       html = balanceHtmlTags(html);
+      // 归一化 style 里的非 ASCII 连字符（font‑weight 等），否则浏览器静默丢弃
+      html = normalizeStyleHyphens(html);
 
+      return html;
+    }
+
+    // 归一化 style 属性里的「非 ASCII 连字符/破折号」→ ASCII '-'
+    // 根因：用户常输入 U+2011（NON-BREAKING HYPHEN）等非 ASCII 连字符来写
+    //   font‑weight / font‑size 等，浏览器会静默丢弃整条 CSS 声明，
+    //   导致 <span style="font‑weight:900;"> 等语法「看起来无效」。
+    // 只归一化「属性名」（冒号之前），不动属性值，避免误伤内容。
+    function normalizeStyleHyphens(html) {
+      if (!html) return html;
+      const HYPHENS = /[‐‑–—―−‒⁃]/g; // U+2010~U+2015、U+2212、U+2043 等非 ASCII 连字符/破折号
+      return html.replace(/style\s*=\s*(["'])([\s\S]*?)\1/g, (m, q, body) => {
+        const decls = body.split(';').map((decl) => {
+          const idx = decl.indexOf(':');
+          if (idx === -1) return decl;
+          return decl.slice(0, idx).replace(HYPHENS, '-') + decl.slice(idx);
+        });
+        return 'style=' + q + decls.join(';') + q;
+      });
+    }
+
+    // 处理 BIG/big 标签内部的 markdown（粗体/斜体）
+    // 根因：marked 把 <BIG>...</BIG> 识别成 raw HTML 块，
+    //   块内部的 markdown（**bold**、*italic*）不会被处理，会以字面量形式输出。
+    //   折叠空行后这个现象尤其明显。
+    // 这里在 marked 输出后再扫一遍，把 BIG 内部的 **xxx** / *xxx* 转成 <strong>/<em>。
+    // 迭代处理以支持嵌套 BIG。
+    function processMarkdownInsideBig(html) {
+      if (!html) return html;
+      let prev;
+      do {
+        prev = html;
+        html = html.replace(/<(big|BIG)>([\s\S]*?)<\/\1>/g, (m, tag, inner) => {
+          const processed = inner
+            .replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>')
+            .replace(/(?<!\*)\*([^*\n]+)\*(?!\*)/g, '<em>$1</em>');
+          return '<' + tag.toLowerCase() + '>' + processed + '</' + tag.toLowerCase() + '>';
+        });
+      } while (html !== prev);
       return html;
     }
 
@@ -3484,40 +3550,65 @@
     function balanceHtmlTags(html) {
       // 允许的标签列表（白名单）
       const allowedTags = ['big', 'small', 'b', 'strong', 'i', 'em', 'u', 's', 'del', 'ins', 'sub', 'sup', 'mark', 'span', 'div', 'p', 'br', 'code', 'pre', 'a', 'ul', 'ol', 'li', 'blockquote', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'table', 'tr', 'td', 'th', 'thead', 'tbody'];
-      
-      const tagStack = [];
+
+      // 两阶段：
+      //  1. tokenize：扫描所有 open/close 标签及它们之间的纯文本。
+      //  2. emit + balance：维护栈，遇 open 压栈；遇 close 在栈中找最近的同名 open，
+      //     关闭中间的 open（注入虚拟 close），再匹配；找不到则丢弃孤立 close。
+      // 这样无论 HTML 多不平衡，输出的 HTML 总是合法的（最终栈空 = balanced）。
+      // 解决 e52ce23 中「白天乱、黑夜对」根因：孤立 </BIG> 让浏览器对 inline-block
+      // 边界修正不可预测，与主题切换触发的二次 rebuild 时序不一致。
       const tagPattern = /<\/?([a-zA-Z][a-zA-Z0-9]*)[^>]*>/g;
-      let match;
-      
-      // 遍历所有标签
-      while ((match = tagPattern.exec(html)) !== null) {
-        const fullMatch = match[0];
-        const tagName = match[1].toLowerCase();
-        
-        // 跳过不在白名单中的标签
-        if (!allowedTags.includes(tagName)) continue;
-        
-        // 跳过自闭合标签
-        if (fullMatch.match(/\/\s*>$/) || tagName === 'br') continue;
-        
-        if (fullMatch.startsWith('</')) {
-          // 闭合标签：检查是否匹配栈顶
-          if (tagStack.length > 0 && tagStack[tagStack.length - 1] === tagName) {
-            tagStack.pop();
-          }
+      const tokens = [];        // [{ type, name, text, idx }]
+      let m;
+      while ((m = tagPattern.exec(html)) !== null) {
+        const full = m[0];
+        const name = m[1].toLowerCase();
+        if (!allowedTags.includes(name)) continue;
+        if (full.match(/\/\s*>$/) || name === 'br') continue;
+        tokens.push({
+          type: full.startsWith('</') ? 'close' : 'open',
+          name,
+          text: full,
+          idx: m.index
+        });
+      }
+
+      const openStack = [];     // [{ name }]
+      let out = '';
+      let cursor = 0;
+      for (const tok of tokens) {
+        // 先把上一个标签到当前标签之间的文本原样输出
+        out += html.slice(cursor, tok.idx);
+        cursor = tok.idx + tok.text.length;
+        if (tok.type === 'open') {
+          openStack.push({ name: tok.name });
+          out += tok.text;
         } else {
-          // 开始标签：压入栈
-          tagStack.push(tagName);
+          // close：在栈里找最近的同名 open
+          let i = openStack.length - 1;
+          while (i >= 0 && openStack[i].name !== tok.name) i--;
+          if (i >= 0) {
+            // 注入中间所有 open 的虚拟 close（按 LIFO 顺序）
+            for (let j = openStack.length - 1; j > i; j--) {
+              out += '</' + openStack[j].name + '>';
+              openStack.pop();
+            }
+            // 匹配当前 close 并 pop
+            out += tok.text;
+            openStack.pop();
+          }
+          // 否则孤立 close：丢弃（不 emit、不入 out）
         }
       }
-      
-      // 闭合所有未闭合的标签
-      while (tagStack.length > 0) {
-        const unclosedTag = tagStack.pop();
-        html += `</${unclosedTag}>`;
+      // 收尾：剩余文本
+      out += html.slice(cursor);
+      // 闭合栈中剩余的 open
+      while (openStack.length > 0) {
+        out += '</' + openStack[openStack.length - 1].name + '>';
+        openStack.pop();
       }
-      
-      return html;
+      return out;
     }
 
     function toggleComplete(id) {
