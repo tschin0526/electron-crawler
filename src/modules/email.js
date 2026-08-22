@@ -364,7 +364,11 @@ window.showEmailRecipientDialog = showEmailRecipientDialog;
     `;
 
     let body = '';
-    if (todo.htmlContent && String(todo.htmlContent).trim().length > 0) {
+    if (todo.contentHtml && String(todo.contentHtml).trim().length > 0) {
+      // 来自 todolist 的预渲染 HTML（与 Gallery 卡片/编辑预览完全一致，
+      // 已含 <strong>/<em>/<h1>/<BIG> 等），保证邮件里看到的是渲染效果而不是 markdown 源码
+      body = todo.contentHtml;
+    } else if (todo.htmlContent && String(todo.htmlContent).trim().length > 0) {
       body = todo.htmlContent;
     } else if (typeof window.markdownToHtml === 'function') {
       body = window.markdownToHtml(todo.text || '');
@@ -387,6 +391,33 @@ window.showEmailRecipientDialog = showEmailRecipientDialog;
         console.warn('[email-bridge] HTML 管线处理失败，使用原始内容:', e);
       }
     }
+
+    // 邮件正文"标题不画装饰线"：去掉 h1-h4 的 inline border-bottom / padding-bottom。
+    // 原因：`injectInlineStyles()` 会在 h1/h2 上加
+    //   border-bottom: 3px solid #2563eb !important; padding-bottom: 8px;
+    // 这本是 AI 搜索结果的视觉装饰风格，与"邮件里 # ## 即标题"的语义冲突
+    // （同一个 ToDo 卡片在 Gallery 里没有线，发邮件却冒出多条亮蓝横线）。
+    // 与 todolist 卡片、email-detail.html 共用同一原则：分割线只来自 `---`。
+    // AI 搜索结果视图（renderer.js 等调用方）不经过此处，视觉风格不受影响。
+    baseHtml = baseHtml.replace(
+      /(<(?:h1|h2|h3|h4)\b[^>]*?)(\sstyle\s*=\s*"([^"]*)")/gi,
+      (m, prefix, styleFull, styleVal) => {
+        const cleaned = styleVal
+          .replace(/border-bottom\s*:[^;"]*;?/gi, '')
+          .replace(/padding-bottom\s*:[^;"]*;?/gi, '');
+        return `${prefix} style="${cleaned}"`;
+      }
+    );
+    // 兜底：处理单引号 style 属性（如 style='xxx'）
+    baseHtml = baseHtml.replace(
+      /(<(?:h1|h2|h3|h4)\b[^>]*?)(\sstyle\s*=\s*'([^']*)')/gi,
+      (m, prefix, styleFull, styleVal) => {
+        const cleaned = styleVal
+          .replace(/border-bottom\s*:[^;']*;?/gi, '')
+          .replace(/padding-bottom\s*:[^;']*;?/gi, '');
+        return `${prefix} style='${cleaned}'`;
+      }
+    );
 
     const charCount = (todo.text || todo.htmlContent || '').length;
     return { subject: `[ToDo 卡片] ${firstLine}`, contentHtml: baseHtml, charCount, firstLine };

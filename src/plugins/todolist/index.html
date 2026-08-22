@@ -694,81 +694,89 @@
       border-top-color: rgba(255, 255, 255, 0.08);
     }
 
-    .todo-text {
+    /* ============================================================
+       统一的 Markdown 渲染样式（业界标准 GitHub Flavored Markdown）
+       编辑器预览(.md-preview) 与 Gallery 卡片(.todo-text) 共用同一套，
+       保证两种视图渲染完全一致，不再各自为政、互不相同。
+       ============================================================ */
+    .todo-text,
+    .md-preview {
       font-size: 14px;
-      color: var(--text-primary);
-      margin-bottom: 6px;
-      word-break: break-word;
-      font-weight: 500;
       line-height: 1.6;
+      color: var(--text-primary);
+      word-break: break-word;
     }
 
-    .todo-text h1 { font-size: 16px; margin: 8px 0 4px; }
-    .todo-text h2 { font-size: 15px; margin: 6px 0 4px; }
-    .todo-text h3 { font-size: 14px; margin: 4px 0 2px; }
-    .todo-text p { margin: 4px 0; }
-    .todo-text p:last-child { margin-bottom: 0; }
-    .todo-text ul, .todo-text ol { margin: 4px 0; padding-left: 20px; }
-    .todo-text ul:last-child, .todo-text ol:last-child { margin-bottom: 0; }
-    .todo-text code {
+    .todo-text > *:first-child,
+    .md-preview > *:first-child { margin-top: 0; }
+    .todo-text > *:last-child,
+    .md-preview > *:last-child { margin-bottom: 0; }
+
+    /* 标题：仅字号/字重，不画分割线（避免与显式 --- 混淆、避免主题切换显隐导致两视图不一致） */
+    .todo-text h1, .md-preview h1 { font-size: 1.6em; font-weight: 700; margin: .8em 0 .4em; }
+    .todo-text h2, .md-preview h2 { font-size: 1.35em; font-weight: 700; margin: .7em 0 .4em; }
+    .todo-text h3, .md-preview h3 { font-size: 1.15em; font-weight: 600; margin: .6em 0 .3em; }
+    .todo-text h4, .md-preview h4 { font-size: 1em; font-weight: 600; margin: .5em 0 .3em; }
+    .todo-text p, .md-preview p { margin: .6em 0; }
+    .todo-text strong, .md-preview strong { font-weight: 700; }
+
+    .todo-text ul, .todo-text ol,
+    .md-preview ul, .md-preview ol { margin: .6em 0; padding-left: 1.6em; }
+    .todo-text li, .md-preview li { margin: .25em 0; }
+
+    .todo-text code, .md-preview code {
       background: #f1f5f9;
-      padding: 1px 4px;
-      border-radius: 3px;
-      font-size: 12px;
-      font-family: 'SF Mono', Monaco, monospace;
+      color: inherit;
+      padding: .2em .4em;
+      border-radius: 4px;
+      font-size: .875em;
+      font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
     }
-    .todo-text pre {
-      background: #f8fafc;
-      padding: 8px;
+    .todo-text pre, .md-preview pre {
+      background: #f6f8fa;
+      padding: 12px;
       border-radius: 6px;
       overflow-x: auto;
-      margin: 6px 0;
+      margin: .8em 0;
+      font-size: .875em;
+      line-height: 1.45;
+      font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
     }
-    .todo-text pre code { background: none; padding: 0; }
-    .todo-text blockquote {
-      border-left: 3px solid var(--border-color);
-      padding-left: 10px;
-      margin: 6px 0;
+    .todo-text pre code, .md-preview pre code { background: transparent; color: inherit; padding: 0; font-size: 1em; }
+
+    .todo-text blockquote, .md-preview blockquote {
+      border-left: 4px solid var(--border-color);
+      padding: 0 1em;
+      margin: .8em 0;
       color: var(--text-secondary);
     }
-    .todo-text a { color: var(--primary-color); text-decoration: underline; }
-    .todo-text table { border-collapse: collapse; margin: 6px 0; }
-    .todo-text th, .todo-text td { border: 1px solid var(--border-color); padding: 4px 8px; }
-    .todo-text th { background: #f8fafc; }
-    .todo-text img { max-width: 100%; border-radius: 6px; margin: 4px 0; }
-    .todo-text hr { border: none; border-top: 1px solid var(--border-color); margin: 8px 0; }
-    .todo-text del { color: var(--text-secondary); }
-
-    /* 🆕 DOM获取的HTML内容样式（无颜色样式，由CSS负责主题适配） */
-    .todo-text h1 { font-size: 22px; font-weight: 800; margin: 16px 0 8px; padding-bottom: 6px; border-bottom: 2px solid var(--border-color); }
-    .todo-text h2 { font-size: 19px; font-weight: 700; margin: 14px 0 6px; padding-bottom: 4px; border-bottom: 1px solid var(--border-color); }
-    .todo-text h3 { font-size: 16px; font-weight: 700; margin: 12px 0 4px; }
-    .todo-text h4 { font-size: 14px; font-weight: 600; margin: 10px 0 4px; }
-    .todo-text a { color: var(--primary-color); text-decoration: underline; }
-    .todo-text strong { font-weight: 700; }
-    .todo-text code { background: var(--code-bg, #fee2e2); color: var(--code-color, #dc2626); padding: 2px 6px; border-radius: 4px; font-family: "SFMono-Regular", Consolas, monospace; font-size: 13px; }
-    .todo-text pre { background: var(--pre-bg, #f8f9fa); color: var(--pre-color, #24292e); padding: 12px; border-radius: 6px; overflow-x: auto; margin: 8px 0; font-family: "SFMono-Regular", Consolas, monospace; font-size: 13px; line-height: 1.6; }
-    .todo-text pre code { background: transparent; color: inherit; padding: 0; }
-    .todo-text blockquote { border-left: 4px solid var(--primary-color); padding: 8px 14px; margin: 8px 0; background: var(--blockquote-bg, #f8fafc); border-radius: 0 6px 6px 0; }
-    .todo-text ul, .todo-text ol { padding-left: 24px; margin: 6px 0; }
-    .todo-text li { margin: 4px 0; line-height: 1.7; }
+    .todo-text a, .md-preview a { color: var(--primary-color); text-decoration: underline; }
+    .todo-text table, .md-preview table { border-collapse: collapse; margin: .8em 0; }
+    .todo-text th, .todo-text td,
+    .md-preview th, .md-preview td { border: 1px solid var(--border-color); padding: .4em .8em; }
+    .todo-text th, .md-preview th { background: #f6f8fa; font-weight: 600; }
+    .todo-text img, .md-preview img { max-width: 100%; border-radius: 6px; margin: .5em 0; }
+    .todo-text hr, .md-preview hr { border: none; border-top: 1px solid var(--border-color); margin: 1em 0; }
+    .todo-text del, .md-preview del { color: var(--text-secondary); }
 
     /* 黑夜模式下忽略自定义卡片背景色，使用默认深色卡片背景 */
     body.dark .todo-item {
       background-color: var(--card-bg) !important;
     }
-    /* 黑夜模式：任务内容 */
+    /* 黑夜模式：任务内容 / 编辑预览 统一配色 */
     body.dark .todo-text,
-    body.dark .todo-text *:not(a):not(code):not(pre) {
+    body.dark .md-preview,
+    body.dark .todo-text *:not(a):not(code):not(pre),
+    body.dark .md-preview *:not(a):not(code):not(pre) {
       color: var(--text-primary) !important;
     }
-    body.dark .todo-text a { color: var(--primary-color) !important; }
-    body.dark .todo-text code { background: #334155 !important; color: var(--text-primary) !important; }
-    body.dark .todo-text pre { background: #0f172a !important; color: var(--text-primary) !important; }
-    body.dark .todo-text pre code { background: transparent !important; }
-    body.dark .todo-text blockquote { background: #172554 !important; border-left-color: #60a5fa !important; }
-    body.dark .todo-text th { background: #334155 !important; }
-    body.dark .todo-text tr:nth-child(even) { background: #1e293b !important; }
+    body.dark .todo-text a, body.dark .md-preview a { color: var(--primary-color) !important; }
+    body.dark .todo-text code, body.dark .md-preview code { background: #334155 !important; color: var(--text-primary) !important; }
+    body.dark .todo-text pre, body.dark .md-preview pre { background: #0f172a !important; color: var(--text-primary) !important; }
+    body.dark .todo-text pre code, body.dark .md-preview pre code { background: transparent !important; }
+    body.dark .todo-text blockquote, body.dark .md-preview blockquote { background: #172554 !important; border-left-color: #60a5fa !important; }
+    body.dark .todo-text th, body.dark .md-preview th { background: #334155 !important; }
+    body.dark .todo-text tr:nth-child(even), body.dark .md-preview tr:nth-child(even) { background: #1e293b !important; }
 
     /* 卡片底部固定区域：显示标签和最后异动时间 */
     .todo-footer {
@@ -1531,64 +1539,13 @@
     .md-preview {
       display: none;
       padding: 0 14px 12px;
-      font-size: 14px;
-      line-height: 1.7;
-      color: var(--text-primary);
       min-height: 525px;
       overflow-y: auto;
       max-height: 90vh;
     }
     .md-preview.show { display: block; }
-    .md-preview > * { margin-top: 0 !important; margin-bottom: 6px !important; }
-    .md-preview > *:first-child { margin-top: 0 !important; }
-    .md-preview > *:last-child { margin-bottom: 0 !important; }
-
-    .md-preview h1 { font-size: 18px; margin: 12px 0 6px !important; }
-    .md-preview h2 { font-size: 16px; margin: 10px 0 6px !important; }
-    .md-preview h3 { font-size: 15px; margin: 8px 0 4px !important; }
-    .md-preview p { margin: 6px 0 !important; }
-    .md-preview ul, .md-preview ol { margin: 6px 0; padding-left: 24px; }
-    .md-preview code {
-      background: #f1f5f9;
-      padding: 2px 6px;
-      border-radius: 3px;
-      font-size: 13px;
-      font-family: 'SF Mono', Monaco, monospace;
-    }
-    .md-preview pre {
-      background: #f8fafc;
-      padding: 10px;
-      border-radius: 6px;
-      overflow-x: auto;
-      margin: 8px 0;
-    }
-    .md-preview pre code { background: none; padding: 0; }
-    .md-preview blockquote {
-      border-left: 3px solid var(--border-color);
-      padding-left: 12px;
-      margin: 8px 0;
-      color: var(--text-secondary);
-    }
-    .md-preview a { color: var(--primary-color); }
-    .md-preview table { border-collapse: collapse; margin: 8px 0; }
-    .md-preview th, .md-preview td { border: 1px solid var(--border-color); padding: 6px 10px; }
-    .md-preview th { background: #f8fafc; }
-    .md-preview img { max-width: 100%; border-radius: 6px; margin: 8px 0; }
-    .md-preview hr { border: none; border-top: 1px solid var(--border-color); margin: 12px 0; }
-    .md-preview del { color: var(--text-secondary); }
-
-    /* 黑夜模式：编辑预览 */
-    body.dark .md-preview,
-    body.dark .md-preview *:not(a):not(code):not(pre) {
-      color: var(--text-primary) !important;
-    }
-    body.dark .md-preview a { color: var(--primary-color) !important; }
-    body.dark .md-preview code { background: #334155 !important; color: var(--text-primary) !important; }
-    body.dark .md-preview pre { background: #0f172a !important; color: var(--text-primary) !important; }
-    body.dark .md-preview pre code { background: transparent !important; }
-    body.dark .md-preview blockquote { background: #172554 !important; border-left-color: #60a5fa !important; }
-    body.dark .md-preview th { background: #334155 !important; }
-    body.dark .md-preview tr:nth-child(even) { background: #1e293b !important; }
+    /* 注：编辑器预览与 Gallery 卡片共用上方统一的 Markdown 样式（.todo-text, .md-preview），
+       此处仅保留预览面板自身的布局属性，元素级样式不再单独定义，确保两视图渲染完全一致。 */
     body.dark .form-textarea {
       background: #0f172a;
       color: #e2e8f0;
@@ -3781,14 +3738,32 @@
 
           pending.set(requestId, { resolve, timeoutId });
 
+          // 预渲染正文为 HTML：调用卡片渲染函数 renderTodoContent(todo)，
+          // 它内部就是根据 MD/HTML 标识选择 renderMarkdown / adaptHtmlForTheme。
+          // —— 邮件与卡片视图用同一段渲染逻辑、同一份"用 MD 还是 HTML"的判定，
+          //    不再各自手写"先看 htmlContent 再看 text"的优先权链，
+          //    也就不会出现"卡片渲染对了，邮件却没渲染"之类的分叉。
+          // —— 异常时 contentHtml 留空字符串，由主窗口 buildTodoEmailHtml 的
+          //    兜底链（contentHtml → htmlContent → markdownToHtml → <pre>）接手。
+          let contentHtml = '';
           try {
-            // 发送 Todo 的基础数据（tags/htmlContent/text/completed/createdAt），主窗口负责构建+渲染+发送
+            if (typeof renderTodoContent === 'function') {
+              contentHtml = renderTodoContent(todo);
+            }
+          } catch (renderErr) {
+            console.warn('[todolist-email] 预渲染失败，将由主窗口兜底:', renderErr);
+          }
+
+          try {
+            // 发送 Todo 的基础数据 + 已渲染的 contentHtml（与卡片视图一致），
+            // 主窗口负责构建邮件壳(主题/收件人)与发送。
             window.electronAPI.sendToHost('todolist-email-request', {
               requestId,
               todo: {
                 id: todo.id,
                 text: todo.text || '',
                 htmlContent: todo.htmlContent || '',
+                contentHtml,
                 tags: (todo.tags && Array.isArray(todo.tags)) ? todo.tags : (todo.tag ? [todo.tag] : []),
                 createdAt: todo.createdAt || null,
                 completed: !!todo.completed,
