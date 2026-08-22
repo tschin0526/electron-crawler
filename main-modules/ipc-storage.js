@@ -329,9 +329,9 @@ function init(shared) {
       if (!todoId || typeof todoId !== 'string') {
         return { success: false, error: 'todoId 非法' };
       }
-      // 只允许字母数字横线下划线，防止路径穿越
-      if (!/^[a-zA-Z0-9_-]+$/.test(todoId)) {
-        return { success: false, error: 'todoId 含非法字符' };
+      // 只允许中文、英文、数字、横线、下划线、空格，防止路径穿越（排除 / \ . 等）
+      if (!/^[\p{L}\p{N}_\-\s]+$/u.test(todoId)) {
+        return { success: false, error: 'todoId 含非法字符（只允许中文、英文、数字、横线、下划线、空格）' };
       }
       const archivedDir = path.join(PLUGINS_DATA_DIR, 'archived');
       if (!fs.existsSync(archivedDir)) {
@@ -374,18 +374,18 @@ function init(shared) {
   });
 
   // 🏷️ 重命名 todo JSON 文件：todo-{oldId}.json → todo-{newId}.json
-  // - oldId / newId 都走白名单校验（仅字母数字横线下划线），防路径穿越
+  // - oldId / newId 都走白名单校验（中文、英文、数字、横线、下划线、空格），防路径穿越
   // - 源文件不存在 → 报错
   // - 目标文件已存在 → 报错（避免覆盖丢失数据）
   // - 用 fs.renameSync 一步完成；同盘下原子操作
   ipcMain.handle('rename-todo-file', async (event, oldId, newId) => {
     try {
-      const idRe = /^[a-zA-Z0-9_-]+$/;
+      const idRe = /^[\p{L}\p{N}_\-\s]+$/u;
       if (!oldId || !newId || typeof oldId !== 'string' || typeof newId !== 'string') {
         return { success: false, error: 'oldId / newId 非法' };
       }
       if (!idRe.test(oldId) || !idRe.test(newId)) {
-        return { success: false, error: 'ID 含非法字符（只允许字母数字横线下划线）' };
+        return { success: false, error: 'ID 含非法字符（只允许中文、英文、数字、横线、下划线、空格）' };
       }
       if (oldId === newId) {
         return { success: false, error: '新旧 ID 相同，无需重命名' };
