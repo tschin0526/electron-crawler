@@ -340,14 +340,11 @@
       return html;
     }
 
-    // 主题由主程式统一控制，通过 executeJavaScript 切换 body.dark 类
-    // 页面加载时从 localStorage 读取初始状态（兼容旧数据）
-    (function loadInitialTheme() {
-      const saved = localStorage.getItem('emailPluginTheme');
-      if (saved === 'dark') {
-        document.body.classList.add('dark');
-      }
-    })();
+    // 🆕 B方案：主题完全由主程式统一控制。
+    //    主进程在 open-email-detail 加载完成（did-finish-load）时，
+    //    通过 executeJavaScript 注入当前工作区主题（body.dark）；
+    //    之后渲染进程切换主题时，主进程会主动遍历所有已打开的邮件详情窗口同步。
+    //    本页面不再自行读取 localStorage，避免与列表主题错位。
 
     function init() {
       const hash = window.location.hash.substring(1);

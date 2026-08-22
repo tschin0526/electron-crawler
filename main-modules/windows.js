@@ -14,6 +14,23 @@ let elementViewerWindow = null;
 let domTreeViewWindow = null;
 let aiResponseViewerWindow = null;
 
+// 🆕 B方案：邮件详情窗口主题跟随主程式统一控制
+//    主进程维护全局工作区黑夜模式状态，并跟踪所有已打开的邮件详情窗口，
+//    主题切换时主动通知它们，无需重启即可实时跟随。
+let workspaceDarkModeEnabled = false;
+const emailDetailWindows = new Set();
+
+// 把当前工作区主题（dark/light）应用到所有已打开的邮件详情窗口
+function applyWorkspaceThemeToEmailDetails(dark) {
+  emailDetailWindows.forEach((win) => {
+    if (win && !win.isDestroyed()) {
+      win.webContents.executeJavaScript(
+        `document.body.classList.toggle('dark', ${dark ? 'true' : 'false'});`
+      ).catch(() => {});
+    }
+  });
+}
+
 let APP_VERSION = '';
 let apiServerModule = null;
 let setMainWindowCallback = () => {};
@@ -243,12 +260,39 @@ function init(shared) {
         },
       });
 
+      // 🆕 跟踪此窗口，主题切换时主动通知它
+      emailDetailWindows.add(detailWindow);
+      detailWindow.on('closed', () => {
+        emailDetailWindows.delete(detailWindow);
+      });
+
+      // 🆕 加载完成后，按主程式当前主题设置 body.dark（跟随统一控制）
+      detailWindow.webContents.once('did-finish-load', () => {
+        detailWindow.webContents.executeJavaScript(
+          `document.body.classList.toggle('dark', ${workspaceDarkModeEnabled ? 'true' : 'false'});`
+        ).catch(() => {});
+      });
+
       detailWindow.loadURL(fullUrl);
       detailWindow.setMenuBarVisibility(false);
 
       return { success: true };
     } catch (error) {
       console.error('[Main] 打开邮件详情失败:', error);
+      return { success: false, error: error.message };
+    }
+  });
+
+  // 🆕 B方案：渲染进程切换工作区黑夜模式后，主动同步到主进程并通知所有邮件详情窗口
+  ipcMain.handle('set-workspace-theme', async (event, payload) => {
+    try {
+      const dark = !!(payload && payload.dark);
+      workspaceDarkModeEnabled = dark;
+      applyWorkspaceThemeToEmailDetails(dark);
+      console.log('[Main] 工作区主题已同步到主进程:', dark ? '黑夜' : '白天');
+      return { success: true, dark };
+    } catch (error) {
+      console.error('[Main] 同步工作区主题失败:', error);
       return { success: false, error: error.message };
     }
   });

@@ -5040,6 +5040,11 @@ async function toggleWorkspaceDarkMode() {
     await removeWorkspaceDarkModeFromAll();
     showStatus('☀️ 已关闭工作区黑夜模式', 'success');
   }
+  // 🆕 B方案：通知主进程，让它同步状态并主动通知所有已打开的邮件详情窗口
+  if (window.electronAPI && window.electronAPI.invoke) {
+    window.electronAPI.invoke('set-workspace-theme', { dark: workspaceDarkModeEnabled })
+      .catch((err) => console.error('[Renderer] 同步工作区主题失败:', err));
+  }
 }
 
 function loadWorkspaceDarkMode() {
@@ -5049,6 +5054,11 @@ function loadWorkspaceDarkMode() {
   if (workspaceDarkModeEnabled) {
     // 延迟应用，等 webview 初始化完成
     setTimeout(() => applyWorkspaceDarkModeToAll(), 1000);
+  }
+  // 🆕 B方案：把初始主题状态同步给主进程（覆盖之前可能残留的默认 false）
+  if (window.electronAPI && window.electronAPI.invoke) {
+    window.electronAPI.invoke('set-workspace-theme', { dark: workspaceDarkModeEnabled })
+      .catch((err) => console.error('[Renderer] 同步初始工作区主题失败:', err));
   }
 }
 

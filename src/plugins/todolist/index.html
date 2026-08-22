@@ -3426,6 +3426,11 @@
       processed = processed
         // 紧跟在 raw HTML 打开标签后面的空行折叠
         .replace(/((?:<[a-zA-Z][^>\/]*>)+)\n\n+/g, '$1\n')
+        // 🆕 open 标签紧贴单 \n + list marker（如 <BIG>\n- xxx）时插入空行
+        //   否则 marked 会把列表项当作 inline 文本塞进 open 标签同一 raw HTML 块内，
+        //   浏览器渲染时 inline 文本换行变空格，导致 5 项列表被压成一行
+        //   （"TraeWork - WorkBuddy - DuMate - ..."）。
+        .replace(/((?:<[a-zA-Z][^>\/]*>)+)\n([-*+]|\d+\.) /g, '$1\n\n$2 ')
         // 紧贴在 raw HTML 关闭标签前面的空行折叠
         .replace(/\n\n+((?:<\/[a-zA-Z][^>]*>)+)/g, '\n$1');
 
