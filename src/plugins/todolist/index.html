@@ -1727,6 +1727,38 @@
     body.dark .card-jump-link:hover {
       color: #bae6fd;
     }
+
+    /* 🆕 跳转后的「返回」按钮：显示在目的卡片头部菜单条，点它回到来源卡片 */
+    .todo-actions .return-btn {
+      display: none;            /* 默认隐藏，由 updateReturnButtons() 控制显隐 */
+      width: 28px;
+      height: 28px;
+      border: 1px solid var(--primary-color);
+      border-radius: 50%;
+      background-color: var(--primary-light, #eff6ff);
+      color: var(--primary-color);
+      cursor: pointer;
+      flex-shrink: 0;
+      align-items: center;
+      justify-content: center;
+      font-size: 14px;
+      margin-right: 4px;
+      transition: background-color 0.15s ease, box-shadow 0.15s ease;
+    }
+    .todo-actions .return-btn:hover {
+      box-shadow: 0 2px 6px rgba(37, 99, 235, 0.35);
+      background-color: var(--primary-color);
+      color: #fff;
+    }
+    body.dark .todo-actions .return-btn {
+      background-color: #1e293b;
+      border-color: #38bdf8;
+      color: #7dd3fc;
+    }
+    body.dark .todo-actions .return-btn:hover {
+      background-color: #38bdf8;
+      color: #0f172a;
+    }
   </style>
 </head>
 <body>
@@ -3270,6 +3302,7 @@
               <div class="checkbox ${todo.completed ? 'checked' : ''}"></div>
             </div>
             <div class="todo-actions">
+              <button class="return-btn" style="display:none" onclick="navigateBack()" title="返回来源卡片">↩</button>
               <span class="todo-actions-label" title="todo-${todo.id}.json">todo-${todo.id}.json</span>
               <button class="action-btn pin ${todo.pinned ? 'active' : ''}" onclick="togglePin('${todo.id}')" title="${todo.pinned ? '取消置顶' : '置顶'}">⬆️</button>
               <button class="action-btn bottom ${todo.bottom ? 'active' : ''}" onclick="toggleBottom('${todo.id}')" title="${todo.bottom ? '取消置底' : '置底'}">⬇️</button>
@@ -3301,6 +3334,8 @@
       }).join('');
       // 用 Muuri 做紧凑网格（保留自定义宽 + 严格 DOM 顺序 + 自动填空隙），再判断 tiny 态
       buildGrid();
+      // 🆕 跳转返回栈：re-render 后按 navStack 恢复「返回」按钮显隐
+      if (typeof updateReturnButtons === 'function') updateReturnButtons();
     }
 
     // 根据卡片面积与「可视父窗口」面积的比例，自动切换「tiny」态：
@@ -4502,13 +4537,35 @@
     // 🆕 卡片间跳转：处理 .card-jump-link 的点击。
     // 接收 data-card-id（已 transformCardLinks 归一化 + escapeHtml 过），
     // 再走一遍归一化（防御性），用 focusResizedCard 触发滚动 + 金边闪动。
-    function jumpToCard(cardId) {
+    // 🆕 归一化卡片 id：去掉 todo- 前缀与 .json 后缀（与卡片 data-id 对齐）
+    function normalizeCardId(raw) {
+      if (!raw) return '';
+      let s = String(raw).trim();
+      const lower = s.toLowerCase();
+      if (lower.startsWith('todo-')) s = s.slice(5);
+      if (lower.endsWith('.json')) s = s.slice(0, -5);
+      return s;
+    }
+
+    // 🆕 卡片间跳转导航栈：存「访问路径」（含起点），栈顶 = 当前所在卡片（归一化 id）。
+    // 长度 >=2 时栈顶卡片显示「返回」按钮；navigateBack 后回到上一站，按钮随之移动/消失。
+    let navStack = [];
+
+    // 🆕 卡片间跳转：处理 .card-jump-link 的点击。
+    // sourceId 为链接所在卡片（来源）；不传 sourceId 表示来自 navigateBack（不压栈）。
+    function jumpToCard(cardId, sourceId) {
       if (!cardId) return;
-      let id = String(cardId).trim();
-      const lower = id.toLowerCase();
-      if (lower.startsWith('todo-')) id = id.slice(5);
-      if (lower.endsWith('.json')) id = id.slice(0, -5);
+      const id = normalizeCardId(cardId);
       if (!id) return;
+      // 新跳转（带来源）：来源与目标不同才压栈，避免自链接污染
+      let pushedSrc = false;
+      if (sourceId) {
+        const src = normalizeCardId(sourceId);
+        if (src && src !== id) {
+          if (navStack[navStack.length - 1] !== src) { navStack.push(src); pushedSrc = true; }
+          navStack.push(id);
+        }
+      }
       // CSS.escape 在 jsdom 里不存在、在真实 Electron 渲染进程里存在——加防御性 fallback。
       // 关键：不要在三元真值分支里引用裸 CSS（即使有 window.CSS guard 也会因
       //   parse/求值时机抛 ReferenceError），必须写 window.CSS.escape 让短路生效。
@@ -4517,10 +4574,35 @@
         : id.replace(/"/g, '\\"');
       const card = document.querySelector(`.todo-item[data-id="${safeId}"]`);
       if (!card) {
+        // 目标不存在：镜像回滚本次压栈（只弹本次新增的条目，不动此前合法栈）
+        if (sourceId) {
+          if (navStack[navStack.length - 1] === id) navStack.pop();
+          if (pushedSrc && navStack[navStack.length - 1] === normalizeCardId(sourceId)) navStack.pop();
+        }
         if (typeof showStatus === 'function') showStatus('未找到目标卡片：' + id, 'error');
         return;
       }
       focusResizedCard(id);
+      updateReturnButtons();
+    }
+
+    // 🆕 点「返回」按钮：回到 navStack 上一站（来源卡片），目的卡片的返回标记随之消失。
+    function navigateBack() {
+      if (navStack.length < 2) return;   // 不足两站，无来源可回
+      navStack.pop();                     // 弹出当前（目的）卡片
+      const dest = navStack[navStack.length - 1]; // 来源 = 弹出后的栈顶
+      jumpToCard(dest);                   // 不带 sourceId → 不压栈
+    }
+
+    // 🆕 按 navStack 设置各卡片「返回」按钮显隐：仅栈顶（当前所在）卡片显示。
+    function updateReturnButtons() {
+      const top = navStack.length >= 2 ? navStack[navStack.length - 1] : null;
+      document.querySelectorAll('.todo-item').forEach(card => {
+        const btn = card.querySelector('.return-btn');
+        if (!btn) return;
+        const show = top && normalizeCardId(card.dataset.id) === top;
+        btn.style.display = show ? 'flex' : 'none';
+      });
     }
 
     // 将卡片滚动到 .todo-list 滚动容器的可视区域内（能居中则居中，过高则顶部对齐）
@@ -4585,7 +4667,9 @@
       const link = e.target && e.target.closest && e.target.closest('a.card-jump-link');
       if (!link) return;
       e.preventDefault();
-      jumpToCard(link.getAttribute('data-card-id'));
+      const sourceCard = link.closest('.todo-item');
+      const sourceId = sourceCard ? sourceCard.dataset.id : null;
+      jumpToCard(link.getAttribute('data-card-id'), sourceId);
     });
 
     // 🆕 监听 body class 变化，主题切换时重新渲染卡片 + 切换代码高亮主题
