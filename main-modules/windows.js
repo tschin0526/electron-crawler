@@ -19,6 +19,7 @@ let aiResponseViewerWindow = null;
 //    主题切换时主动通知它们，无需重启即可实时跟随。
 let workspaceDarkModeEnabled = false;
 const emailDetailWindows = new Set();
+const cardWindows = new Set();
 
 // 把当前工作区主题（dark/light）应用到所有已打开的邮件详情窗口
 function applyWorkspaceThemeToEmailDetails(dark) {
@@ -279,6 +280,44 @@ function init(shared) {
       return { success: true };
     } catch (error) {
       console.error('[Main] 打开邮件详情失败:', error);
+      return { success: false, error: error.message };
+    }
+  });
+
+  // 🆕 卡片 markdown 新窗口：[文字](win:ID) 点击后，在独立窗口里渲染该卡片的 markdown
+  // 数据走 URL hash（base64url），与 open-email-detail 同思路：避免 IPC 接收、无需 preload
+  ipcMain.handle('open-card-window', async (event, payload) => {
+    try {
+      const { id, title, html, dark } = payload || {};
+      if (!id) return { success: false, error: '缺少卡片 id' };
+      const winPath = path.join(APP_ROOT, 'src', 'plugins', 'todolist', 'card-markdown-window.html');
+      const json = JSON.stringify({
+        title: title || ('卡片：' + id),
+        html: html || '',
+        dark: !!dark,
+      });
+      const encoded = Buffer.from(json, 'utf8').toString('base64')
+        .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+      const fullUrl = `file://${winPath}#${encoded}`;
+      const win = new BrowserWindow({
+        width: 760,
+        height: 820,
+        title: title || ('卡片：' + id),
+        frame: true,
+        webPreferences: {
+          webSecurity: false,
+          allowRunningInsecureContent: true,
+          nodeIntegration: false,
+          contextIsolation: true,
+        },
+      });
+      cardWindows.add(win);
+      win.on('closed', () => cardWindows.delete(win));
+      win.loadURL(fullUrl);
+      win.setMenuBarVisibility(false);
+      return { success: true };
+    } catch (error) {
+      console.error('[Main] 打开卡片 markdown 窗口失败:', error);
       return { success: false, error: error.message };
     }
   });

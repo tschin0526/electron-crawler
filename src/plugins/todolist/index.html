@@ -1728,6 +1728,25 @@
       color: #bae6fd;
     }
 
+    /* 🆕 新窗口查看链接：[文字](win:ID) 渲染出的可点击链接（与跳转链接同形、换色区分） */
+    .card-win-link {
+      cursor: pointer;
+      color: #0d9488;
+      text-decoration: underline dotted;
+      text-decoration-thickness: 1px;
+      text-underline-offset: 2px;
+    }
+    .card-win-link:hover {
+      color: #0f766e;
+      text-decoration: underline solid;
+    }
+    body.dark .card-win-link {
+      color: #5eead4;
+    }
+    body.dark .card-win-link:hover {
+      color: #99f6e4;
+    }
+
     /* 🆕 跳转后的「返回」按钮：显示在目的卡片头部菜单条，点它回到来源卡片 */
     .todo-actions .return-btn {
       display: none;            /* 默认隐藏，由 updateReturnButtons() 控制显隐 */
@@ -3509,28 +3528,31 @@
       return div.innerHTML;
     }
 
-    // 🆕 卡片间跳转链接：把 markdown 里 [文字](card:ID) 转成可点击的卡片跳转链接
-    // 语法：[文字](card:ID)，ID 取目标卡片文件名 todo-ID.json 中的 ID 段
-    // 兼容：card:todo-ID.json / card:ID（纯数字、英文、中文皆可）
+    // 🆕 卡片链接：把 markdown 里 [文字](card:ID) / [文字](win:ID) 转成可点击链接
+    //   card:ID → 跳转到对应卡片（.card-jump-link）
+    //   win:ID  → 在新窗口里显示该卡片的 markdown（.card-win-link）
+    // ID 取目标卡片文件名 todo-ID.json 中的 ID 段；兼容 card:todo-ID.json / card:ID（中英文皆可）
     // 必须在 balanceHtmlTags 之后调用（HTML 已平衡、稳定）。
     function transformCardLinks(html) {
       if (!html) return html;
       return html.replace(/<a\b([^>]*)>([\s\S]*?)<\/a>/gi, (_full, attrsStr, label) => {
-        const hrefMatch = attrsStr.match(/\bhref="(card:[^"]*)"/i);
+        const hrefMatch = attrsStr.match(/\bhref="((?:card|win):[^"]*)"/i);
         if (!hrefMatch) return _full;
+        const scheme = hrefMatch[1].slice(0, hrefMatch[1].indexOf(':')).toLowerCase();
         // marked@15 会把中文 URL 自动 percent-encode（易经笔记 → %E6%98%93%E7%BB%8F%E7%AC%94%E8%AE%B0），
         // 必须 decodeURIComponent 还原，否则 data-card-id 选不到对应卡片（querySelector 不自动 unescape）。
         let s;
-        try { s = decodeURIComponent(hrefMatch[1].slice('card:'.length)).trim(); }
-        catch (_) { s = (hrefMatch[1].slice('card:'.length) || '').trim(); }
+        try { s = decodeURIComponent(hrefMatch[1].slice(hrefMatch[1].indexOf(':') + 1)).trim(); }
+        catch (_) { s = (hrefMatch[1].slice(hrefMatch[1].indexOf(':') + 1) || '').trim(); }
         const lower = s.toLowerCase();
         if (lower.startsWith('todo-')) s = s.slice(5);
         if (lower.endsWith('.json')) s = s.slice(0, -5);
         if (!s) return _full;
         const cardId = escapeHtml(s);
         // 保留原 <a> 上除 href 之外的其它属性（marked 一般不加，但防御性保留）
-        const otherAttrs = attrsStr.replace(/\s*href="card:[^"]*"/i, '');
-        return `<a class="card-jump-link" data-card-id="${cardId}"${otherAttrs}>${label}</a>`;
+        const otherAttrs = attrsStr.replace(/\s*href="(?:card|win):[^"]*"/i, '');
+        const cls = scheme === 'win' ? 'card-win-link' : 'card-jump-link';
+        return `<a class="${cls}" data-card-id="${cardId}"${otherAttrs}>${label}</a>`;
       });
     }
 
@@ -4586,6 +4608,30 @@
       updateReturnButtons();
     }
 
+    // 🆕 新窗口查看卡片 markdown：[文字](win:ID) 点击后，在一个独立窗口里渲染该卡片的 markdown
+    function openCardWindow(cardId) {
+      if (!cardId) return;
+      const id = normalizeCardId(cardId);
+      if (!id) return;
+      const todo = todos.find(t => normalizeCardId(t.id) === id);
+      if (!todo) {
+        if (typeof showStatus === 'function') showStatus('未找到目标卡片：' + id, 'error');
+        return;
+      }
+      // 与卡片本体显示一致地渲染 markdown（不含搜索高亮），作为独立窗体内容
+      let html;
+      const mode = getEffectiveRenderMode(todo);
+      if (mode === 'html' && todo.htmlContent) html = adaptHtmlForTheme(todo.htmlContent);
+      else html = renderMarkdown(todo.text || '');
+      const title = '卡片：' + id;
+      const dark = document.body.classList.contains('dark');
+      if (window.electronAPI && typeof window.electronAPI.invoke === 'function') {
+        window.electronAPI.invoke('open-card-window', { id, title, html, dark });
+      } else if (typeof showStatus === 'function') {
+        showStatus('当前环境不支持打开新窗口', 'error');
+      }
+    }
+
     // 🆕 点「返回」按钮：回到 navStack 上一站（来源卡片），目的卡片的返回标记随之消失。
     function navigateBack() {
       if (navStack.length < 2) return;   // 不足两站，无来源可回
@@ -4664,6 +4710,13 @@
     // 🆕 卡片间跳转链接点击委托：拦截 .card-jump-link 的点击，跳到目标卡片 + 金边闪动。
     // 用事件委托（不挂 inline onclick），避免某些 Electron 安全配置下 javascript: 协议被拦截。
     document.addEventListener('click', (e) => {
+      // 🆕 [文字](win:ID)：在新窗口显示该卡片 markdown
+      const winLink = e.target && e.target.closest && e.target.closest('a.card-win-link');
+      if (winLink) {
+        e.preventDefault();
+        openCardWindow(winLink.getAttribute('data-card-id'));
+        return;
+      }
       const link = e.target && e.target.closest && e.target.closest('a.card-jump-link');
       if (!link) return;
       e.preventDefault();
