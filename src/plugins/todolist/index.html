@@ -1708,6 +1708,25 @@
     body.dark .theme-toggle:hover {
       background: rgba(255,255,255,0.25);
     }
+
+    /* 🆕 卡片间跳转链接：[文字](card:ID) 渲染出的可点击链接 */
+    .card-jump-link {
+      cursor: pointer;
+      color: #2563eb;
+      text-decoration: underline dotted;
+      text-decoration-thickness: 1px;
+      text-underline-offset: 2px;
+    }
+    .card-jump-link:hover {
+      color: #1d4ed8;
+      text-decoration: underline solid;
+    }
+    body.dark .card-jump-link {
+      color: #7dd3fc;
+    }
+    body.dark .card-jump-link:hover {
+      color: #bae6fd;
+    }
   </style>
 </head>
 <body>
@@ -3455,6 +3474,31 @@
       return div.innerHTML;
     }
 
+    // 🆕 卡片间跳转链接：把 markdown 里 [文字](card:ID) 转成可点击的卡片跳转链接
+    // 语法：[文字](card:ID)，ID 取目标卡片文件名 todo-ID.json 中的 ID 段
+    // 兼容：card:todo-ID.json / card:ID（纯数字、英文、中文皆可）
+    // 必须在 balanceHtmlTags 之后调用（HTML 已平衡、稳定）。
+    function transformCardLinks(html) {
+      if (!html) return html;
+      return html.replace(/<a\b([^>]*)>([\s\S]*?)<\/a>/gi, (_full, attrsStr, label) => {
+        const hrefMatch = attrsStr.match(/\bhref="(card:[^"]*)"/i);
+        if (!hrefMatch) return _full;
+        // marked@15 会把中文 URL 自动 percent-encode（易经笔记 → %E6%98%93%E7%BB%8F%E7%AC%94%E8%AE%B0），
+        // 必须 decodeURIComponent 还原，否则 data-card-id 选不到对应卡片（querySelector 不自动 unescape）。
+        let s;
+        try { s = decodeURIComponent(hrefMatch[1].slice('card:'.length)).trim(); }
+        catch (_) { s = (hrefMatch[1].slice('card:'.length) || '').trim(); }
+        const lower = s.toLowerCase();
+        if (lower.startsWith('todo-')) s = s.slice(5);
+        if (lower.endsWith('.json')) s = s.slice(0, -5);
+        if (!s) return _full;
+        const cardId = escapeHtml(s);
+        // 保留原 <a> 上除 href 之外的其它属性（marked 一般不加，但防御性保留）
+        const otherAttrs = attrsStr.replace(/\s*href="card:[^"]*"/i, '');
+        return `<a class="card-jump-link" data-card-id="${cardId}"${otherAttrs}>${label}</a>`;
+      });
+    }
+
     // 解码 HTML 实体（如 &amp; &lt; &#39; 等），用于小圆球纯文本提取
     function decodeEntities(text) {
       if (!text) return '';
@@ -3558,6 +3602,8 @@
       html = balanceHtmlTags(html);
       // 归一化 style 里的非 ASCII 连字符（font‑weight 等），否则浏览器静默丢弃
       html = normalizeStyleHyphens(html);
+      // 🆕 卡片间跳转：把 [文字](card:ID) 转成可点击的 .card-jump-link（详见 transformCardLinks）
+      html = transformCardLinks(html);
 
       return html;
     }
@@ -4453,6 +4499,30 @@
       setTimeout(() => card.classList.remove('resize-focus'), 3000);
     }
 
+    // 🆕 卡片间跳转：处理 .card-jump-link 的点击。
+    // 接收 data-card-id（已 transformCardLinks 归一化 + escapeHtml 过），
+    // 再走一遍归一化（防御性），用 focusResizedCard 触发滚动 + 金边闪动。
+    function jumpToCard(cardId) {
+      if (!cardId) return;
+      let id = String(cardId).trim();
+      const lower = id.toLowerCase();
+      if (lower.startsWith('todo-')) id = id.slice(5);
+      if (lower.endsWith('.json')) id = id.slice(0, -5);
+      if (!id) return;
+      // CSS.escape 在 jsdom 里不存在、在真实 Electron 渲染进程里存在——加防御性 fallback。
+      // 关键：不要在三元真值分支里引用裸 CSS（即使有 window.CSS guard 也会因
+      //   parse/求值时机抛 ReferenceError），必须写 window.CSS.escape 让短路生效。
+      const safeId = (window.CSS && typeof window.CSS.escape === 'function')
+        ? window.CSS.escape(id)
+        : id.replace(/"/g, '\\"');
+      const card = document.querySelector(`.todo-item[data-id="${safeId}"]`);
+      if (!card) {
+        if (typeof showStatus === 'function') showStatus('未找到目标卡片：' + id, 'error');
+        return;
+      }
+      focusResizedCard(id);
+    }
+
     // 将卡片滚动到 .todo-list 滚动容器的可视区域内（能居中则居中，过高则顶部对齐）
     function scrollCardIntoView(card) {
       const container = document.getElementById('todoList');
@@ -4508,6 +4578,15 @@
       updateHljsTheme();
     })();
     init();
+
+    // 🆕 卡片间跳转链接点击委托：拦截 .card-jump-link 的点击，跳到目标卡片 + 金边闪动。
+    // 用事件委托（不挂 inline onclick），避免某些 Electron 安全配置下 javascript: 协议被拦截。
+    document.addEventListener('click', (e) => {
+      const link = e.target && e.target.closest && e.target.closest('a.card-jump-link');
+      if (!link) return;
+      e.preventDefault();
+      jumpToCard(link.getAttribute('data-card-id'));
+    });
 
     // 🆕 监听 body class 变化，主题切换时重新渲染卡片 + 切换代码高亮主题
     // 解决：切换主题后 adaptHtmlForTheme 未被重新调用的问题
