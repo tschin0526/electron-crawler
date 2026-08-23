@@ -4,9 +4,12 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>📝 ToDoList</title>
-  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/marked@15.0.12/marked.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/lib/common.min.js"></script>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
   <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/styles/github.min.css" id="hljs-theme-light">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/styles/github-dark.min.css" id="hljs-theme-dark" disabled>
   <style>
     :root {
       --primary-color: #667eea;
@@ -777,6 +780,44 @@
     body.dark .todo-text blockquote, body.dark .md-preview blockquote { background: #172554 !important; border-left-color: #60a5fa !important; }
     body.dark .todo-text th, body.dark .md-preview th { background: #334155 !important; }
     body.dark .todo-text tr:nth-child(even), body.dark .md-preview tr:nth-child(even) { background: #1e293b !important; }
+
+    /* GFM 补全：h5/h6 标题样式 */
+    .todo-text h5, .md-preview h5 { font-size: .9em; font-weight: 600; margin: .4em 0 .2em; }
+    .todo-text h6, .md-preview h6 { font-size: .85em; font-weight: 600; margin: .4em 0 .2em; color: var(--text-secondary); }
+
+    /* GFM 补全：任务列表（task lists）样式
+       marked 渲染 - [x] 为 <li><input type="checkbox" checked disabled> text</li>
+       需要移除列表圆点、对齐 checkbox、给已完成项加删除线 */
+    .todo-text ul:has(input[type="checkbox"]),
+    .md-preview ul:has(input[type="checkbox"]) {
+      list-style: none;
+      padding-left: 1.2em;
+    }
+    .todo-text li:has(input[type="checkbox"]),
+    .md-preview li:has(input[type="checkbox"]) {
+      list-style: none;
+      margin-left: -0.4em;
+    }
+    .todo-text input[type="checkbox"],
+    .md-preview input[type="checkbox"] {
+      margin-right: .4em;
+      vertical-align: middle;
+      accent-color: var(--primary-color);
+    }
+    .todo-text li:has(input[type="checkbox"]:checked),
+    .md-preview li:has(input[type="checkbox"]:checked) {
+      text-decoration: line-through;
+      color: var(--text-secondary);
+    }
+
+    /* GFM 补全：暗色模式代码语法高亮覆盖
+       highlight.js 的 github-dark 主题通过 CSS <link> 切换，
+       但 pre 背景色需与卡片暗色主题协调 */
+    body.dark .todo-text pre, body.dark .md-preview pre { background: #0d1117 !important; }
+    body.dark .todo-text pre code.hljs, body.dark .md-preview pre code.hljs {
+      background: transparent !important;
+      color: #c9d1d9 !important;
+    }
 
     /* 卡片底部固定区域：显示标签和最后异动时间 */
     .todo-footer {
@@ -1846,8 +1887,36 @@
     </div>
   </div>
 
+  <!-- 编辑结束前的「问询后存档」确认框：存在未保存更改时弹出 -->
+  <div class="modal-overlay" id="unsavedConfirmOverlay" style="display: none;" onclick="if(event.target===event.currentTarget) cancelUnsavedConfirm()">
+    <div class="rename-confirm-box" onclick="event.stopPropagation()">
+      <p class="rename-confirm-msg" id="unsavedConfirmMsg">你有未保存的更改，要存档吗？</p>
+      <div class="rename-confirm-actions">
+        <button class="btn btn-secondary" onclick="cancelUnsavedConfirm()">取消</button>
+        <button class="btn btn-secondary" onclick="discardAndCloseFromConfirm()">不保存</button>
+        <button class="btn btn-primary" onclick="saveAndCloseFromConfirm()">保存并关闭</button>
+      </div>
+    </div>
+  </div>
+
   <script src="vendor/muuri.min.js"></script>
   <script>
+    // ============================================================
+    // GFM 完整支持：highlight.js 语法高亮配置
+    // highlight.js 在 renderMarkdown() 后处理阶段对 <pre><code> 块
+    // 按语言高亮，输出带 hljs class 的 HTML。
+    // 库从 CDN 加载，缺失时安全降级（不高亮，不影响渲染）。
+    // ============================================================
+
+    // highlight.js 主题随暗色模式切换
+    function updateHljsTheme() {
+      const isDark = document.body.classList.contains('dark');
+      const lightSheet = document.getElementById('hljs-theme-light');
+      const darkSheet = document.getElementById('hljs-theme-dark');
+      if (lightSheet) lightSheet.disabled = isDark;
+      if (darkSheet) darkSheet.disabled = !isDark;
+    }
+
     const STORAGE_KEY = 'electron-todolist-data';
     const PLUGIN_NAME = 'todolist';
     let todos = [];
@@ -1857,6 +1926,9 @@
     let currentSearchIndex = -1;  // 当前搜索结果索引
     let matchedHighlights = [];   // 匹配的高亮元素列表
     let editingId = null;
+    // 编辑退出前的「未保存更改」检测快照：在 openAddModal / openEditModal 时采集原始内容，
+    // 关闭前与当前编辑器内容比对，决定是否弹出「问询后存档」确认框。
+    let editSnapshot = null;
     let pendingAttachments = [];
     let resizingId = null;
     let resizingEl = null;
@@ -3409,35 +3481,56 @@
         return `%%MATHBLOCK_${idx}%%`;
       });
       // 行内公式 $...$（排除 $$）
-      processed = processed.replace(/(?<!\$)\$(?!\$)([^\$\n]+?)\$(?!\$)/g, (_, formula) => {
+      // GFM 修复：原正则会把货币金额（如 "$5.00 和 $3.00"）误识别为行内公式。
+      //   新增 (?!\s) 和 (?<!\s) 约束：要求 $ 紧贴公式内容（无空格间隔），
+      //   货币金额 "$5.00 和 $3.00" 中第二个 $ 前有空格，不会误匹配。
+      //   同时新增 (?<!\d) 和 (?!\d)：$ 前后不能紧邻数字，排除 "$5" 这类金额。
+      processed = processed.replace(/(?<!\$)(?<!\d)\$(?!\$)(?!\s)([^\$\n]+?)(?<!\s)\$(?!\$)(?!\d)/g, (_, formula) => {
         const idx = mathBlocks.length;
         mathBlocks.push({ formula, display: false });
         return `%%MATHBLOCK_${idx}%%`;
       });
 
-      // 折叠 raw HTML 标签之间、紧邻的空行
-      // 根因：marked 看到 raw HTML（如 <BIG>）跟内容之间有空行时，
-      //   会把它们拆成 <p> 包装：
-      //     <BIG>\n\n内容\n\n</BIG>
-      //   → <p><BIG></p><p>内容</p><p></BIG></p>
-      //   inline 标签 BIG 与 block 标签 <p> 互斥，浏览器会强行关闭 BIG，
-      //   导致 <BIG>...</BIG> 跨段时包裹关系断裂，「BIG 不生效」。
-      // 折叠后 marked 才会把它识别成同一个 raw HTML 块，包裹关系保留。
+      // GFM 修复：仅对已知内联标签（BIG/SMALL/span/mark 等）做空行折叠，
+      //   不再匹配所有 HTML 标签，避免干扰 GFM raw HTML 块（<details>、<div> 等）的正常解析。
+      //   原始正则 <[a-zA-Z][^>\/]*> 会匹配所有 HTML 标签，
+      //   导致 <details>、<div> 等块级 HTML 的空行也被折叠，破坏 GFM 规范。
+      //   根因：marked 看到 raw HTML（如 <BIG>）跟内容之间有空行时，
+      //   会把它们拆成 <p> 包装，inline 标签与 block 标签 <p> 互斥，
+      //   浏览器强行关闭 BIG，导致 <BIG>...</BIG> 跨段时包裹关系断裂。
+      //   折叠后 marked 才会把它识别成同一个 raw HTML 块，包裹关系保留。
+      const _inlineOpen = '(?:<(?:big|small|span|mark|sub|sup|u|s|del|ins|b|i|em|strong)\\b[^>]*>)';
+      const _inlineClose = '(?:<\\/(?:big|small|span|mark|sub|sup|u|s|del|ins|b|i|em|strong)>)';
       processed = processed
-        // 紧跟在 raw HTML 打开标签后面的空行折叠
-        .replace(/((?:<[a-zA-Z][^>\/]*>)+)\n\n+/g, '$1\n')
-        // 🆕 open 标签紧贴单 \n + list marker（如 <BIG>\n- xxx）时插入空行
-        //   否则 marked 会把列表项当作 inline 文本塞进 open 标签同一 raw HTML 块内，
-        //   浏览器渲染时 inline 文本换行变空格，导致 5 项列表被压成一行
-        //   （"TraeWork - WorkBuddy - DuMate - ..."）。
-        .replace(/((?:<[a-zA-Z][^>\/]*>)+)\n([-*+]|\d+\.) /g, '$1\n\n$2 ')
-        // 紧贴在 raw HTML 关闭标签前面的空行折叠
-        .replace(/\n\n+((?:<\/[a-zA-Z][^>]*>)+)/g, '\n$1');
+        // 紧跟在内联标签后面的空行折叠
+        .replace(new RegExp('(' + _inlineOpen + '+)\\n\\n+', 'gi'), '$1\n')
+        // 内联标签紧贴单 \n + list marker 时插入空行（防止列表项被压成一行）
+        .replace(new RegExp('(' + _inlineOpen + '+)\\n([-*+]|\\d+\\.) ', 'gi'), '$1\n\n$2 ')
+        // 紧贴在内联标签前面的空行折叠
+        .replace(new RegExp('\\n\\n+(' + _inlineClose + '+)', 'gi'), '\n$1');
 
       let html;
       if (typeof marked !== 'undefined') {
         marked.setOptions({ breaks: true, gfm: true });
         html = marked.parse(processed);
+        // GFM: 代码语法高亮后处理
+        // marked 输出 <pre><code class="language-xxx">...</code></pre>，
+        // 这里用 hljs.highlight() 替换内容为带语法高亮的 HTML。
+        if (typeof hljs !== 'undefined') {
+          html = html.replace(/<pre><code(?:\s+class="([^"]*)")?>([\s\S]*?)<\/code><\/pre>/g, (match, cls, code) => {
+            const langMatch = cls && cls.match(/language-([\w-]+)/);
+            const lang = langMatch ? langMatch[1] : '';
+            // 解码 HTML 实体，还原代码原文
+            const decoded = code.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'");
+            try {
+              const language = lang && hljs.getLanguage(lang) ? lang : 'plaintext';
+              const highlighted = hljs.highlight(decoded, { language }).value;
+              return `<pre><code class="hljs language-${language}">${highlighted}</code></pre>`;
+            } catch (e) {
+              return match;
+            }
+          });
+        }
       } else {
         html = escapeHtml(processed);
       }
@@ -3867,6 +3960,7 @@
       document.getElementById('taskText').focus();
       resetEditorHistory(document.getElementById('taskText'));
       resetEditorHistory(document.getElementById('htmlText'));
+      captureEditSnapshot();
     }
 
     function openEditModal(id) {
@@ -3901,6 +3995,7 @@
       document.getElementById('taskText').focus();
       resetEditorHistory(document.getElementById('taskText'));
       resetEditorHistory(document.getElementById('htmlText'));
+      captureEditSnapshot();
     }
 
     // 📄 刷新 JSON 文件名显示区（编辑模式专用）
@@ -4065,7 +4160,53 @@
       if (nameEl) nameEl.style.display = '';
     }
 
-    function closeModal(event, focusId) {
+    // ========== 编辑退出前的「未保存更改」检测 + 问询后存档 ==========
+    // 在打开编辑/新增模态框时采集原始内容快照。
+    function captureEditSnapshot() {
+      editSnapshot = {
+        text: document.getElementById('taskText').value,
+        html: document.getElementById('htmlText').value,
+        tags: JSON.stringify(selectedTagsForModal),
+        attachments: JSON.stringify(pendingAttachments),
+        color: getSelectedTodoColor()
+      };
+    }
+
+    // 当前编辑器内容是否与快照不同（即存在未保存更改）。
+    function hasUnsavedChanges() {
+      if (!editSnapshot) return false;
+      return document.getElementById('taskText').value !== editSnapshot.text
+          || document.getElementById('htmlText').value !== editSnapshot.html
+          || JSON.stringify(selectedTagsForModal) !== editSnapshot.tags
+          || JSON.stringify(pendingAttachments) !== editSnapshot.attachments
+          || getSelectedTodoColor() !== editSnapshot.color;
+    }
+
+    // 关闭「问询后存档」确认框（取消/点背景）。
+    function cancelUnsavedConfirm() {
+      const overlay = document.getElementById('unsavedConfirmOverlay');
+      if (overlay) overlay.style.display = 'none';
+    }
+
+    // 「保存并关闭」：先关确认框，再走正常保存流程（saveTask 内部关闭时 skipPrompt）。
+    function saveAndCloseFromConfirm() {
+      cancelUnsavedConfirm();
+      saveTask(true);
+    }
+
+    // 「不保存」：丢弃当前编辑内容，直接关闭（不二次问询）。
+    function discardAndCloseFromConfirm() {
+      cancelUnsavedConfirm();
+      closeModal(undefined, undefined, true);
+    }
+
+    function closeModal(event, focusId, skipPrompt = false) {
+      // 退出编辑前，若存在未保存更改且非「保存后自动关闭」，弹出「问询后存档」确认框。
+      if (!skipPrompt && hasUnsavedChanges()) {
+        const overlay = document.getElementById('unsavedConfirmOverlay');
+        if (overlay) overlay.style.display = 'flex';
+        return;
+      }
       if (event && event.target !== event.currentTarget) return;
       // focusId 未显式传入时默认聚焦当前编辑中的卡片（取消/✕/ESC 场景）；
       // 保存场景由调用方显式传入，以同时覆盖「编辑」与「新增」两种卡片
@@ -4089,6 +4230,8 @@
       if (fid) {
         setTimeout(() => focusResizedCard(fid), 320);
       }
+      // 模态框完全关闭后清空未保存检测快照
+      editSnapshot = null;
     }
 
     function handleFileSelect(event) {
@@ -4197,7 +4340,8 @@
       if (closeAfterSave) {
         // 保存后自动关闭：编辑场景聚焦原卡片，新增场景聚焦刚插入队首的卡片
         const focusCardId = isEdit ? editingId : (todos[0] && todos[0].id);
-        closeModal(undefined, focusCardId);
+        // skipPrompt=true：已保存，无需再弹「问询后存档」
+        closeModal(undefined, focusCardId, true);
       }
     }
 
@@ -4360,18 +4504,27 @@
       if (saved === 'dark') {
         document.body.classList.add('dark');
       }
+      // 初始化 highlight.js 主题
+      updateHljsTheme();
     })();
     init();
 
-    // 🆕 监听 body class 变化，主题切换时重新渲染卡片
+    // 🆕 监听 body class 变化，主题切换时重新渲染卡片 + 切换代码高亮主题
     // 解决：切换主题后 adaptHtmlForTheme 未被重新调用的问题
     const themeObserver = new MutationObserver(() => {
+      updateHljsTheme();
       renderTodos();
     });
     themeObserver.observe(document.body, { attributes: true, attributeFilter: ['class'] });
 
     document.addEventListener('keydown', (e) => {
       if (e.key === 'Escape') {
+        // 若「问询后存档」确认框已打开，Esc 先取消确认框（留在编辑态），避免重复弹出
+        const uc = document.getElementById('unsavedConfirmOverlay');
+        if (uc && uc.style.display !== 'none') {
+          cancelUnsavedConfirm();
+          return;
+        }
         closeModal();
       }
       // Cmd+S / Ctrl+S 保存但不关闭编辑窗口
