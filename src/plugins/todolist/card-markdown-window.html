@@ -127,6 +127,25 @@
     color: #c4b5fd;
   }
 
+  /* 🆕 在原浏览器开启链接：[文字](cur:URL) 可点击 → 本窗体就地导航（橙色，与 index.html 一致） */
+  .content a.card-cur-link {
+    cursor: pointer;
+    color: #ea580c;
+    text-decoration: underline dotted;
+    text-decoration-thickness: 1px;
+    text-underline-offset: 2px;
+  }
+  .content a.card-cur-link:hover {
+    color: #c2410c;
+    text-decoration: underline solid;
+  }
+  body.dark .content a.card-cur-link {
+    color: #fdba74;
+  }
+  body.dark .content a.card-cur-link:hover {
+    color: #fed7aa;
+  }
+
   /* 黑夜模式（与 index.html 的 body.dark .todo-text 系列对齐） */
   body.dark .content,
   body.dark .content *:not(a):not(code):not(pre) {
@@ -195,8 +214,11 @@
       document.getElementById('content').textContent = '内容解析失败：' + e.message;
     }
 
-    // 🆕 图片查看链接（win-img:）点击 → 开新窗看图
+    // 🆕 图片查看链接（win-img:）点击 → 开新窗看图；cur: 链接在开头提前放行（在原浏览器开启）
     document.addEventListener('click', function (e) {
+      // 🆕 在原浏览器开启链接（cur:）→ 不拦截，让本窗体就地导航（需 main 端 will-navigate 放行 http(s)）
+      var curLink = e.target && e.target.closest ? e.target.closest('a.card-cur-link') : null;
+      if (curLink) return;
       var imgLink = e.target && e.target.closest ? e.target.closest('a.card-win-img-link') : null;
       if (imgLink) {
         e.preventDefault();
@@ -207,8 +229,9 @@
         }
         return;
       }
-      // 🆕 外链（普通外链 / ref-num 圆圈编号）点击 → 用「应用内独立窗体」（openWebPreview）打开，
-      //    不跳系统浏览器、也不在当前窗体内导航走。card-jump-link / card-win-link 无 href 属性，不会误命中。
+      // 🆕 不前置协议的普通链接（https:// 或 file://）：统一在新浏览器（新窗口）开启 ——
+      //    http(s) → 应用内独立窗体（openWebPreview）；file:// 图片 → 图片查看窗体；其它 file:// → openWebPreview。
+      //    card-jump-link / card-win-link 无 href 属性，不会误命中。
       var link = e.target && e.target.closest ? e.target.closest('a[href]') : null;
       if (!link) return;
       var href = (link.getAttribute('href') || '').trim();
@@ -219,6 +242,19 @@
         } else {
           window.open(href, '_blank');
         }
+        return;
+      }
+      if (/^file:\/\//i.test(href)) {
+        e.preventDefault();
+        if (/\.(png|jpe?g|gif|webp|bmp|svg|ico|avif)(?:[?#].*)?$/i.test(href)) {
+          var imgLabel = (link.textContent || '').trim();
+          if (window.electronAPI && typeof window.electronAPI.invoke === 'function') {
+            window.electronAPI.invoke('open-image-window', { src: href, title: imgLabel ? '图片：' + imgLabel : '图片' });
+          }
+        } else if (window.electronAPI && typeof window.electronAPI.openWebPreview === 'function') {
+          window.electronAPI.openWebPreview(href);
+        }
+        return;
       }
     });
   })();

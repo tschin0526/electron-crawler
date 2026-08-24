@@ -319,10 +319,11 @@ function init(shared) {
       win.setMenuBarVisibility(false);
 
       // 🆕 markdown 渲染里的外链（普通外链 / ref-num 圆圈编号）点击 → 由渲染进程用「应用内独立窗体」
-      //    （electronAPI.openWebPreview）打开；此处仅作防御性兜底：拦截外链导航，避免在当前窗体内跳走，
-      //    且绝不使用系统默认浏览器。正常点击已被 card-markdown-window.html 的点击处理器拦截。
+      //    （electronAPI.openWebPreview）打开；[文字](cur:URL)（在原浏览器开启）则由渲染进程放行、
+      //    在本窗体内就地导航，故此处放行 http(s) 与 file；其余协议（如 javascript:）仍拦截，
+      //    避免窗体被意外跳走，且绝不使用系统默认浏览器。
       win.webContents.on('will-navigate', (event, url) => {
-        if (/^https?:\/\//i.test(url)) {
+        if (!/^(?:https?|file):\/\//i.test(url)) {
           event.preventDefault();
         }
       });

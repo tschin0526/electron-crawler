@@ -1766,6 +1766,25 @@
       color: #c4b5fd;
     }
 
+    /* 🆕 在原浏览器开启链接：[文字](cur:URL) 渲染出的可点击链接（橙色调区分于跳转蓝/新窗绿/图片紫） */
+    .card-cur-link {
+      cursor: pointer;
+      color: #ea580c;
+      text-decoration: underline dotted;
+      text-decoration-thickness: 1px;
+      text-underline-offset: 2px;
+    }
+    .card-cur-link:hover {
+      color: #c2410c;
+      text-decoration: underline solid;
+    }
+    body.dark .card-cur-link {
+      color: #fdba74;
+    }
+    body.dark .card-cur-link:hover {
+      color: #fed7aa;
+    }
+
     /* 🆕 跳转后的「返回」按钮：显示在目的卡片头部菜单条，点它回到来源卡片 */
     .todo-actions .return-btn {
       display: none;            /* 默认隐藏，由 updateReturnButtons() 控制显隐 */
@@ -3606,16 +3625,18 @@
       return div.innerHTML;
     }
 
-    // 🆕 卡片链接：把 markdown 里 [文字](card:ID) / [文字](win:ID) / [文字](win-img:URL) 转成可点击链接
+    // 🆕 卡片链接：把 markdown 里 [文字](card:ID) / [文字](win:ID) / [文字](win-img:URL) / [文字](cur:URL) 转成可点击链接
     //   card:ID    → 跳转到对应卡片（.card-jump-link）
     //   win:ID     → 在新窗口里显示该卡片的 markdown（.card-win-link）
     //   win-img:URL → 在新窗口里居中显示该图片（.card-win-img-link）
+    //   cur:URL    → 在原浏览器（当前窗体）就地导航开启（.card-cur-link）；
+    //                统一规则：不前置任何协议的普通链接（无论 file:// 还是 https://）一律在新窗口开启
     // ID 取目标卡片文件名 todo-ID.json 中的 ID 段；兼容 card:todo-ID.json / card:ID（中英文皆可）
     // 必须在 balanceHtmlTags 之后调用（HTML 已平衡、稳定）。
     function transformCardLinks(html) {
       if (!html) return html;
       return html.replace(/<a\b([^>]*)>([\s\S]*?)<\/a>/gi, (_full, attrsStr, label) => {
-        const hrefMatch = attrsStr.match(/\bhref="((?:card|win-img|win):[^"]*)"/i);
+        const hrefMatch = attrsStr.match(/\bhref="((?:card|win-img|win|cur):[^"]*)"/i);
         if (!hrefMatch) {
           // 🆕 引用编号：链接文字含 ※（如 [11※](https://...)）→ 渲染成圆圈编号（紫蓝白字胶囊）
           if (label && label.includes('※')) {
@@ -3642,6 +3663,16 @@
           if (!imgSrc) return _full;
           const otherAttrs = attrsStr.replace(/\s*href="win-img:[^"]*"/i, '');
           return `<a class="card-win-img-link${refNumClass}" data-img-src="${escapeHtml(imgSrc)}"${otherAttrs}>${finalLabel}</a>`;
+        }
+        // 🆕 cur:URL 在原浏览器（当前窗体）就地导航开启（统一规则：不前置→新窗口，cur:→原浏览器）；
+        //   保留真实 href，点击时不拦截、交给 webview 原生导航。同样需 decode 还原 marked@15 的 percent-encode。
+        if (scheme === 'cur') {
+          let curUrl;
+          try { curUrl = decodeURIComponent(href.slice(href.indexOf(':') + 1)).trim(); }
+          catch (_) { curUrl = (href.slice(href.indexOf(':') + 1) || '').trim(); }
+          if (!curUrl) return _full;
+          const otherAttrs = attrsStr.replace(/\s*href="cur:[^"]*"/i, '');
+          return `<a class="card-cur-link${refNumClass}" href="${escapeHtml(curUrl)}"${otherAttrs}>${finalLabel}</a>`;
         }
         // marked@15 会把中文 URL 自动 percent-encode（易经笔记 → %E6%98%93%E7%BB%8F%E7%AC%94%E8%AE%B0），
         // 必须 decodeURIComponent 还原，否则 data-card-id 选不到对应卡片（querySelector 不自动 unescape）。
@@ -4825,6 +4856,10 @@
     // 🆕 卡片间跳转链接点击委托：拦截 .card-jump-link 的点击，跳到目标卡片 + 金边闪动。
     // 用事件委托（不挂 inline onclick），避免某些 Electron 安全配置下 javascript: 协议被拦截。
     document.addEventListener('click', (e) => {
+      // 🆕 [文字](cur:URL)：在原浏览器开启 —— 不拦截，让当前窗体就地导航（file:// 与 https:// 皆可用）
+      //（导航走后可用工具栏「后退」返回）
+      const curLink = e.target && e.target.closest && e.target.closest('a.card-cur-link');
+      if (curLink) return;
       // 🆕 [文字](win:ID)：在新窗口显示该卡片 markdown
       const winLink = e.target && e.target.closest && e.target.closest('a.card-win-link');
       if (winLink) {
@@ -4849,7 +4884,8 @@
         jumpToCard(jumpLink.getAttribute('data-card-id'), sourceId);
         return;
       }
-      // 🆕 普通外链 / 引用编号(ref-num) 外链：用「应用内独立窗体」（openWebPreview）打开，
+      // 🆕 不前置协议的普通链接（https:// 或 file://）：统一在新浏览器（新窗口）开启 ——
+      //    http(s) → 应用内独立窗体（openWebPreview）；file:// 图片 → 图片查看窗体；其它 file:// → openWebPreview。
       //    避免当前窗体被导航走、也避免跳到系统浏览器离开程式。
       const extLink = e.target && e.target.closest && e.target.closest('a[href]');
       if (extLink) {
@@ -4861,6 +4897,19 @@
             api.openWebPreview(href);
           } else {
             window.open(href, '_blank');
+          }
+          return;
+        }
+        if (/^file:\/\//i.test(href)) {
+          e.preventDefault();
+          if (/\.(png|jpe?g|gif|webp|bmp|svg|ico|avif)(?:[?#].*)?$/i.test(href)) {
+            // 图片文件 → 图片查看窗体（与 win-img: 同效果）
+            openImageWindow(href, (extLink.textContent || '').trim());
+          } else {
+            const api = window.electronAPI;
+            if (api && typeof api.openWebPreview === 'function') {
+              api.openWebPreview(href);
+            }
           }
           return;
         }
