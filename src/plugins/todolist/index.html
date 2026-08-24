@@ -3530,6 +3530,15 @@
           if (colonIdx === -1) continue;
 
           var prop = decl.substring(0, colonIdx).trim().toLowerCase();
+          var value = decl.substring(colonIdx + 1).trim();
+
+          // 🆕 保留渐变背景：彩虹跑马灯等用 background:linear-gradient(...)+-webkit-background-clip:text
+          //   实现「渐变文字」，剥掉就没彩虹了；用 -webkit-text-fill-color:transparent 让文字本身透明，
+          //   靠 background 的渐变透出来。这类自定义设计必须保留全部样式。
+          if (prop === 'background' && /gradient/i.test(value)) {
+            kept.push(decl);
+            continue;
+          }
 
           // 移除颜色相关属性，让 CSS 控制
           if (prop === 'color' ||
@@ -3546,7 +3555,6 @@
           // border 属性中可能包含颜色，需要特殊处理
           if (prop.indexOf('border') !== -1 && prop !== 'border-radius') {
             // 移除 border 中的颜色值（#xxx 或 rgb() 或 rgba()）
-            var value = decl.substring(colonIdx + 1).trim();
             value = value.replace(/#[0-9a-fA-F]{3,8}\s*/g, '');
             value = value.replace(/rgba?\([^)]*\)\s*/g, '');
             value = value.replace(/\s+/g, ' ').trim();
