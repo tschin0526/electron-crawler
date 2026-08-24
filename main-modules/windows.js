@@ -309,15 +309,65 @@ function init(shared) {
           allowRunningInsecureContent: true,
           nodeIntegration: false,
           contextIsolation: true,
+          // 注入与主窗体相同的 preload，使 card-markdown-window.html 能调用 electronAPI.openWebPreview
+          preload: path.join(APP_ROOT, 'preload.js'),
         },
       });
       cardWindows.add(win);
       win.on('closed', () => cardWindows.delete(win));
       win.loadURL(fullUrl);
       win.setMenuBarVisibility(false);
+
+      // 🆕 markdown 渲染里的外链（普通外链 / ref-num 圆圈编号）点击 → 由渲染进程用「应用内独立窗体」
+      //    （electronAPI.openWebPreview）打开；此处仅作防御性兜底：拦截外链导航，避免在当前窗体内跳走，
+      //    且绝不使用系统默认浏览器。正常点击已被 card-markdown-window.html 的点击处理器拦截。
+      win.webContents.on('will-navigate', (event, url) => {
+        if (/^https?:\/\//i.test(url)) {
+          event.preventDefault();
+        }
+      });
+      win.webContents.setWindowOpenHandler(({ url }) => {
+        return { action: /^https?:\/\//i.test(url) ? 'deny' : 'allow' };
+      });
       return { success: true };
     } catch (error) {
       console.error('[Main] 打开卡片 markdown 窗口失败:', error);
+      return { success: false, error: error.message };
+    }
+  });
+
+  // 🆕 图片查看新窗体：[文字](win-img:URL) 点击后，在独立窗口里居中显示该图片
+  // 数据走 URL hash（base64url），与 open-card-window 同思路：避免 IPC 接收、无需 preload
+  const imageWindows = new Set();
+  ipcMain.handle('open-image-window', async (event, payload) => {
+    try {
+      const { src, title } = payload || {};
+      if (!src) return { success: false, error: '缺少图片 src' };
+      const winPath = path.join(APP_ROOT, 'src', 'plugins', 'todolist', 'image-viewer.html');
+      const json = JSON.stringify({ src, title: title || '图片' });
+      const encoded = Buffer.from(json, 'utf8').toString('base64')
+        .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+      const fullUrl = `file://${winPath}#${encoded}`;
+      const win = new BrowserWindow({
+        width: 900,
+        height: 700,
+        title: title || '图片',
+        frame: true,
+        backgroundColor: '#0a0a0a',
+        webPreferences: {
+          webSecurity: false,
+          allowRunningInsecureContent: true,
+          nodeIntegration: false,
+          contextIsolation: true,
+        },
+      });
+      imageWindows.add(win);
+      win.on('closed', () => imageWindows.delete(win));
+      win.loadURL(fullUrl);
+      win.setMenuBarVisibility(false);
+      return { success: true };
+    } catch (error) {
+      console.error('[Main] 打开图片窗口失败:', error);
       return { success: false, error: error.message };
     }
   });

@@ -1747,6 +1747,25 @@
       color: #99f6e4;
     }
 
+    /* 🆕 图片查看链接：[文字](win-img:URL) 渲染出的可点击链接（紫色调区分于跳转蓝/新窗绿） */
+    .card-win-img-link {
+      cursor: pointer;
+      color: #7c3aed;
+      text-decoration: underline dotted;
+      text-decoration-thickness: 1px;
+      text-underline-offset: 2px;
+    }
+    .card-win-img-link:hover {
+      color: #6d28d9;
+      text-decoration: underline solid;
+    }
+    body.dark .card-win-img-link {
+      color: #a78bfa;
+    }
+    body.dark .card-win-img-link:hover {
+      color: #c4b5fd;
+    }
+
     /* 🆕 跳转后的「返回」按钮：显示在目的卡片头部菜单条，点它回到来源卡片 */
     .todo-actions .return-btn {
       display: none;            /* 默认隐藏，由 updateReturnButtons() 控制显隐 */
@@ -1777,6 +1796,38 @@
     body.dark .todo-actions .return-btn:hover {
       background-color: #38bdf8;
       color: #0f172a;
+    }
+
+    /* 🆕 引用编号：markdown 里 [11※](url) 渲染成紫蓝白字圆圈胶囊（类 footnote）
+       font-size: 1em 完全跟随父级 —— 这样 <BIG>/<BIG><BIG>/<BIG><BIG><BIG> 嵌套会逐级相对放大
+       （0.72em 旧版无法让多层 BIG 附加放大视觉上可见，已停用） */
+    .todo-text a.ref-num, .md-preview a.ref-num {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 1.6em;
+      height: 1.6em;
+      padding: 0 .3em;
+      margin: 0 .12em;
+      font-size: 1em;
+      font-weight: 700;
+      line-height: 1;
+      color: #ffffff !important;
+      background: #6366f1;
+      border-radius: 999px;
+      text-decoration: none;
+      vertical-align: middle;
+      cursor: pointer;
+    }
+    .todo-text a.ref-num:hover, .md-preview a.ref-num:hover {
+      background: #4f46e5;
+    }
+    body.dark .todo-text a.ref-num, body.dark .md-preview a.ref-num {
+      background: #818cf8;
+      color: #ffffff !important;
+    }
+    body.dark .todo-text a.ref-num:hover, body.dark .md-preview a.ref-num:hover {
+      background: #a5b4fc;
     }
   </style>
 </head>
@@ -2781,6 +2832,14 @@
       const tempDiv = document.createElement('div');
       tempDiv.innerHTML = html;
 
+      // 🆕 圆圈编号识别：HTML 里手写带 border-radius:50%/999px/50px 等圆圈样式的 <a>
+      //   在转 markdown 时给文字末尾追加 ※，让 markdown 渲染时（transformCardLinks 走 ref-num）
+      //   也能显示成圆圈，与 HTML 模式视觉一致。
+      function isRefNumLink(el) {
+        const style = (el.getAttribute && el.getAttribute('style')) || '';
+        return /border-radius\s*:\s*(?:50%|999px|50px)/i.test(style);
+      }
+
       function processNode(node, listDepth) {
         listDepth = listDepth || 0;
         let result = '';
@@ -2811,7 +2870,9 @@
               result += `\n\`\`\`\n${child.textContent}\n\`\`\`\n`;
             } else if (tag === 'a') {
               const href = child.getAttribute('href') || '';
-              result += `[${child.textContent}](${href})`;
+              // 🆕 圆圈编号：HTML 源里手写 border-radius:50%/999px/50px 的 <a> → 加 ※ 后缀
+              const mark = isRefNumLink(child) ? '※' : '';
+              result += `[${child.textContent}${mark}](${href})`;
             } else if (tag === 'img') {
               const src = child.getAttribute('src') || '';
               const alt = child.getAttribute('alt') || '';
@@ -3528,22 +3589,48 @@
       return div.innerHTML;
     }
 
-    // 🆕 卡片链接：把 markdown 里 [文字](card:ID) / [文字](win:ID) 转成可点击链接
-    //   card:ID → 跳转到对应卡片（.card-jump-link）
-    //   win:ID  → 在新窗口里显示该卡片的 markdown（.card-win-link）
+    // 🆕 卡片链接：把 markdown 里 [文字](card:ID) / [文字](win:ID) / [文字](win-img:URL) 转成可点击链接
+    //   card:ID    → 跳转到对应卡片（.card-jump-link）
+    //   win:ID     → 在新窗口里显示该卡片的 markdown（.card-win-link）
+    //   win-img:URL → 在新窗口里居中显示该图片（.card-win-img-link）
     // ID 取目标卡片文件名 todo-ID.json 中的 ID 段；兼容 card:todo-ID.json / card:ID（中英文皆可）
     // 必须在 balanceHtmlTags 之后调用（HTML 已平衡、稳定）。
     function transformCardLinks(html) {
       if (!html) return html;
       return html.replace(/<a\b([^>]*)>([\s\S]*?)<\/a>/gi, (_full, attrsStr, label) => {
-        const hrefMatch = attrsStr.match(/\bhref="((?:card|win):[^"]*)"/i);
-        if (!hrefMatch) return _full;
-        const scheme = hrefMatch[1].slice(0, hrefMatch[1].indexOf(':')).toLowerCase();
+        const hrefMatch = attrsStr.match(/\bhref="((?:card|win-img|win):[^"]*)"/i);
+        if (!hrefMatch) {
+          // 🆕 引用编号：链接文字含 ※（如 [11※](https://...)）→ 渲染成圆圈编号（紫蓝白字胶囊）
+          if (label && label.includes('※')) {
+            const clean = label.replace(/\s*※\s*/g, '').trim();
+            // 保留原 <a> 的全部属性（含真实 href，可点击跳转），仅追加 ref-num 类、去掉 ※
+            return `<a class="ref-num"${attrsStr}>${clean}</a>`;
+          }
+          return _full;
+        }
+        const href = hrefMatch[1];
+        const scheme = href.slice(0, href.indexOf(':')).toLowerCase();
+        // 🆕 ※ 标记处理：无论哪种协议，只要链接文字含 ※，就追加 ref-num 类并去掉 ※，
+        //   让 card: / win: / win-img: 也能渲染成与普通外链 [※百度](url) 一致的紫蓝圆圈胶囊。
+        //   提取为同一处理点，三种协议分支都走，避免漏写。
+        const hasRefMark = label && label.includes('※');
+        const finalLabel = hasRefMark ? label.replace(/\s*※\s*/g, '').trim() : label;
+        const refNumClass = hasRefMark ? ' ref-num' : '';
+        // win-img:URL 直接走图片查看窗体，URL 可能是 file:/// 或 http(s)://，
+        //   marked@15 可能把中文/空格 percent-encode（%E6%98%93...），需要 decode 还原以便 file:// 真实可访问。
+        if (scheme === 'win-img') {
+          let imgSrc;
+          try { imgSrc = decodeURIComponent(href.slice(href.indexOf(':') + 1)).trim(); }
+          catch (_) { imgSrc = (href.slice(href.indexOf(':') + 1) || '').trim(); }
+          if (!imgSrc) return _full;
+          const otherAttrs = attrsStr.replace(/\s*href="win-img:[^"]*"/i, '');
+          return `<a class="card-win-img-link${refNumClass}" data-img-src="${escapeHtml(imgSrc)}"${otherAttrs}>${finalLabel}</a>`;
+        }
         // marked@15 会把中文 URL 自动 percent-encode（易经笔记 → %E6%98%93%E7%BB%8F%E7%AC%94%E8%AE%B0），
         // 必须 decodeURIComponent 还原，否则 data-card-id 选不到对应卡片（querySelector 不自动 unescape）。
         let s;
-        try { s = decodeURIComponent(hrefMatch[1].slice(hrefMatch[1].indexOf(':') + 1)).trim(); }
-        catch (_) { s = (hrefMatch[1].slice(hrefMatch[1].indexOf(':') + 1) || '').trim(); }
+        try { s = decodeURIComponent(href.slice(href.indexOf(':') + 1)).trim(); }
+        catch (_) { s = (href.slice(href.indexOf(':') + 1) || '').trim(); }
         const lower = s.toLowerCase();
         if (lower.startsWith('todo-')) s = s.slice(5);
         if (lower.endsWith('.json')) s = s.slice(0, -5);
@@ -3552,7 +3639,7 @@
         // 保留原 <a> 上除 href 之外的其它属性（marked 一般不加，但防御性保留）
         const otherAttrs = attrsStr.replace(/\s*href="(?:card|win):[^"]*"/i, '');
         const cls = scheme === 'win' ? 'card-win-link' : 'card-jump-link';
-        return `<a class="${cls}" data-card-id="${cardId}"${otherAttrs}>${label}</a>`;
+        return `<a class="${cls}${refNumClass}" data-card-id="${cardId}"${otherAttrs}>${finalLabel}</a>`;
       });
     }
 
@@ -4632,6 +4719,17 @@
       }
     }
 
+    // 🆕 新窗口查看图片：[文字](win-img:URL) 点击后，在独立窗口里居中显示该图片
+    function openImageWindow(imgSrc, label) {
+      if (!imgSrc) return;
+      const title = label ? ('图片：' + label) : '图片';
+      if (window.electronAPI && typeof window.electronAPI.invoke === 'function') {
+        window.electronAPI.invoke('open-image-window', { src: imgSrc, title });
+      } else if (typeof showStatus === 'function') {
+        showStatus('当前环境不支持打开新窗口', 'error');
+      }
+    }
+
     // 🆕 点「返回」按钮：回到 navStack 上一站（来源卡片），目的卡片的返回标记随之消失。
     function navigateBack() {
       if (navStack.length < 2) return;   // 不足两站，无来源可回
@@ -4717,12 +4815,39 @@
         openCardWindow(winLink.getAttribute('data-card-id'));
         return;
       }
-      const link = e.target && e.target.closest && e.target.closest('a.card-jump-link');
-      if (!link) return;
-      e.preventDefault();
-      const sourceCard = link.closest('.todo-item');
-      const sourceId = sourceCard ? sourceCard.dataset.id : null;
-      jumpToCard(link.getAttribute('data-card-id'), sourceId);
+      // 🆕 [文字](win-img:URL)：在新窗口居中显示该图片
+      const imgWinLink = e.target && e.target.closest && e.target.closest('a.card-win-img-link');
+      if (imgWinLink) {
+        e.preventDefault();
+        const src = imgWinLink.getAttribute('data-img-src');
+        const label = (imgWinLink.textContent || '').trim();
+        openImageWindow(src, label);
+        return;
+      }
+      const jumpLink = e.target && e.target.closest && e.target.closest('a.card-jump-link');
+      if (jumpLink) {
+        e.preventDefault();
+        const sourceCard = jumpLink.closest('.todo-item');
+        const sourceId = sourceCard ? sourceCard.dataset.id : null;
+        jumpToCard(jumpLink.getAttribute('data-card-id'), sourceId);
+        return;
+      }
+      // 🆕 普通外链 / 引用编号(ref-num) 外链：用「应用内独立窗体」（openWebPreview）打开，
+      //    避免当前窗体被导航走、也避免跳到系统浏览器离开程式。
+      const extLink = e.target && e.target.closest && e.target.closest('a[href]');
+      if (extLink) {
+        const href = (extLink.getAttribute('href') || '').trim();
+        if (/^https?:\/\//i.test(href)) {
+          e.preventDefault();
+          const api = window.electronAPI;
+          if (api && typeof api.openWebPreview === 'function') {
+            api.openWebPreview(href);
+          } else {
+            window.open(href, '_blank');
+          }
+          return;
+        }
+      }
     });
 
     // 🆕 监听 body class 变化，主题切换时重新渲染卡片 + 切换代码高亮主题
