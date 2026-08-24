@@ -2447,7 +2447,7 @@
         htmlTextarea.style.display = '';
         // 加载当前 HTML 内容到编辑器
         const todo = todos.find(t => t.id === editingId);
-        htmlTextarea.value = (todo && todo.htmlContent) ? todo.htmlContent : markdownToHtml(textarea.value);
+        htmlTextarea.value = (todo && todo.htmlContent) ? todo.htmlContent : renderMarkdown(textarea.value);
         resetEditorHistory(htmlTextarea);
         btn.textContent = 'HTML 文本编辑';
         btn.title = hasHtmlContent ? '点击切换到 HTML 预览' : '点击切换到文本编辑';
@@ -2465,7 +2465,7 @@
           if (todo && todo.htmlContent) {
             preview.innerHTML = adaptHtmlForTheme(todo.htmlContent);
           } else {
-            preview.innerHTML = markdownToHtml(textarea.value);
+            preview.innerHTML = renderMarkdown(textarea.value);
           }
         }
         textarea.style.display = 'none';
@@ -2960,7 +2960,7 @@
         alert('Markdown 内容为空，无法转换');
         return;
       }
-      const html = markdownToHtml(mdValue);
+      const html = renderMarkdown(mdValue);
       if (!html.trim()) {
         alert('转换后的 HTML 内容为空');
         return;
