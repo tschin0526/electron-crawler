@@ -3540,6 +3540,15 @@
             continue;
           }
 
+          // 🆕 保留用户显式 !important 标注的声明（color/background 等）：
+          //   例：color:#e11d48 !important —— 用户明确表示「我要这个红色，主题不要接管」。
+          //   一刀切剥掉会让用户的显式颜色（红色、紫色等品牌色）失效，比保留更难接受。
+          //   与上一条渐变豁免一起，覆盖「自定义视觉设计」的所有显式意图。
+          if (/!important\s*$/i.test(value)) {
+            kept.push(decl);
+            continue;
+          }
+
           // 移除颜色相关属性，让 CSS 控制
           if (prop === 'color' ||
               prop === 'background' ||
