@@ -16,6 +16,13 @@ npm-debug.log*
 # 依赖
 node_modules/
 
+# IDE/工具会话缓存目录
+.qoder/
+.dumate/
+.workbuddy/
+.trae/
+.agnes/
+
 # 系统文件
 .DS_Store
 Thumbs.db

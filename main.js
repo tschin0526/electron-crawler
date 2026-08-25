@@ -69,6 +69,17 @@ const apiServerModule = require('./main-modules/api-server.js');
 //    使用可变对象以便与 api-server 模组共享实时状态
 const lastUsedServiceCard = { index: -1, name: '', time: null };
 
+// 插件数据目录：开发模式项目目录/data/，打包模式应用包同级目录/data/
+// 位置提前：下方 windowsModule.init 需注入此路径（裸档名解析的默认查找目录）
+let PLUGINS_DATA_DIR;
+if (app.isPackaged) {
+  const appPath = app.getPath('exe');
+  const appDir = path.dirname(appPath);
+  PLUGINS_DATA_DIR = path.join(appDir, '../data');
+} else {
+  PLUGINS_DATA_DIR = path.join(__dirname, '../data');
+}
+
 // 窗口管理与 UI IPC 模组（从 main.js 拆分而来，通过 init 注入依赖）
 const windowsModule = require('./main-modules/windows.js');
 windowsModule.init({
@@ -76,6 +87,7 @@ windowsModule.init({
   APP_VERSION,
   apiServerModule,
   setMainWindow: (win) => { mainWindow = win; },
+  PLUGINS_DATA_DIR,
 });
 
 app.whenReady().then(() => {
@@ -172,15 +184,7 @@ app.on('window-all-closed', () => {
 const ipcStorage = require('./main-modules/ipc-storage.js');
 const { loadBookmarksForAPI } = ipcStorage;
 
-// 插件数据目录：开发模式项目目录/data/，打包模式应用包同级目录/data/
-let PLUGINS_DATA_DIR;
-if (app.isPackaged) {
-  const appPath = app.getPath('exe');
-  const appDir = path.dirname(appPath);
-  PLUGINS_DATA_DIR = path.join(appDir, '../data');
-} else {
-  PLUGINS_DATA_DIR = path.join(__dirname, '../data');
-}
+// 插件数据目录定义已提前到文件头部（供 windowsModule.init 与 ipcStorage.init 共用）
 
 ipcStorage.init({
   PLUGINS_DATA_DIR,

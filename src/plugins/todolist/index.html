@@ -4,12 +4,14 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>📝 ToDoList</title>
-  <script src="https://cdn.jsdelivr.net/npm/marked@15.0.12/marked.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/lib/common.min.js"></script>
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
-  <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/styles/github.min.css" id="hljs-theme-light">
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/styles/github-dark.min.css" id="hljs-theme-dark" disabled>
+  <!-- 🆕 渲染依赖改为随包本地文件（vendor/），不再依赖 CDN —— CDN 在部分窗体/网络环境下加载失败，
+       会导致 markdown 降级为纯文本显示。版本不变：marked@15.0.12 / hljs@11.9.0 / katex@0.16.9 -->
+  <script src="vendor/marked.min.js"></script>
+  <script src="vendor/hljs-common.min.js"></script>
+  <link rel="stylesheet" href="vendor/katex.min.css">
+  <script src="vendor/katex.min.js"></script>
+  <link rel="stylesheet" href="vendor/hljs-github.min.css" id="hljs-theme-light">
+  <link rel="stylesheet" href="vendor/hljs-github-dark.min.css" id="hljs-theme-dark" disabled>
   <style>
     :root {
       --primary-color: #667eea;
@@ -1848,6 +1850,80 @@
     body.dark .todo-text a.ref-num:hover, body.dark .md-preview a.ref-num:hover {
       background: #a5b4fc;
     }
+
+    /* 🆕 圆角矩形编号：[文字▣](url) → 与圆圈同色系，形状换为圆角矩形 */
+    .todo-text a.ref-rect, .md-preview a.ref-rect {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 1.6em;
+      height: 1.6em;
+      padding: 0 .35em;
+      margin: 0 .12em;
+      font-size: 1em;
+      font-weight: 700;
+      line-height: 1;
+      color: #ffffff !important;
+      background: #6366f1;
+      border-radius: .35em;
+      text-decoration: none;
+      vertical-align: middle;
+      cursor: pointer;
+    }
+    .todo-text a.ref-rect:hover, .md-preview a.ref-rect:hover {
+      background: #4f46e5;
+    }
+    body.dark .todo-text a.ref-rect, body.dark .md-preview a.ref-rect {
+      background: #818cf8;
+      color: #ffffff !important;
+    }
+    body.dark .todo-text a.ref-rect:hover, body.dark .md-preview a.ref-rect:hover {
+      background: #a5b4fc;
+    }
+
+    /* 🆕 只边框无底色：[文字◎](url) → 边框+文字着色，背景透明 */
+    .todo-text a.ref-outline, .md-preview a.ref-outline {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 1.6em;
+      height: 1.6em;
+      padding: 0 .3em;
+      margin: 0 .12em;
+      font-size: 1em;
+      font-weight: 700;
+      line-height: 1;
+      color: #6366f1 !important;
+      background: transparent;
+      border: 1.5px solid #6366f1;
+      border-radius: 999px;
+      text-decoration: none;
+      vertical-align: middle;
+      cursor: pointer;
+    }
+    .todo-text a.ref-outline:hover, .md-preview a.ref-outline:hover {
+      background: #eef2ff;
+    }
+    body.dark .todo-text a.ref-outline, body.dark .md-preview a.ref-outline {
+      color: #a5b4fc !important;
+      border-color: #818cf8;
+      background: transparent;
+    }
+    body.dark .todo-text a.ref-outline:hover, body.dark .md-preview a.ref-outline:hover {
+      background: rgba(129, 140, 248, .18);
+    }
+
+    /* 🆕 上标/下标：[文字↑](url) / [文字↓](url) → 缩小字体并上/下移；
+       可与任意图形前缀组合（如 [文字※↑] = 圆圈+上标）。定义在图形类之后，
+       同特异性下后写优先，组合时字号/对齐能覆盖图形类的 1em/middle */
+    .todo-text a.ref-sup, .md-preview a.ref-sup {
+      font-size: .65em;
+      vertical-align: super;
+    }
+    .todo-text a.ref-sub, .md-preview a.ref-sub {
+      font-size: .65em;
+      vertical-align: sub;
+    }
   </style>
 </head>
 <body>
@@ -1916,7 +1992,9 @@
   </div>
 
   <div class="modal-overlay" id="modalOverlay" style="display: none;" onclick="closeModal(event)">
-    <div class="modal" onclick="event.stopPropagation()">
+    <!-- 注意：.modal 上不可 stopPropagation —— closeModal 已有 target===currentTarget 判定，内部点击不会误关；
+         若阻断冒泡，弹窗内 markdown 链接将无法被 document 级点击委托拦截（win: 无反应、file:// 被导航走） -->
+    <div class="modal">
       <div class="modal-header">
         <h2 class="modal-title" id="modalTitle">添加任务</h2>
         <div class="modal-header-actions">
@@ -3625,6 +3703,39 @@
       return div.innerHTML;
     }
 
+    // 🆕 样式前置符号：链接文字里带下列符号即切换链接形态（可组合，如 [百度◎↑] = 边框无底+上标），
+    //   只影响外观、不影响开启方式。适用于一切协议：普通外链 / file:// / card: / win: / win-img: / cur:
+    //   ※ → ref-num     圆形胶囊（紫蓝底白字，既有）
+    //   ▣ → ref-rect    圆角矩形（紫蓝底白字）
+    //   ◎ → ref-outline 只边框无底色（边框+文字着色，背景透明）
+    //   ↑ → ref-sup     缩小字体 + 上标（无底色）
+    //   ↓ → ref-sub     缩小字体 + 下标（无底色）
+    // 每个符号另有易输入的字母码等价写法（不区分大小写，可组合如 [r:u:百度]）：
+    //   o: ≡ ※ 圆圈   r: ≡ ▣ 圆角矩形   s: ≡ ◎ 边框无底   u: ≡ ↑ 上标   d: ≡ ↓ 下标
+    const REF_MARK_CLASS = { '※': 'ref-num', '▣': 'ref-rect', '◎': 'ref-outline', '↑': 'ref-sup', '↓': 'ref-sub' };
+    // 🆕 字母码（比符号易输入）：只在文字开头识别，避免误伤正文里的冒号（如 "no:5"）
+    const REF_CODE_CLASS = { o: 'ref-num', r: 'ref-rect', s: 'ref-outline', u: 'ref-sup', d: 'ref-sub' };
+    function parseRefMarks(label) {
+      const classes = [];
+      let clean = label || '';
+      let found = false;
+      const addClass = (cls) => { found = true; if (!classes.includes(cls)) classes.push(cls); };
+      for (const mark in REF_MARK_CLASS) {
+        if (clean.includes(mark)) {
+          addClass(REF_MARK_CLASS[mark]);
+          clean = clean.split(mark).join('');
+        }
+      }
+      // 字母码：仅识别文字开头的前缀（不区分大小写），如 [r:百度] / [s:u:百度]；
+      //   可与图形符号混用（如 [r:百度※]）
+      let m;
+      while ((m = clean.match(/^([oursd]):/i))) {
+        addClass(REF_CODE_CLASS[m[1].toLowerCase()]);
+        clean = clean.slice(2);
+      }
+      return { found, classes: classes.join(' '), clean: clean.trim() };
+    }
+
     // 🆕 卡片链接：把 markdown 里 [文字](card:ID) / [文字](win:ID) / [文字](win-img:URL) / [文字](cur:URL) 转成可点击链接
     //   card:ID    → 跳转到对应卡片（.card-jump-link）
     //   win:ID     → 在新窗口里显示该卡片的 markdown（.card-win-link）
@@ -3638,22 +3749,22 @@
       return html.replace(/<a\b([^>]*)>([\s\S]*?)<\/a>/gi, (_full, attrsStr, label) => {
         const hrefMatch = attrsStr.match(/\bhref="((?:card|win-img|win|cur):[^"]*)"/i);
         if (!hrefMatch) {
-          // 🆕 引用编号：链接文字含 ※（如 [11※](https://...)）→ 渲染成圆圈编号（紫蓝白字胶囊）
-          if (label && label.includes('※')) {
-            const clean = label.replace(/\s*※\s*/g, '').trim();
-            // 保留原 <a> 的全部属性（含真实 href，可点击跳转），仅追加 ref-num 类、去掉 ※
-            return `<a class="ref-num"${attrsStr}>${clean}</a>`;
+          // 🆕 样式前置符号（※ ▣ ◎ ↑ ↓，可组合）：追加对应类并去掉符号，
+          //   保留原 <a> 的全部属性（含真实 href，可点击跳转）
+          const parsed = parseRefMarks(label);
+          if (parsed.found) {
+            return `<a class="${parsed.classes}"${attrsStr}>${parsed.clean}</a>`;
           }
           return _full;
         }
         const href = hrefMatch[1];
         const scheme = href.slice(0, href.indexOf(':')).toLowerCase();
-        // 🆕 ※ 标记处理：无论哪种协议，只要链接文字含 ※，就追加 ref-num 类并去掉 ※，
-        //   让 card: / win: / win-img: 也能渲染成与普通外链 [※百度](url) 一致的紫蓝圆圈胶囊。
-        //   提取为同一处理点，三种协议分支都走，避免漏写。
-        const hasRefMark = label && label.includes('※');
-        const finalLabel = hasRefMark ? label.replace(/\s*※\s*/g, '').trim() : label;
-        const refNumClass = hasRefMark ? ' ref-num' : '';
+        // 🆕 样式前置符号处理：无论哪种协议，只要链接文字含任一符号（※ ▣ ◎ ↑ ↓），就追加对应类并去掉符号，
+        //   让 card: / win: / win-img: / cur: 也能渲染成与普通外链一致的形态。
+        //   提取为同一处理点，四种协议分支都走，避免漏写。
+        const refParsed = parseRefMarks(label);
+        const finalLabel = refParsed.found ? refParsed.clean : label;
+        const refNumClass = refParsed.found ? (' ' + refParsed.classes) : '';
         // win-img:URL 直接走图片查看窗体，URL 可能是 file:/// 或 http(s)://，
         //   marked@15 可能把中文/空格 percent-encode（%E6%98%93...），需要 decode 还原以便 file:// 真实可访问。
         if (scheme === 'win-img') {
@@ -3699,11 +3810,14 @@
       return ta.value;
     }
 
-    function renderMarkdown(text) {
+    function renderMarkdown(text, opts) {
       if (!text) return '';
 
       // 如果内容包含已渲染的 KaTeX HTML，直接返回（不需要重新处理）
-      if (text.includes('class="katex"') || text.includes('class="katex-display"')) {
+      // 注意：须匹配 KaTeX 真实输出结构 <span class="katex">，而非仅包含 class="katex" 字样。
+      // 但启发式终归可能被恰好提及该结构的原始文档击败，因此文件读取路径（openDocWindow）
+      // 传 { force: true } 强制解析 —— 文件内容天然就是原始 markdown，无需此短路。
+      if (!(opts && opts.force) && /<span[^>]*class="(?:katex|katex-display)"/.test(text)) {
         return normalizeStyleHyphens(balanceHtmlTags(text));
       }
 
@@ -3768,7 +3882,10 @@
           });
         }
       } else {
-        html = escapeHtml(processed);
+        // 🆕 marked 未加载（本地依赖缺失等）：不再静默降级为原样文本，
+        //    顶部加显式告警条，便于第一时间定位是「渲染库未加载」而非内容问题。
+        console.error('[ToDoList] marked 未加载，markdown 只能以原文显示；请检查 vendor/ 依赖文件是否完整');
+        html = '<div style="background:#fef3c7;color:#92400e;border:1px solid #f59e0b;border-radius:6px;padding:8px 12px;margin:0 0 10px;font-size:12px;">⚠️ 渲染库（marked）未加载，以下为原文显示</div>' + escapeHtml(processed);
       }
 
       // 替换回 KaTeX 渲染结果
@@ -4750,6 +4867,31 @@
       if (!id) return;
       const todo = todos.find(t => normalizeCardId(t.id) === id);
       if (!todo) {
+        // 🆕 卡片没找到，但目标形似文件路径（含路径分隔符/~开头/盘符/末尾扩展名）→
+        //    按「新窗体打开文件」处理（与点 file:// 链接同管线，见 openDocWindow）；
+        //    只写档名时默认在卡片同款资料目录查找（与 win:卡片ID 定位逻辑一致，主进程 resolve-doc-path 解析），
+        //    既不是卡片也不是有效文件时给出明确的状态栏提示。
+        const looksLikePath = /(?:[/~]|^[a-zA-Z]:\\)/.test(cardId) || /\.[a-z0-9]{1,10}$/i.test(cardId);
+        if (looksLikePath) {
+          const api = window.electronAPI;
+          if (api && typeof api.invoke === 'function'
+              && !cardId.includes('/') && !cardId.includes('\\') && !cardId.startsWith('~')
+              && !/^[a-zA-Z]:\\/.test(cardId)) {
+            // 裸档名 → 默认资料目录解析（命中即开窗；未命中明确提示，不回落其它目录）
+            api.invoke('resolve-doc-path', { name: cardId }).then(res => {
+              if (res && res.success) {
+                openDocWindow('file://' + res.path, cardId);
+              } else if (typeof showStatus === 'function') {
+                showStatus('未找到目标卡片，资料目录中也无此文件：' + cardId, 'error');
+              }
+            }).catch(() => {
+              if (typeof showStatus === 'function') showStatus('未找到目标卡片：' + id, 'error');
+            });
+            return;
+          }
+          openDocWindow('file://' + cardId, cardId.split('/').pop());
+          return;
+        }
         if (typeof showStatus === 'function') showStatus('未找到目标卡片：' + id, 'error');
         return;
       }
@@ -4776,6 +4918,57 @@
       } else if (typeof showStatus === 'function') {
         showStatus('当前环境不支持打开新窗口', 'error');
       }
+    }
+
+    // 🆕 文档窗体：[文字](file:///) 点击后，非图片的文本文件在独立窗口里显示 ——
+    //   .md/.markdown → 用 renderMarkdown 按卡片同样的 markdown 样式渲染；
+    //   其它文本/代码（txt/json/js/py/css/html/log/csv/sh...）→ 包成围栏代码块，走 hljs 语法高亮；
+    //   二进制/超大/不存在 → 状态栏提示。窗体复用 open-card-window（卡片 markdown 窗体）。
+    const DOC_LANG_MAP = {
+      js: 'javascript', mjs: 'javascript', cjs: 'javascript', ts: 'typescript', jsx: 'javascript', tsx: 'typescript',
+      json: 'json', py: 'python', rb: 'ruby', sh: 'bash', zsh: 'bash', bash: 'bash',
+      css: 'css', html: 'xml', htm: 'xml', xml: 'xml', svg: 'xml',
+      yml: 'yaml', yaml: 'yaml', sql: 'sql', java: 'java', c: 'c', cpp: 'cpp', h: 'c', hpp: 'cpp',
+      go: 'go', rs: 'rust', php: 'php', swift: 'swift', kt: 'kotlin',
+      txt: 'plaintext', log: 'plaintext', csv: 'plaintext', ini: 'ini', toml: 'ini', conf: 'plaintext'
+    };
+    async function openDocWindow(fileUrl, label) {
+      const api = window.electronAPI;
+      if (!api || typeof api.invoke !== 'function') {
+        if (typeof showStatus === 'function') showStatus('当前环境不支持打开文档窗口', 'error');
+        return;
+      }
+      // file:// → 真实路径（还原中文等 percent-encode）
+      let filePath = fileUrl.replace(/^file:\/\//i, '');
+      try { filePath = decodeURIComponent(filePath); } catch (_) {}
+      const name = filePath.split('/').pop() || filePath;
+      const ext = (name.match(/\.([a-z0-9]+)$/i) || [ '', ''])[1].toLowerCase();
+      let res;
+      try { res = await api.invoke('read-text-file', { path: filePath }); }
+      catch (e) {
+        if (typeof showStatus === 'function') showStatus('❌ 打开文件失败：' + e.message, 'error');
+        return;
+      }
+      if (!res || !res.success) {
+        if (typeof showStatus === 'function') showStatus('❌ ' + ((res && res.error) || '读取文件失败'), 'error');
+        return;
+      }
+      let html;
+      // force: true —— 文件内容是原始 markdown/源码，跳过「已渲染 KaTeX 短路」，
+      //   否则提及 <span class="katex"> 等字样的文档会被误判而原样输出为纯文本。
+      if (ext === 'md' || ext === 'markdown') {
+        html = renderMarkdown(res.content, { force: true });
+      } else {
+        // 围栏长度须大于内容里最长反引号串，避免代码块被内容里的 ``` 截断
+        let n = 3;
+        const runs = res.content.match(/`{3,}/g);
+        if (runs) n = Math.max.apply(null, runs.map(s => s.length)) + 1;
+        const fence = '`'.repeat(n);
+        const lang = DOC_LANG_MAP[ext] || '';
+        html = renderMarkdown(fence + lang + '\n' + res.content.replace(/[\r\n\s]+$/, '') + '\n' + fence, { force: true });
+      }
+      const dark = document.body.classList.contains('dark');
+      api.invoke('open-card-window', { id: name, title: '文档：' + (label || name), html, dark });
     }
 
     // 🆕 点「返回」按钮：回到 navStack 上一站（来源卡片），目的卡片的返回标记随之消失。
@@ -4885,7 +5078,8 @@
         return;
       }
       // 🆕 不前置协议的普通链接（https:// 或 file://）：统一在新浏览器（新窗口）开启 ——
-      //    http(s) → 应用内独立窗体（openWebPreview）；file:// 图片 → 图片查看窗体；其它 file:// → openWebPreview。
+      //    http(s) → 应用内独立窗体（openWebPreview）；file:// 图片 → 图片查看窗体；
+      //    其它 file:// → 文档窗体（.md 按 markdown 渲染、文本/代码语法高亮，见 openDocWindow）。
       //    避免当前窗体被导航走、也避免跳到系统浏览器离开程式。
       const extLink = e.target && e.target.closest && e.target.closest('a[href]');
       if (extLink) {
@@ -4906,10 +5100,8 @@
             // 图片文件 → 图片查看窗体（与 win-img: 同效果）
             openImageWindow(href, (extLink.textContent || '').trim());
           } else {
-            const api = window.electronAPI;
-            if (api && typeof api.openWebPreview === 'function') {
-              api.openWebPreview(href);
-            }
+            // 其它文件 → 文档窗体（.md 按 markdown 渲染、文本/代码语法高亮；二进制/超大会提示错误）
+            openDocWindow(href, (extLink.textContent || '').trim());
           }
           return;
         }

@@ -4,6 +4,13 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>卡片 Markdown</title>
+<!-- 🆕 本地文档渲染：窗体内点击 file:// 的 .md/文本/代码文件时，在窗内直接渲染显示。
+     依赖改为随包本地文件（vendor/），不再走 CDN —— 此前 CDN 脚本在本窗体加载失败，
+     导致 .md 只能降级为纯文本显示。版本与 index.html 一致：marked@15.0.12 / hljs@11.9.0 -->
+<script src="vendor/marked.min.js"></script>
+<script src="vendor/hljs-common.min.js"></script>
+<link rel="stylesheet" href="vendor/hljs-github.min.css" id="hljs-theme-light">
+<link rel="stylesheet" href="vendor/hljs-github-dark.min.css" id="hljs-theme-dark" disabled>
 <style>
   :root {
     --bg-color: #f8fafc;
@@ -38,6 +45,47 @@
     background: var(--card-bg);
     border-bottom: 1px solid var(--border-color);
   }
+  /* 🆕 窗内搜索栏（参考 ToDoList 主窗体搜索：黄底匹配/红色当前项、n/N 计数、▲▼ 导航）。
+     实现用 DOM 文本节点遍历包裹 <mark>，不做字符串替换，不破坏已渲染内容。 */
+  .searchbar {
+    position: sticky; top: 33px; z-index: 9;
+    display: flex; align-items: center; gap: 6px;
+    padding: 6px 14px;
+    background: var(--card-bg);
+    border-bottom: 1px solid var(--border-color);
+  }
+  .searchbar input {
+    flex: 1; min-width: 0;
+    padding: 5px 12px;
+    border: 1px solid var(--border-color);
+    border-radius: 50px;
+    font-size: 13px;
+    background: var(--bg-color);
+    color: var(--text-primary);
+    outline: none;
+    transition: border-color .2s;
+  }
+  .searchbar input:focus {
+    border-color: var(--primary-color);
+    box-shadow: 0 0 0 3px rgba(102, 126, 234, .2);
+  }
+  .searchbar .search-count { font-size: 12px; color: var(--text-secondary); min-width: 44px; text-align: center; }
+  .searchbar button {
+    width: 24px; height: 24px; flex: none;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    background: var(--bg-color);
+    color: var(--text-secondary);
+    font-size: 10px; cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    transition: all .2s;
+  }
+  .searchbar button:hover { border-color: var(--primary-color); color: var(--primary-color); }
+  body.dark .searchbar button { background: rgba(0,0,0,.3); border-color: rgba(255,255,255,.1); }
+  /* 匹配高亮：黄底；当前项红底（与主窗体一致） */
+  mark.search-highlight { background: #fbbf24; color: #000; padding: 1px 2px; border-radius: 2px; font-weight: bold; }
+  body.dark mark.search-highlight { background: #f59e0b; color: #000; }
+  mark.search-highlight.current { background: #ef4444 !important; color: #fff !important; box-shadow: 0 0 0 2px #ef4444; }
   /* 充分利用窗体面积：去掉 max-width 与居中 margin，左右仅留舒适边距 */
   .content {
     padding: 8px 14px 32px;
@@ -182,10 +230,67 @@
   .content a.ref-num:hover { background: #4f46e5; }
   body.dark .content a.ref-num       { background: #818cf8; color: #ffffff !important; }
   body.dark .content a.ref-num:hover { background: #a5b4fc; }
+
+  /* 样式前置符号：[文字▣](url) 圆角矩形 / [文字◎](url) 只边框无底色 /
+     [文字↑](url) 上标 / [文字↓](url) 下标（可组合，与 index.html 一致） */
+  .content a.ref-rect {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 1.6em;
+    height: 1.6em;
+    padding: 0 .35em;
+    margin: 0 .12em;
+    font-size: .72em;
+    font-weight: 700;
+    line-height: 1;
+    color: #ffffff !important;
+    background: #6366f1;
+    border-radius: .35em;
+    text-decoration: none;
+    vertical-align: middle;
+    cursor: pointer;
+  }
+  .content a.ref-rect:hover { background: #4f46e5; }
+  body.dark .content a.ref-rect       { background: #818cf8; color: #ffffff !important; }
+  body.dark .content a.ref-rect:hover { background: #a5b4fc; }
+
+  .content a.ref-outline {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 1.6em;
+    height: 1.6em;
+    padding: 0 .3em;
+    margin: 0 .12em;
+    font-size: .72em;
+    font-weight: 700;
+    line-height: 1;
+    color: #6366f1 !important;
+    background: transparent;
+    border: 1.5px solid #6366f1;
+    border-radius: 999px;
+    text-decoration: none;
+    vertical-align: middle;
+    cursor: pointer;
+  }
+  .content a.ref-outline:hover { background: #eef2ff; }
+  body.dark .content a.ref-outline       { color: #a5b4fc !important; border-color: #818cf8; background: transparent; }
+  body.dark .content a.ref-outline:hover { background: rgba(129, 140, 248, .18); }
+
+  .content a.ref-sup { font-size: .65em; vertical-align: super; }
+  .content a.ref-sub { font-size: .65em; vertical-align: sub; }
 </style>
 </head>
 <body>
   <div class="topbar" id="title">卡片</div>
+  <!-- 🆕 窗内搜索：输入即高亮，Enter 下一笔 / Shift+Enter 上一笔 / Esc 清空 -->
+  <div class="searchbar">
+    <input type="text" id="docSearchInput" placeholder="搜索内容..." autocomplete="off">
+    <span class="search-count" id="docSearchCount"></span>
+    <button id="docSearchPrev" title="上一笔">▲</button>
+    <button id="docSearchNext" title="下一笔">▼</button>
+  </div>
   <div class="content" id="content"></div>
 <script>
   (function () {
@@ -210,9 +315,192 @@
       document.getElementById('title').textContent = data.title || '卡片';
       document.title = data.title || '卡片';
       document.getElementById('content').innerHTML = data.html || '';
+      reapplyDocSearch();
     } catch (e) {
       document.getElementById('content').textContent = '内容解析失败：' + e.message;
     }
+
+    // 🆕 窗内文档渲染：file:// 的 .md → markdown 渲染；其它文本/代码 → 围栏代码块 + hljs 高亮；
+    //    内容直接替换本窗体显示（顺带切标题），二进制/超大/不存在 → 恢复 openWebPreview 兜底。
+    //    （简化管线：无 KaTeX/自定义协议，卡片窗内的二次链接仍走本窗体既有点击委托）
+    var DOC_LANG_MAP = {
+      js: 'javascript', mjs: 'javascript', cjs: 'javascript', ts: 'typescript', jsx: 'javascript', tsx: 'typescript',
+      json: 'json', py: 'python', rb: 'ruby', sh: 'bash', zsh: 'bash', bash: 'bash',
+      css: 'css', html: 'xml', htm: 'xml', xml: 'xml', svg: 'xml',
+      yml: 'yaml', yaml: 'yaml', sql: 'sql', java: 'java', c: 'c', cpp: 'cpp', h: 'c', hpp: 'cpp',
+      go: 'go', rs: 'rust', php: 'php', swift: 'swift', kt: 'kotlin',
+      txt: 'plaintext', log: 'plaintext', csv: 'plaintext', ini: 'ini', toml: 'ini', conf: 'plaintext'
+    };
+    function escapeHtmlLocal(t) {
+      return String(t == null ? '' : t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    }
+    function highlightCodeBlocks(html) {
+      if (typeof hljs === 'undefined') return html;
+      return html.replace(/<pre><code(?:\s+class="([^"]*)")?>([\s\S]*?)<\/code><\/pre>/g, function (match, cls, code) {
+        var langMatch = cls && cls.match(/language-([\w-]+)/);
+        var lang = langMatch ? langMatch[1] : '';
+        var decoded = code.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'");
+        try {
+          var language = lang && hljs.getLanguage(lang) ? lang : 'plaintext';
+          return '<pre><code class="hljs language-' + language + '">' + hljs.highlight(decoded, { language: language }).value + '</code></pre>';
+        } catch (e) { return match; }
+      });
+    }
+    function renderDocContent(content, ext) {
+      if (typeof marked !== 'undefined') {
+        marked.setOptions({ breaks: true, gfm: true });
+        if (ext === 'md' || ext === 'markdown') {
+          return highlightCodeBlocks(marked.parse(content));
+        }
+        // 围栏长度须大于内容里最长反引号串，避免代码块被内容里的 ``` 截断
+        var n = 3;
+        var runs = content.match(/`{3,}/g);
+        if (runs) n = Math.max.apply(null, runs.map(function (s) { return s.length; })) + 1;
+        var fence = '`'.repeat(n);
+        var lang = DOC_LANG_MAP[ext] || '';
+        return highlightCodeBlocks(marked.parse(fence + lang + '\n' + content.replace(/[\r\n\s]+$/, '') + '\n' + fence));
+      }
+      // marked CDN 加载失败时的降级：纯文本转义显示（保留换行）
+      return '<pre style="white-space:pre-wrap;">' + escapeHtmlLocal(content) + '</pre>';
+    }
+    function openDocInThisWindow(fileUrl, label) {
+      if (!window.electronAPI || typeof window.electronAPI.invoke !== 'function') return false;
+      var filePath = fileUrl.replace(/^file:\/\//i, '');
+      try { filePath = decodeURIComponent(filePath); } catch (_) {}
+      var name = filePath.split('/').pop() || filePath;
+      var ext = ((name.match(/\.([a-z0-9]+)$/i) || [ '', ''])[1] || '').toLowerCase();
+      window.electronAPI.invoke('read-text-file', { path: filePath }).then(function (res) {
+        if (!res || !res.success) {
+          // 二进制/超大/不存在等：恢复旧行为兜底（网页预览窗体）
+          if (window.electronAPI.openWebPreview) window.electronAPI.openWebPreview(fileUrl);
+          return;
+        }
+        var html = renderDocContent(res.content, ext);
+        document.getElementById('content').innerHTML = html;
+        reapplyDocSearch();
+        var title = '文档：' + (label || name);
+        document.getElementById('title').textContent = title;
+        document.title = title;
+      }).catch(function () {
+        if (window.electronAPI.openWebPreview) window.electronAPI.openWebPreview(fileUrl);
+      });
+      return true;
+    }
+    // 黑夜模式下切换 hljs 代码高亮主题（与 index.html 的 updateHljsTheme 同思路）
+    function syncHljsTheme() {
+      var dark = document.body.classList.contains('dark');
+      var light = document.getElementById('hljs-theme-light');
+      var darkTheme = document.getElementById('hljs-theme-dark');
+      if (light && darkTheme) { light.disabled = dark; darkTheme.disabled = !dark; }
+    }
+    new MutationObserver(syncHljsTheme).observe(document.body, { attributes: true, attributeFilter: ['class'] });
+    syncHljsTheme(); // 开窗时即按当前明暗态对齐一次（body.dark 可能在 observer 挂好前已设置）
+
+    // 🆕 窗内搜索（参考 ToDoList 主窗体：黄底匹配/红色当前项、n/N 计数、▲▼ 循环导航）。
+    //    用 TreeWalker 遍历文本节点包裹 <mark>，不做字符串替换，不破坏已渲染的链接/公式/高亮。
+    var docSearchInput = document.getElementById('docSearchInput');
+    var docSearchCount = document.getElementById('docSearchCount');
+    var docMatches = [];
+    var docMatchIndex = -1;
+
+    function escapeRegExpLocal2(s) { return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
+
+    function clearDocSearchMarks() {
+      document.querySelectorAll('#content mark.search-highlight').forEach(function (m) {
+        var parent = m.parentNode;
+        if (!parent) return;
+        parent.replaceChild(document.createTextNode(m.textContent), m);
+        parent.normalize();
+      });
+    }
+
+    function updateDocSearchCount() {
+      docSearchCount.textContent = docMatches.length
+        ? (docMatchIndex + 1) + '/' + docMatches.length
+        : (docSearchInput.value.trim() ? '0/0' : '');
+    }
+
+    function focusDocMatch(index) {
+      docMatches.forEach(function (m) { m.classList.remove('current'); });
+      var el = docMatches[index];
+      if (!el) return;
+      el.classList.add('current');
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+
+    function runDocSearch() {
+      if (!docSearchInput) return; // 开窗注入阶段变量尚未初始化，直接跳过（后续无内容变更也不会再触发）
+      clearDocSearchMarks();
+      docMatches = [];
+      docMatchIndex = -1;
+      var q = docSearchInput.value.trim();
+      if (!q) { updateDocSearchCount(); return; }
+      var testRe = new RegExp(escapeRegExpLocal2(q), 'i');
+      var execRe = new RegExp(escapeRegExpLocal2(q), 'gi');
+      var content = document.getElementById('content');
+      // 先收集命中文本节点再包裹，避免遍历中修改 DOM 导致 walker 错乱
+      var walker = document.createTreeWalker(content, NodeFilter.SHOW_TEXT, {
+        acceptNode: function (node) {
+          var tag = node.parentNode && node.parentNode.nodeName;
+          if (tag === 'SCRIPT' || tag === 'STYLE' || tag === 'TEXTAREA' || tag === 'MARK') return NodeFilter.FILTER_REJECT;
+          return testRe.test(node.nodeValue) ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT;
+        }
+      });
+      var nodes = [];
+      while (walker.nextNode()) nodes.push(walker.currentNode);
+      nodes.forEach(function (node) {
+        var text = node.nodeValue;
+        var frag = document.createDocumentFragment();
+        var last = 0;
+        var m;
+        while ((m = execRe.exec(text))) {
+          if (m.index > last) frag.appendChild(document.createTextNode(text.slice(last, m.index)));
+          var mark = document.createElement('mark');
+          mark.className = 'search-highlight';
+          mark.textContent = m[0];
+          frag.appendChild(mark);
+          docMatches.push(mark);
+          last = m.index + m[0].length;
+          if (m[0].length === 0) execRe.lastIndex++; // 防空匹配死循环（理论上不会发生）
+        }
+        if (last < text.length) frag.appendChild(document.createTextNode(text.slice(last)));
+        node.parentNode.replaceChild(frag, node);
+      });
+      if (docMatches.length) {
+        docMatchIndex = 0;
+        focusDocMatch(0);
+      }
+      updateDocSearchCount();
+    }
+
+    function navigateDocSearch(direction) {
+      if (docMatches.length === 0) return;
+      docMatchIndex += direction;
+      if (docMatchIndex < 0) docMatchIndex = docMatches.length - 1;
+      if (docMatchIndex >= docMatches.length) docMatchIndex = 0;
+      updateDocSearchCount();
+      focusDocMatch(docMatchIndex);
+    }
+
+    // 内容被替换后（开窗注入 / 窗内再点 file:// 文档）：若搜索框有内容则自动重搜，否则重置计数。
+    // 首次开窗注入时搜索变量尚未初始化，guard 后静默跳过（此时搜索框必为空）。
+    function reapplyDocSearch() {
+      if (!docSearchInput) return;
+      if (docSearchInput.value.trim()) runDocSearch();
+      else { clearDocSearchMarks(); docMatches = []; docMatchIndex = -1; updateDocSearchCount(); }
+    }
+
+    docSearchInput.addEventListener('input', runDocSearch);
+    docSearchInput.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter') { e.preventDefault(); navigateDocSearch(e.shiftKey ? -1 : 1); }
+      else if (e.key === 'Escape') {
+        docSearchInput.value = '';
+        runDocSearch();
+        docSearchInput.blur();
+      }
+    });
+    document.getElementById('docSearchPrev').addEventListener('click', function () { navigateDocSearch(-1); });
+    document.getElementById('docSearchNext').addEventListener('click', function () { navigateDocSearch(1); });
 
     // 🆕 图片查看链接（win-img:）点击 → 开新窗看图；cur: 链接在开头提前放行（在原浏览器开启）
     document.addEventListener('click', function (e) {
@@ -230,7 +518,8 @@
         return;
       }
       // 🆕 不前置协议的普通链接（https:// 或 file://）：统一在新浏览器（新窗口）开启 ——
-      //    http(s) → 应用内独立窗体（openWebPreview）；file:// 图片 → 图片查看窗体；其它 file:// → openWebPreview。
+      //    http(s) → 应用内独立窗体（openWebPreview）；file:// 图片 → 图片查看窗体；
+      //    其它 file:// → 本窗体内渲染显示（.md 按 markdown、文本/代码语法高亮），失败时兜底 openWebPreview。
       //    card-jump-link / card-win-link 无 href 属性，不会误命中。
       var link = e.target && e.target.closest ? e.target.closest('a[href]') : null;
       if (!link) return;
@@ -251,8 +540,9 @@
           if (window.electronAPI && typeof window.electronAPI.invoke === 'function') {
             window.electronAPI.invoke('open-image-window', { src: href, title: imgLabel ? '图片：' + imgLabel : '图片' });
           }
-        } else if (window.electronAPI && typeof window.electronAPI.openWebPreview === 'function') {
-          window.electronAPI.openWebPreview(href);
+        } else {
+          // 🆕 文本类文件 → 本窗体内渲染（.md 按 markdown 样式；二进制/超大会自动兜底 openWebPreview）
+          openDocInThisWindow(href, (link.textContent || '').trim());
         }
         return;
       }

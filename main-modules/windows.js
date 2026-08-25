@@ -35,6 +35,9 @@ function applyWorkspaceThemeToEmailDetails(dark) {
 let APP_VERSION = '';
 let apiServerModule = null;
 let setMainWindowCallback = () => {};
+// 🆕 插件资料目录（由 main.js 经 init 注入）：裸档名解析（resolve-doc-path）的默认查找目录，
+//    与卡片存储目录（PLUGINS_DATA_DIR）保持一致
+let PLUGINS_DATA_DIR = '';
 
 // 选择器测试结果回调映射（用于等待异步结果）
 const selectorTestCallbacks = new Map();
@@ -186,9 +189,11 @@ function init(shared) {
   // shared.APP_VERSION — 应用版本号
   // shared.apiServerModule — API 服务器模组（用于 get-app-info）
   // shared.setMainWindow — 设置主窗口的回调
+  // shared.PLUGINS_DATA_DIR — 插件资料目录（裸档名解析的默认查找目录）
   APP_VERSION = shared.APP_VERSION;
   apiServerModule = shared.apiServerModule;
   setMainWindowCallback = shared.setMainWindow || (() => {});
+  PLUGINS_DATA_DIR = shared.PLUGINS_DATA_DIR || '';
 
   // 🆕 主窗口最小化与恢复（用于截图区域录制时隐藏窗口）
   ipcMain.handle('minimize-main-window', async () => {
@@ -369,6 +374,39 @@ function init(shared) {
       return { success: true };
     } catch (error) {
       console.error('[Main] 打开图片窗口失败:', error);
+      return { success: false, error: error.message };
+    }
+  });
+
+  // 🆕 裸档名解析：[文字](win:文件名) 只写档名时，默认在与卡片相同的资料目录（PLUGINS_DATA_DIR）查找，
+  //    与 win:卡片ID 的定位逻辑保持一致。命中返回绝对路径，未命中返回 success:false。
+  ipcMain.handle('resolve-doc-path', async (event, payload) => {
+    const name = (payload && payload.name) || '';
+    if (!name || name.includes('/') || name.includes('\\') || name.startsWith('~')) {
+      return { success: false, error: '非裸档名，不解析' };
+    }
+    const dir = PLUGINS_DATA_DIR;
+    if (!dir) return { success: false, error: '资料目录未配置' };
+    const full = path.join(dir, name);
+    if (!fs.existsSync(full)) return { success: false, error: '文件不存在' };
+    return { success: true, path: full };
+  });
+
+  // 🆕 文本文件读取：供渲染进程把 .md / 文本 / 代码文件显示在「应用内文档窗体」里。
+  //    防护：仅限存在的普通文件、大小 ≤ 2MB、内容不含 NUL 字节（二进制拒绝）。
+  ipcMain.handle('read-text-file', async (event, payload) => {
+    try {
+      const filePath = (payload && payload.path) || '';
+      if (!filePath) return { success: false, error: '缺少文件路径' };
+      if (!fs.existsSync(filePath)) return { success: false, error: '文件不存在' };
+      const stat = fs.statSync(filePath);
+      if (!stat.isFile()) return { success: false, error: '不是普通文件' };
+      if (stat.size > 2 * 1024 * 1024) return { success: false, error: '文件过大（>2MB），暂不支持显示' };
+      const buf = fs.readFileSync(filePath);
+      if (buf.indexOf(0) !== -1) return { success: false, error: '二进制文件，无法以文本显示' };
+      return { success: true, content: buf.toString('utf8') };
+    } catch (error) {
+      console.error('[Main] 读取文本文件失败:', error);
       return { success: false, error: error.message };
     }
   });
