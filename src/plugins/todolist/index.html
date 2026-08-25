@@ -1505,12 +1505,15 @@
       display: none;
     }
 
-    /* Markdown toolbar */
+    /* Markdown toolbar
+       注意：仅设上下边框（无左右），与下方 textarea / md-preview 的左右边框
+       拼接形成「编辑器容器」的闭合外框，避免左右边框重叠造成 2px 粗线。 */
     .md-toolbar {
       display: flex;
       align-items: center;
       gap: 1px;
       padding: 4px 10px;
+      border-top: 1px solid var(--border-color);
       border-bottom: 1px solid var(--border-color);
       background: #fafafa;
       flex-wrap: nowrap;
@@ -1578,13 +1581,19 @@
       border-color: var(--primary-border);
     }
 
-    /* Markdown preview area */
+    /* Markdown preview area
+       渲染模式（md-preview 无 bg，与 modal-body 同色）下需用边框圈出编辑区域边界，
+       否则与面板背景融为一体看不见。左右下三边与 toolbar 的上下边共同形成闭合外框。 */
     .md-preview {
       display: none;
       padding: 0 14px 12px;
       min-height: 525px;
       overflow-y: auto;
       max-height: 90vh;
+      border-left: 1px solid var(--border-color);
+      border-right: 1px solid var(--border-color);
+      border-bottom: 1px solid var(--border-color);
+      border-radius: 0 0 8px 8px;
     }
     .md-preview.show { display: block; }
     /* 注：编辑器预览与 Gallery 卡片共用上方统一的 Markdown 样式（.todo-text, .md-preview），
@@ -1592,7 +1601,11 @@
     body.dark .form-textarea {
       background: #0f172a;
       color: #e2e8f0;
-      border-color: #334155;
+      border-color: #fbbf24; /* 金色：黑夜模式下编辑区边界必须醒目，与 md-preview 边框拼成闭合外框 */
+    }
+    /* 黑夜模式 md-preview 边框对齐 textarea，统一金色 */
+    body.dark .md-preview {
+      border-color: #fbbf24;
     }
     body.dark .form-textarea::placeholder { color: #64748b; }
 
@@ -1619,7 +1632,7 @@
       color: #e2e8f0;
     }
 
-    body.dark .md-toolbar { border-bottom-color: #334155; }
+    body.dark .md-toolbar { border-top-color: #fbbf24; border-bottom-color: #fbbf24; } /* 金色：与下方 textarea/preview 边框拼成闭合外框 */
     body.dark .md-toggle-bar { border-top-color: #334155; }
     body.dark .attachment-area { border-top-color: #334155; }
     body.dark .attachment-chip { background: #1f2937; color: #e2e8f0; }
