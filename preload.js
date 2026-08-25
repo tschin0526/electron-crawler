@@ -216,6 +216,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   archiveTodo: (todoId) => ipcRenderer.invoke('archive-todo', todoId),
   getArchivedCount: () => ipcRenderer.invoke('get-archived-count'),
   renameTodoFile: (oldId, newId) => ipcRenderer.invoke('rename-todo-file', oldId, newId),
+  // 📋 列出 todos 资料目录下所有 todo-{id}.json 的文件元数据（前端「文件列表」下拉）
+  listTodoFiles: () => ipcRenderer.invoke('list-todo-files'),
 
   // 读取股票配置（HTTP Get 智能识别用）
   readStockConfig: () => ipcRenderer.invoke('read-stock-config'),

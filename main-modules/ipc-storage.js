@@ -373,6 +373,40 @@ function init(shared) {
     }
   });
 
+  // 📋 列出 todos 资料目录下所有 todo-{id}.json 的文件元数据（供前端「文件列表」下拉使用）
+  // - 只列 PLUGINS_DATA_DIR 顶层（与「已归档」互相独立）
+  // - 每条记录：name（todo-{id}.json）、id（去前缀后缀）、size（字节）、mtime（毫秒时间戳）
+  // - 排序由前端按用户当前选择的「名称/时间/大小」决定，主进程仅保证数据齐全
+  ipcMain.handle('list-todo-files', async () => {
+    try {
+      if (!fs.existsSync(PLUGINS_DATA_DIR)) {
+        return { success: true, data: [] };
+      }
+      const files = fs.readdirSync(PLUGINS_DATA_DIR)
+        .filter(f => f.startsWith('todo-') && f.endsWith('.json'));
+      const list = [];
+      for (const file of files) {
+        try {
+          const filePath = path.join(PLUGINS_DATA_DIR, file);
+          const stat = fs.statSync(filePath);
+          list.push({
+            name: file,
+            id: file.replace('todo-', '').replace('.json', ''),
+            size: stat.size,
+            mtime: stat.mtimeMs
+          });
+        } catch (e) {
+          // 单文件 stat 失败不阻断整体
+          console.warn(`[Main] stat 失败：${file}`, e.message);
+        }
+      }
+      return { success: true, data: list };
+    } catch (error) {
+      console.error('[Main] 列出 todo 文件失败:', error);
+      return { success: false, error: error.message, data: [] };
+    }
+  });
+
   // 🏷️ 重命名 todo JSON 文件：todo-{oldId}.json → todo-{newId}.json
   // - oldId / newId 都走白名单校验（中文、英文、数字、横线、下划线、空格），防路径穿越
   // - 源文件不存在 → 报错

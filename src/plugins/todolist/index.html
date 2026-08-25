@@ -326,6 +326,204 @@
       padding: 0 8px;
     }
 
+    /* 📋 文件列表下拉（搜索框右侧的「文件浏览」按钮 + 弹出面板）
+       - 排序方式：按名称 / 按最后异动时间 / 按大小
+       - 选择后 → 自动滚动到对应卡片 + 金边闪烁 3 秒（复用 .resize-focus 动画） */
+    .file-list-wrapper {
+      position: relative;
+      display: inline-flex;
+    }
+    .file-list-trigger {
+      height: 32px;
+      padding: 0 14px;
+      border: 1px solid var(--border-color);
+      border-radius: 4px;
+      background: var(--card-bg);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      font-size: 13px;
+      font-weight: 500;
+      white-space: nowrap;
+      color: var(--text-secondary);
+      transition: all 0.2s;
+      flex-shrink: 0;
+    }
+    .file-list-trigger:hover {
+      background: var(--primary-light);
+      border-color: var(--primary-color);
+      color: var(--primary-color);
+    }
+    .file-list-trigger.open {
+      background: var(--primary-light);
+      border-color: var(--primary-color);
+      color: var(--primary-color);
+    }
+    body.dark .file-list-trigger {
+      background: rgba(0, 0, 0, 0.3);
+      border-color: rgba(255, 255, 255, 0.1);
+    }
+    body.dark .file-list-trigger:hover,
+    body.dark .file-list-trigger.open {
+      background: rgba(102, 126, 234, 0.3);
+      border-color: var(--primary-color);
+      color: var(--primary-color);
+    }
+    /* dropdown panel：贴在按钮正下方，绝对定位到 toolbar 内，不挤占其他元素空间
+       宽 480px：容纳长文件名（如 todo-markdown使用样式试.m… 之类不截断）+ 状态徽标 + 元信息 */
+    .file-list-panel {
+      position: absolute;
+      top: calc(100% + 6px);
+      right: 0;
+      width: 480px;
+      max-height: 460px;
+      background: var(--card-bg);
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      box-shadow: var(--shadow-lg);
+      z-index: 100;
+      display: none;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    .file-list-panel.open {
+      display: flex;
+    }
+    .file-list-sort {
+      display: flex;
+      gap: 0;
+      padding: 6px;
+      border-bottom: 1px solid var(--border-color);
+      flex-shrink: 0;
+    }
+    .file-list-sort-btn {
+      flex: 1;
+      padding: 6px 4px;
+      border: none;
+      background: transparent;
+      cursor: pointer;
+      font-size: 12px;
+      color: var(--text-secondary);
+      border-radius: 4px;
+      transition: all 0.15s;
+      font-weight: 500;
+    }
+    .file-list-sort-btn:hover {
+      background: var(--primary-light);
+      color: var(--primary-color);
+    }
+    .file-list-sort-btn.active {
+      background: var(--primary-light);
+      color: #4338ca;
+      border: 1px solid var(--primary-border);
+    }
+    body.dark .file-list-sort-btn.active {
+      background: rgba(251, 191, 36, 0.15);
+      color: #fbbf24;
+      border-color: #fbbf24;
+    }
+    .file-list-body {
+      overflow-y: auto;
+      flex: 1;
+      padding: 4px 0;
+    }
+    .file-list-body:empty::before {
+      content: '（无文件）';
+      display: block;
+      text-align: center;
+      color: var(--text-secondary);
+      font-size: 12px;
+      padding: 20px 0;
+      opacity: 0.6;
+    }
+    .file-list-item {
+      padding: 6px 12px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 13px;
+      color: var(--text-primary);
+      transition: background-color 0.12s;
+      border-left: 3px solid transparent;
+    }
+    .file-list-item:hover {
+      background: var(--primary-light);
+    }
+    .file-list-item.active {
+      background: var(--primary-light);
+      border-left-color: var(--primary-color);
+    }
+    body.dark .file-list-item:hover {
+      background: rgba(102, 126, 234, 0.18);
+    }
+    body.dark .file-list-item.active {
+      background: rgba(251, 191, 36, 0.18);
+      border-left-color: #fbbf24;
+    }
+    /* 已完成的文件项：文件名 + ✓ + 整行降透明，营造与卡片完成态一致的视觉 */
+    .file-list-item.completed .file-list-item-name {
+      opacity: 0.55;
+      text-decoration: line-through;
+    }
+    .file-list-item.completed::before {
+      content: '✓';
+      color: #10b981;
+      font-weight: 700;
+      flex-shrink: 0;
+    }
+    /* 状态徽标：待完成（灰）/ 已完成（绿）—— 颜色选与 todo-item 卡片的 opacity/style
+       保持同一语言（#10b981 是常见「成功绿」，与 .todo-item.completed 一致降透明度策略对应） */
+    .file-list-item-status {
+      flex-shrink: 0;
+      font-size: 10px;
+      padding: 2px 8px;
+      border-radius: 999px;
+      font-weight: 500;
+      white-space: nowrap;
+      line-height: 1.4;
+    }
+    .file-list-item-status.pending {
+      background: rgba(148, 163, 184, 0.18);
+      color: #94a3b8;
+    }
+    .file-list-item-status.completed {
+      background: rgba(16, 185, 129, 0.18);
+      color: #10b981;
+    }
+    body.dark .file-list-item-status.pending {
+      background: rgba(148, 163, 184, 0.12);
+      color: #64748b;
+    }
+    .file-list-item-name {
+      flex: 1;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      font-family: 'SF Mono', 'Menlo', Consolas, monospace;
+      font-size: 12px;
+    }
+    .file-list-item-meta {
+      flex-shrink: 0;
+      font-size: 11px;
+      color: var(--text-secondary);
+      white-space: nowrap;
+    }
+    .file-list-footer {
+      flex-shrink: 0;
+      padding: 6px 12px;
+      border-top: 1px solid var(--border-color);
+      font-size: 11px;
+      color: var(--text-secondary);
+      text-align: center;
+      background: rgba(0,0,0,0.02);
+    }
+    body.dark .file-list-footer {
+      background: rgba(255,255,255,0.02);
+    }
+
     .nav-btn {
       width: 24px;
       height: 24px;
@@ -1367,14 +1565,16 @@
 
     .form-textarea {
       width: 100%;
-      padding: 12px 14px;
-      border: 1px solid var(--border-color);
+      /* 与 .md-preview（渲染区块）布局统一：padding 顶部 0、左右 14、底部 12，
+         高度约束一致（min 525 / max 90vh），使文本编辑区与渲染区切换时边界框大小一致 */
+      padding: 0 14px 12px;
+      border: 1px solid #f59e0b; /* 金色外框（白天），与 md-preview 边框拼成闭合外框 */
       border-radius: 8px;
       font-size: 15px;
       resize: vertical;
-      min-height: 300px;
-      height: 525px;
+      min-height: 525px;
       max-height: 90vh;
+      overflow-y: auto; /* 内容超长时内部滚动，与 md-preview 行为一致 */
       transition: border-color 0.2s;
       line-height: 1.6;
     }
@@ -1513,8 +1713,8 @@
       align-items: center;
       gap: 1px;
       padding: 4px 10px;
-      border-top: 1px solid var(--border-color);
-      border-bottom: 1px solid var(--border-color);
+      border-top: 1px solid #f59e0b; /* 金色外框（白天），与黑夜 #fbbf24 一致观感 */
+      border-bottom: 1px solid #f59e0b;
       background: #fafafa;
       flex-wrap: nowrap;
       overflow-x: auto;
@@ -1590,9 +1790,9 @@
       min-height: 525px;
       overflow-y: auto;
       max-height: 90vh;
-      border-left: 1px solid var(--border-color);
-      border-right: 1px solid var(--border-color);
-      border-bottom: 1px solid var(--border-color);
+      border-left: 1px solid #f59e0b; /* 金色外框（白天），与 toolbar 上下边拼成闭合外框 */
+      border-right: 1px solid #f59e0b;
+      border-bottom: 1px solid #f59e0b;
       border-radius: 0 0 8px 8px;
     }
     .md-preview.show { display: block; }
@@ -1986,6 +2186,19 @@
           <span class="search-count" id="searchResultCount">0/0</span>
           <button class="nav-btn" onclick="navigateSearch(-1)" title="上一个">▲</button>
           <button class="nav-btn" onclick="navigateSearch(1)" title="下一个">▼</button>
+        </div>
+        <!-- 📋 文件浏览按钮：以「文件列表方式」浏览所有 todo-{id}.json，点击跳转到对应卡片并金边闪烁 -->
+        <div class="file-list-wrapper" id="fileListWrapper">
+          <button type="button" class="file-list-trigger" id="fileListTrigger" title="按文件名称/时间/大小浏览 (ToDo Cards)" aria-haspopup="true">🗂️ ToDo Cards</button>
+          <div class="file-list-panel" id="fileListPanel" role="dialog" aria-label="文件列表">
+            <div class="file-list-sort" id="fileListSort">
+              <button type="button" class="file-list-sort-btn active" data-sort="name" data-dir="asc">按名称</button>
+              <button type="button" class="file-list-sort-btn" data-sort="mtime" data-dir="desc">按时间</button>
+              <button type="button" class="file-list-sort-btn" data-sort="size" data-dir="desc">按大小</button>
+            </div>
+            <div class="file-list-body" id="fileListBody"></div>
+            <div class="file-list-footer" id="fileListFooter">共 0 个文件</div>
+          </div>
         </div>
       </div>
     </div>
@@ -2479,7 +2692,7 @@
     // 绑定输入监听与快捷键（Markdown 编辑器和 HTML 编辑器共用）
     ['taskText', 'htmlText'].forEach(id => {
       const ta = document.getElementById(id);
-      ta.addEventListener('input', () => pushEditorHistory(ta, true));
+      ta.addEventListener('input', () => { pushEditorHistory(ta, true); autoGrowTextarea(ta); });
       ta.addEventListener('keydown', (e) => {
         if (!(e.metaKey || e.ctrlKey) || e.altKey) return;
         const key = (e.key || '').toLowerCase();
@@ -2492,6 +2705,41 @@
         }
       });
     });
+
+    // 文本编辑区块高度跟随内容（clamp 由 CSS min/max-height 约束），
+    // 与渲染区块(.md-preview)行为一致，切换模式时区块大小不再跳变
+    function autoGrowTextarea(ta) {
+      if (!ta || ta.style.display === 'none') return;
+      // 注意：不可先设 height:'auto' 再测量，否则 textarea 会先收缩到最小高度，
+      // 导致滚动位置(scrollTop)被重置、切换模式时内容跳动。
+      // textarea 的 scrollHeight 本身已反映内容真实高度（不受当前 height 限制），直接读取即可。
+      const cs = getComputedStyle(ta);
+      const borderV = parseFloat(cs.borderTopWidth) + parseFloat(cs.borderBottomWidth);
+      ta.style.height = (ta.scrollHeight + borderV) + 'px';
+    }
+
+    // 让编辑器打开/切换后立刻看到顶部：textarea.focus() 默认把光标放文本末尾，
+    // 浏览器同时调整 scrollTop 让光标可见 → 用户看到的就是跳到底部。
+    // 这里同步 + rAF 两次重置，兜住 focus() 的同步跳跃与异步 layout 的副作用。
+    function resetEditorScrollToTop() {
+      const ta = document.getElementById('taskText');
+      const html = document.getElementById('htmlText');
+      const preview = document.getElementById('mdPreview');
+      const resetOne = (el) => {
+        if (!el) return;
+        if (el.style.display === 'none') return; // 隐藏元素 scrollTop 不会暴露，无需重置
+        try { el.scrollTop = 0; } catch (e) {}
+        try { el.setSelectionRange && el.setSelectionRange(0, 0); } catch (e) {}
+      };
+      resetOne(ta);
+      resetOne(html);
+      resetOne(preview);
+      requestAnimationFrame(() => {
+        resetOne(ta);
+        resetOne(html);
+        resetOne(preview);
+      });
+    }
 
     function toggleMdPreview() {
       // 切换模式时重置搜索状态
@@ -2533,6 +2781,7 @@
         // 文本编辑模式
         preview.classList.remove('show');
         textarea.style.display = '';
+        autoGrowTextarea(textarea);
         htmlTextarea.style.display = 'none';
         btn.textContent = '编辑文本';
         btn.title = '点击切换到 Markdown 预览';
@@ -2559,6 +2808,7 @@
         const todo = todos.find(t => t.id === editingId);
         htmlTextarea.value = (todo && todo.htmlContent) ? todo.htmlContent : renderMarkdown(textarea.value);
         resetEditorHistory(htmlTextarea);
+        autoGrowTextarea(htmlTextarea);
         btn.textContent = 'HTML 文本编辑';
         btn.title = hasHtmlContent ? '点击切换到 HTML 预览' : '点击切换到文本编辑';
         btn.classList.add('active');
@@ -4326,6 +4576,8 @@
       }
       document.getElementById('modalOverlay').style.display = 'flex';
       document.getElementById('taskText').focus();
+      autoGrowTextarea(document.getElementById('taskText'));
+      resetEditorScrollToTop();
       resetEditorHistory(document.getElementById('taskText'));
       resetEditorHistory(document.getElementById('htmlText'));
       captureEditSnapshot();
@@ -4361,6 +4613,8 @@
       updateJsonFileDisplay();
       document.getElementById('modalOverlay').style.display = 'flex';
       document.getElementById('taskText').focus();
+      autoGrowTextarea(document.getElementById('taskText'));
+      resetEditorScrollToTop();
       resetEditorHistory(document.getElementById('taskText'));
       resetEditorHistory(document.getElementById('htmlText'));
       captureEditSnapshot();
@@ -4569,13 +4823,17 @@
     }
 
     function closeModal(event, focusId, skipPrompt = false) {
+      // 先做 target 判定：modal-overlay 上的 onclick 会接收所有冒泡上来的点击
+      // （toolbar 按钮、标签、背景色块、附件等都会冒泡到 modal-overlay），
+      // 因此"弹未保存提示"前必须先排除 modal 内部点击，否则用户点 toolbar/标签/
+      // 背景色块/附件都会弹窗，干扰编辑。点 modal 之外的暗色背景才会继续往下走。
+      if (event && event.target !== event.currentTarget) return;
       // 退出编辑前，若存在未保存更改且非「保存后自动关闭」，弹出「问询后存档」确认框。
       if (!skipPrompt && hasUnsavedChanges()) {
         const overlay = document.getElementById('unsavedConfirmOverlay');
         if (overlay) overlay.style.display = 'flex';
         return;
       }
-      if (event && event.target !== event.currentTarget) return;
       // focusId 未显式传入时默认聚焦当前编辑中的卡片（取消/✕/ESC 场景）；
       // 保存场景由调用方显式传入，以同时覆盖「编辑」与「新增」两种卡片
       const fid = (focusId !== undefined) ? focusId : editingId;
@@ -4821,6 +5079,152 @@
       setTimeout(() => card.classList.remove('resize-focus'), 3000);
     }
 
+    // 📋 文件列表下拉（搜索框右侧 📋 按钮触发）
+    //   状态：
+    //     fileListState = { open, sortKey: 'name'|'mtime'|'size', sortDir: 'asc'|'desc',
+    //                       items: [{id,name,size,mtime}], loaded, pendingId }
+    //   流程：
+    //     1. 点击触发按钮 → 切换 open 状态；首次打开时从主进程拉取文件元数据
+    //     2. 切换排序标签 → 重排 + 重渲列表
+    //     3. 点击列表项 → 关闭面板 + focusResizedCard(id)（滚动 + 金边闪 3 秒）
+    //     4. 点击面板外 → 关闭面板
+    let fileListState = { open: false, sortKey: 'name', sortDir: 'asc', items: [], loaded: false };
+
+    function toggleFileList() {
+      const trigger = document.getElementById('fileListTrigger');
+      const panel = document.getElementById('fileListPanel');
+      if (fileListState.open) {
+        closeFileList();
+      } else {
+        fileListState.open = true;
+        trigger.classList.add('open');
+        panel.classList.add('open');
+        if (!fileListState.loaded) {
+          loadFileListItems();
+        } else {
+          renderFileList();
+        }
+      }
+    }
+
+    function closeFileList() {
+      fileListState.open = false;
+      const trigger = document.getElementById('fileListTrigger');
+      const panel = document.getElementById('fileListPanel');
+      if (trigger) trigger.classList.remove('open');
+      if (panel) panel.classList.remove('open');
+    }
+
+    async function loadFileListItems() {
+      const body = document.getElementById('fileListBody');
+      const footer = document.getElementById('fileListFooter');
+      if (body) body.innerHTML = '';
+      if (footer) footer.textContent = '加载中...';
+      try {
+        if (!window.electronAPI || !window.electronAPI.listTodoFiles) {
+          if (footer) footer.textContent = 'electronAPI.listTodoFiles 不可用';
+          return;
+        }
+        const result = await window.electronAPI.listTodoFiles();
+        if (!result || !result.success) {
+          if (footer) footer.textContent = '加载失败：' + (result && result.error ? result.error : '未知错误');
+          return;
+        }
+        fileListState.items = result.data || [];
+        fileListState.loaded = true;
+        renderFileList();
+      } catch (e) {
+        console.error('[TodoList] 加载文件列表失败:', e);
+        if (footer) footer.textContent = '加载失败：' + e.message;
+      }
+    }
+
+    // 排序后渲染（不动主数据，仅在内存里排一遍）
+    function renderFileList() {
+      const key = fileListState.sortKey;
+      const dir = fileListState.sortDir === 'asc' ? 1 : -1;
+      const items = fileListState.items.slice().sort((a, b) => {
+        if (key === 'name') {
+          // 名称排序时按「自然序」（数字部分按数值比）—— 178695... < 178696... < ...
+          return a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }) * dir;
+        }
+        return ((a[key] || 0) - (b[key] || 0)) * dir;
+      });
+      const body = document.getElementById('fileListBody');
+      const footer = document.getElementById('fileListFooter');
+      if (!body || !footer) return;
+      if (items.length === 0) {
+        body.innerHTML = '';
+        footer.textContent = '共 0 个文件';
+        return;
+      }
+      // 元信息格式：时间=YYYY-MM-DD HH:mm，大小=B/KB/MB（自动）
+      // 状态徽标：从内存 todos 中按 id 查 completed，取不到（孤儿文件）按「待完成」显示
+      body.innerHTML = items.map(it => {
+        const date = new Date(it.mtime);
+        const yyyy = date.getFullYear();
+        const mm = String(date.getMonth() + 1).padStart(2, '0');
+        const dd = String(date.getDate()).padStart(2, '0');
+        const hh = String(date.getHours()).padStart(2, '0');
+        const mi = String(date.getMinutes()).padStart(2, '0');
+        const timeStr = `${yyyy}-${mm}-${dd} ${hh}:${mi}`;
+        const sizeStr = formatFileSizeShort(it.size);
+        // 从内存查完成态；找不到（文件存在但内存未加载）按待完成兜底
+        const todo = (typeof todos !== 'undefined' && Array.isArray(todos))
+          ? todos.find(t => t.id === it.id)
+          : null;
+        const isCompleted = !!(todo && todo.completed);
+        const statusText = isCompleted ? '已完成' : '待完成';
+        const statusClass = isCompleted ? 'completed' : 'pending';
+        const itemClass = isCompleted ? 'completed' : '';
+        return `<div class="file-list-item ${itemClass}" data-id="${escapeHtml(it.id)}" onclick="selectFileListItem('${escapeHtml(it.id)}')" title="${escapeHtml(it.name)}">
+          <span class="file-list-item-name">${escapeHtml(it.name)}</span>
+          <span class="file-list-item-meta">${timeStr} · ${sizeStr}</span>
+          <span class="file-list-item-status ${statusClass}">${statusText}</span>
+        </div>`;
+      }).join('');
+      footer.textContent = `共 ${items.length} 个文件`;
+    }
+
+    // 简化的体积格式（B/KB/MB）—— 主进程已有完整版 formatFileSize，前端独立版本避免重复 IPC
+    function formatFileSizeShort(bytes) {
+      if (typeof bytes !== 'number' || isNaN(bytes)) return '';
+      if (bytes < 1024) return bytes + 'B';
+      if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + 'KB';
+      return (bytes / (1024 * 1024)).toFixed(2) + 'MB';
+    }
+
+    // 切换排序：同名按钮二次点击反向排序；切到不同键时使用该键默认方向（名称 asc / 时间 desc / 大小 desc）
+    function changeFileListSort(sortKey, defaultDir) {
+      const btns = document.querySelectorAll('.file-list-sort-btn');
+      btns.forEach(b => b.classList.remove('active'));
+      const target = document.querySelector(`.file-list-sort-btn[data-sort="${sortKey}"]`);
+      if (fileListState.sortKey === sortKey) {
+        fileListState.sortDir = fileListState.sortDir === 'asc' ? 'desc' : 'asc';
+      } else {
+        fileListState.sortKey = sortKey;
+        fileListState.sortDir = defaultDir;
+      }
+      if (target) {
+        target.classList.add('active');
+        target.dataset.dir = fileListState.sortDir;
+      }
+      renderFileList();
+    }
+
+    // 选中某个文件 → 跳到对应卡片 + 金边闪烁 3 秒（复用保存/拖拽尺寸后的同款动画）
+    function selectFileListItem(id) {
+      closeFileList();
+      // 防御：若卡片已被过滤（标签/状态筛选）导致 .todo-item 不存在，给出一次提示
+      const card = document.querySelector(`.todo-item[data-id="${id}"]`);
+      if (!card) {
+        showToast && showToast(`未找到卡片 ${id}（可能被筛选条件隐藏）`, 'warning');
+        return;
+      }
+      // 320ms 等待面板关闭动画 + 焦点位移完成再触发滚动，避免抖动
+      setTimeout(() => focusResizedCard(id), 100);
+    }
+
     // 🆕 卡片间跳转：处理 .card-jump-link 的点击。
     // 接收 data-card-id（已 transformCardLinks 归一化 + escapeHtml 过），
     // 再走一遍归一化（防御性），用 focusResizedCard 触发滚动 + 金边闪动。
@@ -5045,6 +5449,34 @@
       updateStats();
       // 父窗口尺寸变化时，重新判断各卡片是否进入 tiny 态
       window.addEventListener('resize', applyTinyStates);
+      // 📋 文件列表下拉：挂触发按钮 + 排序标签的事件，并绑定外部点击关闭面板
+      initFileListDropdown();
+    }
+
+    // 📋 文件列表下拉初始化：触发按钮 onclick、排序按钮 onclick、document 级点击关闭
+    function initFileListDropdown() {
+      const trigger = document.getElementById('fileListTrigger');
+      if (trigger) trigger.addEventListener('click', (e) => { e.stopPropagation(); toggleFileList(); });
+      // 排序按钮（三个）：第二次点同键反向排序；切换不同键时使用对应默认方向
+      const sortMap = { name: 'asc', mtime: 'desc', size: 'desc' };
+      document.querySelectorAll('.file-list-sort-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const k = btn.dataset.sort;
+          changeFileListSort(k, sortMap[k] || 'desc');
+        });
+      });
+      // 点击面板内区域不关闭（避免误关）
+      const panel = document.getElementById('fileListPanel');
+      if (panel) panel.addEventListener('click', (e) => e.stopPropagation());
+      // 点击面板外关闭
+      document.addEventListener('click', () => {
+        if (fileListState.open) closeFileList();
+      });
+      // ESC 关闭
+      document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && fileListState.open) closeFileList();
+      });
     }
 
     // 主题由主程式统一控制，通过 CSS 注入实现（主程式 insertCSS 添加 body.dark）
