@@ -288,7 +288,7 @@ function init(shared) {
         fs.writeFileSync(filePath, newContent, 'utf8');
         writeCount++;
       }
-      // 清理孤儿文件（磁盘上有但数据中已不存在的）
+      // 清理孤儿文件（磁盘上有但数据中已不存在的 todo-*.json）
       const files = fs.readdirSync(PLUGINS_DATA_DIR)
         .filter(f => f.startsWith('todo-') && f.endsWith('.json'));
       for (const file of files) {
@@ -308,9 +308,9 @@ function init(shared) {
 
   ipcMain.handle('delete-todo-file', async (event, todoId) => {
     try {
-      const filePath = path.join(PLUGINS_DATA_DIR, `todo-${todoId}.json`);
-      if (fs.existsSync(filePath)) {
-        fs.unlinkSync(filePath);
+      const jsonPath = path.join(PLUGINS_DATA_DIR, `todo-${todoId}.json`);
+      if (fs.existsSync(jsonPath)) {
+        fs.unlinkSync(jsonPath);
         console.log(`[Main] 已删除 todo 文件: todo-${todoId}.json`);
       }
       return { success: true };
@@ -449,6 +449,109 @@ function init(shared) {
       return { success: true, newId };
     } catch (error) {
       console.error(`[Main] 重命名 todo 文件失败: ${oldId} -> ${newId}`, error);
+      return { success: false, error: error.message };
+    }
+  });
+
+  // ========== MD 纯文本文件存储（每个 MD 文件一个 .md，与 todo JSON 完全分离） ==========
+  // 文件命名：data 目录下任意 *.md 文件都可被编辑；通过本插件新建的 MD 文件默认以 md-{id}.md 命名。
+  // 特点：不进 Gallery、无标签/颜色/附件等元数据；仅以纯 Markdown 文本保存。
+
+  // 校验 MD 文件 id（即不带 .md 扩展名的 basename）不会导致路径穿越
+  function resolveMdFilePath(id) {
+    if (!id || typeof id !== 'string') return null;
+    // 拒绝路径分隔符和 ..，防止穿越到 data 目录之外
+    if (id.includes('..') || id.includes(path.sep) || id.includes('/')) return null;
+    const filePath = path.join(PLUGINS_DATA_DIR, `${id}.md`);
+    // 最终解析后的绝对路径必须在 data 目录内
+    const resolved = path.resolve(filePath);
+    const base = path.resolve(PLUGINS_DATA_DIR);
+    if (!resolved.startsWith(base + path.sep) && resolved !== base) return null;
+    return resolved;
+  }
+
+  // 📋 列出 data 目录下所有 *.md 的元数据（供前端「文件列表」下拉使用）
+  ipcMain.handle('list-md-files', async () => {
+    try {
+      if (!fs.existsSync(PLUGINS_DATA_DIR)) {
+        return { success: true, data: [] };
+      }
+      const files = fs.readdirSync(PLUGINS_DATA_DIR)
+        .filter(f => f.endsWith('.md'));
+      const list = [];
+      for (const file of files) {
+        try {
+          const filePath = path.join(PLUGINS_DATA_DIR, file);
+          const stat = fs.statSync(filePath);
+          list.push({
+            name: file,
+            id: file.replace(/\.md$/i, ''),
+            size: stat.size,
+            mtime: stat.mtimeMs
+          });
+        } catch (e) {
+          console.warn(`[Main] stat MD 文件失败：${file}`, e.message);
+        }
+      }
+      return { success: true, data: list };
+    } catch (error) {
+      console.error('[Main] 列出 MD 文件失败:', error);
+      return { success: false, error: error.message, data: [] };
+    }
+  });
+
+  // 📖 读取单个 MD 文件内容
+  ipcMain.handle('read-md-file', async (event, id) => {
+    try {
+      const filePath = resolveMdFilePath(id);
+      if (!filePath) {
+        return { success: false, error: 'id 非法或包含路径穿越字符' };
+      }
+      if (!fs.existsSync(filePath)) {
+        return { success: false, error: 'MD 文件不存在' };
+      }
+      const content = fs.readFileSync(filePath, 'utf8');
+      return { success: true, content };
+    } catch (error) {
+      console.error(`[Main] 读取 MD 文件失败: ${id}`, error);
+      return { success: false, error: error.message };
+    }
+  });
+
+  // 💾 保存/新建 MD 文件（纯 Markdown 文本）
+  ipcMain.handle('save-md-file', async (event, id, content) => {
+    try {
+      const filePath = resolveMdFilePath(id);
+      if (!filePath) {
+        return { success: false, error: 'id 非法或包含路径穿越字符' };
+      }
+      if (!fs.existsSync(PLUGINS_DATA_DIR)) {
+        fs.mkdirSync(PLUGINS_DATA_DIR, { recursive: true });
+      }
+      const mdContent = (content || '').replace(/\r\n/g, '\n');
+      fs.writeFileSync(filePath, mdContent, 'utf8');
+      console.log(`[Main] 已保存 MD 文件: ${filePath}`);
+      return { success: true };
+    } catch (error) {
+      console.error(`[Main] 保存 MD 文件失败: ${id}`, error);
+      return { success: false, error: error.message };
+    }
+  });
+
+  // 🗑️ 删除 MD 文件
+  ipcMain.handle('delete-md-file', async (event, id) => {
+    try {
+      const filePath = resolveMdFilePath(id);
+      if (!filePath) {
+        return { success: false, error: 'id 非法或包含路径穿越字符' };
+      }
+      if (fs.existsSync(filePath)) {
+        fs.unlinkSync(filePath);
+        console.log(`[Main] 已删除 MD 文件: ${filePath}`);
+      }
+      return { success: true };
+    } catch (error) {
+      console.error(`[Main] 删除 MD 文件失败: ${id}`, error);
       return { success: false, error: error.message };
     }
   });

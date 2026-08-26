@@ -493,9 +493,17 @@
       background: rgba(16, 185, 129, 0.18);
       color: #10b981;
     }
+    .file-list-item-status.md {
+      background: rgba(139, 92, 246, 0.18);
+      color: #8b5cf6;
+    }
     body.dark .file-list-item-status.pending {
       background: rgba(148, 163, 184, 0.12);
       color: #64748b;
+    }
+    body.dark .file-list-item-status.md {
+      background: rgba(139, 92, 246, 0.22);
+      color: #a78bfa;
     }
     .file-list-item-name {
       flex: 1;
@@ -1492,6 +1500,46 @@
     .editor-sidebar .modal-header-actions .btn { flex: 1; padding: 6px 8px; font-size: 12px; justify-content: center; }
     body.dark .editor-sidebar { border-left-color: #334155; }
 
+    /* 侧抽屉页签：todo卡片 / MD文件 */
+    .file-type-tabs {
+      display: flex;
+      gap: 0;
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      overflow: hidden;
+      margin-bottom: 10px;
+    }
+    .file-type-tab {
+      flex: 1;
+      padding: 6px 4px;
+      border: none;
+      background: var(--card-bg);
+      color: var(--text-secondary);
+      font-size: 12px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.15s;
+      text-align: center;
+    }
+    .file-type-tab:hover:not(:disabled) {
+      background: var(--primary-light);
+      color: var(--primary-color);
+    }
+    .file-type-tab.active {
+      background: var(--primary-light);
+      color: #4338ca;
+      font-weight: 600;
+    }
+    .file-type-tab:disabled {
+      cursor: not-allowed;
+      opacity: 0.55;
+      background: rgba(148, 163, 184, 0.1);
+    }
+    body.dark .file-type-tab { background: #1e293b; color: #94a3b8; }
+    body.dark .file-type-tab:hover:not(:disabled) { background: rgba(99,102,241,0.14); color: #eff6ff; }
+    body.dark .file-type-tab.active { background: rgba(99,102,241,0.2); color: #fbbf24; }
+    body.dark .file-type-tab:disabled { background: rgba(148, 163, 184, 0.08); color: #64748b; }
+
     .modal-header {
       padding: 14px 18px;
       border-bottom: 1px solid var(--border-color);
@@ -2249,7 +2297,7 @@
 
     <div class="todo-toolbar">
       <div class="btn-group">
-        <button class="btn btn-primary" onclick="openAddModal()" title="添加任务">➕</button>
+        <button class="btn btn-primary" onclick="openAddModal()" title="添加文件">➕</button>
       </div>
       <div class="search-wrapper">
         <input type="text" class="search-box" id="searchInput" placeholder="搜索任务..." oninput="handleSearch()">
@@ -2260,7 +2308,7 @@
         </div>
         <!-- 📋 文件浏览按钮：以「文件列表方式」浏览所有 todo-{id}.json，点击跳转到对应卡片并金边闪烁 -->
         <div class="file-list-wrapper" id="fileListWrapper">
-          <button type="button" class="file-list-trigger" id="fileListTrigger" title="按文件名称/时间/大小浏览 (ToDo Cards)" aria-haspopup="true">🗂️ ToDo Cards</button>
+          <button type="button" class="file-list-trigger" id="fileListTrigger" title="按文件名称/时间/大小浏览（ToDo 卡片 / MD 文件）" aria-haspopup="true">🗂️ 文件</button>
           <div class="file-list-panel" id="fileListPanel" role="dialog" aria-label="文件列表">
             <div class="file-list-sort" id="fileListSort">
               <button type="button" class="file-list-sort-btn" data-sort="name" data-dir="asc">按名称</button>
@@ -2342,9 +2390,13 @@
 
       <!-- 侧边浮动区：其余操作（顶按钮 / 改名 / 标签 / 背景色 / 附件） -->
       <div class="editor-sidebar" id="editorSidebar">
-        <h2 class="modal-title" id="modalTitle">添加任务</h2>
+        <h2 class="modal-title" id="modalTitle">添加文件</h2>
+        <div class="file-type-tabs" id="fileTypeTabs">
+          <button class="file-type-tab" id="tabTodoCard" type="button" onclick="switchFileTypeTab('todo')">todo卡片</button>
+          <button class="file-type-tab" id="tabMdFile" type="button" onclick="switchFileTypeTab('md')">MD文件</button>
+        </div>
         <div class="modal-header-actions">
-          <button class="btn btn-text btn-secondary" onclick="emailTodoFromModal()" style="background:transparent;color:#8b5cf6;border:1px solid #8b5cf6;" title="将当前任务内容发送邮件">📧 发邮件</button>
+          <button class="btn btn-text btn-secondary" id="emailBtn" onclick="emailTodoFromModal()" style="background:transparent;color:#8b5cf6;border:1px solid #8b5cf6;" title="将当前任务内容发送邮件">📧 发邮件</button>
           <button class="btn btn-text btn-secondary" onclick="closeModal()">取消</button>
           <button class="btn btn-text btn-primary" onclick="saveTask()">保存</button>
         </div>
@@ -2356,14 +2408,14 @@
           <button class="json-file-rename-btn" id="jsonFileRenameBtn" onclick="startRenameJsonFile()" title="重命名 JSON 文件（ID）">✏️ 重命名(JSON)</button>
         </div>
 
-        <div class="form-group">
+        <div class="form-group" id="tagsFormGroup">
           <label class="form-label">标签</label>
           <div class="tags-selector" id="tagsSelector">
             <input type="text" class="tag-input" id="tagInput" placeholder="#标签" onkeydown="handleTagInput(event)">
           </div>
         </div>
 
-        <div class="form-group">
+        <div class="form-group" id="colorFormGroup">
           <label class="form-label">🎨 卡片背景色</label>
           <div id="todoColorPicker" style="display: flex; flex-wrap: wrap; gap: 6px; align-items: center;">
             <div class="todo-color-swatch" data-color="" style="width: 28px; height: 28px; border-radius: 6px; border: 2px solid #e2e8f0; cursor: pointer; background: #ffffff; display: flex; align-items: center; justify-content: center; font-size: 14px;" title="默认（白色）" onclick="selectTodoColor(this, '')">✓</div>
@@ -2381,7 +2433,7 @@
           </div>
         </div>
 
-        <div class="form-group">
+        <div class="form-group" id="attachmentsFormGroup">
           <label class="form-label">附件</label>
           <div class="attachments-section">
             <label class="file-upload-btn">
@@ -2445,6 +2497,8 @@
     let currentSearchIndex = -1;  // 当前搜索结果索引
     let matchedHighlights = [];   // 匹配的高亮元素列表
     let editingId = null;
+    // 当前正在编辑的 MD 文件 id（仅当 activeFileTab==='md' 且为编辑（非新增）模式时非 null）
+    let currentMdId = null;
     // 编辑退出前的「未保存更改」检测快照：在 openAddModal / openEditModal 时采集原始内容，
     // 关闭前与当前编辑器内容比对，决定是否弹出「问询后存档」确认框。
     let editSnapshot = null;
@@ -2656,6 +2710,8 @@
     let selectedTodoColor = '';
     // 预览模式：0=文本编辑, 1=Markdown预览, 2=HTML文本编辑, 3=HTML预览（仅当有htmlContent时）
     let previewMode = 0;
+    // 侧抽屉当前页签：'todo'=todo卡片, 'md'=MD文件
+    let activeFileTab = 'todo';
 
     // Markdown 工具函数
     function insertMd(before, after) {
@@ -2847,15 +2903,21 @@
         hasHtmlContent = !!(todo && todo.htmlContent);
       }
 
-      // 循环切换：0(文本编辑) -> 1(MD预览) -> 2(HTML文本编辑) -> 3(HTML预览，仅当有htmlContent) -> 0
-      if (previewMode === 0) {
-        previewMode = 1;
-      } else if (previewMode === 1) {
-        previewMode = 2;
-      } else if (previewMode === 2) {
-        previewMode = hasHtmlContent ? 3 : 0;
+      // MD 文件页签：只保留「编辑文本 ↔ Markdown 预览」两态
+      const isMdFileTab = activeFileTab === 'md';
+      if (isMdFileTab) {
+        previewMode = previewMode === 0 ? 1 : 0;
       } else {
-        previewMode = 0;
+        // 循环切换：0(文本编辑) -> 1(MD预览) -> 2(HTML文本编辑) -> 3(HTML预览，仅当有htmlContent) -> 0
+        if (previewMode === 0) {
+          previewMode = 1;
+        } else if (previewMode === 1) {
+          previewMode = 2;
+        } else if (previewMode === 2) {
+          previewMode = hasHtmlContent ? 3 : 0;
+        } else {
+          previewMode = 0;
+        }
       }
 
       // 应用模式
@@ -2871,15 +2933,17 @@
         btn.title = '点击切换到 Markdown 预览';
         btn.classList.remove('active');
         genMdBtn.style.display = 'none';
-        genHtmlBtn.style.display = '';
+        genHtmlBtn.style.display = isMdFileTab ? 'none' : '';
       } else if (previewMode === 1) {
         // Markdown 预览
         preview.classList.add('show');
-        preview.innerHTML = renderMarkdown(textarea.value);
+        // MD 文件页签：输入为原始 markdown，强制完整解析，避免正文提及
+        // <span class="katex"> 时触发已渲染 KaTeX 短路而原样输出。
+        preview.innerHTML = renderMarkdown(textarea.value, isMdFileTab ? { force: true } : undefined);
         textarea.style.display = 'none';
         htmlTextarea.style.display = 'none';
         btn.textContent = 'Markdown 预览';
-        btn.title = hasHtmlContent ? '点击切换到 HTML 文本编辑' : '点击切换到 HTML 文本编辑';
+        btn.title = isMdFileTab ? '点击切换到文本编辑' : (hasHtmlContent ? '点击切换到 HTML 文本编辑' : '点击切换到 HTML 文本编辑');
         btn.classList.add('active');
         genMdBtn.style.display = 'none';
         genHtmlBtn.style.display = 'none';
@@ -4627,9 +4691,85 @@
       }
     }
 
+    // 切换侧抽屉页签（仅在新增模式下有效；编辑模式下锁定）
+    function switchFileTypeTab(tab) {
+      if (editingId || currentMdId) return; // 编辑模式锁定
+      if (activeFileTab === tab) return;
+      activeFileTab = tab;
+      updateFileTypeTabs();
+      // 切换到 MD 页签时，强制回到文本编辑模式并清理 HTML 相关状态
+      if (tab === 'md') {
+        previewMode = 0;
+        document.getElementById('htmlText').value = '';
+        const textarea = document.getElementById('taskText');
+        const preview = document.getElementById('mdPreview');
+        const htmlTextarea = document.getElementById('htmlText');
+        const btn = document.getElementById('mdToggleBtn');
+        preview.classList.remove('show');
+        textarea.style.display = '';
+        htmlTextarea.style.display = 'none';
+        btn.textContent = '编辑文本';
+        btn.title = '点击切换到 Markdown 预览';
+        btn.classList.remove('active');
+        document.getElementById('genMdBtn').style.display = 'none';
+        document.getElementById('genHtmlBtn').style.display = 'none';
+        autoGrowTextarea(textarea);
+        textarea.focus();
+      } else if (tab === 'todo') {
+        // 切回 todo 卡片：恢复 HTML 相关入口（具体显隐由 toggleMdPreview 决定）
+        previewMode = 0;
+        const textarea = document.getElementById('taskText');
+        const preview = document.getElementById('mdPreview');
+        const htmlTextarea = document.getElementById('htmlText');
+        const btn = document.getElementById('mdToggleBtn');
+        preview.classList.remove('show');
+        textarea.style.display = '';
+        htmlTextarea.style.display = 'none';
+        btn.textContent = '编辑文本';
+        btn.title = '点击切换到 Markdown 预览';
+        btn.classList.remove('active');
+        document.getElementById('genMdBtn').style.display = 'none';
+        document.getElementById('genHtmlBtn').style.display = '';
+        autoGrowTextarea(textarea);
+      }
+    }
+
+    // 根据 activeFileTab / 编辑态，隐藏或显示「标签 / 卡片颜色 / 附件 / 发邮件 / JSON 文件名」
+    // MD 文件是纯 .md，不需要任何 todo 卡片元数据。
+    function updateDrawerMetadataVisibility() {
+      const hide = activeFileTab === 'md';
+      const setDisplay = (id, disp) => {
+        const el = document.getElementById(id);
+        if (el) el.style.display = disp;
+      };
+      setDisplay('jsonFileRow', hide ? 'none' : '');
+      setDisplay('tagsFormGroup', hide ? 'none' : '');
+      setDisplay('colorFormGroup', hide ? 'none' : '');
+      setDisplay('attachmentsFormGroup', hide ? 'none' : '');
+      setDisplay('emailBtn', hide ? 'none' : '');
+    }
+
+    // 根据 activeFileTab / editingId / currentMdId 刷新页签 UI
+    function updateFileTypeTabs() {
+      const tabTodo = document.getElementById('tabTodoCard');
+      const tabMd = document.getElementById('tabMdFile');
+      if (!tabTodo || !tabMd) return;
+      tabTodo.classList.toggle('active', activeFileTab === 'todo');
+      tabMd.classList.toggle('active', activeFileTab === 'md');
+      // 编辑模式下锁定，只允许当前文件类型对应的页签
+      const isEdit = !!editingId || !!currentMdId;
+      tabTodo.disabled = isEdit && activeFileTab !== 'todo';
+      tabMd.disabled = isEdit && activeFileTab !== 'md';
+      // 同步元数据可见性（MD 页签隐藏标签/颜色/附件等）
+      updateDrawerMetadataVisibility();
+    }
+
     function openAddModal() {
       editingId = null;
-      document.getElementById('modalTitle').textContent = '添加任务';
+      currentMdId = null;
+      document.getElementById('modalTitle').textContent = '添加文件';
+      activeFileTab = 'todo';
+      updateFileTypeTabs();
       document.getElementById('taskText').value = '';
       document.getElementById('htmlText').value = '';
       document.getElementById('editSearchInput').value = '';
@@ -4672,8 +4812,12 @@
       if (!todo) return;
 
       editingId = id;
-      document.getElementById('modalTitle').textContent = '编辑任务';
+      currentMdId = null;
+      document.getElementById('modalTitle').textContent = '编辑文件';
+      activeFileTab = 'todo';
+      updateFileTypeTabs();
       document.getElementById('taskText').value = todo.text;
+      // MD 文件不显示/不编辑 HTML 源码（此处仅 todo 卡片会进入本函数）
       document.getElementById('htmlText').value = todo.htmlContent || '';
       document.getElementById('editSearchInput').value = '';
       pendingAttachments = todo.attachments || [];
@@ -4685,7 +4829,10 @@
       previewMode = 0;
       document.getElementById('mdPreview').classList.remove('show');
       document.getElementById('taskText').style.display = '';
+      document.getElementById('htmlText').style.display = 'none';
       document.getElementById('mdToggleBtn').classList.remove('active');
+      document.getElementById('mdToggleBtn').textContent = '编辑文本';
+      document.getElementById('mdToggleBtn').title = '点击切换到 Markdown 预览';
       document.getElementById('genMdBtn').style.display = 'none';
       document.getElementById('genHtmlBtn').style.display = '';
       searchMatches = [];
@@ -4702,6 +4849,62 @@
       resetEditorHistory(document.getElementById('taskText'));
       resetEditorHistory(document.getElementById('htmlText'));
       captureEditSnapshot();
+    }
+
+    // 以 MD 模式打开一个已有的纯 .md 文件（页签锁定为 MD文件，无标签/颜色/附件）
+    async function openEditMdModal(id) {
+      try {
+        if (!window.electronAPI || !window.electronAPI.readMdFile) {
+          alert('electronAPI.readMdFile 不可用');
+          return;
+        }
+        const result = await window.electronAPI.readMdFile(id);
+        if (!result || !result.success) {
+          alert('读取 MD 文件失败：' + (result && result.error ? result.error : '未知错误'));
+          return;
+        }
+        editingId = null;
+        currentMdId = id;
+        activeFileTab = 'md';
+        document.getElementById('modalTitle').textContent = '编辑 MD 文件';
+        document.getElementById('taskText').value = result.content || '';
+        document.getElementById('htmlText').value = '';
+        document.getElementById('editSearchInput').value = '';
+        pendingAttachments = [];
+        selectedTagsForModal = [];
+        renderTagsSelector([]);
+        renderPendingAttachments();
+        setTodoColorPicker('');
+        previewMode = 0;
+        const preview = document.getElementById('mdPreview');
+        const textarea = document.getElementById('taskText');
+        const htmlTextarea = document.getElementById('htmlText');
+        const btn = document.getElementById('mdToggleBtn');
+        preview.classList.remove('show');
+        textarea.style.display = '';
+        htmlTextarea.style.display = 'none';
+        btn.classList.remove('active');
+        btn.textContent = '编辑文本';
+        btn.title = '点击切换到 Markdown 预览';
+        document.getElementById('genMdBtn').style.display = 'none';
+        document.getElementById('genHtmlBtn').style.display = 'none';
+        searchMatches = [];
+        currentMatchIndex = -1;
+        lastSearchEnterQuery = '';
+        document.getElementById('searchCount').textContent = '';
+        updateSearchNavButtons();
+        updateFileTypeTabs();
+        document.getElementById('modalOverlay').style.display = 'flex';
+        textarea.focus();
+        autoGrowTextarea(textarea);
+        resetEditorScrollToTop();
+        resetEditorHistory(textarea);
+        resetEditorHistory(htmlTextarea);
+        captureEditSnapshot();
+      } catch (e) {
+        console.error('[TodoList] 打开 MD 文件失败:', e);
+        alert('打开 MD 文件失败：' + (e && e.message ? e.message : e));
+      }
     }
 
     // 📄 刷新 JSON 文件名显示区（编辑模式专用）
@@ -4944,6 +5147,7 @@
       }
       // 模态框完全关闭后清空未保存检测快照
       editSnapshot = null;
+      currentMdId = null;
     }
 
     function handleFileSelect(event) {
@@ -5002,6 +5206,30 @@
       const text = textarea.value.trim();
       const htmlValue = htmlTextarea.value.trim();
 
+      // ===== MD 文件（纯 .md，无 JSON / 无标签·颜色·附件等元数据）=====
+      if (activeFileTab === 'md') {
+        if (!text) {
+          alert('请输入内容');
+          return;
+        }
+        let mdId = currentMdId;
+        if (!mdId) {
+          mdId = 'md-' + Date.now().toString();
+          currentMdId = mdId;
+        }
+        try {
+          await window.electronAPI.saveMdFile(mdId, textarea.value.replace(/\r\n/g, '\n'));
+          if (closeAfterSave) {
+            closeModal(undefined, undefined, true);
+          }
+        } catch (e) {
+          console.error('[TodoList] 保存 MD 文件失败:', e);
+          alert('保存 MD 文件失败：' + (e && e.message ? e.message : e));
+        }
+        return;
+      }
+
+      // ===== todo 卡片（JSON）=====
       // HTML 编辑模式与 Markdown 编辑模式各自独立保存，互不影响
       if (previewMode === 2) {
         if (!htmlValue) {
@@ -5034,7 +5262,7 @@
       } else {
         const newTodo = {
           id: Date.now().toString(),
-          text: previewMode === 2 ? '' : text,
+          text: previewMode !== 2 ? text : '',
           htmlContent: previewMode === 2 ? htmlValue : undefined,
           tags: selectedTagsForModal,
           attachments: pendingAttachments,
@@ -5208,12 +5436,14 @@
           if (footer) footer.textContent = 'electronAPI.listTodoFiles 不可用';
           return;
         }
-        const result = await window.electronAPI.listTodoFiles();
-        if (!result || !result.success) {
-          if (footer) footer.textContent = '加载失败：' + (result && result.error ? result.error : '未知错误');
-          return;
-        }
-        fileListState.items = result.data || [];
+        // 同时拉取 todo 卡片（JSON）与 MD 纯文本文件，合并展示
+        const todoRes = await window.electronAPI.listTodoFiles();
+        const mdRes = (window.electronAPI.listMdFiles)
+          ? await window.electronAPI.listMdFiles()
+          : { success: true, data: [] };
+        const todoItems = (todoRes && todoRes.success) ? (todoRes.data || []).map(it => ({ ...it, type: 'todo' })) : [];
+        const mdItems = (mdRes && mdRes.success) ? (mdRes.data || []).map(it => ({ ...it, type: 'md' })) : [];
+        fileListState.items = todoItems.concat(mdItems);
         fileListState.loaded = true;
         renderFileList();
       } catch (e) {
@@ -5242,7 +5472,7 @@
         return;
       }
       // 元信息格式：时间=YYYY-MM-DD HH:mm，大小=B/KB/MB（自动）
-      // 状态徽标：从内存 todos 中按 id 查 completed，取不到（孤儿文件）按「待完成」显示
+      // 状态徽标：todo 从内存 todos 查 completed；md 文件显示「📄 MD」徽标
       body.innerHTML = items.map(it => {
         const date = new Date(it.mtime);
         const yyyy = date.getFullYear();
@@ -5252,15 +5482,23 @@
         const mi = String(date.getMinutes()).padStart(2, '0');
         const timeStr = `${yyyy}-${mm}-${dd} ${hh}:${mi}`;
         const sizeStr = formatFileSizeShort(it.size);
-        // 从内存查完成态；找不到（文件存在但内存未加载）按待完成兜底
-        const todo = (typeof todos !== 'undefined' && Array.isArray(todos))
-          ? todos.find(t => t.id === it.id)
-          : null;
-        const isCompleted = !!(todo && todo.completed);
-        const statusText = isCompleted ? '已完成' : '待完成';
-        const statusClass = isCompleted ? 'completed' : 'pending';
-        const itemClass = isCompleted ? 'completed' : '';
-        return `<div class="file-list-item ${itemClass}" data-id="${escapeHtml(it.id)}" onclick="selectFileListItem('${escapeHtml(it.id)}')" title="${escapeHtml(it.name)}">
+        const isMd = it.type === 'md';
+        let statusText, statusClass, itemClass;
+        if (isMd) {
+          statusText = '📄 MD';
+          statusClass = 'md';
+          itemClass = '';
+        } else {
+          // 从内存查完成态；找不到（文件存在但内存未加载）按待完成兜底
+          const todo = (typeof todos !== 'undefined' && Array.isArray(todos))
+            ? todos.find(t => t.id === it.id)
+            : null;
+          const isCompleted = !!(todo && todo.completed);
+          statusText = isCompleted ? '已完成' : '待完成';
+          statusClass = isCompleted ? 'completed' : 'pending';
+          itemClass = isCompleted ? 'completed' : '';
+        }
+        return `<div class="file-list-item ${itemClass}" data-id="${escapeHtml(it.id)}" data-type="${isMd ? 'md' : 'todo'}" onclick="selectFileListItem('${escapeHtml(it.id)}', '${isMd ? 'md' : 'todo'}')" title="${escapeHtml(it.name)}">
           <span class="file-list-item-name">${escapeHtml(it.name)}</span>
           <span class="file-list-item-meta">${timeStr} · ${sizeStr}</span>
           <span class="file-list-item-status ${statusClass}">${statusText}</span>
@@ -5296,8 +5534,13 @@
     }
 
     // 选中某个文件 → 跳到对应卡片 + 金边闪烁 3 秒（复用保存/拖拽尺寸后的同款动画）
-    function selectFileListItem(id) {
+    function selectFileListItem(id, type) {
       closeFileList();
+      // MD 纯文本文件：以 MD 模式打开抽屉（页签锁定，无元数据）
+      if (type === 'md') {
+        openEditMdModal(id);
+        return;
+      }
       // 防御：若卡片已被过滤（标签/状态筛选）导致 .todo-item 不存在，给出一次提示
       const card = document.querySelector(`.todo-item[data-id="${id}"]`);
       if (!card) {

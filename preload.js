@@ -219,6 +219,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // 📋 列出 todos 资料目录下所有 todo-{id}.json 的文件元数据（前端「文件列表」下拉）
   listTodoFiles: () => ipcRenderer.invoke('list-todo-files'),
 
+  // MD 纯文本文件存储（与 todo 卡片完全分离，不进 Gallery）
+  listMdFiles: () => ipcRenderer.invoke('list-md-files'),
+  readMdFile: (id) => ipcRenderer.invoke('read-md-file', id),
+  saveMdFile: (id, content) => ipcRenderer.invoke('save-md-file', id, content),
+  deleteMdFile: (id) => ipcRenderer.invoke('delete-md-file', id),
+
   // 读取股票配置（HTTP Get 智能识别用）
   readStockConfig: () => ipcRenderer.invoke('read-stock-config'),
 
