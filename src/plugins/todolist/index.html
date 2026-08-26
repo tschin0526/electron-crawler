@@ -1427,6 +1427,71 @@
       border: none;
     }
 
+    /* ── 编辑 modal 新布局：主区(编辑+渲染) 占主要画面 + 侧边浮动操作区 ── */
+    .modal.editor-layout {
+      display: flex;
+      flex-direction: row;
+      overflow: hidden;
+    }
+    .editor-main {
+      flex: 1 1 auto;
+      min-width: 0;
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    /* 编辑框 / 渲染框 撑满主区高度，成为画面主体 */
+    .editor-layout .form-textarea,
+    .editor-layout .md-preview {
+      flex: 1 1 auto;
+      min-height: 0;
+      max-height: none;
+    }
+    /* 侧边手柄：竖排文字，点击收起/展开操作面板 */
+    .editor-sidebar-handle {
+      flex: 0 0 26px;
+      align-self: stretch;
+      border: none;
+      border-left: 1px solid var(--border-color);
+      background: #f1f5f9;
+      color: var(--text-secondary);
+      cursor: pointer;
+      writing-mode: vertical-rl;
+      font-size: 13px;
+      letter-spacing: 2px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background 0.15s, color 0.15s;
+    }
+    .editor-sidebar-handle:hover { background: #e2e8f0; color: var(--primary-color); }
+    body.dark .editor-sidebar-handle { background: #1e293b; color: #94a3b8; }
+    body.dark .editor-sidebar-handle:hover { background: #334155; color: #a5b4fc; }
+    /* 侧边浮动操作区 */
+    .editor-sidebar {
+      flex: 0 0 200px;
+      width: 200px;
+      height: 100%;
+      overflow-y: auto;
+      background: var(--card-bg);
+      padding: 14px 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+    .editor-layout.sidebar-collapsed .editor-sidebar { display: none; }
+    .editor-sidebar .modal-title { margin: 0; }
+    /* 侧栏内：顶按钮水平行排列，缩小宽度，flex:1 均分；字号略小适合窄栏 */
+    .editor-sidebar .modal-header-actions {
+      flex-direction: row;
+      align-items: center;
+      width: 100%;
+      gap: 4px;
+    }
+    .editor-sidebar .modal-header-actions .btn { flex: 1; padding: 6px 8px; font-size: 12px; justify-content: center; }
+    body.dark .editor-sidebar { border-left-color: #334155; }
+
     .modal-header {
       padding: 14px 18px;
       border-bottom: 1px solid var(--border-color);
@@ -1484,9 +1549,9 @@
     /* 📄 JSON 文件名显示 + 重命名行（编辑任务时显示，新增时隐藏） */
     .json-file-row {
       display: flex;
-      align-items: center;
-      gap: 8px;
-      padding: 8px 12px;
+      flex-direction: column;
+      gap: 6px;
+      padding: 8px 10px;
       margin-bottom: 14px;
       background: linear-gradient(180deg, #f8fafc 0%, #f1f5f9 100%);
       border: 1px solid rgba(148, 163, 184, 0.35);
@@ -1499,13 +1564,12 @@
       border-color: rgba(148, 163, 184, 0.3);
       color: #94a3b8;
     }
-    .json-file-label {
-      flex-shrink: 0;
-      font-weight: 600;
-      color: var(--text-primary);
-    }
-    body.dark .json-file-label {
-      color: #e2e8f0;
+    /* 第一行：JSON 文件名（或重命名时变为 input + 取消按钮） */
+    .json-file-row-top {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      min-width: 0;
     }
     .json-file-name {
       flex: 1;
@@ -1521,9 +1585,11 @@
     body.dark .json-file-name {
       color: #a5b4fc;
     }
+    /* 第二行：重命名按钮（铺满整行），重命名态下变成「✓ 确定」也占整行 */
     .json-file-rename-btn {
       flex-shrink: 0;
-      padding: 3px 10px;
+      width: 100%;
+      padding: 4px 10px;
       font-size: 11px;
       border-radius: 4px;
       border: 1px solid #6366f1;
@@ -1544,7 +1610,7 @@
       background-color: #a5b4fc;
       color: #0f172a;
     }
-    /* 重命名 inline 输入框（替换按钮位置） */
+    /* 重命名 inline 输入框（替换 jsonFileName 位置） */
     .json-file-rename-input {
       flex: 1;
       min-width: 0;
@@ -1561,6 +1627,11 @@
       background: #0f172a;
       color: #e2e8f0;
       border-color: #a5b4fc;
+    }
+    /* 重命名态：行内取消按钮（在 input 右侧），不要 width:100% 撑满 */
+    .json-file-rename-cancel {
+      width: auto;
+      padding: 3px 8px;
     }
 
     .form-textarea {
@@ -2192,8 +2263,8 @@
           <button type="button" class="file-list-trigger" id="fileListTrigger" title="按文件名称/时间/大小浏览 (ToDo Cards)" aria-haspopup="true">🗂️ ToDo Cards</button>
           <div class="file-list-panel" id="fileListPanel" role="dialog" aria-label="文件列表">
             <div class="file-list-sort" id="fileListSort">
-              <button type="button" class="file-list-sort-btn active" data-sort="name" data-dir="asc">按名称</button>
-              <button type="button" class="file-list-sort-btn" data-sort="mtime" data-dir="desc">按时间</button>
+              <button type="button" class="file-list-sort-btn" data-sort="name" data-dir="asc">按名称</button>
+              <button type="button" class="file-list-sort-btn active" data-sort="mtime" data-dir="desc">按时间</button>
               <button type="button" class="file-list-sort-btn" data-sort="size" data-dir="desc">按大小</button>
             </div>
             <div class="file-list-body" id="fileListBody"></div>
@@ -2220,65 +2291,69 @@
   <div class="modal-overlay" id="modalOverlay" style="display: none;" onclick="closeModal(event)">
     <!-- 注意：.modal 上不可 stopPropagation —— closeModal 已有 target===currentTarget 判定，内部点击不会误关；
          若阻断冒泡，弹窗内 markdown 链接将无法被 document 级点击委托拦截（win: 无反应、file:// 被导航走） -->
-    <div class="modal">
-      <div class="modal-header">
+    <div class="modal editor-layout">
+      <!-- 主区：编辑框 + 渲染框（占主要画面） -->
+      <div class="editor-main">
+        <div class="md-toolbar" id="mdToolbar">
+          <button class="md-tool-btn" id="undoBtn" onclick="editorUndo()" onmousedown="event.preventDefault()" title="撤销 (Cmd/Ctrl+Z)" disabled>↩</button>
+          <button class="md-tool-btn" id="redoBtn" onclick="editorRedo()" onmousedown="event.preventDefault()" title="重做 (Cmd/Ctrl+Shift+Z)" disabled>↪</button>
+          <span class="md-tool-sep"></span>
+          <button class="md-tool-btn" onclick="insertMd('**', '**')" title="粗体"><b>B</b></button>
+          <button class="md-tool-btn" onclick="insertMd('*', '*')" title="斜体"><i>I</i></button>
+          <button class="md-tool-btn" onclick="insertMd('<u>', '</u>')" title="下划线"><u>U</u></button>
+          <button class="md-tool-btn" onclick="insertMd('~~', '~~')" title="删除线"><s>S</s></button>
+          <span class="md-tool-sep"></span>
+          <button class="md-tool-btn" onclick="insertMd('# ', '')" title="标题1">H1</button>
+          <button class="md-tool-btn" onclick="insertMd('## ', '')" title="标题2">H2</button>
+          <button class="md-tool-btn" onclick="insertMd('### ', '')" title="标题3">H3</button>
+          <button class="md-tool-btn" onclick="insertMd('#### ', '')" title="标题4">H4</button>
+          <span class="md-tool-sep"></span>
+          <button class="md-tool-btn" onclick="insertMd('- ', '')" title="无序列表">•</button>
+          <button class="md-tool-btn" onclick="insertMd('1. ', '')" title="有序列表">1.</button>
+          <button class="md-tool-btn" onclick="insertMd('- [ ] ', '')" title="任务列表">☐</button>
+          <button class="md-tool-btn" onclick="insertMd('> ', '')" title="引用">❝</button>
+          <span class="md-tool-sep"></span>
+          <button class="md-tool-btn" onclick="insertMd('`', '`')" title="行内代码">&lt;/&gt;</button>
+          <button class="md-tool-btn" onclick="insertMd('```\n', '\n```')" title="代码块">{ }</button>
+          <button class="md-tool-btn" onclick="insertMd('[', '](url)')" title="链接">🔗</button>
+          <button class="md-tool-btn" onclick="insertMd('![', '](url)')" title="图片">🖼️</button>
+          <button class="md-tool-btn" onclick="insertMd('---\n', '')" title="分隔线">—</button>
+          <span class="md-tool-sep"></span>
+          <button class="md-tool-btn" onclick="insertMd('| 列1 | 列2 | 列3 |\n| --- | --- | --- |\n| 数据 | 数据 | 数据 |', '')" title="表格"></button>
+          <button class="md-tool-btn" onclick="insertMd('^', '^')" title="上标">X²</button>
+          <button class="md-tool-btn" onclick="insertMd('~', '~')" title="下标">X₂</button>
+          <span style="flex:1"></span>
+          <input type="text" id="editSearchInput" placeholder="搜索内容..." style="width:120px;padding:4px 8px;border:1px solid #334155;border-radius:4px;background:#1e293b;color:#e2e8f0;font-size:12px;outline:none;margin-right:4px;" oninput="doSearch()" onkeydown="if(event.key==='Enter'){event.preventDefault();doSearchEnter();}">
+          <span id="searchCount" style="font-size:11px;color:#94a3b8;margin-right:4px;min-width:50px;display:inline-block;"></span>
+          <button id="searchPrevBtn" onmouseover="this.style.background='#334155';this.style.color='#e2e8f0'" onmouseout="this.style.background='#1e293b';this.style.color='#94a3b8'" onclick="findPrev()" title="上一笔" style="display:none;padding:2px 6px;border:1px solid #334155;border-radius:4px;background:#1e293b;color:#94a3b8;font-size:11px;cursor:pointer;margin-right:2px;">◀</button>
+          <button id="searchNextBtn" onmouseover="this.style.background='#334155';this.style.color='#e2e8f0'" onmouseout="this.style.background='#1e293b';this.style.color='#94a3b8'" onclick="findNext()" title="下一笔" style="display:none;padding:2px 6px;border:1px solid #334155;border-radius:4px;background:#1e293b;color:#94a3b8;font-size:11px;cursor:pointer;margin-right:2px;">▶</button>
+          <button id="genMdBtn" onclick="generateMdFromHtml()" title="将当前 HTML 转为 Markdown 文本" style="display:none;padding:2px 8px;border:1px solid #334155;border-radius:4px;background:#1e293b;color:#fbbf24;font-size:11px;cursor:pointer;margin-right:2px;">生成MD</button>
+          <button id="genHtmlBtn" onclick="generateHtmlFromMd()" title="将当前 Markdown 转为 HTML 文本" style="display:none;padding:2px 8px;border:1px solid #334155;border-radius:4px;background:#1e293b;color:#34d399;font-size:11px;cursor:pointer;margin-right:8px;">生成HTML</button>
+          <span class="md-toggle-btn" id="mdToggleBtn" onclick="toggleMdPreview()">编辑文本</span>
+          <button class="md-tool-btn" onclick="closeModal()" title="关闭" style="margin-left:6px;color:#94a3b8;">✕</button>
+        </div>
+        <textarea class="form-textarea" id="taskText" placeholder="输入任务内容（支持 Markdown）..." style="border-top:none;border-radius:0 0 8px 8px;"></textarea>
+        <textarea class="form-textarea" id="htmlText" placeholder="HTML 源码编辑..." style="display:none;border-top:none;border-radius:0 0 8px 8px;font-family:'Monaco','Consolas',monospace;font-size:13px;white-space:pre;overflow-x:auto;"></textarea>
+        <div class="md-preview" id="mdPreview"></div>
+      </div>
+
+      <!-- 侧边手柄：点击收起/展开操作面板 -->
+      <button type="button" class="editor-sidebar-handle" id="editorSidebarHandle" onclick="toggleEditorSidebar()" title="收起/展开 操作面板">⚙ 操作</button>
+
+      <!-- 侧边浮动区：其余操作（顶按钮 / 改名 / 标签 / 背景色 / 附件） -->
+      <div class="editor-sidebar" id="editorSidebar">
         <h2 class="modal-title" id="modalTitle">添加任务</h2>
         <div class="modal-header-actions">
           <button class="btn btn-text btn-secondary" onclick="emailTodoFromModal()" style="background:transparent;color:#8b5cf6;border:1px solid #8b5cf6;" title="将当前任务内容发送邮件">📧 发邮件</button>
           <button class="btn btn-text btn-secondary" onclick="closeModal()">取消</button>
           <button class="btn btn-text btn-primary" onclick="saveTask()">保存</button>
-          <button class="modal-close" onclick="closeModal()">✕</button>
         </div>
-      </div>
-      <div class="modal-body">
-        <!-- 📄 JSON 文件名显示 + 重命名（仅编辑模式；新增任务时通过 JS 隐藏） -->
+
         <div class="json-file-row" id="jsonFileRow" style="display: none;">
-          <span class="json-file-label">📄 JSON</span>
-          <span class="json-file-name" id="jsonFileName" title="data 目录下的 JSON 文件名">todo-0.json</span>
-          <button class="json-file-rename-btn" id="jsonFileRenameBtn" onclick="startRenameJsonFile()" title="重命名 JSON 文件（ID）">✏️ 重命名</button>
-        </div>
-        <div class="form-group">
-          <label class="form-label">任务内容</label>
-          <div class="md-toolbar" id="mdToolbar">
-            <button class="md-tool-btn" id="undoBtn" onclick="editorUndo()" onmousedown="event.preventDefault()" title="撤销 (Cmd/Ctrl+Z)" disabled>↩</button>
-            <button class="md-tool-btn" id="redoBtn" onclick="editorRedo()" onmousedown="event.preventDefault()" title="重做 (Cmd/Ctrl+Shift+Z)" disabled>↪</button>
-            <span class="md-tool-sep"></span>
-            <button class="md-tool-btn" onclick="insertMd('**', '**')" title="粗体"><b>B</b></button>
-            <button class="md-tool-btn" onclick="insertMd('*', '*')" title="斜体"><i>I</i></button>
-            <button class="md-tool-btn" onclick="insertMd('<u>', '</u>')" title="下划线"><u>U</u></button>
-            <button class="md-tool-btn" onclick="insertMd('~~', '~~')" title="删除线"><s>S</s></button>
-            <span class="md-tool-sep"></span>
-            <button class="md-tool-btn" onclick="insertMd('# ', '')" title="标题1">H1</button>
-            <button class="md-tool-btn" onclick="insertMd('## ', '')" title="标题2">H2</button>
-            <button class="md-tool-btn" onclick="insertMd('### ', '')" title="标题3">H3</button>
-            <button class="md-tool-btn" onclick="insertMd('#### ', '')" title="标题4">H4</button>
-            <span class="md-tool-sep"></span>
-            <button class="md-tool-btn" onclick="insertMd('- ', '')" title="无序列表">•</button>
-            <button class="md-tool-btn" onclick="insertMd('1. ', '')" title="有序列表">1.</button>
-            <button class="md-tool-btn" onclick="insertMd('- [ ] ', '')" title="任务列表">☐</button>
-            <button class="md-tool-btn" onclick="insertMd('> ', '')" title="引用">❝</button>
-            <span class="md-tool-sep"></span>
-            <button class="md-tool-btn" onclick="insertMd('`', '`')" title="行内代码">&lt;/&gt;</button>
-            <button class="md-tool-btn" onclick="insertMd('```\n', '\n```')" title="代码块">{ }</button>
-            <button class="md-tool-btn" onclick="insertMd('[', '](url)')" title="链接">🔗</button>
-            <button class="md-tool-btn" onclick="insertMd('![', '](url)')" title="图片">🖼️</button>
-            <button class="md-tool-btn" onclick="insertMd('---\n', '')" title="分隔线">—</button>
-            <span class="md-tool-sep"></span>
-            <button class="md-tool-btn" onclick="insertMd('| 列1 | 列2 | 列3 |\n| --- | --- | --- |\n| 数据 | 数据 | 数据 |', '')" title="表格"></button>
-            <button class="md-tool-btn" onclick="insertMd('^', '^')" title="上标">X²</button>
-            <button class="md-tool-btn" onclick="insertMd('~', '~')" title="下标">X₂</button>
-            <span style="flex:1"></span>
-            <input type="text" id="editSearchInput" placeholder="搜索内容..." style="width:120px;padding:4px 8px;border:1px solid #334155;border-radius:4px;background:#1e293b;color:#e2e8f0;font-size:12px;outline:none;margin-right:4px;" oninput="doSearch()" onkeydown="if(event.key==='Enter'){event.preventDefault();doSearchEnter();}">
-            <span id="searchCount" style="font-size:11px;color:#94a3b8;margin-right:4px;min-width:50px;display:inline-block;"></span>
-            <button id="searchPrevBtn" onmouseover="this.style.background='#334155';this.style.color='#e2e8f0'" onmouseout="this.style.background='#1e293b';this.style.color='#94a3b8'" onclick="findPrev()" title="上一笔" style="display:none;padding:2px 6px;border:1px solid #334155;border-radius:4px;background:#1e293b;color:#94a3b8;font-size:11px;cursor:pointer;margin-right:2px;">◀</button>
-            <button id="searchNextBtn" onmouseover="this.style.background='#334155';this.style.color='#e2e8f0'" onmouseout="this.style.background='#1e293b';this.style.color='#94a3b8'" onclick="findNext()" title="下一笔" style="display:none;padding:2px 6px;border:1px solid #334155;border-radius:4px;background:#1e293b;color:#94a3b8;font-size:11px;cursor:pointer;margin-right:2px;">▶</button>
-            <button id="genMdBtn" onclick="generateMdFromHtml()" title="将当前 HTML 转为 Markdown 文本" style="display:none;padding:2px 8px;border:1px solid #334155;border-radius:4px;background:#1e293b;color:#fbbf24;font-size:11px;cursor:pointer;margin-right:2px;">生成MD</button>
-            <button id="genHtmlBtn" onclick="generateHtmlFromMd()" title="将当前 Markdown 转为 HTML 文本" style="display:none;padding:2px 8px;border:1px solid #334155;border-radius:4px;background:#1e293b;color:#34d399;font-size:11px;cursor:pointer;margin-right:8px;">生成HTML</button>
-            <span class="md-toggle-btn" id="mdToggleBtn" onclick="toggleMdPreview()">编辑文本</span>
+          <div class="json-file-row-top">
+            <span class="json-file-name" id="jsonFileName" title="data 目录下的 JSON 文件名">todo-0.json</span>
           </div>
-          <textarea class="form-textarea" id="taskText" placeholder="输入任务内容（支持 Markdown）..." style="border-top:none;border-radius:0 0 8px 8px;"></textarea>
-          <textarea class="form-textarea" id="htmlText" placeholder="HTML 源码编辑..." style="display:none;border-top:none;border-radius:0 0 8px 8px;font-family:'Monaco','Consolas',monospace;font-size:13px;white-space:pre;overflow-x:auto;"></textarea>
-          <div class="md-preview" id="mdPreview"></div>
+          <button class="json-file-rename-btn" id="jsonFileRenameBtn" onclick="startRenameJsonFile()" title="重命名 JSON 文件（ID）">✏️ 重命名(JSON)</button>
         </div>
 
         <div class="form-group">
@@ -2739,6 +2814,15 @@
         resetOne(html);
         resetOne(preview);
       });
+    }
+
+    // 收起/展开编辑 modal 右侧「操作面板」浮动区（主区编辑框+渲染框保持常显）
+    function toggleEditorSidebar() {
+      const modal = document.querySelector('.modal.editor-layout');
+      if (!modal) return;
+      const collapsed = modal.classList.toggle('sidebar-collapsed');
+      const handle = document.getElementById('editorSidebarHandle');
+      if (handle) handle.title = collapsed ? '展开 操作面板' : '收起 操作面板';
     }
 
     function toggleMdPreview() {
@@ -4656,20 +4740,22 @@
         if (e.key === 'Enter') { e.preventDefault(); commitRenameJsonFile(); }
         else if (e.key === 'Escape') { e.preventDefault(); cancelRenameJsonFile(); }
       });
-      // 替换 nameEl 为 input，btn 文案改「确定」
+      // 第一行：替换 nameEl 为 input（input 插在原 nameEl 位置，nameEl 隐藏）
       nameEl.style.display = 'none';
       nameEl.parentNode.insertBefore(input, nameEl);
-      btn.textContent = '✓ 确定';
+      // 第二行：「重命名(JSON)」按钮改文案为「✓ 确定(JSON)」，仍占整行
+      btn.textContent = '✓ 确定(JSON)';
       btn.title = '确认重命名（Enter）';
       btn.onclick = commitRenameJsonFile;
-      // 同时插入一个取消按钮（紧挨 btn 后面）
+      // 第一行内：在 input 之后插入「✕ 取消」按钮（紧贴 input 右侧）
+      // 用额外 class json-file-rename-cancel 避免继承 btn 的 width:100% 撑满整行
       const cancelBtn = document.createElement('button');
-      cancelBtn.className = 'json-file-rename-btn';
+      cancelBtn.className = 'json-file-rename-btn json-file-rename-cancel';
       cancelBtn.id = 'jsonFileRenameCancelBtn';
       cancelBtn.textContent = '✕';
       cancelBtn.title = '取消（Esc）';
       cancelBtn.onclick = cancelRenameJsonFile;
-      btn.parentNode.insertBefore(cancelBtn, btn.nextSibling);
+      input.parentNode.insertBefore(cancelBtn, input.nextSibling);
       input.focus();
       input.select();
     }
@@ -4775,7 +4861,7 @@
       if (input) input.remove();
       if (cancelBtn) cancelBtn.remove();
       if (btn) {
-        btn.textContent = '✏️ 重命名';
+        btn.textContent = '✏️ 重命名(JSON)';
         btn.title = '重命名 JSON 文件（ID）';
         btn.onclick = startRenameJsonFile;
       }
@@ -5088,7 +5174,7 @@
     //     2. 切换排序标签 → 重排 + 重渲列表
     //     3. 点击列表项 → 关闭面板 + focusResizedCard(id)（滚动 + 金边闪 3 秒）
     //     4. 点击面板外 → 关闭面板
-    let fileListState = { open: false, sortKey: 'name', sortDir: 'asc', items: [], loaded: false };
+    let fileListState = { open: false, sortKey: 'mtime', sortDir: 'desc', items: [], loaded: false };
 
     function toggleFileList() {
       const trigger = document.getElementById('fileListTrigger');
@@ -5099,11 +5185,8 @@
         fileListState.open = true;
         trigger.classList.add('open');
         panel.classList.add('open');
-        if (!fileListState.loaded) {
-          loadFileListItems();
-        } else {
-          renderFileList();
-        }
+        // 每次按开都重新拉取最新资料（用户改名/新建/删除/外部修改文件后能立刻反映）
+        loadFileListItems();
       }
     }
 
