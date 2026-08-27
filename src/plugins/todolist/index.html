@@ -2256,6 +2256,27 @@
       font-size: .65em;
       vertical-align: sub;
     }
+
+    /* 🆕 {{calc}} 表格公式：计算结果单元格高亮，hover 显示原公式 */
+    .todo-text table.calc-table td.calc-cell,
+    .md-preview table.calc-table td.calc-cell,
+    .todo-text table.calc-table th.calc-cell,
+    .md-preview table.calc-table th.calc-cell {
+      background: rgba(102,126,234,0.10);
+      font-variant-numeric: tabular-nums;
+    }
+    body.dark .todo-text table.calc-table td.calc-cell,
+    body.dark .md-preview table.calc-table td.calc-cell,
+    body.dark .todo-text table.calc-table th.calc-cell,
+    body.dark .md-preview table.calc-table th.calc-cell {
+      background: rgba(129,140,248,0.16);
+    }
+    table.calc-table td.calc-cell[title],
+    table.calc-table th.calc-cell[title] {
+      cursor: help;
+    }
+    /* 隐藏已被处理的 {{calc}} 标记段落 */
+    p[data-calc-marker="true"] { display: none; }
   </style>
 </head>
 <body>
@@ -4011,6 +4032,8 @@
       html = balanceHtmlTags(html);
       // 归一化 style 里的非 ASCII 连字符（font‑weight 等），两条渲染路径共用
       html = normalizeStyleHyphens(html);
+      // 🆕 {{calc}} 表格公式渲染：双主题都需生效，放在主题分支之前
+      html = processCalcTables(html);
       var isDark = document.body.classList.contains('dark');
 
       // 白天模式：直接返回，CSS 会处理
@@ -4229,7 +4252,8 @@
       // 但启发式终归可能被恰好提及该结构的原始文档击败，因此文件读取路径（openDocWindow）
       // 传 { force: true } 强制解析 —— 文件内容天然就是原始 markdown，无需此短路。
       if (!(opts && opts.force) && /<span[^>]*class="(?:katex|katex-display)"/.test(text)) {
-        return normalizeStyleHyphens(balanceHtmlTags(text));
+        var _km = processCalcTables(normalizeStyleHyphens(balanceHtmlTags(text)));
+        return (typeof finalizeMarkdown === 'function') ? finalizeMarkdown(_km) : _km;
       }
 
       // 提取 LaTeX 公式，避免 marked 破坏
@@ -4324,8 +4348,11 @@
       html = normalizeStyleHyphens(html);
       // 🆕 卡片间跳转：把 [文字](card:ID) 转成可点击的 .card-jump-link（详见 transformCardLinks）
       html = transformCardLinks(html);
+      // 🆕 {{calc}} 表格公式渲染
+      html = processCalcTables(html);
 
-      return html;
+      // finalizeMarkdown 若未在运行时注入则安全降级为原样返回（避免整段渲染崩溃）
+      return (typeof finalizeMarkdown === 'function') ? finalizeMarkdown(html) : html;
     }
 
     // 归一化 style 属性里的「非 ASCII 连字符/破折号」→ ASCII '-'
@@ -4430,6 +4457,332 @@
         openStack.pop();
       }
       return out;
+    }
+
+    // 🆕 {{calc}} 表格公式渲染（对齐 Obsidian Table Calc 插件语义）：
+    //   - 仅处理紧跟在 <p>{{calc}}</p> 之后的 <table>；其它表格不受影响；
+    //   - 表头行 = 第 1 行，列 A–Z（最多 26 列）；
+    //   - 单元格以 = 开头视为公式：支持单元格引用(A1)、范围(A1:A5 / A:A / 1:3)、
+    //     函数 SUM/AVG/AVERAGE/MIN/MAX/MEDIAN/PRODUCT/STDEV/VAR/COUNT/ABS/SQRT/ROUND/POW、
+    //     四则运算与括号、一元负号、^ 幂；
+    //   - 依赖递归求值，循环引用在第 50 层截断返回 0；
+    //   - 结果写入单元格文本，原公式存入 title（hover 可见）；源 markdown 不被修改。
+    function processCalcTables(html) {
+      if (!html || typeof document === 'undefined') return html;
+      var holder = document.createElement('div');
+      holder.innerHTML = html;
+      var paras = holder.querySelectorAll('p');
+      for (var i = 0; i < paras.length; i++) {
+        var p = paras[i];
+        if (p.getAttribute('data-calc-marker')) continue;
+        if (p.textContent.trim() !== '{{calc}}') continue;
+        var table = p.nextElementSibling;
+        if (!table || table.tagName.toLowerCase() !== 'table') continue;
+        try {
+          evaluateCalcTable(table);
+          p.style.display = 'none';
+          p.setAttribute('data-calc-marker', 'true');
+          table.classList.add('calc-table');
+        } catch (e) {
+          console.error('[ToDoList] calc table error:', e);
+        }
+      }
+      return holder.innerHTML;
+    }
+
+    function evaluateCalcTable(table) {
+      var trs = table.querySelectorAll('tr');
+      var rowArr = [];
+      var maxCols = 0;
+      for (var ri = 0; ri < trs.length; ri++) {
+        var cells = trs[ri].querySelectorAll('th, td');
+        var row = [];
+        for (var ci = 0; ci < cells.length; ci++) row.push(cells[ci]);
+        rowArr.push(row);
+        if (cells.length > maxCols) maxCols = cells.length;
+      }
+      if (rowArr.length === 0) return;
+      var totalRows = rowArr.length;
+      var totalCols = maxCols;
+
+      function indexToCol(idx) {
+        var s = ''; var n = idx + 1;
+        while (n > 0) { var m = (n - 1) % 26; s = String.fromCharCode(65 + m) + s; n = Math.floor((n - 1) / 26); }
+        return s;
+      }
+      function colToIndex(letters) {
+        var idx = 0;
+        for (var k = 0; k < letters.length; k++) idx = idx * 26 + (letters.charCodeAt(k) - 64);
+        return idx - 1;
+      }
+      function parseRef(ref) {
+        var m = String(ref).toUpperCase().match(/^([A-Z]+)(\d*)$/);
+        if (!m) return null;
+        return { col: m[1] ? colToIndex(m[1]) : null, row: m[2] ? parseInt(m[2], 10) : null };
+      }
+      function getCellEl(col, row) {
+        if (row < 1 || row > rowArr.length) return null;
+        var r = rowArr[row - 1];
+        if (col < 0 || col >= r.length) return null;
+        return r[col];
+      }
+      function numAt(col, row) {
+        var el = getCellEl(col, row);
+        if (!el) return NaN;
+        return parseNum(el.textContent);
+      }
+      function parseNum(raw) {
+        raw = (raw == null ? '' : String(raw)).trim();
+        if (/^-?\d+(\.\d+)?$/.test(raw)) return parseFloat(raw);
+        return NaN;
+      }
+      function formatNum(v) {
+        if (!isFinite(v)) return '#ERR';
+        if (Math.abs(v) >= 1e15) return v.toExponential(6);
+        if (Number.isInteger(v)) return String(v);
+        return (Math.round(v * 1e6) / 1e6).toString();
+      }
+
+      var memo = {};
+      var visiting = {};
+      var depth = 0;
+      function evalCell(ref) {
+        ref = String(ref).toUpperCase();
+        if (memo.hasOwnProperty(ref)) return memo[ref];
+        if (visiting[ref]) return 0; // 循环引用 → 0
+        visiting[ref] = true;
+        depth++;
+        var val;
+        if (depth > 50) { val = 0; }
+        else {
+          var pr = parseRef(ref);
+          var el = pr ? getCellEl(pr.col, pr.row) : null;
+          if (!el) val = NaN;
+          else {
+            var raw = el.textContent.trim();
+            if (raw.charAt(0) === '=') {
+              try { val = evalFormula(raw.slice(1)); }
+              catch (e) { val = NaN; }
+            } else {
+              val = parseNum(raw);
+            }
+          }
+        }
+        depth--;
+        visiting[ref] = false;
+        memo[ref] = val;
+        return val;
+      }
+
+      // ---- 公式解析器（递归下降，安全无 eval）----
+      function tokenize(s) {
+        var tokens = []; var i = 0;
+        while (i < s.length) {
+          var c = s[i];
+          if (/\s/.test(c)) { i++; continue; }
+          if ('()+*/^:,'.indexOf(c) !== -1) { tokens.push({ t: c }); i++; continue; }
+          if (/[0-9]/.test(c) || (c === '.' && /[0-9]/.test(s[i + 1] || ''))) {
+            var num = '';
+            while (i < s.length && /[0-9.]/.test(s[i])) { num += s[i]; i++; }
+            tokens.push({ t: 'num', v: parseFloat(num) });
+            continue;
+          }
+          if (/[A-Za-z]/.test(c)) {
+            var word = '';
+            while (i < s.length && /[A-Za-z]/.test(s[i])) { word += s[i]; i++; }
+            var k = i;
+            while (k < s.length && /[0-9]/.test(s[k])) k++;
+            if (k > i) { word += s.slice(i, k); i = k; tokens.push({ t: 'ref', v: word.toUpperCase() }); continue; }
+            var j = i; while (j < s.length && /\s/.test(s[j])) j++;
+            if (s[j] === '(') { tokens.push({ t: 'func', v: word.toUpperCase() }); }
+            else { tokens.push({ t: 'ref', v: word.toUpperCase() }); }
+            continue;
+          }
+          i++; // 跳过未知字符
+        }
+        return tokens;
+      }
+      function toNum(x) {
+        if (typeof x === 'number') return x;
+        if (Array.isArray(x)) throw new Error('range not allowed in arithmetic');
+        var n = Number(x);
+        return isNaN(n) ? 0 : n;
+      }
+      function flatten(nums, excludeNonNumeric) {
+        var out = [];
+        for (var a = 0; a < nums.length; a++) {
+          var arr = nums[a];
+          for (var b = 0; b < arr.length; b++) {
+            var v = arr[b];
+            var n = (typeof v === 'number') ? v : Number(v);
+            if (isNaN(n)) { if (!excludeNonNumeric) out.push(0); }
+            else out.push(n);
+          }
+        }
+        return out;
+      }
+      function getRange(startRef, endRef) {
+        var s = parseRef(startRef), e = parseRef(endRef);
+        if (!s || !e) throw new Error('bad range');
+        var vals = [];
+        if (s.col != null && e.col != null) {
+          var col = s.col, r1 = s.row != null ? s.row : 1, r2 = e.row != null ? e.row : totalRows;
+          for (var r = r1; r <= r2; r++) vals.push(numAt(col, r));
+        } else if (s.col != null) {
+          for (var r2 = 1; r2 <= totalRows; r2++) vals.push(numAt(s.col, r2));
+        } else if (s.row != null) {
+          var rr1 = s.row, rr2 = e.row != null ? e.row : totalRows;
+          for (var r3 = rr1; r3 <= rr2; r3++) for (var c = 0; c < totalCols; c++) vals.push(numAt(c, r3));
+        }
+        return vals;
+      }
+      function callFunc(name, args) {
+        var nums = [];
+        for (var a = 0; a < args.length; a++) {
+          if (args[a].range) nums.push(args[a].range);
+          else nums.push([toNum(args[a].value)]);
+        }
+        switch (name) {
+          case 'SUM': return sumFlat(flatten(nums, false));
+          case 'AVG': case 'AVERAGE': return avgFlat(flatten(nums, false));
+          case 'MIN': return minFlat(flatten(nums, true));
+          case 'MAX': return maxFlat(flatten(nums, true));
+          case 'MEDIAN': return medianFlat(flatten(nums, true));
+          case 'PRODUCT': return prodFlat(flatten(nums, true));
+          case 'STDEV': return stdevFlat(flatten(nums, true));
+          case 'VAR': return varFlat(flatten(nums, true));
+          case 'COUNT': {
+            var cnt = 0;
+            for (var x = 0; x < nums.length; x++) for (var y = 0; y < nums[x].length; y++) { if (!isNaN(Number(nums[x][y]))) cnt++; }
+            return cnt;
+          }
+          case 'ABS': return Math.abs(toNum(args[0].value));
+          case 'SQRT': return Math.sqrt(toNum(args[0].value));
+          case 'ROUND': return Math.round(toNum(args[0].value));
+          case 'POW': return Math.pow(toNum(args[0].value), toNum(args[1].value));
+          default: throw new Error('unknown function ' + name);
+        }
+      }
+      function sumFlat(a){ var s=0; for(var i=0;i<a.length;i++) s+=a[i]; return s; }
+      function avgFlat(a){ return a.length? sumFlat(a)/a.length : 0; }
+      function minFlat(a){ var m=Infinity; for(var i=0;i<a.length;i++) if(a[i]<m) m=a[i]; return a.length?m:0; }
+      function maxFlat(a){ var m=-Infinity; for(var i=0;i<a.length;i++) if(a[i]>m) m=a[i]; return a.length?m:0; }
+      function prodFlat(a){ var p=1; for(var i=0;i<a.length;i++) p*=a[i]; return p; }
+      function medianFlat(a){ if(!a.length) return 0; var b=a.slice().sort(function(x,y){return x-y;}); var n=b.length; return n%2? b[(n-1)/2] : (b[n/2-1]+b[n/2])/2; }
+      function mean(a){ return a.length? sumFlat(a)/a.length : 0; }
+      function varFlat(a){ if(a.length<2) return 0; var m=mean(a); var s=0; for(var i=0;i<a.length;i++) s+=(a[i]-m)*(a[i]-m); return s/(a.length-1); }
+      function stdevFlat(a){ return Math.sqrt(varFlat(a)); }
+
+      function parseAddSub(pos) {
+        var left = parseMulDiv(pos);
+        while (true) {
+          var tk = pos.tokens[pos.i];
+          if (tk && (tk.t === '+' || tk.t === '-')) {
+            pos.i++;
+            var right = parseMulDiv(pos);
+            left = (tk.t === '+') ? (toNum(left) + toNum(right)) : (toNum(left) - toNum(right));
+          } else break;
+        }
+        return left;
+      }
+      function parseMulDiv(pos) {
+        var left = parsePow(pos);
+        while (true) {
+          var tk = pos.tokens[pos.i];
+          if (tk && (tk.t === '*' || tk.t === '/')) {
+            pos.i++;
+            var right = parsePow(pos);
+            left = (tk.t === '*') ? (toNum(left) * toNum(right)) : (toNum(left) / toNum(right));
+          } else break;
+        }
+        return left;
+      }
+      function parsePow(pos) {
+        var left = parseUnary(pos);
+        var tk = pos.tokens[pos.i];
+        if (tk && tk.t === '^') { pos.i++; var right = parsePow(pos); left = Math.pow(toNum(left), toNum(right)); }
+        return left;
+      }
+      function parseUnary(pos) {
+        var tk = pos.tokens[pos.i];
+        if (tk && tk.t === '-') { pos.i++; return -toNum(parseUnary(pos)); }
+        if (tk && tk.t === '+') { pos.i++; return toNum(parseUnary(pos)); }
+        return parsePrimary(pos);
+      }
+      function parsePrimary(pos) {
+        var tk = pos.tokens[pos.i];
+        if (!tk) throw new Error('unexpected end');
+        if (tk.t === 'num') { pos.i++; return tk.v; }
+        if (tk.t === '(') {
+          pos.i++; var v = parseAddSub(pos);
+          if (pos.tokens[pos.i] && pos.tokens[pos.i].t === ')') pos.i++;
+          else throw new Error('missing )');
+          return v;
+        }
+        if (tk.t === 'func') {
+          pos.i++;
+          if (!pos.tokens[pos.i] || pos.tokens[pos.i].t !== '(') throw new Error('func missing (');
+          pos.i++;
+          var args = [];
+          if (pos.tokens[pos.i] && pos.tokens[pos.i].t !== ')') {
+            args.push(parseArg(pos));
+            while (pos.tokens[pos.i] && pos.tokens[pos.i].t === ',') { pos.i++; args.push(parseArg(pos)); }
+          }
+          if (!pos.tokens[pos.i] || pos.tokens[pos.i].t !== ')') throw new Error('func missing )');
+          pos.i++;
+          return callFunc(tk.v, args);
+        }
+        if (tk.t === 'ref') {
+          if (pos.tokens[pos.i + 1] && pos.tokens[pos.i + 1].t === ':') {
+            var startRef = tk.v; pos.i += 2;
+            var endTk = pos.tokens[pos.i];
+            if (!endTk || endTk.t !== 'ref') throw new Error('bad range');
+            pos.i++;
+            return getRange(startRef, endTk.v);
+          }
+          pos.i++;
+          return evalCell(tk.v);
+        }
+        throw new Error('unexpected token ' + JSON.stringify(tk));
+      }
+      function parseArg(pos) {
+        var tk = pos.tokens[pos.i];
+        if (tk && tk.t === 'ref' && pos.tokens[pos.i + 1] && pos.tokens[pos.i + 1].t === ':') {
+          var startRef = tk.v; pos.i += 2;
+          var endTk = pos.tokens[pos.i];
+          if (!endTk || endTk.t !== 'ref') throw new Error('bad range in arg');
+          pos.i++;
+          return { range: getRange(startRef, endTk.v) };
+        }
+        return { value: parseAddSub(pos) };
+      }
+      function evalFormula(expr) {
+        var tokens = tokenize(expr);
+        var pos = { i: 0, tokens: tokens };
+        if (tokens.length === 0) throw new Error('empty formula');
+        var val = parseAddSub(pos);
+        if (pos.i < tokens.length) throw new Error('trailing tokens');
+        if (Array.isArray(val)) throw new Error('range not allowed as result');
+        return val;
+      }
+
+      // 计算并写入所有公式单元格
+      for (var r = 1; r <= rowArr.length; r++) {
+        for (var c = 0; c < rowArr[r - 1].length; c++) {
+          var el = rowArr[r - 1][c];
+          var raw = el.textContent.trim();
+          if (raw.charAt(0) === '=') {
+            var ref = indexToCol(c) + r;
+            var v;
+            try { v = evalCell(ref); } catch (e) { v = NaN; }
+            var display = isNaN(v) ? '#ERR' : formatNum(v);
+            el.textContent = display;
+            el.setAttribute('title', raw + ' = ' + display);
+            el.setAttribute('data-formula', raw);
+            el.classList.add('calc-cell');
+          }
+        }
+      }
     }
 
     function toggleComplete(id) {
