@@ -4580,7 +4580,7 @@
         while (i < s.length) {
           var c = s[i];
           if (/\s/.test(c)) { i++; continue; }
-          if ('()+*/^:,'.indexOf(c) !== -1) { tokens.push({ t: c }); i++; continue; }
+          if ('()+*/^:,-'.indexOf(c) !== -1) { tokens.push({ t: c }); i++; continue; }
           if (/[0-9]/.test(c) || (c === '.' && /[0-9]/.test(s[i + 1] || ''))) {
             var num = '';
             while (i < s.length && /[0-9.]/.test(s[i])) { num += s[i]; i++; }
