@@ -2275,8 +2275,28 @@
     table.calc-table th.calc-cell[title] {
       cursor: help;
     }
-    /* 隐藏已被处理的 {{calc}} 标记段落 */
-    p[data-calc-marker="true"] { display: none; }
+    /* 行内公式 {{=expr}} 高亮（与 calc-cell 一致的明暗双主题） */
+    .todo-text .inline-calc,
+    .md-preview .inline-calc {
+      background: rgba(102,126,234,0.10);
+      border-radius: 3px;
+      padding: 0 2px;
+      font-variant-numeric: tabular-nums;
+    }
+    body.dark .todo-text .inline-calc,
+    body.dark .md-preview .inline-calc {
+      background: rgba(129,140,248,0.16);
+    }
+    .inline-calc[title] { cursor: help; }
+    /* 列宽标记 {{cols:}} 注入的表格：固定布局让宽度精确生效 */
+    .todo-text table.fixed-cols,
+    .md-preview table.fixed-cols {
+      table-layout: fixed;
+      width: 100%;
+    }
+    /* 隐藏已被处理的 {{calc}} / {{cols}} 标记段落 */
+    p[data-calc-marker="true"],
+    p[data-cols-marker="true"] { display: none; }
   </style>
 </head>
 <body>
@@ -4034,6 +4054,11 @@
       html = normalizeStyleHyphens(html);
       // 🆕 {{calc}} 表格公式渲染：双主题都需生效，放在主题分支之前
       html = processCalcTables(html);
+      html = processColWidths(html);
+      // 🆕 行内公式 {{=expr}} 渲染（与表格并列，互不干扰）
+      html = processInlineCalc(html);
+      // 🆕 排序标记 {{sort:}}：放在最后，作用于已算完公式的表格
+      html = processSortTables(html);
       var isDark = document.body.classList.contains('dark');
 
       // 白天模式：直接返回，CSS 会处理
@@ -4252,7 +4277,7 @@
       // 但启发式终归可能被恰好提及该结构的原始文档击败，因此文件读取路径（openDocWindow）
       // 传 { force: true } 强制解析 —— 文件内容天然就是原始 markdown，无需此短路。
       if (!(opts && opts.force) && /<span[^>]*class="(?:katex|katex-display)"/.test(text)) {
-        var _km = processCalcTables(normalizeStyleHyphens(balanceHtmlTags(text)));
+        var _km = processSortTables(processInlineCalc(processColWidths(processCalcTables(normalizeStyleHyphens(balanceHtmlTags(text))))));
         return (typeof finalizeMarkdown === 'function') ? finalizeMarkdown(_km) : _km;
       }
 
@@ -4350,6 +4375,11 @@
       html = transformCardLinks(html);
       // 🆕 {{calc}} 表格公式渲染
       html = processCalcTables(html);
+      html = processColWidths(html);
+      // 🆕 行内公式 {{=expr}} 渲染
+      html = processInlineCalc(html);
+      // 🆕 排序标记 {{sort:}}：放在最后，作用于已算完公式的表格
+      html = processSortTables(html);
 
       // finalizeMarkdown 若未在运行时注入则安全降级为原样返回（避免整段渲染崩溃）
       return (typeof finalizeMarkdown === 'function') ? finalizeMarkdown(html) : html;
@@ -4469,28 +4499,296 @@
     //   - 结果写入单元格文本，原公式存入 title（hover 可见）；源 markdown 不被修改。
     function processCalcTables(html) {
       if (!html || typeof document === 'undefined') return html;
+      var vars = collectVars(html); // 文档级命名变量 {{let: 名 值}}（作用于其后所有 {{calc}} 表）
       var holder = document.createElement('div');
       holder.innerHTML = html;
       var paras = holder.querySelectorAll('p');
       for (var i = 0; i < paras.length; i++) {
         var p = paras[i];
-        if (p.getAttribute('data-calc-marker')) continue;
-        if (p.textContent.trim() !== '{{calc}}') continue;
-        var table = p.nextElementSibling;
-        if (!table || table.tagName.toLowerCase() !== 'table') continue;
-        try {
-          evaluateCalcTable(table);
-          p.style.display = 'none';
-          p.setAttribute('data-calc-marker', 'true');
-          table.classList.add('calc-table');
-        } catch (e) {
-          console.error('[ToDoList] calc table error:', e);
+        if (p.getAttribute('data-calc-marker') || p.getAttribute('data-let-marker')) continue;
+        var hasCalc = /\{\{calc\}\}/.test(p.textContent);
+        var hasLet = /\{\{let\s*:/.test(p.textContent);
+        if (!hasCalc && !hasLet) continue;
+        // {{let}} 声明段落一律隐藏（与 {{calc}} 可写在同一段落）
+        if (hasLet) { p.style.display = 'none'; p.setAttribute('data-let-marker', 'true'); }
+        if (hasCalc) {
+          var table = findNextTable(p);
+          if (!table) continue;
+          try {
+            evaluateCalcTable(table, vars);
+            p.style.display = 'none';
+            p.setAttribute('data-calc-marker', 'true');
+            table.classList.add('calc-table');
+          } catch (e) {
+            console.error('[ToDoList] calc table error:', e);
+          }
         }
       }
       return holder.innerHTML;
     }
 
-    function evaluateCalcTable(table) {
+    // 🆕 命名变量 {{let: 名 值}}：文档级单一事实来源，供 {{calc}} 表格公式以 =名 引用。
+    // 两种写法：{{let: 中信金现价 63.8}}（字面数值）或 {{let: 元大金配息 =1.8+0.4}}（=表达式，复用行内引擎）。
+    function collectVars(html) {
+      var vars = {};
+      if (!html) return vars;
+      var re = /\{\{\s*let\s*:\s*([^\s}=]+)\s*(=?)\s*([^}]+?)\s*\}\}/g;
+      var m;
+      while ((m = re.exec(html)) !== null) {
+        var name = m[1];
+        var eq = m[2];
+        var valStr = m[3].trim();
+        var v;
+        try {
+          if (eq === '=') { v = evalMathExpression(valStr).value; }
+          else { v = parseFloat(valStr); }
+        } catch (e) { v = NaN; }
+        if (isNaN(v)) { console.warn('[ToDoList] 忽略无法解析的 {{let}} 变量:', name, '=', valStr); continue; }
+        vars[name] = v;
+        vars[name.toUpperCase()] = v; // Latin 变量名大小写不敏感
+      }
+      return vars;
+    }
+
+    // 🆕 列宽标记 {{cols: 20% 12% ...}}：声明其后紧邻表格的各列宽度（百分比/px/em），
+    // 注入 <colgroup><col style="width:...">，并设 table-layout: fixed 让宽度精确生效。
+    // 与 {{calc}} 正交：可单独用于普通表格，也可与 {{calc}} 共存（二者各自找其后第一个 <table>，
+    // 遇到对方的标记段落会跳过）。
+    function findNextTable(p) {
+      var sib = p.nextElementSibling;
+      while (sib) {
+        var tag = sib.tagName.toLowerCase();
+        if (tag === 'table') return sib;
+        if (tag === 'p') {
+          var t = (sib.textContent || '').trim();
+          if (sib.getAttribute('data-calc-marker') || sib.getAttribute('data-cols-marker') || t.indexOf('{{') === 0) {
+            sib = sib.nextElementSibling; continue;
+          }
+        }
+        break;
+      }
+      return null;
+    }
+
+    function processColWidths(html) {
+      if (!html || typeof document === 'undefined') return html;
+      var holder = document.createElement('div');
+      holder.innerHTML = html;
+      var paras = holder.querySelectorAll('p');
+      for (var i = 0; i < paras.length; i++) {
+        var p = paras[i];
+        if (p.getAttribute('data-cols-marker')) continue;
+        // 支持与 {{calc}} 等标记写在同一段落（marked 在 breaks:true 下会把连续两行并成一个 <p>）
+        var m = (p.textContent || '').match(/\{\{cols:\s*([^}]*)\}\}/);
+        if (!m) continue;
+        // 提取冒号后、到 }} 前的内容
+        var body = m[1].trim();
+        if (!body) continue;
+        var raw = body.split(/[\s,]+/).filter(Boolean);
+        var widths = [];
+        var ok = true;
+        for (var k = 0; k < raw.length; k++) {
+          var w = raw[k].trim();
+          if (/^\d+(\.\d+)?(px|%|em|rem)$/.test(w)) widths.push(w);
+          else if (/^\d+(\.\d+)?$/.test(w)) widths.push(w + '%'); // 纯数字默认按百分比
+          else { ok = false; break; }
+        }
+        if (!ok) { console.warn('[ToDoList] 忽略非法 {{cols}} 宽度声明:', (p.textContent || '').trim()); continue; }
+        var table = findNextTable(p);
+        if (!table) continue;
+        var existing = table.querySelector('colgroup');
+        if (existing && existing.parentNode) existing.parentNode.removeChild(existing);
+        var cg = document.createElement('colgroup');
+        for (var c = 0; c < widths.length; c++) {
+          var col = document.createElement('col');
+          col.style.width = widths[c];
+          cg.appendChild(col);
+        }
+        table.insertBefore(cg, table.firstChild);
+        table.classList.add('fixed-cols');
+        p.style.display = 'none';
+        p.setAttribute('data-cols-marker', 'true');
+      }
+      return holder.innerHTML;
+    }
+
+    // 🆕 行内公式 {{=expr}}：独立纯算术引擎（不依赖表格上下文）
+    // 与 processCalcTables 共用同一套语法（+ - * / ^、括号、一元负号、函数集），
+    // 但行内不读取表格单元格，遇到 A1 类单元格引用会安全降级为 #ERR。
+    function evalMathExpression(src) {
+      var percent = false;
+      var expr = String(src).trim();
+      if (expr.charAt(expr.length - 1) === '%') { percent = true; expr = expr.slice(0, -1); }
+
+      var tokens = [];
+      var i = 0;
+      while (i < expr.length) {
+        var c = expr[i];
+        if (/\s/.test(c)) { i++; continue; }
+        if ('()+*/^:,'.indexOf(c) !== -1) { tokens.push({ t: c }); i++; continue; }
+        if (/[0-9]/.test(c) || (c === '.' && /[0-9]/.test(expr[i + 1] || ''))) {
+          var num = '';
+          while (i < expr.length && /[0-9.]/.test(expr[i])) { num += expr[i]; i++; }
+          if ((num.match(/\./g) || []).length > 1) throw new Error('bad number');
+          tokens.push({ t: 'num', v: parseFloat(num) });
+          continue;
+        }
+        if (/[A-Za-z]/.test(c)) {
+          var word = '';
+          while (i < expr.length && /[A-Za-z]/.test(expr[i])) { word += expr[i]; i++; }
+          var j = i; while (j < expr.length && /\s/.test(expr[j])) j++;
+          if (expr[j] === '(') { tokens.push({ t: 'func', v: word.toUpperCase() }); continue; }
+          var k = i; while (k < expr.length && /[0-9]/.test(expr[k])) k++;
+          if (k > i) throw new Error('cell ref not supported inline: ' + word + expr.slice(i, k));
+          throw new Error('unknown name: ' + word);
+        }
+        throw new Error('unexpected char: ' + c);
+      }
+
+      var pos = 0;
+      function peek() { return tokens[pos]; }
+      function next() { return tokens[pos++]; }
+      function parseExpr() {
+        var v = parseTerm();
+        while (peek() && (peek().t === '+' || peek().t === '-')) {
+          var op = next().t; var r = parseTerm();
+          v = op === '+' ? v + r : v - r;
+        }
+        return v;
+      }
+      function parseTerm() {
+        var v = parseFactor();
+        while (peek() && (peek().t === '*' || peek().t === '/')) {
+          var op = next().t; var r = parseFactor();
+          v = op === '*' ? v * r : v / r;
+        }
+        return v;
+      }
+      function parseFactor() {
+        if (peek() && peek().t === '-') { next(); return -parseFactor(); }
+        if (peek() && peek().t === '+') { next(); return parseFactor(); }
+        return parsePower();
+      }
+      function parsePower() {
+        var v = parseUnary();
+        while (peek() && peek().t === '^') { next(); var r = parseUnary(); v = Math.pow(v, r); }
+        return v;
+      }
+      function parseUnary() {
+        if (peek() && peek().t === '(') {
+          next(); var v = parseExpr();
+          if (!peek() || peek().t !== ')') throw new Error('missing )');
+          next(); return v;
+        }
+        if (peek() && peek().t === 'num') { return next().v; }
+        if (peek() && peek().t === 'func') {
+          var fn = next().v;
+          if (!peek() || peek().t !== '(') throw new Error('func no (');
+          next();
+          var args = [];
+          if (peek() && peek().t !== ')') {
+            args.push(parseExpr());
+            while (peek() && peek().t === ',') { next(); args.push(parseExpr()); }
+          }
+          if (!peek() || peek().t !== ')') throw new Error('func missing )');
+          next();
+          return applyInlineFunc(fn, args);
+        }
+        throw new Error('unexpected token');
+      }
+      var result = parseExpr();
+      if (pos < tokens.length) throw new Error('trailing tokens');
+      return { value: result, percent: percent };
+    }
+
+    function applyInlineFunc(name, args) {
+      switch (name) {
+        case 'SUM': return args.reduce(function (a, b) { return a + b; }, 0);
+        case 'AVG': case 'AVERAGE': return args.reduce(function (a, b) { return a + b; }, 0) / args.length;
+        case 'MIN': return Math.min.apply(null, args);
+        case 'MAX': return Math.max.apply(null, args);
+        case 'PRODUCT': return args.reduce(function (a, b) { return a * b; }, 1);
+        case 'MEDIAN': {
+          var s = args.slice().sort(function (a, b) { return a - b; });
+          var n = s.length;
+          return n % 2 ? s[(n - 1) / 2] : (s[n / 2 - 1] + s[n / 2]) / 2;
+        }
+        case 'ABS': return Math.abs(args[0]);
+        case 'SQRT': return Math.sqrt(args[0]);
+        case 'ROUND': return args.length > 1 ? Math.round(args[0] * Math.pow(10, args[1])) / Math.pow(10, args[1]) : Math.round(args[0]);
+        case 'POW': return Math.pow(args[0], args[1]);
+        default: throw new Error('unknown func ' + name);
+      }
+    }
+
+    function formatInlineNum(v, percent) {
+      if (!isFinite(v)) return '#ERR';
+      if (percent) return formatPercent(v); // 与表格百分比显示保持一致（2 位小数）
+      if (Math.abs(v) >= 1e15) return v.toExponential(6);
+      if (Number.isInteger(v)) return String(v);
+      return (Math.round(v * 1e6) / 1e6).toString();
+    }
+
+    // 🆕 行内公式 {{=expr}} 渲染：遍历文本节点替换 {{=...}}，跳过 <code>/<pre>（代码块不误算）
+    function processInlineCalc(html) {
+      if (!html || typeof document === 'undefined') return html;
+      var holder = document.createElement('div');
+      holder.innerHTML = html;
+      var re = /\{\{=([\s\S]*?)\}\}/g;
+
+      function processTextNode(textNode) {
+        var txt = textNode.nodeValue;
+        re.lastIndex = 0;
+        if (!re.test(txt)) return;
+        re.lastIndex = 0;
+        var frag = document.createDocumentFragment();
+        var last = 0, m, changed = false;
+        while ((m = re.exec(txt)) !== null) {
+          if (m.index > last) frag.appendChild(document.createTextNode(txt.slice(last, m.index)));
+          var raw = m[1];
+          var res;
+          try {
+            var r = evalMathExpression(raw);
+            res = formatInlineNum(r.value, r.percent);
+          } catch (e) { res = '#ERR'; }
+          var span = document.createElement('span');
+          span.className = 'inline-calc';
+          span.textContent = res;
+          span.setAttribute('title', '{{=' + raw + '}} = ' + res);
+          frag.appendChild(span);
+          last = re.lastIndex;
+          changed = true;
+        }
+        if (!changed) return;
+        if (last < txt.length) frag.appendChild(document.createTextNode(txt.slice(last)));
+        textNode.parentNode.replaceChild(frag, textNode);
+      }
+
+      function walk(node) {
+        var children = Array.prototype.slice.call(node.childNodes);
+        for (var n = 0; n < children.length; n++) {
+          var ch = children[n];
+          if (ch.nodeType === 3) { // 文本节点
+            if (ch.nodeValue.indexOf('{{=') !== -1) processTextNode(ch);
+          } else if (ch.nodeType === 1) {
+            var tag = ch.tagName.toLowerCase();
+            if (tag === 'code' || tag === 'pre') continue; // 代码块保留原样
+            walk(ch);
+          }
+        }
+      }
+      walk(holder);
+      return holder.innerHTML;
+    }
+
+    // 顶层百分比格式化（表格与行内共用，保留 2 位小数）
+    function formatPercent(v) {
+      if (!isFinite(v)) return '#ERR';
+      var p = v * 100;
+      return (Math.round(p * 100) / 100).toString() + '%';
+    }
+
+    function evaluateCalcTable(table, vars) {
       var trs = table.querySelectorAll('tr');
       var rowArr = [];
       var maxCols = 0;
@@ -4504,6 +4802,7 @@
       if (rowArr.length === 0) return;
       var totalRows = rowArr.length;
       var totalCols = maxCols;
+      var VARS = vars || {};
 
       function indexToCol(idx) {
         var s = ''; var n = idx + 1;
@@ -4529,6 +4828,10 @@
       function numAt(col, row) {
         var el = getCellEl(col, row);
         if (!el) return NaN;
+        if (el.hasAttribute('data-val')) {
+          var dv = parseFloat(el.getAttribute('data-val'));
+          return isNaN(dv) ? NaN : dv;
+        }
         return parseNum(el.textContent);
       }
       function parseNum(raw) {
@@ -4564,7 +4867,12 @@
               try { val = evalFormula(raw.slice(1)); }
               catch (e) { val = NaN; }
             } else {
-              val = parseNum(raw);
+              if (el.hasAttribute('data-val')) {
+                var dv2 = parseFloat(el.getAttribute('data-val'));
+                val = isNaN(dv2) ? NaN : dv2;
+              } else {
+                val = parseNum(raw);
+              }
             }
           }
         }
@@ -4592,10 +4900,17 @@
             while (i < s.length && /[A-Za-z]/.test(s[i])) { word += s[i]; i++; }
             var k = i;
             while (k < s.length && /[0-9]/.test(s[k])) k++;
-            if (k > i) { word += s.slice(i, k); i = k; tokens.push({ t: 'ref', v: word.toUpperCase() }); continue; }
+            if (k > i) { word += s.slice(i, k); i = k; tokens.push({ t: 'ref', v: word.toUpperCase() }); continue; } // B2 / D11 单元格引用
             var j = i; while (j < s.length && /\s/.test(s[j])) j++;
-            if (s[j] === '(') { tokens.push({ t: 'func', v: word.toUpperCase() }); }
-            else { tokens.push({ t: 'ref', v: word.toUpperCase() }); }
+            if (s[j] === '(') { tokens.push({ t: 'func', v: word.toUpperCase() }); } // 函数
+            else if (s[j] === ':') { tokens.push({ t: 'ref', v: word.toUpperCase() }); } // A:A 整列引用
+            else { tokens.push({ t: 'var', v: word.toUpperCase() }); } // 拉丁变量名（大小写不敏感）
+            continue;
+          }
+          if (/[\u4e00-\u9fff]/.test(c)) {
+            var cjk = '';
+            while (i < s.length && /[A-Za-z0-9_\u4e00-\u9fff]/.test(s[i])) { cjk += s[i]; i++; }
+            tokens.push({ t: 'var', v: cjk }); // 中文/混合变量名
             continue;
           }
           i++; // 跳过未知字符
@@ -4732,6 +5047,11 @@
           pos.i++;
           return callFunc(tk.v, args);
         }
+        if (tk.t === 'var') {
+          pos.i++;
+          if (VARS.hasOwnProperty(tk.v)) return VARS[tk.v];
+          throw new Error('undefined variable ' + tk.v);
+        }
         if (tk.t === 'ref') {
           if (pos.tokens[pos.i + 1] && pos.tokens[pos.i + 1].t === ':') {
             var startRef = tk.v; pos.i += 2;
@@ -4772,17 +5092,133 @@
           var el = rowArr[r - 1][c];
           var raw = el.textContent.trim();
           if (raw.charAt(0) === '=') {
+            var exprBody = raw.slice(1).trim();
+            var asPct = false;
+            if (exprBody.charAt(exprBody.length - 1) === '%') {
+              asPct = true;
+              exprBody = exprBody.slice(0, -1).trim();
+            }
             var ref = indexToCol(c) + r;
             var v;
             try { v = evalCell(ref); } catch (e) { v = NaN; }
-            var display = isNaN(v) ? '#ERR' : formatNum(v);
+            var display = isNaN(v) ? '#ERR' : (asPct ? formatPercent(v) : formatNum(v));
             el.textContent = display;
             el.setAttribute('title', raw + ' = ' + display);
             el.setAttribute('data-formula', raw);
+            if (!isNaN(v)) el.setAttribute('data-val', String(v));
             el.classList.add('calc-cell');
           }
         }
       }
+    }
+
+    // 🆕 排序标记 {{sort: <列> <asc|desc>}}：对其后紧邻表格的数据行按指定列排序。
+    // 放在渲染管线最后一步（calc / cols / inline 之后），故排序作用在「公式已算完、数值已写入单元格」之后，
+    // 显示顺序稳定且每次重渲可复现。支持列名（匹配表头文本）、列序号（1 起）、列字母（A–Z）。
+    // 首格含 平均/合计/总计/小计 等关键词的行视为汇总行，不参与排序并固定在表尾。
+    function processSortTables(html) {
+      if (!html || typeof document === 'undefined') return html;
+      var holder = document.createElement('div');
+      holder.innerHTML = html;
+      var paras = holder.querySelectorAll('p');
+      var SUMMARY_RE = /^(平均|合计|总计|小计|小計|總計|總和|均值|汇总|彙總)(?:\s|$)/;
+      for (var i = 0; i < paras.length; i++) {
+        var p = paras[i];
+        if (p.getAttribute('data-sort-marker')) continue;
+        var m = (p.textContent || '').match(/\{\{sort:\s*([^}]*)\}\}/);
+        if (!m) continue;
+        var body = m[1].trim();
+        if (!body) continue;
+        var parts = body.split(/[\s,]+/).filter(Boolean);
+        var colSpec = parts[0];
+        var dir = (parts[1] || 'asc').toLowerCase();
+        if (dir === '降序') dir = 'desc';
+        else if (dir === '升序') dir = 'asc';
+        if (dir !== 'asc' && dir !== 'desc') dir = 'asc';
+        var table = findNextTable(p);
+        if (!table) continue;
+        try {
+          sortTableRows(table, colSpec, dir, SUMMARY_RE);
+          p.style.display = 'none';
+          p.setAttribute('data-sort-marker', 'true');
+          table.classList.add('sorted-table');
+        } catch (e) {
+          console.error('[ToDoList] sort table error:', e);
+        }
+      }
+      return holder.innerHTML;
+    }
+
+    function colIndexFromSpec(table, colSpec) {
+      if (/^\d+$/.test(colSpec)) return parseInt(colSpec, 10) - 1; // 列序号（1 起）
+      if (/^[A-Za-z]+$/.test(colSpec)) {                            // 列字母 A–Z
+        var idx = 0;
+        for (var k = 0; k < colSpec.length; k++) idx = idx * 26 + (colSpec.charCodeAt(k) - 64);
+        return idx - 1;
+      }
+      var thead = table.querySelector('thead');                    // 列名：匹配表头文本
+      var headCells = thead ? thead.querySelectorAll('th, td') : [];
+      for (var c = 0; c < headCells.length; c++) {
+        if ((headCells[c].textContent || '').trim() === colSpec) return c;
+      }
+      for (var c2 = 0; c2 < headCells.length; c2++) {
+        if ((headCells[c2].textContent || '').indexOf(colSpec) !== -1) return c2; // 模糊包含兜底
+      }
+      return -1;
+    }
+
+    function cellSortVal(el) {
+      if (el.hasAttribute('data-val')) {
+        var dv = parseFloat(el.getAttribute('data-val'));
+        if (!isNaN(dv)) return { num: dv, isNum: true };
+      }
+      var txt = (el.textContent || '').trim();
+      var n = parseFloat(txt.replace(/[%,¥$]/g, ''));
+      if (!isNaN(n) && /[-0-9.]/.test(txt)) return { num: n, isNum: true };
+      return { str: txt, isNum: false };
+    }
+
+    function sortTableRows(table, colSpec, dir, summaryRe) {
+      var col = colIndexFromSpec(table, colSpec);
+      if (col < 0) { console.warn('[ToDoList] 排序列未找到:', colSpec); return; }
+      var tbody = table.querySelector('tbody');
+      var headerRow = null;
+      var rows;
+      if (!tbody) { // 极少见（无 tbody）：把首个 tr 当表头，不参与排序
+        var all = Array.prototype.slice.call(table.querySelectorAll('tr'));
+        if (all.length < 2) return;
+        headerRow = all[0];
+        tbody = table;
+        rows = all.slice(1);
+      } else {
+        rows = Array.prototype.slice.call(tbody.querySelectorAll('tr'));
+      }
+      if (rows.length < 2) return;
+      var dataRows = [], summaryRows = [];
+      for (var r = 0; r < rows.length; r++) {
+        var firstCell = rows[r].querySelector('th, td');
+        var firstTxt = firstCell ? (firstCell.textContent || '').trim() : '';
+        if (summaryRe.test(firstTxt)) summaryRows.push(rows[r]);
+        else dataRows.push(rows[r]);
+      }
+      if (dataRows.length >= 2) {
+        dataRows.sort(function (a, b) {
+          var ca = a.querySelectorAll('th, td')[col];
+          var cb = b.querySelectorAll('th, td')[col];
+          if (!ca || !cb) return 0;
+          var va = cellSortVal(ca), vb = cellSortVal(cb);
+          var cmp;
+          if (va.isNum && vb.isNum) cmp = va.num - vb.num;
+          else if (va.isNum) cmp = -1;   // 数字优先于文本
+          else if (vb.isNum) cmp = 1;
+          else cmp = va.str < vb.str ? -1 : (va.str > vb.str ? 1 : 0);
+          return dir === 'desc' ? -cmp : cmp;
+        });
+      }
+      // 重排：表头(若有) → 已排序数据行 → 汇总行固定表尾
+      if (headerRow) tbody.insertBefore(headerRow, tbody.firstChild);
+      for (var d = 0; d < dataRows.length; d++) tbody.appendChild(dataRows[d]);
+      for (var s = 0; s < summaryRows.length; s++) tbody.appendChild(summaryRows[s]);
     }
 
     function toggleComplete(id) {
