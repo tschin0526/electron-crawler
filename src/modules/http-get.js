@@ -300,6 +300,15 @@ function stocksToMarkdown(stocks, userPrices) {
   const hasUserPrices = userPrices && Object.keys(userPrices).length > 0;
 
   let md = '## 📊 股票行情\n\n';
+
+  // 生成 {{let: 股票名现价 价格}} 变量声明，便于复制到 TodoList {{calc}} 公式中复用
+  for (const s of stocks) {
+    const r = s._raw || {};
+    const varName = `${s.name}现价`;
+    md += `{{let: ${varName} ${fmt(s.currentPrice, r.currentPrice)}}}\n`;
+  }
+  md += '\n';
+
   if (hasUserPrices) {
     md += '| 名称 | 代码 | 当前价 | 涨跌 | 涨跌幅% | 今开 | 最高 | 最低 | 昨收 | 成交量(手) | 最近交易价 | 价差 | 价差% |\n';
     md += '|------|------|--------|------|---------|------|------|------|------|------------|------------|------|-------|\n';
