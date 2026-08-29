@@ -3,4 +3,5 @@
 
 echo "️ 正在启动无限空间·AI智控台..."
 cd /Users/chincharles/myProgram/electron-crawler
-npx electron --no-sandbox .
+# "$@" 透传命令行参数，例如 ./start.sh --todolist 只启动 TodoList
+npx electron --no-sandbox . "$@"

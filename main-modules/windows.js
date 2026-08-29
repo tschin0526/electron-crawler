@@ -141,12 +141,24 @@ function createWindow() {
   const windowWidth = Math.round(screenWidth * 0.95);
   const windowHeight = Math.round(screenHeight * 0.95);
 
+  // 🆕 独立模式：./start.sh --todolist 时，主窗口直接加载 TodoList 插件入口
+  //    其余参数照常启动完整智控台。TodoList 本身已是完整应用且只用 preload 暴露的
+  //    electronAPI，无需任何插件侧改动；数据目录、子窗口（卡片/图片）照常可用。
+  //    邮件按钮因依赖 webview 宿主桥接，在独立模式下由插件自身的 index.html 隐藏。
+  const isTodolistMode = process.argv.includes('--todolist');
+
+  // 🆕 主题参数：--dark 强制暗色、--light 强制亮色。
+  //    解析后作为查询参数透传给入口 HTML：独立模式由 TodoList 自身读取，主程序模式暂透传（留待后续接入）。
+  let themeArg = null;
+  if (process.argv.includes('--dark')) themeArg = 'dark';
+  else if (process.argv.includes('--light')) themeArg = 'light';
+
   mainWindow = new BrowserWindow({
     width: windowWidth,
     height: windowHeight,
     x: Math.round((screenWidth - windowWidth) / 2),
     y: Math.round((screenHeight - windowHeight) / 2),
-    title: '无限空间·AI智控台 v' + APP_VERSION,  // ✨ 显示版本号
+    title: isTodolistMode ? '📝 TodoList' : ('无限空间·AI智控台 v' + APP_VERSION),  // ✨ 显示版本号
     webPreferences: {
       preload: path.join(APP_ROOT, 'preload.js'),
       contextIsolation: true,
@@ -164,13 +176,22 @@ function createWindow() {
   // 同步主窗口引用回 main.js（供其他模组/逻辑访问）
   setMainWindowCallback(mainWindow);
 
-  mainWindow.loadFile('src/crawler-window.html');
+  if (isTodolistMode) {
+    // 🆕 独立模式：加载 TodoList，并通过查询参数告知它处于 standalone 模式（隐藏邮件按钮）+ 可选主题
+    const search = '?standalone=1' + (themeArg ? '&theme=' + themeArg : '');
+    mainWindow.loadFile('src/plugins/todolist/index.html', { search });
+    console.log('📌 [Main] 独立模式：主窗口已加载 TodoList（standalone=1' + (themeArg ? '，主题=' + themeArg : '') + '）');
+  } else {
+    // 主程序模式：若带了 --dark/--light 也透传查询参数（当前 TodoList 之外的主界面有自己的主题切换，参数暂不影响主界面）
+    const search = themeArg ? '?theme=' + themeArg : '';
+    mainWindow.loadFile('src/crawler-window.html', search ? { search } : undefined);
+  }
 
   // ✨ 动态设置窗口标题（确保版本号显示，覆盖 HTML 的 title）
   mainWindow.once('ready-to-show', () => {
     if (mainWindow) {
-      mainWindow.setTitle('无限空间·AI智控台 v' + APP_VERSION);
-      console.log('📌 [Main] 窗口标题已设置为: v' + APP_VERSION);
+      mainWindow.setTitle(isTodolistMode ? '📝 TodoList' : ('无限空间·AI智控台 v' + APP_VERSION));
+      console.log('📌 [Main] 窗口标题已设置为:', isTodolistMode ? 'TodoList（独立模式）' : ('v' + APP_VERSION));
     }
   });
 

@@ -2497,6 +2497,32 @@
     p[data-calc-marker="true"],
     p[data-cols-marker="true"] { display: none; }
   </style>
+
+  <!-- 🆕 独立模式（./start.sh --todolist 启动，URL 带 ?standalone=1）：
+       此时 TodoList 是主窗口而非 webview 内嵌，没有宿主 webview 接收 sendToHost 邮件桥接，
+       故隐藏所有邮件按钮（编辑弹窗 #emailBtn 与卡片操作区 .action-btn.email），
+       避免用户点击后无反应。其余功能（卡片 CRUD / MD / 子窗口 / 图片）均照常可用。 -->
+  <script>
+    (function () {
+      try {
+        var params = new URLSearchParams(window.location.search);
+        if (params.get('standalone') === '1') {
+          window.__todoStandalone = true;
+          var s = document.createElement('style');
+          s.textContent = '.action-btn.email, #emailBtn { display: none !important; }';
+          document.head.appendChild(s);
+        }
+        // 🆕 主题参数：URL 带 ?theme=dark|light 时，覆盖 localStorage 初始值。
+        //    下方 body 脚本中的 loadInitialTheme() 会读取该值决定 body.dark，并同步 highlight.js 主题。
+        //    仅影响「启动时的初始主题」，进入后手动切换仍生效（会再次写入 localStorage）。
+        var theme = params.get('theme');
+        if (theme === 'dark' || theme === 'light') {
+          localStorage.setItem('todoListTheme', theme);
+          window.__todoForcedTheme = theme;
+        }
+      } catch (e) {}
+    })();
+  </script>
 </head>
 <body>
   <div class="todo-container">
