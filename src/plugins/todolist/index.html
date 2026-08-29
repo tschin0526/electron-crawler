@@ -4316,8 +4316,38 @@
         .replace(new RegExp('(' + _inlineOpen + '+)\\n\\n+', 'gi'), '$1\n')
         // 内联标签紧贴单 \n + list marker 时插入空行（防止列表项被压成一行）
         .replace(new RegExp('(' + _inlineOpen + '+)\\n([-*+]|\\d+\\.) ', 'gi'), '$1\n\n$2 ')
-        // 紧贴在内联标签前面的空行折叠
-        .replace(new RegExp('\\n\\n+(' + _inlineClose + '+)', 'gi'), '\n$1');
+      // 紧贴在内联标签前面的空行折叠
+      .replace(new RegExp('\\n\\n+(' + _inlineClose + '+)', 'gi'), '\n$1');
+
+      // 🆕 折叠连续相同的 <BIG>/<SMALL> 开/闭标签，并「保留缩小/放大层级」。
+      //   根因：marked 把同一行的 <SMALL><SMALL> 或 9 个 <BIG> 当作「内联 HTML」而非
+      //   「块级 HTML 块」，生成 <p><small><small></small></small></p> 后，后续 markdown
+      //   不再被 small/big 包裹，字号回弹；表格因此不缩小/放大。
+      //   解决：仅当「连续 N 个同名开标签后面紧跟换行（块级包裹用法）」时，
+      //        才把它折叠成单个带 style 的标签；font-size 按 (1.2)^N / (1/1.2)^N
+      //        计算（em 相对单位），精确复刻 N 层真实嵌套，无等级上限。
+      //        闭标签同理，仅在「换行后紧跟连续闭标签」时折叠成单个 </TAG>。
+      //        行内交错嵌套（如 <big><big>持</big>之</big>）因不在行尾，完全不动，
+      //        保持浏览器原生多层缩放，避免破坏原意。
+      //   仅对 big/small 生效，<SMALL>...<BIG> 这类不同标签不折叠。
+      ['big', 'small'].forEach(function (tag) {
+        var openRe = new RegExp('<((' + tag + ')\\b[^>]*)>(\\s*<' + tag + '\\b[^>]*>)+(?=\\s*\\n)', 'gi');
+        var closeRe = new RegExp('(?<=\\n\\s*)(</(' + tag + ')\\b[^>]*>(\\s*</' + tag + '\\b[^>]*>)+)', 'gi');
+        processed = processed
+          .replace(openRe, function (m, firstOpenTag) {
+            var cnt = 0, re = new RegExp('<' + tag + '\\b', 'gi');
+            while (re.exec(m) !== null) cnt++;
+            if (cnt <= 1) return m;
+            var ratio = tag === 'big' ? Math.pow(1.2, cnt) : Math.pow(1 / 1.2, cnt);
+            var style = 'font-size:' + ratio.toFixed(4) + 'em;';
+            if (/\\sstyle="/.test(firstOpenTag)) {
+              // 若首个标签已有 style，追加到末尾
+              return '<' + firstOpenTag.replace(/(style="[^"]*)">/, '$1;' + style + '">') + '>';
+            }
+            return '<' + firstOpenTag + ' style="' + style + '">';
+          })
+          .replace(closeRe, '</' + tag + '>');
+      });
 
       let html;
       if (typeof marked !== 'undefined') {
@@ -4863,10 +4893,10 @@
           if (!el) val = NaN;
           else {
             var raw = el.textContent.trim();
-            if (raw.charAt(0) === '=') {
-              try { val = evalFormula(raw.slice(1)); }
-              catch (e) { val = NaN; }
-            } else {
+          if (raw.charAt(0) === '=') {
+            try { val = evalFormula(raw.slice(1), ref); }
+            catch (e) { val = NaN; }
+          } else {
               if (el.hasAttribute('data-val')) {
                 var dv2 = parseFloat(el.getAttribute('data-val'));
                 val = isNaN(dv2) ? NaN : dv2;
@@ -4951,7 +4981,7 @@
         }
         return vals;
       }
-      function callFunc(name, args) {
+      function callFunc(name, args, currentRef) {
         var nums = [];
         for (var a = 0; a < args.length; a++) {
           if (args[a].range) nums.push(args[a].range);
@@ -4975,6 +5005,16 @@
           case 'SQRT': return Math.sqrt(toNum(args[0].value));
           case 'ROUND': return Math.round(toNum(args[0].value));
           case 'POW': return Math.pow(toNum(args[0].value), toNum(args[1].value));
+          case 'ROW': {
+            var pr = parseRef(currentRef);
+            // 返回「数据行序号」（表头为第 0 行，第一行数据 = 1），便于做序号列
+            return (pr && pr.row != null) ? Math.max(0, pr.row - 1) : 0;
+          }
+          case 'SORTROW': {
+            var pr2 = parseRef(currentRef);
+            // 计算阶段先回退为 ROW() 的值；排序阶段会再改写为「当前视觉行号」
+            return (pr2 && pr2.row != null) ? Math.max(0, pr2.row - 1) : 0;
+          }
           default: throw new Error('unknown function ' + name);
         }
       }
@@ -5045,7 +5085,7 @@
           }
           if (!pos.tokens[pos.i] || pos.tokens[pos.i].t !== ')') throw new Error('func missing )');
           pos.i++;
-          return callFunc(tk.v, args);
+          return callFunc(tk.v, args, pos.currentRef);
         }
         if (tk.t === 'var') {
           pos.i++;
@@ -5076,9 +5116,9 @@
         }
         return { value: parseAddSub(pos) };
       }
-      function evalFormula(expr) {
+      function evalFormula(expr, currentRef) {
         var tokens = tokenize(expr);
-        var pos = { i: 0, tokens: tokens };
+        var pos = { i: 0, tokens: tokens, currentRef: currentRef };
         if (tokens.length === 0) throw new Error('empty formula');
         var val = parseAddSub(pos);
         if (pos.i < tokens.length) throw new Error('trailing tokens');
@@ -5115,7 +5155,8 @@
     // 🆕 排序标记 {{sort: <列> <asc|desc>}}：对其后紧邻表格的数据行按指定列排序。
     // 放在渲染管线最后一步（calc / cols / inline 之后），故排序作用在「公式已算完、数值已写入单元格」之后，
     // 显示顺序稳定且每次重渲可复现。支持列名（匹配表头文本）、列序号（1 起）、列字母（A–Z）。
-    // 首格含 平均/合计/总计/小计 等关键词的行视为汇总行，不参与排序并固定在表尾。
+    // 行内含 平均/合计/总计/小计 等关键词的行视为汇总行，不参与排序并固定在表尾。
+    // 若序号列希望「由上到下重新编号」，请用 =SORTROW()；=ROW() 会保留原始数据行号（稳定 ID）。
     function processSortTables(html) {
       if (!html || typeof document === 'undefined') return html;
       var holder = document.createElement('div');
@@ -5193,12 +5234,28 @@
       } else {
         rows = Array.prototype.slice.call(tbody.querySelectorAll('tr'));
       }
+      // 移除 marked 在某些 HTML 块包裹（如 <SMALL>）下可能产生的空行
+      for (var e = rows.length - 1; e >= 0; e--) {
+        var rowCells = rows[e].querySelectorAll('th, td');
+        var allEmpty = true;
+        for (var ec = 0; ec < rowCells.length; ec++) {
+          if ((rowCells[ec].textContent || '').trim() !== '') { allEmpty = false; break; }
+        }
+        if (allEmpty && rows[e].parentNode) {
+          rows[e].parentNode.removeChild(rows[e]);
+          rows.splice(e, 1);
+        }
+      }
       if (rows.length < 2) return;
       var dataRows = [], summaryRows = [];
       for (var r = 0; r < rows.length; r++) {
-        var firstCell = rows[r].querySelector('th, td');
-        var firstTxt = firstCell ? (firstCell.textContent || '').trim() : '';
-        if (summaryRe.test(firstTxt)) summaryRows.push(rows[r]);
+        var cells = rows[r].querySelectorAll('th, td');
+        var isSummary = false;
+        for (var c = 0; c < cells.length; c++) {
+          var txt = (cells[c].textContent || '').trim();
+          if (summaryRe.test(txt)) { isSummary = true; break; }
+        }
+        if (isSummary) summaryRows.push(rows[r]);
         else dataRows.push(rows[r]);
       }
       if (dataRows.length >= 2) {
@@ -5219,6 +5276,23 @@
       if (headerRow) tbody.insertBefore(headerRow, tbody.firstChild);
       for (var d = 0; d < dataRows.length; d++) tbody.appendChild(dataRows[d]);
       for (var s = 0; s < summaryRows.length; s++) tbody.appendChild(summaryRows[s]);
+
+      // 对 =SORTROW() 单元格按当前视觉顺序重新编号（1 起）
+      var visibleRows = tbody.querySelectorAll('tr');
+      var visualIdx = 0;
+      for (var v = 0; v < visibleRows.length; v++) {
+        if (visibleRows[v] === headerRow) continue;
+        visualIdx++;
+        var cells = visibleRows[v].querySelectorAll('th, td');
+        for (var c = 0; c < cells.length; c++) {
+          var formula = cells[c].getAttribute('data-formula');
+          if (formula && formula.trim().toUpperCase() === '=SORTROW()') {
+            cells[c].textContent = String(visualIdx);
+            cells[c].setAttribute('data-val', String(visualIdx));
+            cells[c].setAttribute('title', '=SORTROW() = ' + visualIdx);
+          }
+        }
+      }
     }
 
     function toggleComplete(id) {
