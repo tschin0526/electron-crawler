@@ -966,7 +966,14 @@
     .todo-text th, .todo-text td,
     .md-preview th, .md-preview td { border: 1px solid var(--border-color); padding: .4em .8em; }
     .todo-text th, .md-preview th { background: #f6f8fa; font-weight: 600; }
-    .todo-text img, .md-preview img { max-width: 100%; border-radius: 6px; margin: .5em 0; }
+    .todo-text img, .md-preview img { max-width: 100%; height: auto; border-radius: 6px; margin: .5em 0; }
+    /* 🆕 并排图组：{{row}} … {{endrow}} 包裹的图片横向排列 */
+    .todo-text .img-row, .md-preview .img-row {
+      display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-start; margin: .5em 0;
+    }
+    .todo-text .img-row img, .md-preview .img-row img {
+      margin: 0; max-height: 320px; width: auto; object-fit: contain; border-radius: 6px;
+    }
     .todo-text hr, .md-preview hr { border: none; border-top: 1px solid var(--border-color); margin: 1em 0; }
     .todo-text del, .md-preview del { color: var(--text-secondary); }
 
@@ -977,14 +984,22 @@
     /* 黑夜模式：任务内容 / 编辑预览 统一配色 */
     body.dark .todo-text,
     body.dark .md-preview,
-    body.dark .todo-text *:not(a):not(code):not(pre):not(span[style*="color" i]),
-    body.dark .md-preview *:not(a):not(code):not(pre):not(span[style*="color" i]) {
+    body.dark .todo-text *:not(a):not(code):not(pre):not(span[style*="color" i]):not(mark),
+    body.dark .md-preview *:not(a):not(code):not(pre):not(span[style*="color" i]):not(mark) {
       color: var(--text-primary) !important;
     }
     body.dark .todo-text a, body.dark .md-preview a { color: var(--primary-color) !important; }
     body.dark .todo-text code, body.dark .md-preview code { background: #334155 !important; color: var(--text-primary) !important; }
     body.dark .todo-text pre, body.dark .md-preview pre { background: #0f172a !important; color: var(--text-primary) !important; }
     body.dark .todo-text pre code, body.dark .md-preview pre code { background: transparent !important; }
+    /* 黑夜模式：<mark> 高亮（非搜索高亮）改为粉绿底白字，确保清晰可读 */
+    body.dark .todo-text mark:not(.search-highlight),
+    body.dark .md-preview mark:not(.search-highlight) {
+      background-color: #16a34a;
+      color: #ffffff;
+      border-radius: 3px;
+      padding: 0 2px;
+    }
     body.dark .todo-text blockquote, body.dark .md-preview blockquote { background: #172554 !important; border-left-color: #60a5fa !important; }
     body.dark .todo-text th, body.dark .md-preview th { background: #334155 !important; }
     body.dark .todo-text tr:nth-child(even), body.dark .md-preview tr:nth-child(even) { background: #1e293b !important; }
@@ -2631,7 +2646,21 @@
             <button class="md-tool-dropbtn" onclick="toggleMdDropdown(this)" title="表格与计算">表格/计算<span class="caret">▾</span></button>
             <div class="md-tool-dropmenu">
               <button class="md-tool-dropitem" onclick="insertMd('| 列1 | 列2 | 列3 |\n| --- | --- | --- |\n| 数据 | 数据 | 数据 |', '')">插入表格</button>
-              <button class="md-tool-dropitem" onclick="insertMd('{{cols: 20% 30% 50%}}', '')">列宽标记 <kbd>{{cols:}}</kbd></button>
+              <div class="md-tool-submenu" data-md-submenu>
+                <button class="md-tool-dropitem has-submenu">
+                  列宽标记 <span class="sub-caret">▸</span><kbd>{{cols:}}</kbd>
+                </button>
+                <div class="md-tool-sublist">
+                  <button class="md-tool-dropitem" onclick="insertMd('{{cols: 50% 50%}}', '')">2列 均分</button>
+                  <button class="md-tool-dropitem" onclick="insertMd('{{cols: 33% 67%}}', '')">2列 1:2</button>
+                  <button class="md-tool-dropitem" onclick="insertMd('{{cols: 67% 33%}}', '')">2列 2:1</button>
+                  <button class="md-tool-dropitem" onclick="insertMd('{{cols: 33% 34% 33%}}', '')">3列 均分</button>
+                  <button class="md-tool-dropitem" onclick="insertMd('{{cols: 20% 60% 20%}}', '')">3列 1:2:1</button>
+                  <button class="md-tool-dropitem" onclick="insertMd('{{cols: 50% 25% 25%}}', '')">3列 2:1:1</button>
+                  <button class="md-tool-dropitem" onclick="insertMd('{{cols: 25% 25% 25% 25%}}', '')">4列 均分</button>
+                  <button class="md-tool-dropitem" onclick="insertMd('{{cols: 20% 30% 50%}}', '')">3列 2:3:5</button>
+                </div>
+              </div>
               <div class="md-tool-dropgroup">计算表</div>
               <button class="md-tool-dropitem" onclick="insertMd('{{calc}}\n', '')">计算表标记 <kbd>{{calc}}</kbd></button>
               <button class="md-tool-dropitem" onclick="insertMd('{{sort: 1 asc}}', '')">排序标记 <kbd>{{sort:}}</kbd></button>
@@ -2648,6 +2677,9 @@
             <div class="md-tool-dropmenu">
               <button class="md-tool-dropitem" onclick="insertMd('[', '](url)')">普通链接 <kbd>[]()</kbd></button>
               <button class="md-tool-dropitem" onclick="insertMd('![', '](url)')">图片 <kbd>![]()</kbd></button>
+              <button class="md-tool-dropitem" onclick="insertMd('![', '](url =200x150)')">图片(定宽高) <kbd>=WxH</kbd></button>
+              <div class="md-tool-dropgroup">并排图组</div>
+              <button class="md-tool-dropitem" onclick="insertMd('{{row}}\n![说明](url =200)\n![说明](url =200)\n{{endrow}}\n', '')">并排图组模板 <kbd>{{row}}</kbd></button>
               <div class="md-tool-dropgroup">卡片/窗口协议</div>
               <button class="md-tool-dropitem" onclick="insertMd('[', '](card:ID)')">跳转卡片 <kbd>card:</kbd></button>
               <button class="md-tool-dropitem" onclick="insertMd('[', '](win:ID)')">新窗卡片 <kbd>win:</kbd></button>
@@ -3031,9 +3063,11 @@
       const selected = textarea.value.substring(start, end);
       const replacement = before + (selected || '文本') + after;
       textarea.value = textarea.value.substring(0, start) + replacement + textarea.value.substring(end);
-      textarea.focus();
+      const savedScrollTop = textarea.scrollTop;
+      textarea.focus({ preventScroll: true });
       const newCursor = start + before.length + (selected ? selected.length : 2);
       textarea.setSelectionRange(newCursor, newCursor + (selected ? 0 : 2));
+      textarea.scrollTop = savedScrollTop;
       // 工具栏插入属于程序化修改，手动记入撤销历史
       pushEditorHistory(textarea, true);
       // 关闭可能打开的工具栏下拉菜单
@@ -4425,6 +4459,8 @@
       // 🆕 {{calc}} 表格公式渲染：双主题都需生效，放在主题分支之前
       html = processCalcTables(html);
       html = processColWidths(html);
+      // 🆕 并排图组：把 {{row}}…{{endrow}} 之间的 <img> 收进 .img-row 横向排列
+      html = processImageRows(html);
       // 🆕 行内公式 {{=expr}} 渲染（与表格并列，互不干扰）
       html = processInlineCalc(html);
       // 🆕 排序标记 {{sort:}}：放在最后，作用于已算完公式的表格
@@ -4719,6 +4755,12 @@
           .replace(closeRe, '</' + tag + '>');
       });
 
+      // 🆕 图片尺寸语法 ![alt](url =WxH) 与并排图组标记 {{row}} / {{endrow}}
+      //   必须在 marked 之前处理：将尺寸转成 <img style>，把 {{row}} 转成 HTML 注释哨兵，
+      //   避免 marked 把 =WxH 当作链接标题或把图组当普通文本。
+      processed = processImageSizes(processed);
+      processed = processRowMarkers(processed);
+
       let html;
       if (typeof marked !== 'undefined') {
         marked.setOptions({ breaks: true, gfm: true });
@@ -4776,6 +4818,8 @@
       // 🆕 {{calc}} 表格公式渲染
       html = processCalcTables(html);
       html = processColWidths(html);
+      // 🆕 并排图组：把 {{row}}…{{endrow}} 之间的 <img> 收进 .img-row 横向排列
+      html = processImageRows(html);
       // 🆕 行内公式 {{=expr}} 渲染
       html = processInlineCalc(html);
       // 🆕 排序标记 {{sort:}}：放在最后，作用于已算完公式的表格
@@ -5010,6 +5054,59 @@
         p.setAttribute('data-cols-marker', 'true');
       }
       return holder.innerHTML;
+    }
+
+    // 🆕 图片尺寸语法（MultiMarkdown 风格）：在 marked 之前把
+    //   ![alt](url =200x150) / =200 / =x150 / =50% / =50%x30%
+    //   转成 <img style="width:..;height:..;object-fit:contain">
+    //   规则：等号前必须有空白，避免误伤带 ?b=1 这类查询参数的 URL。
+    function processImageSizes(md) {
+      if (!md) return md;
+      return md.replace(/!\[([^\]]*)\]\(\s*(\S+?)\s+=\s*([^)\s]+?)\s*\)/g, function (m, alt, url, dim) {
+        var style = parseImageDim(dim);
+        if (!style) return m; // 解析失败则保留原样
+        var safeAlt = String(alt).replace(/"/g, '&quot;');
+        var safeUrl = String(url).replace(/"/g, '&quot;');
+        return '<img src="' + safeUrl + '" alt="' + safeAlt + '" style="' + style + '">';
+      });
+    }
+    function parseImageDim(dim) {
+      if (!dim) return '';
+      // 宽度(可选%) [x 高度(可选%)]，或仅 x高度
+      var m = dim.match(/^(?:(\d+(?:\.\d+)?)(%?))?(?:x(\d+(?:\.\d+)?)(%?))?$/);
+      if (!m) return '';
+      var w = m[1], wPct = m[2], h = m[3], hPct = m[4];
+      if (!w && !h) return '';
+      var s = '';
+      if (w) s += 'width:' + w + (wPct ? '%' : 'px') + ';';
+      else s += 'width:auto;';
+      if (h) s += 'height:' + h + (hPct ? '%' : 'px') + ';';
+      else s += 'height:auto;';
+      s += 'object-fit:contain;';
+      return s;
+    }
+
+    // 🆕 并排图组标记：把源码里的 {{row}} / {{endrow}} 转成 HTML 注释哨兵，
+    //   交给 processImageRows（marked 之后）收拢成 <div class="img-row">。
+    //   要求 {{row}} 与 {{endrow}} 各自独占一行，确保被 marked 视为块级 HTML。
+    function processRowMarkers(md) {
+      if (!md) return md;
+      return md
+        .replace(/\{\{row\}\}/g, '<!--IMGROW_START-->')
+        .replace(/\{\{endrow\}\}/g, '<!--IMGROW_END-->');
+    }
+
+    // 🆕 并排图组包裹：把 <!--IMGROW_START-->…<!--IMGROW_END--> 之间的所有 <img>
+    //   收进一个 flex 行容器，实现「图片并排」。若无图片则只移除哨兵、保留内部文本。
+    function processImageRows(html) {
+      if (!html) return html;
+      return html.replace(/<!--IMGROW_START-->([\s\S]*?)<!--IMGROW_END-->/g, function (m, inner) {
+        var imgs = inner.match(/<img\b[^>]*>/gi);
+        if (!imgs || imgs.length === 0) {
+          return inner.replace(/<!--IMGROW_(?:START|END)-->/g, '');
+        }
+        return '<div class="img-row">' + imgs.join('') + '</div>';
+      });
     }
 
     // 🆕 行内公式 {{=expr}}：独立纯算术引擎（不依赖表格上下文）
@@ -5298,6 +5395,12 @@
           if (/[A-Za-z]/.test(c)) {
             var word = '';
             while (i < s.length && /[A-Za-z]/.test(s[i])) { word += s[i]; i++; }
+            // 支持 A商品单价、price单价 等拉丁+中文混合变量名（仍以 var 类型处理）
+            if (i < s.length && /[\u4e00-\u9fff]/.test(s[i])) {
+              while (i < s.length && /[A-Za-z0-9_\u4e00-\u9fff]/.test(s[i])) { word += s[i]; i++; }
+              tokens.push({ t: 'var', v: word });
+              continue;
+            }
             var k = i;
             while (k < s.length && /[0-9]/.test(s[k])) k++;
             if (k > i) { word += s.slice(i, k); i = k; tokens.push({ t: 'ref', v: word.toUpperCase() }); continue; } // B2 / D11 单元格引用
