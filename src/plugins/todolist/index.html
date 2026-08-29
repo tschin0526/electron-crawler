@@ -1865,6 +1865,123 @@
       height: 16px;
       background: var(--border-color);
       margin: 0 4px;
+      flex-shrink: 0;
+    }
+
+    /* 🆕 Markdown toolbar dropdown groups */
+    .md-tool-dropdown {
+      position: relative;
+      display: inline-flex;
+      flex-shrink: 0;
+    }
+    .md-tool-dropbtn {
+      padding: 3px 6px;
+      border: 1px solid transparent;
+      border-radius: 3px;
+      background: transparent;
+      font-size: 11px;
+      color: var(--text-secondary);
+      cursor: pointer;
+      transition: all 0.15s;
+      min-width: 34px;
+      text-align: center;
+      white-space: nowrap;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 2px;
+    }
+    .md-tool-dropbtn:hover,
+    .md-tool-dropdown.open > .md-tool-dropbtn {
+      background: var(--primary-light);
+      color: #4338ca;
+      border-color: var(--primary-border);
+    }
+    .md-tool-dropbtn .caret {
+      font-size: 9px;
+      opacity: 0.7;
+      margin-left: 1px;
+    }
+    .md-tool-dropmenu {
+      display: none;
+      position: fixed;           /* 脱离 .md-toolbar 的 overflow-x 裁剪上下文 */
+      min-width: 150px;
+      max-height: 70vh;
+      overflow-y: auto;
+      background: #fff;
+      border: 1px solid var(--border-color);
+      border-radius: 4px;
+      box-shadow: 0 6px 20px rgba(0,0,0,0.12);
+      z-index: 1000;
+      padding: 4px 0;
+    }
+    .md-tool-dropdown.open > .md-tool-dropmenu {
+      display: block;
+    }
+    .md-tool-dropitem {
+      display: block;
+      width: 100%;
+      text-align: left;
+      padding: 5px 12px;
+      border: none;
+      background: transparent;
+      font-size: 12px;
+      color: var(--text-primary);
+      cursor: pointer;
+      white-space: nowrap;
+      line-height: 1.4;
+    }
+    .md-tool-dropitem:hover {
+      background: var(--primary-light);
+      color: #4338ca;
+    }
+    .md-tool-dropitem kbd {
+      float: right;
+      font-size: 10px;
+      color: var(--text-secondary);
+      margin-left: 12px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    }
+    .md-tool-dropgroup {
+      padding: 4px 12px 2px;
+      font-size: 10px;
+      color: var(--text-secondary);
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+      border-top: 1px solid var(--border-color);
+      margin-top: 2px;
+    }
+    .md-tool-dropgroup:first-child {
+      border-top: none;
+      margin-top: 0;
+    }
+    body.dark .md-tool-dropmenu {
+      background: #111827;
+      border-color: #334155;
+      box-shadow: 0 6px 20px rgba(0,0,0,0.35);
+    }
+    body.dark .md-tool-dropbtn {
+      color: #cbd5e1;            /* 比默认 #94a3b8 更亮，确保在深色 toolbar 上可见 */
+    }
+    body.dark .md-tool-dropbtn:hover,
+    body.dark .md-tool-dropdown.open > .md-tool-dropbtn {
+      background: var(--primary-light);
+      color: #e0e7ff;            /* 亮蓝白，在深靛蓝背景 #312e81 上清晰可读 */
+      border-color: var(--primary-border);
+    }
+    body.dark .md-tool-dropitem {
+      color: #e2e8f0;
+    }
+    body.dark .md-tool-dropitem:hover {
+      background: rgba(99,102,241,0.25);
+      color: #ffffff;
+    }
+    body.dark .md-tool-dropitem:hover kbd {
+      color: #cbd5e1;
+    }
+    body.dark .md-tool-dropgroup {
+      color: #94a3b8;
+      border-color: #334155;
     }
 
     /* Markdown preview toggle */
@@ -2387,30 +2504,99 @@
           <button class="md-tool-btn" id="undoBtn" onclick="editorUndo()" onmousedown="event.preventDefault()" title="撤销 (Cmd/Ctrl+Z)" disabled>↩</button>
           <button class="md-tool-btn" id="redoBtn" onclick="editorRedo()" onmousedown="event.preventDefault()" title="重做 (Cmd/Ctrl+Shift+Z)" disabled>↪</button>
           <span class="md-tool-sep"></span>
-          <button class="md-tool-btn" onclick="insertMd('**', '**')" title="粗体"><b>B</b></button>
-          <button class="md-tool-btn" onclick="insertMd('*', '*')" title="斜体"><i>I</i></button>
-          <button class="md-tool-btn" onclick="insertMd('<u>', '</u>')" title="下划线"><u>U</u></button>
-          <button class="md-tool-btn" onclick="insertMd('~~', '~~')" title="删除线"><s>S</s></button>
+
+          <!-- 格式 -->
+          <div class="md-tool-dropdown" data-md-dropdown>
+            <button class="md-tool-dropbtn" onclick="toggleMdDropdown(this)" title="文字格式">格式<span class="caret">▾</span></button>
+            <div class="md-tool-dropmenu">
+              <button class="md-tool-dropitem" onclick="insertMd('**', '**')">粗体 <kbd>**</kbd></button>
+              <button class="md-tool-dropitem" onclick="insertMd('*', '*')">斜体 <kbd>*</kbd></button>
+              <button class="md-tool-dropitem" onclick="insertMd('<u>', '</u>')">下划线 <kbd>&lt;u&gt;</kbd></button>
+              <button class="md-tool-dropitem" onclick="insertMd('~~', '~~')">删除线 <kbd>~~</kbd></button>
+              <button class="md-tool-dropitem" onclick="insertMd('<mark>', '</mark>')">高亮 <kbd>&lt;mark&gt;</kbd></button>
+              <button class="md-tool-dropitem" onclick="insertMd('<span style=&quot;color:#f59e0b&quot;>', '</span>')">文字颜色 <kbd>style</kbd></button>
+              <div class="md-tool-dropgroup">上下标</div>
+              <button class="md-tool-dropitem" onclick="insertMd('<sup>', '</sup>')">上标 <kbd>&lt;sup&gt;</kbd></button>
+              <button class="md-tool-dropitem" onclick="insertMd('<sub>', '</sub>')">下标 <kbd>&lt;sub&gt;</kbd></button>
+            </div>
+          </div>
+
+          <!-- 段落 -->
+          <div class="md-tool-dropdown" data-md-dropdown>
+            <button class="md-tool-dropbtn" onclick="toggleMdDropdown(this)" title="段落结构">段落<span class="caret">▾</span></button>
+            <div class="md-tool-dropmenu">
+              <button class="md-tool-dropitem" onclick="insertMd('# ', '')">标题 1 <kbd>#</kbd></button>
+              <button class="md-tool-dropitem" onclick="insertMd('## ', '')">标题 2 <kbd>##</kbd></button>
+              <button class="md-tool-dropitem" onclick="insertMd('### ', '')">标题 3 <kbd>###</kbd></button>
+              <button class="md-tool-dropitem" onclick="insertMd('#### ', '')">标题 4 <kbd>####</kbd></button>
+              <button class="md-tool-dropitem" onclick="insertMd('##### ', '')">标题 5 <kbd>#####</kbd></button>
+              <button class="md-tool-dropitem" onclick="insertMd('###### ', '')">标题 6 <kbd>######</kbd></button>
+              <div class="md-tool-dropgroup">列表与引用</div>
+              <button class="md-tool-dropitem" onclick="insertMd('- ', '')">无序列表 <kbd>-</kbd></button>
+              <button class="md-tool-dropitem" onclick="insertMd('1. ', '')">有序列表 <kbd>1.</kbd></button>
+              <button class="md-tool-dropitem" onclick="insertMd('- [ ] ', '')">任务列表 <kbd>[]</kbd></button>
+              <button class="md-tool-dropitem" onclick="insertMd('> ', '')">引用 <kbd>&gt;</kbd></button>
+              <div class="md-tool-dropgroup">分隔与代码</div>
+              <button class="md-tool-dropitem" onclick="insertMd('---\n', '')">分隔线 <kbd>---</kbd></button>
+              <button class="md-tool-dropitem" onclick="insertMd('`', '`')">行内代码 <kbd>`</kbd></button>
+              <button class="md-tool-dropitem" onclick="insertMd('```\n', '\n```')">代码块 <kbd>```</kbd></button>
+            </div>
+          </div>
+
+          <!-- 表格/计算 -->
+          <div class="md-tool-dropdown" data-md-dropdown>
+            <button class="md-tool-dropbtn" onclick="toggleMdDropdown(this)" title="表格与计算">表格/计算<span class="caret">▾</span></button>
+            <div class="md-tool-dropmenu">
+              <button class="md-tool-dropitem" onclick="insertMd('| 列1 | 列2 | 列3 |\n| --- | --- | --- |\n| 数据 | 数据 | 数据 |', '')">插入表格</button>
+              <button class="md-tool-dropitem" onclick="insertMd('{{cols: 20% 30% 50%}}', '')">列宽标记 <kbd>{{cols:}}</kbd></button>
+              <div class="md-tool-dropgroup">计算表</div>
+              <button class="md-tool-dropitem" onclick="insertMd('{{calc}}\n', '')">计算表标记 <kbd>{{calc}}</kbd></button>
+              <button class="md-tool-dropitem" onclick="insertMd('{{sort: 1 asc}}', '')">排序标记 <kbd>{{sort:}}</kbd></button>
+              <button class="md-tool-dropitem" onclick="insertMd('{{let: 名称 值}}', '')">命名变量 <kbd>{{let:}}</kbd></button>
+              <button class="md-tool-dropitem" onclick="insertMd('=ROW()', '')">序号（原始行） <kbd>=ROW()</kbd></button>
+              <button class="md-tool-dropitem" onclick="insertMd('=SORTROW()', '')">序号（排序后） <kbd>=SORTROW()</kbd></button>
+              <button class="md-tool-dropitem" onclick="insertMd('{{=', '}}')">行内公式 <kbd>{{=}}</kbd></button>
+            </div>
+          </div>
+
+          <!-- 链接/跳转 -->
+          <div class="md-tool-dropdown" data-md-dropdown>
+            <button class="md-tool-dropbtn" onclick="toggleMdDropdown(this)" title="链接与跳转">链接/跳转<span class="caret">▾</span></button>
+            <div class="md-tool-dropmenu">
+              <button class="md-tool-dropitem" onclick="insertMd('[', '](url)')">普通链接 <kbd>[]()</kbd></button>
+              <button class="md-tool-dropitem" onclick="insertMd('![', '](url)')">图片 <kbd>![]()</kbd></button>
+              <div class="md-tool-dropgroup">卡片/窗口协议</div>
+              <button class="md-tool-dropitem" onclick="insertMd('[', '](card:ID)')">跳转卡片 <kbd>card:</kbd></button>
+              <button class="md-tool-dropitem" onclick="insertMd('[', '](win:ID)')">新窗卡片 <kbd>win:</kbd></button>
+              <button class="md-tool-dropitem" onclick="insertMd('[', '](win-img:URL)')">新窗图片 <kbd>win-img:</kbd></button>
+              <button class="md-tool-dropitem" onclick="insertMd('[', '](cur:URL)')">当前窗打开 <kbd>cur:</kbd></button>
+              <div class="md-tool-dropgroup">引用样式</div>
+              <button class="md-tool-dropitem" onclick="insertMd('※', '')">圆圈 <kbd>※</kbd></button>
+              <button class="md-tool-dropitem" onclick="insertMd('▣', '')">矩形 <kbd>▣</kbd></button>
+              <button class="md-tool-dropitem" onclick="insertMd('◎', '')">边框 <kbd>◎</kbd></button>
+              <button class="md-tool-dropitem" onclick="insertMd('↑', '')">上标样式 <kbd>↑</kbd></button>
+              <button class="md-tool-dropitem" onclick="insertMd('↓', '')">下标样式 <kbd>↓</kbd></button>
+            </div>
+          </div>
+
+          <!-- HTML/数学 -->
+          <div class="md-tool-dropdown" data-md-dropdown>
+            <button class="md-tool-dropbtn" onclick="toggleMdDropdown(this)" title="HTML 块与数学公式">HTML/数学<span class="caret">▾</span></button>
+            <div class="md-tool-dropmenu">
+              <button class="md-tool-dropitem" onclick="insertMd('<SMALL>\n', '\n</SMALL>')">小字块 <kbd>&lt;SMALL&gt;</kbd></button>
+              <button class="md-tool-dropitem" onclick="insertMd('<BIG>\n', '\n</BIG>')">大字块 <kbd>&lt;BIG&gt;</kbd></button>
+              <button class="md-tool-dropitem" onclick="insertMd('<CENTER>', '</CENTER>')">居中 <kbd>&lt;CENTER&gt;</kbd></button>
+              <div class="md-tool-dropgroup">LaTeX 公式</div>
+              <button class="md-tool-dropitem" onclick="insertMd('$', '$')">行内公式 <kbd>$</kbd></button>
+              <button class="md-tool-dropitem" onclick="insertMd('$$\n', '\n$$')">块级公式 <kbd>$$</kbd></button>
+            </div>
+          </div>
+
           <span class="md-tool-sep"></span>
-          <button class="md-tool-btn" onclick="insertMd('# ', '')" title="标题1">H1</button>
-          <button class="md-tool-btn" onclick="insertMd('## ', '')" title="标题2">H2</button>
-          <button class="md-tool-btn" onclick="insertMd('### ', '')" title="标题3">H3</button>
-          <button class="md-tool-btn" onclick="insertMd('#### ', '')" title="标题4">H4</button>
-          <span class="md-tool-sep"></span>
-          <button class="md-tool-btn" onclick="insertMd('- ', '')" title="无序列表">•</button>
-          <button class="md-tool-btn" onclick="insertMd('1. ', '')" title="有序列表">1.</button>
-          <button class="md-tool-btn" onclick="insertMd('- [ ] ', '')" title="任务列表">☐</button>
-          <button class="md-tool-btn" onclick="insertMd('> ', '')" title="引用">❝</button>
-          <span class="md-tool-sep"></span>
-          <button class="md-tool-btn" onclick="insertMd('`', '`')" title="行内代码">&lt;/&gt;</button>
-          <button class="md-tool-btn" onclick="insertMd('```\n', '\n```')" title="代码块">{ }</button>
-          <button class="md-tool-btn" onclick="insertMd('[', '](url)')" title="链接">🔗</button>
-          <button class="md-tool-btn" onclick="insertMd('![', '](url)')" title="图片">🖼️</button>
-          <button class="md-tool-btn" onclick="insertMd('---\n', '')" title="分隔线">—</button>
-          <span class="md-tool-sep"></span>
-          <button class="md-tool-btn" onclick="insertMd('| 列1 | 列2 | 列3 |\n| --- | --- | --- |\n| 数据 | 数据 | 数据 |', '')" title="表格"></button>
-          <button class="md-tool-btn" onclick="insertMd('^', '^')" title="上标">X²</button>
-          <button class="md-tool-btn" onclick="insertMd('~', '~')" title="下标">X₂</button>
+          <button class="md-tool-btn" onclick="insertMd('| 列1 | 列2 | 列3 |\n| --- | --- | --- |\n| 数据 | 数据 | 数据 |', '')" title="快速表格">⊞</button>
+          <button class="md-tool-btn" onclick="insertMd('`', '`')" title="快速行内代码">&lt;/&gt;</button>
+          <button class="md-tool-btn" onclick="insertMd('---\n', '')" title="快速分隔线">—</button>
+
           <span style="flex:1"></span>
           <input type="text" id="editSearchInput" placeholder="搜索内容..." style="width:120px;padding:4px 8px;border:1px solid #334155;border-radius:4px;background:#1e293b;color:#e2e8f0;font-size:12px;outline:none;margin-right:4px;" oninput="doSearch()" onkeydown="if(event.key==='Enter'){event.preventDefault();doSearchEnter();}">
           <span id="searchCount" style="font-size:11px;color:#94a3b8;margin-right:4px;min-width:50px;display:inline-block;"></span>
@@ -2767,7 +2953,49 @@
       textarea.setSelectionRange(newCursor, newCursor + (selected ? 0 : 2));
       // 工具栏插入属于程序化修改，手动记入撤销历史
       pushEditorHistory(textarea, true);
+      // 关闭可能打开的工具栏下拉菜单
+      closeAllMdDropdowns();
     }
+
+    // 🆕 Markdown toolbar dropdown toggle
+    function toggleMdDropdown(btn) {
+      const dropdown = btn.closest('[data-md-dropdown]');
+      const wasOpen = dropdown && dropdown.classList.contains('open');
+      closeAllMdDropdowns();
+      if (dropdown && !wasOpen) {
+        dropdown.classList.add('open');
+        const menu = dropdown.querySelector('.md-tool-dropmenu');
+        if (menu) {
+          const rect = btn.getBoundingClientRect();
+          // 固定定位：菜单显示在按钮正下方，脱离 toolbar 的 overflow 裁剪
+          menu.style.top = (rect.bottom + 2) + 'px';
+          menu.style.left = rect.left + 'px';
+          // 若菜单右侧超出视口，则向左对齐到按钮右边缘
+          if (typeof requestAnimationFrame === 'function') {
+            requestAnimationFrame(function () {
+              const vw = window.innerWidth || document.documentElement.clientWidth;
+              if (rect.left + menu.offsetWidth > vw - 8) {
+                menu.style.left = Math.max(8, rect.right - menu.offsetWidth) + 'px';
+              }
+            });
+          }
+        }
+      }
+    }
+    function closeAllMdDropdowns() {
+      document.querySelectorAll('[data-md-dropdown].open').forEach(function (el) {
+        el.classList.remove('open');
+        const menu = el.querySelector('.md-tool-dropmenu');
+        if (menu) {
+          menu.style.top = '';
+          menu.style.left = '';
+        }
+      });
+    }
+    // 点击下拉菜单内部按钮后自动关闭；点击外部也关闭
+    document.addEventListener('click', function (e) {
+      if (!e.target.closest('[data-md-dropdown]')) closeAllMdDropdowns();
+    });
 
     // ========== 撤销/重做（undo/redo）历史管理 ==========
     const editorHistories = new WeakMap();
