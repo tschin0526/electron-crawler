@@ -977,8 +977,8 @@
     /* 黑夜模式：任务内容 / 编辑预览 统一配色 */
     body.dark .todo-text,
     body.dark .md-preview,
-    body.dark .todo-text *:not(a):not(code):not(pre),
-    body.dark .md-preview *:not(a):not(code):not(pre) {
+    body.dark .todo-text *:not(a):not(code):not(pre):not(span[style*="color" i]),
+    body.dark .md-preview *:not(a):not(code):not(pre):not(span[style*="color" i]) {
       color: var(--text-primary) !important;
     }
     body.dark .todo-text a, body.dark .md-preview a { color: var(--primary-color) !important; }
@@ -1984,6 +1984,73 @@
       border-color: #334155;
     }
 
+    /* 🆕 Markdown toolbar 二级菜单（颜色选择器等） */
+    .md-tool-submenu {
+      position: relative;
+    }
+    .md-tool-dropitem.has-submenu {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .md-tool-dropitem.has-submenu kbd {
+      margin-left: auto;
+      padding-right: 4px;
+      float: none;
+    }
+    .md-tool-dropitem .sub-caret {
+      font-size: 10px;
+      opacity: 0.55;
+      margin-left: 2px;
+    }
+    .md-tool-sublist {
+      display: none;
+      position: fixed;
+      min-width: 120px;
+      max-height: 70vh;
+      overflow-y: auto;
+      background: #fff;
+      border: 1px solid var(--border-color);
+      border-radius: 4px;
+      box-shadow: 0 6px 20px rgba(0,0,0,0.12);
+      z-index: 1001;
+      padding: 4px 0;
+    }
+    .md-tool-submenu.open > .md-tool-sublist {
+      display: block;
+    }
+    .md-tool-sublist .md-tool-dropitem {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .md-tool-sublist .md-tool-dropitem kbd {
+      display: none;
+    }
+    .md-color-dot {
+      display: inline-block;
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      flex-shrink: 0;
+      border: 1px solid rgba(0,0,0,0.12);
+    }
+    body.dark .md-tool-sublist {
+      background: #111827;
+      border-color: #334155;
+      box-shadow: 0 6px 20px rgba(0,0,0,0.35);
+    }
+    body.dark .md-tool-sublist .md-tool-dropitem {
+      color: #e2e8f0;
+    }
+    body.dark .md-tool-sublist .md-tool-dropitem:hover {
+      background: rgba(99,102,241,0.25);
+      color: #ffffff;
+    }
+    body.dark .md-color-dot {
+      border-color: rgba(255,255,255,0.2);
+    }
+
     /* Markdown preview toggle */
     .md-toggle-bar {
       display: flex;
@@ -2514,7 +2581,23 @@
               <button class="md-tool-dropitem" onclick="insertMd('<u>', '</u>')">下划线 <kbd>&lt;u&gt;</kbd></button>
               <button class="md-tool-dropitem" onclick="insertMd('~~', '~~')">删除线 <kbd>~~</kbd></button>
               <button class="md-tool-dropitem" onclick="insertMd('<mark>', '</mark>')">高亮 <kbd>&lt;mark&gt;</kbd></button>
-              <button class="md-tool-dropitem" onclick="insertMd('<span style=&quot;color:#f59e0b&quot;>', '</span>')">文字颜色 <kbd>style</kbd></button>
+              <div class="md-tool-submenu" data-md-submenu>
+                <button class="md-tool-dropitem has-submenu">
+                  文字颜色 <span class="sub-caret">▸</span><kbd>style</kbd>
+                </button>
+                <div class="md-tool-sublist">
+                  <button class="md-tool-dropitem" onclick="insertMd('<span style=&quot;color:#ef4444&quot;>', '</span>')"><span class="md-color-dot" style="background:#ef4444"></span>红色</button>
+                  <button class="md-tool-dropitem" onclick="insertMd('<span style=&quot;color:#f97316&quot;>', '</span>')"><span class="md-color-dot" style="background:#f97316"></span>橙色</button>
+                  <button class="md-tool-dropitem" onclick="insertMd('<span style=&quot;color:#f59e0b&quot;>', '</span>')"><span class="md-color-dot" style="background:#f59e0b"></span>琥珀</button>
+                  <button class="md-tool-dropitem" onclick="insertMd('<span style=&quot;color:#eab308&quot;>', '</span>')"><span class="md-color-dot" style="background:#eab308"></span>黄色</button>
+                  <button class="md-tool-dropitem" onclick="insertMd('<span style=&quot;color:#22c55e&quot;>', '</span>')"><span class="md-color-dot" style="background:#22c55e"></span>绿色</button>
+                  <button class="md-tool-dropitem" onclick="insertMd('<span style=&quot;color:#06b6d4&quot;>', '</span>')"><span class="md-color-dot" style="background:#06b6d4"></span>青色</button>
+                  <button class="md-tool-dropitem" onclick="insertMd('<span style=&quot;color:#3b82f6&quot;>', '</span>')"><span class="md-color-dot" style="background:#3b82f6"></span>蓝色</button>
+                  <button class="md-tool-dropitem" onclick="insertMd('<span style=&quot;color:#a855f7&quot;>', '</span>')"><span class="md-color-dot" style="background:#a855f7"></span>紫色</button>
+                  <button class="md-tool-dropitem" onclick="insertMd('<span style=&quot;color:#ec4899&quot;>', '</span>')"><span class="md-color-dot" style="background:#ec4899"></span>粉色</button>
+                  <button class="md-tool-dropitem" onclick="insertMd('<span style=&quot;color:#64748b&quot;>', '</span>')"><span class="md-color-dot" style="background:#64748b"></span>钢灰</button>
+                </div>
+              </div>
               <div class="md-tool-dropgroup">上下标</div>
               <button class="md-tool-dropitem" onclick="insertMd('<sup>', '</sup>')">上标 <kbd>&lt;sup&gt;</kbd></button>
               <button class="md-tool-dropitem" onclick="insertMd('<sub>', '</sub>')">下标 <kbd>&lt;sub&gt;</kbd></button>
@@ -2991,11 +3074,70 @@
           menu.style.left = '';
         }
       });
+      closeAllMdSubmenus();
     }
     // 点击下拉菜单内部按钮后自动关闭；点击外部也关闭
     document.addEventListener('click', function (e) {
       if (!e.target.closest('[data-md-dropdown]')) closeAllMdDropdowns();
     });
+
+    // 🆕 二级菜单管理
+    function closeAllMdSubmenus() {
+      document.querySelectorAll('[data-md-submenu].open').forEach(function (el) {
+        el.classList.remove('open');
+        const list = el.querySelector('.md-tool-sublist');
+        if (list) {
+          list.style.top = '';
+          list.style.left = '';
+        }
+      });
+    }
+
+    function positionSubmenu(submenu) {
+      const btn = submenu.querySelector('.has-submenu');
+      const list = submenu.querySelector('.md-tool-sublist');
+      if (!btn || !list) return;
+      const rect = btn.getBoundingClientRect();
+      const vw = window.innerWidth || document.documentElement.clientWidth;
+      const vh = window.innerHeight || document.documentElement.clientHeight;
+      let top = rect.top;
+      let left = rect.right + 2;
+      if (left + list.offsetWidth > vw - 8) {
+        left = Math.max(8, rect.left - list.offsetWidth - 2);
+      }
+      if (top + list.offsetHeight > vh - 8) {
+        top = Math.max(8, vh - list.offsetHeight - 8);
+      }
+      list.style.top = top + 'px';
+      list.style.left = left + 'px';
+    }
+
+    (function initMdSubmenus() {
+      document.querySelectorAll('[data-md-submenu]').forEach(function (submenu) {
+        const btn = submenu.querySelector('.has-submenu');
+        if (!btn) return;
+
+        btn.addEventListener('mouseenter', function () {
+          closeAllMdSubmenus();
+          submenu.classList.add('open');
+          positionSubmenu(submenu);
+        });
+
+        submenu.addEventListener('mouseleave', function () {
+          submenu.classList.remove('open');
+        });
+
+        btn.addEventListener('click', function (e) {
+          e.stopPropagation();
+          const wasOpen = submenu.classList.contains('open');
+          closeAllMdSubmenus();
+          if (!wasOpen) {
+            submenu.classList.add('open');
+            positionSubmenu(submenu);
+          }
+        });
+      });
+    })();
 
     // ========== 撤销/重做（undo/redo）历史管理 ==========
     const editorHistories = new WeakMap();
