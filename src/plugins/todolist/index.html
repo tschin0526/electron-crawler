@@ -7,6 +7,28 @@
   <!-- 🆕 渲染依赖改为随包本地文件（vendor/），不再依赖 CDN —— CDN 在部分窗体/网络环境下加载失败，
        会导致 markdown 降级为纯文本显示。版本不变：marked@15.0.12 / hljs@11.9.0 / katex@0.16.9 -->
   <script src="vendor/marked.min.js"></script>
+  <!-- 🆕 GFM Emoji 短代码支持：marked-emoji 扩展 + gemoji 数据集（:smile: → 😄 等，约 1900+ 个） -->
+  <script src="vendor/marked-emoji.min.js"></script>
+  <script src="vendor/gemoji-data.js"></script>
+  <script>
+    // 全局注册一次即可（marked.use 注册的扩展在后续 setOptions 调用间持续生效）
+    // 注：marked-emoji 的 UMD 把 global 设为 { markedEmoji: fn } 对象，故按情况取出函数
+    // renderer 覆盖默认行为：默认会输出 <img src="😄">（浏览器显示为破图），
+    // 改为直接输出 emoji 字符本身，与 GitHub（GFM）表现一致。
+    if (window.marked && window.markedEmoji) {
+      var emojiExt = (typeof window.markedEmoji === 'function') ? window.markedEmoji : window.markedEmoji.markedEmoji;
+      if (emojiExt) {
+        try {
+          marked.use(emojiExt({
+            emojis: window.gemojiData || {},
+            renderer: function (token) { return token.emoji; }
+          }));
+        } catch (e) {
+          console.error('[ToDoList] marked-emoji 注册失败：', e);
+        }
+      }
+    }
+  </script>
   <script src="vendor/hljs-common.min.js"></script>
   <link rel="stylesheet" href="vendor/katex.min.css" data-page-node-id="HrWe4hivjaXzbvbLrxVNOd">
   <script src="vendor/katex.min.js"></script>

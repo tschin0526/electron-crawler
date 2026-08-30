@@ -8,6 +8,18 @@
      依赖改为随包本地文件（vendor/），不再走 CDN —— 此前 CDN 脚本在本窗体加载失败，
      导致 .md 只能降级为纯文本显示。版本与 index.html 一致：marked@15.0.12 / hljs@11.9.0 -->
 <script src="vendor/marked.min.js"></script>
+<!-- 🆕 GFM Emoji 短代码支持（与 index.html 同源）：marked-emoji 扩展 + gemoji 数据集 -->
+<script src="vendor/marked-emoji.min.js"></script>
+<script src="vendor/gemoji-data.js"></script>
+<script>
+  if (window.marked && window.markedEmoji) {
+    var emojiExt = (typeof window.markedEmoji === 'function') ? window.markedEmoji : window.markedEmoji.markedEmoji;
+    if (emojiExt) {
+      try { marked.use(emojiExt({ emojis: window.gemojiData || {}, renderer: function (token) { return token.emoji; } })); }
+      catch (e) { console.error('[card-markdown-window] marked-emoji 注册失败：', e); }
+    }
+  }
+</script>
 <script src="vendor/hljs-common.min.js"></script>
 <link rel="stylesheet" href="vendor/hljs-github.min.css" id="hljs-theme-light">
 <link rel="stylesheet" href="vendor/hljs-github-dark.min.css" id="hljs-theme-dark" disabled>
