@@ -346,11 +346,50 @@
         } catch (e) { return match; }
       });
     }
+    // 🆕 GFM 原生目录锚点：与主窗体 renderMarkdown 的 assignHeadingIds 同源逻辑，
+    //    给 h1–h6 自动生成 slug id，并把 href="#片段" 链接片段按同一规则归一化，
+    //    使 [文字](#标题) 在文档窗体内（含窗内 file:// 跳转到另一篇 md）也能文内跳转。
+    function assignHeadingIds(html) {
+      if (!html || typeof DOMParser === 'undefined') return html;
+      var doc = new DOMParser().parseFromString(html, 'text/html');
+      function slugify(t) {
+        return String(t || '')
+          .trim()
+          .toLowerCase()
+          .replace(/\s+/g, '-')
+          .replace(/[&/\\#,+()$~%.'":*?<>{}，。、；：！？（）「」『』【】《》“”‘’—…·\s]/g, '')
+          .replace(/-+/g, '-')
+          .replace(/^-|-$/g, '');
+      }
+      var used = Object.create(null);
+      var existing = Object.create(null);
+      doc.querySelectorAll('[id]').forEach(function (el) { if (el.id) existing[el.id] = true; });
+      doc.querySelectorAll('h1,h2,h3,h4,h5,h6').forEach(function (h) {
+        var text = (h.textContent || '').trim();
+        if (!text) return;
+        var base = slugify(text) || 'section';
+        var id = base, n = 2;
+        while (used[id]) id = base + '-' + (n++);
+        used[id] = true;
+        existing[id] = true;
+        h.id = id;
+      });
+      doc.querySelectorAll('a[href^="#"]').forEach(function (a) {
+        var href = a.getAttribute('href') || '';
+        var frag = href.slice(1);
+        if (!frag) return;
+        // marked 的 cleanUrl 会对 href 做 encodeURI（CJK → %XX），需先还原再 slugify 才能与标题 id 对上
+        try { frag = decodeURIComponent(frag); } catch (_) {}
+        var slug = slugify(frag);
+        if (slug && existing[slug]) a.setAttribute('href', '#' + slug);
+      });
+      return doc.body.innerHTML;
+    }
     function renderDocContent(content, ext) {
       if (typeof marked !== 'undefined') {
         marked.setOptions({ breaks: true, gfm: true });
         if (ext === 'md' || ext === 'markdown') {
-          return highlightCodeBlocks(marked.parse(content));
+          return assignHeadingIds(highlightCodeBlocks(marked.parse(content)));
         }
         // 围栏长度须大于内容里最长反引号串，避免代码块被内容里的 ``` 截断
         var n = 3;
@@ -521,6 +560,22 @@
       //    http(s) → 应用内独立窗体（openWebPreview）；file:// 图片 → 图片查看窗体；
       //    其它 file:// → 本窗体内渲染显示（.md 按 markdown、文本/代码语法高亮），失败时兜底 openWebPreview。
       //    card-jump-link / card-win-link 无 href 属性，不会误命中。
+      // 🆕 GFM 原生目录锚点：[文字](#标题) 在窗体内平滑滚动到对应标题
+      //    （renderDocContent 内的 assignHeadingIds 已生成 slug id 并归一化链接 href；此处兜底保证点击必跳）
+      var anchorLink = e.target && e.target.closest ? e.target.closest('a[href^="#"]') : null;
+      if (anchorLink) {
+        var rawId = (anchorLink.getAttribute('href') || '').slice(1);
+        if (rawId) {
+          var aid = rawId;
+          try { aid = decodeURIComponent(rawId); } catch (_) {}
+          var target = document.getElementById(aid);
+          if (target) {
+            e.preventDefault();
+            target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            return;
+          }
+        }
+      }
       var link = e.target && e.target.closest ? e.target.closest('a[href]') : null;
       if (!link) return;
       var href = (link.getAttribute('href') || '').trim();

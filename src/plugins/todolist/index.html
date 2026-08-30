@@ -1,17 +1,17 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<html lang="zh-CN" data-page-node-id="5ldscfTsbdBS3dusZpHhj8">
+<head data-page-node-id="fFr1Ma7exYVksVIKnaEzne">
+  <meta charset="UTF-8" data-page-node-id="KoQeSEzyGktMm6H3dh26JI">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" data-page-node-id="cBjEI0Yoqt1AgpBgpPa0pr">
   <title>📝 ToDoList</title>
   <!-- 🆕 渲染依赖改为随包本地文件（vendor/），不再依赖 CDN —— CDN 在部分窗体/网络环境下加载失败，
        会导致 markdown 降级为纯文本显示。版本不变：marked@15.0.12 / hljs@11.9.0 / katex@0.16.9 -->
   <script src="vendor/marked.min.js"></script>
   <script src="vendor/hljs-common.min.js"></script>
-  <link rel="stylesheet" href="vendor/katex.min.css">
+  <link rel="stylesheet" href="vendor/katex.min.css" data-page-node-id="HrWe4hivjaXzbvbLrxVNOd">
   <script src="vendor/katex.min.js"></script>
-  <link rel="stylesheet" href="vendor/hljs-github.min.css" id="hljs-theme-light">
-  <link rel="stylesheet" href="vendor/hljs-github-dark.min.css" id="hljs-theme-dark" disabled>
+  <link rel="stylesheet" href="vendor/hljs-github.min.css" id="hljs-theme-light" data-page-node-id="fL8bxHWwilM31EThhTGesW">
+  <link rel="stylesheet" href="vendor/hljs-github-dark.min.css" id="hljs-theme-dark" disabled data-page-node-id="5NcMFWg0o8GnD0JcbpWPVj">
   <style>
     :root {
       --primary-color: #667eea;
@@ -2524,291 +2524,293 @@
     })();
   </script>
 </head>
-<body>
-  <div class="todo-container">
-    <div class="todo-header">
-      <h1>📝 ToDoList</h1>
-      <div style="display: flex; align-items: center; gap: 10px;">
+<body data-page-node-id="NuotoF2Gt8FJFarkWZAWOQ">
+  <div class="todo-container" data-page-node-id="crkLWB3UGm2AfM0FmLoX2t">
+    <div class="todo-header" data-page-node-id="6BDAuBds9W6kf0XLGHLhKv">
+      <h1 data-page-node-id="DOYwQW4EUdhfI6XB6s8oCS">📝 ToDoList</h1>
+      <div style="display: flex; align-items: center; gap: 10px;" data-page-node-id="76bx7pz7OMsF9340rteFRh">
         <!-- 黑夜模式由主程式统一控制，不单独显示按钮 -->
-        <div class="stats">
-        <div class="stat-item">
-          <span class="stat-value" id="totalCount">0</span>
-          <span class="stat-label">总任务</span>
+        <div class="stats" data-page-node-id="zX2XxkKpqaw4dt6NsGHhH9">
+        <div class="stat-item" data-page-node-id="piv8gJOvem1zRFzzBT5gA2">
+          <span class="stat-value" id="totalCount" data-page-node-id="BrjaWWFnAP0VjEIh1MjdBs">0</span>
+          <span class="stat-label" data-page-node-id="jH5w8bvwEjFCdExJuLjUIZ">总任务</span>
         </div>
-        <div class="stat-item">
-          <span class="stat-value" id="pendingCount">0</span>
-          <span class="stat-label">待完成</span>
+        <div class="stat-item" data-page-node-id="QDRqpp3aH0IneAKD4RDRWs">
+          <span class="stat-value" id="pendingCount" data-page-node-id="NLFNbcyIrAYQW3teKDtwCB">0</span>
+          <span class="stat-label" data-page-node-id="fIyqArUP9XKFXjnFGIMpb1">待完成</span>
         </div>
-        <div class="stat-item">
-          <span class="stat-value" id="completedCount">0</span>
-          <span class="stat-label">已完成</span>
+        <div class="stat-item" data-page-node-id="JdpFXPjwAHeXDORPSdBIxN">
+          <span class="stat-value" id="completedCount" data-page-node-id="nljJBMjHjB9Hg9jkr2rShy">0</span>
+          <span class="stat-label" data-page-node-id="yotCN7reauQU2R4LHoAMy3">已完成</span>
         </div>
-        <div class="stat-divider" aria-hidden="true"></div>
-        <div class="stat-item">
-          <span class="stat-value" id="pinnedCount">0</span>
-          <span class="stat-label">📌 置顶</span>
+        <div class="stat-divider" aria-hidden="true" data-page-node-id="A5fL8BRuxkmgiFf5XipfAz"></div>
+        <div class="stat-item" data-page-node-id="kk3CKH7nlxhJOWePYLTwUE">
+          <span class="stat-value" id="pinnedCount" data-page-node-id="ItglnUrGMdliW14I1XWJxg">0</span>
+          <span class="stat-label" data-page-node-id="DxHmx2TFOteUQmCQA21WVN">📌 置顶</span>
         </div>
-        <div class="stat-item">
-          <span class="stat-value" id="bottomCount">0</span>
-          <span class="stat-label">📍 置底</span>
+        <div class="stat-item" data-page-node-id="YNZ7SwcrbKLHrunz3jifrr">
+          <span class="stat-value" id="bottomCount" data-page-node-id="SNV8xkpWlNmH4DvMJgR5xs">0</span>
+          <span class="stat-label" data-page-node-id="cwn7iINNttV8q3KSqA5d07">📍 置底</span>
         </div>
-        <div class="stat-divider" aria-hidden="true"></div>
-        <div class="stat-item">
-          <span class="stat-value" id="archivedCount">0</span>
-          <span class="stat-label">🗄️ 已归档</span>
+        <div class="stat-divider" aria-hidden="true" data-page-node-id="0bvaUdyPVX0lMnMwo17PBo"></div>
+        <div class="stat-item" data-page-node-id="tQACgybqj9oe0ph68HzNDD">
+          <span class="stat-value" id="archivedCount" data-page-node-id="VA1jB6eS05aiZU4lsH14nq">0</span>
+          <span class="stat-label" data-page-node-id="VgSMbRaVt9tFUxbiQpgSV5">🗄️ 已归档</span>
         </div>
       </div>
     </div>
     </div>
 
-    <div class="todo-toolbar">
-      <div class="btn-group">
-        <button class="btn btn-primary" onclick="openAddModal()" title="添加文件">➕</button>
+    <div class="todo-toolbar" data-page-node-id="VOMxxUyvRzOkFkbZmlZMF4">
+      <div class="btn-group" data-page-node-id="UlLnfiTwpKi0LmsjDpH1GD">
+        <button class="btn btn-primary" onclick="openAddModal()" title="添加文件" data-page-node-id="JZ4R7jBK2QWolHWtvVUnKE">➕</button>
       </div>
-      <div class="search-wrapper">
-        <input type="text" class="search-box" id="searchInput" placeholder="搜索任务..." oninput="handleSearch()">
-        <div class="search-nav" id="searchNav" style="display: none;">
-          <span class="search-count" id="searchResultCount">0/0</span>
-          <button class="nav-btn" onclick="navigateSearch(-1)" title="上一个">▲</button>
-          <button class="nav-btn" onclick="navigateSearch(1)" title="下一个">▼</button>
+      <div class="search-wrapper" data-page-node-id="lpsvAbEpZ8FVZnprD6mZJI">
+        <input type="text" class="search-box" id="searchInput" placeholder="搜索任务..." oninput="handleSearch()" data-page-node-id="ilsn0X5Tzrc4nmwC6RfPD7">
+        <div class="search-nav" id="searchNav" style="display: none;" data-page-node-id="XOiqCmPp9d3TVjJoPmpGq2">
+          <span class="search-count" id="searchResultCount" data-page-node-id="NNkTKERhBQ4PMixQDvFsWE">0/0</span>
+          <button class="nav-btn" onclick="navigateSearch(-1)" title="上一个" data-page-node-id="tot2swuNFQ11I042m3baKb">▲</button>
+          <button class="nav-btn" onclick="navigateSearch(1)" title="下一个" data-page-node-id="aEY2XWb3OMYAjQPJThZ3Vs">▼</button>
         </div>
         <!-- 📋 文件浏览按钮：以「文件列表方式」浏览所有 todo-{id}.json，点击跳转到对应卡片并金边闪烁 -->
-        <div class="file-list-wrapper" id="fileListWrapper">
-          <button type="button" class="file-list-trigger" id="fileListTrigger" title="按文件名称/时间/大小浏览（ToDo 卡片 / MD 文件）" aria-haspopup="true">🗂️ 文件</button>
-          <div class="file-list-panel" id="fileListPanel" role="dialog" aria-label="文件列表">
-            <div class="file-list-sort" id="fileListSort">
-              <button type="button" class="file-list-sort-btn" data-sort="name" data-dir="asc">按名称</button>
-              <button type="button" class="file-list-sort-btn active" data-sort="mtime" data-dir="desc">按时间</button>
-              <button type="button" class="file-list-sort-btn" data-sort="size" data-dir="desc">按大小</button>
+        <div class="file-list-wrapper" id="fileListWrapper" data-page-node-id="hnmjlkimM1oSISO7lNr9X6">
+          <button type="button" class="file-list-trigger" id="fileListTrigger" title="按文件名称/时间/大小浏览（ToDo 卡片 / MD 文件）" aria-haspopup="true" data-page-node-id="5NJ5iDcLQfA2OkyjRIT3fV">🗂️ 文件</button>
+          <div class="file-list-panel" id="fileListPanel" role="dialog" aria-label="文件列表" data-page-node-id="ZTb62hp3Rq5zZbdVY8BM95">
+            <div class="file-list-sort" id="fileListSort" data-page-node-id="BZNXqMgvfMTG4fS1u3e4ZQ">
+              <button type="button" class="file-list-sort-btn" data-sort="name" data-dir="asc" data-page-node-id="1jbXrGfE3HZE4USHRlv1VU">按名称</button>
+              <button type="button" class="file-list-sort-btn active" data-sort="mtime" data-dir="desc" data-page-node-id="OPORgcoV6iB37GtBbZsgJd">按时间</button>
+              <button type="button" class="file-list-sort-btn" data-sort="size" data-dir="desc" data-page-node-id="BfdLbGAaM6glp1av3n6pxL">按大小</button>
             </div>
-            <div class="file-list-body" id="fileListBody"></div>
-            <div class="file-list-footer" id="fileListFooter">共 0 个文件</div>
+            <div class="file-list-body" id="fileListBody" data-page-node-id="2B5RWUFgbeHMEOvnXcOgPj"></div>
+            <div class="file-list-footer" id="fileListFooter" data-page-node-id="tLCOCV3xkGCO2ah2swAShl">共 0 个文件</div>
           </div>
         </div>
       </div>
     </div>
 
-    <div class="filter-section">
-      <span class="filter-label">状态:</span>
-      <div class="status-filter">
-        <button class="status-btn active" onclick="setFilter('all')" title="全部">全</button>
-        <button class="status-btn" onclick="setFilter('pending')" title="待完成">待</button>
-        <button class="status-btn" onclick="setFilter('completed')" title="已完成">完</button>
+    <div class="filter-section" data-page-node-id="zz6bfTiynQe9gPdyIt6oZO">
+      <span class="filter-label" data-page-node-id="lUf0ROZ9CRLjTMExA20PZe">状态:</span>
+      <div class="status-filter" data-page-node-id="j5nx8foApgINkuZ6YChO9E">
+        <button class="status-btn active" onclick="setFilter('all')" title="全部" data-page-node-id="mOVViy27PjMAdXY8rbp5VF">全</button>
+        <button class="status-btn" onclick="setFilter('pending')" title="待完成" data-page-node-id="v6zvpolZ2edW4rQznZQEHj">待</button>
+        <button class="status-btn" onclick="setFilter('completed')" title="已完成" data-page-node-id="g1D7siLU4HlkXqruOUYksa">完</button>
       </div>
-      <span class="filter-label" style="margin-left: 16px;">标签:</span>
-      <div class="tag-filter" id="tagFilter"></div>
+      <span class="filter-label" style="margin-left: 16px;" data-page-node-id="BeAgOunHDLIVFyP8ZZBrmB">标签:</span>
+      <div class="tag-filter" id="tagFilter" data-page-node-id="BM02enDuQQrSoXUDWVWawk"></div>
     </div>
 
-    <div class="todo-list" id="todoList"></div>
+    <div class="todo-list" id="todoList" data-page-node-id="7Bv1FhyYUc38OKWJZPF0uE"></div>
   </div>
 
-  <div class="modal-overlay" id="modalOverlay" style="display: none;" onclick="closeModal(event)">
+  <div class="modal-overlay" id="modalOverlay" style="display: none;" onclick="closeModal(event)" data-page-node-id="ronLhFuiscU2fqSFXX6QMX">
     <!-- 注意：.modal 上不可 stopPropagation —— closeModal 已有 target===currentTarget 判定，内部点击不会误关；
          若阻断冒泡，弹窗内 markdown 链接将无法被 document 级点击委托拦截（win: 无反应、file:// 被导航走） -->
-    <div class="modal editor-layout">
+    <div class="modal editor-layout" data-page-node-id="vx1KrOBYFDDYeQkvTsS5Ob">
       <!-- 主区：编辑框 + 渲染框（占主要画面） -->
-      <div class="editor-main">
-        <div class="md-toolbar" id="mdToolbar">
-          <button class="md-tool-btn" id="undoBtn" onclick="editorUndo()" onmousedown="event.preventDefault()" title="撤销 (Cmd/Ctrl+Z)" disabled>↩</button>
-          <button class="md-tool-btn" id="redoBtn" onclick="editorRedo()" onmousedown="event.preventDefault()" title="重做 (Cmd/Ctrl+Shift+Z)" disabled>↪</button>
-          <span class="md-tool-sep"></span>
+      <div class="editor-main" data-page-node-id="asFD5unXFBFr6pyRcjDKqM">
+        <div class="md-toolbar" id="mdToolbar" data-page-node-id="tHu5QxXomXTzOjQVojod7I">
+          <button class="md-tool-btn" id="undoBtn" onclick="editorUndo()" onmousedown="event.preventDefault()" title="撤销 (Cmd/Ctrl+Z)" disabled data-page-node-id="xMZJZ8VDdsuBrZ1EW3ERvI">↩</button>
+          <button class="md-tool-btn" id="redoBtn" onclick="editorRedo()" onmousedown="event.preventDefault()" title="重做 (Cmd/Ctrl+Shift+Z)" disabled data-page-node-id="DdKJS58FLx68ad2bQE5SKC">↪</button>
+          <span class="md-tool-sep" data-page-node-id="DDaO0v5H2Fa2SCmCsWj32z"></span>
 
           <!-- 格式 -->
-          <div class="md-tool-dropdown" data-md-dropdown>
-            <button class="md-tool-dropbtn" onclick="toggleMdDropdown(this)" title="文字格式">格式<span class="caret">▾</span></button>
-            <div class="md-tool-dropmenu">
-              <button class="md-tool-dropitem" onclick="insertMd('**', '**')">粗体 <kbd>**</kbd></button>
-              <button class="md-tool-dropitem" onclick="insertMd('*', '*')">斜体 <kbd>*</kbd></button>
-              <button class="md-tool-dropitem" onclick="insertMd('<u>', '</u>')">下划线 <kbd>&lt;u&gt;</kbd></button>
-              <button class="md-tool-dropitem" onclick="insertMd('~~', '~~')">删除线 <kbd>~~</kbd></button>
-              <button class="md-tool-dropitem" onclick="insertMd('<mark>', '</mark>')">高亮 <kbd>&lt;mark&gt;</kbd></button>
-              <div class="md-tool-submenu" data-md-submenu>
-                <button class="md-tool-dropitem has-submenu">
-                  文字颜色 <span class="sub-caret">▸</span><kbd>style</kbd>
+          <div class="md-tool-dropdown" data-md-dropdown data-page-node-id="X4n0HWry32VzbHY6GSfkhq">
+            <button class="md-tool-dropbtn" onclick="toggleMdDropdown(this)" title="文字格式" data-page-node-id="vuKj5HA6hvt0DHZEISYlBP">格式<span class="caret" data-page-node-id="HBg2UuRBxyBRj1aV0JwHox">▾</span></button>
+            <div class="md-tool-dropmenu" data-page-node-id="6QQIWrSHEZF38i5elR4Jue">
+              <button class="md-tool-dropitem" onclick="insertMd('**', '**')" data-page-node-id="FKepp8EtxKsedbSy6nRqCN">粗体 <kbd data-page-node-id="yLOQrBM16J1xvrBPc7Ezsi">**</kbd></button>
+              <button class="md-tool-dropitem" onclick="insertMd('*', '*')" data-page-node-id="oWOinAvPyrb7Q8yIXz1HoQ">斜体 <kbd data-page-node-id="1PBF4zSY5FAKl2oF6CxxIw">*</kbd></button>
+              <button class="md-tool-dropitem" onclick="insertMd('<u data-page-node-id="2g1kAYBlxrkpEC4NEw7mmE">', '</u>')">下划线 <kbd data-page-node-id="PbxptpUCqKbIGx8uQkkAI0">&lt;u&gt;</kbd></button>
+              <button class="md-tool-dropitem" onclick="insertMd('~~', '~~')" data-page-node-id="3HJaUs34mHNlicMjQyWiDp">删除线 <kbd data-page-node-id="lr9zwFImKQ430YVY1XNYeG">~~</kbd></button>
+              <button class="md-tool-dropitem" onclick="insertMd('<mark data-page-node-id="nnyQd8mOsUOHljgZGZoVg2">', '</mark>')">高亮 <kbd data-page-node-id="smUH0zsxx9H6pvR8w8sQK6">&lt;mark&gt;</kbd></button>
+              <div class="md-tool-submenu" data-md-submenu data-page-node-id="VDWg9fXrqyXWDiw1FzCyFV">
+                <button class="md-tool-dropitem has-submenu" data-page-node-id="P4H9e3zCWTXIS89yIKtaiY">
+                  文字颜色 <span class="sub-caret" data-page-node-id="G4cxBDlYEVxtf07B5QU0iy">▸</span><kbd data-page-node-id="mMym1Y7KJZ5hlLD8vc8Ke4">style</kbd>
                 </button>
-                <div class="md-tool-sublist">
-                  <button class="md-tool-dropitem" onclick="insertMd('<span style=&quot;color:#ef4444&quot;>', '</span>')"><span class="md-color-dot" style="background:#ef4444"></span>红色</button>
-                  <button class="md-tool-dropitem" onclick="insertMd('<span style=&quot;color:#f97316&quot;>', '</span>')"><span class="md-color-dot" style="background:#f97316"></span>橙色</button>
-                  <button class="md-tool-dropitem" onclick="insertMd('<span style=&quot;color:#f59e0b&quot;>', '</span>')"><span class="md-color-dot" style="background:#f59e0b"></span>琥珀</button>
-                  <button class="md-tool-dropitem" onclick="insertMd('<span style=&quot;color:#eab308&quot;>', '</span>')"><span class="md-color-dot" style="background:#eab308"></span>黄色</button>
-                  <button class="md-tool-dropitem" onclick="insertMd('<span style=&quot;color:#22c55e&quot;>', '</span>')"><span class="md-color-dot" style="background:#22c55e"></span>绿色</button>
-                  <button class="md-tool-dropitem" onclick="insertMd('<span style=&quot;color:#06b6d4&quot;>', '</span>')"><span class="md-color-dot" style="background:#06b6d4"></span>青色</button>
-                  <button class="md-tool-dropitem" onclick="insertMd('<span style=&quot;color:#3b82f6&quot;>', '</span>')"><span class="md-color-dot" style="background:#3b82f6"></span>蓝色</button>
-                  <button class="md-tool-dropitem" onclick="insertMd('<span style=&quot;color:#a855f7&quot;>', '</span>')"><span class="md-color-dot" style="background:#a855f7"></span>紫色</button>
-                  <button class="md-tool-dropitem" onclick="insertMd('<span style=&quot;color:#ec4899&quot;>', '</span>')"><span class="md-color-dot" style="background:#ec4899"></span>粉色</button>
-                  <button class="md-tool-dropitem" onclick="insertMd('<span style=&quot;color:#64748b&quot;>', '</span>')"><span class="md-color-dot" style="background:#64748b"></span>钢灰</button>
+                <div class="md-tool-sublist" data-page-node-id="zjbgvYMacwWOVndxdyBMoj">
+                  <button class="md-tool-dropitem" onclick="insertMd('<span style=&quot;color:#ef4444&quot; data-page-node-id="UMfvAhf0F6KWvISEPHEt1u">', '</span>')"><span class="md-color-dot" style="background:#ef4444" data-page-node-id="bVSKqmUXXXupzqQE03cZQQ"></span>红色</button>
+                  <button class="md-tool-dropitem" onclick="insertMd('<span style=&quot;color:#f97316&quot; data-page-node-id="dvjhYtxlZXtUYkhGgp24e5">', '</span>')"><span class="md-color-dot" style="background:#f97316" data-page-node-id="ezB8BxmUgw2vruXEsh660q"></span>橙色</button>
+                  <button class="md-tool-dropitem" onclick="insertMd('<span style=&quot;color:#f59e0b&quot; data-page-node-id="tWhmAxgfOmul39aQhVsXc4">', '</span>')"><span class="md-color-dot" style="background:#f59e0b" data-page-node-id="Fw0AENEbxHsi1uRx9N9DAD"></span>琥珀</button>
+                  <button class="md-tool-dropitem" onclick="insertMd('<span style=&quot;color:#eab308&quot; data-page-node-id="B5g23qfkqoJD8yOLlLcNWg">', '</span>')"><span class="md-color-dot" style="background:#eab308" data-page-node-id="LEQY8ntC8lbLLIovVx2LoL"></span>黄色</button>
+                  <button class="md-tool-dropitem" onclick="insertMd('<span style=&quot;color:#22c55e&quot; data-page-node-id="2RP1ewyKSAy3o2Ia1gWr4D">', '</span>')"><span class="md-color-dot" style="background:#22c55e" data-page-node-id="IiAs5W76ZVg7A6x6tad3jV"></span>绿色</button>
+                  <button class="md-tool-dropitem" onclick="insertMd('<span style=&quot;color:#06b6d4&quot; data-page-node-id="vjmJa6WpcTCWwNUntw9vir">', '</span>')"><span class="md-color-dot" style="background:#06b6d4" data-page-node-id="HebKQ10ENGrsfJqroQFN3r"></span>青色</button>
+                  <button class="md-tool-dropitem" onclick="insertMd('<span style=&quot;color:#3b82f6&quot; data-page-node-id="0ZbDOmutF7RKmTOannLTJV">', '</span>')"><span class="md-color-dot" style="background:#3b82f6" data-page-node-id="foAMxDAfSnpPtoIGhYq1Fz"></span>蓝色</button>
+                  <button class="md-tool-dropitem" onclick="insertMd('<span style=&quot;color:#a855f7&quot; data-page-node-id="MlgCrzEFUcHzHCPF4e32d5">', '</span>')"><span class="md-color-dot" style="background:#a855f7" data-page-node-id="fnriS1G0xIUGGK5cZoIf1Z"></span>紫色</button>
+                  <button class="md-tool-dropitem" onclick="insertMd('<span style=&quot;color:#ec4899&quot; data-page-node-id="E6KqPVHB8ViXHcw5n9uUP6">', '</span>')"><span class="md-color-dot" style="background:#ec4899" data-page-node-id="p0h0h44NSDJrBLwPBOskTW"></span>粉色</button>
+                  <button class="md-tool-dropitem" onclick="insertMd('<span style=&quot;color:#64748b&quot; data-page-node-id="UEdw2GIDNyGdxMce70fC0N">', '</span>')"><span class="md-color-dot" style="background:#64748b" data-page-node-id="kftbOe1c5eKZAPMCnYazX4"></span>钢灰</button>
                 </div>
               </div>
-              <div class="md-tool-dropgroup">上下标</div>
-              <button class="md-tool-dropitem" onclick="insertMd('<sup>', '</sup>')">上标 <kbd>&lt;sup&gt;</kbd></button>
-              <button class="md-tool-dropitem" onclick="insertMd('<sub>', '</sub>')">下标 <kbd>&lt;sub&gt;</kbd></button>
+              <div class="md-tool-dropgroup" data-page-node-id="vq4q1FvuvyLtHXdqVD8c9S">上下标</div>
+              <button class="md-tool-dropitem" onclick="insertMd('<sup data-page-node-id="YDhMNAxYsBEvIjzLOznukk">', '</sup>')">上标 <kbd data-page-node-id="dQKlSLpPGc98etDh6awdlJ">&lt;sup&gt;</kbd></button>
+              <button class="md-tool-dropitem" onclick="insertMd('<sub data-page-node-id="mOTR9GpfJntJrpCfMo3Wam">', '</sub>')">下标 <kbd data-page-node-id="dCu9N5zNKiuuUlv7UW4CpW">&lt;sub&gt;</kbd></button>
             </div>
           </div>
 
           <!-- 段落 -->
-          <div class="md-tool-dropdown" data-md-dropdown>
-            <button class="md-tool-dropbtn" onclick="toggleMdDropdown(this)" title="段落结构">段落<span class="caret">▾</span></button>
-            <div class="md-tool-dropmenu">
-              <button class="md-tool-dropitem" onclick="insertMd('# ', '')">标题 1 <kbd>#</kbd></button>
-              <button class="md-tool-dropitem" onclick="insertMd('## ', '')">标题 2 <kbd>##</kbd></button>
-              <button class="md-tool-dropitem" onclick="insertMd('### ', '')">标题 3 <kbd>###</kbd></button>
-              <button class="md-tool-dropitem" onclick="insertMd('#### ', '')">标题 4 <kbd>####</kbd></button>
-              <button class="md-tool-dropitem" onclick="insertMd('##### ', '')">标题 5 <kbd>#####</kbd></button>
-              <button class="md-tool-dropitem" onclick="insertMd('###### ', '')">标题 6 <kbd>######</kbd></button>
-              <div class="md-tool-dropgroup">列表与引用</div>
-              <button class="md-tool-dropitem" onclick="insertMd('- ', '')">无序列表 <kbd>-</kbd></button>
-              <button class="md-tool-dropitem" onclick="insertMd('1. ', '')">有序列表 <kbd>1.</kbd></button>
-              <button class="md-tool-dropitem" onclick="insertMd('- [ ] ', '')">任务列表 <kbd>[]</kbd></button>
-              <button class="md-tool-dropitem" onclick="insertMd('> ', '')">引用 <kbd>&gt;</kbd></button>
-              <div class="md-tool-dropgroup">分隔与代码</div>
-              <button class="md-tool-dropitem" onclick="insertMd('---\n', '')">分隔线 <kbd>---</kbd></button>
-              <button class="md-tool-dropitem" onclick="insertMd('`', '`')">行内代码 <kbd>`</kbd></button>
-              <button class="md-tool-dropitem" onclick="insertMd('```\n', '\n```')">代码块 <kbd>```</kbd></button>
+          <div class="md-tool-dropdown" data-md-dropdown data-page-node-id="SH9t3lnmmp1NDHw58zb2tY">
+            <button class="md-tool-dropbtn" onclick="toggleMdDropdown(this)" title="段落结构" data-page-node-id="fJJU0LxkuY7Ffjg322tWUG">段落<span class="caret" data-page-node-id="hopgZyOFc3pnH5mxFvDCUM">▾</span></button>
+            <div class="md-tool-dropmenu" data-page-node-id="gsoDJzKp5A9FeKxHctPNy2">
+              <button class="md-tool-dropitem" onclick="insertMd('# ', '')" data-page-node-id="ZP0RABNJNIMZVKVC8BxP9o">标题 1 <kbd data-page-node-id="l42sxCzXWUGUWtpEU2nrct">#</kbd></button>
+              <button class="md-tool-dropitem" onclick="insertMd('## ', '')" data-page-node-id="C3YaHEZifnSn6lpgDnb4Jm">标题 2 <kbd data-page-node-id="LHxtWagHPKcF5MA5YjJdVe">##</kbd></button>
+              <button class="md-tool-dropitem" onclick="insertMd('### ', '')" data-page-node-id="AdDlKmkhA2lPrCoDRSWa6H">标题 3 <kbd data-page-node-id="CLE8Hq6N42wSXUlxVAqcaR">###</kbd></button>
+              <button class="md-tool-dropitem" onclick="insertMd('#### ', '')" data-page-node-id="SKDbmUuYBjLDtE7E7KXr2i">标题 4 <kbd data-page-node-id="jSCNuFhKMp1VUkQIWdPZMI">####</kbd></button>
+              <button class="md-tool-dropitem" onclick="insertMd('##### ', '')" data-page-node-id="ywVsW1SHn29NZdYKPXIYOq">标题 5 <kbd data-page-node-id="pQWWXPIElFExFUYfA20yKU">#####</kbd></button>
+              <button class="md-tool-dropitem" onclick="insertMd('###### ', '')" data-page-node-id="9R7LLELPr4G7sz9fqdwulm">标题 6 <kbd data-page-node-id="t7ztaUz6YXWdEI3d9CadRQ">######</kbd></button>
+              <div class="md-tool-dropgroup" data-page-node-id="AUHrLvcmirl9i0YZsNzwrF">列表与引用</div>
+              <button class="md-tool-dropitem" onclick="insertMd('- ', '')" data-page-node-id="9IH2qGCEtaiwHaG7WcwDbH">无序列表 <kbd data-page-node-id="6oPhPJYEjDYeMiTchgmi4F">-</kbd></button>
+              <button class="md-tool-dropitem" onclick="insertMd('1. ', '')" data-page-node-id="I82I9R3DgHeIYm9yANcj3x">有序列表 <kbd data-page-node-id="n09XxXmAVl3ciYjel6k3b1">1.</kbd></button>
+              <button class="md-tool-dropitem" onclick="insertMd('- [ ] ', '')" data-page-node-id="10fehxGtPSTxLwUyYbXX36">任务列表 <kbd data-page-node-id="12n3MRvWcNE8TC2aMumWLo">[]</kbd></button>
+              <button class="md-tool-dropitem" onclick="insertMd(' data-page-node-id="uGyxxHsBj1s5gmin7Jla1j"> ', '')">引用 <kbd data-page-node-id="3nTlZpcLPS3aBemMH5kG9x">&gt;</kbd></button>
+              <div class="md-tool-dropgroup" data-page-node-id="TOCgrp1b2c3">目录（文内跳转）</div>
+              <button class="md-tool-dropitem" onclick="insertToc()" data-page-node-id="insertTocBtn7a9">插入目录 <kbd data-page-node-id="insertTocKbd3d5">[TOC]</kbd></button>
+              <div class="md-tool-dropgroup" data-page-node-id="CA8hdWTxssr0MXr97UUS12">分隔与代码</div>
+              <button class="md-tool-dropitem" onclick="insertMd('---\n', '')" data-page-node-id="PJXSaUzyoSsAwSSUyl9oRk">分隔线 <kbd data-page-node-id="XK9k9qcWtaWCEF6HtH2QPK">---</kbd></button>
+              <button class="md-tool-dropitem" onclick="insertMd('`', '`')" data-page-node-id="9LqDnp1Dr20RhTGLjJ2WMe">行内代码 <kbd data-page-node-id="2cyJNd7KpdPum0dAVL2Ur1">`</kbd></button>
+              <button class="md-tool-dropitem" onclick="insertMd('```\n', '\n```')" data-page-node-id="8YkWh8jjaT9WKRoELaLV5h">代码块 <kbd data-page-node-id="7UkEz1Tr1Ah5nLe1hQvThy">```</kbd></button>
             </div>
           </div>
 
           <!-- 表格/计算 -->
-          <div class="md-tool-dropdown" data-md-dropdown>
-            <button class="md-tool-dropbtn" onclick="toggleMdDropdown(this)" title="表格与计算">表格/计算<span class="caret">▾</span></button>
-            <div class="md-tool-dropmenu">
-              <button class="md-tool-dropitem" onclick="insertMd('| 列1 | 列2 | 列3 |\n| --- | --- | --- |\n| 数据 | 数据 | 数据 |', '')">插入表格</button>
-              <div class="md-tool-submenu" data-md-submenu>
-                <button class="md-tool-dropitem has-submenu">
-                  列宽标记 <span class="sub-caret">▸</span><kbd>{{cols:}}</kbd>
+          <div class="md-tool-dropdown" data-md-dropdown data-page-node-id="d7U8ZIkhEz3c7COd1DjAZJ">
+            <button class="md-tool-dropbtn" onclick="toggleMdDropdown(this)" title="表格与计算" data-page-node-id="4anbfrrKYvOeLAA02px0VO">表格/计算<span class="caret" data-page-node-id="uIFDh3IyyS3D8CKaXe0cn4">▾</span></button>
+            <div class="md-tool-dropmenu" data-page-node-id="S1nnSuskHbIwuEIrzJ7w3e">
+              <button class="md-tool-dropitem" onclick="insertMd('| 列1 | 列2 | 列3 |\n| --- | --- | --- |\n| 数据 | 数据 | 数据 |', '')" data-page-node-id="ioELNnSHzoH2lAU1VKil5i">插入表格</button>
+              <div class="md-tool-submenu" data-md-submenu data-page-node-id="Xzt4Uu7r2X3HjcfvsIstOP">
+                <button class="md-tool-dropitem has-submenu" data-page-node-id="aQyhZmf5zMeB3eMNgHumTa">
+                  列宽标记 <span class="sub-caret" data-page-node-id="ZQlIanaQaCQHW8LyCZYfPk">▸</span><kbd data-page-node-id="JG4fTPoR0WBwSlKnts2zPu">{{cols:}}</kbd>
                 </button>
-                <div class="md-tool-sublist">
-                  <button class="md-tool-dropitem" onclick="insertMd('{{cols: 50% 50%}}', '')">2列 均分</button>
-                  <button class="md-tool-dropitem" onclick="insertMd('{{cols: 33% 67%}}', '')">2列 1:2</button>
-                  <button class="md-tool-dropitem" onclick="insertMd('{{cols: 67% 33%}}', '')">2列 2:1</button>
-                  <button class="md-tool-dropitem" onclick="insertMd('{{cols: 33% 34% 33%}}', '')">3列 均分</button>
-                  <button class="md-tool-dropitem" onclick="insertMd('{{cols: 20% 60% 20%}}', '')">3列 1:2:1</button>
-                  <button class="md-tool-dropitem" onclick="insertMd('{{cols: 50% 25% 25%}}', '')">3列 2:1:1</button>
-                  <button class="md-tool-dropitem" onclick="insertMd('{{cols: 25% 25% 25% 25%}}', '')">4列 均分</button>
-                  <button class="md-tool-dropitem" onclick="insertMd('{{cols: 20% 30% 50%}}', '')">3列 2:3:5</button>
+                <div class="md-tool-sublist" data-page-node-id="CRAfwtDHEUcbo6iDsbl5us">
+                  <button class="md-tool-dropitem" onclick="insertMd('{{cols: 50% 50%}}', '')" data-page-node-id="ErGs8Pz0PMr6pTOH6aHiTM">2列 均分</button>
+                  <button class="md-tool-dropitem" onclick="insertMd('{{cols: 33% 67%}}', '')" data-page-node-id="vQeot9Jcg9Kt6G0HY0D2vi">2列 1:2</button>
+                  <button class="md-tool-dropitem" onclick="insertMd('{{cols: 67% 33%}}', '')" data-page-node-id="ResB5zCC8zP9wcmV10F97w">2列 2:1</button>
+                  <button class="md-tool-dropitem" onclick="insertMd('{{cols: 33% 34% 33%}}', '')" data-page-node-id="xzB8HoJLD530LQuJbh6qCs">3列 均分</button>
+                  <button class="md-tool-dropitem" onclick="insertMd('{{cols: 20% 60% 20%}}', '')" data-page-node-id="JUywOYOcoS75b24Qe1Q1XV">3列 1:2:1</button>
+                  <button class="md-tool-dropitem" onclick="insertMd('{{cols: 50% 25% 25%}}', '')" data-page-node-id="mAAcHbCRlKnu9EwBsAxKjV">3列 2:1:1</button>
+                  <button class="md-tool-dropitem" onclick="insertMd('{{cols: 25% 25% 25% 25%}}', '')" data-page-node-id="uJrAJ2kzfUmzA7HN6BKPTp">4列 均分</button>
+                  <button class="md-tool-dropitem" onclick="insertMd('{{cols: 20% 30% 50%}}', '')" data-page-node-id="cm4YmPCybdG0Rs5FEUkYUX">3列 2:3:5</button>
                 </div>
               </div>
-              <div class="md-tool-dropgroup">计算表</div>
-              <button class="md-tool-dropitem" onclick="insertMd('{{calc}}\n', '')">计算表标记 <kbd>{{calc}}</kbd></button>
-              <button class="md-tool-dropitem" onclick="insertMd('{{sort: 1 asc}}', '')">排序标记 <kbd>{{sort:}}</kbd></button>
-              <button class="md-tool-dropitem" onclick="insertMd('{{let: 名称 值}}', '')">命名变量 <kbd>{{let:}}</kbd></button>
-              <button class="md-tool-dropitem" onclick="insertMd('=ROW()', '')">序号（原始行） <kbd>=ROW()</kbd></button>
-              <button class="md-tool-dropitem" onclick="insertMd('=SORTROW()', '')">序号（排序后） <kbd>=SORTROW()</kbd></button>
-              <button class="md-tool-dropitem" onclick="insertMd('{{=', '}}')">行内公式 <kbd>{{=}}</kbd></button>
+              <div class="md-tool-dropgroup" data-page-node-id="gtIDt4Y6crRTz7NLPgqqAM">计算表</div>
+              <button class="md-tool-dropitem" onclick="insertMd('{{calc}}\n', '')" data-page-node-id="rbLFSJj5wW5lYGv9DGV49s">计算表标记 <kbd data-page-node-id="J80wvFKkIwZaSO5e0Kvg5V">{{calc}}</kbd></button>
+              <button class="md-tool-dropitem" onclick="insertMd('{{sort: 1 asc}}', '')" data-page-node-id="dnnSCxzUbE3AlBfN1gAiy4">排序标记 <kbd data-page-node-id="hlrxuyc9DRtgN0dqZGHaov">{{sort:}}</kbd></button>
+              <button class="md-tool-dropitem" onclick="insertMd('{{let: 名称 值}}', '')" data-page-node-id="bKCY30k5vDzcumIyVCcjZy">命名变量 <kbd data-page-node-id="eU1PlNKGfp3uzF7StzPLhe">{{let:}}</kbd></button>
+              <button class="md-tool-dropitem" onclick="insertMd('=ROW()', '')" data-page-node-id="O87AB6d0Chu9EpZBOLGXxd">序号（原始行） <kbd data-page-node-id="UngRpRpEBZBf1UgLdRtF33">=ROW()</kbd></button>
+              <button class="md-tool-dropitem" onclick="insertMd('=SORTROW()', '')" data-page-node-id="UafLgjgtzz4Bl4ceuMBqjt">序号（排序后） <kbd data-page-node-id="IJQuf4zpKGEzo0nayF2cKC">=SORTROW()</kbd></button>
+              <button class="md-tool-dropitem" onclick="insertMd('{{=', '}}')" data-page-node-id="4sPrGC6dV0zunqsJzc2YQX">行内公式 <kbd data-page-node-id="PiKNhBM7L6sBW7dkqBbM7H">{{=}}</kbd></button>
             </div>
           </div>
 
           <!-- 链接/跳转 -->
-          <div class="md-tool-dropdown" data-md-dropdown>
-            <button class="md-tool-dropbtn" onclick="toggleMdDropdown(this)" title="链接与跳转">链接/跳转<span class="caret">▾</span></button>
-            <div class="md-tool-dropmenu">
-              <button class="md-tool-dropitem" onclick="insertMd('[', '](url)')">普通链接 <kbd>[]()</kbd></button>
-              <button class="md-tool-dropitem" onclick="insertMd('![', '](url)')">图片 <kbd>![]()</kbd></button>
-              <button class="md-tool-dropitem" onclick="insertMd('![', '](url =200x150)')">图片(定宽高) <kbd>=WxH</kbd></button>
-              <div class="md-tool-dropgroup">并排图组</div>
-              <button class="md-tool-dropitem" onclick="insertMd('{{row}}\n![说明](url =200)\n![说明](url =200)\n{{endrow}}\n', '')">并排图组模板 <kbd>{{row}}</kbd></button>
-              <div class="md-tool-dropgroup">卡片/窗口协议</div>
-              <button class="md-tool-dropitem" onclick="insertMd('[', '](card:ID)')">跳转卡片 <kbd>card:</kbd></button>
-              <button class="md-tool-dropitem" onclick="insertMd('[', '](win:ID)')">新窗卡片 <kbd>win:</kbd></button>
-              <button class="md-tool-dropitem" onclick="insertMd('[', '](win-img:URL)')">新窗图片 <kbd>win-img:</kbd></button>
-              <button class="md-tool-dropitem" onclick="insertMd('[', '](cur:URL)')">当前窗打开 <kbd>cur:</kbd></button>
-              <div class="md-tool-dropgroup">引用样式</div>
-              <button class="md-tool-dropitem" onclick="insertMd('※', '')">圆圈 <kbd>※</kbd></button>
-              <button class="md-tool-dropitem" onclick="insertMd('▣', '')">矩形 <kbd>▣</kbd></button>
-              <button class="md-tool-dropitem" onclick="insertMd('◎', '')">边框 <kbd>◎</kbd></button>
-              <button class="md-tool-dropitem" onclick="insertMd('↑', '')">上标样式 <kbd>↑</kbd></button>
-              <button class="md-tool-dropitem" onclick="insertMd('↓', '')">下标样式 <kbd>↓</kbd></button>
+          <div class="md-tool-dropdown" data-md-dropdown data-page-node-id="bNlfjhLYw7usNEIBoeqK67">
+            <button class="md-tool-dropbtn" onclick="toggleMdDropdown(this)" title="链接与跳转" data-page-node-id="Lnrz6Kn4EaJ5q0PyGFXIHD">链接/跳转<span class="caret" data-page-node-id="J06QemafmHr4f2R1lvTbHd">▾</span></button>
+            <div class="md-tool-dropmenu" data-page-node-id="mQZvP0hL3WxIA13JAjWdkA">
+              <button class="md-tool-dropitem" onclick="insertMd('[', '](url)')" data-page-node-id="tGkqdl6ct1Nbdee7IuD4le">普通链接 <kbd data-page-node-id="Bxy3eSKXvzO1CxPhOuSabQ">[]()</kbd></button>
+              <button class="md-tool-dropitem" onclick="insertMd('![', '](url)')" data-page-node-id="0NLo6LexM5ByAy3Kx85GWQ">图片 <kbd data-page-node-id="uTOHrM8q3m5eQgP1dUh7CN">![]()</kbd></button>
+              <button class="md-tool-dropitem" onclick="insertMd('![', '](url =200x150)')" data-page-node-id="iQMji66bzkC9OD4gCRclW4">图片(定宽高) <kbd data-page-node-id="jc2Fb9C89HdfgcVXEBwVr0">=WxH</kbd></button>
+              <div class="md-tool-dropgroup" data-page-node-id="w37Q9wtgJ8KtnD7QeW9c58">并排图组</div>
+              <button class="md-tool-dropitem" onclick="insertMd('{{row}}\n![说明](url =200)\n![说明](url =200)\n{{endrow}}\n', '')" data-page-node-id="OERAZ3FTUhV6E2Uf3ZiS3J">并排图组模板 <kbd data-page-node-id="gQgWyK6A1bCMf5g92eak2K">{{row}}</kbd></button>
+              <div class="md-tool-dropgroup" data-page-node-id="ABouTEhfPAZm0fS7kf17Zh">卡片/窗口协议</div>
+              <button class="md-tool-dropitem" onclick="insertMd('[', '](card:ID)')" data-page-node-id="FjDW9BF64HNXTTsUDVf0rC">跳转卡片 <kbd data-page-node-id="ecM0oAH01yJCjHbSRj7YhM">card:</kbd></button>
+              <button class="md-tool-dropitem" onclick="insertMd('[', '](win:ID)')" data-page-node-id="cq0INHcRR2MAiW7odzobEr">新窗卡片 <kbd data-page-node-id="M6M5OYFqbYdoq4BwUDW7kH">win:</kbd></button>
+              <button class="md-tool-dropitem" onclick="insertMd('[', '](win-img:URL)')" data-page-node-id="QQxf9LKA15jgjTHb7iUzCY">新窗图片 <kbd data-page-node-id="LHAsO0DhJiJs2D4DMvYPGJ">win-img:</kbd></button>
+              <button class="md-tool-dropitem" onclick="insertMd('[', '](cur:URL)')" data-page-node-id="jyaC0TgfyD0HhLAKxroUzm">当前窗打开 <kbd data-page-node-id="3BIJMlklQ7KujFMDD8j41d">cur:</kbd></button>
+              <div class="md-tool-dropgroup" data-page-node-id="rGAvGVU0c0Ewe47PdCfTmO">引用样式</div>
+              <button class="md-tool-dropitem" onclick="insertMd('※', '')" data-page-node-id="wLTTej5GaGL5KFD2TG9ouq">圆圈 <kbd data-page-node-id="yjkIdvveYZKtt48Vdvvlpj">※</kbd></button>
+              <button class="md-tool-dropitem" onclick="insertMd('▣', '')" data-page-node-id="3bnD6RkNc8O11DOthpEDxn">矩形 <kbd data-page-node-id="nWxYnsZG1QxSBT1XBo9hq4">▣</kbd></button>
+              <button class="md-tool-dropitem" onclick="insertMd('◎', '')" data-page-node-id="AuEiHfYk5d4Fw6rllGUWz6">边框 <kbd data-page-node-id="0UkW92doHIKAuOBmIYzmGz">◎</kbd></button>
+              <button class="md-tool-dropitem" onclick="insertMd('↑', '')" data-page-node-id="SNkGcGuuDYeuS7g05yVzcN">上标样式 <kbd data-page-node-id="8HBjHtopsRl399hCCsBzGA">↑</kbd></button>
+              <button class="md-tool-dropitem" onclick="insertMd('↓', '')" data-page-node-id="Z6NRJYCn2TrvUoSQCtr3gN">下标样式 <kbd data-page-node-id="wJDajGjw5PFU2GlKAbOz85">↓</kbd></button>
             </div>
           </div>
 
           <!-- HTML/数学 -->
-          <div class="md-tool-dropdown" data-md-dropdown>
-            <button class="md-tool-dropbtn" onclick="toggleMdDropdown(this)" title="HTML 块与数学公式">HTML/数学<span class="caret">▾</span></button>
-            <div class="md-tool-dropmenu">
-              <button class="md-tool-dropitem" onclick="insertMd('<SMALL>\n', '\n</SMALL>')">小字块 <kbd>&lt;SMALL&gt;</kbd></button>
-              <button class="md-tool-dropitem" onclick="insertMd('<BIG>\n', '\n</BIG>')">大字块 <kbd>&lt;BIG&gt;</kbd></button>
-              <button class="md-tool-dropitem" onclick="insertMd('<CENTER>', '</CENTER>')">居中 <kbd>&lt;CENTER&gt;</kbd></button>
-              <div class="md-tool-dropgroup">LaTeX 公式</div>
-              <button class="md-tool-dropitem" onclick="insertMd('$', '$')">行内公式 <kbd>$</kbd></button>
-              <button class="md-tool-dropitem" onclick="insertMd('$$\n', '\n$$')">块级公式 <kbd>$$</kbd></button>
+          <div class="md-tool-dropdown" data-md-dropdown data-page-node-id="YY2r6KGBsM4QRAFD5yE8OF">
+            <button class="md-tool-dropbtn" onclick="toggleMdDropdown(this)" title="HTML 块与数学公式" data-page-node-id="q6eKCEBm1U89x79GVn6SuR">HTML/数学<span class="caret" data-page-node-id="PQkVFy58pPmxvQ5TbNdSPG">▾</span></button>
+            <div class="md-tool-dropmenu" data-page-node-id="QydHeFCugAcDgtQp7n7SrJ">
+              <button class="md-tool-dropitem" onclick="insertMd('<SMALL data-page-node-id="wI4rAPNmpA8HRttRZ3r5pw">\n', '\n</SMALL>')">小字块 <kbd data-page-node-id="FJOSoO8jJrOXFrkxPUMF5W">&lt;SMALL&gt;</kbd></button>
+              <button class="md-tool-dropitem" onclick="insertMd('<BIG data-page-node-id="MMIyAcenpaGqCnMEHAmqqb">\n', '\n</BIG>')">大字块 <kbd data-page-node-id="oyPxsHVxzkAF1TcVNb5oi2">&lt;BIG&gt;</kbd></button>
+              <button class="md-tool-dropitem" onclick="insertMd('<CENTER data-page-node-id="V9Ow3zrbZwMxKH7yAFXixk">', '</CENTER>')">居中 <kbd data-page-node-id="skWOlVxah1aprikS4h2CUX">&lt;CENTER&gt;</kbd></button>
+              <div class="md-tool-dropgroup" data-page-node-id="bj177qyeXemzD2g0Ucjgr0">LaTeX 公式</div>
+              <button class="md-tool-dropitem" onclick="insertMd('$', '$')" data-page-node-id="xfvAGtDtoaJVLvMNzif4wx">行内公式 <kbd data-page-node-id="OmhM2EcpxcCFapIHGMyBvl">$</kbd></button>
+              <button class="md-tool-dropitem" onclick="insertMd('$$\n', '\n$$')" data-page-node-id="S6Gsjs8w0I6qnWCsXLQ0w0">块级公式 <kbd data-page-node-id="4tDHv1m5zKAkL4Q9a1aAd3">$$</kbd></button>
             </div>
           </div>
 
-          <span class="md-tool-sep"></span>
-          <button class="md-tool-btn" onclick="insertMd('| 列1 | 列2 | 列3 |\n| --- | --- | --- |\n| 数据 | 数据 | 数据 |', '')" title="快速表格">⊞</button>
-          <button class="md-tool-btn" onclick="insertMd('`', '`')" title="快速行内代码">&lt;/&gt;</button>
-          <button class="md-tool-btn" onclick="insertMd('---\n', '')" title="快速分隔线">—</button>
+          <span class="md-tool-sep" data-page-node-id="hX2C5VswwdlIQtdXALzFP4"></span>
+          <button class="md-tool-btn" onclick="insertMd('| 列1 | 列2 | 列3 |\n| --- | --- | --- |\n| 数据 | 数据 | 数据 |', '')" title="快速表格" data-page-node-id="zXQfEoS1i5GJTGdsmJLF8X">⊞</button>
+          <button class="md-tool-btn" onclick="insertMd('`', '`')" title="快速行内代码" data-page-node-id="zIIaEVZGT4MK1pdsl0bwau">&lt;/&gt;</button>
+          <button class="md-tool-btn" onclick="insertMd('---\n', '')" title="快速分隔线" data-page-node-id="xq71cJs2XNhLX8SpM7q3rn">—</button>
 
-          <span style="flex:1"></span>
-          <input type="text" id="editSearchInput" placeholder="搜索内容..." style="width:120px;padding:4px 8px;border:1px solid #334155;border-radius:4px;background:#1e293b;color:#e2e8f0;font-size:12px;outline:none;margin-right:4px;" oninput="doSearch()" onkeydown="if(event.key==='Enter'){event.preventDefault();doSearchEnter();}">
-          <span id="searchCount" style="font-size:11px;color:#94a3b8;margin-right:4px;min-width:50px;display:inline-block;"></span>
-          <button id="searchPrevBtn" onmouseover="this.style.background='#334155';this.style.color='#e2e8f0'" onmouseout="this.style.background='#1e293b';this.style.color='#94a3b8'" onclick="findPrev()" title="上一笔" style="display:none;padding:2px 6px;border:1px solid #334155;border-radius:4px;background:#1e293b;color:#94a3b8;font-size:11px;cursor:pointer;margin-right:2px;">◀</button>
-          <button id="searchNextBtn" onmouseover="this.style.background='#334155';this.style.color='#e2e8f0'" onmouseout="this.style.background='#1e293b';this.style.color='#94a3b8'" onclick="findNext()" title="下一笔" style="display:none;padding:2px 6px;border:1px solid #334155;border-radius:4px;background:#1e293b;color:#94a3b8;font-size:11px;cursor:pointer;margin-right:2px;">▶</button>
-          <button id="genMdBtn" onclick="generateMdFromHtml()" title="将当前 HTML 转为 Markdown 文本" style="display:none;padding:2px 8px;border:1px solid #334155;border-radius:4px;background:#1e293b;color:#fbbf24;font-size:11px;cursor:pointer;margin-right:2px;">生成MD</button>
-          <button id="genHtmlBtn" onclick="generateHtmlFromMd()" title="将当前 Markdown 转为 HTML 文本" style="display:none;padding:2px 8px;border:1px solid #334155;border-radius:4px;background:#1e293b;color:#34d399;font-size:11px;cursor:pointer;margin-right:8px;">生成HTML</button>
-          <span class="md-toggle-btn" id="mdToggleBtn" onclick="toggleMdPreview()">编辑文本</span>
-          <button class="md-tool-btn" onclick="closeModal()" title="关闭" style="margin-left:6px;color:#94a3b8;">✕</button>
+          <span style="flex:1" data-page-node-id="rYQS1EpVAsBLVKB3hOouqm"></span>
+          <input type="text" id="editSearchInput" placeholder="搜索内容..." style="width:120px;padding:4px 8px;border:1px solid #334155;border-radius:4px;background:#1e293b;color:#e2e8f0;font-size:12px;outline:none;margin-right:4px;" oninput="doSearch()" onkeydown="if(event.key==='Enter'){event.preventDefault();doSearchEnter();}" data-page-node-id="MwJBrn8xQaEsuPzX3O86Es">
+          <span id="searchCount" style="font-size:11px;color:#94a3b8;margin-right:4px;min-width:50px;display:inline-block;" data-page-node-id="kI5XzGl9ya480PNfujtSML"></span>
+          <button id="searchPrevBtn" onmouseover="this.style.background='#334155';this.style.color='#e2e8f0'" onmouseout="this.style.background='#1e293b';this.style.color='#94a3b8'" onclick="findPrev()" title="上一笔" style="display:none;padding:2px 6px;border:1px solid #334155;border-radius:4px;background:#1e293b;color:#94a3b8;font-size:11px;cursor:pointer;margin-right:2px;" data-page-node-id="kCNTdS1TWqAQIFpYxD6Bvc">◀</button>
+          <button id="searchNextBtn" onmouseover="this.style.background='#334155';this.style.color='#e2e8f0'" onmouseout="this.style.background='#1e293b';this.style.color='#94a3b8'" onclick="findNext()" title="下一笔" style="display:none;padding:2px 6px;border:1px solid #334155;border-radius:4px;background:#1e293b;color:#94a3b8;font-size:11px;cursor:pointer;margin-right:2px;" data-page-node-id="x1GeoyQWC1yAFT2NyfJOWH">▶</button>
+          <button id="genMdBtn" onclick="generateMdFromHtml()" title="将当前 HTML 转为 Markdown 文本" style="display:none;padding:2px 8px;border:1px solid #334155;border-radius:4px;background:#1e293b;color:#fbbf24;font-size:11px;cursor:pointer;margin-right:2px;" data-page-node-id="5wtSeQzn524aAUW9Mdbrwq">生成MD</button>
+          <button id="genHtmlBtn" onclick="generateHtmlFromMd()" title="将当前 Markdown 转为 HTML 文本" style="display:none;padding:2px 8px;border:1px solid #334155;border-radius:4px;background:#1e293b;color:#34d399;font-size:11px;cursor:pointer;margin-right:8px;" data-page-node-id="JaYl2VijZBq5TAZrACRbtN">生成HTML</button>
+          <span class="md-toggle-btn" id="mdToggleBtn" onclick="toggleMdPreview()" data-page-node-id="MvIl4qAC20v16McYbgnhsf">编辑文本</span>
+          <button class="md-tool-btn" onclick="closeModal()" title="关闭" style="margin-left:6px;color:#94a3b8;" data-page-node-id="IeiM7U26O8JuXaDWjX3q0H">✕</button>
         </div>
         <textarea class="form-textarea" id="taskText" placeholder="输入任务内容（支持 Markdown）..." style="border-top:none;border-radius:0 0 8px 8px;"></textarea>
         <textarea class="form-textarea" id="htmlText" placeholder="HTML 源码编辑..." style="display:none;border-top:none;border-radius:0 0 8px 8px;font-family:'Monaco','Consolas',monospace;font-size:13px;white-space:pre;overflow-x:auto;"></textarea>
-        <div class="md-preview" id="mdPreview"></div>
+        <div class="md-preview" id="mdPreview" data-page-node-id="drImIYSWJSMVITbt0Otl3f"></div>
       </div>
 
       <!-- 侧边手柄：点击收起/展开操作面板 -->
-      <button type="button" class="editor-sidebar-handle" id="editorSidebarHandle" onclick="toggleEditorSidebar()" title="收起/展开 操作面板">⚙ 操作</button>
+      <button type="button" class="editor-sidebar-handle" id="editorSidebarHandle" onclick="toggleEditorSidebar()" title="收起/展开 操作面板" data-page-node-id="AqihGmaCXhNYHawmTM4b2g">⚙ 操作</button>
 
       <!-- 侧边浮动区：其余操作（顶按钮 / 改名 / 标签 / 背景色 / 附件） -->
-      <div class="editor-sidebar" id="editorSidebar">
-        <h2 class="modal-title" id="modalTitle">添加文件</h2>
-        <div class="file-type-tabs" id="fileTypeTabs">
-          <button class="file-type-tab" id="tabTodoCard" type="button" onclick="switchFileTypeTab('todo')">todo卡片</button>
-          <button class="file-type-tab" id="tabMdFile" type="button" onclick="switchFileTypeTab('md')">MD文件</button>
+      <div class="editor-sidebar" id="editorSidebar" data-page-node-id="YjUpzKt3GsZk5NtXZnBA80">
+        <h2 class="modal-title" id="modalTitle" data-page-node-id="YHi3CUZlbek1kj3dTs9mAe">添加文件</h2>
+        <div class="file-type-tabs" id="fileTypeTabs" data-page-node-id="lRFjfI5yAT6eJHViwYQKqQ">
+          <button class="file-type-tab" id="tabTodoCard" type="button" onclick="switchFileTypeTab('todo')" data-page-node-id="ChID7aiCuEPW9L60HfA2JN">todo卡片</button>
+          <button class="file-type-tab" id="tabMdFile" type="button" onclick="switchFileTypeTab('md')" data-page-node-id="QsIiQztFZUBCHLHHJ0M7w3">MD文件</button>
         </div>
-        <div class="modal-header-actions">
-          <button class="btn btn-text btn-secondary" id="emailBtn" onclick="emailTodoFromModal()" style="background:transparent;color:#8b5cf6;border:1px solid #8b5cf6;" title="将当前任务内容发送邮件">📧 发邮件</button>
-          <button class="btn btn-text btn-secondary" onclick="closeModal()">取消</button>
-          <button class="btn btn-text btn-primary" onclick="saveTask()">保存</button>
+        <div class="modal-header-actions" data-page-node-id="IBqvx04ddWYZeUk26Q0Bbo">
+          <button class="btn btn-text btn-secondary" id="emailBtn" onclick="emailTodoFromModal()" style="background:transparent;color:#8b5cf6;border:1px solid #8b5cf6;" title="将当前任务内容发送邮件" data-page-node-id="jFZCYv5vTMUoM55ImmpHAh">📧 发邮件</button>
+          <button class="btn btn-text btn-secondary" onclick="closeModal()" data-page-node-id="vmsMk5SyBCqpSx17cKICP9">取消</button>
+          <button class="btn btn-text btn-primary" onclick="saveTask()" data-page-node-id="DpFPDrKnUkj2ujsKQEjFGA">保存</button>
         </div>
 
-        <div class="json-file-row" id="jsonFileRow" style="display: none;">
-          <div class="json-file-row-top">
-            <span class="json-file-name" id="jsonFileName" title="data 目录下的 JSON 文件名">todo-0.json</span>
+        <div class="json-file-row" id="jsonFileRow" style="display: none;" data-page-node-id="1QYKWA5xip33kCzdQbsWOX">
+          <div class="json-file-row-top" data-page-node-id="rax8c8o7PUv6XNFQpBFiAv">
+            <span class="json-file-name" id="jsonFileName" title="data 目录下的 JSON 文件名" data-page-node-id="tA3YY4BZs9FktzxGKuIIAF">todo-0.json</span>
           </div>
-          <button class="json-file-rename-btn" id="jsonFileRenameBtn" onclick="startRenameJsonFile()" title="重命名 JSON 文件（ID）">✏️ 重命名(JSON)</button>
+          <button class="json-file-rename-btn" id="jsonFileRenameBtn" onclick="startRenameJsonFile()" title="重命名 JSON 文件（ID）" data-page-node-id="JmdN9ND3ii7FomFtqBpjBe">✏️ 重命名(JSON)</button>
         </div>
 
-        <div class="form-group" id="tagsFormGroup">
-          <label class="form-label">标签</label>
-          <div class="tags-selector" id="tagsSelector">
-            <input type="text" class="tag-input" id="tagInput" placeholder="#标签" onkeydown="handleTagInput(event)">
-          </div>
-        </div>
-
-        <div class="form-group" id="colorFormGroup">
-          <label class="form-label">🎨 卡片背景色</label>
-          <div id="todoColorPicker" style="display: flex; flex-wrap: wrap; gap: 6px; align-items: center;">
-            <div class="todo-color-swatch" data-color="" style="width: 28px; height: 28px; border-radius: 6px; border: 2px solid #e2e8f0; cursor: pointer; background: #ffffff; display: flex; align-items: center; justify-content: center; font-size: 14px;" title="默认（白色）" onclick="selectTodoColor(this, '')">✓</div>
-            <div class="todo-color-swatch" data-color="#fef3c7" style="width: 28px; height: 28px; border-radius: 6px; border: 2px solid #e2e8f0; cursor: pointer; background: #fef3c7;" title="浅黄" onclick="selectTodoColor(this, '#fef3c7')"></div>
-            <div class="todo-color-swatch" data-color="#dbeafe" style="width: 28px; height: 28px; border-radius: 6px; border: 2px solid #e2e8f0; cursor: pointer; background: #dbeafe;" title="浅蓝" onclick="selectTodoColor(this, '#dbeafe')"></div>
-            <div class="todo-color-swatch" data-color="#dcfce7" style="width: 28px; height: 28px; border-radius: 6px; border: 2px solid #e2e8f0; cursor: pointer; background: #dcfce7;" title="浅绿" onclick="selectTodoColor(this, '#dcfce7')"></div>
-            <div class="todo-color-swatch" data-color="#fce7f3" style="width: 28px; height: 28px; border-radius: 6px; border: 2px solid #e2e8f0; cursor: pointer; background: #fce7f3;" title="浅粉" onclick="selectTodoColor(this, '#fce7f3')"></div>
-            <div class="todo-color-swatch" data-color="#f3e8ff" style="width: 28px; height: 28px; border-radius: 6px; border: 2px solid #e2e8f0; cursor: pointer; background: #f3e8ff;" title="浅紫" onclick="selectTodoColor(this, '#f3e8ff')"></div>
-            <div class="todo-color-swatch" data-color="#fed7aa" style="width: 28px; height: 28px; border-radius: 6px; border: 2px solid #e2e8f0; cursor: pointer; background: #fed7aa;" title="浅橙" onclick="selectTodoColor(this, '#fed7aa')"></div>
-            <div class="todo-color-swatch" data-color="#e0e7ff" style="width: 28px; height: 28px; border-radius: 6px; border: 2px solid #e2e8f0; cursor: pointer; background: #e0e7ff;" title="浅靛" onclick="selectTodoColor(this, '#e0e7ff')"></div>
-            <div class="todo-color-swatch" data-color="#d1fae5" style="width: 28px; height: 28px; border-radius: 6px; border: 2px solid #e2e8f0; cursor: pointer; background: #d1fae5;" title="浅青" onclick="selectTodoColor(this, '#d1fae5')"></div>
-            <div class="todo-color-swatch" data-color="#fee2e2" style="width: 28px; height: 28px; border-radius: 6px; border: 2px solid #e2e8f0; cursor: pointer; background: #fee2e2;" title="浅红" onclick="selectTodoColor(this, '#fee2e2')"></div>
-            <div class="todo-color-swatch" data-color="#f1f5f9" style="width: 28px; height: 28px; border-radius: 6px; border: 2px solid #e2e8f0; cursor: pointer; background: #f1f5f9;" title="浅灰" onclick="selectTodoColor(this, '#f1f5f9')"></div>
-            <div class="todo-color-swatch" data-color="#fef9c3" style="width: 28px; height: 28px; border-radius: 6px; border: 2px solid #e2e8f0; cursor: pointer; background: #fef9c3;" title="浅柠檬" onclick="selectTodoColor(this, '#fef9c3')"></div>
+        <div class="form-group" id="tagsFormGroup" data-page-node-id="0nM7DOZB9pWzeenE2b4F8T">
+          <label class="form-label" data-page-node-id="dhfPElZCWZ4w4trcYfsSbX">标签</label>
+          <div class="tags-selector" id="tagsSelector" data-page-node-id="PEluMghJGqtmJuohN0V3As">
+            <input type="text" class="tag-input" id="tagInput" placeholder="#标签" onkeydown="handleTagInput(event)" data-page-node-id="liDFQxfsAuNucTl9q0aFiq">
           </div>
         </div>
 
-        <div class="form-group" id="attachmentsFormGroup">
-          <label class="form-label">附件</label>
-          <div class="attachments-section">
-            <label class="file-upload-btn">
+        <div class="form-group" id="colorFormGroup" data-page-node-id="vzaBE8KgkEsWENDjlf1E70">
+          <label class="form-label" data-page-node-id="UG1b2VZdz9W6YeeAD4cGM2">🎨 卡片背景色</label>
+          <div id="todoColorPicker" style="display: flex; flex-wrap: wrap; gap: 6px; align-items: center;" data-page-node-id="gxk8OHIkB6LKcBeAdZsdCN">
+            <div class="todo-color-swatch" data-color="" style="width: 28px; height: 28px; border-radius: 6px; border: 2px solid #e2e8f0; cursor: pointer; background: #ffffff; display: flex; align-items: center; justify-content: center; font-size: 14px;" title="默认（白色）" onclick="selectTodoColor(this, '')" data-page-node-id="rlfao3tKmy9znlvCWYEhSC">✓</div>
+            <div class="todo-color-swatch" data-color="#fef3c7" style="width: 28px; height: 28px; border-radius: 6px; border: 2px solid #e2e8f0; cursor: pointer; background: #fef3c7;" title="浅黄" onclick="selectTodoColor(this, '#fef3c7')" data-page-node-id="DV1EPAnMDHBAyqaLF3Y2Oj"></div>
+            <div class="todo-color-swatch" data-color="#dbeafe" style="width: 28px; height: 28px; border-radius: 6px; border: 2px solid #e2e8f0; cursor: pointer; background: #dbeafe;" title="浅蓝" onclick="selectTodoColor(this, '#dbeafe')" data-page-node-id="PcqGH9FSvaVJQdr6cz6zTg"></div>
+            <div class="todo-color-swatch" data-color="#dcfce7" style="width: 28px; height: 28px; border-radius: 6px; border: 2px solid #e2e8f0; cursor: pointer; background: #dcfce7;" title="浅绿" onclick="selectTodoColor(this, '#dcfce7')" data-page-node-id="j1kv9r2hoG86lf3FytfFak"></div>
+            <div class="todo-color-swatch" data-color="#fce7f3" style="width: 28px; height: 28px; border-radius: 6px; border: 2px solid #e2e8f0; cursor: pointer; background: #fce7f3;" title="浅粉" onclick="selectTodoColor(this, '#fce7f3')" data-page-node-id="dvK4bpMB3jlZwB4RPAi4gV"></div>
+            <div class="todo-color-swatch" data-color="#f3e8ff" style="width: 28px; height: 28px; border-radius: 6px; border: 2px solid #e2e8f0; cursor: pointer; background: #f3e8ff;" title="浅紫" onclick="selectTodoColor(this, '#f3e8ff')" data-page-node-id="aK88v48m0PhUbKFzqoUEAa"></div>
+            <div class="todo-color-swatch" data-color="#fed7aa" style="width: 28px; height: 28px; border-radius: 6px; border: 2px solid #e2e8f0; cursor: pointer; background: #fed7aa;" title="浅橙" onclick="selectTodoColor(this, '#fed7aa')" data-page-node-id="eDc2OKCIdHEpGxNJDSqytr"></div>
+            <div class="todo-color-swatch" data-color="#e0e7ff" style="width: 28px; height: 28px; border-radius: 6px; border: 2px solid #e2e8f0; cursor: pointer; background: #e0e7ff;" title="浅靛" onclick="selectTodoColor(this, '#e0e7ff')" data-page-node-id="kBxeHSUo6DNoH4tEOaHfM1"></div>
+            <div class="todo-color-swatch" data-color="#d1fae5" style="width: 28px; height: 28px; border-radius: 6px; border: 2px solid #e2e8f0; cursor: pointer; background: #d1fae5;" title="浅青" onclick="selectTodoColor(this, '#d1fae5')" data-page-node-id="aZjhJWN9UB15yGJzvpr2Fa"></div>
+            <div class="todo-color-swatch" data-color="#fee2e2" style="width: 28px; height: 28px; border-radius: 6px; border: 2px solid #e2e8f0; cursor: pointer; background: #fee2e2;" title="浅红" onclick="selectTodoColor(this, '#fee2e2')" data-page-node-id="Rv0GpXNt5Fs5yrhna8nroV"></div>
+            <div class="todo-color-swatch" data-color="#f1f5f9" style="width: 28px; height: 28px; border-radius: 6px; border: 2px solid #e2e8f0; cursor: pointer; background: #f1f5f9;" title="浅灰" onclick="selectTodoColor(this, '#f1f5f9')" data-page-node-id="iV6rFESUJ66GuszA0yzRrP"></div>
+            <div class="todo-color-swatch" data-color="#fef9c3" style="width: 28px; height: 28px; border-radius: 6px; border: 2px solid #e2e8f0; cursor: pointer; background: #fef9c3;" title="浅柠檬" onclick="selectTodoColor(this, '#fef9c3')" data-page-node-id="LGrSmFweErOisfjiLjvYHY"></div>
+          </div>
+        </div>
+
+        <div class="form-group" id="attachmentsFormGroup" data-page-node-id="672fiGfKNINqhi5J8dEuuh">
+          <label class="form-label" data-page-node-id="4MKMDxVEHijUrnDd31D9TE">附件</label>
+          <div class="attachments-section" data-page-node-id="1PIKtYGQYwb4BseBpPqmuk">
+            <label class="file-upload-btn" data-page-node-id="Z1MFErxiARhkQaH7qVK1ZJ">
               📎 点击上传附件
-              <input type="file" class="file-input" id="fileInput" multiple onchange="handleFileSelect(event)">
+              <input type="file" class="file-input" id="fileInput" multiple onchange="handleFileSelect(event)" data-page-node-id="vBJvyibkDUkB2sF49G7YXW">
             </label>
-            <div class="attachments-list" id="attachmentsList"></div>
+            <div class="attachments-list" id="attachmentsList" data-page-node-id="MD4MT6nLLuuEFXuH4vuV01"></div>
           </div>
         </div>
       </div>
@@ -2816,24 +2818,24 @@
   </div>
 
   <!-- 重命名确认框（回车后弹出，让用户确认「保存」或「放弃」） -->
-  <div class="modal-overlay" id="renameConfirmOverlay" style="display: none;" onclick="if(event.target===event.currentTarget) confirmRenameDiscard()">
-    <div class="rename-confirm-box" onclick="event.stopPropagation()">
-      <p class="rename-confirm-msg" id="renameConfirmMsg"></p>
-      <div class="rename-confirm-actions">
-        <button class="btn btn-secondary" onclick="confirmRenameDiscard()">放弃</button>
-        <button class="btn btn-primary" onclick="confirmRenameSave()">保存</button>
+  <div class="modal-overlay" id="renameConfirmOverlay" style="display: none;" onclick="if(event.target===event.currentTarget) confirmRenameDiscard()" data-page-node-id="iLUyxCUyI77aUmPdKMVaHH">
+    <div class="rename-confirm-box" onclick="event.stopPropagation()" data-page-node-id="0YHvFP4MN9gTCLEBpRUrhj">
+      <p class="rename-confirm-msg" id="renameConfirmMsg" data-page-node-id="3KRnOvKcMjcRFroNxYYckt"></p>
+      <div class="rename-confirm-actions" data-page-node-id="gBZL6YoxC6ZgRjmkmWsBef">
+        <button class="btn btn-secondary" onclick="confirmRenameDiscard()" data-page-node-id="FebTu2h4GP6NTYYyZifkPv">放弃</button>
+        <button class="btn btn-primary" onclick="confirmRenameSave()" data-page-node-id="dsFDAB3JsC16P3X37cZVnC">保存</button>
       </div>
     </div>
   </div>
 
   <!-- 编辑结束前的「问询后存档」确认框：存在未保存更改时弹出 -->
-  <div class="modal-overlay" id="unsavedConfirmOverlay" style="display: none;" onclick="if(event.target===event.currentTarget) cancelUnsavedConfirm()">
-    <div class="rename-confirm-box" onclick="event.stopPropagation()">
-      <p class="rename-confirm-msg" id="unsavedConfirmMsg">你有未保存的更改，要存档吗？</p>
-      <div class="rename-confirm-actions">
-        <button class="btn btn-secondary" onclick="cancelUnsavedConfirm()">取消</button>
-        <button class="btn btn-secondary" onclick="discardAndCloseFromConfirm()">不保存</button>
-        <button class="btn btn-primary" onclick="saveAndCloseFromConfirm()">保存并关闭</button>
+  <div class="modal-overlay" id="unsavedConfirmOverlay" style="display: none;" onclick="if(event.target===event.currentTarget) cancelUnsavedConfirm()" data-page-node-id="1tAftS7ani1lBw5cB7rDmx">
+    <div class="rename-confirm-box" onclick="event.stopPropagation()" data-page-node-id="mukn6T7nMnbc0JEmreBNWH">
+      <p class="rename-confirm-msg" id="unsavedConfirmMsg" data-page-node-id="B9EQeG06UfjL2pK4oDZbsz">你有未保存的更改，要存档吗？</p>
+      <div class="rename-confirm-actions" data-page-node-id="v35c59ZVker30BY9VN8t2G">
+        <button class="btn btn-secondary" onclick="cancelUnsavedConfirm()" data-page-node-id="TkVkcS9Tuxk2CJuTq87LtH">取消</button>
+        <button class="btn btn-secondary" onclick="discardAndCloseFromConfirm()" data-page-node-id="bUyVwRGVWFEN1v3DiKKf9f">不保存</button>
+        <button class="btn btn-primary" onclick="saveAndCloseFromConfirm()" data-page-node-id="k97xBzfZOPBRBCqLzNENXB">保存并关闭</button>
       </div>
     </div>
   </div>
@@ -3097,6 +3099,66 @@
       // 工具栏插入属于程序化修改，手动记入撤销历史
       pushEditorHistory(textarea, true);
       // 关闭可能打开的工具栏下拉菜单
+      closeAllMdDropdowns();
+    }
+
+    // 🆕 插入目录（TOC，文内跳转）
+    //    从「当前 markdown 源码」出发，先经 renderMarkdown 跑完整管线（含 assignHeadingIds），
+    //    用 DOMParser 取出每个 h1–h6 的层级 / 文本 / 已生成的 id，再拼成嵌套列表
+    //    - [标题文字](#标题id)。因为直接读取 renderMarkdown 实际写进 DOM 的 id，
+    //    与渲染时 assignHeadingIds 产生的 id 完全一致，点击即可命中——不依赖任何 slug 推断。
+    //    缩进 = (层级-1)×2 空格，恰好贴合 markdown 嵌套列表语法，呈现层级结构。
+    function insertToc() {
+      const textarea = document.getElementById('taskText');
+      const src = textarea ? textarea.value : '';
+      if (!src || !src.trim()) {
+        alert('当前文档没有内容，无法生成目录。请先写一些带 # 标题 的内容。');
+        return;
+      }
+      // 1) 渲染当前 markdown（renderMarkdown 内部已用 assignHeadingIds 给标题生成 id）
+      let html;
+      try {
+        html = renderMarkdown(src);
+      } catch (e) {
+        alert('生成目录失败：' + (e && e.message ? e.message : e));
+        return;
+      }
+      if (typeof DOMParser === 'undefined') {
+        alert('当前环境不支持目录生成（DOMParser 不可用）。');
+        return;
+      }
+      // 2) 解析渲染结果，提取 h1–h6 的 层级 / 文本 / id
+      //    跳过「目录」类标题本身（否则 TOC 会包含自己的容器标题，形成自引用）
+      const doc = new DOMParser().parseFromString(html, 'text/html');
+      const headings = [];
+      doc.querySelectorAll('h1,h2,h3,h4,h5,h6').forEach(function (h) {
+        const text = (h.textContent || '').trim();
+        const id = h.id;
+        if (!text || !id) return;
+        const t = text.toLowerCase();
+        if (t === '目录' || t === 'toc' || t === 'table of contents' || t === 'tableofcontents' || t === 'contents' || t === '内容目录' || t === '目录表') return;
+        headings.push({ level: parseInt(h.tagName.substring(1), 10) || 1, text: text, id: id });
+      });
+      if (headings.length === 0) {
+        alert('当前文档没有可用的标题（# 标题 / ## 标题 …）。请先添加标题再插入目录。');
+        return;
+      }
+      // 3) 生成「多行嵌套」目录：按层级缩进（(层级-1)×2 空格）拼成 markdown 嵌套列表
+      let toc = headings.map(function (h) {
+        const indent = '  '.repeat(Math.max(0, h.level - 1));
+        return indent + '- [' + h.text + '](#' + h.id + ')';
+      }).join('\n');
+      toc = toc + '\n';
+      // 4) 插入到光标处（沿用 insertMd 的撤销/历史与关闭下拉约定）
+      const start = textarea.selectionStart;
+      const end = textarea.selectionEnd;
+      textarea.value = textarea.value.substring(0, start) + toc + textarea.value.substring(end);
+      const savedScrollTop = textarea.scrollTop;
+      textarea.focus({ preventScroll: true });
+      const newCursor = start + toc.length;
+      textarea.setSelectionRange(newCursor, newCursor);
+      textarea.scrollTop = savedScrollTop;
+      pushEditorHistory(textarea, true);
       closeAllMdDropdowns();
     }
 
@@ -4491,6 +4553,8 @@
       html = processInlineCalc(html);
       // 🆕 排序标记 {{sort:}}：放在最后，作用于已算完公式的表格
       html = processSortTables(html);
+      // 🆕 GFM 原生锚点：为标题生成 id，并把 #锚点 链接对齐到对应 id（编辑器渲染模式也需要）
+      html = assignHeadingIds(html);
       var isDark = document.body.classList.contains('dark');
 
       // 白天模式：直接返回，CSS 会处理
@@ -4693,6 +4757,49 @@
       });
     }
 
+    // 🆕 GFM 原生目录锚点：给 h1–h6 自动生成 id（slugify），并把正文里 href="#片段" 的链接
+    //    片段按同一规则归一化，使 [文字](#标题) 能像 GitHub 那样文内跳转。
+    //    两个点击委托（index.html / card-markdown-window.html）对 # 片段链接都不 preventDefault，
+    //    会走浏览器原生片段滚动；只要 id 与 href 片段对得上即可跳转。
+    //    手动锚点（如 <a id="s1"> + #s1）不受影响：仅当 slug 命中已存在 id 时才改写 href。
+    function assignHeadingIds(html) {
+      if (!html || typeof DOMParser === 'undefined') return html;
+      var doc = new DOMParser().parseFromString(html, 'text/html');
+      function slugify(t) {
+        return String(t || '')
+          .trim()
+          .toLowerCase()
+          .replace(/\s+/g, '-')
+          .replace(/[&/\\#,+()$~%.'":*?<>{}，。、；：！？（）「」『』【】《》“”‘’—…·\s]/g, '')
+          .replace(/-+/g, '-')
+          .replace(/^-|-$/g, '');
+      }
+      var used = Object.create(null);
+      var existing = Object.create(null);
+      doc.querySelectorAll('[id]').forEach(function (el) { if (el.id) existing[el.id] = true; });
+      doc.querySelectorAll('h1,h2,h3,h4,h5,h6').forEach(function (h) {
+        var text = (h.textContent || '').trim();
+        if (!text) return;
+        var base = slugify(text) || 'section';
+        var id = base, n = 2;
+        while (used[id]) id = base + '-' + (n++);
+        used[id] = true;
+        existing[id] = true;
+        h.id = id;
+      });
+      doc.querySelectorAll('a[href^="#"]').forEach(function (a) {
+        var href = a.getAttribute('href') || '';
+        var frag = href.slice(1);
+        if (!frag) return;
+        // marked 的 cleanUrl 会对 href 做 encodeURI（CJK → %XX），需先还原再 slugify 才能与标题 id 对上
+        try { frag = decodeURIComponent(frag); } catch (_) {}
+        var slug = slugify(frag);
+        // 仅当 slug 命中某个已存在 id 时才改写；否则保留原 href（手动锚点 #s1 等不受影响）
+        if (slug && existing[slug]) a.setAttribute('href', '#' + slug);
+      });
+      return doc.body.innerHTML;
+    }
+
     // 解码 HTML 实体（如 &amp; &lt; &#39; 等），用于小圆球纯文本提取
     function decodeEntities(text) {
       if (!text) return '';
@@ -4851,6 +4958,8 @@
       // 🆕 排序标记 {{sort:}}：放在最后，作用于已算完公式的表格
       html = processSortTables(html);
 
+      // 🆕 给标题生成 id + 归一化 # 链接片段（GFM 原生目录跳转，见 assignHeadingIds）
+      html = assignHeadingIds(html);
       // finalizeMarkdown 若未在运行时注入则安全降级为原样返回（避免整段渲染崩溃）
       return (typeof finalizeMarkdown === 'function') ? finalizeMarkdown(html) : html;
     }
@@ -7214,6 +7323,33 @@
       //    http(s) → 应用内独立窗体（openWebPreview）；file:// 图片 → 图片查看窗体；
       //    其它 file:// → 文档窗体（.md 按 markdown 渲染、文本/代码语法高亮，见 openDocWindow）。
       //    避免当前窗体被导航走、也避免跳到系统浏览器离开程式。
+      // 🆕 GFM 原生目录锚点：[文字](#标题) 在应用内平滑滚动到对应标题
+      //    （assignHeadingIds 已给标题生成 slug id、并把链接 href 归一化；此处兜底保证点击必跳，
+      //     不依赖浏览器原生片段滚动——Electron 内层滚动容器下原生跳转常失效）
+      //    关键：必须在「点击元素所在的预览/卡片容器」内查找目标 id，**不能直接 document.getElementById**——
+      //    编辑器打开时 .md-preview 与 .todo-text 会在同一文档里共存，二者渲染同一 markdown 会产生同名 id；
+      //    document.getElementById 永远返回第一个（Gallery 卡片），导致在编辑器预览里点目录
+      //    会去滚 Gallery 卡片（被 modal 遮住，用户以为没反应）。
+      var anchorLink = e.target && e.target.closest && e.target.closest('a[href^="#"]');
+      if (anchorLink) {
+        var rawId = (anchorLink.getAttribute('href') || '').slice(1);
+        if (rawId) {
+          var aid = rawId;
+          try { aid = decodeURIComponent(rawId); } catch (_) {}
+          // CSS.escape 处理 id 中的特殊字符（含 CJK 不会触发，但若用户用 #s1 之类 ASCII 也兼容）
+          var sel = '#' + (window.CSS && CSS.escape ? CSS.escape(aid) : aid);
+          // 优先在点击链接所在的内容容器（编辑器预览 / Gallery 卡片 / 文档窗体）内查找
+          var scope = anchorLink.closest('.md-preview, .todo-text, .doc-content, .doc-body');
+          var target = scope ? scope.querySelector(sel) : null;
+          // 找不到再退化到全文（兼容手动锚点 <a id="..."> 放在 body 其它位置）
+          if (!target) target = document.getElementById(aid);
+          if (target) {
+            e.preventDefault();
+            target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            return;
+          }
+        }
+      }
       const extLink = e.target && e.target.closest && e.target.closest('a[href]');
       if (extLink) {
         const href = (extLink.getAttribute('href') || '').trim();
