@@ -2064,6 +2064,48 @@
     .md-tool-sublist .md-tool-dropitem kbd {
       display: none;
     }
+    /* Emoji picker submenu：左侧大字 Emoji，右侧灰小号 GFM 短代码提示 */
+    .md-tool-sublist-emoji {
+      min-width: 210px;
+      padding: 6px 4px;
+    }
+    .md-tool-sublist-emoji .md-tool-dropgroup {
+      padding: 6px 12px 4px;
+      margin-top: 4px;
+      font-size: 11px;
+    }
+    .md-tool-sublist-emoji .md-tool-dropgroup:first-child {
+      margin-top: 0;
+    }
+    .md-tool-emoji-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 5px 12px;
+      font-size: 13px;
+      line-height: 1.2;
+    }
+    .md-tool-emoji-item .emoji-char {
+      font-size: 16px;
+      line-height: 1;
+      width: 22px;
+      text-align: center;
+      flex-shrink: 0;
+    }
+    .md-tool-emoji-item .emoji-code {
+      color: #6b7280;
+      font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+      font-size: 11px;
+      opacity: 0.75;
+      flex: 1;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    body.dark .md-tool-sublist-emoji .md-tool-emoji-item .emoji-code {
+      color: #94a3b8;
+    }
     .md-color-dot {
       display: inline-block;
       width: 10px;
@@ -2641,29 +2683,29 @@
             <div class="md-tool-dropmenu" data-page-node-id="6QQIWrSHEZF38i5elR4Jue">
               <button class="md-tool-dropitem" onclick="insertMd('**', '**')" data-page-node-id="FKepp8EtxKsedbSy6nRqCN">粗体 <kbd data-page-node-id="yLOQrBM16J1xvrBPc7Ezsi">**</kbd></button>
               <button class="md-tool-dropitem" onclick="insertMd('*', '*')" data-page-node-id="oWOinAvPyrb7Q8yIXz1HoQ">斜体 <kbd data-page-node-id="1PBF4zSY5FAKl2oF6CxxIw">*</kbd></button>
-              <button class="md-tool-dropitem" onclick="insertMd('<u data-page-node-id="2g1kAYBlxrkpEC4NEw7mmE">', '</u>')">下划线 <kbd data-page-node-id="PbxptpUCqKbIGx8uQkkAI0">&lt;u&gt;</kbd></button>
+              <button class="md-tool-dropitem" onclick="insertMd('<u>', '</u>')">下划线 <kbd data-page-node-id="PbxptpUCqKbIGx8uQkkAI0">&lt;u&gt;</kbd></button>
               <button class="md-tool-dropitem" onclick="insertMd('~~', '~~')" data-page-node-id="3HJaUs34mHNlicMjQyWiDp">删除线 <kbd data-page-node-id="lr9zwFImKQ430YVY1XNYeG">~~</kbd></button>
-              <button class="md-tool-dropitem" onclick="insertMd('<mark data-page-node-id="nnyQd8mOsUOHljgZGZoVg2">', '</mark>')">高亮 <kbd data-page-node-id="smUH0zsxx9H6pvR8w8sQK6">&lt;mark&gt;</kbd></button>
+              <button class="md-tool-dropitem" onclick="insertMd('<mark>', '</mark>')">高亮 <kbd data-page-node-id="smUH0zsxx9H6pvR8w8sQK6">&lt;mark&gt;</kbd></button>
               <div class="md-tool-submenu" data-md-submenu data-page-node-id="VDWg9fXrqyXWDiw1FzCyFV">
                 <button class="md-tool-dropitem has-submenu" data-page-node-id="P4H9e3zCWTXIS89yIKtaiY">
                   文字颜色 <span class="sub-caret" data-page-node-id="G4cxBDlYEVxtf07B5QU0iy">▸</span><kbd data-page-node-id="mMym1Y7KJZ5hlLD8vc8Ke4">style</kbd>
                 </button>
                 <div class="md-tool-sublist" data-page-node-id="zjbgvYMacwWOVndxdyBMoj">
-                  <button class="md-tool-dropitem" onclick="insertMd('<span style=&quot;color:#ef4444&quot; data-page-node-id="UMfvAhf0F6KWvISEPHEt1u">', '</span>')"><span class="md-color-dot" style="background:#ef4444" data-page-node-id="bVSKqmUXXXupzqQE03cZQQ"></span>红色</button>
-                  <button class="md-tool-dropitem" onclick="insertMd('<span style=&quot;color:#f97316&quot; data-page-node-id="dvjhYtxlZXtUYkhGgp24e5">', '</span>')"><span class="md-color-dot" style="background:#f97316" data-page-node-id="ezB8BxmUgw2vruXEsh660q"></span>橙色</button>
-                  <button class="md-tool-dropitem" onclick="insertMd('<span style=&quot;color:#f59e0b&quot; data-page-node-id="tWhmAxgfOmul39aQhVsXc4">', '</span>')"><span class="md-color-dot" style="background:#f59e0b" data-page-node-id="Fw0AENEbxHsi1uRx9N9DAD"></span>琥珀</button>
-                  <button class="md-tool-dropitem" onclick="insertMd('<span style=&quot;color:#eab308&quot; data-page-node-id="B5g23qfkqoJD8yOLlLcNWg">', '</span>')"><span class="md-color-dot" style="background:#eab308" data-page-node-id="LEQY8ntC8lbLLIovVx2LoL"></span>黄色</button>
-                  <button class="md-tool-dropitem" onclick="insertMd('<span style=&quot;color:#22c55e&quot; data-page-node-id="2RP1ewyKSAy3o2Ia1gWr4D">', '</span>')"><span class="md-color-dot" style="background:#22c55e" data-page-node-id="IiAs5W76ZVg7A6x6tad3jV"></span>绿色</button>
-                  <button class="md-tool-dropitem" onclick="insertMd('<span style=&quot;color:#06b6d4&quot; data-page-node-id="vjmJa6WpcTCWwNUntw9vir">', '</span>')"><span class="md-color-dot" style="background:#06b6d4" data-page-node-id="HebKQ10ENGrsfJqroQFN3r"></span>青色</button>
-                  <button class="md-tool-dropitem" onclick="insertMd('<span style=&quot;color:#3b82f6&quot; data-page-node-id="0ZbDOmutF7RKmTOannLTJV">', '</span>')"><span class="md-color-dot" style="background:#3b82f6" data-page-node-id="foAMxDAfSnpPtoIGhYq1Fz"></span>蓝色</button>
-                  <button class="md-tool-dropitem" onclick="insertMd('<span style=&quot;color:#a855f7&quot; data-page-node-id="MlgCrzEFUcHzHCPF4e32d5">', '</span>')"><span class="md-color-dot" style="background:#a855f7" data-page-node-id="fnriS1G0xIUGGK5cZoIf1Z"></span>紫色</button>
-                  <button class="md-tool-dropitem" onclick="insertMd('<span style=&quot;color:#ec4899&quot; data-page-node-id="E6KqPVHB8ViXHcw5n9uUP6">', '</span>')"><span class="md-color-dot" style="background:#ec4899" data-page-node-id="p0h0h44NSDJrBLwPBOskTW"></span>粉色</button>
-                  <button class="md-tool-dropitem" onclick="insertMd('<span style=&quot;color:#64748b&quot; data-page-node-id="UEdw2GIDNyGdxMce70fC0N">', '</span>')"><span class="md-color-dot" style="background:#64748b" data-page-node-id="kftbOe1c5eKZAPMCnYazX4"></span>钢灰</button>
+                  <button class="md-tool-dropitem" onclick="insertMd('<span style=&quot;color:#ef4444&quot;>', '</span>')"><span class="md-color-dot" style="background:#ef4444" data-page-node-id="bVSKqmUXXXupzqQE03cZQQ"></span>红色</button>
+                  <button class="md-tool-dropitem" onclick="insertMd('<span style=&quot;color:#f97316&quot;>', '</span>')"><span class="md-color-dot" style="background:#f97316" data-page-node-id="ezB8BxmUgw2vruXEsh660q"></span>橙色</button>
+                  <button class="md-tool-dropitem" onclick="insertMd('<span style=&quot;color:#f59e0b&quot;>', '</span>')"><span class="md-color-dot" style="background:#f59e0b" data-page-node-id="Fw0AENEbxHsi1uRx9N9DAD"></span>琥珀</button>
+                  <button class="md-tool-dropitem" onclick="insertMd('<span style=&quot;color:#eab308&quot;>', '</span>')"><span class="md-color-dot" style="background:#eab308" data-page-node-id="LEQY8ntC8lbLLIovVx2LoL"></span>黄色</button>
+                  <button class="md-tool-dropitem" onclick="insertMd('<span style=&quot;color:#22c55e&quot;>', '</span>')"><span class="md-color-dot" style="background:#22c55e" data-page-node-id="IiAs5W76ZVg7A6x6tad3jV"></span>绿色</button>
+                  <button class="md-tool-dropitem" onclick="insertMd('<span style=&quot;color:#06b6d4&quot;>', '</span>')"><span class="md-color-dot" style="background:#06b6d4" data-page-node-id="HebKQ10ENGrsfJqroQFN3r"></span>青色</button>
+                  <button class="md-tool-dropitem" onclick="insertMd('<span style=&quot;color:#3b82f6&quot;>', '</span>')"><span class="md-color-dot" style="background:#3b82f6" data-page-node-id="foAMxDAfSnpPtoIGhYq1Fz"></span>蓝色</button>
+                  <button class="md-tool-dropitem" onclick="insertMd('<span style=&quot;color:#a855f7&quot;>', '</span>')"><span class="md-color-dot" style="background:#a855f7" data-page-node-id="fnriS1G0xIUGGK5cZoIf1Z"></span>紫色</button>
+                  <button class="md-tool-dropitem" onclick="insertMd('<span style=&quot;color:#ec4899&quot;>', '</span>')"><span class="md-color-dot" style="background:#ec4899" data-page-node-id="p0h0h44NSDJrBLwPBOskTW"></span>粉色</button>
+                  <button class="md-tool-dropitem" onclick="insertMd('<span style=&quot;color:#64748b&quot;>', '</span>')"><span class="md-color-dot" style="background:#64748b" data-page-node-id="kftbOe1c5eKZAPMCnYazX4"></span>钢灰</button>
                 </div>
               </div>
               <div class="md-tool-dropgroup" data-page-node-id="vq4q1FvuvyLtHXdqVD8c9S">上下标</div>
-              <button class="md-tool-dropitem" onclick="insertMd('<sup data-page-node-id="YDhMNAxYsBEvIjzLOznukk">', '</sup>')">上标 <kbd data-page-node-id="dQKlSLpPGc98etDh6awdlJ">&lt;sup&gt;</kbd></button>
-              <button class="md-tool-dropitem" onclick="insertMd('<sub data-page-node-id="mOTR9GpfJntJrpCfMo3Wam">', '</sub>')">下标 <kbd data-page-node-id="dCu9N5zNKiuuUlv7UW4CpW">&lt;sub&gt;</kbd></button>
+              <button class="md-tool-dropitem" onclick="insertMd('<sup>', '</sup>')">上标 <kbd data-page-node-id="dQKlSLpPGc98etDh6awdlJ">&lt;sup&gt;</kbd></button>
+              <button class="md-tool-dropitem" onclick="insertMd('<sub>', '</sub>')">下标 <kbd data-page-node-id="dCu9N5zNKiuuUlv7UW4CpW">&lt;sub&gt;</kbd></button>
             </div>
           </div>
 
@@ -2681,9 +2723,83 @@
               <button class="md-tool-dropitem" onclick="insertMd('- ', '')" data-page-node-id="9IH2qGCEtaiwHaG7WcwDbH">无序列表 <kbd data-page-node-id="6oPhPJYEjDYeMiTchgmi4F">-</kbd></button>
               <button class="md-tool-dropitem" onclick="insertMd('1. ', '')" data-page-node-id="I82I9R3DgHeIYm9yANcj3x">有序列表 <kbd data-page-node-id="n09XxXmAVl3ciYjel6k3b1">1.</kbd></button>
               <button class="md-tool-dropitem" onclick="insertMd('- [ ] ', '')" data-page-node-id="10fehxGtPSTxLwUyYbXX36">任务列表 <kbd data-page-node-id="12n3MRvWcNE8TC2aMumWLo">[]</kbd></button>
-              <button class="md-tool-dropitem" onclick="insertMd(' data-page-node-id="uGyxxHsBj1s5gmin7Jla1j"> ', '')">引用 <kbd data-page-node-id="3nTlZpcLPS3aBemMH5kG9x">&gt;</kbd></button>
+              <button class="md-tool-dropitem" onclick="insertMd('> ', '')">引用 <kbd data-page-node-id="3nTlZpcLPS3aBemMH5kG9x">&gt;</kbd></button>
               <div class="md-tool-dropgroup" data-page-node-id="TOCgrp1b2c3">目录（文内跳转）</div>
               <button class="md-tool-dropitem" onclick="insertToc()" data-page-node-id="insertTocBtn7a9">插入目录 <kbd data-page-node-id="insertTocKbd3d5">[TOC]</kbd></button>
+              <div class="md-tool-dropgroup" data-page-node-id="emojiGrpX9k2">Emoji 表情</div>
+              <div class="md-tool-submenu" data-md-submenu data-page-node-id="emojiSubmenuAb3">
+                <button class="md-tool-dropitem has-submenu" data-page-node-id="emojiSubBtn7p1" title="鼠标悬停展开分类菜单，点击 Emoji 直接插入 Unicode 表情字符">
+                  选择 Emoji <span class="sub-caret" data-page-node-id="emojiSubCaret5k9">▸</span><kbd data-page-node-id="emojiSubKbd2w4">😄</kbd>
+                </button>
+                <div class="md-tool-sublist md-tool-sublist-emoji" data-page-node-id="emojiSubList8z6">
+                  <div class="md-tool-dropgroup" data-page-node-id="emojiGrp_Smileys">常用笑脸</div>
+                  <button class="md-tool-dropitem md-tool-emoji-item" onclick="insertEmojiChar('😄')" title=":smile:" data-page-node-id="eSmileB1"><span class="emoji-char" data-page-node-id="eSmileC1">😄</span><span class="emoji-code" data-page-node-id="eSmileL1">:smile:</span></button>
+                  <button class="md-tool-dropitem md-tool-emoji-item" onclick="insertEmojiChar('😃')" title=":smiley:" data-page-node-id="eSmileyB1"><span class="emoji-char">😃</span><span class="emoji-code">:smiley:</span></button>
+                  <button class="md-tool-dropitem md-tool-emoji-item" onclick="insertEmojiChar('😊')" title=":blush:" data-page-node-id="eBlushB1"><span class="emoji-char">😊</span><span class="emoji-code">:blush:</span></button>
+                  <button class="md-tool-dropitem md-tool-emoji-item" onclick="insertEmojiChar('😁')" title=":grin:" data-page-node-id="eGrinB1"><span class="emoji-char">😁</span><span class="emoji-code">:grin:</span></button>
+                  <button class="md-tool-dropitem md-tool-emoji-item" onclick="insertEmojiChar('😂')" title=":joy:" data-page-node-id="eJoyB1"><span class="emoji-char">😂</span><span class="emoji-code">:joy:</span></button>
+                  <button class="md-tool-dropitem md-tool-emoji-item" onclick="insertEmojiChar('🤣')" title=":rofl:" data-page-node-id="eRoflB1"><span class="emoji-char">🤣</span><span class="emoji-code">:rofl:</span></button>
+                  <button class="md-tool-dropitem md-tool-emoji-item" onclick="insertEmojiChar('😎')" title=":sunglasses:" data-page-node-id="eSunglassesB1"><span class="emoji-char">😎</span><span class="emoji-code">:sunglasses:</span></button>
+                  <button class="md-tool-dropitem md-tool-emoji-item" onclick="insertEmojiChar('🥳')" title=":partying_face:" data-page-node-id="ePartyB1"><span class="emoji-char">🥳</span><span class="emoji-code">:partying_face:</span></button>
+                  <div class="md-tool-dropgroup" data-page-node-id="emojiGrp_Emotion">表情情绪</div>
+                  <button class="md-tool-dropitem md-tool-emoji-item" onclick="insertEmojiChar('😍')" title=":heart_eyes:" data-page-node-id="eHeartEyesB1"><span class="emoji-char">😍</span><span class="emoji-code">:heart_eyes:</span></button>
+                  <button class="md-tool-dropitem md-tool-emoji-item" onclick="insertEmojiChar('😘')" title=":kissing_heart:" data-page-node-id="eKissingB1"><span class="emoji-char">😘</span><span class="emoji-code">:kissing_heart:</span></button>
+                  <button class="md-tool-dropitem md-tool-emoji-item" onclick="insertEmojiChar('🤩')" title=":star_struck:" data-page-node-id="eStarStrB1"><span class="emoji-char">🤩</span><span class="emoji-code">:star_struck:</span></button>
+                  <button class="md-tool-dropitem md-tool-emoji-item" onclick="insertEmojiChar('🤔')" title=":thinking:" data-page-node-id="eThinkB1"><span class="emoji-char">🤔</span><span class="emoji-code">:thinking:</span></button>
+                  <button class="md-tool-dropitem md-tool-emoji-item" onclick="insertEmojiChar('😏')" title=":smirk:" data-page-node-id="eSmirkB1"><span class="emoji-char">😏</span><span class="emoji-code">:smirk:</span></button>
+                  <button class="md-tool-dropitem md-tool-emoji-item" onclick="insertEmojiChar('😴')" title=":sleeping:" data-page-node-id="eSleepB1"><span class="emoji-char">😴</span><span class="emoji-code">:sleeping:</span></button>
+                  <button class="md-tool-dropitem md-tool-emoji-item" onclick="insertEmojiChar('🥺')" title=":pleading_face:" data-page-node-id="ePleadB1"><span class="emoji-char">🥺</span><span class="emoji-code">:pleading_face:</span></button>
+                  <button class="md-tool-dropitem md-tool-emoji-item" onclick="insertEmojiChar('😢')" title=":cry:" data-page-node-id="eCryB1"><span class="emoji-char">😢</span><span class="emoji-code">:cry:</span></button>
+                  <div class="md-tool-dropgroup" data-page-node-id="emojiGrp_Hands">手势动作</div>
+                  <button class="md-tool-dropitem md-tool-emoji-item" onclick="insertEmojiChar('👍')" title=":+1: / :thumbsup:" data-page-node-id="eThumbsUpB1"><span class="emoji-char">👍</span><span class="emoji-code">:+1:</span></button>
+                  <button class="md-tool-dropitem md-tool-emoji-item" onclick="insertEmojiChar('👎')" title=":-1: / :thumbsdown:" data-page-node-id="eThumbsDnB1"><span class="emoji-char">👎</span><span class="emoji-code">:-1:</span></button>
+                  <button class="md-tool-dropitem md-tool-emoji-item" onclick="insertEmojiChar('👌')" title=":ok_hand:" data-page-node-id="eOkB1"><span class="emoji-char">👌</span><span class="emoji-code">:ok_hand:</span></button>
+                  <button class="md-tool-dropitem md-tool-emoji-item" onclick="insertEmojiChar('✌️')" title=":v:" data-page-node-id="eVB1"><span class="emoji-char">✌️</span><span class="emoji-code">:v:</span></button>
+                  <button class="md-tool-dropitem md-tool-emoji-item" onclick="insertEmojiChar('🤞')" title=":crossed_fingers:" data-page-node-id="eCrossB1"><span class="emoji-char">🤞</span><span class="emoji-code">:crossed_fingers:</span></button>
+                  <button class="md-tool-dropitem md-tool-emoji-item" onclick="insertEmojiChar('👏')" title=":clap:" data-page-node-id="eClapB1"><span class="emoji-char">👏</span><span class="emoji-code">:clap:</span></button>
+                  <button class="md-tool-dropitem md-tool-emoji-item" onclick="insertEmojiChar('🙌')" title=":raised_hands:" data-page-node-id="eRaisedB1"><span class="emoji-char">🙌</span><span class="emoji-code">:raised_hands:</span></button>
+                  <button class="md-tool-dropitem md-tool-emoji-item" onclick="insertEmojiChar('🙏')" title=":pray:" data-page-node-id="ePrayB1"><span class="emoji-char">🙏</span><span class="emoji-code">:pray:</span></button>
+                  <button class="md-tool-dropitem md-tool-emoji-item" onclick="insertEmojiChar('👋')" title=":wave:" data-page-node-id="eWaveB1"><span class="emoji-char">👋</span><span class="emoji-code">:wave:</span></button>
+                  <div class="md-tool-dropgroup" data-page-node-id="emojiGrp_Hearts">心与符号</div>
+                  <button class="md-tool-dropitem md-tool-emoji-item" onclick="insertEmojiChar('❤️')" title=":heart:" data-page-node-id="eHeartB1"><span class="emoji-char">❤️</span><span class="emoji-code">:heart:</span></button>
+                  <button class="md-tool-dropitem md-tool-emoji-item" onclick="insertEmojiChar('💖')" title=":sparkling_heart:" data-page-node-id="eSparklB1"><span class="emoji-char">💖</span><span class="emoji-code">:sparkling_heart:</span></button>
+                  <button class="md-tool-dropitem md-tool-emoji-item" onclick="insertEmojiChar('💔')" title=":broken_heart:" data-page-node-id="eBrokenB1"><span class="emoji-char">💔</span><span class="emoji-code">:broken_heart:</span></button>
+                  <button class="md-tool-dropitem md-tool-emoji-item" onclick="insertEmojiChar('🔥')" title=":fire:" data-page-node-id="eFireB1"><span class="emoji-char">🔥</span><span class="emoji-code">:fire:</span></button>
+                  <button class="md-tool-dropitem md-tool-emoji-item" onclick="insertEmojiChar('✨')" title=":sparkles:" data-page-node-id="eSparkleB1"><span class="emoji-char">✨</span><span class="emoji-code">:sparkles:</span></button>
+                  <button class="md-tool-dropitem md-tool-emoji-item" onclick="insertEmojiChar('⭐')" title=":star:" data-page-node-id="eStarB1"><span class="emoji-char">⭐</span><span class="emoji-code">:star:</span></button>
+                  <button class="md-tool-dropitem md-tool-emoji-item" onclick="insertEmojiChar('💯')" title=":100:" data-page-node-id="e100B1"><span class="emoji-char">💯</span><span class="emoji-code">:100:</span></button>
+                  <button class="md-tool-dropitem md-tool-emoji-item" onclick="insertEmojiChar('🎉')" title=":tada:" data-page-node-id="eTadaB1"><span class="emoji-char">🎉</span><span class="emoji-code">:tada:</span></button>
+                  <div class="md-tool-dropgroup" data-page-node-id="emojiGrp_Status">状态标记</div>
+                  <button class="md-tool-dropitem md-tool-emoji-item" onclick="insertEmojiChar('✅')" title=":white_check_mark:" data-page-node-id="eCheckB1"><span class="emoji-char">✅</span><span class="emoji-code">:white_check_mark:</span></button>
+                  <button class="md-tool-dropitem md-tool-emoji-item" onclick="insertEmojiChar('❌')" title=":x:" data-page-node-id="eXB1"><span class="emoji-char">❌</span><span class="emoji-code">:x:</span></button>
+                  <button class="md-tool-dropitem md-tool-emoji-item" onclick="insertEmojiChar('⚠️')" title=":warning:" data-page-node-id="eWarnB1"><span class="emoji-char">⚠️</span><span class="emoji-code">:warning:</span></button>
+                  <button class="md-tool-dropitem md-tool-emoji-item" onclick="insertEmojiChar('❓')" title=":question:" data-page-node-id="eQuestionB1"><span class="emoji-char">❓</span><span class="emoji-code">:question:</span></button>
+                  <button class="md-tool-dropitem md-tool-emoji-item" onclick="insertEmojiChar('❗')" title=":exclamation:" data-page-node-id="eExclB1"><span class="emoji-char">❗</span><span class="emoji-code">:exclamation:</span></button>
+                  <button class="md-tool-dropitem md-tool-emoji-item" onclick="insertEmojiChar('🔴')" title=":red_circle:" data-page-node-id="eRedDotB1"><span class="emoji-char">🔴</span><span class="emoji-code">:red_circle:</span></button>
+                  <button class="md-tool-dropitem md-tool-emoji-item" onclick="insertEmojiChar('🟢')" title=":green_circle:" data-page-node-id="eGreenDotB1"><span class="emoji-char">🟢</span><span class="emoji-code">:green_circle:</span></button>
+                  <button class="md-tool-dropitem md-tool-emoji-item" onclick="insertEmojiChar('🟡')" title=":yellow_circle:" data-page-node-id="eYellowDotB1"><span class="emoji-char">🟡</span><span class="emoji-code">:yellow_circle:</span></button>
+                  <div class="md-tool-dropgroup" data-page-node-id="emojiGrp_Objects">物品工具</div>
+                  <button class="md-tool-dropitem md-tool-emoji-item" onclick="insertEmojiChar('💡')" title=":bulb:" data-page-node-id="eBulbB1"><span class="emoji-char">💡</span><span class="emoji-code">:bulb:</span></button>
+                  <button class="md-tool-dropitem md-tool-emoji-item" onclick="insertEmojiChar('📌')" title=":pushpin:" data-page-node-id="ePushB1"><span class="emoji-char">📌</span><span class="emoji-code">:pushpin:</span></button>
+                  <button class="md-tool-dropitem md-tool-emoji-item" onclick="insertEmojiChar('📎')" title=":paperclip:" data-page-node-id="eClipB1"><span class="emoji-char">📎</span><span class="emoji-code">:paperclip:</span></button>
+                  <button class="md-tool-dropitem md-tool-emoji-item" onclick="insertEmojiChar('🔑')" title=":key:" data-page-node-id="eKeyB1"><span class="emoji-char">🔑</span><span class="emoji-code">:key:</span></button>
+                  <button class="md-tool-dropitem md-tool-emoji-item" onclick="insertEmojiChar('🔒')" title=":lock:" data-page-node-id="eLockB1"><span class="emoji-char">🔒</span><span class="emoji-code">:lock:</span></button>
+                  <button class="md-tool-dropitem md-tool-emoji-item" onclick="insertEmojiChar('📷')" title=":camera:" data-page-node-id="eCamB1"><span class="emoji-char">📷</span><span class="emoji-code">:camera:</span></button>
+                  <button class="md-tool-dropitem md-tool-emoji-item" onclick="insertEmojiChar('📝')" title=":memo:" data-page-node-id="eMemoB1"><span class="emoji-char">📝</span><span class="emoji-code">:memo:</span></button>
+                  <button class="md-tool-dropitem md-tool-emoji-item" onclick="insertEmojiChar('🎁')" title=":gift:" data-page-node-id="eGiftB1"><span class="emoji-char">🎁</span><span class="emoji-code">:gift:</span></button>
+                  <div class="md-tool-dropgroup" data-page-node-id="emojiGrp_Arrows">箭头方向</div>
+                  <button class="md-tool-dropitem md-tool-emoji-item" onclick="insertEmojiChar('➡️')" title=":arrow_right:" data-page-node-id="eArrRB1"><span class="emoji-char">➡️</span><span class="emoji-code">:arrow_right:</span></button>
+                  <button class="md-tool-dropitem md-tool-emoji-item" onclick="insertEmojiChar('⬅️')" title=":arrow_left:" data-page-node-id="eArrLB1"><span class="emoji-char">⬅️</span><span class="emoji-code">:arrow_left:</span></button>
+                  <button class="md-tool-dropitem md-tool-emoji-item" onclick="insertEmojiChar('⬆️')" title=":arrow_up:" data-page-node-id="eArrUB1"><span class="emoji-char">⬆️</span><span class="emoji-code">:arrow_up:</span></button>
+                  <button class="md-tool-dropitem md-tool-emoji-item" onclick="insertEmojiChar('⬇️')" title=":arrow_down:" data-page-node-id="eArrDB1"><span class="emoji-char">⬇️</span><span class="emoji-code">:arrow_down:</span></button>
+                  <button class="md-tool-dropitem md-tool-emoji-item" onclick="insertEmojiChar('🔄')" title=":arrows_counterclockwise:" data-page-node-id="eArrCycleB1"><span class="emoji-char">🔄</span><span class="emoji-code">:arrows_counterclockwise:</span></button>
+                  <button class="md-tool-dropitem md-tool-emoji-item" onclick="insertEmojiChar('🔁')" title=":repeat:" data-page-node-id="eRepeatB1"><span class="emoji-char">🔁</span><span class="emoji-code">:repeat:</span></button>
+                  <button class="md-tool-dropitem md-tool-emoji-item" onclick="insertEmojiChar('➕')" title=":heavy_plus_sign:" data-page-node-id="ePlusB1"><span class="emoji-char">➕</span><span class="emoji-code">:heavy_plus_sign:</span></button>
+                  <button class="md-tool-dropitem md-tool-emoji-item" onclick="insertEmojiChar('➖')" title=":heavy_minus_sign:" data-page-node-id="eMinusB1"><span class="emoji-char">➖</span><span class="emoji-code">:heavy_minus_sign:</span></button>
+                </div>
+              </div>
+              <button class="md-tool-dropitem" onclick="insertEmoji()" data-page-node-id="insertEmojiBtn4m7" title="插入 3 个最常用的 GFM 短代码示例，可自行再修改">插入 Emoji 短代码 <kbd data-page-node-id="insertEmojiKbd8w1">:smile:</kbd></button>
+              <button class="md-tool-dropitem" onclick="openEmojiCheatSheet()" data-page-node-id="emojiSheetBtn6r3" title="在独立窗口里列出全部 1870 个 Emoji 及短码，可搜索、按分类筛选，点击即写入光标处">全部 Emoji 速查表 <kbd data-page-node-id="emojiSheetKbd9t5">📖</kbd></button>
               <div class="md-tool-dropgroup" data-page-node-id="CA8hdWTxssr0MXr97UUS12">分隔与代码</div>
               <button class="md-tool-dropitem" onclick="insertMd('---\n', '')" data-page-node-id="PJXSaUzyoSsAwSSUyl9oRk">分隔线 <kbd data-page-node-id="XK9k9qcWtaWCEF6HtH2QPK">---</kbd></button>
               <button class="md-tool-dropitem" onclick="insertMd('`', '`')" data-page-node-id="9LqDnp1Dr20RhTGLjJ2WMe">行内代码 <kbd data-page-node-id="2cyJNd7KpdPum0dAVL2Ur1">`</kbd></button>
@@ -2748,9 +2864,9 @@
           <div class="md-tool-dropdown" data-md-dropdown data-page-node-id="YY2r6KGBsM4QRAFD5yE8OF">
             <button class="md-tool-dropbtn" onclick="toggleMdDropdown(this)" title="HTML 块与数学公式" data-page-node-id="q6eKCEBm1U89x79GVn6SuR">HTML/数学<span class="caret" data-page-node-id="PQkVFy58pPmxvQ5TbNdSPG">▾</span></button>
             <div class="md-tool-dropmenu" data-page-node-id="QydHeFCugAcDgtQp7n7SrJ">
-              <button class="md-tool-dropitem" onclick="insertMd('<SMALL data-page-node-id="wI4rAPNmpA8HRttRZ3r5pw">\n', '\n</SMALL>')">小字块 <kbd data-page-node-id="FJOSoO8jJrOXFrkxPUMF5W">&lt;SMALL&gt;</kbd></button>
-              <button class="md-tool-dropitem" onclick="insertMd('<BIG data-page-node-id="MMIyAcenpaGqCnMEHAmqqb">\n', '\n</BIG>')">大字块 <kbd data-page-node-id="oyPxsHVxzkAF1TcVNb5oi2">&lt;BIG&gt;</kbd></button>
-              <button class="md-tool-dropitem" onclick="insertMd('<CENTER data-page-node-id="V9Ow3zrbZwMxKH7yAFXixk">', '</CENTER>')">居中 <kbd data-page-node-id="skWOlVxah1aprikS4h2CUX">&lt;CENTER&gt;</kbd></button>
+              <button class="md-tool-dropitem" onclick="insertMd('<SMALL>\n', '\n</SMALL>')">小字块 <kbd data-page-node-id="FJOSoO8jJrOXFrkxPUMF5W">&lt;SMALL&gt;</kbd></button>
+              <button class="md-tool-dropitem" onclick="insertMd('<BIG>\n', '\n</BIG>')">大字块 <kbd data-page-node-id="oyPxsHVxzkAF1TcVNb5oi2">&lt;BIG&gt;</kbd></button>
+              <button class="md-tool-dropitem" onclick="insertMd('<CENTER>', '</CENTER>')">居中 <kbd data-page-node-id="skWOlVxah1aprikS4h2CUX">&lt;CENTER&gt;</kbd></button>
               <div class="md-tool-dropgroup" data-page-node-id="bj177qyeXemzD2g0Ucjgr0">LaTeX 公式</div>
               <button class="md-tool-dropitem" onclick="insertMd('$', '$')" data-page-node-id="xfvAGtDtoaJVLvMNzif4wx">行内公式 <kbd data-page-node-id="OmhM2EcpxcCFapIHGMyBvl">$</kbd></button>
               <button class="md-tool-dropitem" onclick="insertMd('$$\n', '\n$$')" data-page-node-id="S6Gsjs8w0I6qnWCsXLQ0w0">块级公式 <kbd data-page-node-id="4tDHv1m5zKAkL4Q9a1aAd3">$$</kbd></button>
@@ -3178,6 +3294,75 @@
       const savedScrollTop = textarea.scrollTop;
       textarea.focus({ preventScroll: true });
       const newCursor = start + toc.length;
+      textarea.setSelectionRange(newCursor, newCursor);
+      textarea.scrollTop = savedScrollTop;
+      pushEditorHistory(textarea, true);
+      closeAllMdDropdowns();
+    }
+
+    // 🆕 直接插入 Unicode 表情字符（不经过 :shortcode:）——供 Emoji 子菜单里的具体按钮调用。
+    //    与 GitHub 输入 Emoji 的体验一致：所见即所得，看到啥字符就插啥字符。
+    function insertEmojiChar(ch) {
+      const textarea = document.getElementById('taskText');
+      if (!textarea || !ch) return;
+      const start = textarea.selectionStart;
+      const end = textarea.selectionEnd;
+      textarea.value = textarea.value.substring(0, start) + ch + textarea.value.substring(end);
+      const savedScrollTop = textarea.scrollTop;
+      textarea.focus({ preventScroll: true });
+      const newCursor = start + ch.length;
+      textarea.setSelectionRange(newCursor, newCursor);
+      textarea.scrollTop = savedScrollTop;
+      pushEditorHistory(textarea, true);
+      closeAllMdDropdowns();
+    }
+
+    // 🆕 打开「全部 Emoji 速查表」独立窗体：完整列出 1870 个 gemoji 短码与图样，
+    //    支持搜索 / 分类筛选；在里面点击某个表情会经主进程转发回本窗体插入到光标处。
+    function openEmojiCheatSheet() {
+      const dark = document.body.classList.contains('dark');
+      const api = window.electronAPI;
+      if (api && typeof api.invoke === 'function') {
+        api.invoke('open-emoji-cheatsheet', { dark: dark }).catch(function (e) {
+          if (typeof showStatus === 'function') showStatus('打开 Emoji 速查表失败：' + ((e && e.message) || e), 'error');
+        });
+      } else if (typeof showStatus === 'function') {
+        showStatus('当前环境不支持打开新窗口', 'error');
+      }
+      closeAllMdDropdowns();
+    }
+
+    // 🆕 接收「Emoji 速查表」窗体的插入请求：编辑器开着就插到光标处，否则忽略
+    //    （速查表侧无论如何都已复制一份到剪贴板，用户仍可手动粘贴）。
+    if (window.electronAPI && typeof window.electronAPI.onEmojiPick === 'function') {
+      window.electronAPI.onEmojiPick(function (payload) {
+        const text = payload && payload.text;
+        if (!text) return;
+        const ta = document.getElementById('taskText');
+        const overlay = document.getElementById('modalOverlay');
+        // 编辑器仍处于打开状态才插入——否则用户可能已切到别的卡片，插进去就串台了
+        if (ta && overlay && overlay.style.display !== 'none') {
+          insertEmojiChar(text);
+          if (typeof showStatus === 'function') showStatus('已插入 Emoji：' + text, 'success');
+        } else if (typeof showStatus === 'function') {
+          showStatus('编辑器已关闭，Emoji 已复制到剪贴板：' + text, 'info');
+        }
+      });
+    }
+
+    // 🆕 插入 Emoji 短代码（GFM :smile: 风格，渲染时由 marked-emoji 转成对应 Unicode 表情字符）
+    //    插入 3 个最常用的短代码作为示例，保留/删除/改成其它短代码都行（与 GitHub 一致）。
+    //    不加换行——emoji 短代码是行内元素，插在当前行最自然，需要换行用户自己 Enter。
+    function insertEmoji() {
+      const textarea = document.getElementById('taskText');
+      if (!textarea) return;
+      const SAMPLE = ':smile: :rocket: :heart:';
+      const start = textarea.selectionStart;
+      const end = textarea.selectionEnd;
+      textarea.value = textarea.value.substring(0, start) + SAMPLE + textarea.value.substring(end);
+      const savedScrollTop = textarea.scrollTop;
+      textarea.focus({ preventScroll: true });
+      const newCursor = start + SAMPLE.length;
       textarea.setSelectionRange(newCursor, newCursor);
       textarea.scrollTop = savedScrollTop;
       pushEditorHistory(textarea, true);

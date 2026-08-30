@@ -129,6 +129,17 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return ipcRenderer.invoke(channel, data);
   },
   
+  // 🆕 打开 Emoji 速查表窗体（完整列出全部短码与图样，可搜索/分类/点击写入编辑器）
+  openEmojiCheatSheet: (dark) => ipcRenderer.invoke('open-emoji-cheatsheet', { dark }),
+
+  // 🆕 Emoji 速查表选中的表情 → 转发给本窗体，由编辑器插入到光标处
+  pickEmoji: (text) => ipcRenderer.invoke('emoji-pick', { text }),
+
+  // 🆕 监听 Emoji 速查表的插入请求（主进程转发），回调收到 { text }
+  onEmojiPick: (callback) => {
+    ipcRenderer.on('emoji-pick-request', (event, payload) => callback(payload));
+  },
+
   // 打开 DOM 树查看器
   openDomTreeView: (data) => ipcRenderer.invoke('open-dom-tree-viewer', data),
   

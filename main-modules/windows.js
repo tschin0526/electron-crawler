@@ -399,6 +399,53 @@ function init(shared) {
     }
   });
 
+  // 🆕 Emoji 速查表窗体：独立窗口完整列出全部 gemoji 短码与图样（搜索 / 分类 / 点击写入编辑器）。
+  //    表情数据不经过 IPC —— 页面自行加载 vendor/gemoji-full.js（1870 条含分类），此处只传明暗主题。
+  const emojiCheatSheetWindows = new Set();
+  ipcMain.handle('open-emoji-cheatsheet', async (event, payload) => {
+    try {
+      const { dark } = payload || {};
+      const winPath = path.join(APP_ROOT, 'src', 'plugins', 'todolist', 'emoji-cheatsheet.html');
+      const json = JSON.stringify({ dark: !!dark });
+      const encoded = Buffer.from(json, 'utf8').toString('base64')
+        .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+      const fullUrl = `file://${winPath}#${encoded}`;
+      const win = new BrowserWindow({
+        width: 1000,
+        height: 760,
+        title: 'Emoji 速查表',
+        frame: true,
+        webPreferences: {
+          webSecurity: false,
+          allowRunningInsecureContent: true,
+          nodeIntegration: false,
+          contextIsolation: true,
+          preload: path.join(APP_ROOT, 'preload.js'),
+        },
+      });
+      emojiCheatSheetWindows.add(win);
+      win.on('closed', () => emojiCheatSheetWindows.delete(win));
+      win.loadURL(fullUrl);
+      win.setMenuBarVisibility(false);
+      return { success: true };
+    } catch (error) {
+      console.error('[Main] 打开 Emoji 速查表失败:', error);
+      return { success: false, error: error.message };
+    }
+  });
+
+  // 🆕 Emoji 速查表 → 主窗口编辑器：把选中的 emoji 转发给主窗体，由主窗体插入光标处。
+  //    主进程只做转发，不判断编辑器是否就绪；速查表侧无论转发与否都会自行复制一份到剪贴板兜底。
+  ipcMain.handle('emoji-pick', async (event, payload) => {
+    const { text } = payload || {};
+    if (!text) return { success: false, error: '缺少内容' };
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('emoji-pick-request', { text });
+      return { success: true, delivered: true };
+    }
+    return { success: true, delivered: false };
+  });
+
   // 🆕 裸档名解析：[文字](win:文件名) 只写档名时，默认在与卡片相同的资料目录（PLUGINS_DATA_DIR）查找，
   //    与 win:卡片ID 的定位逻辑保持一致。命中返回绝对路径，未命中返回 success:false。
   ipcMain.handle('resolve-doc-path', async (event, payload) => {
