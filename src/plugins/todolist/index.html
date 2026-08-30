@@ -2106,6 +2106,43 @@
     body.dark .md-tool-sublist-emoji .md-tool-emoji-item .emoji-code {
       color: #94a3b8;
     }
+    /* 卦象 picker submenu：左侧中等大小卦符号（中间一道实线、上下虚线，方便辨识），
+       右侧黑/灰卦名。卦名 1~3 字符，少数宽名（如「噬嗑」「无妄」「中孚」）需保留。 */
+    .md-tool-sublist-yijing {
+      min-width: 180px;
+      padding: 6px 4px;
+    }
+    .md-tool-sublist-yijing .md-tool-dropgroup {
+      padding: 6px 12px 4px;
+      margin-top: 4px;
+      font-size: 11px;
+    }
+    .md-tool-sublist-yijing .md-tool-dropgroup:first-child {
+      margin-top: 0;
+    }
+    .md-tool-yijing-item {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 5px 12px;
+      font-size: 13px;
+    }
+    .md-tool-yijing-item .yao-symbol {
+      font-size: 16px;
+      line-height: 1;
+      width: 22px;
+      text-align: center;
+      font-family: "STKaiti", "KaiTi", "STSong", "SimSun", serif;
+      flex-shrink: 0;
+    }
+    .md-tool-yijing-item .yao-name {
+      flex: 1;
+      min-width: 0;
+      color: #1f2937;
+    }
+    body.dark .md-tool-sublist-yijing .md-tool-yijing-item .yao-name {
+      color: #e2e8f0;
+    }
     .md-color-dot {
       display: inline-block;
       width: 10px;
@@ -2800,6 +2837,102 @@
               </div>
               <button class="md-tool-dropitem" onclick="insertEmoji()" data-page-node-id="insertEmojiBtn4m7" title="插入 3 个最常用的 GFM 短代码示例，可自行再修改">插入 Emoji 短代码 <kbd data-page-node-id="insertEmojiKbd8w1">:smile:</kbd></button>
               <button class="md-tool-dropitem" onclick="openEmojiCheatSheet()" data-page-node-id="emojiSheetBtn6r3" title="在独立窗口里列出全部 1870 个 Emoji 及短码，可搜索、按分类筛选，点击即写入光标处">全部 Emoji 速查表 <kbd data-page-node-id="emojiSheetKbd9t5">📖</kbd></button>
+              <div class="md-tool-dropgroup" data-page-node-id="yjGrp1a2">卦象</div>
+              <div class="md-tool-submenu" data-md-submenu data-page-node-id="yjSubmenuX9z">
+                <button class="md-tool-dropitem has-submenu" data-page-node-id="yjSubBtn3m7" title="鼠标悬停展开：八卦（8 卦）与文王卦序六十四卦（64 卦），共 72 个；点击把卦符号原样插入到光标处">
+                  八卦与六十四卦 <span class="sub-caret" data-page-node-id="yjSubCaret5k8">▸</span><kbd data-page-node-id="yjSubKbd2p4">☰</kbd>
+                </button>
+                <div class="md-tool-sublist md-tool-sublist-yijing" data-page-node-id="yjSubList6w1">
+                  <div class="md-tool-dropgroup" data-page-node-id="yjB8Grp0h2">八卦（先天符号）</div>
+                  <button class="md-tool-dropitem md-tool-yijing-item" onclick="insertEmojiChar('☰')" title="乾 ☰ 乾为天，纯阳，代表刚健、创造" data-page-node-id="yjT_1"><span class="yao-name" data-page-node-id="yjTn_1">乾</span><span class="yao-symbol" data-page-node-id="yjTs_1">☰</span></button>
+                  <button class="md-tool-dropitem md-tool-yijing-item" onclick="insertEmojiChar('☱')" title="兑 ☱ 兑为泽，纯阴在上，代表喜悦、言说" data-page-node-id="yjT_2"><span class="yao-name" data-page-node-id="yjTn_2">兑</span><span class="yao-symbol" data-page-node-id="yjTs_2">☱</span></button>
+                  <button class="md-tool-dropitem md-tool-yijing-item" onclick="insertEmojiChar('☲')" title="离 ☲ 离为火，纯阴居中，代表光明、依附" data-page-node-id="yjT_3"><span class="yao-name" data-page-node-id="yjTn_3">离</span><span class="yao-symbol" data-page-node-id="yjTs_3">☲</span></button>
+                  <button class="md-tool-dropitem md-tool-yijing-item" onclick="insertEmojiChar('☳')" title="震 ☳ 震为雷，纯阴在下，代表启动、警醒" data-page-node-id="yjT_4"><span class="yao-name" data-page-node-id="yjTn_4">震</span><span class="yao-symbol" data-page-node-id="yjTs_4">☳</span></button>
+                  <button class="md-tool-dropitem md-tool-yijing-item" onclick="insertEmojiChar('☴')" title="巽 ☴ 巽为风，纯阳居中，代表顺从、流通" data-page-node-id="yjT_5"><span class="yao-name" data-page-node-id="yjTn_5">巽</span><span class="yao-symbol" data-page-node-id="yjTs_5">☴</span></button>
+                  <button class="md-tool-dropitem md-tool-yijing-item" onclick="insertEmojiChar('☵')" title="坎 ☵ 坎为水，纯阳居中，代表险难、智慧" data-page-node-id="yjT_6"><span class="yao-name" data-page-node-id="yjTn_6">坎</span><span class="yao-symbol" data-page-node-id="yjTs_6">☵</span></button>
+                  <button class="md-tool-dropitem md-tool-yijing-item" onclick="insertEmojiChar('☶')" title="艮 ☶ 艮为山，纯阳在上，代表止息、笃实" data-page-node-id="yjT_7"><span class="yao-name" data-page-node-id="yjTn_7">艮</span><span class="yao-symbol" data-page-node-id="yjTs_7">☶</span></button>
+                  <button class="md-tool-dropitem md-tool-yijing-item" onclick="insertEmojiChar('☷')" title="坤 ☷ 坤为地，纯阴，代表柔顺、包容" data-page-node-id="yjT_8"><span class="yao-name" data-page-node-id="yjTn_8">坤</span><span class="yao-symbol" data-page-node-id="yjTs_8">☷</span></button>
+                  <div class="md-tool-dropgroup" data-page-node-id="yj64Grp9r3">六十四卦（文王卦序）</div>
+                  <button class="md-tool-dropitem md-tool-yijing-item" onclick="insertEmojiChar('䷀')" title="第 1 卦 乾（U+4DC0，文王卦序）" data-page-node-id="yjH_1"><span class="yao-name" data-page-node-id="yjHn_1">乾</span><span class="yao-symbol" data-page-node-id="yjHs_1">䷀</span></button>
+                  <button class="md-tool-dropitem md-tool-yijing-item" onclick="insertEmojiChar('䷁')" title="第 2 卦 坤（U+4DC1，文王卦序）" data-page-node-id="yjH_2"><span class="yao-name" data-page-node-id="yjHn_2">坤</span><span class="yao-symbol" data-page-node-id="yjHs_2">䷁</span></button>
+                  <button class="md-tool-dropitem md-tool-yijing-item" onclick="insertEmojiChar('䷂')" title="第 3 卦 屯（U+4DC2，文王卦序）" data-page-node-id="yjH_3"><span class="yao-name" data-page-node-id="yjHn_3">屯</span><span class="yao-symbol" data-page-node-id="yjHs_3">䷂</span></button>
+                  <button class="md-tool-dropitem md-tool-yijing-item" onclick="insertEmojiChar('䷃')" title="第 4 卦 蒙（U+4DC3，文王卦序）" data-page-node-id="yjH_4"><span class="yao-name" data-page-node-id="yjHn_4">蒙</span><span class="yao-symbol" data-page-node-id="yjHs_4">䷃</span></button>
+                  <button class="md-tool-dropitem md-tool-yijing-item" onclick="insertEmojiChar('䷄')" title="第 5 卦 需（U+4DC4，文王卦序）" data-page-node-id="yjH_5"><span class="yao-name" data-page-node-id="yjHn_5">需</span><span class="yao-symbol" data-page-node-id="yjHs_5">䷄</span></button>
+                  <button class="md-tool-dropitem md-tool-yijing-item" onclick="insertEmojiChar('䷅')" title="第 6 卦 讼（U+4DC5，文王卦序）" data-page-node-id="yjH_6"><span class="yao-name" data-page-node-id="yjHn_6">讼</span><span class="yao-symbol" data-page-node-id="yjHs_6">䷅</span></button>
+                  <button class="md-tool-dropitem md-tool-yijing-item" onclick="insertEmojiChar('䷆')" title="第 7 卦 师（U+4DC6，文王卦序）" data-page-node-id="yjH_7"><span class="yao-name" data-page-node-id="yjHn_7">师</span><span class="yao-symbol" data-page-node-id="yjHs_7">䷆</span></button>
+                  <button class="md-tool-dropitem md-tool-yijing-item" onclick="insertEmojiChar('䷇')" title="第 8 卦 比（U+4DC7，文王卦序）" data-page-node-id="yjH_8"><span class="yao-name" data-page-node-id="yjHn_8">比</span><span class="yao-symbol" data-page-node-id="yjHs_8">䷇</span></button>
+                  <button class="md-tool-dropitem md-tool-yijing-item" onclick="insertEmojiChar('䷈')" title="第 9 卦 小畜（U+4DC8，文王卦序）" data-page-node-id="yjH_9"><span class="yao-name" data-page-node-id="yjHn_9">小畜</span><span class="yao-symbol" data-page-node-id="yjHs_9">䷈</span></button>
+                  <button class="md-tool-dropitem md-tool-yijing-item" onclick="insertEmojiChar('䷉')" title="第 10 卦 履（U+4DC9，文王卦序）" data-page-node-id="yjH_a"><span class="yao-name" data-page-node-id="yjHn_a">履</span><span class="yao-symbol" data-page-node-id="yjHs_a">䷉</span></button>
+                  <button class="md-tool-dropitem md-tool-yijing-item" onclick="insertEmojiChar('䷊')" title="第 11 卦 泰（U+4DCA，文王卦序）" data-page-node-id="yjH_b"><span class="yao-name" data-page-node-id="yjHn_b">泰</span><span class="yao-symbol" data-page-node-id="yjHs_b">䷊</span></button>
+                  <button class="md-tool-dropitem md-tool-yijing-item" onclick="insertEmojiChar('䷋')" title="第 12 卦 否（U+4DCB，文王卦序）" data-page-node-id="yjH_c"><span class="yao-name" data-page-node-id="yjHn_c">否</span><span class="yao-symbol" data-page-node-id="yjHs_c">䷋</span></button>
+                  <button class="md-tool-dropitem md-tool-yijing-item" onclick="insertEmojiChar('䷌')" title="第 13 卦 同人（U+4DCC，文王卦序）" data-page-node-id="yjH_d"><span class="yao-name" data-page-node-id="yjHn_d">同人</span><span class="yao-symbol" data-page-node-id="yjHs_d">䷌</span></button>
+                  <button class="md-tool-dropitem md-tool-yijing-item" onclick="insertEmojiChar('䷍')" title="第 14 卦 大有（U+4DCD，文王卦序）" data-page-node-id="yjH_e"><span class="yao-name" data-page-node-id="yjHn_e">大有</span><span class="yao-symbol" data-page-node-id="yjHs_e">䷍</span></button>
+                  <button class="md-tool-dropitem md-tool-yijing-item" onclick="insertEmojiChar('䷎')" title="第 15 卦 谦（U+4DCE，文王卦序）" data-page-node-id="yjH_f"><span class="yao-name" data-page-node-id="yjHn_f">谦</span><span class="yao-symbol" data-page-node-id="yjHs_f">䷎</span></button>
+                  <button class="md-tool-dropitem md-tool-yijing-item" onclick="insertEmojiChar('䷏')" title="第 16 卦 豫（U+4DCF，文王卦序）" data-page-node-id="yjH_g"><span class="yao-name" data-page-node-id="yjHn_g">豫</span><span class="yao-symbol" data-page-node-id="yjHs_g">䷏</span></button>
+                  <button class="md-tool-dropitem md-tool-yijing-item" onclick="insertEmojiChar('䷐')" title="第 17 卦 随（U+4DD0，文王卦序）" data-page-node-id="yjH_h"><span class="yao-name" data-page-node-id="yjHn_h">随</span><span class="yao-symbol" data-page-node-id="yjHs_h">䷐</span></button>
+                  <button class="md-tool-dropitem md-tool-yijing-item" onclick="insertEmojiChar('䷑')" title="第 18 卦 蛊（U+4DD1，文王卦序）" data-page-node-id="yjH_i"><span class="yao-name" data-page-node-id="yjHn_i">蛊</span><span class="yao-symbol" data-page-node-id="yjHs_i">䷑</span></button>
+                  <button class="md-tool-dropitem md-tool-yijing-item" onclick="insertEmojiChar('䷒')" title="第 19 卦 临（U+4DD2，文王卦序）" data-page-node-id="yjH_j"><span class="yao-name" data-page-node-id="yjHn_j">临</span><span class="yao-symbol" data-page-node-id="yjHs_j">䷒</span></button>
+                  <button class="md-tool-dropitem md-tool-yijing-item" onclick="insertEmojiChar('䷓')" title="第 20 卦 观（U+4DD3，文王卦序）" data-page-node-id="yjH_k"><span class="yao-name" data-page-node-id="yjHn_k">观</span><span class="yao-symbol" data-page-node-id="yjHs_k">䷓</span></button>
+                  <button class="md-tool-dropitem md-tool-yijing-item" onclick="insertEmojiChar('䷔')" title="第 21 卦 噬嗑（U+4DD4，文王卦序）" data-page-node-id="yjH_l"><span class="yao-name" data-page-node-id="yjHn_l">噬嗑</span><span class="yao-symbol" data-page-node-id="yjHs_l">䷔</span></button>
+                  <button class="md-tool-dropitem md-tool-yijing-item" onclick="insertEmojiChar('䷕')" title="第 22 卦 贲（U+4DD5，文王卦序）" data-page-node-id="yjH_m"><span class="yao-name" data-page-node-id="yjHn_m">贲</span><span class="yao-symbol" data-page-node-id="yjHs_m">䷕</span></button>
+                  <button class="md-tool-dropitem md-tool-yijing-item" onclick="insertEmojiChar('䷖')" title="第 23 卦 剥（U+4DD6，文王卦序）" data-page-node-id="yjH_n"><span class="yao-name" data-page-node-id="yjHn_n">剥</span><span class="yao-symbol" data-page-node-id="yjHs_n">䷖</span></button>
+                  <button class="md-tool-dropitem md-tool-yijing-item" onclick="insertEmojiChar('䷗')" title="第 24 卦 复（U+4DD7，文王卦序）" data-page-node-id="yjH_o"><span class="yao-name" data-page-node-id="yjHn_o">复</span><span class="yao-symbol" data-page-node-id="yjHs_o">䷗</span></button>
+                  <button class="md-tool-dropitem md-tool-yijing-item" onclick="insertEmojiChar('䷘')" title="第 25 卦 无妄（U+4DD8，文王卦序）" data-page-node-id="yjH_p"><span class="yao-name" data-page-node-id="yjHn_p">无妄</span><span class="yao-symbol" data-page-node-id="yjHs_p">䷘</span></button>
+                  <button class="md-tool-dropitem md-tool-yijing-item" onclick="insertEmojiChar('䷙')" title="第 26 卦 大畜（U+4DD9，文王卦序）" data-page-node-id="yjH_q"><span class="yao-name" data-page-node-id="yjHn_q">大畜</span><span class="yao-symbol" data-page-node-id="yjHs_q">䷙</span></button>
+                  <button class="md-tool-dropitem md-tool-yijing-item" onclick="insertEmojiChar('䷚')" title="第 27 卦 颐（U+4DDA，文王卦序）" data-page-node-id="yjH_r"><span class="yao-name" data-page-node-id="yjHn_r">颐</span><span class="yao-symbol" data-page-node-id="yjHs_r">䷚</span></button>
+                  <button class="md-tool-dropitem md-tool-yijing-item" onclick="insertEmojiChar('䷛')" title="第 28 卦 大过（U+4DDB，文王卦序）" data-page-node-id="yjH_s"><span class="yao-name" data-page-node-id="yjHn_s">大过</span><span class="yao-symbol" data-page-node-id="yjHs_s">䷛</span></button>
+                  <button class="md-tool-dropitem md-tool-yijing-item" onclick="insertEmojiChar('䷜')" title="第 29 卦 坎（U+4DDC，文王卦序）" data-page-node-id="yjH_t"><span class="yao-name" data-page-node-id="yjHn_t">坎</span><span class="yao-symbol" data-page-node-id="yjHs_t">䷜</span></button>
+                  <button class="md-tool-dropitem md-tool-yijing-item" onclick="insertEmojiChar('䷝')" title="第 30 卦 离（U+4DDD，文王卦序）" data-page-node-id="yjH_u"><span class="yao-name" data-page-node-id="yjHn_u">离</span><span class="yao-symbol" data-page-node-id="yjHs_u">䷝</span></button>
+                  <button class="md-tool-dropitem md-tool-yijing-item" onclick="insertEmojiChar('䷞')" title="第 31 卦 咸（U+4DDE，文王卦序）" data-page-node-id="yjH_v"><span class="yao-name" data-page-node-id="yjHn_v">咸</span><span class="yao-symbol" data-page-node-id="yjHs_v">䷞</</span></button>
+                  <button class="md-tool-dropitem md-tool-yijing-item" onclick="insertEmojiChar('䷟')" title="第 32 卦 恒（U+4DDF，文王卦序）" data-page-node-id="yjH_w"><span class="yao-name" data-page-node-id="yjHn_w">恒</span><span class="yao-symbol" data-page-node-id="yjHs_w">䷟</span></button>
+                  <button class="md-tool-dropitem md-tool-yijing-item" onclick="insertEmojiChar('䷠')" title="第 33 卦 遁（U+4DE0，文王卦序）" data-page-node-id="yjH_x"><span class="yao-name" data-page-node-id="yjHn_x">遁</span><span class="yao-symbol" data-page-node-id="yjHs_x">䷠</span></button>
+                  <button class="md-tool-dropitem md-tool-yijing-item" onclick="insertEmojiChar('䷡')" title="第 34 卦 大壮（U+4DE1，文王卦序）" data-page-node-id="yjH_y"><span class="yao-name" data-page-node-id="yjHn_y">大壮</span><span class="yao-symbol" data-page-node-id="yjHs_y">䷡</span></button>
+                  <button class="md-tool-dropitem md-tool-yijing-item" onclick="insertEmojiChar('䷢')" title="第 35 卦 晋（U+4DE2，文王卦序）" data-page-node-id="yjH_z"><span class="yao-name" data-page-node-id="yjHn_z">晋</span><span class="yao-symbol" data-page-node-id="yjHs_z">䷢</span></button>
+                  <button class="md-tool-dropitem md-tool-yijing-item" onclick="insertEmojiChar('䷣')" title="第 36 卦 明夷（U+4DE3，文王卦序）" data-page-node-id="yjH_10"><span class="yao-name" data-page-node-id="yjHn_10">明夷</span><span class="yao-symbol" data-page-node-id="yjHs_10">䷣</span></button>
+                  <button class="md-tool-dropitem md-tool-yijing-item" onclick="insertEmojiChar('䷤')" title="第 37 卦 家人（U+4DE4，文王卦序）" data-page-node-id="yjH_11"><span class="yao-name" data-page-node-id="yjHn_11">家人</span><span class="yao-symbol" data-page-node-id="yjHs_11">䷤</span></button>
+                  <button class="md-tool-dropitem md-tool-yijing-item" onclick="insertEmojiChar('䷥')" title="第 38 卦 睽（U+4DE5，文王卦序）" data-page-node-id="yjH_12"><span class="yao-name" data-page-node-id="yjHn_12">睽</span><span class="yao-symbol" data-page-node-id="yjHs_12">䷥</span></button>
+                  <button class="md-tool-dropitem md-tool-yijing-item" onclick="insertEmojiChar('䷦')" title="第 39 卦 蹇（U+4DE6，文王卦序）" data-page-node-id="yjH_13"><span class="yao-name" data-page-node-id="yjHn_13">蹇</span><span class="yao-symbol" data-page-node-id="yjHs_13">䷦</span></button>
+                  <button class="md-tool-dropitem md-tool-yijing-item" onclick="insertEmojiChar('䷧')" title="第 40 卦 解（U+4DE7，文王卦序）" data-page-node-id="yjH_14"><span class="yao-name" data-page-node-id="yjHn_14">解</span><span class="yao-symbol" data-page-node-id="yjHs_14">䷧</span></button>
+                  <button class="md-tool-dropitem md-tool-yijing-item" onclick="insertEmojiChar('䷨')" title="第 41 卦 损（U+4DE8，文王卦序）" data-page-node-id="yjH_15"><span class="yao-name" data-page-node-id="yjHn_15">损</span><span class="yao-symbol" data-page-node-id="yjHs_15">䷨</span></button>
+                  <button class="md-tool-dropitem md-tool-yijing-item" onclick="insertEmojiChar('䷩')" title="第 42 卦 益（U+4DE9，文王卦序）" data-page-node-id="yjH_16"><span class="yao-name" data-page-node-id="yjHn_16">益</span><span class="yao-symbol" data-page-node-id="yjHs_16">䷩</span></button>
+                  <button class="md-tool-dropitem md-tool-yijing-item" onclick="insertEmojiChar('䷪')" title="第 43 卦 夬（U+4DEA，文王卦序）" data-page-node-id="yjH_17"><span class="yao-name" data-page-node-id="yjHn_17">夬</span><span class="yao-symbol" data-page-node-id="yjHs_17">䷪</span></button>
+                  <button class="md-tool-dropitem md-tool-yijing-item" onclick="insertEmojiChar('䷫')" title="第 44 卦 姤（U+4DEB，文王卦序）" data-page-node-id="yjH_18"><span class="yao-name" data-page-node-id="yjHn_18">姤</span><span class="yao-symbol" data-page-node-id="yjHs_18">䷫</span></button>
+                  <button class="md-tool-dropitem md-tool-yijing-item" onclick="insertEmojiChar('䷬')" title="第 45 卦 萃（U+4DEC，文王卦序）" data-page-node-id="yjH_19"><span class="yao-name" data-page-node-id="yjHn_19">萃</span><span class="yao-symbol" data-page-node-id="yjHs_19">䷬</span></button>
+                  <button class="md-tool-dropitem md-tool-yijing-item" onclick="insertEmojiChar('䷭')" title="第 46 卦 升（U+4DED，文王卦序）" data-page-node-id="yjH_1a"><span class="yao-name" data-page-node-id="yjHn_1a">升</span><span class="yao-symbol" data-page-node-id="yjHs_1a">䷭</span></button>
+                  <button class="md-tool-dropitem md-tool-yijing-item" onclick="insertEmojiChar('䷮')" title="第 47 卦 困（U+4DEE，文王卦序）" data-page-node-id="yjH_1b"><span class="yao-name" data-page-node-id="yjHn_1b">困</span><span class="yao-symbol" data-page-node-id="yjHs_1b">䷮</span></button>
+                  <button class="md-tool-dropitem md-tool-yijing-item" onclick="insertEmojiChar('䷯')" title="第 48 卦 井（U+4DEF，文王卦序）" data-page-node-id="yjH_1c"><span class="yao-name" data-page-node-id="yjHn_1c">井</span><span class="yao-symbol" data-page-node-id="yjHs_1c">䷯</span></button>
+                  <button class="md-tool-dropitem md-tool-yijing-item" onclick="insertEmojiChar('䷰')" title="第 49 卦 革（U+4DF0，文王卦序）" data-page-node-id="yjH_1d"><span class="yao-name" data-page-node-id="yjHn_1d">革</span><span class="yao-symbol" data-page-node-id="yjHs_1d">䷰</span></button>
+                  <button class="md-tool-dropitem md-tool-yijing-item" onclick="insertEmojiChar('䷱')" title="第 50 卦 鼎（U+4DF1，文王卦序）" data-page-node-id="yjH_1e"><span class="yao-name" data-page-node-id="yjHn_1e">鼎</span><span class="yao-symbol" data-page-node-id="yjHs_1e">䷱</span></button>
+                  <button class="md-tool-dropitem md-tool-yijing-item" onclick="insertEmojiChar('䷲')" title="第 51 卦 震（U+4DF2，文王卦序）" data-page-node-id="yjH_1f"><span class="yao-name" data-page-node-id="yjHn_1f">震</span><span class="yao-symbol" data-page-node-id="yjHs_1f">䷲</span></button>
+                  <button class="md-tool-dropitem md-tool-yijing-item" onclick="insertEmojiChar('䷳')" title="第 52 卦 艮（U+4DF3，文王卦序）" data-page-node-id="yjH_1g"><span class="yao-name" data-page-node-id="yjHn_1g">艮</span><span class="yao-symbol" data-page-node-id="yjHs_1g">䷳</span></button>
+                  <button class="md-tool-dropitem md-tool-yijing-item" onclick="insertEmojiChar('䷴')" title="第 53 卦 渐（U+4DF4，文王卦序）" data-page-node-id="yjH_1h"><span class="yao-name" data-page-node-id="yjHn_1h">渐</span><span class="yao-symbol" data-page-node-id="yjHs_1h">䷴</span></button>
+                  <button class="md-tool-dropitem md-tool-yijing-item" onclick="insertEmojiChar('䷵')" title="第 54 卦 归妹（U+4DF5，文王卦序）" data-page-node-id="yjH_1i"><span class="yao-name" data-page-node-id="yjHn_1i">归妹</span><span class="yao-symbol" data-page-node-id="yjHs_1i">䷵</span></button>
+                  <button class="md-tool-dropitem md-tool-yijing-item" onclick="insertEmojiChar('䷶')" title="第 55 卦 丰（U+4DF6，文王卦序）" data-page-node-id="yjH_1j"><span class="yao-name" data-page-node-id="yjHn_1j">丰</span><span class="yao-symbol" data-page-node-id="yjHs_1j">䷶</span></button>
+                  <button class="md-tool-dropitem md-tool-yijing-item" onclick="insertEmojiChar('䷷')" title="第 56 卦 旅（U+4DF7，文王卦序）" data-page-node-id="yjH_1k"><span class="yao-name" data-page-node-id="yjHn_1k">旅</span><span class="yao-symbol" data-page-node-id="yjHs_1k">䷷</span></button>
+                  <button class="md-tool-dropitem md-tool-yijing-item" onclick="insertEmojiChar('䷸')" title="第 57 卦 巽（U+4DF8，文王卦序）" data-page-node-id="yjH_1l"><span class="yao-name" data-page-node-id="yjHn_1l">巽</span><span class="yao-symbol" data-page-node-id="yjHs_1l">䷸</span></button>
+                  <button class="md-tool-dropitem md-tool-yijing-item" onclick="insertEmojiChar('䷹')" title="第 58 卦 兑（U+4DF9，文王卦序）" data-page-node-id="yjH_1m"><span class="yao-name" data-page-node-id="yjHn_1m">兑</span><span class="yao-symbol" data-page-node-id="yjHs_1m">䷹</span></button>
+                  <button class="md-tool-dropitem md-tool-yijing-item" onclick="insertEmojiChar('䷺')" title="第 59 卦 涣（U+4DFA，文王卦序）" data-page-node-id="yjH_1n"><span class="yao-name" data-page-node-id="yjHn_1n">涣</span><span class="yao-symbol" data-page-node-id="yjHs_1n">䷺</span></button>
+                  <button class="md-tool-dropitem md-tool-yijing-item" onclick="insertEmojiChar('䷻')" title="第 60 卦 节（U+4DFB，文王卦序）" data-page-node-id="yjH_1o"><span class="yao-name" data-page-node-id="yjHn_1o">节</span><span class="yao-symbol" data-page-node-id="yjHs_1o">䷻</span></button>
+                  <button class="md-tool-dropitem md-tool-yijing-item" onclick="insertEmojiChar('䷼')" title="第 61 卦 中孚（U+4DFC，文王卦序）" data-page-node-id="yjH_1p"><span class="yao-name" data-page-node-id="yjHn_1p">中孚</span><span class="yao-symbol" data-page-node-id="yjHs_1p">䷼</span></button>
+                  <button class="md-tool-dropitem md-tool-yijing-item" onclick="insertEmojiChar('䷽')" title="第 62 卦 小过（U+4DFD，文王卦序）" data-page-node-id="yjH_1q"><span class="yao-name" data-page-node-id="yjHn_1q">小过</span><span class="yao-symbol" data-page-node-id="yjHs_1q">䷽</span></button>
+                  <button class="md-tool-dropitem md-tool-yijing-item" onclick="insertEmojiChar('䷾')" title="第 63 卦 既济（U+4DFE，文王卦序）" data-page-node-id="yjH_1r"><span class="yao-name" data-page-node-id="yjHn_1r">既济</span><span class="yao-symbol" data-page-node-id="yjHs_1r">䷾</span></button>
+                  <button class="md-tool-dropitem md-tool-yijing-item" onclick="insertEmojiChar('䷿')" title="第 64 卦 未济（U+4DFF，文王卦序）" data-page-node-id="yjH_1s"><span class="yao-name" data-page-node-id="yjHn_1s">未济</span><span class="yao-symbol" data-page-node-id="yjHs_1s">䷿</span></button>
+                </div>
+              </div>
+              <div class="md-tool-dropgroup" data-page-node-id="wsGrpK3m9">空白与不可见字符</div>
+              <div class="md-tool-submenu" data-md-submenu data-page-node-id="wsSubmenuP2x7">
+                <button class="md-tool-dropitem has-submenu" data-page-node-id="wsSubBtn8k1" title="鼠标悬停展开，点击子项把对应的空白 / 不可见字符原样插入到光标处">
+                  空白字符 <span class="sub-caret" data-page-node-id="wsSubCaret4d2">▸</span><kbd data-page-node-id="wsSubKbd6n5">␣</kbd>
+                </button>
+                <div class="md-tool-sublist" data-page-node-id="wsSubList9q3">
+                  <button class="md-tool-dropitem" onclick="insertRaw('　')" title="全角空格（U+3000，中文排版常用，宽度等同一个汉字）">全角空格 <kbd data-page-node-id="wsKbd1a2">U+3000</kbd></button>
+                  <button class="md-tool-dropitem" onclick="insertRaw('&amp;nbsp;')" title="不换行空格（HTML 实体 &amp;nbsp;，渲染为不断开的水平空格）">不换行空格 <kbd data-page-node-id="wsKbd2b3">&amp;nbsp;</kbd></button>
+                  <button class="md-tool-dropitem" onclick="insertRaw('&amp;emsp;')" title="全角空白（HTML 实体 &amp;emsp;，约等于一个汉字宽度）">全角空白 <kbd data-page-node-id="wsKbd3c4">&amp;emsp;</kbd></button>
+                  <button class="md-tool-dropitem" onclick="insertRaw('&amp;ensp;')" title="半角空白（HTML 实体 &amp;ensp;，约等于半个汉字宽度）">半角空白 <kbd data-page-node-id="wsKbd4d5">&amp;ensp;</kbd></button>
+                  <button class="md-tool-dropitem" onclick="insertRaw('​')" title="零宽空格（U+200B，不可见，用于断词或微调间距）">零宽空格 <kbd data-page-node-id="wsKbd5e6">U+200B</kbd></button>
+                  <button class="md-tool-dropitem" onclick="insertRaw('<br>')" title="软回车（不另起段落，渲染为 &lt;br&gt; 换行）">软回车 <kbd data-page-node-id="wsKbd6f7">&lt;br&gt;</kbd></button>
+                </div>
+              </div>
               <div class="md-tool-dropgroup" data-page-node-id="CA8hdWTxssr0MXr97UUS12">分隔与代码</div>
               <button class="md-tool-dropitem" onclick="insertMd('---\n', '')" data-page-node-id="PJXSaUzyoSsAwSSUyl9oRk">分隔线 <kbd data-page-node-id="XK9k9qcWtaWCEF6HtH2QPK">---</kbd></button>
               <button class="md-tool-dropitem" onclick="insertMd('`', '`')" data-page-node-id="9LqDnp1Dr20RhTGLjJ2WMe">行内代码 <kbd data-page-node-id="2cyJNd7KpdPum0dAVL2Ur1">`</kbd></button>
@@ -3311,6 +3444,24 @@
       const savedScrollTop = textarea.scrollTop;
       textarea.focus({ preventScroll: true });
       const newCursor = start + ch.length;
+      textarea.setSelectionRange(newCursor, newCursor);
+      textarea.scrollTop = savedScrollTop;
+      pushEditorHistory(textarea, true);
+      closeAllMdDropdowns();
+    }
+
+    // 🆕 直接把「字面文本/字符」原样写到光标处（不经过 :短码:，也不会套用「文本」占位符）。
+    //    供「空白与不可见字符」子菜单调用——这些项要插的就是空格字符或 HTML 实体文本（&nbsp; 等）本身，
+    //    而非把它们当作包裹选中文字的前/后缀，所以用单独的 insertRaw 而非 insertMd。
+    function insertRaw(text) {
+      const textarea = document.getElementById('taskText');
+      if (!textarea || !text) return;
+      const start = textarea.selectionStart;
+      const end = textarea.selectionEnd;
+      textarea.value = textarea.value.substring(0, start) + text + textarea.value.substring(end);
+      const savedScrollTop = textarea.scrollTop;
+      textarea.focus({ preventScroll: true });
+      const newCursor = start + text.length;
       textarea.setSelectionRange(newCursor, newCursor);
       textarea.scrollTop = savedScrollTop;
       pushEditorHistory(textarea, true);
