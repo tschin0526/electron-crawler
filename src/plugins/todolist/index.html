@@ -1064,18 +1064,17 @@
       color: #c9d1d9 !important;
     }
 
-    /* 卡片底部固定区域：显示标签和最后异动时间 */
+    /* 卡片底部固定区域：显示状态徽章、标签、文件大小和最后异动时间
+       布局与顶部功能条 (.todo-actions) 一致：单行 flex，内容超出时横向滚动 */
     .todo-footer {
       display: flex;
       align-items: center;
-      justify-content: space-between;
-      gap: 8px;
+      gap: 4px;
       flex-shrink: 0;
       min-width: 0;
       padding-top: 6px;
       margin-top: 4px;
       border-top: 1px solid rgba(0, 0, 0, 0.08);
-      /* 底部讯息条：内容超出时横向滚动，不再撑大卡片宽度 */
       overflow-x: auto;
       overflow-y: hidden;
       scrollbar-width: thin;
@@ -1093,9 +1092,13 @@
     .todo-footer-left {
       display: flex;
       align-items: center;
-      gap: 6px;
-      flex: 1;
+      gap: 4px;
       min-width: 0;
+    }
+    .todo-footer-left > *,
+    .todo-footer > .todo-date,
+    .todo-footer > .todo-size {
+      flex-shrink: 0;
     }
     .todo-footer .todo-tags {
       display: flex;
@@ -1196,6 +1199,23 @@
       color: var(--text-secondary);
       flex-shrink: 0;
       white-space: nowrap;
+    }
+
+    .todo-size {
+      font-size: 11px;
+      color: var(--text-secondary);
+      background: rgba(148, 163, 184, 0.12);
+      border: 1px solid rgba(148, 163, 184, 0.22);
+      border-radius: 4px;
+      padding: 1px 5px;
+      flex-shrink: 0;
+      white-space: nowrap;
+      font-family: 'SF Mono', 'Menlo', 'Monaco', 'Consolas', monospace;
+    }
+    body.dark .todo-size {
+      color: #94a3b8;
+      background: rgba(148, 163, 184, 0.08);
+      border-color: rgba(148, 163, 184, 0.18);
     }
 
     .todo-attachments {
@@ -3138,6 +3158,9 @@
     let currentSearchIndex = -1;  // 当前搜索结果索引
     let matchedHighlights = [];   // 匹配的高亮元素列表
     let editingId = null;
+    // 🆕 卡片 JSON 文件大小缓存：{ [todoId]: '1.2KB' }
+    //    纯运行时变量，不写回 JSON、不参与存档；加载卡片 / 保存后重新读取即可。
+    let todoFileSizes = {};
     // 当前正在编辑的 MD 文件 id（仅当 activeFileTab==='md' 且为编辑（非新增）模式时非 null）
     let currentMdId = null;
     // 编辑退出前的「未保存更改」检测快照：在 openAddModal / openEditModal 时采集原始内容，
@@ -3171,6 +3194,28 @@
       }
       const colorIndex = Math.abs(hash) % TAG_COLOR_CLASSES.length;
       return TAG_COLOR_CLASSES[colorIndex];
+    }
+
+    // 📏 重新读取磁盘上所有 todo-{id}.json 的实际大小，存入运行时变量 todoFileSizes。
+    //    只走 list-todo-files IPC（不改动任何 JSON、不写回存档），
+    //    加载卡片时调用一次；保存/重命名/归档等导致文件大小变化的操作后再调用一次即可。
+    async function refreshTodoFileSizes() {
+      if (!window.electronAPI || !window.electronAPI.listTodoFiles) {
+        todoFileSizes = {};
+        return;
+      }
+      try {
+        const result = await window.electronAPI.listTodoFiles();
+        const map = {};
+        if (result && result.success && Array.isArray(result.data)) {
+          result.data.forEach(f => {
+            if (f && f.id) map[f.id] = formatFileSizeShort(f.size);
+          });
+        }
+        todoFileSizes = map;
+      } catch (e) {
+        console.warn('[TodoList] 读取文件大小失败：', e.message);
+      }
     }
 
     async function loadTodos() {
@@ -3211,6 +3256,8 @@
       }
       // 加载完成后统计 archived/ 子目录文件数（不依赖 todos 内存列表）
       refreshArchivedCount();
+      // 🆕 读取所有卡片 JSON 的磁盘大小 → 运行时变量（不写入任何 JSON）
+      await refreshTodoFileSizes();
     }
 
     async function saveTodos() {
@@ -3231,6 +3278,8 @@
         console.error('[TodoList] 保存数据异常:', error);
         saveTodosToLocalStorage();
       }
+      // 🆕 保存后文件大小可能变化：重新读取一次（只更新运行时变量）
+      await refreshTodoFileSizes();
       renderTodos();
       updateStats();
     }
@@ -4689,6 +4738,8 @@
       try {
         if (!window.electronAPI) return;
         await window.electronAPI.saveTodos(todos);
+        // 🆕 内容变了文件大小也会变：刷新运行时大小缓存（由调用方决定是否重渲染）
+        await refreshTodoFileSizes();
       } catch (error) {
         console.error('[TodoList] 静默保存失败:', error);
       }
@@ -4803,8 +4854,9 @@
               <div class="todo-tags">
                 ${tagsHtml}
               </div>
+              ${todoFileSizes[todo.id] ? `<span class="todo-size" title="文件大小：todo-${todo.id}.json">${todoFileSizes[todo.id]}</span>` : ''}
+              <span class="todo-date" title="最后异动时间">${formatDate(todo.updatedAt || todo.createdAt)}</span>
             </div>
-            <span class="todo-date" title="最后异动时间">${formatDate(todo.updatedAt || todo.createdAt)}</span>
           </div>
           </div>
           <div class="resize-handle" onmousedown="startResize(event, '${todo.id}')" ondblclick="resetCardSize(event, '${todo.id}')" title="拖动调整宽度和高度，双击重置"></div>
@@ -6870,6 +6922,8 @@
       updateJsonFileDisplay();
       // 关键：重渲染画廊卡片，使卡片的 data-id 与功能条 JSON 名同步为新 id。
       // 否则卡片 DOM 仍保留旧 id → 双击 openEditModal(旧id) 找不到 todo（无法进入编辑），且名称不刷新。
+      // id 变了 → 按新 id 重新读取文件大小（缓存 key 是 id）
+      await refreshTodoFileSizes();
       renderTodos();
       console.log(`[TodoList] todo id 已从 ${oldId} 改为 ${newId}`);
     }
