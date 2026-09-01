@@ -373,6 +373,105 @@ function init(shared) {
     }
   });
 
+  // 📂 返回资料目录的绝对路径（前端「文件列表」底部按钮展示用）
+  ipcMain.handle('get-data-dir', async () => {
+    return { success: true, data: PLUGINS_DATA_DIR };
+  });
+
+  // 📂 弹出原生文件夹选择对话框（前端点击「📂 目录」按钮触发）
+  ipcMain.handle('open-dir-dialog', async () => {
+    try {
+      const win = BrowserWindow.getFocusedWindow();
+      const result = await dialog.showOpenDialog(win || undefined, {
+        title: '选择要浏览的目录',
+        properties: ['openDirectory'],
+      });
+      if (result.canceled || !result.filePaths.length) {
+        return { success: false, data: null };
+      }
+      return { success: true, data: result.filePaths[0] };
+    } catch (e) {
+      return { success: false, error: e.message };
+    }
+  });
+
+  // 📂 列出指定目录下所有编辑器支持的文件（todo卡片/MD/HTML/JSON），用于临时切换浏览目录
+  // - 不影响 PLUGINS_DATA_DIR（默认资料来源不变）
+  // - 返回格式与 list-todo-files / list-md-files 等一致：{ name, id, size, mtime } + type 由前端按扩展名判定
+  ipcMain.handle('list-all-files-in-dir', async (_event, dir) => {
+    try {
+      if (!dir || !fs.existsSync(dir)) {
+        return { success: true, data: [] };
+      }
+      const supportedExts = ['.json', '.md', '.html'];
+      const files = fs.readdirSync(dir).filter(f => {
+        const ext = path.extname(f).toLowerCase();
+        return supportedExts.includes(ext);
+      });
+      const list = [];
+      for (const file of files) {
+        try {
+          const filePath = path.join(dir, file);
+          const stat = fs.statSync(filePath);
+          if (!stat.isFile()) continue;
+          list.push({
+            name: file,
+            // id 必须与默认 list-todo-files 一致：todo 文件去掉 "todo-" 前缀（否则 Gallery 卡片 data-id 对不上，无法滚动/闪烁）
+            id: (() => {
+              let base = file.replace(/\.(json|md|html)$/i, '');
+              if (base.startsWith('todo-')) base = base.slice('todo-'.length);
+              return base;
+            })(),
+            size: stat.size,
+            mtime: stat.mtimeMs,
+          });
+        } catch { /* 单文件 stat 失败跳过 */ }
+      }
+      return { success: true, data: list };
+    } catch (e) {
+      return { success: false, error: e.message };
+    }
+  });
+
+  // 📖 按绝对路径读取文件内容（用于「临时浏览目录」模式下打开外部文件）
+  ipcMain.handle('read-file-by-path', async (_event, absolutePath) => {
+    try {
+      if (!absolutePath || typeof absolutePath !== 'string') {
+        return { success: false, error: '路径参数无效' };
+      }
+      // 安全守卫：禁止路径穿越到敏感目录（仅允许用户可读文件）
+      const normalized = path.resolve(absolutePath);
+      if (!fs.existsSync(normalized)) {
+        return { success: false, error: '文件不存在' };
+      }
+      if (!fs.statSync(normalized).isFile()) {
+        return { success: false, error: '路径不是文件' };
+      }
+      const content = fs.readFileSync(normalized, 'utf8');
+      return { success: true, content, path: normalized };
+    } catch (e) {
+      return { success: false, error: e.message };
+    }
+  });
+
+  // 💾 按绝对路径保存文件内容（用于「临时浏览目录」模式下保存外部文件）
+  ipcMain.handle('save-file-by-path', async (_event, absolutePath, content) => {
+    try {
+      if (!absolutePath || typeof absolutePath !== 'string') {
+        return { success: false, error: '路径参数无效' };
+      }
+      const normalized = path.resolve(absolutePath);
+      const dir = path.dirname(normalized);
+      if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true });
+      }
+      fs.writeFileSync(normalized, content, 'utf8');
+      return { success: true, path: normalized };
+    } catch (e) {
+      return { success: false, error: e.message };
+    }
+  });
+
   // 📋 列出 todos 资料目录下所有 todo-{id}.json 的文件元数据（供前端「文件列表」下拉使用）
   // - 只列 PLUGINS_DATA_DIR 顶层（与「已归档」互相独立）
   // - 每条记录：name（todo-{id}.json）、id（去前缀后缀）、size（字节）、mtime（毫秒时间戳）
@@ -552,6 +651,211 @@ function init(shared) {
       return { success: true };
     } catch (error) {
       console.error(`[Main] 删除 MD 文件失败: ${id}`, error);
+      return { success: false, error: error.message };
+    }
+  });
+
+  // ========== 一般 JSON 文件存储（每个文件一个 .json，与 todo 卡片 JSON 完全分离） ==========
+  // 文件命名：data 目录下任意 *.json（排除 todo-*.json 系统专用卡片）都可被编辑。
+  // 特点：不进 Gallery、无标签/颜色/附件；以「原始文本」保存（保留用户格式，不强制重新序列化）。
+
+  // 校验一般 JSON 文件 id（即不带 .json 扩展名的 basename）不会导致路径穿越
+  function resolveJsonFilePath(id) {
+    if (!id || typeof id !== 'string') return null;
+    // 拒绝路径分隔符和 ..，防止穿越到 data 目录之外；也拒绝 todo- 前缀（那是卡片专用）
+    if (id.includes('..') || id.includes(path.sep) || id.includes('/') || id.startsWith('todo-')) return null;
+    const filePath = path.join(PLUGINS_DATA_DIR, `${id}.json`);
+    // 最终解析后的绝对路径必须在 data 目录内
+    const resolved = path.resolve(filePath);
+    const base = path.resolve(PLUGINS_DATA_DIR);
+    if (!resolved.startsWith(base + path.sep) && resolved !== base) return null;
+    return resolved;
+  }
+
+  // 📋 列出 data 目录下所有一般 *.json 的元数据（供前端「文件列表」下拉使用）
+  //     排除系统专用 todo-*.json 卡片文件（那些走 list-todo-files）。
+  ipcMain.handle('list-json-files', async () => {
+    try {
+      if (!fs.existsSync(PLUGINS_DATA_DIR)) {
+        return { success: true, data: [] };
+      }
+      const files = fs.readdirSync(PLUGINS_DATA_DIR)
+        .filter(f => f.endsWith('.json') && !f.startsWith('todo-'));
+      const list = [];
+      for (const file of files) {
+        try {
+          const filePath = path.join(PLUGINS_DATA_DIR, file);
+          const stat = fs.statSync(filePath);
+          list.push({
+            name: file,
+            id: file.replace(/\.json$/i, ''),
+            size: stat.size,
+            mtime: stat.mtimeMs
+          });
+        } catch (e) {
+          console.warn(`[Main] stat JSON 文件失败：${file}`, e.message);
+        }
+      }
+      return { success: true, data: list };
+    } catch (error) {
+      console.error('[Main] 列出 JSON 文件失败:', error);
+      return { success: false, error: error.message, data: [] };
+    }
+  });
+
+  // 📖 读取单个一般 JSON 文件内容（原始文本，不解析）
+  ipcMain.handle('read-json-file', async (event, id) => {
+    try {
+      const filePath = resolveJsonFilePath(id);
+      if (!filePath) {
+        return { success: false, error: 'id 非法或包含路径穿越字符' };
+      }
+      if (!fs.existsSync(filePath)) {
+        return { success: false, error: 'JSON 文件不存在' };
+      }
+      const content = fs.readFileSync(filePath, 'utf8');
+      return { success: true, content };
+    } catch (error) {
+      console.error(`[Main] 读取 JSON 文件失败: ${id}`, error);
+      return { success: false, error: error.message };
+    }
+  });
+
+  // 💾 保存/新建一般 JSON 文件（原始文本，保留用户格式；不重新序列化）
+  ipcMain.handle('save-json-file', async (event, id, content) => {
+    try {
+      const filePath = resolveJsonFilePath(id);
+      if (!filePath) {
+        return { success: false, error: 'id 非法或包含路径穿越字符' };
+      }
+      if (!fs.existsSync(PLUGINS_DATA_DIR)) {
+        fs.mkdirSync(PLUGINS_DATA_DIR, { recursive: true });
+      }
+      const jsonContent = (content || '').replace(/\r\n/g, '\n');
+      fs.writeFileSync(filePath, jsonContent, 'utf8');
+      console.log(`[Main] 已保存 JSON 文件: ${filePath}`);
+      return { success: true };
+    } catch (error) {
+      console.error(`[Main] 保存 JSON 文件失败: ${id}`, error);
+      return { success: false, error: error.message };
+    }
+  });
+
+  // 🗑️ 删除一般 JSON 文件
+  ipcMain.handle('delete-json-file', async (event, id) => {
+    try {
+      const filePath = resolveJsonFilePath(id);
+      if (!filePath) {
+        return { success: false, error: 'id 非法或包含路径穿越字符' };
+      }
+      if (fs.existsSync(filePath)) {
+        fs.unlinkSync(filePath);
+        console.log(`[Main] 已删除 JSON 文件: ${filePath}`);
+      }
+      return { success: true };
+    } catch (error) {
+      console.error(`[Main] 删除 JSON 文件失败: ${id}`, error);
+      return { success: false, error: error.message };
+    }
+  });
+
+  // ========== HTML 文件存储（每个文件一个 .html，与 todo 卡片 / MD / JSON 完全分离） ==========
+  // 文件命名：data 目录下任意 *.html 都可被编辑；本插件新建的 HTML 文件默认以 html-{id}.html 命名。
+  // 特点：不进 Gallery、无标签/颜色/附件等元数据；仅以纯 HTML 源码文本保存。
+
+  // 校验 HTML 文件 id（即不带 .html 扩展名的 basename）不会导致路径穿越
+  function resolveHtmlFilePath(id) {
+    if (!id || typeof id !== 'string') return null;
+    if (id.includes('..') || id.includes(path.sep) || id.includes('/')) return null;
+    const filePath = path.join(PLUGINS_DATA_DIR, `${id}.html`);
+    const resolved = path.resolve(filePath);
+    const base = path.resolve(PLUGINS_DATA_DIR);
+    if (!resolved.startsWith(base + path.sep) && resolved !== base) return null;
+    return resolved;
+  }
+
+  // 📋 列出 data 目录下所有 *.html 的元数据（供前端「文件列表」下拉使用）
+  ipcMain.handle('list-html-files', async () => {
+    try {
+      if (!fs.existsSync(PLUGINS_DATA_DIR)) {
+        return { success: true, data: [] };
+      }
+      const files = fs.readdirSync(PLUGINS_DATA_DIR)
+        .filter(f => f.endsWith('.html'));
+      const list = [];
+      for (const file of files) {
+        try {
+          const filePath = path.join(PLUGINS_DATA_DIR, file);
+          const stat = fs.statSync(filePath);
+          list.push({
+            name: file,
+            id: file.replace(/\.html$/i, ''),
+            size: stat.size,
+            mtime: stat.mtimeMs
+          });
+        } catch (e) {
+          console.warn(`[Main] stat HTML 文件失败：${file}`, e.message);
+        }
+      }
+      return { success: true, data: list };
+    } catch (error) {
+      console.error('[Main] 列出 HTML 文件失败:', error);
+      return { success: false, error: error.message, data: [] };
+    }
+  });
+
+  // 📖 读取单个 HTML 文件内容
+  ipcMain.handle('read-html-file', async (event, id) => {
+    try {
+      const filePath = resolveHtmlFilePath(id);
+      if (!filePath) {
+        return { success: false, error: 'id 非法或包含路径穿越字符' };
+      }
+      if (!fs.existsSync(filePath)) {
+        return { success: false, error: 'HTML 文件不存在' };
+      }
+      const content = fs.readFileSync(filePath, 'utf8');
+      return { success: true, content };
+    } catch (error) {
+      console.error(`[Main] 读取 HTML 文件失败: ${id}`, error);
+      return { success: false, error: error.message };
+    }
+  });
+
+  // 💾 保存/新建 HTML 文件（纯 HTML 源码文本）
+  ipcMain.handle('save-html-file', async (event, id, content) => {
+    try {
+      const filePath = resolveHtmlFilePath(id);
+      if (!filePath) {
+        return { success: false, error: 'id 非法或包含路径穿越字符' };
+      }
+      if (!fs.existsSync(PLUGINS_DATA_DIR)) {
+        fs.mkdirSync(PLUGINS_DATA_DIR, { recursive: true });
+      }
+      const htmlContent = (content || '').replace(/\r\n/g, '\n');
+      fs.writeFileSync(filePath, htmlContent, 'utf8');
+      console.log(`[Main] 已保存 HTML 文件: ${filePath}`);
+      return { success: true };
+    } catch (error) {
+      console.error(`[Main] 保存 HTML 文件失败: ${id}`, error);
+      return { success: false, error: error.message };
+    }
+  });
+
+  // 🗑️ 删除 HTML 文件
+  ipcMain.handle('delete-html-file', async (event, id) => {
+    try {
+      const filePath = resolveHtmlFilePath(id);
+      if (!filePath) {
+        return { success: false, error: 'id 非法或包含路径穿越字符' };
+      }
+      if (fs.existsSync(filePath)) {
+        fs.unlinkSync(filePath);
+        console.log(`[Main] 已删除 HTML 文件: ${filePath}`);
+      }
+      return { success: true };
+    } catch (error) {
+      console.error(`[Main] 删除 HTML 文件失败: ${id}`, error);
       return { success: false, error: error.message };
     }
   });

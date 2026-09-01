@@ -519,6 +519,10 @@
       background: rgba(139, 92, 246, 0.18);
       color: #8b5cf6;
     }
+    .file-list-item-status.json {
+      background: rgba(14, 165, 233, 0.18);
+      color: #0ea5e9;
+    }
     body.dark .file-list-item-status.pending {
       background: rgba(148, 163, 184, 0.12);
       color: #64748b;
@@ -526,6 +530,18 @@
     body.dark .file-list-item-status.md {
       background: rgba(139, 92, 246, 0.22);
       color: #a78bfa;
+    }
+    body.dark .file-list-item-status.json {
+      background: rgba(14, 165, 233, 0.22);
+      color: #38bdf8;
+    }
+    .file-list-item-status.html {
+      background: rgba(249, 115, 22, 0.18);
+      color: #f97316;
+    }
+    body.dark .file-list-item-status.html {
+      background: rgba(249, 115, 22, 0.22);
+      color: #fb923c;
     }
     .file-list-item-name {
       flex: 1;
@@ -549,9 +565,39 @@
       color: var(--text-secondary);
       text-align: center;
       background: rgba(0,0,0,0.02);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
     }
     body.dark .file-list-footer {
       background: rgba(255,255,255,0.02);
+    }
+    .file-list-dir-btn {
+      flex-shrink: 0;
+      padding: 1px 5px;
+      border: 1px solid var(--border-color);
+      border-radius: 3px;
+      background: transparent;
+      color: var(--text-secondary);
+      font-size: 12px;
+      line-height: 1.4;
+      cursor: pointer;
+      transition: background 0.15s, color 0.15s, border-color 0.15s;
+    }
+    .file-list-dir-btn:hover {
+      background: var(--primary-light);
+      color: #e0e7ff;
+      border-color: var(--primary-border);
+    }
+    .file-list-dir-btn.browsing {
+      color: #f59e0b;
+      border-color: #f59e0b;
+    }
+    .file-list-dir-btn.browsing:hover {
+      background: rgba(245,158,11,0.15);
+      color: #fbbf24;
+      border-color: #fbbf24;
     }
 
     .nav-btn {
@@ -1062,6 +1108,58 @@
     body.dark .todo-text pre code.hljs, body.dark .md-preview pre code.hljs {
       background: transparent !important;
       color: #c9d1d9 !important;
+    }
+
+    /* ============================================================
+       JSON 模式：递归表格渲染
+       对象/数组 → table；标量 → 带颜色区分的 span
+       ============================================================ */
+    .json-table-wrapper {
+      width: 100%;
+      overflow-x: auto;
+      font-size: 13px;
+      line-height: 1.5;
+    }
+    .json-table {
+      border-collapse: collapse;
+      width: 100%;
+      margin: 0;
+      text-align: left;
+    }
+    .json-table td {
+      border: 1px solid var(--border-color);
+      padding: 4px 8px;
+      vertical-align: top;
+    }
+    .json-table .json-key {
+      background: rgba(148, 163, 184, 0.12);
+      font-weight: 500;
+      white-space: nowrap;
+      width: 1%;
+      color: var(--text-primary);
+    }
+    .json-table .json-string { color: #16a34a; word-break: break-word; }
+    .json-table .json-number { color: #d97706; }
+    .json-table .json-boolean { color: #2563eb; }
+    .json-table .json-null { color: #94a3b8; font-style: italic; }
+    .json-table .json-empty { color: #94a3b8; }
+    .json-error {
+      color: #dc2626;
+      background: #fee2e2;
+      border: 1px solid #fca5a5;
+      border-radius: 6px;
+      padding: 8px 12px;
+      font-size: 13px;
+    }
+    body.dark .json-table td { border-color: #334155; }
+    body.dark .json-table .json-key { background: rgba(148, 163, 184, 0.08); color: #e2e8f0; }
+    body.dark .json-table .json-string { color: #4ade80; }
+    body.dark .json-table .json-number { color: #fbbf24; }
+    body.dark .json-table .json-boolean { color: #60a5fa; }
+    body.dark .json-error {
+      color: #fca5a5;
+      background: rgba(220, 38, 38, 0.15);
+      border-color: rgba(252, 165, 165, 0.3);
     }
 
     /* 卡片底部固定区域：显示状态徽章、标签、文件大小和最后异动时间
@@ -1897,6 +1995,14 @@
       min-height: 32px;
     }
 
+    /* 三种编辑器（MD / HTML / JSON）各自的工具按钮组 */
+    .editor-toolbar-group {
+      display: none;
+      align-items: center;
+      gap: 1px;
+      flex-wrap: nowrap;
+    }
+
     .md-tool-btn {
       padding: 3px 6px;
       border: 1px solid transparent;
@@ -2695,7 +2801,7 @@
         </div>
         <!-- 📋 文件浏览按钮：以「文件列表方式」浏览所有 todo-{id}.json，点击跳转到对应卡片并金边闪烁 -->
         <div class="file-list-wrapper" id="fileListWrapper" data-page-node-id="hnmjlkimM1oSISO7lNr9X6">
-          <button type="button" class="file-list-trigger" id="fileListTrigger" title="按文件名称/时间/大小浏览（ToDo 卡片 / MD 文件）" aria-haspopup="true" data-page-node-id="5NJ5iDcLQfA2OkyjRIT3fV">🗂️ 文件</button>
+          <button type="button" class="file-list-trigger" id="fileListTrigger" title="按文件名称/时间/大小浏览（ToDo 卡片 / MD / HTML / JSON 文件）" aria-haspopup="true" data-page-node-id="5NJ5iDcLQfA2OkyjRIT3fV">🗂️ 文件</button>
           <div class="file-list-panel" id="fileListPanel" role="dialog" aria-label="文件列表" data-page-node-id="ZTb62hp3Rq5zZbdVY8BM95">
             <div class="file-list-sort" id="fileListSort" data-page-node-id="BZNXqMgvfMTG4fS1u3e4ZQ">
               <button type="button" class="file-list-sort-btn" data-sort="name" data-dir="asc" data-page-node-id="1jbXrGfE3HZE4USHRlv1VU">按名称</button>
@@ -2703,7 +2809,7 @@
               <button type="button" class="file-list-sort-btn" data-sort="size" data-dir="desc" data-page-node-id="BfdLbGAaM6glp1av3n6pxL">按大小</button>
             </div>
             <div class="file-list-body" id="fileListBody" data-page-node-id="2B5RWUFgbeHMEOvnXcOgPj"></div>
-            <div class="file-list-footer" id="fileListFooter" data-page-node-id="tLCOCV3xkGCO2ah2swAShl">共 0 个文件</div>
+            <div class="file-list-footer" id="fileListFooter" data-page-node-id="tLCOCV3xkGCO2ah2swAShl"><span id="fileListCount">共 0 个文件</span><button class="file-list-dir-btn" id="fileListResetBtn" title="返回默认 data 目录" onclick="resetBrowseDir()" style="display:none">↩ 默认</button><button class="file-list-dir-btn" id="fileListDirBtn" title="点击切换浏览目录…" onclick="switchBrowseDir()">📂</button></div>
           </div>
         </div>
       </div>
@@ -2729,10 +2835,13 @@
     <div class="modal editor-layout" data-page-node-id="vx1KrOBYFDDYeQkvTsS5Ob">
       <!-- 主区：编辑框 + 渲染框（占主要画面） -->
       <div class="editor-main" data-page-node-id="asFD5unXFBFr6pyRcjDKqM">
-        <div class="md-toolbar" id="mdToolbar" data-page-node-id="tHu5QxXomXTzOjQVojod7I">
+        <div class="md-toolbar" id="editorToolbar" data-page-node-id="tHu5QxXomXTzOjQVojod7I">
           <button class="md-tool-btn" id="undoBtn" onclick="editorUndo()" onmousedown="event.preventDefault()" title="撤销 (Cmd/Ctrl+Z)" disabled data-page-node-id="xMZJZ8VDdsuBrZ1EW3ERvI">↩</button>
           <button class="md-tool-btn" id="redoBtn" onclick="editorRedo()" onmousedown="event.preventDefault()" title="重做 (Cmd/Ctrl+Shift+Z)" disabled data-page-node-id="DdKJS58FLx68ad2bQE5SKC">↪</button>
           <span class="md-tool-sep" data-page-node-id="DDaO0v5H2Fa2SCmCsWj32z"></span>
+
+          <!-- Markdown 工具（仅在 MD 文本/预览时显示） -->
+          <div class="editor-toolbar-group" id="mdTools" style="display:flex;">
 
           <!-- 格式 -->
           <div class="md-tool-dropdown" data-md-dropdown data-page-node-id="X4n0HWry32VzbHY6GSfkhq">
@@ -2763,6 +2872,33 @@
               <div class="md-tool-dropgroup" data-page-node-id="vq4q1FvuvyLtHXdqVD8c9S">上下标</div>
               <button class="md-tool-dropitem" onclick="insertMd('<sup>', '</sup>')">上标 <kbd data-page-node-id="dQKlSLpPGc98etDh6awdlJ">&lt;sup&gt;</kbd></button>
               <button class="md-tool-dropitem" onclick="insertMd('<sub>', '</sub>')">下标 <kbd data-page-node-id="dCu9N5zNKiuuUlv7UW4CpW">&lt;sub&gt;</kbd></button>
+            </div>
+          </div>
+
+          <!-- 字体 -->
+          <div class="md-tool-dropdown" data-md-dropdown>
+            <button class="md-tool-dropbtn" onclick="toggleMdDropdown(this)" title="文字字体">字体<span class="caret">▾</span></button>
+            <div class="md-tool-dropmenu">
+              <div class="md-tool-dropgroup">黑体</div>
+              <button class="md-tool-dropitem" onclick="insertFontFamily('STHeiti', ['Heiti SC','PingFang SC','sans-serif'], '黑体')"><span style="font-family:'STHeiti','Heiti SC',sans-serif">黑体 · STHeiti</span></button>
+              <button class="md-tool-dropitem" onclick="insertFontFamily('Hiragino Sans GB', ['Hiragino Sans','PingFang SC','sans-serif'], '冬青黑体')"><span style="font-family:'Hiragino Sans GB','Hiragino Sans',sans-serif">冬青黑体 · Hiragino Sans GB</span></button>
+              <button class="md-tool-dropitem" onclick="insertFontFamily('PingFang SC', ['PingFang SC','sans-serif'], '苹方')"><span style="font-family:'PingFang SC',sans-serif">苹方 · PingFang SC</span></button>
+              <div class="md-tool-dropgroup">宋体 / 楷体 / 仿宋</div>
+              <button class="md-tool-dropitem" onclick="insertFontFamily('Songti SC', ['Songti','STSong','华文宋体','宋体-简','serif'], '宋体')"><span style="font-family:'Songti SC','Songti',serif">宋体 · Songti SC</span></button>
+              <button class="md-tool-dropitem" onclick="insertFontFamily('Kaiti SC', ['Kai','楷体-简','STKaiti','华文楷体','cursive'], '楷体')"><span style="font-family:'Kaiti SC','Kai',cursive">楷体 · Kaiti SC</span></button>
+              <button class="md-tool-dropitem" onclick="insertFontFamily('STFangsong', ['FangSong','华文仿宋','仿宋','serif'], '仿宋')"><span style="font-family:'STFangsong','FangSong',serif">仿宋 · STFangsong</span></button>
+              <div class="md-tool-dropgroup">圆体 / 艺术体</div>
+              <button class="md-tool-dropitem" onclick="insertFontFamily('Yuanti SC', ['圆体-简','STYuanti','sans-serif'], '圆体')"><span style="font-family:'Yuanti SC','圆体-简',sans-serif">圆体 · Yuanti SC</span></button>
+              <button class="md-tool-dropitem" onclick="insertFontFamily('Libian SC', ['LiSu','隶变-简','STLibian','cursive'], '隶书')"><span style="font-family:'Libian SC','LiSu',cursive">隶书 · Libian SC</span></button>
+              <button class="md-tool-dropitem" onclick="insertFontFamily('Xingkai SC', ['STXingkai','行楷-简','cursive'], '行楷')"><span style="font-family:'Xingkai SC','STXingkai',cursive">行楷 · Xingkai SC</span></button>
+              <button class="md-tool-dropitem" onclick="insertFontFamily('STHupo', ['华文琥珀','cursive'], '琥珀')"><span style="font-family:'STHupo','华文琥珀',cursive">华文琥珀 · STHupo</span></button>
+              <div class="md-tool-dropgroup">拉丁 / 等宽</div>
+              <button class="md-tool-dropitem" onclick="insertFontFamily('Arial', ['Helvetica','sans-serif'], 'Arial')"><span style="font-family:Arial,Helvetica,sans-serif">Arial</span></button>
+              <button class="md-tool-dropitem" onclick="insertFontFamily('Georgia', ['Times New Roman','serif'], 'Georgia')"><span style="font-family:Georgia,'Times New Roman',serif">Georgia</span></button>
+              <button class="md-tool-dropitem" onclick="insertFontFamily('Menlo', ['SF Mono','Courier New','monospace'], '等宽代码')"><span style="font-family:Menlo,'SF Mono',monospace">等宽代码 · Menlo</span></button>
+              <div class="md-tool-dropgroup">重置 / 自定义</div>
+              <button class="md-tool-dropitem" onclick="insertFont('inherit')" title="继承默认字体（清除局部字体设置）">系统默认 <kbd>inherit</kbd></button>
+              <button class="md-tool-dropitem" onclick="insertCustomFont()" title="输入任意 font-family（可用逗号分隔多个候选，如：Arial, sans-serif）">✏️ 自定义字体…</button>
             </div>
           </div>
 
@@ -3031,18 +3167,111 @@
           <button class="md-tool-btn" onclick="insertMd('`', '`')" title="快速行内代码" data-page-node-id="zIIaEVZGT4MK1pdsl0bwau">&lt;/&gt;</button>
           <button class="md-tool-btn" onclick="insertMd('---\n', '')" title="快速分隔线" data-page-node-id="xq71cJs2XNhLX8SpM7q3rn">—</button>
 
+          </div>
+
+          <!-- HTML 工具（仅在 HTML 文本/预览时显示） -->
+          <div class="editor-toolbar-group" id="htmlTools" style="display:none;">
+            <div class="md-tool-dropdown" data-md-dropdown>
+              <button class="md-tool-dropbtn" onclick="toggleMdDropdown(this)" title="HTML 文字格式">格式<span class="caret">▾</span></button>
+              <div class="md-tool-dropmenu">
+                <button class="md-tool-dropitem" onclick="insertHtmlTag('<b>', '</b>')">粗体 <kbd>&lt;b&gt;</kbd></button>
+                <button class="md-tool-dropitem" onclick="insertHtmlTag('<i>', '</i>')">斜体 <kbd>&lt;i&gt;</kbd></button>
+                <button class="md-tool-dropitem" onclick="insertHtmlTag('<u>', '</u>')">下划线 <kbd>&lt;u&gt;</kbd></button>
+                <button class="md-tool-dropitem" onclick="insertHtmlTag('<s>', '</s>')">删除线 <kbd>&lt;s&gt;</kbd></button>
+                <button class="md-tool-dropitem" onclick="insertHtmlTag('<mark>', '</mark>')">高亮 <kbd>&lt;mark&gt;</kbd></button>
+                <button class="md-tool-dropitem" onclick="insertHtmlTag('<big>', '</big>')">放大 <kbd>&lt;big&gt;</kbd></button>
+                <button class="md-tool-dropitem" onclick="insertHtmlTag('<small>', '</small>')">缩小 <kbd>&lt;small&gt;</kbd></button>
+                <button class="md-tool-dropitem" onclick="insertHtmlTag('<sub>', '</sub>')">下标 <kbd>&lt;sub&gt;</kbd></button>
+                <button class="md-tool-dropitem" onclick="insertHtmlTag('<sup>', '</sup>')">上标 <kbd>&lt;sup&gt;</kbd></button>
+              </div>
+            </div>
+            <div class="md-tool-dropdown" data-md-dropdown>
+              <button class="md-tool-dropbtn" onclick="toggleMdDropdown(this)" title="HTML 结构与布局">结构<span class="caret">▾</span></button>
+              <div class="md-tool-dropmenu">
+                <button class="md-tool-dropitem" onclick="insertHtmlTag('<h1>', '</h1>')">标题 1 <kbd>&lt;h1&gt;</kbd></button>
+                <button class="md-tool-dropitem" onclick="insertHtmlTag('<h2>', '</h2>')">标题 2 <kbd>&lt;h2&gt;</kbd></button>
+                <button class="md-tool-dropitem" onclick="insertHtmlTag('<h3>', '</h3>')">标题 3 <kbd>&lt;h3&gt;</kbd></button>
+                <button class="md-tool-dropitem" onclick="insertHtmlTag('<p>', '</p>')">段落 <kbd>&lt;p&gt;</kbd></button>
+                <button class="md-tool-dropitem" onclick="insertHtmlTag('<center>', '</center>')">居中 <kbd>&lt;center&gt;</kbd></button>
+                <button class="md-tool-dropitem" onclick="insertHtmlTag('<div>\n', '\n</div>')">块级 div <kbd>&lt;div&gt;</kbd></button>
+                <button class="md-tool-dropitem" onclick="insertHtmlTag('<span>', '</span>')">行内 span <kbd>&lt;span&gt;</kbd></button>
+                <button class="md-tool-dropitem" onclick="insertHtmlTag('<br>')">换行 <kbd>&lt;br&gt;</kbd></button>
+                <button class="md-tool-dropitem" onclick="insertHtmlTag('<hr>')">水平线 <kbd>&lt;hr&gt;</kbd></button>
+              </div>
+            </div>
+            <div class="md-tool-dropdown" data-md-dropdown>
+              <button class="md-tool-dropbtn" onclick="toggleMdDropdown(this)" title="HTML 列表与表格">列表/表<span class="caret">▾</span></button>
+              <div class="md-tool-dropmenu">
+                <button class="md-tool-dropitem" onclick="insertHtmlTag('<ul>\n  <li>', '</li>\n</ul>')">无序列表 <kbd>&lt;ul&gt;</kbd></button>
+                <button class="md-tool-dropitem" onclick="insertHtmlTag('<ol>\n  <li>', '</li>\n</ol>')">有序列表 <kbd>&lt;ol&gt;</kbd></button>
+                <button class="md-tool-dropitem" onclick="insertHtmlTag('<li>', '</li>')">列表项 <kbd>&lt;li&gt;</kbd></button>
+                <button class="md-tool-dropitem" onclick="insertHtmlRaw('<table border="1">\n  <tr><th>表头</th></tr>\n  <tr><td>数据</td></tr>\n</table>')">表格模板 <kbd>&lt;table&gt;</kbd></button>
+              </div>
+            </div>
+            <div class="md-tool-dropdown" data-md-dropdown>
+              <button class="md-tool-dropbtn" onclick="toggleMdDropdown(this)" title="HTML 空白与链接">其它<span class="caret">▾</span></button>
+              <div class="md-tool-dropmenu">
+                <button class="md-tool-dropitem" onclick="insertHtmlRaw('&amp;nbsp;')">不换行空格 <kbd>&amp;nbsp;</kbd></button>
+                <button class="md-tool-dropitem" onclick="insertHtmlRaw('&amp;ensp;')">半角空格 <kbd>&amp;ensp;</kbd></button>
+                <button class="md-tool-dropitem" onclick="insertHtmlRaw('&amp;emsp;')">全角空格 <kbd>&amp;emsp;</kbd></button>
+                <button class="md-tool-dropitem" onclick="insertHtmlTag('<a href=\"url\">', '</a>')">链接 <kbd>&lt;a&gt;</kbd></button>
+                <button class="md-tool-dropitem" onclick="insertHtmlRaw('<img src=\"url\" width=\"200\">')">图片 <kbd>&lt;img&gt;</kbd></button>
+                <button class="md-tool-dropitem" onclick="insertHtmlTag('<span style=\"color:#ef4444\">', '</span>')">红色 <kbd>color</kbd></button>
+                <button class="md-tool-dropitem" onclick="insertHtmlTag('<span style=\"font-size:1.2em\">', '</span>')">字号 1.2em <kbd>font-size</kbd></button>
+              </div>
+            </div>
+            <span class="md-tool-sep"></span>
+            <button class="md-tool-btn" onclick="insertHtmlRaw('&amp;nbsp;')" title="不换行空格">&amp;nbsp;</button>
+            <button class="md-tool-btn" onclick="insertHtmlTag('<br>')" title="换行">&lt;br&gt;</button>
+            <button class="md-tool-btn" onclick="insertHtmlTag('<center>', '</center>')" title="居中">center</button>
+            <button class="md-tool-btn" onclick="insertHtmlTag('<big>', '</big>')" title="放大">big</button>
+            <button class="md-tool-btn" onclick="insertHtmlTag('<small>', '</small>')" title="缩小">small</button>
+          </div>
+
+          <!-- JSON 工具（仅在 JSON 文本/预览时显示） -->
+          <div class="editor-toolbar-group" id="jsonTools" style="display:none;">
+            <button class="md-tool-btn" onclick="formatJson('pretty')" title="格式化（2空格缩进）">格式化</button>
+            <button class="md-tool-btn" onclick="formatJson('compact')" title="压缩成一行">压缩</button>
+            <button class="md-tool-btn" onclick="formatJson('escape')" title="转义为字符串">转义</button>
+            <button class="md-tool-btn" onclick="formatJson('unescape')" title="反转义字符串">反转义</button>
+            <button class="md-tool-btn" onclick="formatJson('validate')" title="校验 JSON 语法">校验</button>
+            <span class="md-tool-sep"></span>
+            <div class="md-tool-dropdown" data-md-dropdown>
+              <button class="md-tool-dropbtn" onclick="toggleMdDropdown(this)" title="插入 JSON 片段">插入<span class="caret">▾</span></button>
+              <div class="md-tool-dropmenu">
+                <button class="md-tool-dropitem" onclick="insertJsonRaw('\"\"')">字符串 <kbd>""</kbd></button>
+                <button class="md-tool-dropitem" onclick="insertJsonRaw('[]')">空数组 <kbd>[]</kbd></button>
+                <button class="md-tool-dropitem" onclick="insertJsonRaw('{}')">空对象 <kbd>{}</kbd></button>
+                <button class="md-tool-dropitem" onclick="insertJsonRaw('true')">true</button>
+                <button class="md-tool-dropitem" onclick="insertJsonRaw('false')">false</button>
+                <button class="md-tool-dropitem" onclick="insertJsonRaw('null')">null</button>
+                <button class="md-tool-dropitem" onclick="insertJsonRaw('{\n  \"text\": \"\"\n}')">text 字段</button>
+                <button class="md-tool-dropitem" onclick="insertJsonRaw('{\n  \"htmlContent\": \"\"\n}')">htmlContent 字段</button>
+                <button class="md-tool-dropitem" onclick="insertJsonRaw('{\n  \"tags\": []\n}')">tags 字段</button>
+                <div class="md-tool-dropgroup">JSON 表格范例</div>
+                <button class="md-tool-dropitem" onclick='insertJsonRaw(`[\n  "苹果",\n  "香蕉",\n  "橘子"\n]`)' title="一维表格：纯字符串数组，最简单的列表">一维·字符串列表 <kbd>[…]</kbd></button>
+                <button class="md-tool-dropitem" onclick='insertJsonRaw(`[\n  { "name": "苹果", "qty": 3 },\n  { "name": "香蕉", "qty": 5 },\n  { "name": "橘子", "qty": 2 }\n]`)' title="一维表格：每行一个对象，列名即 key；最常见的表格形式">一维·行对象表 <kbd>[{}]</kbd></button>
+                <button class="md-tool-dropitem" onclick='insertJsonRaw(`[\n  ["姓名", "年龄", "城市"],\n  ["张三", 28, "北京"],\n  ["李四", 30, "上海"],\n  ["王五", 25, "广州"]\n]`)' title="二维表格：数组嵌套数组；第一行为表头，其余为数据行（对齐 Obsidian / Excel 直读）">二维·字符串+数字表 <kbd>[[…]]</kbd></button>
+                <button class="md-tool-dropitem" onclick='insertJsonRaw(`[\n  [\n    { "key": "姓名", "value": "张三" },\n    { "key": "年龄", "value": 28 }\n  ],\n  [\n    { "key": "姓名", "value": "李四" },\n    { "key": "年龄", "value": 30 }\n  ]\n]`)' title="二维表格：每格是一个 {key, value} 对象，方便扩展元数据（如单位、格式）">二维·键值格表 <kbd>[[{…}]]</kbd></button>
+                <button class="md-tool-dropitem" onclick='insertJsonRaw(`{\n  "title": "员工花名册",\n  "columns": ["姓名", "年龄", "城市"],\n  "rows": [\n    ["张三", 28, "北京"],\n    ["李四", 30, "上海"]\n  ]\n}`)' title="自描述表格：title 是表名，columns 是表头，rows 是数据；前端可直接渲染为 <table>">二维·自描述表 <kbd>{title,…}</kbd></button>
+              </div>
+            </div>
+          </div>
+
           <span style="flex:1" data-page-node-id="rYQS1EpVAsBLVKB3hOouqm"></span>
           <input type="text" id="editSearchInput" placeholder="搜索内容..." style="width:120px;padding:4px 8px;border:1px solid #334155;border-radius:4px;background:#1e293b;color:#e2e8f0;font-size:12px;outline:none;margin-right:4px;" oninput="doSearch()" onkeydown="if(event.key==='Enter'){event.preventDefault();doSearchEnter();}" data-page-node-id="MwJBrn8xQaEsuPzX3O86Es">
           <span id="searchCount" style="font-size:11px;color:#94a3b8;margin-right:4px;min-width:50px;display:inline-block;" data-page-node-id="kI5XzGl9ya480PNfujtSML"></span>
           <button id="searchPrevBtn" onmouseover="this.style.background='#334155';this.style.color='#e2e8f0'" onmouseout="this.style.background='#1e293b';this.style.color='#94a3b8'" onclick="findPrev()" title="上一笔" style="display:none;padding:2px 6px;border:1px solid #334155;border-radius:4px;background:#1e293b;color:#94a3b8;font-size:11px;cursor:pointer;margin-right:2px;" data-page-node-id="kCNTdS1TWqAQIFpYxD6Bvc">◀</button>
           <button id="searchNextBtn" onmouseover="this.style.background='#334155';this.style.color='#e2e8f0'" onmouseout="this.style.background='#1e293b';this.style.color='#94a3b8'" onclick="findNext()" title="下一笔" style="display:none;padding:2px 6px;border:1px solid #334155;border-radius:4px;background:#1e293b;color:#94a3b8;font-size:11px;cursor:pointer;margin-right:2px;" data-page-node-id="x1GeoyQWC1yAFT2NyfJOWH">▶</button>
           <button id="genMdBtn" onclick="generateMdFromHtml()" title="将当前 HTML 转为 Markdown 文本" style="display:none;padding:2px 8px;border:1px solid #334155;border-radius:4px;background:#1e293b;color:#fbbf24;font-size:11px;cursor:pointer;margin-right:2px;" data-page-node-id="5wtSeQzn524aAUW9Mdbrwq">生成MD</button>
-          <button id="genHtmlBtn" onclick="generateHtmlFromMd()" title="将当前 Markdown 转为 HTML 文本" style="display:none;padding:2px 8px;border:1px solid #334155;border-radius:4px;background:#1e293b;color:#34d399;font-size:11px;cursor:pointer;margin-right:8px;" data-page-node-id="JaYl2VijZBq5TAZrACRbtN">生成HTML</button>
+          <button id="genHtmlBtn" onclick="generateHtmlFromMd()" title="将当前 Markdown 转为 HTML 文本" style="display:none;padding:2px 8px;border:1px solid #334155;border-radius:4px;background:#1e293b;color:#34d399;font-size:11px;cursor:pointer;margin-right:2px;" data-page-node-id="JaYl2VijZBq5TAZrACRbtN">生成HTML</button>
+          <button id="delHtmlBtn" onclick="deleteHtmlContent()" title="删除 HTML 内容，卡片回到 Markdown 模式" style="display:none;padding:2px 8px;border:1px solid #334155;border-radius:4px;background:#1e293b;color:#f87171;font-size:11px;cursor:pointer;margin-right:8px;" data-page-node-id="DelHtmlBtn1">删除HTML</button>
           <span class="md-toggle-btn" id="mdToggleBtn" onclick="toggleMdPreview()" data-page-node-id="MvIl4qAC20v16McYbgnhsf">编辑文本</span>
           <button class="md-tool-btn" onclick="closeModal()" title="关闭" style="margin-left:6px;color:#94a3b8;" data-page-node-id="IeiM7U26O8JuXaDWjX3q0H">✕</button>
         </div>
         <textarea class="form-textarea" id="taskText" placeholder="输入任务内容（支持 Markdown）..." style="border-top:none;border-radius:0 0 8px 8px;"></textarea>
         <textarea class="form-textarea" id="htmlText" placeholder="HTML 源码编辑..." style="display:none;border-top:none;border-radius:0 0 8px 8px;font-family:'Monaco','Consolas',monospace;font-size:13px;white-space:pre;overflow-x:auto;"></textarea>
+        <textarea class="form-textarea" id="jsonText" placeholder="JSON 源码编辑..." style="display:none;border-top:none;border-radius:0 0 8px 8px;font-family:'Monaco','Consolas',monospace;font-size:13px;white-space:pre;overflow-x:auto;"></textarea>
         <div class="md-preview" id="mdPreview" data-page-node-id="drImIYSWJSMVITbt0Otl3f"></div>
       </div>
 
@@ -3055,6 +3284,8 @@
         <div class="file-type-tabs" id="fileTypeTabs" data-page-node-id="lRFjfI5yAT6eJHViwYQKqQ">
           <button class="file-type-tab" id="tabTodoCard" type="button" onclick="switchFileTypeTab('todo')" data-page-node-id="ChID7aiCuEPW9L60HfA2JN">todo卡片</button>
           <button class="file-type-tab" id="tabMdFile" type="button" onclick="switchFileTypeTab('md')" data-page-node-id="QsIiQztFZUBCHLHHJ0M7w3">MD文件</button>
+          <button class="file-type-tab" id="tabHtmlFile" type="button" onclick="switchFileTypeTab('html')" data-page-node-id="QsIiQztFZUBCHLHHJ0M7w4">HTML文件</button>
+          <button class="file-type-tab" id="tabJsonFile" type="button" onclick="switchFileTypeTab('json')" data-page-node-id="QsIiQztFZUBCHLHHJ0M7w5">JSON文件</button>
         </div>
         <div class="modal-header-actions" data-page-node-id="IBqvx04ddWYZeUk26Q0Bbo">
           <button class="btn btn-text btn-secondary" id="emailBtn" onclick="emailTodoFromModal()" style="background:transparent;color:#8b5cf6;border:1px solid #8b5cf6;" title="将当前任务内容发送邮件" data-page-node-id="jFZCYv5vTMUoM55ImmpHAh">📧 发邮件</button>
@@ -3163,6 +3394,10 @@
     let todoFileSizes = {};
     // 当前正在编辑的 MD 文件 id（仅当 activeFileTab==='md' 且为编辑（非新增）模式时非 null）
     let currentMdId = null;
+    // 当前正在编辑的「一般 JSON 文件」id（仅当 activeFileTab==='json' 且为编辑模式时非 null；不含 .json 后缀）
+    let currentJsonId = null;
+    // 当前正在编辑的 HTML 文件 id（仅当 activeFileTab==='html' 且为编辑模式时非 null；不含 .html 后缀）
+    let currentHtmlId = null;
     // 编辑退出前的「未保存更改」检测快照：在 openAddModal / openEditModal 时采集原始内容，
     // 关闭前与当前编辑器内容比对，决定是否弹出「问询后存档」确认框。
     let editSnapshot = null;
@@ -3420,6 +3655,105 @@
       pushEditorHistory(textarea, true);
       // 关闭可能打开的工具栏下拉菜单
       closeAllMdDropdowns();
+    }
+
+    // 🔤 字体选择器：把选中文字（或占位符）用 <span style="font-family:…"> 包裹
+    // 用独立函数避免 onclick 里 font 名带空格时的引号嵌套地狱
+    function insertFont(family) {
+      const cssVal = "'" + String(family).replace(/'/g, "\\'") + "'";
+      // 用 !important 确保覆盖父元素继承的 font-family（body 的 -apple-system 在 macOS 上就是 PingFang SC，
+      // 不加 !important 时设苹方=设默认，看起来"没效果"）
+      const before = '<span style="font-family: ' + cssVal + ' !important">';
+      insertMd(before, '</span>');
+    }
+
+    // 🔤 字体选择器（带 fallback 链）：name 为首选字体，fallbacks 为候选回退列表。
+    // 根因：旧版菜单列了「圆体/楷体/隶书/琥珀/行楷」等字体，但这些字体在 Catalina 之后的
+    // macOS 上已被移除（本机 /System/Library/Fonts 里只剩 STHeiti / Hiragino Sans GB /
+    // Songti / Arial Unicode 等少数中文字体），浏览器找不到就静默回落到默认苹方，
+    // 导致「大部分字体点了没效果」。现在只列真实存在的字体，并带 fallback 链保证可降级。
+    function insertFontFamily(name, fallbacks, label) {
+      const list = [name].concat(fallbacks || []);
+      const cssVal = list.map(function (f) {
+        const s = String(f);
+        // 通用族名（serif/sans-serif/monospace/cursive）不加引号
+        if (/^(serif|sans-serif|monospace|cursive|fantasy|system-ui|inherit)$/i.test(s)) return s;
+        return "'" + s.replace(/'/g, "\\'") + "'";
+      }).join(', ');
+      const before = '<span style="font-family: ' + cssVal + ' !important">';
+      insertMd(before, '</span>');
+    }
+
+    // ✏️ 自定义字体：让用户输入任意 font-family（支持逗号分隔多个候选）
+    function insertCustomFont() {
+      const input = window.prompt('输入 font-family（可填多个，逗号分隔，如：Arial, sans-serif）', '');
+      if (!input) return;
+      const family = input.trim();
+      if (!family) return;
+      insertFont(family);
+    }
+
+    // ========== HTML / JSON 编辑器的通用插入辅助函数 ==========
+    // 在指定 textarea 的光标处插入 before + selected + after
+    function insertIntoTextarea(textarea, before, after) {
+      if (!textarea) return;
+      const start = textarea.selectionStart;
+      const end = textarea.selectionEnd;
+      const selected = textarea.value.substring(start, end);
+      const replacement = before + (selected || '') + (after || '');
+      textarea.value = textarea.value.substring(0, start) + replacement + textarea.value.substring(end);
+      const savedScrollTop = textarea.scrollTop;
+      textarea.focus({ preventScroll: true });
+      const newCursor = start + before.length + (selected ? selected.length : 0);
+      textarea.setSelectionRange(newCursor, newCursor + (selected ? selected.length : 0));
+      textarea.scrollTop = savedScrollTop;
+      pushEditorHistory(textarea, true);
+      autoGrowTextarea(textarea);
+      closeAllMdDropdowns();
+    }
+
+    function insertHtmlTag(before, after) {
+      insertIntoTextarea(document.getElementById('htmlText'), before, after);
+    }
+
+    function insertHtmlRaw(text) {
+      insertIntoTextarea(document.getElementById('htmlText'), text, '');
+    }
+
+    function insertJsonRaw(text) {
+      insertIntoTextarea(document.getElementById('jsonText'), text, '');
+    }
+
+    // JSON 工具栏：格式化 / 压缩 / 转义 / 反转义 / 校验
+    function formatJson(action) {
+      const textarea = document.getElementById('jsonText');
+      if (!textarea) return;
+      const raw = textarea.value;
+      try {
+        if (action === 'pretty') {
+          textarea.value = JSON.stringify(JSON.parse(raw), null, 2);
+        } else if (action === 'compact') {
+          textarea.value = JSON.stringify(JSON.parse(raw));
+        } else if (action === 'escape') {
+          textarea.value = JSON.stringify(raw);
+        } else if (action === 'unescape') {
+          // 若当前文本是一个 JSON 字符串（如 "{\"a\":1}"），则解出其中的内容；
+          // 若解出的是对象/数组，再格式化回 JSON；若解出的是普通字符串，直接写回。
+          const val = JSON.parse(raw);
+          textarea.value = (typeof val === 'string') ? val : JSON.stringify(val, null, 2);
+        } else if (action === 'validate') {
+          JSON.parse(raw);
+          if (typeof showStatus === 'function') showStatus('JSON 语法正确', 'success');
+          else alert('JSON 语法正确');
+        }
+        if (action !== 'validate') {
+          pushEditorHistory(textarea, true);
+          autoGrowTextarea(textarea);
+        }
+      } catch (e) {
+        if (typeof showStatus === 'function') showStatus('JSON 处理失败：' + (e && e.message ? e.message : e), 'error');
+        else alert('JSON 处理失败：' + (e && e.message ? e.message : e));
+      }
     }
 
     // 🆕 插入目录（TOC，文内跳转）
@@ -3687,9 +4021,7 @@
       if (!overlay || overlay.style.display === 'none') return;
       const active = (document.activeElement && editorHistories.has(document.activeElement))
         ? document.activeElement
-        : (document.getElementById('htmlText').style.display !== 'none'
-            ? document.getElementById('htmlText')
-            : document.getElementById('taskText'));
+        : getActiveEditorTextarea();
       const h = getEditorHistory(active);
       const undoBtn = document.getElementById('undoBtn');
       const redoBtn = document.getElementById('redoBtn');
@@ -3728,12 +4060,17 @@
       updateHistoryButtons();
     }
 
-    function editorUndo() {
+    // 返回当前处于编辑态的 textarea（MD / HTML / JSON）
+    function getActiveEditorTextarea() {
       const el = document.activeElement;
-      const textarea = (el && editorHistories.has(el)) ? el
-        : (document.getElementById('htmlText').style.display !== 'none'
-            ? document.getElementById('htmlText')
-            : document.getElementById('taskText'));
+      if (el && editorHistories.has(el)) return el;
+      if (previewMode === 2) return document.getElementById('htmlText');
+      if (previewMode === 4) return document.getElementById('jsonText');
+      return document.getElementById('taskText');
+    }
+
+    function editorUndo() {
+      const textarea = getActiveEditorTextarea();
       const h = getEditorHistory(textarea);
       if (h.index <= 0) return;
       h.index--;
@@ -3745,11 +4082,7 @@
     }
 
     function editorRedo() {
-      const el = document.activeElement;
-      const textarea = (el && editorHistories.has(el)) ? el
-        : (document.getElementById('htmlText').style.display !== 'none'
-            ? document.getElementById('htmlText')
-            : document.getElementById('taskText'));
+      const textarea = getActiveEditorTextarea();
       const h = getEditorHistory(textarea);
       if (h.index >= h.stack.length - 1) return;
       h.index++;
@@ -3760,8 +4093,8 @@
       updateHistoryButtons();
     }
 
-    // 绑定输入监听与快捷键（Markdown 编辑器和 HTML 编辑器共用）
-    ['taskText', 'htmlText'].forEach(id => {
+    // 绑定输入监听与快捷键（Markdown / HTML / JSON 编辑器共用）
+    ['taskText', 'htmlText', 'jsonText'].forEach(id => {
       const ta = document.getElementById(id);
       ta.addEventListener('input', () => { pushEditorHistory(ta, true); autoGrowTextarea(ta); });
       ta.addEventListener('keydown', (e) => {
@@ -3834,27 +4167,44 @@
       const preview = document.getElementById('mdPreview');
       const textarea = document.getElementById('taskText');
       const htmlTextarea = document.getElementById('htmlText');
+      const jsonTextarea = document.getElementById('jsonText');
       const btn = document.getElementById('mdToggleBtn');
 
-      // 检查当前卡片是否有 htmlContent
+      // 检查当前卡片是否已有 htmlContent；JSON 内容永远存在（todo 卡片本身就是 JSON）
       let hasHtmlContent = false;
       if (editingId) {
         const todo = todos.find(t => t.id === editingId);
         hasHtmlContent = !!(todo && todo.htmlContent);
       }
+      // jsonTextarea 在 openEditModal / openAddModal 时已填充，因此 JSON 预览永远可用
+      const hasJsonContent = jsonTextarea.value.trim().length > 0;
 
       // MD 文件页签：只保留「编辑文本 ↔ Markdown 预览」两态
       const isMdFileTab = activeFileTab === 'md';
+      // HTML 文件页签：只在「HTML 文本编辑(2) ↔ HTML 预览(3)」两态间切换
+      const isHtmlFileTab = activeFileTab === 'html';
+      // 一般 JSON 文件页签：只在「JSON 文本编辑(4) ↔ JSON 预览(5)」两态间切换
+      const isJsonFileTab = activeFileTab === 'json';
       if (isMdFileTab) {
         previewMode = previewMode === 0 ? 1 : 0;
+      } else if (isHtmlFileTab) {
+        previewMode = previewMode === 2 ? 3 : 2;
+      } else if (isJsonFileTab) {
+        previewMode = previewMode === 4 ? 5 : 4;
       } else {
-        // 循环切换：0(文本编辑) -> 1(MD预览) -> 2(HTML文本编辑) -> 3(HTML预览，仅当有htmlContent) -> 0
+        // todo 卡片循环切换：
+        // 0(MD编辑) -> 1(MD预览) -> [有HTML才进] 2(HTML编辑) -> 3(HTML预览) -> 4(JSON编辑) -> 5(JSON预览) -> 0
+        // 没有 HTML 资料时，从 MD 预览直接跳到 JSON 编辑，不再经过 HTML 编辑
         if (previewMode === 0) {
           previewMode = 1;
         } else if (previewMode === 1) {
-          previewMode = 2;
+          previewMode = hasHtmlContent ? 2 : 4;
         } else if (previewMode === 2) {
-          previewMode = hasHtmlContent ? 3 : 0;
+          previewMode = hasHtmlContent ? 3 : 4;
+        } else if (previewMode === 3) {
+          previewMode = 4;
+        } else if (previewMode === 4) {
+          previewMode = hasJsonContent ? 5 : 0;
         } else {
           previewMode = 0;
         }
@@ -3863,12 +4213,23 @@
       // 应用模式
       const genMdBtn = document.getElementById('genMdBtn');
       const genHtmlBtn = document.getElementById('genHtmlBtn');
+      const delHtmlBtn = document.getElementById('delHtmlBtn');
+      const mdTools = document.getElementById('mdTools');
+      const htmlTools = document.getElementById('htmlTools');
+      const jsonTools = document.getElementById('jsonTools');
+      if (mdTools) mdTools.style.display = 'none';
+      if (htmlTools) htmlTools.style.display = 'none';
+      if (jsonTools) jsonTools.style.display = 'none';
+      if (delHtmlBtn) delHtmlBtn.style.display = 'none';
+
       if (previewMode === 0) {
-        // 文本编辑模式
+        // Markdown 文本编辑模式
+        if (mdTools) mdTools.style.display = 'flex';
         preview.classList.remove('show');
         textarea.style.display = '';
         autoGrowTextarea(textarea);
         htmlTextarea.style.display = 'none';
+        jsonTextarea.style.display = 'none';
         btn.textContent = '编辑文本';
         btn.title = '点击切换到 Markdown 预览';
         btn.classList.remove('active');
@@ -3876,39 +4237,49 @@
         genHtmlBtn.style.display = isMdFileTab ? 'none' : '';
       } else if (previewMode === 1) {
         // Markdown 预览
+        if (mdTools) mdTools.style.display = 'flex';
         preview.classList.add('show');
         // MD 文件页签：输入为原始 markdown，强制完整解析，避免正文提及
         // <span class="katex"> 时触发已渲染 KaTeX 短路而原样输出。
         preview.innerHTML = renderMarkdown(textarea.value, isMdFileTab ? { force: true } : undefined);
         textarea.style.display = 'none';
         htmlTextarea.style.display = 'none';
+        jsonTextarea.style.display = 'none';
         btn.textContent = 'Markdown 预览';
-        btn.title = isMdFileTab ? '点击切换到文本编辑' : (hasHtmlContent ? '点击切换到 HTML 文本编辑' : '点击切换到 HTML 文本编辑');
+        btn.title = isMdFileTab ? '点击切换到文本编辑' : (hasHtmlContent ? '点击切换到 HTML 文本编辑' : '点击切换到 JSON 文本编辑');
         btn.classList.add('active');
         genMdBtn.style.display = 'none';
         genHtmlBtn.style.display = 'none';
       } else if (previewMode === 2) {
         // HTML 文本编辑模式
+        if (htmlTools) htmlTools.style.display = 'flex';
         preview.classList.remove('show');
         textarea.style.display = 'none';
         htmlTextarea.style.display = '';
-        // 加载当前 HTML 内容到编辑器
-        const todo = todos.find(t => t.id === editingId);
-        htmlTextarea.value = (todo && todo.htmlContent) ? todo.htmlContent : renderMarkdown(textarea.value);
+        jsonTextarea.style.display = 'none';
+        // 加载当前 HTML 内容到编辑器；只有 todo 卡片才允许从 htmlContent / Markdown 回退填充
+        if (activeFileTab === 'todo') {
+          const todo = todos.find(t => t.id === editingId);
+          htmlTextarea.value = (todo && todo.htmlContent) ? todo.htmlContent : renderMarkdown(textarea.value);
+        }
         resetEditorHistory(htmlTextarea);
         autoGrowTextarea(htmlTextarea);
-        btn.textContent = 'HTML 文本编辑';
-        btn.title = hasHtmlContent ? '点击切换到 HTML 预览' : '点击切换到文本编辑';
+        btn.textContent = '编辑HTML文本';
+        btn.title = activeFileTab === 'html' ? '点击切换到 HTML 预览' : (hasHtmlContent ? '点击切换到 HTML 预览' : '点击切换到 JSON 文本编辑');
         btn.classList.add('active');
-        genMdBtn.style.display = '';
+        // 文件页签不显示「生成 MD / 生成 HTML / 删除 HTML」按钮
+        genMdBtn.style.display = isHtmlFileTab ? 'none' : '';
         genHtmlBtn.style.display = 'none';
-      } else {
+        if (delHtmlBtn) delHtmlBtn.style.display = activeFileTab === 'todo' ? '' : 'none';
+      } else if (previewMode === 3) {
         // HTML 预览（优先使用当前 HTML 编辑器的内容，其次用原始 htmlContent）
+        if (htmlTools) htmlTools.style.display = 'flex';
         preview.classList.add('show');
         const htmlValue = htmlTextarea.value.trim();
         if (htmlValue) {
           preview.innerHTML = adaptHtmlForTheme(htmlValue);
-        } else {
+        } else if (activeFileTab === 'todo') {
+          // 只有 todo 卡片才回退到 htmlContent / Markdown
           const todo = todos.find(t => t.id === editingId);
           if (todo && todo.htmlContent) {
             preview.innerHTML = adaptHtmlForTheme(todo.htmlContent);
@@ -3918,7 +4289,45 @@
         }
         textarea.style.display = 'none';
         htmlTextarea.style.display = 'none';
+        jsonTextarea.style.display = 'none';
         btn.textContent = 'HTML 预览';
+        btn.title = activeFileTab === 'html' ? '点击切换到 HTML 文本编辑' : '点击切换到 JSON 文本编辑';
+        btn.classList.add('active');
+        genMdBtn.style.display = 'none';
+        genHtmlBtn.style.display = 'none';
+        if (delHtmlBtn) delHtmlBtn.style.display = activeFileTab === 'todo' ? '' : 'none';
+      } else if (previewMode === 4) {
+        // JSON 文本编辑模式（内容在 openEditModal / openAddModal 时已经填充好，不要覆盖用户编辑）
+        if (jsonTools) jsonTools.style.display = 'flex';
+        preview.classList.remove('show');
+        textarea.style.display = 'none';
+        htmlTextarea.style.display = 'none';
+        jsonTextarea.style.display = '';
+        resetEditorHistory(jsonTextarea);
+        autoGrowTextarea(jsonTextarea);
+        btn.textContent = '编辑JSON文本';
+        btn.title = hasJsonContent ? '点击切换到 JSON 预览' : '点击切换到文本编辑';
+        btn.classList.add('active');
+        genMdBtn.style.display = 'none';
+        genHtmlBtn.style.display = 'none';
+      } else {
+        // JSON 预览：递归表格渲染（优先用编辑器当前内容）
+        if (jsonTools) jsonTools.style.display = 'flex';
+        preview.classList.add('show');
+        const jsonValue = jsonTextarea.value.trim();
+        if (jsonValue) {
+          preview.innerHTML = renderJsonToTable(jsonValue);
+        } else if (activeFileTab === 'todo') {
+          // 兜底：用当前 todo 对象的完整 JSON（新增/编辑卡片时 jsonTextarea 空，则展示卡片自身 JSON）
+          const todo = editingId ? todos.find(t => t.id === editingId) : null;
+          preview.innerHTML = todo ? renderJsonToTable(JSON.stringify(todo, null, 2)) : '<div class="json-error">当前没有 JSON 内容</div>';
+        } else {
+          preview.innerHTML = '<div class="json-error">当前没有 JSON 内容</div>';
+        }
+        textarea.style.display = 'none';
+        htmlTextarea.style.display = 'none';
+        jsonTextarea.style.display = 'none';
+        btn.textContent = 'JSON 预览';
         btn.title = '点击切换到文本编辑';
         btn.classList.add('active');
         genMdBtn.style.display = 'none';
@@ -3936,6 +4345,7 @@
       const preview = document.getElementById('mdPreview');
       const textarea = document.getElementById('taskText');
       const htmlTextarea = document.getElementById('htmlText');
+      const jsonTextarea = document.getElementById('jsonText');
       const countSpan = document.getElementById('searchCount');
 
       // 清除之前的高亮
@@ -3950,13 +4360,17 @@
         return;
       }
 
-      // 根据当前模式搜索
+      // 根据当前模式搜索：0/文本 1/MD预览 2/HTML文本 3/HTML预览 4/JSON文本 5/JSON预览
       if (previewMode === 0) {
         highlightInTextarea(textarea, query, shouldNavigate);
       } else if (previewMode === 1) {
         highlightInElement(preview, query, shouldNavigate);
       } else if (previewMode === 2) {
         highlightInTextarea(htmlTextarea, query, shouldNavigate);
+      } else if (previewMode === 3) {
+        highlightInElement(preview, query, shouldNavigate);
+      } else if (previewMode === 4) {
+        highlightInTextarea(jsonTextarea, query, shouldNavigate);
       } else {
         highlightInElement(preview, query, shouldNavigate);
       }
@@ -4092,8 +4506,8 @@
     function findNext() {
       if (searchMatches.length === 0) return;
 
-      // 清除上一个的红色边框
-      if (previewMode >= 1 && previewMode <= 3) {
+      // 清除上一个的红色边框（1/3/5 为预览模式，0/2/4 为文本编辑模式无高亮元素）
+      if (previewMode >= 1 && previewMode <= 5) {
         const preview = document.getElementById('mdPreview');
         const highlights = preview.querySelectorAll('.search-highlight');
         highlights.forEach(h => { h.style.outline = ''; h.style.outlineOffset = ''; });
@@ -4103,8 +4517,9 @@
       const countSpan = document.getElementById('searchCount');
       countSpan.textContent = `${currentMatchIndex + 1}/${searchMatches.length}`;
 
-      if (previewMode === 0 || previewMode === 2) {
-        const textarea = previewMode === 0 ? document.getElementById('taskText') : document.getElementById('htmlText');
+      if (previewMode === 0 || previewMode === 2 || previewMode === 4) {
+        const textarea = previewMode === 0 ? document.getElementById('taskText')
+          : (previewMode === 2 ? document.getElementById('htmlText') : document.getElementById('jsonText'));
         const match = searchMatches[currentMatchIndex];
         textarea.focus();
         textarea.setSelectionRange(match.start, match.end);
@@ -4124,7 +4539,7 @@
       if (searchMatches.length === 0) return;
 
       // 清除上一个的红色边框
-      if (previewMode >= 1 && previewMode <= 3) {
+      if (previewMode >= 1 && previewMode <= 5) {
         const preview = document.getElementById('mdPreview');
         const highlights = preview.querySelectorAll('.search-highlight');
         highlights.forEach(h => { h.style.outline = ''; h.style.outlineOffset = ''; });
@@ -4134,8 +4549,9 @@
       const countSpan = document.getElementById('searchCount');
       countSpan.textContent = `${currentMatchIndex + 1}/${searchMatches.length}`;
 
-      if (previewMode === 0 || previewMode === 2) {
-        const textarea = previewMode === 0 ? document.getElementById('taskText') : document.getElementById('htmlText');
+      if (previewMode === 0 || previewMode === 2 || previewMode === 4) {
+        const textarea = previewMode === 0 ? document.getElementById('taskText')
+          : (previewMode === 2 ? document.getElementById('htmlText') : document.getElementById('jsonText'));
         const match = searchMatches[currentMatchIndex];
         textarea.focus();
         textarea.setSelectionRange(match.start, match.end);
@@ -4426,6 +4842,41 @@
       alert('已从 Markdown 生成 HTML 文本');
     }
 
+    // "删除HTML"按钮：删除 todo.htmlContent 字段，保存后回到 Markdown 编辑模式
+    async function deleteHtmlContent() {
+      if (!editingId) {
+        alert('当前不是编辑已有卡片，无法删除 HTML 内容');
+        return;
+      }
+      const todo = todos.find(t => t.id === editingId);
+      if (!todo) {
+        alert('未找到当前卡片');
+        return;
+      }
+      if (!todo.htmlContent) {
+        alert('当前卡片没有 HTML 内容可删除');
+        return;
+      }
+      if (!confirm('确定要删除该卡片的 HTML 内容吗？\n\n删除后：\n- 卡片将回到 Markdown 显示模式；\n- 该操作不可撤销（但你可以在 Markdown 中重新生成 HTML）。\n\n确认删除？')) {
+        return;
+      }
+      delete todo.htmlContent;
+      // 清除 renderMode，避免 Gallery 仍尝试以 HTML 模式渲染
+      if (todo.renderMode === 'html') delete todo.renderMode;
+      todo.updatedAt = Date.now();
+      try {
+        await saveTodos();
+        // 重新打开编辑模态框，回到 Markdown 编辑态
+        openEditModal(editingId);
+        if (typeof showStatus === 'function') {
+          showStatus('HTML 内容已删除，卡片回到 Markdown 模式', 'success');
+        }
+      } catch (e) {
+        console.error('[TodoList] 删除 HTML 内容失败:', e);
+        alert('删除 HTML 内容失败：' + (e && e.message ? e.message : e));
+      }
+    }
+
     // 色卡选择
     function selectTodoColor(el, color) {
       selectedTodoColor = color;
@@ -4681,15 +5132,59 @@
       `;
     }
 
-    // 判断卡片当前应使用的渲染模式：'html' 或 'md'
+    // ============================================================
+    // JSON 模式：递归表格渲染
+    // ============================================================
+    function renderJsonToTable(jsonStr) {
+      let data;
+      try {
+        data = JSON.parse(jsonStr);
+      } catch (e) {
+        return `<div class="json-error">JSON 解析失败：${escapeHtml(e.message)}</div>`;
+      }
+      return '<div class="json-table-wrapper">' + jsonValueToHtml(data) + '</div>';
+    }
+
+    function jsonValueToHtml(value) {
+      if (value === null) return '<span class="json-null">null</span>';
+      const type = typeof value;
+      if (type === 'boolean') return '<span class="json-boolean">' + value + '</span>';
+      if (type === 'number') return '<span class="json-number">' + value + '</span>';
+      if (type === 'string') return '<span class="json-string">"' + escapeHtml(value) + '"</span>';
+      if (Array.isArray(value)) {
+        if (value.length === 0) return '<span class="json-empty">[]</span>';
+        let html = '<table class="json-table json-array">';
+        value.forEach((item, idx) => {
+          html += '<tr><td class="json-key">[' + idx + ']</td><td>' + jsonValueToHtml(item) + '</td></tr>';
+        });
+        html += '</table>';
+        return html;
+      }
+      if (type === 'object') {
+        const keys = Object.keys(value);
+        if (keys.length === 0) return '<span class="json-empty">{}</span>';
+        let html = '<table class="json-table json-object">';
+        keys.forEach(key => {
+          html += '<tr><td class="json-key">' + escapeHtml(key) + '</td><td>' + jsonValueToHtml(value[key]) + '</td></tr>';
+        });
+        html += '</table>';
+        return html;
+      }
+      return '<span>' + escapeHtml(String(value)) + '</span>';
+    }
+
+    // 判断卡片当前应使用的渲染模式：'html' / 'md' / 'json'
+    // 注意：每张 todo 卡片本身就是 JSON 文件，所以 JSON 模式永远可用。
     function getEffectiveRenderMode(todo) {
       const hasHtml = !!todo.htmlContent;
       const hasText = !!todo.text;
       // 优先使用持久化的 renderMode 字段
+      if (todo.renderMode === 'json') return 'json';
       if (todo.renderMode === 'html' && hasHtml) return 'html';
       if (todo.renderMode === 'md' && hasText) return 'md';
-      // 默认：有 htmlContent 就用 HTML，否则用 Markdown
-      return hasHtml ? 'html' : 'md';
+      // 默认：有 htmlContent 就用 HTML，否则 Markdown（JSON 通过手动切换进入）
+      if (hasHtml) return 'html';
+      return 'md';
     }
 
     // 渲染卡片内容
@@ -4697,6 +5192,10 @@
       const mode = getEffectiveRenderMode(todo);
       if (mode === 'html' && todo.htmlContent) {
         return adaptHtmlForTheme(todo.htmlContent);
+      }
+      if (mode === 'json') {
+        // JSON 模式：把整张卡片对象渲染成递归表格
+        return renderJsonToTable(JSON.stringify(todo, null, 2));
       }
       // Markdown 模式
       if (searchQuery) {
@@ -4707,15 +5206,9 @@
 
     // 渲染模式标识 badge
     function renderModeBadge(todo) {
-      const hasHtml = !!todo.htmlContent;
-      const hasText = !!todo.text;
-      const canToggle = hasHtml && hasText;
       const mode = getEffectiveRenderMode(todo);
-      const label = mode === 'html' ? '📄 HTML' : '📝 MD';
-      if (canToggle) {
-        return `<span class="render-mode-badge" onclick="toggleRenderMode('${todo.id}')" title="点击切换 ${mode === 'html' ? 'Markdown' : 'HTML'} 渲染">${label}</span>`;
-      }
-      return `<span class="render-mode-badge disabled">${label}</span>`;
+      const label = mode === 'html' ? '📄 HTML' : (mode === 'json' ? '📋 JSON' : '📝 MD');
+      return `<span class="render-mode-badge" onclick="toggleRenderMode('${todo.id}')" title="点击切换 MD / HTML / JSON 渲染">${label}</span>`;
     }
 
     // 切换卡片的渲染模式（持久化到 JSON，不更新 updatedAt）
@@ -4723,7 +5216,9 @@
       const todo = todos.find(t => t.id === todoId);
       if (!todo) return;
       const current = getEffectiveRenderMode(todo);
-      todo.renderMode = current === 'html' ? 'md' : 'html';
+      // 循环：md → html → json → md
+      const next = current === 'md' ? 'html' : (current === 'html' ? 'json' : 'md');
+      todo.renderMode = next;
       // 只保存，不更新 updatedAt
       await saveTodosSilent();
       renderTodos();
@@ -4753,6 +5248,18 @@
     //  3. 截断后用 balanceHtmlTags 补全未闭合的标签
     function getTinyLabel(todo) {
       let text = todo.text || '';
+      // JSON 模式下 text 可能为空，从 todo 对象本身取一个简短标识给 tiny 态
+      if (!text) {
+        const obj = todo;
+        if (obj && typeof obj === 'object' && !Array.isArray(obj)) {
+          const keys = Object.keys(obj);
+          text = keys.length ? ('JSON: ' + keys.slice(0, 3).join(', ')) : 'JSON: {}';
+        } else if (Array.isArray(obj)) {
+          text = 'JSON: [' + obj.length + ' items]';
+        } else {
+          text = 'JSON: ' + String(obj);
+        }
+      }
       const lines = text.split('\n');
       let firstLine = '';
       for (const l of lines) {
@@ -6574,21 +7081,34 @@
 
     // 切换侧抽屉页签（仅在新增模式下有效；编辑模式下锁定）
     function switchFileTypeTab(tab) {
-      if (editingId || currentMdId) return; // 编辑模式锁定
+      if (editingId || currentMdId || currentJsonId || currentHtmlId) return; // 编辑模式锁定
       if (activeFileTab === tab) return;
       activeFileTab = tab;
+      // 新增模式下随页签切换标题，让用户明确正在创建的文件类型
+      const titleMap = { todo: '添加 todo 卡片', md: '添加 MD 文件', html: '添加 HTML 文件', json: '添加 JSON 文件' };
+      document.getElementById('modalTitle').textContent = titleMap[tab] || '添加文件';
       updateFileTypeTabs();
-      // 切换到 MD 页签时，强制回到文本编辑模式并清理 HTML 相关状态
+      const textarea = document.getElementById('taskText');
+      const preview = document.getElementById('mdPreview');
+      const htmlTextarea = document.getElementById('htmlText');
+      const jsonTextarea = document.getElementById('jsonText');
+      const btn = document.getElementById('mdToggleBtn');
+      const mdTools = document.getElementById('mdTools');
+      const htmlTools = document.getElementById('htmlTools');
+      const jsonTools = document.getElementById('jsonTools');
+      if (mdTools) mdTools.style.display = 'none';
+      if (htmlTools) htmlTools.style.display = 'none';
+      if (jsonTools) jsonTools.style.display = 'none';
+      // 切换到 MD 页签时，强制回到文本编辑模式并清理 HTML / JSON 相关状态
       if (tab === 'md') {
         previewMode = 0;
         document.getElementById('htmlText').value = '';
-        const textarea = document.getElementById('taskText');
-        const preview = document.getElementById('mdPreview');
-        const htmlTextarea = document.getElementById('htmlText');
-        const btn = document.getElementById('mdToggleBtn');
+        document.getElementById('jsonText').value = '';
         preview.classList.remove('show');
         textarea.style.display = '';
         htmlTextarea.style.display = 'none';
+        jsonTextarea.style.display = 'none';
+        if (mdTools) mdTools.style.display = 'flex';
         btn.textContent = '编辑文本';
         btn.title = '点击切换到 Markdown 预览';
         btn.classList.remove('active');
@@ -6596,29 +7116,61 @@
         document.getElementById('genHtmlBtn').style.display = 'none';
         autoGrowTextarea(textarea);
         textarea.focus();
+      } else if (tab === 'html') {
+        previewMode = 2;
+        document.getElementById('taskText').value = '';
+        document.getElementById('jsonText').value = '';
+        htmlTextarea.value = '<!DOCTYPE html>\n<html>\n<body>\n\n</body>\n</html>';
+        preview.classList.remove('show');
+        textarea.style.display = 'none';
+        htmlTextarea.style.display = '';
+        jsonTextarea.style.display = 'none';
+        if (htmlTools) htmlTools.style.display = 'flex';
+        btn.textContent = '编辑HTML文本';
+        btn.title = '点击切换到 HTML 预览';
+        btn.classList.add('active');
+        document.getElementById('genMdBtn').style.display = 'none';
+        document.getElementById('genHtmlBtn').style.display = 'none';
+        autoGrowTextarea(htmlTextarea);
+        htmlTextarea.focus();
+      } else if (tab === 'json') {
+        previewMode = 4;
+        document.getElementById('taskText').value = '';
+        document.getElementById('htmlText').value = '';
+        jsonTextarea.value = JSON.stringify({ key: 'value' }, null, 2);
+        preview.classList.remove('show');
+        textarea.style.display = 'none';
+        htmlTextarea.style.display = 'none';
+        jsonTextarea.style.display = '';
+        if (jsonTools) jsonTools.style.display = 'flex';
+        btn.textContent = '编辑JSON文本';
+        btn.title = '点击切换到 JSON 预览';
+        btn.classList.add('active');
+        document.getElementById('genMdBtn').style.display = 'none';
+        document.getElementById('genHtmlBtn').style.display = 'none';
+        autoGrowTextarea(jsonTextarea);
+        jsonTextarea.focus();
       } else if (tab === 'todo') {
-        // 切回 todo 卡片：恢复 HTML 相关入口（具体显隐由 toggleMdPreview 决定）
+        // 切回 todo 卡片：恢复 HTML / JSON 相关入口（具体显隐由 toggleMdPreview 决定）
         previewMode = 0;
-        const textarea = document.getElementById('taskText');
-        const preview = document.getElementById('mdPreview');
-        const htmlTextarea = document.getElementById('htmlText');
-        const btn = document.getElementById('mdToggleBtn');
         preview.classList.remove('show');
         textarea.style.display = '';
         htmlTextarea.style.display = 'none';
+        jsonTextarea.style.display = 'none';
         btn.textContent = '编辑文本';
         btn.title = '点击切换到 Markdown 预览';
         btn.classList.remove('active');
         document.getElementById('genMdBtn').style.display = 'none';
         document.getElementById('genHtmlBtn').style.display = '';
         autoGrowTextarea(textarea);
+        textarea.focus();
       }
     }
 
     // 根据 activeFileTab / 编辑态，隐藏或显示「标签 / 卡片颜色 / 附件 / 发邮件 / JSON 文件名」
-    // MD 文件是纯 .md，不需要任何 todo 卡片元数据。
+    // MD 文件是纯 .md，不需要任何 todo 卡片元数据；一般 JSON 文件同理。
     function updateDrawerMetadataVisibility() {
-      const hide = activeFileTab === 'md';
+      const hide = activeFileTab === 'md' || activeFileTab === 'html' || activeFileTab === 'json';
       const setDisplay = (id, disp) => {
         const el = document.getElementById(id);
         if (el) el.style.display = disp;
@@ -6634,25 +7186,45 @@
     function updateFileTypeTabs() {
       const tabTodo = document.getElementById('tabTodoCard');
       const tabMd = document.getElementById('tabMdFile');
+      const tabHtml = document.getElementById('tabHtmlFile');
+      const tabJson = document.getElementById('tabJsonFile');
       if (!tabTodo || !tabMd) return;
       tabTodo.classList.toggle('active', activeFileTab === 'todo');
       tabMd.classList.toggle('active', activeFileTab === 'md');
+      if (tabHtml) tabHtml.classList.toggle('active', activeFileTab === 'html');
+      if (tabJson) tabJson.classList.toggle('active', activeFileTab === 'json');
       // 编辑模式下锁定，只允许当前文件类型对应的页签
-      const isEdit = !!editingId || !!currentMdId;
+      const isEdit = !!editingId || !!currentMdId || !!currentJsonId || !!currentHtmlId;
       tabTodo.disabled = isEdit && activeFileTab !== 'todo';
       tabMd.disabled = isEdit && activeFileTab !== 'md';
-      // 同步元数据可见性（MD 页签隐藏标签/颜色/附件等）
+      if (tabHtml) tabHtml.disabled = isEdit && activeFileTab !== 'html';
+      if (tabJson) tabJson.disabled = isEdit && activeFileTab !== 'json';
+      // 同步元数据可见性（MD/HTML/JSON 页签都隐藏 todo 卡片元数据）
       updateDrawerMetadataVisibility();
     }
 
     function openAddModal() {
       editingId = null;
       currentMdId = null;
+      currentJsonId = null;
+      currentHtmlId = null;
       document.getElementById('modalTitle').textContent = '添加文件';
       activeFileTab = 'todo';
       updateFileTypeTabs();
       document.getElementById('taskText').value = '';
       document.getElementById('htmlText').value = '';
+      // JSON 文本编辑：新增卡片也给出完整的 JSON 模板，用户编辑的就是卡片本身
+      document.getElementById('jsonText').value = JSON.stringify({
+        text: '',
+        htmlContent: '',
+        tags: [],
+        attachments: [],
+        bgColor: '',
+        completed: false,
+        completedAt: null,
+        createdAt: Date.now(),
+        updatedAt: Date.now()
+      }, null, 2);
       document.getElementById('editSearchInput').value = '';
       pendingAttachments = [];
       selectedTagsForModal = [];
@@ -6663,6 +7235,7 @@
       document.getElementById('mdPreview').classList.remove('show');
       document.getElementById('taskText').style.display = '';
       document.getElementById('htmlText').style.display = 'none';
+      document.getElementById('jsonText').style.display = 'none';
       document.getElementById('mdToggleBtn').classList.remove('active');
       document.getElementById('mdToggleBtn').textContent = '编辑文本';
       document.getElementById('mdToggleBtn').title = '点击切换到 Markdown 预览';
@@ -6685,6 +7258,7 @@
       resetEditorScrollToTop();
       resetEditorHistory(document.getElementById('taskText'));
       resetEditorHistory(document.getElementById('htmlText'));
+      resetEditorHistory(document.getElementById('jsonText'));
       captureEditSnapshot();
     }
 
@@ -6694,12 +7268,16 @@
 
       editingId = id;
       currentMdId = null;
+      currentJsonId = null;
+      currentHtmlId = null;
       document.getElementById('modalTitle').textContent = '编辑文件';
       activeFileTab = 'todo';
       updateFileTypeTabs();
       document.getElementById('taskText').value = todo.text;
       // MD 文件不显示/不编辑 HTML 源码（此处仅 todo 卡片会进入本函数）
       document.getElementById('htmlText').value = todo.htmlContent || '';
+      // JSON 文本编辑：显示整张卡片的 JSON 源数据（卡片本身就是 JSON 资料）
+      document.getElementById('jsonText').value = JSON.stringify(todo, null, 2);
       document.getElementById('editSearchInput').value = '';
       pendingAttachments = todo.attachments || [];
       const tags = todo.tags && Array.isArray(todo.tags) ? todo.tags : (todo.tag ? [todo.tag] : []);
@@ -6711,6 +7289,7 @@
       document.getElementById('mdPreview').classList.remove('show');
       document.getElementById('taskText').style.display = '';
       document.getElementById('htmlText').style.display = 'none';
+      document.getElementById('jsonText').style.display = 'none';
       document.getElementById('mdToggleBtn').classList.remove('active');
       document.getElementById('mdToggleBtn').textContent = '编辑文本';
       document.getElementById('mdToggleBtn').title = '点击切换到 Markdown 预览';
@@ -6729,11 +7308,13 @@
       resetEditorScrollToTop();
       resetEditorHistory(document.getElementById('taskText'));
       resetEditorHistory(document.getElementById('htmlText'));
+      resetEditorHistory(document.getElementById('jsonText'));
       captureEditSnapshot();
     }
 
     // 以 MD 模式打开一个已有的纯 .md 文件（页签锁定为 MD文件，无标签/颜色/附件）
     async function openEditMdModal(id) {
+      externalFilePath = null; // 切回默认目录模式
       try {
         if (!window.electronAPI || !window.electronAPI.readMdFile) {
           alert('electronAPI.readMdFile 不可用');
@@ -6746,6 +7327,8 @@
         }
         editingId = null;
         currentMdId = id;
+        currentJsonId = null;
+        currentHtmlId = null;
         activeFileTab = 'md';
         document.getElementById('modalTitle').textContent = '编辑 MD 文件';
         document.getElementById('taskText').value = result.content || '';
@@ -6785,6 +7368,138 @@
       } catch (e) {
         console.error('[TodoList] 打开 MD 文件失败:', e);
         alert('打开 MD 文件失败：' + (e && e.message ? e.message : e));
+      }
+    }
+
+    // 以「一般 JSON 模式」打开一个已有的 .json 文件（页签锁定，无标签/颜色/附件/重命名）
+    // 与 openEditMdModal 同理：复用三模式编辑器，但固定落在 JSON 文本编辑（previewMode=4）。
+    async function openEditJsonModal(id) {
+      externalFilePath = null; // 切回默认目录模式
+      try {
+        if (!window.electronAPI || !window.electronAPI.readJsonFile) {
+          alert('electronAPI.readJsonFile 不可用');
+          return;
+        }
+        const result = await window.electronAPI.readJsonFile(id);
+        if (!result || !result.success) {
+          alert('读取 JSON 文件失败：' + (result && result.error ? result.error : '未知错误'));
+          return;
+        }
+        editingId = null;
+        currentMdId = null;
+        currentHtmlId = null;
+        currentJsonId = id;
+        activeFileTab = 'json';
+        document.getElementById('modalTitle').textContent = '编辑 ' + id + '.json';
+        document.getElementById('taskText').value = '';
+        document.getElementById('htmlText').value = '';
+        document.getElementById('jsonText').value = result.content || '';
+        document.getElementById('editSearchInput').value = '';
+        pendingAttachments = [];
+        selectedTagsForModal = [];
+        renderTagsSelector([]);
+        renderPendingAttachments();
+        setTodoColorPicker('');
+        previewMode = 4; // JSON 文本编辑模式
+        const preview = document.getElementById('mdPreview');
+        const textarea = document.getElementById('taskText');
+        const htmlTextarea = document.getElementById('htmlText');
+        const jsonTextarea = document.getElementById('jsonText');
+        const btn = document.getElementById('mdToggleBtn');
+        preview.classList.remove('show');
+        textarea.style.display = 'none';
+        htmlTextarea.style.display = 'none';
+        jsonTextarea.style.display = '';
+        btn.classList.add('active');
+        btn.textContent = '编辑JSON文本';
+        btn.title = '点击切换到 JSON 预览';
+        document.getElementById('genMdBtn').style.display = 'none';
+        document.getElementById('genHtmlBtn').style.display = 'none';
+        const delHtmlBtn = document.getElementById('delHtmlBtn');
+        if (delHtmlBtn) delHtmlBtn.style.display = 'none';
+        const jsonTools = document.getElementById('jsonTools');
+        if (jsonTools) jsonTools.style.display = 'flex';
+        searchMatches = [];
+        currentMatchIndex = -1;
+        lastSearchEnterQuery = '';
+        document.getElementById('searchCount').textContent = '';
+        updateSearchNavButtons();
+        updateFileTypeTabs();
+        document.getElementById('modalOverlay').style.display = 'flex';
+        jsonTextarea.focus();
+        autoGrowTextarea(jsonTextarea);
+        resetEditorScrollToTop();
+        resetEditorHistory(jsonTextarea);
+        captureEditSnapshot();
+      } catch (e) {
+        console.error('[TodoList] 打开 JSON 文件失败:', e);
+        alert('打开 JSON 文件失败：' + (e && e.message ? e.message : e));
+      }
+    }
+
+    // 以「HTML 文件」模式打开一个已有的 .html 文件（页签锁定，无标签/颜色/附件/重命名）
+    // 与 openEditMdModal / openEditJsonModal 同理：复用三模式编辑器，但固定落在 HTML 文本编辑（previewMode=2）。
+    async function openEditHtmlModal(id) {
+      externalFilePath = null; // 切回默认目录模式
+      try {
+        if (!window.electronAPI || !window.electronAPI.readHtmlFile) {
+          alert('electronAPI.readHtmlFile 不可用');
+          return;
+        }
+        const result = await window.electronAPI.readHtmlFile(id);
+        if (!result || !result.success) {
+          alert('读取 HTML 文件失败：' + (result && result.error ? result.error : '未知错误'));
+          return;
+        }
+        editingId = null;
+        currentMdId = null;
+        currentJsonId = null;
+        currentHtmlId = id;
+        activeFileTab = 'html';
+        document.getElementById('modalTitle').textContent = '编辑 ' + id + '.html';
+        document.getElementById('taskText').value = '';
+        document.getElementById('htmlText').value = result.content || '';
+        document.getElementById('jsonText').value = '';
+        document.getElementById('editSearchInput').value = '';
+        pendingAttachments = [];
+        selectedTagsForModal = [];
+        renderTagsSelector([]);
+        renderPendingAttachments();
+        setTodoColorPicker('');
+        previewMode = 2; // HTML 文本编辑模式
+        const preview = document.getElementById('mdPreview');
+        const textarea = document.getElementById('taskText');
+        const htmlTextarea = document.getElementById('htmlText');
+        const jsonTextarea = document.getElementById('jsonText');
+        const btn = document.getElementById('mdToggleBtn');
+        preview.classList.remove('show');
+        textarea.style.display = 'none';
+        htmlTextarea.style.display = '';
+        jsonTextarea.style.display = 'none';
+        btn.classList.add('active');
+        btn.textContent = '编辑HTML文本';
+        btn.title = '点击切换到 HTML 预览';
+        document.getElementById('genMdBtn').style.display = 'none';
+        document.getElementById('genHtmlBtn').style.display = 'none';
+        const delHtmlBtn = document.getElementById('delHtmlBtn');
+        if (delHtmlBtn) delHtmlBtn.style.display = 'none';
+        const htmlTools = document.getElementById('htmlTools');
+        if (htmlTools) htmlTools.style.display = 'flex';
+        searchMatches = [];
+        currentMatchIndex = -1;
+        lastSearchEnterQuery = '';
+        document.getElementById('searchCount').textContent = '';
+        updateSearchNavButtons();
+        updateFileTypeTabs();
+        document.getElementById('modalOverlay').style.display = 'flex';
+        htmlTextarea.focus();
+        autoGrowTextarea(htmlTextarea);
+        resetEditorScrollToTop();
+        resetEditorHistory(htmlTextarea);
+        captureEditSnapshot();
+      } catch (e) {
+        console.error('[TodoList] 打开 HTML 文件失败:', e);
+        alert('打开 HTML 文件失败：' + (e && e.message ? e.message : e));
       }
     }
 
@@ -6960,6 +7675,7 @@
       editSnapshot = {
         text: document.getElementById('taskText').value,
         html: document.getElementById('htmlText').value,
+        json: document.getElementById('jsonText').value,
         tags: JSON.stringify(selectedTagsForModal),
         attachments: JSON.stringify(pendingAttachments),
         color: getSelectedTodoColor()
@@ -6971,6 +7687,7 @@
       if (!editSnapshot) return false;
       return document.getElementById('taskText').value !== editSnapshot.text
           || document.getElementById('htmlText').value !== editSnapshot.html
+          || document.getElementById('jsonText').value !== editSnapshot.json
           || JSON.stringify(selectedTagsForModal) !== editSnapshot.tags
           || JSON.stringify(pendingAttachments) !== editSnapshot.attachments
           || getSelectedTodoColor() !== editSnapshot.color;
@@ -7016,6 +7733,7 @@
       document.getElementById('mdPreview').classList.remove('show');
       document.getElementById('taskText').style.display = '';
       document.getElementById('htmlText').style.display = 'none';
+      document.getElementById('jsonText').style.display = 'none';
       document.getElementById('mdToggleBtn').classList.remove('active');
       document.getElementById('mdToggleBtn').textContent = '编辑文本';
       document.getElementById('mdToggleBtn').title = '点击切换到 Markdown 预览';
@@ -7031,6 +7749,8 @@
       // 模态框完全关闭后清空未保存检测快照
       editSnapshot = null;
       currentMdId = null;
+      currentJsonId = null;
+      currentHtmlId = null;
     }
 
     function handleFileSelect(event) {
@@ -7086,8 +7806,56 @@
     async function saveTask(closeAfterSave = true) {
       const textarea = document.getElementById('taskText');
       const htmlTextarea = document.getElementById('htmlText');
+      const jsonTextarea = document.getElementById('jsonText');
       const text = textarea.value.trim();
       const htmlValue = htmlTextarea.value.trim();
+      const jsonValue = jsonTextarea.value.trim();
+
+      // ===== HTML 文件（纯 .html，无 todo 卡片结构）=====
+      if (activeFileTab === 'html') {
+        if (!htmlValue) {
+          alert('请输入 HTML 内容');
+          return;
+        }
+        try {
+          if (externalFilePath) {
+            // 📂 外部文件模式：写回原路径
+            await window.electronAPI.saveFileByPath(externalFilePath, htmlTextarea.value.replace(/\r\n/g, '\n'));
+          } else {
+            let htmlId = currentHtmlId;
+            if (!htmlId) { htmlId = 'html-' + Date.now().toString(); currentHtmlId = htmlId; }
+            await window.electronAPI.saveHtmlFile(htmlId, htmlTextarea.value.replace(/\r\n/g, '\n'));
+          }
+          if (closeAfterSave) { closeModal(undefined, undefined, true); }
+        } catch (e) {
+          console.error('[TodoList] 保存 HTML 文件失败:', e);
+          alert('保存 HTML 文件失败：' + (e && e.message ? e.message : e));
+        }
+        return;
+      }
+
+      // ===== 一般 JSON 文件（纯 .json，无 todo 卡片结构）=====
+      if (activeFileTab === 'json') {
+        if (!jsonValue) {
+          alert('请输入 JSON 内容');
+          return;
+        }
+        try {
+          if (externalFilePath) {
+            // 📂 外部文件模式：写回原路径
+            await window.electronAPI.saveFileByPath(externalFilePath, jsonTextarea.value.replace(/\r\n/g, '\n'));
+          } else {
+            let jsonId = currentJsonId;
+            if (!jsonId) { jsonId = 'json-' + Date.now().toString(); currentJsonId = jsonId; }
+            await window.electronAPI.saveJsonFile(jsonId, jsonTextarea.value.replace(/\r\n/g, '\n'));
+          }
+          if (closeAfterSave) { closeModal(undefined, undefined, true); }
+        } catch (e) {
+          console.error('[TodoList] 保存 JSON 文件失败:', e);
+          alert('保存 JSON 文件失败：' + (e && e.message ? e.message : e));
+        }
+        return;
+      }
 
       // ===== MD 文件（纯 .md，无 JSON / 无标签·颜色·附件等元数据）=====
       if (activeFileTab === 'md') {
@@ -7095,16 +7863,16 @@
           alert('请输入内容');
           return;
         }
-        let mdId = currentMdId;
-        if (!mdId) {
-          mdId = 'md-' + Date.now().toString();
-          currentMdId = mdId;
-        }
         try {
-          await window.electronAPI.saveMdFile(mdId, textarea.value.replace(/\r\n/g, '\n'));
-          if (closeAfterSave) {
-            closeModal(undefined, undefined, true);
+          if (externalFilePath) {
+            // 📂 外部文件模式：写回原路径
+            await window.electronAPI.saveFileByPath(externalFilePath, textarea.value.replace(/\r\n/g, '\n'));
+          } else {
+            let mdId = currentMdId;
+            if (!mdId) { mdId = 'md-' + Date.now().toString(); currentMdId = mdId; }
+            await window.electronAPI.saveMdFile(mdId, textarea.value.replace(/\r\n/g, '\n'));
           }
+          if (closeAfterSave) { closeModal(undefined, undefined, true); }
         } catch (e) {
           console.error('[TodoList] 保存 MD 文件失败:', e);
           alert('保存 MD 文件失败：' + (e && e.message ? e.message : e));
@@ -7113,10 +7881,16 @@
       }
 
       // ===== todo 卡片（JSON）=====
-      // HTML 编辑模式与 Markdown 编辑模式各自独立保存，互不影响
+      // 按当前 previewMode 决定保存哪个字段：0/1/3=MD, 2=HTML, 4/5=JSON
+      const isJsonMode = previewMode === 4 || previewMode === 5;
       if (previewMode === 2) {
         if (!htmlValue) {
           alert('请输入 HTML 内容');
+          return;
+        }
+      } else if (isJsonMode) {
+        if (!jsonValue) {
+          alert('请输入 JSON 内容');
           return;
         }
       } else {
@@ -7132,29 +7906,67 @@
           if (previewMode === 2) {
             // HTML 编辑模式：只更新 htmlContent，不更动 text
             todo.htmlContent = htmlValue;
+          } else if (isJsonMode) {
+            // JSON 编辑/预览模式：jsonText 就是整张卡片的 JSON，解析后替换整个对象
+            // 但保留原 id（文件名是权威标识），并更新 updatedAt
+            try {
+              const parsed = JSON.parse(jsonValue);
+              if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+                alert('JSON 必须是一个对象');
+                return;
+              }
+              parsed.id = editingId;
+              if (!parsed.createdAt) parsed.createdAt = todo.createdAt || Date.now();
+              parsed.updatedAt = Date.now();
+              Object.assign(todo, parsed);
+              // JSON 保存后同步 MD/HTML 编辑框，避免切回其它模式时看到旧内容
+              document.getElementById('taskText').value = (typeof todo.text === 'string') ? todo.text : '';
+              document.getElementById('htmlText').value = (typeof todo.htmlContent === 'string') ? todo.htmlContent : '';
+            } catch (e) {
+              alert('JSON 格式错误：' + (e && e.message ? e.message : e));
+              return;
+            }
           } else {
             // Markdown 编辑模式：只更新 text，不更动 htmlContent
             todo.text = text;
           }
-          todo.tags = selectedTagsForModal;
-          delete todo.tag;
-          todo.attachments = pendingAttachments;
-          todo.bgColor = getSelectedTodoColor();
+          // 非 JSON 模式下，侧边栏的标签/颜色/附件才参与保存
+          if (!isJsonMode) {
+            todo.tags = selectedTagsForModal;
+            delete todo.tag;
+            todo.attachments = pendingAttachments;
+            todo.bgColor = getSelectedTodoColor();
+          }
           todo.updatedAt = Date.now();
         }
       } else {
-        const newTodo = {
-          id: Date.now().toString(),
-          text: previewMode !== 2 ? text : '',
-          htmlContent: previewMode === 2 ? htmlValue : undefined,
-          tags: selectedTagsForModal,
-          attachments: pendingAttachments,
-          bgColor: getSelectedTodoColor(),
-          completed: false,
-          createdAt: Date.now(),
-          updatedAt: Date.now(),
-          completedAt: null
-        };
+        let newTodo;
+        if (isJsonMode) {
+          // 新增卡片且处于 JSON 模式：直接解析 jsonText 作为新卡片对象
+          try {
+            newTodo = JSON.parse(jsonValue);
+          } catch (e) {
+            alert('JSON 格式错误：' + (e && e.message ? e.message : e));
+            return;
+          }
+          if (!newTodo || typeof newTodo !== 'object' || Array.isArray(newTodo)) {
+            alert('JSON 必须是一个对象');
+            return;
+          }
+        } else {
+          newTodo = {
+            text: previewMode === 2 ? '' : text,
+            htmlContent: previewMode === 2 ? htmlValue : undefined
+          };
+        }
+        newTodo.id = newTodo.id || Date.now().toString();
+        newTodo.tags = isJsonMode ? (newTodo.tags || []) : selectedTagsForModal;
+        newTodo.attachments = isJsonMode ? (newTodo.attachments || []) : pendingAttachments;
+        newTodo.bgColor = isJsonMode ? (newTodo.bgColor || '') : getSelectedTodoColor();
+        newTodo.completed = !!newTodo.completed;
+        newTodo.createdAt = newTodo.createdAt || Date.now();
+        newTodo.updatedAt = Date.now();
+        newTodo.completedAt = newTodo.completedAt || null;
         todos.unshift(newTodo);
       }
 
@@ -7285,7 +8097,10 @@
     //     2. 切换排序标签 → 重排 + 重渲列表
     //     3. 点击列表项 → 关闭面板 + focusResizedCard(id)（滚动 + 金边闪 3 秒）
     //     4. 点击面板外 → 关闭面板
-    let fileListState = { open: false, sortKey: 'mtime', sortDir: 'desc', items: [], loaded: false };
+    let fileListState = { open: false, sortKey: 'mtime', sortDir: 'desc', items: [], loaded: false, browseDir: null };
+    // 📂 外部文件模式：非 null 时表示当前正在编辑一个「临时浏览目录」下的文件，值为绝对路径
+    // 保存时走 saveFileByPath 而非默认的 PLUGINS_DATA_DIR 下的 IPC
+    let externalFilePath = null;
 
     function toggleFileList() {
       const trigger = document.getElementById('fileListTrigger');
@@ -7313,25 +8128,107 @@
       const body = document.getElementById('fileListBody');
       const footer = document.getElementById('fileListFooter');
       if (body) body.innerHTML = '';
-      if (footer) footer.textContent = '加载中...';
+      if (footer) { const c = document.getElementById('fileListCount'); if (c) c.textContent = '加载中...'; }
       try {
         if (!window.electronAPI || !window.electronAPI.listTodoFiles) {
-          if (footer) footer.textContent = 'electronAPI.listTodoFiles 不可用';
+          if (footer) { const c = document.getElementById('fileListCount'); if (c) c.textContent = 'electronAPI.listTodoFiles 不可用'; }
           return;
         }
-        // 同时拉取 todo 卡片（JSON）与 MD 纯文本文件，合并展示
-        const todoRes = await window.electronAPI.listTodoFiles();
-        const mdRes = (window.electronAPI.listMdFiles)
-          ? await window.electronAPI.listMdFiles()
-          : { success: true, data: [] };
-        const todoItems = (todoRes && todoRes.success) ? (todoRes.data || []).map(it => ({ ...it, type: 'todo' })) : [];
-        const mdItems = (mdRes && mdRes.success) ? (mdRes.data || []).map(it => ({ ...it, type: 'md' })) : [];
-        fileListState.items = todoItems.concat(mdItems);
+
+        let items = [];
+
+        // 📂 如果用户切换了浏览目录，用统一接口拉取该目录下所有支持的文件
+        if (fileListState.browseDir) {
+          const res = await window.electronAPI.listAllFilesInDir(fileListState.browseDir);
+          if (res && res.success && Array.isArray(res.data)) {
+            items = res.data.map(it => {
+              const ext = (it.name || '').split('.').pop().toLowerCase();
+              let type = 'json';
+              if (ext === 'md') type = 'md';
+              else if (ext === 'html') type = 'html';
+              else if (it.name.startsWith('todo-')) type = 'todo';
+              return { ...it, type };
+            });
+          }
+        } else {
+          // 默认：从 PLUGINS_DATA_DIR 分别拉取 4 类文件
+          const todoRes = await window.electronAPI.listTodoFiles();
+          const mdRes = (window.electronAPI.listMdFiles)
+            ? await window.electronAPI.listMdFiles()
+            : { success: true, data: [] };
+          const htmlRes = (window.electronAPI.listHtmlFiles)
+            ? await window.electronAPI.listHtmlFiles()
+            : { success: true, data: [] };
+          const jsonRes = (window.electronAPI.listJsonFiles)
+            ? await window.electronAPI.listJsonFiles()
+            : { success: true, data: [] };
+          const todoItems = (todoRes && todoRes.success) ? (todoRes.data || []).map(it => ({ ...it, type: 'todo' })) : [];
+          const mdItems = (mdRes && mdRes.success) ? (mdRes.data || []).map(it => ({ ...it, type: 'md' })) : [];
+          const htmlItems = (htmlRes && htmlRes.success) ? (htmlRes.data || []).map(it => ({ ...it, type: 'html' })) : [];
+          const jsonItems = (jsonRes && jsonRes.success) ? (jsonRes.data || []).map(it => ({ ...it, type: 'json' })) : [];
+          items = todoItems.concat(mdItems, htmlItems, jsonItems);
+        }
+        fileListState.items = items;
         fileListState.loaded = true;
+        // 📂 更新底部目录按钮：显示当前浏览的目录（默认 data 或用户切换的临时目录）
+        updateFileListDirBtn();
         renderFileList();
       } catch (e) {
         console.error('[TodoList] 加载文件列表失败:', e);
-        if (footer) footer.textContent = '加载失败：' + e.message;
+        if (footer) { const c = document.getElementById('fileListCount'); if (c) c.textContent = '加载失败：' + e.message; }
+      }
+    }
+
+    // 📂 更新底部目录按钮的显示（名称 + tooltip 全路径）
+    async function updateFileListDirBtn() {
+      const btn = document.getElementById('fileListDirBtn');
+      if (!btn) return;
+      try {
+        let dirPath = fileListState.browseDir;
+        if (!dirPath) {
+          const res = (window.electronAPI && window.electronAPI.getDataDir)
+            ? await window.electronAPI.getDataDir()
+            : null;
+          dirPath = (res && res.success && res.data) ? res.data : null;
+        }
+        const resetBtn = document.getElementById('fileListResetBtn');
+        if (dirPath) {
+          const dirName = dirPath.split('/').pop() || dirPath.split('\\').pop() || 'data';
+          btn.title = dirPath + (fileListState.browseDir ? '\n（临时浏览，不影响默认 data 目录）' : '\n（默认资料目录）');
+          btn.textContent = '📂 ' + dirName;
+          // 临时浏览模式下按钮加个视觉区分
+          btn.classList.toggle('browsing', !!fileListState.browseDir);
+          // 仅在临时浏览模式下显示「返回默认目录」按钮
+          if (resetBtn) resetBtn.style.display = fileListState.browseDir ? '' : 'none';
+        } else {
+          btn.title = '无法获取路径';
+          btn.textContent = '📂';
+          btn.classList.remove('browsing');
+          if (resetBtn) resetBtn.style.display = 'none';
+        }
+      } catch { /* 静默 */ }
+    }
+
+    // 📂 清除临时浏览目录，返回默认 data 目录
+    async function resetBrowseDir() {
+      fileListState.browseDir = null;
+      fileListState.loaded = false;
+      await updateFileListDirBtn();
+      loadFileListItems();
+    }
+
+    // 📂 点击目录按钮 → 弹出原生文件夹选择器 → 切换浏览目录
+    async function switchBrowseDir() {
+      if (!window.electronAPI || !window.electronAPI.openDirDialog) return;
+      try {
+        const res = await window.electronAPI.openDirDialog();
+        if (!res || !res.success || !res.data) return; // 用户取消或失败
+        fileListState.browseDir = res.data;
+        fileListState.loaded = false; // 强制重新加载
+        await updateFileListDirBtn();
+        loadFileListItems();
+      } catch (e) {
+        console.error('[TodoList] 切换浏览目录失败:', e);
       }
     }
 
@@ -7351,7 +8248,7 @@
       if (!body || !footer) return;
       if (items.length === 0) {
         body.innerHTML = '';
-        footer.textContent = '共 0 个文件';
+        const c = document.getElementById('fileListCount'); if (c) c.textContent = '共 0 个文件';
         return;
       }
       // 元信息格式：时间=YYYY-MM-DD HH:mm，大小=B/KB/MB（自动）
@@ -7366,11 +8263,24 @@
         const timeStr = `${yyyy}-${mm}-${dd} ${hh}:${mi}`;
         const sizeStr = formatFileSizeShort(it.size);
         const isMd = it.type === 'md';
-        let statusText, statusClass, itemClass;
+        const isHtml = it.type === 'html';
+        const isJson = it.type === 'json';
+        let statusText, statusClass, itemClass, itemType;
         if (isMd) {
           statusText = '📄 MD';
           statusClass = 'md';
           itemClass = '';
+          itemType = 'md';
+        } else if (isHtml) {
+          statusText = '📄 HTML';
+          statusClass = 'html';
+          itemClass = '';
+          itemType = 'html';
+        } else if (isJson) {
+          statusText = '📄 JSON';
+          statusClass = 'json';
+          itemClass = '';
+          itemType = 'json';
         } else {
           // 从内存查完成态；找不到（文件存在但内存未加载）按待完成兜底
           const todo = (typeof todos !== 'undefined' && Array.isArray(todos))
@@ -7380,14 +8290,15 @@
           statusText = isCompleted ? '已完成' : '待完成';
           statusClass = isCompleted ? 'completed' : 'pending';
           itemClass = isCompleted ? 'completed' : '';
+          itemType = 'todo';
         }
-        return `<div class="file-list-item ${itemClass}" data-id="${escapeHtml(it.id)}" data-type="${isMd ? 'md' : 'todo'}" onclick="selectFileListItem('${escapeHtml(it.id)}', '${isMd ? 'md' : 'todo'}')" title="${escapeHtml(it.name)}">
+        return `<div class="file-list-item ${itemClass}" data-id="${escapeHtml(it.id)}" data-type="${itemType}" onclick="selectFileListItem('${escapeHtml(it.id)}', '${itemType}')" title="${escapeHtml(it.name)}">
           <span class="file-list-item-name">${escapeHtml(it.name)}</span>
           <span class="file-list-item-meta">${timeStr} · ${sizeStr}</span>
           <span class="file-list-item-status ${statusClass}">${statusText}</span>
         </div>`;
       }).join('');
-      footer.textContent = `共 ${items.length} 个文件`;
+      const c = document.getElementById('fileListCount'); if (c) c.textContent = `共 ${items.length} 个文件`;
     }
 
     // 简化的体积格式（B/KB/MB）—— 主进程已有完整版 formatFileSize，前端独立版本避免重复 IPC
@@ -7416,12 +8327,155 @@
       renderFileList();
     }
 
+    // 📂 打开「临时浏览目录」下的外部文件（按绝对路径读取，保存时也写回原路径）
+    async function openExternalFile(fullPath, fileName, type) {
+      if (!window.electronAPI || !window.electronAPI.readFileByPath) {
+        alert('electronAPI.readFileByPath 不可用');
+        return;
+      }
+      try {
+        const result = await window.electronAPI.readFileByPath(fullPath);
+        if (!result || !result.success) {
+          alert('读取文件失败：' + (result && result.error ? result.error : '未知错误'));
+          return;
+        }
+        // 标记为外部文件模式
+        externalFilePath = fullPath;
+        editingId = null;
+        currentMdId = null;
+        currentJsonId = null;
+        currentHtmlId = null;
+
+        const textarea = document.getElementById('taskText');
+        const htmlTextarea = document.getElementById('htmlText');
+        const jsonTextarea = document.getElementById('jsonText');
+        const preview = document.getElementById('mdPreview');
+        const btn = document.getElementById('mdToggleBtn');
+        const jsonTools = document.getElementById('jsonTools');
+        const htmlTools = document.getElementById('htmlTools');
+
+        // 通用清理
+        preview.classList.remove('show');
+        pendingAttachments = [];
+        selectedTagsForModal = [];
+        renderTagsSelector([]);
+        renderPendingAttachments();
+        setTodoColorPicker('');
+        document.getElementById('editSearchInput').value = '';
+        document.getElementById('genMdBtn').style.display = 'none';
+        document.getElementById('genHtmlBtn').style.display = 'none';
+        const delHtmlBtn = document.getElementById('delHtmlBtn');
+        if (delHtmlBtn) delHtmlBtn.style.display = 'none';
+        searchMatches = [];
+        currentMatchIndex = -1;
+        lastSearchEnterQuery = '';
+        document.getElementById('searchCount').textContent = '';
+        updateSearchNavButtons();
+
+        // 按类型切换编辑器 UI（与 openEditMdModal / openEditJsonModal / openEditHtmlModal 完全对齐）
+        if (type === 'md') {
+          activeFileTab = 'md';
+          previewMode = 0;
+          document.getElementById('modalTitle').textContent = '编辑 MD 文件：' + fileName;
+          textarea.value = result.content || '';
+          htmlTextarea.value = '';
+          jsonTextarea.value = '';
+          textarea.style.display = '';
+          htmlTextarea.style.display = 'none';
+          jsonTextarea.style.display = 'none';
+          btn.classList.remove('active');
+          btn.textContent = '编辑文本';
+          btn.title = '点击切换到 Markdown 预览';
+          if (jsonTools) jsonTools.style.display = 'none';
+          if (htmlTools) htmlTools.style.display = 'none';
+          switchFileTypeTab('md');
+          document.getElementById('modalOverlay').style.display = 'flex';
+          textarea.focus();
+          autoGrowTextarea(textarea);
+          resetEditorScrollToTop();
+          resetEditorHistory(textarea);
+          captureEditSnapshot();
+
+        } else if (type === 'json') {
+          activeFileTab = 'json';
+          previewMode = 4; // JSON 文本编辑模式
+          document.getElementById('modalTitle').textContent = '编辑 JSON 文件：' + fileName;
+          textarea.value = '';
+          htmlTextarea.value = '';
+          jsonTextarea.value = result.content || '';
+          textarea.style.display = 'none';
+          htmlTextarea.style.display = 'none';
+          jsonTextarea.style.display = '';
+          btn.classList.add('active');
+          btn.textContent = '编辑JSON文本';
+          btn.title = '点击切换到 JSON 预览';
+          if (jsonTools) jsonTools.style.display = 'flex';
+          if (htmlTools) htmlTools.style.display = 'none';
+          switchFileTypeTab('json');
+          document.getElementById('modalOverlay').style.display = 'flex';
+          jsonTextarea.focus();
+          autoGrowTextarea(jsonTextarea);
+          resetEditorScrollToTop();
+          resetEditorHistory(jsonTextarea);
+          captureEditSnapshot();
+
+        } else if (type === 'html') {
+          activeFileTab = 'html';
+          previewMode = 2; // HTML 文本编辑模式
+          document.getElementById('modalTitle').textContent = '编辑 HTML 文件：' + fileName;
+          textarea.value = '';
+          htmlTextarea.value = result.content || '';
+          jsonTextarea.value = '';
+          textarea.style.display = 'none';
+          htmlTextarea.style.display = '';
+          jsonTextarea.style.display = 'none';
+          btn.classList.add('active');
+          btn.textContent = '编辑HTML文本';
+          btn.title = '点击切换到 HTML 预览';
+          if (jsonTools) jsonTools.style.display = 'none';
+          if (htmlTools) htmlTools.style.display = 'flex';
+          switchFileTypeTab('html');
+          document.getElementById('modalOverlay').style.display = 'flex';
+          htmlTextarea.focus();
+          autoGrowTextarea(htmlTextarea);
+          resetEditorScrollToTop();
+          resetEditorHistory(htmlTextarea);
+          captureEditSnapshot();
+        }
+
+        updateFileTypeTabs();
+      } catch (e) {
+        console.error('[TodoList] 打开外部文件失败:', e);
+        alert('打开文件失败：' + (e && e.message ? e.message : e));
+      }
+    }
+
     // 选中某个文件 → 跳到对应卡片 + 金边闪烁 3 秒（复用保存/拖拽尺寸后的同款动画）
     function selectFileListItem(id, type) {
       closeFileList();
+      // 📂 临时浏览目录模式：md/json/html 外部文件走 read-file-by-path 打开
+      //    —— todo 卡片永远走 Gallery 滚动（卡片只来自默认 data 目录，不在此分支处理）
+      if (fileListState.browseDir && type !== 'todo') {
+        // 从 items 里找到完整文件名（含扩展名）
+        const item = fileListState.items.find(it => it.id === id && it.type === type);
+        if (!item) { alert('找不到文件项'); return; }
+        const fullPath = fileListState.browseDir + '/' + item.name;
+        openExternalFile(fullPath, item.name, type);
+        return;
+      }
       // MD 纯文本文件：以 MD 模式打开抽屉（页签锁定，无元数据）
       if (type === 'md') {
         openEditMdModal(id);
+        return;
+      }
+      // 一般 JSON 文件：以 JSON 模式打开编辑器（页签锁定，无 todo 元数据）
+      if (type === 'json') {
+        openEditJsonModal(id);
+        return;
+      }
+      // HTML 文件：以 HTML 模式打开编辑器（页签锁定，无 todo 元数据）
+      if (type === 'html') {
+        openEditHtmlModal(id);
         return;
       }
       // 防御：若卡片已被过滤（标签/状态筛选）导致 .todo-item 不存在，给出一次提示

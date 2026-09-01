@@ -103,6 +103,12 @@
       "sina_code": "tw4904"
     },
     {
+      "code": "2385",
+      "name": "群光",
+      "market": "台股",
+      "sina_code": "tw2385"
+    },    
+    {
       "code": "600519",
       "name": "贵州茅台",
       "market": "A股",

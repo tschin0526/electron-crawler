@@ -229,12 +229,29 @@ contextBridge.exposeInMainWorld('electronAPI', {
   renameTodoFile: (oldId, newId) => ipcRenderer.invoke('rename-todo-file', oldId, newId),
   // 📋 列出 todos 资料目录下所有 todo-{id}.json 的文件元数据（前端「文件列表」下拉）
   listTodoFiles: () => ipcRenderer.invoke('list-todo-files'),
+  getDataDir: () => ipcRenderer.invoke('get-data-dir'),
+  openDirDialog: () => ipcRenderer.invoke('open-dir-dialog'),
+  listAllFilesInDir: (dir) => ipcRenderer.invoke('list-all-files-in-dir', dir),
+  readFileByPath: (absolutePath) => ipcRenderer.invoke('read-file-by-path', absolutePath),
+  saveFileByPath: (absolutePath, content) => ipcRenderer.invoke('save-file-by-path', absolutePath, content),
 
   // MD 纯文本文件存储（与 todo 卡片完全分离，不进 Gallery）
   listMdFiles: () => ipcRenderer.invoke('list-md-files'),
   readMdFile: (id) => ipcRenderer.invoke('read-md-file', id),
   saveMdFile: (id, content) => ipcRenderer.invoke('save-md-file', id, content),
   deleteMdFile: (id) => ipcRenderer.invoke('delete-md-file', id),
+
+  // 一般 JSON 文件存储（与 todo 卡片 / MD 纯文本 完全分离；排除 todo-*.json）
+  listJsonFiles: () => ipcRenderer.invoke('list-json-files'),
+  readJsonFile: (id) => ipcRenderer.invoke('read-json-file', id),
+  saveJsonFile: (id, content) => ipcRenderer.invoke('save-json-file', id, content),
+  deleteJsonFile: (id) => ipcRenderer.invoke('delete-json-file', id),
+
+  // HTML 文件存储（与 todo 卡片 / MD / JSON 完全分离）
+  listHtmlFiles: () => ipcRenderer.invoke('list-html-files'),
+  readHtmlFile: (id) => ipcRenderer.invoke('read-html-file', id),
+  saveHtmlFile: (id, content) => ipcRenderer.invoke('save-html-file', id, content),
+  deleteHtmlFile: (id) => ipcRenderer.invoke('delete-html-file', id),
 
   // 读取股票配置（HTTP Get 智能识别用）
   readStockConfig: () => ipcRenderer.invoke('read-stock-config'),
