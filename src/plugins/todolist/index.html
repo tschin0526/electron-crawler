@@ -446,6 +446,49 @@
       color: #fbbf24;
       border-color: #fbbf24;
     }
+    /* 🆕 只看：文件类型筛选行 */
+    .file-list-type-filter {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      padding: 5px 8px 6px;
+      border-bottom: 1px solid var(--border-color);
+      flex-shrink: 0;
+    }
+    .file-list-type-label {
+      font-size: 11px;
+      color: var(--text-secondary);
+      font-weight: 500;
+      margin-right: 2px;
+      white-space: nowrap;
+    }
+    .file-list-type-btn {
+      padding: 2px 10px;
+      border: 1px solid transparent;
+      background: transparent;
+      cursor: pointer;
+      font-size: 11px;
+      color: var(--text-secondary);
+      border-radius: 10px;
+      transition: all 0.15s;
+      font-weight: 500;
+      white-space: nowrap;
+      line-height: 1.6;
+    }
+    .file-list-type-btn:hover {
+      background: var(--primary-light);
+      color: var(--primary-color);
+    }
+    .file-list-type-btn.active {
+      background: var(--primary-light);
+      color: #4338ca;
+      border-color: var(--primary-border);
+    }
+    body.dark .file-list-type-btn.active {
+      background: rgba(251, 191, 36, 0.15);
+      color: #fbbf24;
+      border-color: rgba(251, 191, 36, 0.35);
+    }
     .file-list-body {
       overflow-y: auto;
       flex: 1;
@@ -2897,6 +2940,15 @@
               <button type="button" class="file-list-sort-btn active" data-sort="mtime" data-dir="desc" data-page-node-id="OPORgcoV6iB37GtBbZsgJd">按时间</button>
               <button type="button" class="file-list-sort-btn" data-sort="size" data-dir="desc" data-page-node-id="BfdLbGAaM6glp1av3n6pxL">按大小</button>
             </div>
+            <!-- 🆕 只看：文件类型筛选（默认全看） -->
+            <div class="file-list-type-filter" id="fileListTypeFilter">
+              <span class="file-list-type-label">只看:</span>
+              <button type="button" class="file-list-type-btn active" data-type="all" onclick="setFileListTypeFilter('all')">全部</button>
+              <button type="button" class="file-list-type-btn" data-type="todo" onclick="setFileListTypeFilter('todo')">卡片</button>
+              <button type="button" class="file-list-type-btn" data-type="md" onclick="setFileListTypeFilter('md')">MD</button>
+              <button type="button" class="file-list-type-btn" data-type="html" onclick="setFileListTypeFilter('html')">HTML</button>
+              <button type="button" class="file-list-type-btn" data-type="json" onclick="setFileListTypeFilter('json')">JSON</button>
+            </div>
             <div class="file-list-body" id="fileListBody" data-page-node-id="2B5RWUFgbeHMEOvnXcOgPj"></div>
             <div class="file-list-footer" id="fileListFooter" data-page-node-id="tLCOCV3xkGCO2ah2swAShl"><span id="fileListCount">共 0 个文件</span><button class="file-list-dir-btn" id="fileListResetBtn" title="返回默认 data 目录" onclick="resetBrowseDir()" style="display:none">↩ 默认</button><button class="file-list-dir-btn" id="fileListDirBtn" title="点击切换浏览目录…" onclick="switchBrowseDir()">📂</button></div>
           </div>
@@ -3181,7 +3233,7 @@
               <div class="md-tool-dropgroup" data-page-node-id="CA8hdWTxssr0MXr97UUS12">分隔与代码</div>
               <button class="md-tool-dropitem" onclick="insertMd('---\n', '')" data-page-node-id="PJXSaUzyoSsAwSSUyl9oRk">分隔线 <kbd data-page-node-id="XK9k9qcWtaWCEF6HtH2QPK">---</kbd></button>
               <button class="md-tool-dropitem" onclick="insertMd('`', '`')" data-page-node-id="9LqDnp1Dr20RhTGLjJ2WMe">行内代码 <kbd data-page-node-id="2cyJNd7KpdPum0dAVL2Ur1">`</kbd></button>
-              <button class="md-tool-dropitem" onclick="insertMd('```\n', '\n```')" data-page-node-id="8YkWh8jjaT9WKRoELaLV5h">代码块 <kbd data-page-node-id="7UkEz1Tr1Ah5nLe1hQvThy">```</kbd></button>
+              <button class="md-tool-dropitem" onclick="insertMd('```\n', '\n```')" data-page-node-id="fmtMdCode1">代码块 <kbd data-page-node-id="fmtMdCodeK1">```</kbd></button>
             </div>
           </div>
 
@@ -3489,6 +3541,12 @@
     //    纯运行时变量 + localStorage 持久化，绝不写回 todo JSON（避免污染存档、触发保存）。
     let cardScrollPositions = {};
     const CARD_SCROLL_LS_KEY = 'todolist-card-scroll-positions-v1';
+    // 🆕 画廊画面滚动位置记忆：记录 .todo-list（#todoList）整体 viewport 的 scrollTop，
+    //    实现「首次加载系统时自动滚动到上次离开时的画面位置」。
+    //    纯运行时变量 + localStorage 持久化，绝不写回 todo JSON（与卡片阅读进度同理）。
+    let galleryScrollTop = 0;
+    const GALLERY_SCROLL_LS_KEY = 'todolist-gallery-scroll-v1';
+    let galleryScrollRestored = false; // 仅在首次渲染（init 加载）时恢复一次，后续 re-render 不再跳回
     // 当前正在编辑的 MD 文件 id（仅当 activeFileTab==='md' 且为编辑（非新增）模式时非 null）
     let currentMdId = null;
     // 当前正在编辑的「一般 JSON 文件」id（仅当 activeFileTab==='json' 且为编辑模式时非 null；不含 .json 后缀）
@@ -5436,11 +5494,79 @@
     function flushCardScroll() {
       if (_scrollSaveTimer) { clearTimeout(_scrollSaveTimer); _scrollSaveTimer = null; }
       try { localStorage.setItem(CARD_SCROLL_LS_KEY, JSON.stringify(cardScrollPositions)); } catch (e) {}
+      // 🆕 一并落盘画廊画面滚动位置
+      if (_galleryScrollSaveTimer) { clearTimeout(_galleryScrollSaveTimer); _galleryScrollSaveTimer = null; }
+      try { localStorage.setItem(GALLERY_SCROLL_LS_KEY, JSON.stringify(galleryScrollTop)); } catch (e) {}
     }
 
     // 🆕 统一时间戳来源（performance.now 优先，降级 Date.now），用于 scroll 抑制窗口判定
     function nowMs() {
       return (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+    }
+
+    // 🆕 画廊画面滚动位置：从 localStorage 恢复（init 时调用）
+    function loadGalleryScroll() {
+      galleryScrollTop = 0;
+      try {
+        const raw = localStorage.getItem(GALLERY_SCROLL_LS_KEY);
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (typeof parsed === 'number' && parsed > 0) galleryScrollTop = parsed;
+        }
+      } catch (e) { galleryScrollTop = 0; }
+    }
+
+    // 🆕 画廊画面滚动位置：节流写回 localStorage（与卡片阅读进度同款 400ms 节流）
+    let _galleryScrollSaveTimer = null;
+    function scheduleSaveGalleryScroll() {
+      if (_galleryScrollSaveTimer) return;
+      _galleryScrollSaveTimer = setTimeout(() => {
+        _galleryScrollSaveTimer = null;
+        try { localStorage.setItem(GALLERY_SCROLL_LS_KEY, JSON.stringify(galleryScrollTop)); } catch (e) {}
+      }, 400);
+    }
+
+    // 🆕 画廊画面滚动位置：绑定 #todoList 的 scroll 监听（仅绑定一次）。
+    //    真实用户滚动才记忆；程序化恢复滚动在抑制窗口内被忽略（由 __suppressUntil 判定）。
+    function bindGalleryScrollListener() {
+      const container = document.getElementById('todoList');
+      if (!container || container.__galleryScrollBound) return;
+      container.__galleryScrollBound = true;
+      container.addEventListener('scroll', () => {
+        if (container.__suppressUntil && nowMs() < container.__suppressUntil) return;
+        galleryScrollTop = container.scrollTop;
+        scheduleSaveGalleryScroll();
+      }, { passive: true });
+    }
+
+    // 🆕 画廊画面滚动位置：渲染后恢复（仅首次加载时调用一次）。
+    //    与单卡片阅读进度同理：图片/嵌入/字体异步加载会让内容高度在 restore 之后才稳定，
+    //    同步设置的 scrollTop 会被浏览器钳制到较小值，需在资源就绪后再定位一次。
+    function restoreGalleryScroll() {
+      const container = document.getElementById('todoList');
+      if (!container) return;
+      if (typeof galleryScrollTop !== 'number' || galleryScrollTop <= 0) return;
+      container.__pendingGalleryRestore = galleryScrollTop;
+      container.__suppressUntil = nowMs() + 200;
+      container.scrollTop = galleryScrollTop; // 可能先被钳制（内容偏短）
+      const reapply = () => {
+        if (!container.__pendingGalleryRestore) return; // 用户已手动滚动 → 取消
+        const pos = container.__pendingGalleryRestore;
+        container.__suppressUntil = nowMs() + 200;
+        try { container.scrollTop = pos; } catch (e) {}
+      };
+      // 图片就绪后内容变高，可定位更深
+      container.querySelectorAll('img').forEach(img => {
+        if (!img.complete) {
+          img.addEventListener('load', reapply, { once: true });
+          img.addEventListener('error', reapply, { once: true });
+        }
+      });
+      if (typeof requestAnimationFrame === 'function') {
+        requestAnimationFrame(() => requestAnimationFrame(reapply));
+      }
+      setTimeout(reapply, 500);
+      setTimeout(reapply, 1200);
     }
 
     // 🆕 恢复某张卡片 .todo-content 的滚动位置（渲染后调用）
@@ -5612,6 +5738,12 @@
       });
       // 🆕 文件嵌入：异步读取外部文本文件内容填进占位块（不 await，先出画面再补内容）
       hydrateFileEmbeds(container);
+      // 🆕 画廊画面滚动位置：仅首次加载（init）时恢复到上次离开的画面位置，
+      //    后续 re-render（搜索/筛选/编辑后）不再跳回，避免打乱用户当前浏览。
+      if (!galleryScrollRestored) {
+        galleryScrollRestored = true;
+        restoreGalleryScroll();
+      }
     }
 
     // 🆕 离屏填充：把一段 HTML 里的文件嵌入占位填好，返回可直接发送/落盘的 HTML
@@ -8646,7 +8778,7 @@
     //     2. 切换排序标签 → 重排 + 重渲列表
     //     3. 点击列表项 → 关闭面板 + focusResizedCard(id)（滚动 + 金边闪 3 秒）
     //     4. 点击面板外 → 关闭面板
-    let fileListState = { open: false, sortKey: 'mtime', sortDir: 'desc', items: [], loaded: false, browseDir: null };
+    let fileListState = { open: false, sortKey: 'mtime', sortDir: 'desc', items: [], loaded: false, browseDir: null, typeFilter: 'all' };
     // 📂 外部文件模式：非 null 时表示当前正在编辑一个「临时浏览目录」下的文件，值为绝对路径
     // 保存时走 saveFileByPath 而非默认的 PLUGINS_DATA_DIR 下的 IPC
     let externalFilePath = null;
@@ -8781,17 +8913,21 @@
       }
     }
 
-    // 排序后渲染（不动主数据，仅在内存里排一遍）
+    // 排序 + 类型筛选后渲染（不动主数据，仅在内存里排一遍）
     function renderFileList() {
       const key = fileListState.sortKey;
       const dir = fileListState.sortDir === 'asc' ? 1 : -1;
-      const items = fileListState.items.slice().sort((a, b) => {
+      let items = fileListState.items.slice().sort((a, b) => {
         if (key === 'name') {
           // 名称排序时按「自然序」（数字部分按数值比）—— 178695... < 178696... < ...
           return a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }) * dir;
         }
         return ((a[key] || 0) - (b[key] || 0)) * dir;
       });
+      // 🆕 类型筛选：非 'all' 时只保留匹配 type 的文件
+      if (fileListState.typeFilter && fileListState.typeFilter !== 'all') {
+        items = items.filter(it => it.type === fileListState.typeFilter);
+      }
       const body = document.getElementById('fileListBody');
       const footer = document.getElementById('fileListFooter');
       if (!body || !footer) return;
@@ -8873,6 +9009,15 @@
         target.classList.add('active');
         target.dataset.dir = fileListState.sortDir;
       }
+      renderFileList();
+    }
+
+    // 🆕 切换文件类型筛选：全部 / 卡片(todo) / MD / HTML / JSON
+    function setFileListTypeFilter(type) {
+      if (fileListState.typeFilter === type) return; // 已选中，不重复渲染
+      fileListState.typeFilter = type || 'all';
+      const btns = document.querySelectorAll('.file-list-type-btn');
+      btns.forEach(b => b.classList.toggle('active', b.dataset.type === (type || 'all')));
       renderFileList();
     }
 
@@ -9261,9 +9406,13 @@
     async function init() {
       // 🆕 阅读进度：先恢复上次会话记住的卡片滚动位置（localStorage），再渲染
       loadCardScrollPositions();
+      // 🆕 画廊画面滚动位置：恢复上次离开时的整体 viewport 位置
+      loadGalleryScroll();
       await loadTodos();
       renderTagFilter();
       renderTodos();
+      // 🆕 画廊画面滚动：渲染后绑定 #todoList 的 scroll 监听（仅一次），记忆用户滚动位置
+      bindGalleryScrollListener();
       updateStats();
       // 父窗口尺寸变化时，重新判断各卡片是否进入 tiny 态
       window.addEventListener('resize', applyTinyStates);
