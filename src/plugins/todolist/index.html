@@ -733,15 +733,17 @@
     }
 
     .todo-list::-webkit-scrollbar {
-      width: 6px;
+      width: 15px;
     }
 
     .todo-list::-webkit-scrollbar-track {
-      background: transparent;
+      background: rgba(100, 116, 139, 0.12);
+      border-radius: 8px;
     }
 
     .todo-list::-webkit-scrollbar-thumb {
-      background: var(--border-color);
+      background: var(--text-secondary);
+      border-radius: 8px;
     }
 
     .search-highlight {
@@ -769,7 +771,7 @@
     }
 
     .todo-list::-webkit-scrollbar-thumb:hover {
-      background: var(--text-secondary);
+      background: var(--primary-color);
     }
 
     .todo-item {
@@ -888,6 +890,22 @@
       margin-right: 10px;
       flex-shrink: 0;
     }
+
+    /* 🆕 卡片首行纯文本标题：显示在 checkbox 右侧，单行截断，鼠标悬停显示完整内容 */
+    .todo-card-title {
+      flex: 1 1 auto;
+      min-width: 0;
+      margin-right: 8px;
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--text-primary);
+      line-height: 22px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    /* 已完成卡片：标题跟正文一起置灰（仅未加删除线，保留完整文字以示可读） */
+    .todo-item.completed .todo-card-title { color: var(--text-secondary); }
 
     .checkbox {
       width: 16px;
@@ -1023,6 +1041,53 @@
     }
     .todo-text pre code, .md-preview pre code { background: transparent; color: inherit; padding: 0; font-size: 1em; }
 
+    /* 🆕 文件嵌入：```log ```txt 等围栏里只写一行路径 → 显示该文本文件的真实内容
+       结构：.file-embed > [.file-embed-bar 档名条] + pre 内容 + [.file-embed-more 展开按钮] */
+    .file-embed { margin: .8em 0; }
+    .file-embed-bar {
+      font-size: 11px;
+      color: var(--text-secondary);
+      background: rgba(127, 127, 127, .10);
+      border: 1px solid var(--border-color);
+      border-bottom: none;
+      border-radius: 6px 6px 0 0;
+      padding: 4px 8px;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+    }
+    .file-embed pre {
+      margin: 0 !important;
+      border: 1px solid var(--border-color);
+      border-width: 0 1px;
+      border-radius: 0;
+      max-height: 240px;
+      overflow: auto;
+    }
+    .file-embed:not(.has-more) pre { border-bottom-width: 1px; border-radius: 0 0 6px 6px; }
+    .file-embed-more {
+      display: block; width: 100%; text-align: left; cursor: pointer;
+      font-size: 11px; font-family: inherit; color: var(--primary-color);
+      background: rgba(127, 127, 127, .10);
+      border: 1px solid var(--border-color);
+      border-top: none;
+      border-radius: 0 0 6px 6px;
+      padding: 4px 8px;
+    }
+    .file-embed-more:hover { background: rgba(127, 127, 127, .18); }
+    .file-embed-loading {
+      font-size: 11px;
+      color: var(--text-secondary);
+      border: 1px solid var(--border-color);
+      border-top: none;
+      border-radius: 0 0 6px 6px;
+      padding: 6px 8px;
+      font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+    }
+    .file-embed-error {
+      border: 1px solid #f59e0b; background: #fef3c7; color: #92400e;
+      border-radius: 6px; padding: 6px 10px; font-size: 12px;
+    }
+
     .todo-text blockquote, .md-preview blockquote {
       border-left: 4px solid var(--border-color);
       padding: 0 1em;
@@ -1042,6 +1107,11 @@
     .todo-text .img-row img, .md-preview .img-row img {
       margin: 0; max-height: 320px; width: auto; object-fit: contain; border-radius: 6px;
     }
+    /* 🆕 并排图组内的文本文件嵌入块：与图片同列并排，各占一半、内部独立滚动 */
+    .todo-text .img-row .file-embed, .md-preview .img-row .file-embed {
+      margin: 0; flex: 1 1 0; min-width: 0; max-width: 50%;
+    }
+    .todo-text .img-row .file-embed pre, .md-preview .img-row .file-embed pre { max-height: 240px; }
     .todo-text hr, .md-preview hr { border: none; border-top: 1px solid var(--border-color); margin: 1em 0; }
     .todo-text del, .md-preview del { color: var(--text-secondary); }
 
@@ -2545,6 +2615,25 @@
       color: #fed7aa;
     }
 
+    /* 🆕 在系统浏览器执行文件：[文字](exec:URL) 渲染出的可点击链接（绿色调 = "运行/执行"） */
+    .card-exec-link {
+      cursor: pointer;
+      color: #16a34a;
+      text-decoration: underline dashed;
+      text-decoration-thickness: 1px;
+      text-underline-offset: 2px;
+    }
+    .card-exec-link:hover {
+      color: #15803d;
+      text-decoration: underline solid;
+    }
+    body.dark .card-exec-link {
+      color: #4ade80;
+    }
+    body.dark .card-exec-link:hover {
+      color: #86efac;
+    }
+
     /* 🆕 跳转后的「返回」按钮：显示在目的卡片头部菜单条，点它回到来源卡片 */
     .todo-actions .return-btn {
       display: none;            /* 默认隐藏，由 updateReturnButtons() 控制显隐 */
@@ -3135,11 +3224,14 @@
               <button class="md-tool-dropitem" onclick="insertMd('![', '](url =200x150)')" data-page-node-id="iQMji66bzkC9OD4gCRclW4">图片(定宽高) <kbd data-page-node-id="jc2Fb9C89HdfgcVXEBwVr0">=WxH</kbd></button>
               <div class="md-tool-dropgroup" data-page-node-id="w37Q9wtgJ8KtnD7QeW9c58">并排图组</div>
               <button class="md-tool-dropitem" onclick="insertMd('{{row}}\n![说明](url =200)\n![说明](url =200)\n{{endrow}}\n', '')" data-page-node-id="OERAZ3FTUhV6E2Uf3ZiS3J">并排图组模板 <kbd data-page-node-id="gQgWyK6A1bCMf5g92eak2K">{{row}}</kbd></button>
+              <button class="md-tool-dropitem" onclick="insertMd('```txt\ndata/文件名.txt\n```\n', '')" data-page-node-id="FEfileEmbedTpl">文件嵌入(文本) <kbd data-page-node-id="FEfileEmbedKbd">```txt</kbd></button>
+              <button class="md-tool-dropitem" onclick="insertMd('{{row}}\n![说明](url =40%)\n```txt\ndata/文件名.txt\n```\n{{endrow}}\n', '')" data-page-node-id="FEimgTxtRowTpl">图文混排模板 <kbd data-page-node-id="FEimgTxtRowKbd">{{row}}</kbd></button>
               <div class="md-tool-dropgroup" data-page-node-id="ABouTEhfPAZm0fS7kf17Zh">卡片/窗口协议</div>
               <button class="md-tool-dropitem" onclick="insertMd('[', '](card:ID)')" data-page-node-id="FjDW9BF64HNXTTsUDVf0rC">跳转卡片 <kbd data-page-node-id="ecM0oAH01yJCjHbSRj7YhM">card:</kbd></button>
               <button class="md-tool-dropitem" onclick="insertMd('[', '](win:ID)')" data-page-node-id="cq0INHcRR2MAiW7odzobEr">新窗卡片 <kbd data-page-node-id="M6M5OYFqbYdoq4BwUDW7kH">win:</kbd></button>
               <button class="md-tool-dropitem" onclick="insertMd('[', '](win-img:URL)')" data-page-node-id="QQxf9LKA15jgjTHb7iUzCY">新窗图片 <kbd data-page-node-id="LHAsO0DhJiJs2D4DMvYPGJ">win-img:</kbd></button>
               <button class="md-tool-dropitem" onclick="insertMd('[', '](cur:URL)')" data-page-node-id="jyaC0TgfyD0HhLAKxroUzm">当前窗打开 <kbd data-page-node-id="3BIJMlklQ7KujFMDD8j41d">cur:</kbd></button>
+              <button class="md-tool-dropitem" onclick="insertMd('[', '](exec:file:///路径/到/文件.html)')" data-page-node-id="FEexecTpl">浏览器执行 <kbd data-page-node-id="FEexecKbd">exec:</kbd></button>
               <div class="md-tool-dropgroup" data-page-node-id="rGAvGVU0c0Ewe47PdCfTmO">引用样式</div>
               <button class="md-tool-dropitem" onclick="insertMd('※', '')" data-page-node-id="wLTTej5GaGL5KFD2TG9ouq">圆圈 <kbd data-page-node-id="yjkIdvveYZKtt48Vdvvlpj">※</kbd></button>
               <button class="md-tool-dropitem" onclick="insertMd('▣', '')" data-page-node-id="3bnD6RkNc8O11DOthpEDxn">矩形 <kbd data-page-node-id="nWxYnsZG1QxSBT1XBo9hq4">▣</kbd></button>
@@ -3392,6 +3484,11 @@
     // 🆕 卡片 JSON 文件大小缓存：{ [todoId]: '1.2KB' }
     //    纯运行时变量，不写回 JSON、不参与存档；加载卡片 / 保存后重新读取即可。
     let todoFileSizes = {};
+    // 🆕 卡片内容阅读进度：{ [todoId]: scrollTop }
+    //    记录每张卡片 .todo-content 的滚动位置，实现「打开卡片自动定位到上次阅读位置」。
+    //    纯运行时变量 + localStorage 持久化，绝不写回 todo JSON（避免污染存档、触发保存）。
+    let cardScrollPositions = {};
+    const CARD_SCROLL_LS_KEY = 'todolist-card-scroll-positions-v1';
     // 当前正在编辑的 MD 文件 id（仅当 activeFileTab==='md' 且为编辑（非新增）模式时非 null）
     let currentMdId = null;
     // 当前正在编辑的「一般 JSON 文件」id（仅当 activeFileTab==='json' 且为编辑模式时非 null；不含 .json 后缀）
@@ -5197,7 +5294,7 @@
         // JSON 模式：把整张卡片对象渲染成递归表格
         return renderJsonToTable(JSON.stringify(todo, null, 2));
       }
-      // Markdown 模式
+      // Markdown 模式：完整渲染，正文保持原样（首行标题只额外显示在 checkbox 旁，不删正文）
       if (searchQuery) {
         return highlightInHtml(renderMarkdown(todo.text || ''));
       }
@@ -5294,6 +5391,71 @@
       return result;
     }
 
+    // 🆕 阅读进度记忆开关：读 todo JSON 顶层的 rememberScroll 字段（默认启用）
+    //    语义（缺省即开启，与业界惯例一致）：
+    //      字段不存在             → 启用
+    //      "rememberScroll": true → 启用
+    //      "rememberScroll": false → 停用：该卡片既不记录、也不恢复滚动位置
+    //    字段位置：todo-{id}.json 顶层，与 tags / bgColor / completed 同级，例如
+    //      { "id": "TradingJournal", "tags": [], "rememberScroll": false, "text": "..." }
+    //    保存链路 saveTodos → JSON.stringify(todo) 全量写回，手改的字段不会被冲掉。
+    //    改完 JSON 需重启 app 重新 load-todos 才会生效（前端只认内存里的 todos）。
+    //    只有「显式关闭」才停用：布尔 false、或手误写成字符串 "false"（忽略大小写与空格）。
+    //    其余取值（字段不存在 / true / null / 其它）一律按启用处理。
+    function isScrollMemoryEnabled(todo) {
+      if (!todo) return true;
+      const v = todo.rememberScroll;
+      if (v === false) return false;
+      if (typeof v === 'string') return v.trim().toLowerCase() !== 'false';
+      return true;
+    }
+
+    // 🆕 阅读进度持久化：从 localStorage 恢复卡片滚动位置
+    function loadCardScrollPositions() {
+      cardScrollPositions = {};
+      try {
+        const raw = localStorage.getItem(CARD_SCROLL_LS_KEY);
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (parsed && typeof parsed === 'object') cardScrollPositions = parsed;
+        }
+      } catch (e) { cardScrollPositions = {}; }
+    }
+
+    // 🆕 阅读进度持久化：把当前滚动位置写回 localStorage（节流，避免高频写盘）
+    let _scrollSaveTimer = null;
+    function scheduleSaveCardScroll() {
+      if (_scrollSaveTimer) return;
+      _scrollSaveTimer = setTimeout(() => {
+        _scrollSaveTimer = null;
+        try { localStorage.setItem(CARD_SCROLL_LS_KEY, JSON.stringify(cardScrollPositions)); } catch (e) {}
+      }, 400);
+    }
+
+    // 🆕 退出/隐藏页面时立即落盘，避免最后 400ms 内的滚动位置随节流计时器一起丢失
+    function flushCardScroll() {
+      if (_scrollSaveTimer) { clearTimeout(_scrollSaveTimer); _scrollSaveTimer = null; }
+      try { localStorage.setItem(CARD_SCROLL_LS_KEY, JSON.stringify(cardScrollPositions)); } catch (e) {}
+    }
+
+    // 🆕 统一时间戳来源（performance.now 优先，降级 Date.now），用于 scroll 抑制窗口判定
+    function nowMs() {
+      return (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+    }
+
+    // 🆕 恢复某张卡片 .todo-content 的滚动位置（渲染后调用）
+    //    contentEl 可省略（由调用方传入可省一次 querySelector）
+    function restoreCardScroll(cardEl, contentEl) {
+      if (!cardEl) return;
+      const id = cardEl.dataset && cardEl.dataset.id;
+      const content = contentEl || cardEl.querySelector('.todo-content');
+      if (!id || !content) return;
+      const pos = cardScrollPositions[id];
+      if (typeof pos === 'number' && pos > 0) {
+        content.scrollTop = pos;
+      }
+    }
+
     function renderTodos() {
       const container = document.getElementById('todoList');
       const filtered = filterTodos();
@@ -5338,6 +5500,24 @@
             <div class="checkbox-wrapper" onclick="toggleComplete('${todo.id}')">
               <div class="checkbox ${todo.completed ? 'checked' : ''}"></div>
             </div>
+            ${(() => {
+              // 🆕 首段纯文本标题：仅 MD 模式且能提取到非空标题时，额外显示在 checkbox 旁。
+              // 仅做「额外显示」，正文 .todo-text 保持完整渲染（不删首行）。
+              // 注：标题取「首段」（首个 \n\n 之前整段），不是「首行」——因为标题可能被换行拆开
+              //    （如 <CENTER>\n<BIG>🐲...</BIG>\n</center>，取首行只剩 <CENTER>）。
+              if (getEffectiveRenderMode(todo) !== 'md') return '';
+              const text = todo.text || '';
+              if (!text) return '';
+              const firstLine = (text.split(/\r?\n\r?\n/)[0] || '').split(/\r?\n/)[0] || '';
+              // 特判：仅排除真正「不是内容」的文档头——代码块围栏、frontmatter 分隔、HTML 文档结构、HTML 注释。
+              // 不再排除 # H1 / > 引用 / - 列表 / 1. 列表——extractFirstLineTitle 已经会去掉这些语法前缀，
+              // 用户的核心需求是「首行是文本资料就是文件标题」。
+              if (/^\s*(```|---|<!--|<!?doctype|<html|<head|<script|<style)/i.test(firstLine)) return '';
+              const title = extractFirstLineTitle(text);
+              if (!title) return '';
+              // 限制最大宽度避免挤压右侧 actions
+              return '<span class="todo-card-title" title="' + title.replace(/"/g, '&quot;') + '">' + title + '</span>';
+            })()}
             <div class="todo-actions">
               <button class="return-btn" style="display:none" onclick="navigateBack()" title="返回来源卡片">↩</button>
               <span class="todo-actions-label" title="todo-${todo.id}.json">todo-${todo.id}.json</span>
@@ -5374,6 +5554,74 @@
       buildGrid();
       // 🆕 跳转返回栈：re-render 后按 navStack 恢复「返回」按钮显隐
       if (typeof updateReturnButtons === 'function') updateReturnButtons();
+      // 🆕 阅读进度：渲染后恢复每张卡片 .todo-content 的滚动位置（自动定位到上次阅读位置），
+      //    并给每个内容滚动容器绑 scroll 监听（scroll 不冒泡，需逐个绑定）。
+      // 建一次 id → todo 索引，避免在 forEach 里反复 find（原本是 O(卡片数 × todo 数)）
+      const todoById = new Map(todos.map(t => [t.id, t]));
+      container.querySelectorAll('.todo-item').forEach(card => {
+        const id = card.dataset && card.dataset.id;
+        const content = card.querySelector('.todo-content');
+        if (!id || !content) return;
+        // 🆕 开关：todo JSON 里 "rememberScroll": false 的卡片，不恢复也不记录（默认启用）
+        if (!isScrollMemoryEnabled(todoById.get(id))) return;
+        // 🆕 待恢复目标：图片/嵌入/字体等异步加载会让内容高度在 restore 之后才稳定，
+        //    此时同步设置的 scrollTop 会被浏览器钳制到较小值（图片未加载 content 偏短），
+        //    需在资源就绪后再定位一次。先记下目标，供下方 reapply 使用。
+        const targetPos = cardScrollPositions[id];
+        if (typeof targetPos === 'number' && targetPos > 0) {
+          content.__pendingRestore = targetPos;
+          // 覆盖下方同步 restore 触发的程序化 scroll 事件（非用户手动），避免误判为"用户已滚动"
+          content.__suppressUntil = nowMs() + 200;
+        }
+        restoreCardScroll(card, content);
+        // 🆕 资源就绪后重新应用（图片未加载完成 → scrollTop 被钳制；加载后 content 变高即可定位更深）
+        if (typeof targetPos === 'number' && targetPos > 0) {
+          const reapply = () => {
+            if (!content.__pendingRestore) return;          // 用户已手动滚动 → 取消
+            const pos = content.__pendingRestore;
+            content.__suppressUntil = nowMs() + 200;
+            try { content.scrollTop = pos; } catch (e) {}
+          };
+          content.querySelectorAll('img').forEach(img => {
+            if (!img.complete) {
+              img.addEventListener('load', reapply, { once: true });
+              img.addEventListener('error', reapply, { once: true });
+            }
+          });
+          // 兜底：两帧后（布局稳定）+ 多次超时（覆盖 font/marquee/懒加载/文件嵌入填充后高度变化）
+          if (typeof requestAnimationFrame === 'function') {
+            requestAnimationFrame(() => requestAnimationFrame(reapply));
+          }
+          setTimeout(reapply, 500);
+          setTimeout(reapply, 1200);
+        }
+        if (!content.__scrollBound) {
+          content.__scrollBound = true;
+          // ⚡ 性能：闭包捕获 id / content，滚动回调内不再 querySelector / 读 dataset。
+          //    实测（100 卡片 × 6000 次调用）：每次回调从 4.5μs 降到 0.035μs（约 127 倍）。
+          //    passive:true 声明不会 preventDefault，让滚动走合成器线程、不阻塞帧。
+          content.addEventListener('scroll', () => {
+            // 程序化恢复滚动（reapply/restore）触发的 scroll 事件在抑制窗口内，忽略
+            if (content.__suppressUntil && nowMs() < content.__suppressUntil) return;
+            // 真实用户滚动：取消待恢复（不再被异步 reapply 覆盖），并即时记忆
+            content.__pendingRestore = null;
+            cardScrollPositions[id] = content.scrollTop;
+            scheduleSaveCardScroll();
+          }, { passive: true });
+        }
+      });
+      // 🆕 文件嵌入：异步读取外部文本文件内容填进占位块（不 await，先出画面再补内容）
+      hydrateFileEmbeds(container);
+    }
+
+    // 🆕 离屏填充：把一段 HTML 里的文件嵌入占位填好，返回可直接发送/落盘的 HTML
+    //    用于「卡片独立窗体」「文档窗体」这类把 HTML 交给主进程的场景（新窗体里没有本页脚本）
+    async function hydrateHtmlForExport(html) {
+      if (!html || html.indexOf('data-file-state="pending"') === -1) return html;
+      const tmp = document.createElement('div');
+      tmp.innerHTML = html;
+      await hydrateFileEmbeds(tmp);
+      return tmp.innerHTML;
     }
 
     // 根据卡片面积与「可视父窗口」面积的比例，自动切换「tiny」态：
@@ -5608,18 +5856,19 @@
       return { found, classes: classes.join(' '), clean: clean.trim() };
     }
 
-    // 🆕 卡片链接：把 markdown 里 [文字](card:ID) / [文字](win:ID) / [文字](win-img:URL) / [文字](cur:URL) 转成可点击链接
+    // 🆕 卡片链接：把 markdown 里 [文字](card:ID) / [文字](win:ID) / [文字](win-img:URL) / [文字](cur:URL) / [文字](exec:URL) 转成可点击链接
     //   card:ID    → 跳转到对应卡片（.card-jump-link）
     //   win:ID     → 在新窗口里显示该卡片的 markdown（.card-win-link）
     //   win-img:URL → 在新窗口里居中显示该图片（.card-win-img-link）
     //   cur:URL    → 在原浏览器（当前窗体）就地导航开启（.card-cur-link）；
+    //   exec:URL   → 在系统默认浏览器里打开/执行该文件（.card-exec-link）；
     //                统一规则：不前置任何协议的普通链接（无论 file:// 还是 https://）一律在新窗口开启
     // ID 取目标卡片文件名 todo-ID.json 中的 ID 段；兼容 card:todo-ID.json / card:ID（中英文皆可）
     // 必须在 balanceHtmlTags 之后调用（HTML 已平衡、稳定）。
     function transformCardLinks(html) {
       if (!html) return html;
       return html.replace(/<a\b([^>]*)>([\s\S]*?)<\/a>/gi, (_full, attrsStr, label) => {
-        const hrefMatch = attrsStr.match(/\bhref="((?:card|win-img|win|cur):[^"]*)"/i);
+        const hrefMatch = attrsStr.match(/\bhref="((?:card|win-img|win|cur|exec):[^"]*)"/i);
         if (!hrefMatch) {
           // 🆕 样式前置符号（※ ▣ ◎ ↑ ↓，可组合）：追加对应类并去掉符号，
           //   保留原 <a> 的全部属性（含真实 href，可点击跳转）
@@ -5656,6 +5905,20 @@
           if (!curUrl) return _full;
           const otherAttrs = attrsStr.replace(/\s*href="cur:[^"]*"/i, '');
           return `<a class="card-cur-link${refNumClass}" href="${escapeHtml(curUrl)}"${otherAttrs}>${finalLabel}</a>`;
+        }
+        // 🆕 exec:URL 在系统默认浏览器里打开/执行该文件（HTML 当网页跑、PDF 用阅读器开等）；
+        //   同样需 decode 还原 marked@15 的 percent-encode。保留真实 URL 在 data-exec-url 供点击取用。
+        if (scheme === 'exec') {
+          let execUrl;
+          try { execUrl = decodeURIComponent(href.slice(href.indexOf(':') + 1)).trim(); }
+          catch (_) { execUrl = (href.slice(href.indexOf(':') + 1) || '').trim(); }
+          if (!execUrl) return _full;
+          // 兼容裸路径（无 file:// 前缀）→ 自动补上
+          if (!/^https?:\/\//i.test(execUrl) && !/^file:\/\//i.test(execUrl)) {
+            execUrl = 'file://' + execUrl;
+          }
+          const otherAttrs = attrsStr.replace(/\s*href="exec:[^"]*"/i, '');
+          return `<a class="card-exec-link${refNumClass}" data-exec-url="${escapeHtml(execUrl)}"${otherAttrs}>${finalLabel}</a>`;
         }
         // marked@15 会把中文 URL 自动 percent-encode（易经笔记 → %E6%98%93%E7%BB%8F%E7%AC%94%E8%AE%B0），
         // 必须 decodeURIComponent 还原，否则 data-card-id 选不到对应卡片（querySelector 不自动 unescape）。
@@ -5723,6 +5986,274 @@
       const ta = document.createElement('textarea');
       ta.innerHTML = text;
       return ta.value;
+    }
+
+    // 🆕 从 markdown 文本中提取「第一段纯文本标题」
+    // 规则：取首个空行（\n\n 或 \r\n\r\n）之前的整段内容（允许多行，因为标题可能被换行拆开，如
+    //   <CENTER>
+    //   <BIG>🐲 Markdown 使用样式试验室</BIG>
+    //   </center>
+    //   这种结构若只取首行就只剩 <CENTER>，提取不到标题）。
+    // 去除所有 HTML 标签（<BIG>、<span>、<center> 等）、markdown 标题前缀（# ）、强调符号（** *）、
+    // 围栏代码（`）与首尾空白。
+    // 返回 trim 后的纯文本标题；若为空则返回空字符串（视为无标题）。
+    // 注：浏览器 parse 不到 <script>，但我们只是用 DOMParser/textContent 提取纯文本，不执行，
+    // 所以可安全处理任意用户输入。
+    function extractFirstLineTitle(text) {
+      if (!text) return '';
+      // 取首段（首个 \n\n 之前），允许多行
+      let firstBlock = text.split(/\r?\n\r?\n/)[0] || '';
+      // 若整篇就只有 1 段（无 \n\n）但首段含换行，再尝试只取首行（避免误把后面段落当标题）
+      if (text.indexOf('\n\n') === -1 && text.indexOf('\r\n\r\n') === -1) {
+        firstBlock = firstBlock.split(/\r?\n/)[0] || '';
+      }
+      if (!firstBlock) return '';
+      // 去除 HTML 标签（含 <BIG>、<span>、<center>、<br> 等）以及 <!-- 注释 -->
+      // 用 DOMParser 解析 <、> 边界；用 textarea.innerHTML 也能对付，但 DOMParser 对残缺 HTML 更稳。
+      let plain;
+      try {
+        const doc = new DOMParser().parseFromString('<div>' + firstBlock + '</div>', 'text/html');
+        plain = (doc.body.textContent || '');
+      } catch (e) {
+        // 退化：直接用正则剥标签
+        plain = firstBlock.replace(/<!--[\s\S]*?-->/g, '')
+                          .replace(/<\/?[a-zA-Z][^>]*>/g, '')
+                          .replace(/&nbsp;/g, ' ')
+                          .replace(/&amp;/g, '&')
+                          .replace(/&lt;/g, '<')
+                          .replace(/&gt;/g, '>')
+                          .replace(/&quot;/g, '"')
+                          .replace(/&#39;/g, "'");
+      }
+      // 去除 markdown 强调符号（**bold**、*italic*、`code`）与标题前缀（# / ## 等）
+      plain = plain
+        .replace(/^#+\s*/, '')               // 开头 # / ## / ### …
+        .replace(/^>\s*/, '')                 // 引用块前缀
+        .replace(/^[-*+]\s+/, '')             // 列表前缀
+        .replace(/^\d+\.\s+/, '')             // 有序列表前缀
+        .replace(/`([^`]+)`/g, '$1')          // 行内代码
+        .replace(/\*\*([^*]+)\*\*/g, '$1')    // 加粗
+        .replace(/\*([^*]+)\*/g, '$1')        // 斜体
+        .replace(/__([^_]+)__/g, '$1')        // 加粗（下划线）
+        .replace(/_([^_]+)_/g, '$1')          // 斜体（下划线）
+        .replace(/~~([^~]+)~~/g, '$1')        // 删除线
+        // 仅折叠换行（多行 wrapper 的标题压成一行），保留 NBSP（U+00A0）和普通空格：
+        // 用户故意用 &nbsp; 做标题间隔时不应被压缩。
+        .replace(/\r?\n/g, ' ');
+      return plain.trim();
+    }
+
+    // ============================================================
+    // 🆕 文件嵌入（File Embed）：markdown 里用围栏代码块引用外部文本文件内容
+    //
+    //   写法 —— info string 写文件类型，块内「只写一行路径」：
+    //     ```log
+    //     logs/app.log
+    //     ```
+    //     ```txt:500        ← 冒号后是显示行数，默认 200
+    //     app.log
+    //     ```
+    //   支持路径：绝对路径 / file://URL / 相对 data 目录（logs/app.log）/ 裸档名（app.log）/ ~/
+    //   超出显示行数时给「展开」按钮；文件不存在、二进制、>2MB 显示错误块，不破坏整页渲染。
+    //
+    //   ⚠️ 触发条件（防误伤普通代码块）：info string 必须在白名单，且块内是「单行 +
+    //      形似路径/档名」。多行文本的普通 ```txt 代码块不受任何影响。
+    //   实现：renderMarkdown 同步产出占位 div → 渲染后 hydrateFileEmbeds 异步填内容。
+    // ============================================================
+    const FILE_EMBED_LANGS = new Set([
+      'txt', 'text', 'log', 'file', 'embed', 'csv', 'tsv', 'json', 'ini', 'conf', 'cfg',
+      'yaml', 'yml', 'sql', 'sh', 'bash', 'zsh', 'py', 'js', 'ts', 'jsx', 'tsx',
+      'css', 'html', 'htm', 'xml', 'svg', 'md', 'markdown', 'java', 'go', 'rs', 'php'
+    ]);
+    const FILE_EMBED_DEFAULT_LINES = 200;
+    const FILE_EMBED_CACHE_TTL = 30 * 1000;
+    const fileEmbedCache = new Map(); // 绝对路径 -> { content, ts }，30 秒 TTL（日志会持续追加）
+
+    function decodeHtmlBasic(s) {
+      return String(s)
+        .replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+        .replace(/&quot;/g, '"').replace(/&#39;/g, "'")
+        .replace(/&nbsp;/g, ' ')
+        .replace(/&amp;/g, '&');
+    }
+    function stripHtmlToText(html) {
+      return decodeHtmlBasic(String(html).replace(/<[^>]*>/g, ''));
+    }
+    function escapeAttrForEmbed(s) {
+      return String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
+    // 形似「文件路径 / 档名」才触发；普通一句话文本（如 ```txt 里写 hello）不算
+    function looksLikeFilePath(s) {
+      const t = String(s || '').trim();
+      if (!t || t.length > 512 || /\s/.test(t)) return false;
+      if (/^file:\/\//i.test(t)) return true;
+      if (/^\//.test(t) || /^~/.test(t) || /^[a-zA-Z]:[\\/]/.test(t)) return true;
+      const m = t.match(/\.([a-z0-9]{1,10})$/i);
+      if (m && FILE_EMBED_LANGS.has(m[1].toLowerCase())) return true;
+      return t.indexOf('/') !== -1 || t.indexOf('\\') !== -1;
+    }
+    // 同步：把命中的代码块/行内代码换成占位 div（此时还没读文件）
+    //   支持两种形态：
+    //   ① 块级：<pre><code class="language-txt:50">path</code></pre>（表格外的正常写法）
+    //   ② 行内：<td>...<code>txt:50 path</code>...</td>（GFM 限制：表格单元格内围栏被降级为行内 <code>）
+    function processFileEmbeds(html) {
+      if (!html) return html;
+
+      // ① 块级代码块（原有逻辑）
+      html = html.replace(/<pre><code(?:\s+class="([^"]*)")?>([\s\S]*?)<\/code><\/pre>/g, (match, cls, codeHtml) => {
+        const langMatch = cls && cls.match(/language-([\w:.-]+)/);
+        if (!langMatch) return match;
+        const parts = String(langMatch[1]).split(':');
+        const lang = (parts[0] || '').toLowerCase();
+        if (!FILE_EMBED_LANGS.has(lang)) return match;
+        const raw = stripHtmlToText(codeHtml).trim();
+        if (!looksLikeFilePath(raw)) return match;
+        const lines = parseInt(parts[1], 10);
+        return buildFileEmbedDiv(raw, lang, lines);
+      });
+
+      // ② 行内代码在表格单元格内（GFM 把单元格内围栏降级为 <code> 无 class）
+      //    匹配模式：<td|th 内的 <code>内容</code>，内容形如 "语言:行数 路径" 或 "语言 路径"
+      html = html.replace(/(<(?:td|th)[^>]*>)([\s\S]*?)(<\/(?:td|th)>)/gi, (cellMatch, openTag, cellInner, closeTag) => {
+        // 只处理包含 <code> 且不含已有 .file-embed 的单元格
+        if (!cellInner.includes('<code>') || cellInner.includes('class="file-embed"')) return cellMatch;
+        const newInner = cellInner.replace(/<code>([\s\S]*?)<\/code>/g, (codeMatch, codeText) => {
+          const raw = stripHtmlToText(codeText).trim();
+          // 尝试解析 "语言:行数 路径" 或 "语言 路径" 格式
+          const m = raw.match(/^(\w[.\w-]*)(?::(\d+))?\s+(.+)$/);
+          if (!m) return codeMatch;  // 格式不匹配 → 保持原样
+          const lang = m[1].toLowerCase();
+          if (!FILE_EMBED_LANGS.has(lang)) return codeMatch;
+          const lines = parseInt(m[2], 10);
+          const path = m[3].trim();
+          if (!looksLikeFilePath(path)) return codeMatch;
+          return buildFileEmbedDiv(path, lang, lines);
+        });
+        return openTag + newInner + closeTag;
+      });
+
+      return html;
+    }
+
+    // 构建 file-embed 占位 div（processFileEmbeds 两路共用）
+    function buildFileEmbedDiv(raw, lang, lines) {
+      return '<div class="file-embed" data-file-state="pending"'
+        + ' data-file-src="' + escapeAttrForEmbed(raw) + '"'
+        + ' data-file-lang="' + escapeAttrForEmbed(lang) + '"'
+        + ' data-file-lines="' + (lines > 0 ? lines : FILE_EMBED_DEFAULT_LINES) + '">'
+        + '<div class="file-embed-bar">载入中：' + escapeAttrForEmbed(raw) + '</div>'
+        + '<div class="file-embed-loading">读取中…</div></div>';
+    }
+    // 路径解析：file:// / 绝对路径直接用；裸档名、相对路径、~/ 交主进程按 data 目录解析
+    async function resolveEmbedPath(raw) {
+      let p = String(raw || '').trim().replace(/^["'<]+|["'>]+$/g, '');
+      if (!p) return { error: '路径为空' };
+      const api = window.electronAPI;
+      if (!api || typeof api.invoke !== 'function') return { error: '当前环境不支持读取文件' };
+      if (/^file:\/\//i.test(p)) {
+        let fp = p.replace(/^file:\/\//i, '');
+        try { fp = decodeURIComponent(fp); } catch (_) {}
+        return { path: fp };
+      }
+      if (/^\//.test(p) || /^[a-zA-Z]:[\\/]/.test(p)) return { path: p };
+      try {
+        const res = await api.invoke('resolve-doc-path', { name: p });
+        if (res && res.success) return { path: res.path };
+        return { error: (res && res.error) || ('找不到文件：' + p) };
+      } catch (e) {
+        return { error: (e && e.message) || '路径解析失败' };
+      }
+    }
+    async function readTextFileCached(path) {
+      const hit = fileEmbedCache.get(path);
+      const now = Date.now();
+      if (hit && (now - hit.ts) < FILE_EMBED_CACHE_TTL) return hit.content;
+      const res = await window.electronAPI.invoke('read-text-file', { path });
+      if (!res || !res.success) throw new Error((res && res.error) || '读取文件失败');
+      fileEmbedCache.set(path, { content: res.content, ts: now });
+      return res.content;
+    }
+    function highlightEmbedCode(code, lang) {
+      if (typeof hljs === 'undefined' || !lang || !hljs.getLanguage || !hljs.getLanguage(lang)) return;
+      try { hljs.highlightElement(code); } catch (e) {}
+    }
+    function relayoutAfterEmbed() {
+      // 内容填入后卡片高度变了 → Muuri 重新测量 + tiny 态重算
+      try {
+        if (typeof todoGrid !== 'undefined' && todoGrid && typeof todoGrid.refreshItems === 'function') {
+          todoGrid.refreshItems().layout();
+        }
+        if (typeof applyTinyStates === 'function') applyTinyStates();
+      } catch (e) {}
+    }
+    function renderFileEmbedError(el, label, msg) {
+      el.innerHTML = '';
+      const box = document.createElement('div');
+      box.className = 'file-embed-error';
+      box.textContent = '📄 ' + label + ' — ' + msg;
+      el.appendChild(box);
+      el.dataset.fileState = 'error';
+    }
+    function renderFileEmbed(el, content, lang, lines, label, path) {
+      const all = String(content).replace(/\r\n/g, '\n').replace(/\n+$/, '').split('\n');
+      const total = all.length;
+      const shown = total > lines ? all.slice(0, lines) : all;
+      el.innerHTML = '';
+      const bar = document.createElement('div');
+      bar.className = 'file-embed-bar';
+      bar.textContent = '📄 ' + label + ' · ' + total + ' 行';
+      bar.title = path;
+      el.appendChild(bar);
+      const pre = document.createElement('pre');
+      const code = document.createElement('code');
+      if (lang) code.className = 'language-' + lang;
+      code.textContent = shown.join('\n');   // textContent 赋值：内容永远当纯文本，不解析 HTML
+      pre.appendChild(code);
+      el.appendChild(pre);
+      highlightEmbedCode(code, lang);
+      if (total > lines) {
+        el.classList.add('has-more');
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'file-embed-more';
+        btn.textContent = '▾ 展开剩余 ' + (total - lines) + ' 行（共 ' + total + ' 行）';
+        btn.onclick = function () {
+          code.textContent = all.join('\n');
+          highlightEmbedCode(code, lang);
+          el.classList.remove('has-more');
+          if (btn.parentNode) btn.parentNode.removeChild(btn);
+          relayoutAfterEmbed();
+        };
+        el.appendChild(btn);
+      }
+      el.dataset.fileState = 'done';
+    }
+    // 异步：把 root 内所有 pending 占位填上真实内容（可传离屏 div）
+    async function hydrateFileEmbeds(root) {
+      const scope = root || document;
+      let nodes;
+      try { nodes = scope.querySelectorAll('.file-embed[data-file-state="pending"]'); }
+      catch (e) { return; }
+      if (!nodes || !nodes.length) return;
+      const list = Array.prototype.slice.call(nodes);
+      let changed = false;
+      for (const el of list) {
+        if (el.dataset.fileState !== 'pending') continue;
+        el.dataset.fileState = 'loading';
+        const raw = el.dataset.fileSrc || '';
+        const lines = parseInt(el.dataset.fileLines, 10) || FILE_EMBED_DEFAULT_LINES;
+        const lang = el.dataset.fileLang || '';
+        try {
+          const r = await resolveEmbedPath(raw);
+          if (r.error) throw new Error(r.error);
+          const content = await readTextFileCached(r.path);
+          renderFileEmbed(el, content, lang, lines, raw, r.path);
+        } catch (e) {
+          renderFileEmbedError(el, raw, (e && e.message) || '读取失败');
+        }
+        changed = true;
+      }
+      if (changed) relayoutAfterEmbed();
     }
 
     function renderMarkdown(text, opts) {
@@ -5815,6 +6346,10 @@
       if (typeof marked !== 'undefined') {
         marked.setOptions({ breaks: true, gfm: true });
         html = marked.parse(processed);
+        // 🆕 文件嵌入：```log / ```txt + 单行路径 → 换成占位 div（内容由 hydrateFileEmbeds 异步填）
+        //    必须放在 hljs 之前：hljs 会把无法识别的语言（如 log:50）改写 class 为
+        //    language-plaintext，自定义行数参数就丢了。
+        html = processFileEmbeds(html);
         // GFM: 代码语法高亮后处理
         // marked 输出 <pre><code class="language-xxx">...</code></pre>，
         // 这里用 hljs.highlight() 替换内容为带语法高亮的 HTML。
@@ -6119,7 +6654,10 @@
         if (!style) return m; // 解析失败则保留原样
         var safeAlt = String(alt).replace(/"/g, '&quot;');
         var safeUrl = String(url).replace(/"/g, '&quot;');
-        return '<img src="' + safeUrl + '" alt="' + safeAlt + '" style="' + style + '">';
+        // 🆕 每个转换后的 <img> 后追加 \n\n（空行），确保后续内容（围栏代码块、引用等）
+        //    被 marked 正确识别为独立块级元素。否则 GFM 要求「HTML 块后必须空行」，
+        //    围栏代码块紧跟 <img> 时会被当成纯文本原样输出，导致 processFileEmbeds 匹配不到。
+        return '<img src="' + safeUrl + '" alt="' + safeAlt + '" style="' + style + '">\n\n';
       });
     }
     function parseImageDim(dim) {
@@ -6148,16 +6686,27 @@
         .replace(/\{\{endrow\}\}/g, '<!--IMGROW_END-->');
     }
 
-    // 🆕 并排图组包裹：把 <!--IMGROW_START-->…<!--IMGROW_END--> 之间的所有 <img>
-    //   收进一个 flex 行容器，实现「图片并排」。若无图片则只移除哨兵、保留内部文本。
+    // 🆕 并排图组包裹：把 <!--IMGROW_START-->…<!--IMGROW_END--> 之间的「可并排项」
+    //   收进一个 flex 行容器，实现并排。可并排项 = <img>（图片）与 .file-embed（文本文件嵌入）。
+    //   用 DOMParser 解析以便正确收集嵌套 div 的 .file-embed 占位（正则无法平衡匹配）。
+    //   若无任何可并排项则只移除哨兵、保留内部文本。
     function processImageRows(html) {
-      if (!html) return html;
+      if (!html || typeof DOMParser === 'undefined') return html;
       return html.replace(/<!--IMGROW_START-->([\s\S]*?)<!--IMGROW_END-->/g, function (m, inner) {
-        var imgs = inner.match(/<img\b[^>]*>/gi);
-        if (!imgs || imgs.length === 0) {
+        try {
+          var doc = new DOMParser().parseFromString('<div>' + inner + '</div>', 'text/html');
+          var root = doc.body.firstChild;
+          var items = root.querySelectorAll('img, .file-embed');
+          if (!items || items.length === 0) {
+            return inner.replace(/<!--IMGROW_(?:START|END)-->/g, '');
+          }
+          var row = doc.createElement('div');
+          row.className = 'img-row';
+          Array.prototype.forEach.call(items, function (el) { row.appendChild(el); });
+          return row.outerHTML;
+        } catch (e) {
           return inner.replace(/<!--IMGROW_(?:START|END)-->/g, '');
         }
-        return '<div class="img-row">' + imgs.join('') + '</div>';
       });
     }
 
@@ -8541,7 +9090,7 @@
     }
 
     // 🆕 新窗口查看卡片 markdown：[文字](win:ID) 点击后，在一个独立窗口里渲染该卡片的 markdown
-    function openCardWindow(cardId) {
+    async function openCardWindow(cardId) {
       if (!cardId) return;
       const id = normalizeCardId(cardId);
       if (!id) return;
@@ -8583,6 +9132,8 @@
       const title = '卡片：' + id;
       const dark = document.body.classList.contains('dark');
       if (window.electronAPI && typeof window.electronAPI.invoke === 'function') {
+        // 🆕 新窗体拿到的是静态 HTML，先把嵌入文件内容填好再发送
+        html = await hydrateHtmlForExport(html);
         window.electronAPI.invoke('open-card-window', { id, title, html, dark });
       } else if (typeof showStatus === 'function') {
         showStatus('当前环境不支持打开新窗口', 'error');
@@ -8648,6 +9199,8 @@
         html = renderMarkdown(fence + lang + '\n' + res.content.replace(/[\r\n\s]+$/, '') + '\n' + fence, { force: true });
       }
       const dark = document.body.classList.contains('dark');
+      // 🆕 文档内容里可能也写了 ```log 文件引用：发送前先把嵌入内容填好
+      html = await hydrateHtmlForExport(html);
       api.invoke('open-card-window', { id: name, title: '文档：' + (label || name), html, dark });
     }
 
@@ -8706,14 +9259,39 @@
     }
 
     async function init() {
+      // 🆕 阅读进度：先恢复上次会话记住的卡片滚动位置（localStorage），再渲染
+      loadCardScrollPositions();
       await loadTodos();
       renderTagFilter();
       renderTodos();
       updateStats();
       // 父窗口尺寸变化时，重新判断各卡片是否进入 tiny 态
       window.addEventListener('resize', applyTinyStates);
+      // 🆕 退出/隐藏页面时立即落盘阅读进度，避免最后 400ms 滚动位置丢失
+      window.addEventListener('pagehide', flushCardScroll);
+      window.addEventListener('beforeunload', flushCardScroll);
       // 📋 文件列表下拉：挂触发按钮 + 排序标签的事件，并绑定外部点击关闭面板
       initFileListDropdown();
+      // 🆕 文件嵌入：编辑器预览的赋值点散落多处（切换模式、输入防抖、切页签…），
+      //    用 MutationObserver 一处兜住所有路径：预览内容一变就补填嵌入文件内容。
+      initMdPreviewEmbedObserver();
+    }
+
+    // 🆕 监听 #mdPreview 内容变化，自动补填其中的文件嵌入占位。
+    //    防循环：只处理 data-file-state="pending" 的节点，填完置 done/error，不再命中。
+    let _mdPreviewEmbedTimer = null;
+    function initMdPreviewEmbedObserver() {
+      const preview = document.getElementById('mdPreview');
+      if (!preview || typeof MutationObserver === 'undefined') return;
+      const schedule = () => {
+        if (_mdPreviewEmbedTimer) clearTimeout(_mdPreviewEmbedTimer);
+        _mdPreviewEmbedTimer = setTimeout(() => {
+          _mdPreviewEmbedTimer = null;
+          hydrateFileEmbeds(preview);
+        }, 80);
+      };
+      new MutationObserver(schedule).observe(preview, { childList: true, subtree: true });
+      schedule();
     }
 
     // 📋 文件列表下拉初始化：触发按钮 onclick、排序按钮 onclick、document 级点击关闭
@@ -8761,6 +9339,21 @@
       //（导航走后可用工具栏「后退」返回）
       const curLink = e.target && e.target.closest && e.target.closest('a.card-cur-link');
       if (curLink) return;
+      // 🆕 [文字](exec:URL)：在系统默认浏览器里打开/执行该文件（HTML 当网页、PDF 用阅读器等）
+      const execLink = e.target && e.target.closest && e.target.closest('a.card-exec-link');
+      if (execLink) {
+        e.preventDefault();
+        const url = execLink.getAttribute('data-exec-url') || '';
+        if (!url) return;
+        const api = window.electronAPI;
+        // 优先用 openExternalBrowser（IPC → shell.openExternal），降级直接 shell
+        if (api && typeof api.openExternalBrowser === 'function') {
+          api.openExternalBrowser(url).catch(() => {});
+        } else if (api && typeof api.openExternal === 'function') {
+          api.openExternal(url).catch(() => {});
+        }
+        return;
+      }
       // 🆕 [文字](win:ID)：在新窗口显示该卡片 markdown
       const winLink = e.target && e.target.closest && e.target.closest('a.card-win-link');
       if (winLink) {

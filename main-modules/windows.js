@@ -5,6 +5,7 @@
 const { BrowserWindow, ipcMain, clipboard, nativeImage, app, dialog } = require('electron');
 const path = require('path');
 const fs = require('fs');
+const os = require('os');
 
 // 应用根目录（本模组位于 main-modules/ 子目录，回退一级即 electron-crawler 根）
 const APP_ROOT = path.join(__dirname, '..');
@@ -448,15 +449,32 @@ function init(shared) {
 
   // 🆕 裸档名解析：[文字](win:文件名) 只写档名时，默认在与卡片相同的资料目录（PLUGINS_DATA_DIR）查找，
   //    与 win:卡片ID 的定位逻辑保持一致。命中返回绝对路径，未命中返回 success:false。
+  // 🆕 支持「裸档名 + 相对子路径 + ~/」：markdown 文件嵌入用 ```log logs/app.log 这类写法，
+  //    基准目录仍是资料目录（与 win: 定位逻辑一致）。
+  //    绝对路径由渲染进程直接交给 read-text-file，不走这里。
   ipcMain.handle('resolve-doc-path', async (event, payload) => {
     const name = (payload && payload.name) || '';
-    if (!name || name.includes('/') || name.includes('\\') || name.startsWith('~')) {
-      return { success: false, error: '非裸档名，不解析' };
+    if (!name) return { success: false, error: '空路径' };
+    if (name.startsWith('/') || /^[a-zA-Z]:[\\/]/.test(name) || /^file:\/\//i.test(name)) {
+      return { success: false, error: '绝对路径无需解析' };
     }
     const dir = PLUGINS_DATA_DIR;
     if (!dir) return { success: false, error: '资料目录未配置' };
-    const full = path.join(dir, name);
-    if (!fs.existsSync(full)) return { success: false, error: '文件不存在' };
+    let rel = name;
+    if (rel === '~' || rel.startsWith('~/')) rel = path.join(os.homedir(), rel.slice(1));
+    // 🆕 剥离多余的 data/ 前缀：PLUGINS_DATA_DIR 本身已是 xxx/data/，
+    //    用户常写 data/scripts.txt（意为"项目 data 目录下的 scripts.txt"），
+    //    若不剥离会拼成 xxx/data/data/scripts.txt 导致"文件不存在"。
+    if (/^data[\\/]/i.test(rel)) rel = rel.replace(/^[Dd][Aa][Tt][Aa][\\/]+/, '');
+    const full = path.resolve(dir, rel);
+    // 路径穿越防护：解析结果必须仍在资料目录或用户目录内
+    const base = path.resolve(dir);
+    const home = path.resolve(os.homedir());
+    const inside = (p, root) => p === root || p.startsWith(root + path.sep);
+    if (!inside(full, base) && !inside(full, home)) {
+      return { success: false, error: '路径越界：' + name };
+    }
+    if (!fs.existsSync(full)) return { success: false, error: '文件不存在：' + name };
     return { success: true, path: full };
   });
 
