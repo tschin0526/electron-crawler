@@ -3085,6 +3085,7 @@
     <div class="todo-toolbar" data-page-node-id="VOMxxUyvRzOkFkbZmlZMF4">
       <div class="btn-group" data-page-node-id="UlLnfiTwpKi0LmsjDpH1GD">
         <button class="btn btn-primary" onclick="openAddModal()" title="添加文件" data-page-node-id="JZ4R7jBK2QWolHWtvVUnKE">➕</button>
+        <button class="btn btn-primary" onclick="openEditQuick()" title="编辑最近的文件" data-page-node-id="tU3Jm5xWcN9oQe1h0kZ7Rp">✏️</button>
       </div>
       <div class="search-wrapper" data-page-node-id="lpsvAbEpZ8FVZnprD6mZJI">
         <span class="search-box-wrap">
@@ -5911,6 +5912,7 @@
     // ============================================================
     let editorTabs = [];      // [{ key, type, id, title, path, extType, dirty }]
     let activeTabKey = null;  // 当前页签的 key
+    let lastActiveTabKey = null;  // 上次离开编辑器时的活动页签 key（用于「编辑」按钮停驻）
     const EDITOR_TABS_LS_KEY = 'todolist-editor-tabs-v1';
     // 页签只显示标题文字，类型不占版面 —— 改在 title 提示里给出（悬停可见）
     const SHEET_TAB_TYPE_LABEL = { todo: 'todo 卡片', md: 'MD 文件', json: 'JSON 文件', html: 'HTML 文件', ext: '外部文件' };
@@ -8643,6 +8645,20 @@
       captureEditSnapshot();
     }
 
+    // 🆕 「编辑」按钮：若存在页签，停驻在上次离开时的活动页签；否则打开空白编辑器
+    function openEditQuick() {
+      // 有页签 → 停驻到上次离开的活动页签（页签被手动关闭/清空则回退到空白态）
+      if (editorTabs.length > 0) {
+        const targetKey = (lastActiveTabKey && editorTabs.some(t => t.key === lastActiveTabKey))
+          ? lastActiveTabKey
+          : editorTabs[editorTabs.length - 1].key;
+        activateSheetTab(targetKey);
+        return;
+      }
+      openAddModal();
+      document.getElementById('modalTitle').textContent = '编辑文件';
+    }
+
     function openEditModal(id) {
       const todo = todos.find(t => t.id === id);
       if (!todo) return;
@@ -9190,6 +9206,8 @@
       }
       // 🆕 底部 Sheet 页签：关闭前把"是否有未保存改动"记到页签上（必须在 editSnapshot 清空之前）
       markCurrentTabDirty();
+      // 🆕 「编辑」按钮停驻：记住本次离开时的活动页签，下次点「编辑」直接回到它
+      if (activeTabKey) lastActiveTabKey = activeTabKey;
       activeTabKey = null;
       renderSheetTabs();
       // 模态框完全关闭后清空未保存检测快照
