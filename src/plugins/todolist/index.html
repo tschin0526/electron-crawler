@@ -4508,6 +4508,8 @@
         genMdBtn.style.display = 'none';
         genHtmlBtn.style.display = 'none';
       }
+      // 🆕 编辑器视图记忆：切换模式后，恢复到当前可见容器（编辑文本 / 预览）的上次滚动位置
+      restoreEditorViewAll();
     }
 
     // 搜索功能
@@ -5517,6 +5519,105 @@
       // 🆕 一并落盘画廊画面滚动位置
       if (_galleryScrollSaveTimer) { clearTimeout(_galleryScrollSaveTimer); _galleryScrollSaveTimer = null; }
       try { localStorage.setItem(GALLERY_SCROLL_LS_KEY, JSON.stringify(galleryScrollTop)); } catch (e) {}
+      // 🆕 一并落盘编辑器视图（编辑文本 / 预览）滚动位置
+      if (_editorViewSaveTimer) { clearTimeout(_editorViewSaveTimer); _editorViewSaveTimer = null; }
+      try { localStorage.setItem(EDITOR_VIEW_LS_KEY, JSON.stringify(editorViewMemory)); } catch (e) {}
+    }
+
+    // 🆕 编辑器视图记忆（编辑文本 / 预览 的滚动位置）——「全方位」阅读进度记忆
+    //    把原先只作用于 Gallery 卡片 .todo-content 的阅读进度记忆，延伸到双击卡片 / 打开文件后的
+    //    编辑器里：编辑文本（textarea）与预览（.md-preview）的滚动位置都能记住，关闭再开回到原处。
+    //    存储结构：{ [docKey]: { md:top, html:top, json:top, preview:top } }
+    //      docKey 形如：todo:<id> / md:<id> / json:<id> / html:<id> / ext:<绝对路径>
+    //    绝不与 todo JSON 混存（遵守既有约定：运行时位置记忆只走 localStorage）。
+    let editorViewMemory = {};
+    let currentEditorDocKey = null;
+    const EDITOR_VIEW_LS_KEY = 'todolist-editor-view-v1';
+
+    function loadEditorViewMemory() {
+      editorViewMemory = {};
+      try {
+        const raw = localStorage.getItem(EDITOR_VIEW_LS_KEY);
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (parsed && typeof parsed === 'object') editorViewMemory = parsed;
+        }
+      } catch (e) { editorViewMemory = {}; }
+    }
+
+    let _editorViewSaveTimer = null;
+    function scheduleSaveEditorView() {
+      if (_editorViewSaveTimer) return;
+      _editorViewSaveTimer = setTimeout(() => {
+        _editorViewSaveTimer = null;
+        try { localStorage.setItem(EDITOR_VIEW_LS_KEY, JSON.stringify(editorViewMemory)); } catch (e) {}
+      }, 400);
+    }
+
+    // 立即落盘（关闭 / 退出页面时调用，避免最后 400ms 内的滚动位置随节流计时器丢失）
+    function flushEditorView() {
+      if (_editorViewSaveTimer) { clearTimeout(_editorViewSaveTimer); _editorViewSaveTimer = null; }
+      try { localStorage.setItem(EDITOR_VIEW_LS_KEY, JSON.stringify(editorViewMemory)); } catch (e) {}
+    }
+
+    // 绑定编辑器 4 个滚动容器的 scroll 监听（仅一次）。滚动时把对应 role 的位置写入记忆。
+    // passive:true + 闭包捕获 role/el，与 Gallery 卡片同款高性能写法。
+    function bindEditorScrollMemory() {
+      const map = [['md', 'taskText'], ['html', 'htmlText'], ['json', 'jsonText'], ['preview', 'mdPreview']];
+      map.forEach(([role, id]) => {
+        const el = document.getElementById(id);
+        if (!el || el.__editorScrollBound) return;
+        el.__editorScrollBound = true;
+        const roleKey = role, elRef = el;
+        el.addEventListener('scroll', () => {
+          if (!currentEditorDocKey) return;
+          // 程序化恢复滚动（restoreEditorScroll）在抑制窗口内，忽略，避免误覆盖
+          if (elRef.__suppressUntil && nowMs() < elRef.__suppressUntil) return;
+          let mem = editorViewMemory[currentEditorDocKey];
+          if (!mem) mem = editorViewMemory[currentEditorDocKey] = {};
+          mem[roleKey] = elRef.scrollTop;
+          scheduleSaveEditorView();
+        }, { passive: true });
+      });
+    }
+
+    // 恢复某 role 对应容器的滚动位置（异步资源加载后高度变化，再定位一次）
+    function restoreEditorScroll(role) {
+      if (!currentEditorDocKey) return;
+      const mem = editorViewMemory[currentEditorDocKey];
+      if (!mem) return;
+      const top = mem[role];
+      if (typeof top !== 'number' || top <= 0) return;
+      const id = role === 'md' ? 'taskText' : role === 'html' ? 'htmlText' : role === 'json' ? 'jsonText' : 'mdPreview';
+      const el = document.getElementById(id);
+      if (!el || el.style.display === 'none') return;
+      // 抑制窗口拉长到 350ms：覆盖 open* 里 resetEditorScrollToTop() 的 rAF 重置（~16ms 会把位置清零），
+      // 让本函数后续的 rAF / setTimeout 二次定位最终胜出，避免恢复的位置被重置成 0。
+      el.__suppressUntil = nowMs() + 350;
+      try { el.scrollTop = top; } catch (e) {}
+      // rAF 二次定位：在 resetEditorScrollToTop 的 rAF（先入队）之后执行，确保覆盖其清零
+      if (typeof requestAnimationFrame === 'function') {
+        requestAnimationFrame(() => {
+          if (!el || el.style.display === 'none') return;
+          el.__suppressUntil = nowMs() + 350;
+          try { el.scrollTop = top; } catch (e) {}
+        });
+      }
+      // 图片/字体/文件嵌入异步加载后内容变高，同步定位可能被钳制，资源就绪后再定位一次
+      setTimeout(() => {
+        if (!el || el.style.display === 'none') return;
+        el.__suppressUntil = nowMs() + 350;
+        try { el.scrollTop = top; } catch (e) {}
+      }, 300);
+    }
+
+    // 按当前 previewMode 恢复当前可见容器的滚动位置
+    function restoreEditorViewAll() {
+      if (!currentEditorDocKey) return;
+      if (previewMode === 0) restoreEditorScroll('md');
+      else if (previewMode === 1 || previewMode === 3 || previewMode === 5) restoreEditorScroll('preview');
+      else if (previewMode === 2) restoreEditorScroll('html');
+      else if (previewMode === 4) restoreEditorScroll('json');
     }
 
     // 🆕 统一时间戳来源（performance.now 优先，降级 Date.now），用于 scroll 抑制窗口判定
@@ -7941,6 +8042,8 @@
       currentMdId = null;
       currentJsonId = null;
       currentHtmlId = null;
+      // 🆕 编辑器视图记忆：新增文档无既有位置，置空（不恢复也不误写）
+      currentEditorDocKey = null;
       document.getElementById('modalTitle').textContent = '添加文件';
       activeFileTab = 'todo';
       updateFileTypeTabs();
@@ -8003,6 +8106,8 @@
       currentMdId = null;
       currentJsonId = null;
       currentHtmlId = null;
+      // 🆕 编辑器视图记忆：标记当前文档（恢复滚动位置用）
+      currentEditorDocKey = 'todo:' + id;
       document.getElementById('modalTitle').textContent = '编辑文件';
       activeFileTab = 'todo';
       updateFileTypeTabs();
@@ -8039,6 +8144,8 @@
       document.getElementById('taskText').focus();
       autoGrowTextarea(document.getElementById('taskText'));
       resetEditorScrollToTop();
+      // 🆕 编辑器视图记忆：恢复到上次离开的编辑文本滚动位置（有记忆才定位，否则保持顶部）
+      restoreEditorViewAll();
       resetEditorHistory(document.getElementById('taskText'));
       resetEditorHistory(document.getElementById('htmlText'));
       resetEditorHistory(document.getElementById('jsonText'));
@@ -8062,6 +8169,8 @@
         currentMdId = id;
         currentJsonId = null;
         currentHtmlId = null;
+        // 🆕 编辑器视图记忆：标记当前文档（恢复滚动位置用）
+        currentEditorDocKey = 'md:' + id;
         activeFileTab = 'md';
         document.getElementById('modalTitle').textContent = '编辑 MD 文件';
         document.getElementById('taskText').value = result.content || '';
@@ -8095,6 +8204,8 @@
         textarea.focus();
         autoGrowTextarea(textarea);
         resetEditorScrollToTop();
+        // 🆕 编辑器视图记忆：恢复到上次离开的编辑文本滚动位置（有记忆才定位，否则保持顶部）
+        restoreEditorViewAll();
         resetEditorHistory(textarea);
         resetEditorHistory(htmlTextarea);
         captureEditSnapshot();
@@ -8122,6 +8233,8 @@
         currentMdId = null;
         currentHtmlId = null;
         currentJsonId = id;
+        // 🆕 编辑器视图记忆：标记当前文档（恢复滚动位置用）
+        currentEditorDocKey = 'json:' + id;
         activeFileTab = 'json';
         document.getElementById('modalTitle').textContent = '编辑 ' + id + '.json';
         document.getElementById('taskText').value = '';
@@ -8162,6 +8275,8 @@
         jsonTextarea.focus();
         autoGrowTextarea(jsonTextarea);
         resetEditorScrollToTop();
+        // 🆕 编辑器视图记忆：恢复到上次离开的编辑文本滚动位置（有记忆才定位，否则保持顶部）
+        restoreEditorViewAll();
         resetEditorHistory(jsonTextarea);
         captureEditSnapshot();
       } catch (e) {
@@ -8188,6 +8303,8 @@
         currentMdId = null;
         currentJsonId = null;
         currentHtmlId = id;
+        // 🆕 编辑器视图记忆：标记当前文档（恢复滚动位置用）
+        currentEditorDocKey = 'html:' + id;
         activeFileTab = 'html';
         document.getElementById('modalTitle').textContent = '编辑 ' + id + '.html';
         document.getElementById('taskText').value = '';
@@ -8228,6 +8345,8 @@
         htmlTextarea.focus();
         autoGrowTextarea(htmlTextarea);
         resetEditorScrollToTop();
+        // 🆕 编辑器视图记忆：恢复到上次离开的编辑文本滚动位置（有记忆才定位，否则保持顶部）
+        restoreEditorViewAll();
         resetEditorHistory(htmlTextarea);
         captureEditSnapshot();
       } catch (e) {
@@ -8492,6 +8611,9 @@
       currentMdId = null;
       currentJsonId = null;
       currentHtmlId = null;
+      // 🆕 编辑器视图记忆：关闭时立即落盘最后滚动位置，并清除当前文档标识
+      flushEditorView();
+      currentEditorDocKey = null;
     }
 
     function handleFileSelect(event) {
@@ -9101,6 +9223,8 @@
         currentMdId = null;
         currentJsonId = null;
         currentHtmlId = null;
+        // 🆕 编辑器视图记忆：标记当前文档（恢复滚动位置用）
+        currentEditorDocKey = 'ext:' + fullPath;
 
         const textarea = document.getElementById('taskText');
         const htmlTextarea = document.getElementById('htmlText');
@@ -9149,6 +9273,8 @@
           textarea.focus();
           autoGrowTextarea(textarea);
           resetEditorScrollToTop();
+          // 🆕 编辑器视图记忆：恢复到上次离开的编辑文本滚动位置（有记忆才定位，否则保持顶部）
+          restoreEditorViewAll();
           resetEditorHistory(textarea);
           captureEditSnapshot();
 
@@ -9172,6 +9298,8 @@
           jsonTextarea.focus();
           autoGrowTextarea(jsonTextarea);
           resetEditorScrollToTop();
+          // 🆕 编辑器视图记忆：恢复到上次离开的编辑文本滚动位置（有记忆才定位，否则保持顶部）
+          restoreEditorViewAll();
           resetEditorHistory(jsonTextarea);
           captureEditSnapshot();
 
@@ -9195,6 +9323,8 @@
           htmlTextarea.focus();
           autoGrowTextarea(htmlTextarea);
           resetEditorScrollToTop();
+          // 🆕 编辑器视图记忆：恢复到上次离开的编辑文本滚动位置（有记忆才定位，否则保持顶部）
+          restoreEditorViewAll();
           resetEditorHistory(htmlTextarea);
           captureEditSnapshot();
         }
@@ -9501,6 +9631,8 @@
       loadCardScrollPositions();
       // 🆕 画廊画面滚动位置：恢复上次离开时的整体 viewport 位置
       loadGalleryScroll();
+      // 🆕 编辑器视图记忆：恢复上次会话记住的编辑器（编辑文本 / 预览）滚动位置
+      loadEditorViewMemory();
       await loadTodos();
       renderTagFilter();
       renderTodos();
@@ -9512,6 +9644,8 @@
       // 🆕 退出/隐藏页面时立即落盘阅读进度，避免最后 400ms 滚动位置丢失
       window.addEventListener('pagehide', flushCardScroll);
       window.addEventListener('beforeunload', flushCardScroll);
+      // 🆕 编辑器视图记忆：绑定编辑器 4 个滚动容器的 scroll 监听（仅一次）
+      bindEditorScrollMemory();
       // 📋 文件列表下拉：挂触发按钮 + 排序标签的事件，并绑定外部点击关闭面板
       initFileListDropdown();
       // 🆕 文件嵌入：编辑器预览的赋值点散落多处（切换模式、输入防抖、切页签…），
