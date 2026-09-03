@@ -2676,6 +2676,24 @@
     body.dark .card-exec-link:hover {
       color: #86efac;
     }
+    /* 🆕 编辑链接：[文字](edit:URL) 点开后用 todo 编辑器编辑该文件（紫色调，区别于 exec 绿、外链蓝） */
+    .card-edit-link {
+      cursor: pointer;
+      color: #7c3aed;
+      text-decoration: underline dashed;
+      text-decoration-thickness: 1px;
+      text-underline-offset: 2px;
+    }
+    .card-edit-link:hover {
+      color: #6d28d9;
+      text-decoration: underline solid;
+    }
+    body.dark .card-edit-link {
+      color: #c4b5fd;
+    }
+    body.dark .card-edit-link:hover {
+      color: #ddd6fe;
+    }
 
     /* 🆕 跳转后的「返回」按钮：显示在目的卡片头部菜单条，点它回到来源卡片 */
     .todo-actions .return-btn {
@@ -3284,6 +3302,7 @@
               <button class="md-tool-dropitem" onclick="insertMd('[', '](win-img:URL)')" data-page-node-id="QQxf9LKA15jgjTHb7iUzCY">新窗图片 <kbd data-page-node-id="LHAsO0DhJiJs2D4DMvYPGJ">win-img:</kbd></button>
               <button class="md-tool-dropitem" onclick="insertMd('[', '](cur:URL)')" data-page-node-id="jyaC0TgfyD0HhLAKxroUzm">当前窗打开 <kbd data-page-node-id="3BIJMlklQ7KujFMDD8j41d">cur:</kbd></button>
               <button class="md-tool-dropitem" onclick="insertMd('[', '](exec:file:///路径/到/文件.html)')" data-page-node-id="FEexecTpl">浏览器执行 <kbd data-page-node-id="FEexecKbd">exec:</kbd></button>
+              <button class="md-tool-dropitem" onclick="insertMd('[', '](edit:file:///路径/到/文件.md)')" data-page-node-id="FEeditTpl">编辑器编辑 <kbd data-page-node-id="FEeditKbd">edit:</kbd></button>
               <div class="md-tool-dropgroup" data-page-node-id="rGAvGVU0c0Ewe47PdCfTmO">引用样式</div>
               <button class="md-tool-dropitem" onclick="insertMd('※', '')" data-page-node-id="wLTTej5GaGL5KFD2TG9ouq">圆圈 <kbd data-page-node-id="yjkIdvveYZKtt48Vdvvlpj">※</kbd></button>
               <button class="md-tool-dropitem" onclick="insertMd('▣', '')" data-page-node-id="3bnD6RkNc8O11DOthpEDxn">矩形 <kbd data-page-node-id="nWxYnsZG1QxSBT1XBo9hq4">▣</kbd></button>
@@ -3432,6 +3451,7 @@
           <button class="file-type-tab" id="tabJsonFile" type="button" onclick="switchFileTypeTab('json')" data-page-node-id="QsIiQztFZUBCHLHHJ0M7w5">JSON文件</button>
         </div>
         <div class="modal-header-actions" data-page-node-id="IBqvx04ddWYZeUk26Q0Bbo">
+          <button class="btn btn-text btn-secondary" id="editorReturnBtn" onclick="returnFromEditorLink()" style="display:none;color:#7c3aed;border:1px solid #7c3aed;" title="返回来源卡片（关闭编辑器并滚回原卡片位置）">↩ 返回</button>
           <button class="btn btn-text btn-secondary" id="emailBtn" onclick="emailTodoFromModal()" style="background:transparent;color:#8b5cf6;border:1px solid #8b5cf6;" title="将当前任务内容发送邮件" data-page-node-id="jFZCYv5vTMUoM55ImmpHAh">📧 发邮件</button>
           <button class="btn btn-text btn-secondary" onclick="closeModal()" data-page-node-id="vmsMk5SyBCqpSx17cKICP9">取消</button>
           <button class="btn btn-text btn-primary" onclick="saveTask()" data-page-node-id="DpFPDrKnUkj2ujsKQEjFGA">保存</button>
@@ -6000,13 +6020,31 @@
     function transformCardLinks(html) {
       if (!html) return html;
       return html.replace(/<a\b([^>]*)>([\s\S]*?)<\/a>/gi, (_full, attrsStr, label) => {
-        const hrefMatch = attrsStr.match(/\bhref="((?:card|win-img|win|cur|exec):[^"]*)"/i);
+        const hrefMatch = attrsStr.match(/\bhref="((?:card|win-img|win|cur|exec|edit):[^"]*)"/i);
         if (!hrefMatch) {
           // 🆕 样式前置符号（※ ▣ ◎ ↑ ↓，可组合）：追加对应类并去掉符号，
           //   保留原 <a> 的全部属性（含真实 href，可点击跳转）
           const parsed = parseRefMarks(label);
           if (parsed.found) {
             return `<a class="${parsed.classes}"${attrsStr}>${parsed.clean}</a>`;
+          }
+          // 🆕 兼容：用户可能把 edit: 写在链接文字里而非 href 中
+          //   例：[edit:文件名](file:///路径/到/文件.md)
+          //   检测条件：文字以 "edit:" 开头（大小写不敏感）且 href 是 file:// URL
+          const rawHref = (attrsStr.match(/\bhref="([^"]*)"/i) || [])[1] || '';
+          const trimmedLabel = label.replace(/^[\s※▣◎↑↓]+/, ''); // 去掉样式前缀后检测
+          if (/^edit:/i.test(trimmedLabel) && /^file:\/\//i.test(rawHref)) {
+            let editUrl = rawHref.replace(/^file:\/\//i, '');
+            try { editUrl = decodeURIComponent(editUrl); } catch (_) {}
+            editUrl = editUrl.trim();
+            if (!editUrl) return _full;
+            const refParsed2 = parseRefMarks(label);
+            const finalLabel2 = refParsed2.found ? refParsed2.clean : label;
+            const refNumClass2 = refParsed2.found ? (' ' + refParsed2.classes) : '';
+            // 去掉文字里的 "edit:" 前缀（只去第一个，保留其余文字）
+            const displayLabel = finalLabel2.replace(/^edit:\s*/i, '');
+            const cleanAttrs = attrsStr.replace(/\s*href="[^"]*"/i, '');
+            return `<a class="card-edit-link${refNumClass2}" data-edit-path="${escapeHtml('file://' + editUrl)}"${cleanAttrs}>${displayLabel}</a>`;
           }
           return _full;
         }
@@ -6051,6 +6089,20 @@
           }
           const otherAttrs = attrsStr.replace(/\s*href="exec:[^"]*"/i, '');
           return `<a class="card-exec-link${refNumClass}" data-exec-url="${escapeHtml(execUrl)}"${otherAttrs}>${finalLabel}</a>`;
+        }
+        // 🆕 edit:URL 用 todo 编辑器打开该文件进行编辑（.md/.html/.json 等本地文件），
+        //   由链接开启的编辑器会显示「返回」按钮，关闭后自动滚回来源卡片。
+        //   同样需 decode 还原 marked@15 的 percent-encode；裸路径自动补 file://。
+        if (scheme === 'edit') {
+          let editUrl;
+          try { editUrl = decodeURIComponent(href.slice(href.indexOf(':') + 1)).trim(); }
+          catch (_) { editUrl = (href.slice(href.indexOf(':') + 1) || '').trim(); }
+          if (!editUrl) return _full;
+          if (!/^https?:\/\//i.test(editUrl) && !/^file:\/\//i.test(editUrl)) {
+            editUrl = 'file://' + editUrl;
+          }
+          const otherAttrs = attrsStr.replace(/\s*href="edit:[^"]*"/i, '');
+          return `<a class="card-edit-link${refNumClass}" data-edit-path="${escapeHtml(editUrl)}"${otherAttrs}>${finalLabel}</a>`;
         }
         // marked@15 会把中文 URL 自动 percent-encode（易经笔记 → %E6%98%93%E7%BB%8F%E7%AC%94%E8%AE%B0），
         // 必须 decodeURIComponent 还原，否则 data-card-id 选不到对应卡片（querySelector 不自动 unescape）。
@@ -8427,6 +8479,14 @@
       if (fid) {
         setTimeout(() => focusResizedCard(fid), 320);
       }
+      // 🆕 由链接（edit:）开启的编辑器：关闭后返回来源卡片（滚动 + 金边心跳），并隐藏「返回」按钮
+      if (editorReturnSourceId) {
+        const sid = editorReturnSourceId;
+        editorReturnSourceId = null;
+        const rbtn = document.getElementById('editorReturnBtn');
+        if (rbtn) rbtn.style.display = 'none';
+        setTimeout(() => focusResizedCard(sid), 320);
+      }
       // 模态框完全关闭后清空未保存检测快照
       editSnapshot = null;
       currentMdId = null;
@@ -8782,6 +8842,8 @@
     // 📂 外部文件模式：非 null 时表示当前正在编辑一个「临时浏览目录」下的文件，值为绝对路径
     // 保存时走 saveFileByPath 而非默认的 PLUGINS_DATA_DIR 下的 IPC
     let externalFilePath = null;
+    // 🆕 由链接（edit:）开启编辑器时，记录来源卡片 id，供编辑器「返回」按钮关闭后滚回原卡片位置
+    let editorReturnSourceId = null;
 
     function toggleFileList() {
       const trigger = document.getElementById('fileListTrigger');
@@ -9144,6 +9206,37 @@
       }
     }
 
+    // 🆕 由 edit: 链接触发：用 todo 编辑器打开本地文件进行编辑，并记录来源卡片供「返回」。
+    //   复用 openExternalFile（externalFilePath 模式，保存走 saveFileByPath），其余编辑器能力完全一致。
+    async function openFileInEditorForEdit(url, sourceId) {
+      // url 可能带 file:// 前缀（或裸路径已在上游补过），统一去掉前缀得到真实路径
+      let fsPath = url.replace(/^file:\/\//i, '');
+      try { fsPath = decodeURIComponent(fsPath); } catch (_) {}
+      if (!fsPath) return;
+      const ext = (fsPath.split('.').pop() || '').toLowerCase();
+      let type = 'md';
+      if (ext === 'html' || ext === 'htm') type = 'html';
+      else if (ext === 'json') type = 'json';
+      // 非 md/html/json 的纯文本（txt/log/...）按 md 文本模式打开（即纯文本编辑）
+      editorReturnSourceId = sourceId || null;
+      const fileName = fsPath.split('/').pop() || fsPath;
+      await openExternalFile(fsPath, fileName, type);
+      // 仅当编辑器确实打开成功时才显示「返回」按钮（打开失败则弹窗提示，不挂返回态）
+      const overlay = document.getElementById('modalOverlay');
+      if (overlay && overlay.style.display === 'flex' && editorReturnSourceId) {
+        const rbtn = document.getElementById('editorReturnBtn');
+        if (rbtn) rbtn.style.display = '';
+      } else {
+        editorReturnSourceId = null;
+      }
+    }
+
+    // 🆕 由链接（edit:）开启编辑器后的「返回」按钮：直接关闭编辑器
+    //   （若有未保存变更会先弹「问询后存档」确认框），关闭后滚回来源卡片由 closeModal 依据 editorReturnSourceId 处理。
+    function returnFromEditorLink() {
+      closeModal();
+    }
+
     // 选中某个文件 → 跳到对应卡片 + 金边闪烁 3 秒（复用保存/拖拽尺寸后的同款动画）
     function selectFileListItem(id, type) {
       closeFileList();
@@ -9501,6 +9594,17 @@
         } else if (api && typeof api.openExternal === 'function') {
           api.openExternal(url).catch(() => {});
         }
+        return;
+      }
+      // 🆕 [文字](edit:URL)：用 todo 编辑器打开该文件编辑，并记录来源卡片供「返回」
+      const editLink = e.target && e.target.closest && e.target.closest('a.card-edit-link');
+      if (editLink) {
+        e.preventDefault();
+        const raw = editLink.getAttribute('data-edit-path') || '';
+        if (!raw) return;
+        const sourceCard = editLink.closest('.todo-item');
+        const sourceId = sourceCard ? sourceCard.dataset.id : null;
+        openFileInEditorForEdit(raw, sourceId);
         return;
       }
       // 🆕 [文字](win:ID)：在新窗口显示该卡片 markdown
