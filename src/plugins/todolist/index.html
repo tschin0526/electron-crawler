@@ -1705,14 +1705,20 @@
     }
 
     /* ── 编辑 modal 新布局：主区(编辑+渲染) 占主要画面 + 侧边浮动操作区 ── */
+    /* 2 行 × 3 列：
+       行1 = 主区(编辑/预览) | 侧栏手柄 | 操作侧栏
+       行2 = 底部 Sheet 页签栏（横跨全部三列，类 Excel）
+       用 grid 而非 flex-row，才能在不动既有 DOM 顺序的前提下多出一条底栏。 */
     .modal.editor-layout {
-      display: flex;
-      flex-direction: row;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 26px auto;
+      grid-template-rows: minmax(0, 1fr) auto;
       overflow: hidden;
     }
     .editor-main {
-      flex: 1 1 auto;
+      grid-area: 1 / 1 / 2 / 2;
       min-width: 0;
+      min-height: 0;
       height: 100%;
       display: flex;
       flex-direction: column;
@@ -1727,6 +1733,7 @@
     }
     /* 侧边手柄：竖排文字，点击收起/展开操作面板 */
     .editor-sidebar-handle {
+      grid-area: 1 / 2 / 2 / 3;
       flex: 0 0 26px;
       align-self: stretch;
       border: none;
@@ -1768,6 +1775,109 @@
     }
     .editor-sidebar .modal-header-actions .btn { flex: 1; padding: 6px 8px; font-size: 12px; justify-content: center; }
     body.dark .editor-sidebar { border-left-color: #334155; }
+
+    /* ───────────────────────────────────────────────────────────
+       底部 Sheet 页签栏（类 Excel）：列出"曾经开启过的文件"
+       点击页签切换，点 ✕ 关闭该页签。横跨编辑器整个宽度。
+       ─────────────────────────────────────────────────────────── */
+    .editor-sheetbar {
+      grid-area: 2 / 1 / 3 / 4;
+      display: flex;
+      align-items: stretch;
+      height: 34px;
+      min-height: 34px;
+      border-top: 1px solid var(--border-color);
+      background: #f1f5f9;
+      overflow: hidden;
+      user-select: none;
+    }
+    body.dark .editor-sheetbar { background: #0f172a; border-top-color: #334155; }
+
+    .sheet-tab-strip {
+      flex: 1 1 auto;
+      display: flex;
+      align-items: stretch;
+      gap: 3px;
+      padding: 4px 6px;
+      overflow-x: auto;
+      overflow-y: hidden;
+      scrollbar-width: thin;
+    }
+    .sheet-tab-strip::-webkit-scrollbar { height: 5px; }
+    .sheet-tab-strip::-webkit-scrollbar-thumb { background: var(--border-color); border-radius: 3px; }
+    .sheet-tab-strip::-webkit-scrollbar-track { background: transparent; }
+
+    .sheet-tab {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      max-width: 190px;
+      padding: 0 4px 0 9px;
+      border: 1px solid var(--border-color);
+      border-radius: 6px 6px 0 0;
+      background: var(--card-bg);
+      color: var(--text-secondary);
+      font-size: 12px;
+      line-height: 1;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: background 0.15s, color 0.15s, border-color 0.15s;
+    }
+    .sheet-tab:hover { background: var(--primary-light); color: var(--primary-color); }
+    .sheet-tab.active {
+      background: var(--primary-color);
+      border-color: var(--primary-color);
+      color: #fff;
+      font-weight: 600;
+    }
+    body.dark .sheet-tab.active { color: #fff; }
+    .sheet-tab-label { overflow: hidden; text-overflow: ellipsis; }
+    /* 未保存标记：实心圆点（与 VS Code 一致） */
+    .sheet-tab-dirty { flex: 0 0 auto; color: #f59e0b; font-weight: 700; }
+    .sheet-tab.active .sheet-tab-dirty { color: #fde68a; }
+    .sheet-tab-close {
+      flex: 0 0 auto;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 15px;
+      height: 15px;
+      margin-left: 2px;
+      border-radius: 3px;
+      font-size: 10px;
+      line-height: 1;
+      opacity: 0.5;
+    }
+    .sheet-tab-close:hover { opacity: 1; background: rgba(0, 0, 0, 0.14); }
+    body.dark .sheet-tab-close:hover { background: rgba(255, 255, 255, 0.2); }
+    .sheet-tab-empty {
+      align-self: center;
+      font-size: 11px;
+      color: var(--text-secondary);
+      opacity: 0.65;
+      padding-left: 4px;
+    }
+
+    .sheet-bar-actions {
+      flex: 0 0 auto;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      padding: 0 8px;
+      border-left: 1px solid var(--border-color);
+    }
+    body.dark .sheet-bar-actions { border-left-color: #334155; }
+    .sheet-bar-btn {
+      padding: 3px 8px;
+      border: 1px solid var(--border-color);
+      border-radius: 5px;
+      background: transparent;
+      color: var(--text-secondary);
+      font-size: 11px;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    .sheet-bar-btn:hover { background: var(--primary-light); color: var(--primary-color); }
 
     /* 侧抽屉页签：todo卡片 / MD文件 */
     .file-type-tabs {
@@ -3540,6 +3650,14 @@
           </div>
         </div>
       </div>
+
+      <!-- 🆕 底部 Sheet 页签栏（类 Excel）：记录"曾经开启过的文件"，点击切换 / 点 ✕ 关闭 -->
+      <div class="editor-sheetbar" id="editorSheetBar">
+        <div class="sheet-tab-strip" id="sheetTabStrip"></div>
+        <div class="sheet-bar-actions">
+          <button class="sheet-bar-btn" type="button" onclick="closeAllSheetTabs()" title="清空全部页签（不会删除文件）">全部关闭</button>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -3560,8 +3678,8 @@
       <p class="rename-confirm-msg" id="unsavedConfirmMsg" data-page-node-id="B9EQeG06UfjL2pK4oDZbsz">你有未保存的更改，要存档吗？</p>
       <div class="rename-confirm-actions" data-page-node-id="v35c59ZVker30BY9VN8t2G">
         <button class="btn btn-secondary" onclick="cancelUnsavedConfirm()" data-page-node-id="TkVkcS9Tuxk2CJuTq87LtH">取消</button>
-        <button class="btn btn-secondary" onclick="discardAndCloseFromConfirm()" data-page-node-id="bUyVwRGVWFEN1v3DiKKf9f">不保存</button>
-        <button class="btn btn-primary" onclick="saveAndCloseFromConfirm()" data-page-node-id="k97xBzfZOPBRBCqLzNENXB">保存并关闭</button>
+        <button class="btn btn-secondary" id="unsavedConfirmDiscardBtn" onclick="discardAndCloseFromConfirm()" data-page-node-id="bUyVwRGVWFEN1v3DiKKf9f">不保存</button>
+        <button class="btn btn-primary" id="unsavedConfirmSaveBtn" onclick="saveAndCloseFromConfirm()" data-page-node-id="k97xBzfZOPBRBCqLzNENXB">保存并关闭</button>
       </div>
     </div>
   </div>
@@ -5782,6 +5900,270 @@
     // 🆕 统一时间戳来源（performance.now 优先，降级 Date.now），用于 scroll 抑制窗口判定
     function nowMs() {
       return (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+    }
+
+    // ============================================================
+    // 🆕 底部 Sheet 页签（类 Excel）：记录"曾经开启过的文件"
+    //    - 每次打开任何文件（todo 卡片 / MD / JSON / HTML / 外部文件）都登记一个页签
+    //    - 点击页签 = 切换到该文件；点 ✕ = 从页签列表移除（不动磁盘文件）
+    //    - 列表持久化在 localStorage，重启 app 仍在（"曾经开启过"）
+    //    - 页签本身只是一份"索引"，内容永远以磁盘文件为准，故不写回 todo JSON
+    // ============================================================
+    let editorTabs = [];      // [{ key, type, id, title, path, extType, dirty }]
+    let activeTabKey = null;  // 当前页签的 key
+    const EDITOR_TABS_LS_KEY = 'todolist-editor-tabs-v1';
+    // 页签只显示标题文字，类型不占版面 —— 改在 title 提示里给出（悬停可见）
+    const SHEET_TAB_TYPE_LABEL = { todo: 'todo 卡片', md: 'MD 文件', json: 'JSON 文件', html: 'HTML 文件', ext: '外部文件' };
+
+    function loadEditorTabs() {
+      editorTabs = [];
+      try {
+        const raw = localStorage.getItem(EDITOR_TABS_LS_KEY);
+        if (!raw) return;
+        const arr = JSON.parse(raw);
+        if (Array.isArray(arr)) {
+          editorTabs = arr.filter(t => t && typeof t.key === 'string' && typeof t.type === 'string');
+        }
+      } catch (e) { editorTabs = []; }
+    }
+
+    function saveEditorTabs() {
+      try { localStorage.setItem(EDITOR_TABS_LS_KEY, JSON.stringify(editorTabs)); } catch (e) {}
+    }
+
+    // todo 卡片页签的标题：与卡片左上角标题完全同一套提取逻辑（extractFirstLineTitle）。
+    // 它会取「首段」并用 DOMParser 剥掉 <CENTER>/<BIG>/<span> 等 HTML 标签和 markdown 前缀，
+    // 能正确处理多行 wrapper（如 <CENTER>\n<BIG>🐲标题</BIG>\n</center>）；截断交给页签 CSS ellipsis。
+    function todoTabTitle(todo) {
+      const raw = (todo && typeof todo.text === 'string') ? todo.text : '';
+      let s = (typeof extractFirstLineTitle === 'function')
+        ? extractFirstLineTitle(raw)
+        : (raw.split('\n').find(l => l.replace(/<[^>]*>/g, '').trim()) || '');
+      // 任务列表 checkbox 前缀在页签里是纯噪音（extractFirstLineTitle 只剥 `- ` 不剥 `[ ]`）
+      s = s.replace(/^\[[ xX]\]\s*/, '');
+      return s || (todo && todo.id ? ('todo-' + todo.id) : '未命名卡片');
+    }
+
+    // 🆕 启动恢复页签后，用当前 todo 数据刷新 todo 页签的标题：
+    //  1) 卡片改名/正文首段变化后，页签标题跟着刷新；
+    //  2) 修正旧版本存进 localStorage 的脏标题（如 "<center><BIG><BIG…" 这类没剥标签的）。
+    function refreshTodoTabTitles() {
+      if (!editorTabs.length) return;
+      let changed = false;
+      editorTabs.forEach(t => {
+        if (t.type !== 'todo' || !t.id) return;
+        const todo = todos.find(x => x.id === t.id);
+        if (!todo) return; // 卡片已不存在 → 保留原样，等切换时按"已不存在"逻辑移除
+        const title = todoTabTitle(todo);
+        if (title && t.title !== title) { t.title = title; changed = true; }
+      });
+      if (changed) { saveEditorTabs(); renderSheetTabs(); }
+    }
+
+    // 每个「打开编辑器」的入口都调一次：登记/更新页签并置为活动
+    // tab: { key, type, id, title, path, extType }
+    function touchEditorTab(tab) {
+      if (!tab || !tab.key) return;
+      const idx = editorTabs.findIndex(t => t.key === tab.key);
+      if (idx >= 0) {
+        // 保留已记录的 dirty 标记（切换回来时由 captureEditSnapshot 重新校准）
+        editorTabs[idx] = Object.assign({}, editorTabs[idx], tab);
+      } else {
+        editorTabs.push(tab);
+      }
+      activeTabKey = tab.key;
+      // 刚打开的文档必然与快照一致 → 清掉脏标记
+      const cur = editorTabs.find(t => t.key === tab.key);
+      if (cur) delete cur.dirty;
+      saveEditorTabs();
+      renderSheetTabs();
+    }
+
+    // 把当前文档的"是否有未保存改动"写回页签（切换 / 关闭前调用）
+    function markCurrentTabDirty() {
+      if (!activeTabKey) return;
+      const tab = editorTabs.find(t => t.key === activeTabKey);
+      if (!tab) return;
+      if (hasUnsavedChanges()) tab.dirty = true;
+      else delete tab.dirty;
+      saveEditorTabs();
+    }
+
+    // 渲染页签栏（用 DOM API 构建，避免 key 里的引号/路径字符破坏 onclick 字符串）
+    function renderSheetTabs() {
+      const strip = document.getElementById('sheetTabStrip');
+      if (!strip) return;
+      strip.textContent = '';
+      if (!editorTabs.length) {
+        const empty = document.createElement('span');
+        empty.className = 'sheet-tab-empty';
+        empty.textContent = '最近打开的文件会显示在这里';
+        strip.appendChild(empty);
+        return;
+      }
+      const dirtyNow = hasUnsavedChanges();
+      editorTabs.forEach(tab => {
+        const isActive = tab.key === activeTabKey;
+        const isDirty = isActive ? dirtyNow : (tab.dirty === true);
+
+        const el = document.createElement('div');
+        el.className = 'sheet-tab' + (isActive ? ' active' : '');
+        el.dataset.tabKey = tab.key;
+        el.title = (SHEET_TAB_TYPE_LABEL[tab.type] || '文件') + ' · ' + tab.key + (isDirty ? '（有未保存的更改）' : '');
+
+        const label = document.createElement('span');
+        label.className = 'sheet-tab-label';
+        label.textContent = tab.title || tab.id || tab.key;
+        el.appendChild(label);
+
+        if (isDirty) {
+          const dot = document.createElement('span');
+          dot.className = 'sheet-tab-dirty';
+          dot.textContent = '●';
+          dot.title = '有未保存的更改';
+          el.appendChild(dot);
+        }
+
+        const close = document.createElement('span');
+        close.className = 'sheet-tab-close';
+        close.textContent = '✕';
+        close.title = '关闭页签（不删除文件）';
+        el.appendChild(close);
+
+        strip.appendChild(el);
+      });
+      // 页签多到横向溢出时，把活动页签滚进可视区（否则切换过去看不见自己当前在哪）
+      const activeEl = strip.querySelector('.sheet-tab.active');
+      if (activeEl && strip.scrollWidth > strip.clientWidth) {
+        const l = activeEl.offsetLeft, r = l + activeEl.offsetWidth;
+        if (l < strip.scrollLeft) strip.scrollLeft = l - 6;
+        else if (r > strip.scrollLeft + strip.clientWidth) strip.scrollLeft = r - strip.clientWidth + 6;
+      }
+    }
+
+    // 事件委托：一次绑定，覆盖所有动态页签（点 ✕ 关闭 / 点其它区域切换）
+    function bindSheetTabStrip() {
+      const strip = document.getElementById('sheetTabStrip');
+      if (!strip || strip.__sheetBound) return;
+      strip.__sheetBound = true;
+      strip.addEventListener('click', (e) => {
+        const tabEl = e.target.closest('.sheet-tab');
+        if (!tabEl) return;
+        const key = tabEl.dataset.tabKey;
+        if (!key) return;
+        if (e.target.closest('.sheet-tab-close')) { closeSheetTab(key); return; }
+        switchToSheetTab(key);
+      });
+      // 中键关闭（与浏览器标签页一致）
+      strip.addEventListener('auxclick', (e) => {
+        if (e.button !== 1) return;
+        const tabEl = e.target.closest('.sheet-tab');
+        if (tabEl && tabEl.dataset.tabKey) { e.preventDefault(); closeSheetTab(tabEl.dataset.tabKey); }
+      });
+      // 横向滚轮 → 横向滚动页签条
+      strip.addEventListener('wheel', (e) => {
+        if (Math.abs(e.deltaY) <= Math.abs(e.deltaX)) return;
+        strip.scrollLeft += e.deltaY;
+        e.preventDefault();
+      }, { passive: false });
+    }
+
+    // 切换页签：有未保存改动先问询（保存 / 不保存 / 取消），再加载目标文件
+    async function switchToSheetTab(key) {
+      if (key === activeTabKey) return;
+      const tab = editorTabs.find(t => t.key === key);
+      if (!tab) return;
+      if (hasUnsavedChanges()) {
+        openUnsavedConfirm('switch', { key });
+        return;
+      }
+      await activateSheetTab(key);
+    }
+
+    // 真正加载某个页签对应的文件（复用现有 5 个打开入口，不重复实现）
+    async function activateSheetTab(key) {
+      const tab = editorTabs.find(t => t.key === key);
+      if (!tab) return;
+      // 离开前：记录脏标记 + 立即落盘当前文档的滚动位置（用旧的 currentEditorDocKey）
+      markCurrentTabDirty();
+      flushEditorView();
+
+      if (tab.type === 'todo') {
+        if (!todos.some(t => t.id === tab.id)) {
+          alert('该卡片已不存在，已从页签移除');
+          removeSheetTabFromList(key);
+          return;
+        }
+        openEditModal(tab.id);
+      } else if (tab.type === 'md') {
+        await openEditMdModal(tab.id);
+      } else if (tab.type === 'json') {
+        await openEditJsonModal(tab.id);
+      } else if (tab.type === 'html') {
+        await openEditHtmlModal(tab.id);
+      } else if (tab.type === 'ext') {
+        await openExternalFile(tab.path, tab.title, tab.extType);
+      }
+      // 打开失败（文件被删 / 读取异常）时不要把页签置为活动
+      if (currentEditorDocKey === key) {
+        activeTabKey = key;
+        const cur = editorTabs.find(t => t.key === key);
+        if (cur) delete cur.dirty;
+      }
+      saveEditorTabs();
+      renderSheetTabs();
+    }
+
+    // 点 ✕ 关闭页签
+    async function closeSheetTab(key) {
+      const tab = editorTabs.find(t => t.key === key);
+      if (!tab) return;
+      if (key === activeTabKey) {
+        if (hasUnsavedChanges()) { openUnsavedConfirm('closeTab', { key }); return; }
+        await removeSheetTab(key);
+      } else {
+        removeSheetTabFromList(key);
+      }
+    }
+
+    // 从列表移除（非活动页签，无需切换/关窗）
+    function removeSheetTabFromList(key) {
+      const idx = editorTabs.findIndex(t => t.key === key);
+      if (idx < 0) return;
+      editorTabs.splice(idx, 1);
+      if (activeTabKey === key) activeTabKey = null;
+      saveEditorTabs();
+      renderSheetTabs();
+    }
+
+    // 移除活动页签：自动切到相邻页签；没有页签了就关掉整个编辑器
+    async function removeSheetTab(key) {
+      const idx = editorTabs.findIndex(t => t.key === key);
+      if (idx < 0) return;
+      editorTabs.splice(idx, 1);
+      saveEditorTabs();
+      if (!editorTabs.length) {
+        activeTabKey = null;
+        renderSheetTabs();
+        closeModal(undefined, undefined, true); // skipPrompt：脏状态已在问询中处理过
+        return;
+      }
+      const next = editorTabs[Math.min(idx, editorTabs.length - 1)];
+      await activateSheetTab(next.key);
+    }
+
+    // 「全部关闭」：清空页签列表（只清索引，绝不碰磁盘文件）
+    function closeAllSheetTabs() {
+      if (!editorTabs.length) return;
+      if (!confirm('清空全部页签？（只会清掉列表，不会删除任何文件）')) return;
+      if (hasUnsavedChanges()) {
+        if (!confirm('当前文件有未保存的更改，仍要全部关闭吗？')) return;
+      }
+      editorTabs = [];
+      activeTabKey = null;
+      saveEditorTabs();
+      renderSheetTabs();
+      closeModal(undefined, undefined, true);
     }
 
     // 🆕 画廊画面滚动位置：从 localStorage 恢复（init 时调用）
@@ -8203,6 +8585,10 @@
       currentHtmlId = null;
       // 🆕 编辑器视图记忆：新增文档无既有位置，置空（不恢复也不误写）
       currentEditorDocKey = null;
+      // 🆕 底部 Sheet 页签：新增态尚未落盘成文件，没有对应页签
+      markCurrentTabDirty();
+      activeTabKey = null;
+      renderSheetTabs();
       document.getElementById('modalTitle').textContent = '添加文件';
       activeFileTab = 'todo';
       updateFileTypeTabs();
@@ -8299,6 +8685,8 @@
       updateSearchNavButtons();
       // 📄 显示 JSON 文件名（编辑模式）
       updateJsonFileDisplay();
+      // 🆕 底部 Sheet 页签：登记/激活本卡片
+      touchEditorTab({ key: 'todo:' + id, type: 'todo', id, title: todoTabTitle(todo) });
       document.getElementById('modalOverlay').style.display = 'flex';
       document.getElementById('taskText').focus();
       autoGrowTextarea(document.getElementById('taskText'));
@@ -8359,6 +8747,8 @@
         document.getElementById('searchCount').textContent = '';
         updateSearchNavButtons();
         updateFileTypeTabs();
+        // 🆕 底部 Sheet 页签：登记/激活本 MD 文件
+        touchEditorTab({ key: 'md:' + id, type: 'md', id, title: id + '.md' });
         document.getElementById('modalOverlay').style.display = 'flex';
         textarea.focus();
         autoGrowTextarea(textarea);
@@ -8430,6 +8820,8 @@
         document.getElementById('searchCount').textContent = '';
         updateSearchNavButtons();
         updateFileTypeTabs();
+        // 🆕 底部 Sheet 页签：登记/激活本 JSON 文件
+        touchEditorTab({ key: 'json:' + id, type: 'json', id, title: id + '.json' });
         document.getElementById('modalOverlay').style.display = 'flex';
         jsonTextarea.focus();
         autoGrowTextarea(jsonTextarea);
@@ -8500,6 +8892,8 @@
         document.getElementById('searchCount').textContent = '';
         updateSearchNavButtons();
         updateFileTypeTabs();
+        // 🆕 底部 Sheet 页签：登记/激活本 HTML 文件
+        touchEditorTab({ key: 'html:' + id, type: 'html', id, title: id + '.html' });
         document.getElementById('modalOverlay').style.display = 'flex';
         htmlTextarea.focus();
         autoGrowTextarea(htmlTextarea);
@@ -8704,22 +9098,51 @@
           || getSelectedTodoColor() !== editSnapshot.color;
     }
 
+    // 「问询后存档」确认框的后续动作（供底部 Sheet 页签复用同一个确认框）：
+    //   null                  → 关闭编辑器（原有行为）
+    //   {mode:'switch',   key} → 处理完后切换到目标页签
+    //   {mode:'closeTab', key} → 处理完后关闭目标页签
+    let unsavedConfirmAction = null;
+
+    function openUnsavedConfirm(mode, payload) {
+      unsavedConfirmAction = mode ? { mode, payload } : null;
+      const msg = document.getElementById('unsavedConfirmMsg');
+      const saveBtn = document.getElementById('unsavedConfirmSaveBtn');
+      if (msg) {
+        msg.textContent = (mode === 'switch')
+          ? '当前文件有未保存的更改，切换页签前要存档吗？'
+          : '你有未保存的更改，要存档吗？';
+      }
+      if (saveBtn) saveBtn.textContent = (mode === 'switch') ? '保存并切换' : '保存并关闭';
+      const overlay = document.getElementById('unsavedConfirmOverlay');
+      if (overlay) overlay.style.display = 'flex';
+    }
+
     // 关闭「问询后存档」确认框（取消/点背景）。
     function cancelUnsavedConfirm() {
       const overlay = document.getElementById('unsavedConfirmOverlay');
       if (overlay) overlay.style.display = 'none';
+      unsavedConfirmAction = null;
     }
 
-    // 「保存并关闭」：先关确认框，再走正常保存流程（saveTask 内部关闭时 skipPrompt）。
-    function saveAndCloseFromConfirm() {
+    // 「保存并关闭」/「保存并切换」：先关确认框，再走正常保存流程。
+    // 注意：cancelUnsavedConfirm 会清空 unsavedConfirmAction，故先取出动作再取消。
+    async function saveAndCloseFromConfirm() {
+      const act = unsavedConfirmAction;
       cancelUnsavedConfirm();
-      saveTask(true);
+      if (!act) { saveTask(true); return; }
+      await saveTask(false); // 保存但不关窗
+      if (act.mode === 'switch') await activateSheetTab(act.payload.key);
+      else if (act.mode === 'closeTab') await removeSheetTab(act.payload.key);
     }
 
-    // 「不保存」：丢弃当前编辑内容，直接关闭（不二次问询）。
-    function discardAndCloseFromConfirm() {
+    // 「不保存」：丢弃当前编辑内容，继续原动作（不二次问询）。
+    async function discardAndCloseFromConfirm() {
+      const act = unsavedConfirmAction;
       cancelUnsavedConfirm();
-      closeModal(undefined, undefined, true);
+      if (!act) { closeModal(undefined, undefined, true); return; }
+      if (act.mode === 'switch') await activateSheetTab(act.payload.key);
+      else if (act.mode === 'closeTab') await removeSheetTab(act.payload.key);
     }
 
     function closeModal(event, focusId, skipPrompt = false) {
@@ -8765,6 +9188,10 @@
         if (rbtn) rbtn.style.display = 'none';
         setTimeout(() => focusResizedCard(sid), 320);
       }
+      // 🆕 底部 Sheet 页签：关闭前把"是否有未保存改动"记到页签上（必须在 editSnapshot 清空之前）
+      markCurrentTabDirty();
+      activeTabKey = null;
+      renderSheetTabs();
       // 模态框完全关闭后清空未保存检测快照
       editSnapshot = null;
       currentMdId = null;
@@ -8850,6 +9277,9 @@
             if (!htmlId) { htmlId = 'html-' + Date.now().toString(); currentHtmlId = htmlId; }
             await window.electronAPI.saveHtmlFile(htmlId, htmlTextarea.value.replace(/\r\n/g, '\n'));
           }
+          // 🆕 保存成功后刷新「未保存检测」快照：此后 hasUnsavedChanges() 应为 false，
+          //    页签脏标记 / 关闭问询都依赖它（否则 Cmd+S 保存后关闭还会误报未保存）。
+          captureEditSnapshot();
           if (closeAfterSave) { closeModal(undefined, undefined, true); }
         } catch (e) {
           console.error('[TodoList] 保存 HTML 文件失败:', e);
@@ -8873,6 +9303,9 @@
             if (!jsonId) { jsonId = 'json-' + Date.now().toString(); currentJsonId = jsonId; }
             await window.electronAPI.saveJsonFile(jsonId, jsonTextarea.value.replace(/\r\n/g, '\n'));
           }
+          // 🆕 保存成功后刷新「未保存检测」快照：此后 hasUnsavedChanges() 应为 false，
+          //    页签脏标记 / 关闭问询都依赖它（否则 Cmd+S 保存后关闭还会误报未保存）。
+          captureEditSnapshot();
           if (closeAfterSave) { closeModal(undefined, undefined, true); }
         } catch (e) {
           console.error('[TodoList] 保存 JSON 文件失败:', e);
@@ -8896,6 +9329,9 @@
             if (!mdId) { mdId = 'md-' + Date.now().toString(); currentMdId = mdId; }
             await window.electronAPI.saveMdFile(mdId, textarea.value.replace(/\r\n/g, '\n'));
           }
+          // 🆕 保存成功后刷新「未保存检测」快照：此后 hasUnsavedChanges() 应为 false，
+          //    页签脏标记 / 关闭问询都依赖它（否则 Cmd+S 保存后关闭还会误报未保存）。
+          captureEditSnapshot();
           if (closeAfterSave) { closeModal(undefined, undefined, true); }
         } catch (e) {
           console.error('[TodoList] 保存 MD 文件失败:', e);
@@ -8996,6 +9432,8 @@
 
       const isEdit = !!editingId;
       await saveTodos();
+      // 🆕 同上：保存成功后刷新快照，避免刚存过的文档仍被判定为"有未保存改动"
+      captureEditSnapshot();
       if (closeAfterSave) {
         // 保存后自动关闭：编辑场景聚焦原卡片，新增场景聚焦刚插入队首的卡片
         const focusCardId = isEdit ? editingId : (todos[0] && todos[0].id);
@@ -9433,6 +9871,8 @@
           if (jsonTools) jsonTools.style.display = 'none';
           if (htmlTools) htmlTools.style.display = 'none';
           switchFileTypeTab('md');
+          // 🆕 底部 Sheet 页签：登记/激活本外部文件
+          touchEditorTab({ key: 'ext:' + fullPath, type: 'ext', id: fileName, path: fullPath, extType: 'md', title: fileName });
           document.getElementById('modalOverlay').style.display = 'flex';
           textarea.focus();
           autoGrowTextarea(textarea);
@@ -9458,6 +9898,8 @@
           if (jsonTools) jsonTools.style.display = 'flex';
           if (htmlTools) htmlTools.style.display = 'none';
           switchFileTypeTab('json');
+          // 🆕 底部 Sheet 页签：登记/激活本外部文件
+          touchEditorTab({ key: 'ext:' + fullPath, type: 'ext', id: fileName, path: fullPath, extType: 'json', title: fileName });
           document.getElementById('modalOverlay').style.display = 'flex';
           jsonTextarea.focus();
           autoGrowTextarea(jsonTextarea);
@@ -9483,6 +9925,8 @@
           if (jsonTools) jsonTools.style.display = 'none';
           if (htmlTools) htmlTools.style.display = 'flex';
           switchFileTypeTab('html');
+          // 🆕 底部 Sheet 页签：登记/激活本外部文件
+          touchEditorTab({ key: 'ext:' + fullPath, type: 'ext', id: fileName, path: fullPath, extType: 'html', title: fileName });
           document.getElementById('modalOverlay').style.display = 'flex';
           htmlTextarea.focus();
           autoGrowTextarea(htmlTextarea);
@@ -9797,9 +10241,15 @@
       loadGalleryScroll();
       // 🆕 编辑器视图记忆：恢复上次会话记住的编辑器（编辑文本 / 预览）滚动位置
       loadEditorViewMemory();
+      // 🆕 底部 Sheet 页签：恢复上次会话打开过的文件列表（仅索引，内容点击时才读盘）
+      loadEditorTabs();
+      renderSheetTabs();
+      bindSheetTabStrip();
       // 🆕 搜索历史：恢复上次会话记住的搜索内容（下拉选单用）
       loadSearchHistory();
       await loadTodos();
+      // 🆕 Sheet 页签：todo 数据就位后刷新 todo 页签标题（对齐卡片左上角标题 + 修正旧脏标题）
+      refreshTodoTabTitles();
       renderTagFilter();
       renderTodos();
       // 🆕 画廊画面滚动：渲染后绑定 #todoList 的 scroll 监听（仅一次），记忆用户滚动位置
