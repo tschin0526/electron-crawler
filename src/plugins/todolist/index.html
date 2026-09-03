@@ -314,7 +314,7 @@
 
     .search-box {
       flex: 1;
-      min-width: 150px;
+      min-width: 450px;
       padding: 6px 12px;
       border: 1px solid var(--border-color);
       border-radius: 50px;
@@ -332,6 +332,7 @@
     .search-wrapper {
       display: flex;
       align-items: center;
+      justify-content: flex-end;
       gap: 8px;
       flex: 1;
     }
@@ -2873,6 +2874,39 @@
     /* 隐藏已被处理的 {{calc}} / {{cols}} 标记段落 */
     p[data-calc-marker="true"],
     p[data-cols-marker="true"] { display: none; }
+
+    /* ── 搜索历史下拉选单（编辑 modal 搜索框）── */
+    .search-box-wrap { position: relative; display: inline-flex; align-items: center; }
+    .search-history-dropdown {
+      position: absolute;
+      top: 100%;
+      right: 0;
+      left: 0;
+      margin-top: 4px;
+      max-height: 260px;
+      overflow-y: auto;
+      background: #1e293b;
+      border: 1px solid #334155;
+      border-radius: 6px;
+      box-shadow: 0 6px 18px rgba(0,0,0,0.35);
+      z-index: 100;
+      padding: 4px 0;
+    }
+    .search-history-item {
+      padding: 6px 12px;
+      font-size: 12px;
+      color: #e2e8f0;
+      cursor: pointer;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      display: flex;
+      align-items: center;
+    }
+    .search-history-item:hover { background: #334155; color: #a5b4fc; }
+    .search-history-item:hover span:last-child { opacity: 1; }
+    body.dark .search-history-dropdown { background: #0f172a; border-color: #334155; }
+    body.dark .search-history-item:hover { background: #1e293b; }
   </style>
 
   <!-- 🆕 独立模式（./start.sh --todolist 启动，URL 带 ?standalone=1）：
@@ -2943,7 +2977,10 @@
         <button class="btn btn-primary" onclick="openAddModal()" title="添加文件" data-page-node-id="JZ4R7jBK2QWolHWtvVUnKE">➕</button>
       </div>
       <div class="search-wrapper" data-page-node-id="lpsvAbEpZ8FVZnprD6mZJI">
-        <input type="text" class="search-box" id="searchInput" placeholder="搜索任务..." oninput="handleSearch()" data-page-node-id="ilsn0X5Tzrc4nmwC6RfPD7">
+        <span class="search-box-wrap">
+          <input type="text" class="search-box" id="searchInput" placeholder="搜索任务..." oninput="handleSearch();onGallerySearchInputChange()" onfocus="showGallerySearchHistory()" onblur="setTimeout(hideGallerySearchHistory,150)" onkeydown="if(event.key==='Enter'){event.preventDefault();hideGallerySearchHistory();const v=document.getElementById('searchInput').value.trim();if(v){addSearchHistory(v);handleSearch();}}else if(event.key==='Escape'){hideGallerySearchHistory();}" data-page-node-id="ilsn0X5Tzrc4nmwC6RfPD7">
+          <div id="gallerySearchHistoryDropdown" class="search-history-dropdown" style="display:none;"></div>
+        </span>
         <div class="search-nav" id="searchNav" style="display: none;" data-page-node-id="XOiqCmPp9d3TVjJoPmpGq2">
           <span class="search-count" id="searchResultCount" data-page-node-id="NNkTKERhBQ4PMixQDvFsWE">0/0</span>
           <button class="nav-btn" onclick="navigateSearch(-1)" title="上一个" data-page-node-id="tot2swuNFQ11I042m3baKb">▲</button>
@@ -3422,7 +3459,10 @@
           </div>
 
           <span style="flex:1" data-page-node-id="rYQS1EpVAsBLVKB3hOouqm"></span>
-          <input type="text" id="editSearchInput" placeholder="搜索内容..." style="width:120px;padding:4px 8px;border:1px solid #334155;border-radius:4px;background:#1e293b;color:#e2e8f0;font-size:12px;outline:none;margin-right:4px;" oninput="doSearch()" onkeydown="if(event.key==='Enter'){event.preventDefault();doSearchEnter();}" data-page-node-id="MwJBrn8xQaEsuPzX3O86Es">
+          <span class="search-box-wrap">
+            <input type="text" id="editSearchInput" placeholder="搜索内容..." style="width:120px;padding:4px 8px;border:1px solid #334155;border-radius:4px;background:#1e293b;color:#e2e8f0;font-size:12px;outline:none;margin-right:4px;" oninput="doSearch();onSearchInputChange()" onfocus="showSearchHistory()" onblur="setTimeout(hideSearchHistory,150)" onkeydown="if(event.key==='Enter'){event.preventDefault();doSearchEnter();}else if(event.key==='Escape'){hideSearchHistory();}" data-page-node-id="MwJBrn8xQaEsuPzX3O86Es">
+            <div id="searchHistoryDropdown" class="search-history-dropdown" style="display:none;"></div>
+          </span>
           <span id="searchCount" style="font-size:11px;color:#94a3b8;margin-right:4px;min-width:50px;display:inline-block;" data-page-node-id="kI5XzGl9ya480PNfujtSML"></span>
           <button id="searchPrevBtn" onmouseover="this.style.background='#334155';this.style.color='#e2e8f0'" onmouseout="this.style.background='#1e293b';this.style.color='#94a3b8'" onclick="findPrev()" title="上一笔" style="display:none;padding:2px 6px;border:1px solid #334155;border-radius:4px;background:#1e293b;color:#94a3b8;font-size:11px;cursor:pointer;margin-right:2px;" data-page-node-id="kCNTdS1TWqAQIFpYxD6Bvc">◀</button>
           <button id="searchNextBtn" onmouseover="this.style.background='#334155';this.style.color='#e2e8f0'" onmouseout="this.style.background='#1e293b';this.style.color='#94a3b8'" onclick="findNext()" title="下一笔" style="display:none;padding:2px 6px;border:1px solid #334155;border-radius:4px;background:#1e293b;color:#94a3b8;font-size:11px;cursor:pointer;margin-right:2px;" data-page-node-id="x1GeoyQWC1yAFT2NyfJOWH">▶</button>
@@ -4770,10 +4810,128 @@
       if (query !== lastSearchEnterQuery || searchMatches.length === 0) {
         doSearch(true);
         lastSearchEnterQuery = query;
+        // 🆕 写入搜索历史（去重 + 置顶）
+        addSearchHistory(query);
         return;
       }
 
       findNext();
+    }
+
+    // 🆕 搜索历史（下拉选单，去重后最多保留 N 条，同样内容只显示一次）
+    let searchHistory = [];
+    const SEARCH_HISTORY_LS_KEY = 'todolist-search-history-v1';
+    const SEARCH_HISTORY_MAX = 20;
+
+    function loadSearchHistory() {
+      searchHistory = [];
+      try {
+        const raw = localStorage.getItem(SEARCH_HISTORY_LS_KEY);
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed)) searchHistory = parsed.filter(s => typeof s === 'string' && s.length > 0);
+        }
+      } catch (e) { searchHistory = []; }
+    }
+
+    function saveSearchHistoryNow() {
+      try { localStorage.setItem(SEARCH_HISTORY_LS_KEY, JSON.stringify(searchHistory)); } catch (e) {}
+    }
+
+    // 写入一条历史：去重（大小写不敏感比较，同内容只留最新一次并置顶），并限制最大条数
+    function addSearchHistory(query) {
+      query = (query || '').trim();
+      if (!query) return;
+      const lower = query.toLowerCase();
+      searchHistory = searchHistory.filter(s => s.toLowerCase() !== lower);
+      searchHistory.unshift(query); // 最新置顶
+      if (searchHistory.length > SEARCH_HISTORY_MAX) searchHistory.length = SEARCH_HISTORY_MAX;
+      saveSearchHistoryNow();
+    }
+
+    // 删除某条搜索历史（i 为数组索引）
+    function removeSearchHistory(i) {
+      if (typeof i !== 'number' || i < 0 || i >= searchHistory.length) return;
+      searchHistory.splice(i, 1);
+      saveSearchHistoryNow();
+      // 重新渲染两个下拉（哪个开着就更新哪个）
+      renderSearchHistoryDropdown();
+      renderGallerySearchHistoryDropdown();
+    }
+
+    function renderSearchHistoryDropdown() {
+      const dd = document.getElementById('searchHistoryDropdown');
+      if (!dd) return;
+      if (searchHistory.length === 0) { dd.style.display = 'none'; return; }
+      dd.innerHTML = searchHistory.map((s, i) =>
+        `<div class="search-history-item" data-i="${i}"><span onmousedown="event.preventDefault();selectSearchHistory(${i})" style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(s)}</span><span onclick="event.stopPropagation();removeSearchHistory(${i})" style="cursor:pointer;flex-shrink:0;margin-left:6px;opacity:0.5;font-size:11px;" title="删除此条记录">✕</span></div>`
+      ).join('');
+    }
+
+    // 显示下拉：仅当编辑 modal 处于打开态；有历史才显示
+    function showSearchHistory() {
+      const input = document.getElementById('editSearchInput');
+      const dd = document.getElementById('searchHistoryDropdown');
+      if (!input || !dd) return;
+      const overlay = document.getElementById('modalOverlay');
+      if (!overlay || overlay.style.display !== 'flex') return;
+      renderSearchHistoryDropdown();
+      if (searchHistory.length > 0) dd.style.display = 'block';
+    }
+
+    function hideSearchHistory() {
+      const dd = document.getElementById('searchHistoryDropdown');
+      if (dd) dd.style.display = 'none';
+    }
+
+    // 点选历史项：填入输入框并触发搜索（doSearchEnter 会去重写入历史）
+    function selectSearchHistory(i) {
+      const item = searchHistory[i];
+      if (typeof item !== 'string') return;
+      const input = document.getElementById('editSearchInput');
+      if (input) input.value = item;
+      hideSearchHistory();
+      doSearchEnter();
+    }
+
+    // input 事件：空输入时展示历史下拉，有内容时收起（避免遮挡正在输入的查询）
+    function onSearchInputChange() {
+      const input = document.getElementById('editSearchInput');
+      if (input && input.value.trim() === '') showSearchHistory();
+      else hideSearchHistory();
+    }
+
+    // 🆕 Gallery 顶部搜索框（#searchInput）的历史下拉（复用同一套 searchHistory 数据源）
+    function showGallerySearchHistory() {
+      const dd = document.getElementById('gallerySearchHistoryDropdown');
+      if (!dd) return;
+      renderGallerySearchHistoryDropdown();
+      if (searchHistory.length > 0) dd.style.display = 'block';
+    }
+    function hideGallerySearchHistory() {
+      const dd = document.getElementById('gallerySearchHistoryDropdown');
+      if (dd) dd.style.display = 'none';
+    }
+    function renderGallerySearchHistoryDropdown() {
+      const dd = document.getElementById('gallerySearchHistoryDropdown');
+      if (!dd) return;
+      if (searchHistory.length === 0) { dd.style.display = 'none'; return; }
+      dd.innerHTML = searchHistory.map((s, i) =>
+        `<div class="search-history-item" data-i="${i}"><span onmousedown="event.preventDefault();selectGallerySearchHistory(${i})" style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(s)}</span><span onclick="event.stopPropagation();removeSearchHistory(${i})" style="cursor:pointer;flex-shrink:0;margin-left:6px;opacity:0.5;font-size:11px;" title="删除此条记录">✕</span></div>`
+      ).join('');
+    }
+    function selectGallerySearchHistory(i) {
+      const item = searchHistory[i];
+      if (typeof item !== 'string') return;
+      const input = document.getElementById('searchInput');
+      if (input) input.value = item;
+      hideGallerySearchHistory();
+      handleSearch(); // 触发 Gallery 实时搜索
+    }
+    function onGallerySearchInputChange() {
+      const input = document.getElementById('searchInput');
+      if (input && input.value.trim() === '') showGallerySearchHistory();
+      else hideGallerySearchHistory();
     }
 
     function escapeRegex(string) {
@@ -5148,6 +5306,7 @@
       searchQuery = document.getElementById('searchInput').value.toLowerCase();
       currentSearchIndex = -1;
       matchedHighlights = [];
+      // 注意：搜索历史只在 Enter 提交时写入（onkeydown 处理），不在 oninput 实时搜索时写入
       renderTodos();
       updateSearchNav();
     }
@@ -8614,6 +8773,8 @@
       // 🆕 编辑器视图记忆：关闭时立即落盘最后滚动位置，并清除当前文档标识
       flushEditorView();
       currentEditorDocKey = null;
+      // 🆕 搜索历史：关闭 modal 时收起下拉选单
+      hideSearchHistory();
     }
 
     function handleFileSelect(event) {
@@ -8973,6 +9134,9 @@
       if (fileListState.open) {
         closeFileList();
       } else {
+        // 打开文件列表时自动关闭搜索历史下拉（避免互相遮挡）
+        hideGallerySearchHistory();
+        hideSearchHistory();
         fileListState.open = true;
         trigger.classList.add('open');
         panel.classList.add('open');
@@ -9633,6 +9797,8 @@
       loadGalleryScroll();
       // 🆕 编辑器视图记忆：恢复上次会话记住的编辑器（编辑文本 / 预览）滚动位置
       loadEditorViewMemory();
+      // 🆕 搜索历史：恢复上次会话记住的搜索内容（下拉选单用）
+      loadSearchHistory();
       await loadTodos();
       renderTagFilter();
       renderTodos();
