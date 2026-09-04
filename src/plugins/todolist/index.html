@@ -1226,11 +1226,39 @@
       list-style: none;
       margin-left: -0.4em;
     }
+    /* 自绘 checkbox：原生 accent-color 在暗色模式下勾与框都偏淡（白勾配淡色框）看不清，
+       改为自绘：勾选态框用主题色填充，勾的颜色亮色模式白色、暗色模式深色 */
     .todo-text input[type="checkbox"],
     .md-preview input[type="checkbox"] {
+      appearance: none;
+      -webkit-appearance: none;
+      width: 1em;
+      height: 1em;
       margin-right: .4em;
       vertical-align: middle;
-      accent-color: var(--primary-color);
+      border: 1px solid var(--border-color);
+      border-radius: .2em;
+      background: var(--card-bg);
+      position: relative;
+      flex-shrink: 0;
+    }
+    .todo-text input[type="checkbox"]:checked,
+    .md-preview input[type="checkbox"]:checked {
+      background: var(--primary-color);
+      border-color: var(--primary-color);
+    }
+    .todo-text input[type="checkbox"]:checked::before,
+    .md-preview input[type="checkbox"]:checked::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: #fff;
+      clip-path: polygon(14% 48%, 0 62%, 38% 100%, 100% 22%, 86% 8%, 38% 72%);
+    }
+    /* 暗色模式：勾选框是淡色主题（#818cf8 浅紫），勾用深色才看得清 */
+    body.dark .todo-text input[type="checkbox"]:checked::before,
+    body.dark .md-preview input[type="checkbox"]:checked::before {
+      background: #1e293b;
     }
     .todo-text li:has(input[type="checkbox"]:checked),
     .md-preview li:has(input[type="checkbox"]:checked) {
@@ -3679,7 +3707,7 @@
         <!-- 🆕 新增态：设定文件名（不含扩展名，自动拼上「文件类型」所选扩展名） -->
         <div class="form-group" id="newFileNameGroup" style="display:none;">
           <label class="form-label" for="newFileNameInput">文件名称</label>
-          <input type="text" id="newFileNameInput" placeholder="例如：会议记录" oninput="onNewFileNameInput(this)" style="width:100%;padding:6px 8px;border:1px solid var(--border-color);border-radius:6px;background:var(--bg-input,#fff);color:var(--text-color,#1e293b);font-size:13px;" />
+          <input type="text" id="newFileNameInput" placeholder="例如：会议记录" oninput="onNewFileNameInput(this)" onkeydown="onNewFileNameKeydown(event)" style="width:100%;padding:6px 8px;border:1px solid var(--border-color);border-radius:6px;background:var(--bg-input,#fff);color:var(--text-color,#1e293b);font-size:13px;" />
           <div class="form-hint" id="newFileNameHint" style="margin-top:4px;font-size:12px;color:var(--text-tertiary,#94a3b8);">留空则自动命名（如 file-时间戳.txt）</div>
         </div>
         <div class="modal-header-actions" data-page-node-id="IBqvx04ddWYZeUk26Q0Bbo">
@@ -4541,8 +4569,19 @@
     // 绑定输入监听与快捷键（Markdown / HTML / JSON 编辑器共用）
     ['taskText', 'htmlText', 'jsonText'].forEach(id => {
       const ta = document.getElementById(id);
-      ta.addEventListener('input', () => { pushEditorHistory(ta, true); autoGrowTextarea(ta); });
+      ta.addEventListener('input', () => { pushEditorHistory(ta, true); autoGrowTextarea(ta); applyScrollGuard(ta); });
       ta.addEventListener('keydown', (e) => {
+        const k = e.key || '';
+        // 🆕 Enter / Shift+Enter 插入空行：锁住滚动位置（详见 applyScrollGuard 注释）
+        if (k === 'Enter' && !e.metaKey && !e.ctrlKey && !e.altKey && !e.isComposing) {
+          armScrollGuard(ta, 'keep');
+          return;
+        }
+        // 🆕 上下键：一次只许走一行（详见 applyScrollGuard 注释）
+        if ((k === 'ArrowUp' || k === 'ArrowDown') && !e.metaKey && !e.altKey && !e.isComposing) {
+          armScrollGuard(ta, 'line');
+          return;
+        }
         if (!(e.metaKey || e.ctrlKey) || e.altKey) return;
         const key = (e.key || '').toLowerCase();
         if (key === 'z' && !e.shiftKey) {
@@ -4565,6 +4604,89 @@
       const cs = getComputedStyle(ta);
       const borderV = parseFloat(cs.borderTopWidth) + parseFloat(cs.borderBottomWidth);
       ta.style.height = (ta.scrollHeight + borderV) + 'px';
+    }
+
+    // ── 🆕 编辑器滚动守卫（taskText / htmlText / jsonText 共用）─────────────────────
+    // 现象 1（Enter）：插入空行时内容高度 +1 行，浏览器为让光标可见（caret-into-view）
+    //        或 scroll anchoring 触发的滚动，偶尔把编辑区整体滚一大段，新空行被顶到顶部。
+    // 现象 2（↑/↓）：光标走到可视区顶部/底部边缘时，浏览器不只滚输入框，还会连带滚动外层
+    //        容器（overflow:hidden 也能被程序性滚动），结果是一大块内容整体位移，视线丢失。
+    // 正规编辑器的行为：只有输入控件自己滚，且一次只滚一行。
+    // 策略：按键前快照「textarea 自身 + 所有可滚动祖先 + window」的滚动位置，按键生效后
+    //       （rAF，晚于浏览器默认行为）逐层校正：
+    //         · 输入框自身 —— 最多跟 1 行（光标贴边时必要的最小跟随）；
+    //         · 外层容器   —— 输入框自己能滚就完全冻结（它才是唯一该滚的容器）；
+    //                         输入框滚不动（内容不长）才退化为最多 1 行；
+    //         · Enter 模式 —— 任一容器偏移 > 1 行即整体回滚（插行不该产生任何滚动）。
+    let scrollGuard = null;
+
+    // 允许的滚动上限：1 行行高（取自元素自身计算样式，不写死数值）
+    function editorLineHeight(el) {
+      const cs = getComputedStyle(el);
+      const lh = parseFloat(cs.lineHeight);
+      return Math.max(lh || 0, parseFloat(cs.fontSize) || 0, 1);
+    }
+
+    // 快照 el 自身及其可滚动祖先（含 window）的纵向滚动位置
+    function snapshotScrollState(el) {
+      const snaps = [];
+      let node = el;
+      while (node && node.nodeType === 1) {
+        const oy = getComputedStyle(node).overflowY;
+        if ((oy === 'auto' || oy === 'scroll') && node.scrollHeight > node.clientHeight) {
+          snaps.push({ node, top: node.scrollTop });
+        }
+        node = node.parentElement;
+      }
+      snaps.push({ win: true, top: window.scrollY, left: window.scrollX });
+      return snaps;
+    }
+
+    function setScrollTop(s, top) {
+      try {
+        if (s.win) window.scrollTo(s.left, top);
+        else s.node.scrollTop = top;
+      } catch (e) {}
+    }
+
+    // mode: 'keep' = Enter（超出即回滚） / 'line' = 上下键（超出即压回一行）
+    function armScrollGuard(ta, mode) {
+      const g = {
+        ta, mode,
+        selfScrollable: ta.scrollHeight > ta.clientHeight,
+        snaps: snapshotScrollState(ta),
+        limit: editorLineHeight(ta)
+      };
+      scrollGuard = g;
+      // 浏览器在默认行为里滚动（晚于本 handler 返回），故放到下一帧校正；
+      // 再叠一帧兜住布局异步变化（autoGrow / 预览重排）。
+      const settle = (depth) => requestAnimationFrame(() => {
+        if (scrollGuard !== g) return; // 已被后一次按键接管，交给新的守卫处理
+        applyScrollGuard(ta);
+        if (depth > 0) settle(depth - 1);
+        else scrollGuard = null;
+      });
+      settle(1);
+    }
+
+    function applyScrollGuard(ta) {
+      const g = scrollGuard;
+      if (!g || g.ta !== ta) return;
+      g.snaps.forEach(s => {
+        const now = s.win ? window.scrollY : s.node.scrollTop;
+        const delta = now - s.top;
+        if (!delta) return;
+        if (g.mode === 'keep') {
+          if (Math.abs(delta) > g.limit) setScrollTop(s, s.top); // Enter：整体回滚
+          return;
+        }
+        // 'line'：输入框自身最多一行；外层容器能冻则冻，滚不动时才放行一行
+        const isSelf = (s.node === ta);
+        const allow = isSelf ? g.limit : (g.selfScrollable ? 0 : g.limit);
+        if (Math.abs(delta) > allow) {
+          setScrollTop(s, allow === 0 ? s.top : s.top + Math.sign(delta) * allow);
+        }
+      });
     }
 
     // 让编辑器打开/切换后立刻看到顶部：textarea.focus() 默认把光标放文本末尾，
@@ -8694,7 +8816,17 @@
       btn.textContent = isNewFile ? '确认' : '保存';
     }
 
-    // 🆕 文件名输入：同步到 newFileName（实时），并实时预览 hint 里的最终文件名
+    // 🆕 把新增态占位页签（key='newfile'）的标题同步为「文件名+扩展名」；空名回落「NewFile」
+    function syncNewFileTabTitle() {
+      const idx = editorTabs.findIndex(t => t.key === 'newfile');
+      if (idx < 0) return;
+      const title = newFileName ? (newFileName + (newFileExt || '')) : 'NewFile';
+      if (editorTabs[idx].title === title) return;
+      editorTabs[idx].title = title;
+      renderSheetTabs();
+    }
+
+    // 🆕 文件名输入：同步到 newFileName（实时），实时预览 hint 里的最终文件名，并同步底部页签标题
     function onNewFileNameInput(input) {
       newFileName = (input && input.value) ? input.value.trim() : '';
       const hint = document.getElementById('newFileNameHint');
@@ -8702,6 +8834,16 @@
         const ext = (newFileExt || '.txt');
         const finalName = newFileName ? (newFileName + ext) : ('file-时间戳' + ext);
         hint.textContent = newFileName ? ('将保存为：' + finalName) : '留空则自动命名（如 file-时间戳' + ext + '）';
+      }
+      syncNewFileTabTitle();
+    }
+
+    // 🆕 文件名输入框按 Enter：确认输入（页签此时已随输入实时同步），收起输入焦点
+    function onNewFileNameKeydown(e) {
+      if (e && e.key === 'Enter') {
+        e.preventDefault();
+        syncNewFileTabTitle();
+        if (e.target && typeof e.target.blur === 'function') e.target.blur();
       }
     }
 
@@ -8783,6 +8925,8 @@
       } else {
         if (activeFileTab !== 'md') switchFileTypeTab('md');
       }
+      // 🆕 已输入文件名时，改类型后页签后缀同步更新（如 MD一号.txt → MD一号.md）
+      syncNewFileTabTitle();
     }
 
     function openAddModal() {
