@@ -414,6 +414,29 @@
     .file-list-panel.open {
       display: flex;
     }
+    /* 🆕 编辑器内「打开已有文件」面板：position:fixed 避开 .editor-main 的 overflow:hidden 裁剪，
+       内部排序/类型/列表项全部复用 .file-list-* 既有样式 */
+    .editor-filelist-panel {
+      position: fixed;
+      z-index: 9999;
+      width: 480px;
+      max-height: 460px;
+      background: var(--card-bg);
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      box-shadow: var(--shadow-lg);
+      display: none;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    .editor-filelist-panel.open {
+      display: flex;
+    }
+    #editorFileListBtn.open {
+      background: var(--primary-light);
+      border-color: var(--primary-color);
+      color: var(--primary-color);
+    }
     .file-list-sort {
       display: flex;
       gap: 0;
@@ -1879,6 +1902,52 @@
     }
     .sheet-bar-btn:hover { background: var(--primary-light); color: var(--primary-color); }
 
+    /* 🆕 轻量 toast（保存新文件 / 删除文件等操作的反馈）
+       放在底部居中，做成玻璃质感胶囊：
+       - 与应用「保存」按钮同款（--primary-color / --primary-border）保持视觉统一
+       - 圆角胶囊 + 左侧色条 + 细描边 + 柔和投影，融入暗色界面
+       - 4 秒自动消失，渐入渐出 */
+    .app-toast {
+      position: fixed;
+      left: 50%;
+      bottom: 28px;
+      transform: translateX(-50%) translateY(12px);
+      background: var(--card-bg, #1e293b);
+      color: var(--text-primary, #e2e8f0);
+      padding: 10px 18px 10px 16px;
+      border-radius: 999px;
+      font-size: 13.5px;
+      font-weight: 500;
+      line-height: 1.4;
+      letter-spacing: 0.1px;
+      border: 1px solid var(--primary-border, #4338ca);
+      border-left-width: 3px;
+      box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35), 0 0 0 1px rgba(255, 255, 255, 0.04) inset;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.22s ease, transform 0.22s cubic-bezier(.2,.8,.2,1);
+      z-index: 99999;
+      max-width: 80vw;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .app-toast::before {
+      /* 类型小圆点（彩点 + 字间距，自然不喧宾夺主） */
+      content: '';
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--primary-color, #818cf8);
+      box-shadow: 0 0 6px currentColor;
+      flex: 0 0 auto;
+    }
+    .app-toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+    .app-toast.success { border-left-color: var(--success-color, #34d399); }
+    .app-toast.success::before { background: var(--success-color, #34d399); color: var(--success-color, #34d399); }
+    .app-toast.danger { border-left-color: var(--danger-color, #f87171); }
+    .app-toast.danger::before { background: var(--danger-color, #f87171); color: var(--danger-color, #f87171); }
+
     /* 侧抽屉页签：todo卡片 / MD文件 */
     .file-type-tabs {
       display: flex;
@@ -3114,6 +3183,7 @@
               <button type="button" class="file-list-type-btn" data-type="md" onclick="setFileListTypeFilter('md')">MD</button>
               <button type="button" class="file-list-type-btn" data-type="html" onclick="setFileListTypeFilter('html')">HTML</button>
               <button type="button" class="file-list-type-btn" data-type="json" onclick="setFileListTypeFilter('json')">JSON</button>
+              <button type="button" class="file-list-type-btn" data-type="text" onclick="setFileListTypeFilter('text')">文本</button>
             </div>
             <div class="file-list-body" id="fileListBody" data-page-node-id="2B5RWUFgbeHMEOvnXcOgPj"></div>
             <div class="file-list-footer" id="fileListFooter" data-page-node-id="tLCOCV3xkGCO2ah2swAShl"><span id="fileListCount">共 0 个文件</span><button class="file-list-dir-btn" id="fileListResetBtn" title="返回默认 data 目录" onclick="resetBrowseDir()" style="display:none">↩ 默认</button><button class="file-list-dir-btn" id="fileListDirBtn" title="点击切换浏览目录…" onclick="switchBrowseDir()">📂</button></div>
@@ -3597,15 +3667,56 @@
         <h2 class="modal-title" id="modalTitle" data-page-node-id="YHi3CUZlbek1kj3dTs9mAe">添加文件</h2>
         <div class="file-type-tabs" id="fileTypeTabs" data-page-node-id="lRFjfI5yAT6eJHViwYQKqQ">
           <button class="file-type-tab" id="tabTodoCard" type="button" onclick="switchFileTypeTab('todo')" data-page-node-id="ChID7aiCuEPW9L60HfA2JN">todo卡片</button>
-          <button class="file-type-tab" id="tabMdFile" type="button" onclick="switchFileTypeTab('md')" data-page-node-id="QsIiQztFZUBCHLHHJ0M7w3">MD文件</button>
+          <button class="file-type-tab" id="tabMdFile" type="button" onclick="switchFileTypeTab('md')" title="Markdown 文件（.md / .markdown / .mdx）；其他纯文本（.txt / .log 等）也可用此编辑器打开" data-page-node-id="QsIiQztFZUBCHLHHJ0M7w3">MD文件</button>
           <button class="file-type-tab" id="tabHtmlFile" type="button" onclick="switchFileTypeTab('html')" data-page-node-id="QsIiQztFZUBCHLHHJ0M7w4">HTML文件</button>
           <button class="file-type-tab" id="tabJsonFile" type="button" onclick="switchFileTypeTab('json')" data-page-node-id="QsIiQztFZUBCHLHHJ0M7w5">JSON文件</button>
         </div>
+        <!-- 🆕 新增态：保存前选择要存成的文本文件类型（扩展名），与「开启→文本」白名单一致 -->
+        <div class="form-group" id="newFileExtGroup" style="display:none;">
+          <label class="form-label" for="newFileExtSelect">文件类型</label>
+          <select id="newFileExtSelect" onchange="onNewFileExtChange()" style="width:100%;padding:6px 8px;border:1px solid var(--border-color);border-radius:6px;background:var(--bg-input,#fff);color:var(--text-color,#1e293b);font-size:13px;"></select>
+        </div>
+        <!-- 🆕 新增态：设定文件名（不含扩展名，自动拼上「文件类型」所选扩展名） -->
+        <div class="form-group" id="newFileNameGroup" style="display:none;">
+          <label class="form-label" for="newFileNameInput">文件名称</label>
+          <input type="text" id="newFileNameInput" placeholder="例如：会议记录" oninput="onNewFileNameInput(this)" style="width:100%;padding:6px 8px;border:1px solid var(--border-color);border-radius:6px;background:var(--bg-input,#fff);color:var(--text-color,#1e293b);font-size:13px;" />
+          <div class="form-hint" id="newFileNameHint" style="margin-top:4px;font-size:12px;color:var(--text-tertiary,#94a3b8);">留空则自动命名（如 file-时间戳.txt）</div>
+        </div>
         <div class="modal-header-actions" data-page-node-id="IBqvx04ddWYZeUk26Q0Bbo">
+          <!-- 🆕 编辑器内「新增文件」：打开新增态，编辑器自带 fileTypeTabs 可选择类型 -->
+          <button class="btn btn-text btn-primary" id="editorNewFileBtn" onclick="openAddModal()" title="新增文件（可选择 todo 卡片 / MD / HTML / JSON 类型）">新增</button>
+          <!-- 🆕 编辑器内「打开已有文件」：弹出文件列表（复用主画面数据），点击即在编辑器内打开 -->
+          <button class="btn btn-text btn-primary" id="editorFileListBtn" type="button" title="打开已有文件（浏览 ToDo 卡片 / MD / HTML / JSON 文件）">开启</button>
+          <div class="editor-filelist-panel" id="editorFileListPanel" role="dialog" aria-label="打开已有文件">
+            <div class="file-list-sort" id="editorFileListSort">
+              <button type="button" class="file-list-sort-btn" data-sort="name" data-dir="asc">按名称</button>
+              <button type="button" class="file-list-sort-btn active" data-sort="mtime" data-dir="desc">按时间</button>
+              <button type="button" class="file-list-sort-btn" data-sort="size" data-dir="desc">按大小</button>
+            </div>
+            <div class="file-list-type-filter" id="editorFileListTypeFilter">
+              <span class="file-list-type-label">只看:</span>
+              <button type="button" class="file-list-type-btn active" data-type="all" onclick="setFileListTypeFilter('all')">全部</button>
+              <button type="button" class="file-list-type-btn" data-type="todo" onclick="setFileListTypeFilter('todo')">卡片</button>
+              <button type="button" class="file-list-type-btn" data-type="md" onclick="setFileListTypeFilter('md')">MD</button>
+              <button type="button" class="file-list-type-btn" data-type="html" onclick="setFileListTypeFilter('html')">HTML</button>
+              <button type="button" class="file-list-type-btn" data-type="json" onclick="setFileListTypeFilter('json')">JSON</button>
+              <button type="button" class="file-list-type-btn" data-type="text" onclick="setFileListTypeFilter('text')">文本</button>
+            </div>
+            <div class="file-list-body" id="editorFileListBody"></div>
+            <div class="file-list-footer" id="editorFileListFooter">
+              <span id="editorFileListCount">共 0 个文件</span>
+              <button class="file-list-dir-btn" id="editorFileListResetBtn" title="返回默认 data 目录" onclick="resetBrowseDir()" style="display:none">↩ 默认</button>
+              <button class="file-list-dir-btn" id="editorFileListDirBtn" title="点击切换浏览目录…" onclick="switchBrowseDir()">📂</button>
+            </div>
+          </div>
           <button class="btn btn-text btn-secondary" id="editorReturnBtn" onclick="returnFromEditorLink()" style="display:none;color:#7c3aed;border:1px solid #7c3aed;" title="返回来源卡片（关闭编辑器并滚回原卡片位置）">↩ 返回</button>
-          <button class="btn btn-text btn-secondary" id="emailBtn" onclick="emailTodoFromModal()" style="background:transparent;color:#8b5cf6;border:1px solid #8b5cf6;" title="将当前任务内容发送邮件" data-page-node-id="jFZCYv5vTMUoM55ImmpHAh">📧 发邮件</button>
-          <button class="btn btn-text btn-secondary" onclick="closeModal()" data-page-node-id="vmsMk5SyBCqpSx17cKICP9">取消</button>
-          <button class="btn btn-text btn-primary" onclick="saveTask()" data-page-node-id="DpFPDrKnUkj2ujsKQEjFGA">保存</button>
+          <!-- 📧 发邮件按钮已移除（用户要求）：todo 编辑器里没必要发邮件，Gallery 卡片上已有同功能 -->
+          <button class="btn btn-text btn-primary" onclick="closeModal()" title="关闭编辑器，返回 Gallery" data-page-node-id="vmsMk5SyBCqpSx17cKICP9">返回</button>
+          <!-- 🆕 编辑器内「删除」：删除当前打开的文件（todo 卡片 / MD / JSON / HTML / 任意文本文件）；
+               样式与「保存」统一（用户要求五个按钮同款），禁用态仅靠 disabled + opacity 区分 -->
+          <button class="btn btn-text btn-primary" id="editorDeleteFileBtn" type="button" onclick="deleteCurrentFile()" title="删除当前文件（从磁盘删除，不可恢复）">删除</button>
+          <!-- 保存后不自动关窗（用户要求）：留在编辑器继续编辑；返回 Gallery 需手动按「返回」 -->
+          <button class="btn btn-text btn-primary" id="saveTaskBtn" onclick="saveTask(false)" data-page-node-id="DpFPDrKnUkj2ujsKQEjFGA">保存</button>
         </div>
 
         <div class="json-file-row" id="jsonFileRow" style="display: none;" data-page-node-id="1QYKWA5xip33kCzdQbsWOX">
@@ -5915,7 +6026,7 @@
     let lastActiveTabKey = null;  // 上次离开编辑器时的活动页签 key（用于「编辑」按钮停驻）
     const EDITOR_TABS_LS_KEY = 'todolist-editor-tabs-v1';
     // 页签只显示标题文字，类型不占版面 —— 改在 title 提示里给出（悬停可见）
-    const SHEET_TAB_TYPE_LABEL = { todo: 'todo 卡片', md: 'MD 文件', json: 'JSON 文件', html: 'HTML 文件', ext: '外部文件' };
+    const SHEET_TAB_TYPE_LABEL = { todo: 'todo 卡片', md: 'MD 文件', json: 'JSON 文件', html: 'HTML 文件', ext: '外部文件', newfile: '新文件' };
 
     function loadEditorTabs() {
       editorTabs = [];
@@ -8458,9 +8569,16 @@
 
     // 切换侧抽屉页签（仅在新增模式下有效；编辑模式下锁定）
     function switchFileTypeTab(tab) {
-      if (editingId || currentMdId || currentJsonId || currentHtmlId) return; // 编辑模式锁定
+      if (editingId || currentMdId || currentJsonId || currentHtmlId || externalFilePath) return; // 编辑/外部文件模式锁定
       if (activeFileTab === tab) return;
       activeFileTab = tab;
+      // 🆕 切页签时同步「文件类型」下拉到对应扩展名（md→.md / html→.html / json→.json / todo→默认 .txt）
+      const extByTab = { todo: '.txt', md: '.md', html: '.html', json: '.json' };
+      const extSel = document.getElementById('newFileExtSelect');
+      if (extSel && extByTab[tab] && Array.from(extSel.options).some(o => o.value === extByTab[tab])) {
+        newFileExt = extByTab[tab];
+        extSel.value = newFileExt;
+      }
       // 新增模式下随页签切换标题，让用户明确正在创建的文件类型
       const titleMap = { todo: '添加 todo 卡片', md: '添加 MD 文件', html: '添加 HTML 文件', json: '添加 JSON 文件' };
       document.getElementById('modalTitle').textContent = titleMap[tab] || '添加文件';
@@ -8557,6 +8675,47 @@
       setDisplay('colorFormGroup', hide ? 'none' : '');
       setDisplay('attachmentsFormGroup', hide ? 'none' : '');
       setDisplay('emailBtn', hide ? 'none' : '');
+      // 🆕 新增态下「文件类型」下拉 + 「文件名称」输入：仅 MD/HTML/JSON 等文件页签显示；todo 卡片 / 编辑态隐藏
+      const isNewFile = !editingId && !currentMdId && !currentJsonId && !currentHtmlId && !externalFilePath;
+      const showNewFileFields = isNewFile && hide;
+      setDisplay('newFileExtGroup', showNewFileFields ? '' : 'none');
+      setDisplay('newFileNameGroup', showNewFileFields ? '' : 'none');
+      // 🆕 「删除」按钮：新增态（磁盘上还没有文件）时禁用，编辑态（有真实文件）时启用
+      updateDeleteBtnVisibility();
+      // 🆕 新增态把「保存」按钮文案换成「确认」（设定好名称+类型后，按确认即创建文件并显示页签）
+      updateSaveBtnLabel();
+    }
+
+    // 🆕 主按钮文案：新增态 →「确认」；编辑态 →「保存」
+    function updateSaveBtnLabel() {
+      const btn = document.getElementById('saveTaskBtn');
+      if (!btn) return;
+      const isNewFile = !editingId && !currentMdId && !currentJsonId && !currentHtmlId && !externalFilePath;
+      btn.textContent = isNewFile ? '确认' : '保存';
+    }
+
+    // 🆕 文件名输入：同步到 newFileName（实时），并实时预览 hint 里的最终文件名
+    function onNewFileNameInput(input) {
+      newFileName = (input && input.value) ? input.value.trim() : '';
+      const hint = document.getElementById('newFileNameHint');
+      if (hint) {
+        const ext = (newFileExt || '.txt');
+        const finalName = newFileName ? (newFileName + ext) : ('file-时间戳' + ext);
+        hint.textContent = newFileName ? ('将保存为：' + finalName) : '留空则自动命名（如 file-时间戳' + ext + '）';
+      }
+    }
+
+    // 🆕 「删除」按钮可用性：只有在编辑一个磁盘上真实存在的文件时才可点
+    function updateDeleteBtnVisibility() {
+      const btn = document.getElementById('editorDeleteFileBtn');
+      if (!btn) return;
+      const hasFile = !!(editingId || currentMdId || currentJsonId || currentHtmlId || externalFilePath);
+      btn.disabled = !hasFile;
+      btn.style.opacity = hasFile ? '' : '0.4';
+      btn.style.cursor = hasFile ? '' : 'not-allowed';
+      btn.title = hasFile
+        ? '删除当前文件（从磁盘删除，不可恢复）'
+        : '当前是新增状态，磁盘上还没有文件可删除';
     }
 
     // 根据 activeFileTab / editingId / currentMdId 刷新页签 UI
@@ -8570,8 +8729,8 @@
       tabMd.classList.toggle('active', activeFileTab === 'md');
       if (tabHtml) tabHtml.classList.toggle('active', activeFileTab === 'html');
       if (tabJson) tabJson.classList.toggle('active', activeFileTab === 'json');
-      // 编辑模式下锁定，只允许当前文件类型对应的页签
-      const isEdit = !!editingId || !!currentMdId || !!currentJsonId || !!currentHtmlId;
+      // 编辑模式 / 外部文件模式下锁定，只允许当前文件类型对应的页签
+      const isEdit = !!editingId || !!currentMdId || !!currentJsonId || !!currentHtmlId || !!externalFilePath;
       tabTodo.disabled = isEdit && activeFileTab !== 'todo';
       tabMd.disabled = isEdit && activeFileTab !== 'md';
       if (tabHtml) tabHtml.disabled = isEdit && activeFileTab !== 'html';
@@ -8580,20 +8739,83 @@
       updateDrawerMetadataVisibility();
     }
 
+    // 🆕 新增态保存时选择的文本文件扩展名（含点，如 '.md' / '.txt' / '.js'）
+    let newFileExt = '.txt';
+    // 🆕 新增态用户设定的文件名（不含扩展名）；为空时退回自动命名 file-{ts}
+    let newFileName = '';
+    let textExtensionsLoaded = false;
+
+    // 从主进程拉取支持的文本扩展名白名单，填充「文件类型」下拉（与「开启→文本」一致）
+    async function ensureTextExtensions() {
+      if (textExtensionsLoaded) return;
+      textExtensionsLoaded = true;
+      const sel = document.getElementById('newFileExtSelect');
+      if (!sel) return;
+      let exts = ['.txt', '.md', '.html', '.json', '.log', '.csv'];
+      try {
+        if (window.electronAPI && window.electronAPI.getTextExtensions) {
+          const res = await window.electronAPI.getTextExtensions();
+          if (res && res.success && Array.isArray(res.data) && res.data.length) {
+            exts = res.data;
+          }
+        }
+      } catch (e) { /* 用默认列表兜底 */ }
+      // 常用类型排前，其余按字母序
+      const COMMON = ['.txt', '.md', '.html', '.json', '.log', '.csv', '.js', '.py', '.css', '.sql', '.yaml', '.xml', '.sh'];
+      const common = exts.filter(x => COMMON.includes(x));
+      const rest = exts.filter(x => !COMMON.includes(x)).sort();
+      const ordered = common.concat(rest);
+      sel.innerHTML = ordered.map(ext => `<option value="${ext}">${ext}</option>`).join('');
+      if (!ordered.includes(newFileExt)) newFileExt = ordered[0] || '.txt';
+      sel.value = newFileExt;
+    }
+
+    // 用户手动改下拉 → 同步 newFileExt 并切换到对应编辑模式（html/json 专用编辑器，其余走 MD 文本编辑器）
+    function onNewFileExtChange() {
+      const sel = document.getElementById('newFileExtSelect');
+      if (!sel) return;
+      newFileExt = sel.value || '.txt';
+      const lower = newFileExt.toLowerCase();
+      if (lower === '.html' || lower === '.htm') {
+        if (activeFileTab !== 'html') switchFileTypeTab('html');
+      } else if (lower === '.json' || lower === '.json5' || lower === '.jsonc') {
+        if (activeFileTab !== 'json') switchFileTypeTab('json');
+      } else {
+        if (activeFileTab !== 'md') switchFileTypeTab('md');
+      }
+    }
+
     function openAddModal() {
       editingId = null;
       currentMdId = null;
       currentJsonId = null;
       currentHtmlId = null;
+      externalFilePath = null; // 新增态不是外部文件，清除锁定
       // 🆕 编辑器视图记忆：新增文档无既有位置，置空（不恢复也不误写）
-      currentEditorDocKey = null;
-      // 🆕 底部 Sheet 页签：新增态尚未落盘成文件，没有对应页签
+      currentEditorDocKey = 'newfile';
+      // 🆕 底部 Sheet 页签：每次新增前先摘掉上次遗留的 NewFile 占位页签（避免堆叠）
+      const oldNewfileIdx = editorTabs.findIndex(t => t.key === 'newfile');
+      if (oldNewfileIdx >= 0) {
+        editorTabs.splice(oldNewfileIdx, 1);
+        if (activeTabKey === 'newfile') activeTabKey = null;
+      }
       markCurrentTabDirty();
-      activeTabKey = null;
+      // 🆕 立刻挂上「NewFile」占位页签（用户要求：新增态要有可见页签，避免与现有页签混淆）
+      touchEditorTab({ key: 'newfile', type: 'newfile', id: 'newfile', title: 'NewFile' });
       renderSheetTabs();
       document.getElementById('modalTitle').textContent = '添加文件';
       activeFileTab = 'todo';
       updateFileTypeTabs();
+      // 🆕 新增态：隐藏「文件类型」下拉（todo 卡片态不适用）；切到 MD/HTML/JSON 页签时才显示
+      const extGroup = document.getElementById('newFileExtGroup');
+      if (extGroup) extGroup.style.display = 'none';
+      // 🆕 重置文件名输入（每次新增都从空开始）
+      newFileName = '';
+      const nameInput = document.getElementById('newFileNameInput');
+      if (nameInput) nameInput.value = '';
+      const nameGroup = document.getElementById('newFileNameGroup');
+      if (nameGroup) nameGroup.style.display = 'none';
+      ensureTextExtensions();
       document.getElementById('taskText').value = '';
       document.getElementById('htmlText').value = '';
       // JSON 文本编辑：新增卡片也给出完整的 JSON 模板，用户编辑的就是卡片本身
@@ -9162,6 +9384,8 @@
     }
 
     function closeModal(event, focusId, skipPrompt = false) {
+      // 🆕 关闭编辑器时一并收起「打开已有文件」面板
+      if (typeof closeEditorFileList === 'function') closeEditorFileList();
       // 先做 target 判定：modal-overlay 上的 onclick 会接收所有冒泡上来的点击
       // （toolbar 按钮、标签、背景色块、附件等都会冒泡到 modal-overlay），
       // 因此"弹未保存提示"前必须先排除 modal 内部点击，否则用户点 toolbar/标签/
@@ -9206,6 +9430,13 @@
       }
       // 🆕 底部 Sheet 页签：关闭前把"是否有未保存改动"记到页签上（必须在 editSnapshot 清空之前）
       markCurrentTabDirty();
+      // 🆕 用户要求：未保存就离开编辑器 → 自动取消 NewFile 占位页签（文件未落到磁盘，不留死链）
+      if (!externalFilePath && !editingId && !currentMdId && !currentJsonId && !currentHtmlId) {
+        const ni = editorTabs.findIndex(t => t.key === 'newfile');
+        if (ni >= 0) {
+          editorTabs.splice(ni, 1);
+        }
+      }
       // 🆕 「编辑」按钮停驻：记住本次离开时的活动页签，下次点「编辑」直接回到它
       if (activeTabKey) lastActiveTabKey = activeTabKey;
       activeTabKey = null;
@@ -9215,6 +9446,7 @@
       currentMdId = null;
       currentJsonId = null;
       currentHtmlId = null;
+      externalFilePath = null; // 关闭编辑器时清除外部文件路径，避免影响新增态
       // 🆕 编辑器视图记忆：关闭时立即落盘最后滚动位置，并清除当前文档标识
       flushEditorView();
       currentEditorDocKey = null;
@@ -9272,6 +9504,222 @@
       `).join('');
     }
 
+    // 🆕 轻量 toast：底部居中短暂提示（保存新文件等反馈用，自动消失）
+    let toastTimer = null;
+    function showToast(message, type = 'info') {
+      let el = document.getElementById('appToast');
+      if (!el) {
+        el = document.createElement('div');
+        el.id = 'appToast';
+        el.className = 'app-toast';
+        document.body.appendChild(el);
+      }
+      el.textContent = message;
+      el.classList.remove('success', 'danger');
+      if (type === 'success') el.classList.add('success');
+      else if (type === 'danger') el.classList.add('danger');
+      // 强制重排，保证连续两次调用（间隔很短）也能重新播放过渡动画
+      void el.offsetWidth;
+      el.classList.add('show');
+      console.log('[TodoList][toast]', message);
+      if (toastTimer) clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => {
+        el.classList.remove('show');
+        toastTimer = null;
+      }, 4000);
+    }
+
+    // 🆕 当前编辑器正在操作的文件（删除按钮用）。
+    //    key 必须与 touchEditorTab 登记的页签 key 一致，删除后才能把页签一并摘掉。
+    function currentFileTarget() {
+      if (editingId) return { kind: 'todo', id: editingId, name: 'todo-' + editingId + '.json', key: 'todo:' + editingId };
+      if (currentMdId) return { kind: 'md', id: currentMdId, name: currentMdId + '.md', key: 'md:' + currentMdId };
+      if (currentJsonId) return { kind: 'json', id: currentJsonId, name: currentJsonId + '.json', key: 'json:' + currentJsonId };
+      if (currentHtmlId) return { kind: 'html', id: currentHtmlId, name: currentHtmlId + '.html', key: 'html:' + currentHtmlId };
+      if (externalFilePath) {
+        const p = String(externalFilePath);
+        const name = p.split(/[\\/]/).pop() || p;
+        return { kind: 'ext', path: p, name, key: 'ext:' + p };
+      }
+      return null;
+    }
+
+    // 🆕 编辑器内「删除」：把当前打开的文件从磁盘删掉。
+    //   覆盖 5 种文档：todo 卡片 / MD / JSON / HTML / 任意外部文本文件（按绝对路径）。
+    //   删除后：摘掉对应 Sheet 页签 → 关闭编辑器（skipPrompt，删除语义明确不再问存档）→ 刷新 → toast。
+    //   ⚠️ 只删「当前这一个文件」，绝不做批量 / 递归；后端 delete-file-by-path 另有三重守卫。
+    async function deleteCurrentFile() {
+      const target = currentFileTarget();
+      if (!target) {
+        showToast('当前是新增状态，磁盘上还没有文件可删除');
+        return;
+      }
+      if (!confirm(`确定删除「${target.name}」吗？\n\n这会直接从磁盘删除该文件，不可恢复。`)) return;
+
+      try {
+        const api = window.electronAPI || {};
+        if (target.kind === 'todo') {
+          if (api.deleteTodoFile) {
+            const r = await api.deleteTodoFile(target.id);
+            if (r && r.success === false) throw new Error(r.error || '删除 todo 文件失败');
+          }
+          todos = todos.filter(t => t.id !== target.id);
+          editingId = null;
+          await saveTodos(); // 内部会 renderTodos + updateStats
+        } else if (target.kind === 'md') {
+          const r = await api.deleteMdFile(target.id);
+          if (r && r.success === false) throw new Error(r.error || '删除 MD 文件失败');
+        } else if (target.kind === 'json') {
+          const r = await api.deleteJsonFile(target.id);
+          if (r && r.success === false) throw new Error(r.error || '删除 JSON 文件失败');
+        } else if (target.kind === 'html') {
+          const r = await api.deleteHtmlFile(target.id);
+          if (r && r.success === false) throw new Error(r.error || '删除 HTML 文件失败');
+        } else {
+          // ext：按绝对路径删除；allowedRoot 限定在「当前临时浏览目录」或「默认 data 目录」内
+          let allowedRoot = (fileListState && fileListState.browseDir) || null;
+          if (!allowedRoot) {
+            const dirRes = api.getDataDir ? await api.getDataDir() : null;
+            if (dirRes && dirRes.success && dirRes.data) allowedRoot = dirRes.data;
+          }
+          const r = await api.deleteFileByPath(target.path, allowedRoot);
+          if (!r || !r.success) throw new Error((r && r.error) || '删除文件失败');
+        }
+
+        // 磁盘文件已不存在 → 摘掉对应页签（用户要求「焦点移到相邻左侧页签；左边没有就看右边；都没有就清空画面」）。
+        //   复用 removeSheetTab 的相邻定位逻辑：先 splice 出当前页签，再在剩余页签里挑左邻。
+        const tabIdx = editorTabs.findIndex(t => t.key === target.key);
+        if (tabIdx >= 0) {
+          editorTabs.splice(tabIdx, 1);
+          if (activeTabKey === target.key) activeTabKey = null;
+        }
+
+        // 🆕 删除后不关窗（用户要求）：清空三个编辑器输入框 + 切换到相邻页签；无相邻页签就完全空画面。
+        //   优先左侧页签，左侧没有则右侧；两侧都没有 → 清空当前画面，不显示任何内容。
+        document.getElementById('taskText').value = '';
+        document.getElementById('htmlText').value = '';
+        document.getElementById('jsonText').value = '';
+        editingId = null;
+        currentMdId = null;
+        currentJsonId = null;
+        currentHtmlId = null;
+        externalFilePath = null;
+        currentEditorDocKey = null;
+        document.getElementById('modalTitle').textContent = '添加文件';
+
+        if (editorTabs.length > 0) {
+          // splice 后，索引 tabIdx 位置的就是「原左侧相邻」，同索引（若未越界）即左邻
+          const neighborIdx = Math.min(tabIdx, editorTabs.length - 1);
+          const neighbor = editorTabs[neighborIdx];
+          activeTabKey = neighbor.key;
+          saveEditorTabs();
+          renderSheetTabs();
+          // 加载相邻页签对应的真实文件内容（异步，可能出错需容错）
+          try {
+            await activateSheetTab(neighbor.key);
+          } catch (e) {
+            console.warn('[TodoList] 切换到相邻页签失败:', e);
+          }
+          // 激活相邻页签后，按钮状态由 updateDrawerMetadataVisibility 决定；这里保险起见再调一次
+          updateDeleteBtnVisibility();
+        } else {
+          // 没有任何页签 → 编辑器空画面
+          activeTabKey = null;
+          saveEditorTabs();
+          renderSheetTabs();
+          // 切到默认 todo 页签（空态），保留编辑器打开
+          activeFileTab = 'todo';
+          updateFileTypeTabs();
+          captureEditSnapshot();   // 空内容快照，避免被「未保存更改」误判
+          updateDeleteBtnVisibility();
+        }
+
+        // 刷新「打开已有文件」列表（编辑器内 + 主画面共用同一份 fileListState）
+        if (typeof loadFileListItems === 'function') loadFileListItems();
+
+        showToast(`已删除 ${target.name}（已切到相邻页签）`, 'success');
+      } catch (e) {
+        console.error('[TodoList] 删除当前文件失败:', e);
+        alert('删除失败：' + (e && e.message ? e.message : e));
+      }
+    }
+
+    // 🆕 新增态保存文本文件：按「文件类型」下拉所选扩展名，自动命名后写入 data 目录。
+    //    - .html/.htm → 取 HTML 编辑器内容；.json/.json5/.jsonc → 取 JSON 编辑器内容；其余取 MD 文本编辑器内容。
+    //    - 保存走 save-file-by-path（写 data 目录下 `{前缀}-{时间戳}{扩展名}`），任意扩展名皆可。
+    async function saveNewTextFile(closeAfterSave = true) {
+      const ext = (newFileExt || '.txt').toLowerCase();
+      const lower = ext.replace(/^\./, '');
+      const textarea = document.getElementById('taskText');
+      const htmlTextarea = document.getElementById('htmlText');
+      const jsonTextarea = document.getElementById('jsonText');
+
+      let content, prefix;
+      if (lower === 'html' || lower === 'htm') {
+        content = htmlTextarea.value.replace(/\r\n/g, '\n');
+        prefix = 'html';
+      } else if (lower === 'json' || lower === 'json5' || lower === 'jsonc') {
+        content = jsonTextarea.value.replace(/\r\n/g, '\n');
+        prefix = 'json';
+      } else {
+        content = textarea.value.replace(/\r\n/g, '\n');
+        prefix = 'file';
+      }
+      if (!content || !content.trim()) {
+        alert('请输入内容');
+        return;
+      }
+      try {
+        const dirRes = (window.electronAPI && window.electronAPI.getDataDir)
+          ? await window.electronAPI.getDataDir()
+          : null;
+        const dirPath = (dirRes && dirRes.success && dirRes.data) ? dirRes.data : null;
+        if (!dirPath) { alert('无法获取数据目录'); return; }
+        // 🆕 文件名：优先用户设定的名称（去掉用户可能手动输入的后缀/空格）；为空退回自动命名
+        let baseName = (newFileName || '').trim();
+        if (baseName) {
+          // 用户可能已带扩展名输入，去掉已有扩展名再拼所选扩展名，避免出现 xx.md.txt
+          baseName = baseName.replace(/\.[A-Za-z0-9]+$/, '');
+          baseName = baseName + ext;
+        } else {
+          baseName = `${prefix}-${Date.now().toString()}${ext}`;
+        }
+        const fullPath = dirPath + '/' + baseName;
+        if (window.electronAPI && window.electronAPI.saveFileByPath) {
+          await window.electronAPI.saveFileByPath(fullPath, content);
+        } else {
+          // 兜底：无 save-file-by-path 时退回旧的按类型保存（仅 md/json/html）
+          if (lower === 'html' || lower === 'htm') await window.electronAPI.saveHtmlFile(baseName.replace(ext, ''), content);
+          else if (lower === 'json') await window.electronAPI.saveJsonFile(baseName.replace(ext, ''), content);
+          else await window.electronAPI.saveMdFile(baseName.replace(ext, ''), content);
+        }
+        captureEditSnapshot();
+        // 🆕 保存成功后登记到底部 Sheet 页签（用 ext: 全路径作 key，与 openExternalFile 一致，
+        //    这样下次进入编辑器点页签即可直接重开该文件；extType 区分 md/html/json/text）。
+        const extType = (lower === 'html' || lower === 'htm') ? 'html'
+                      : (lower === 'json' || lower === 'json5' || lower === 'jsonc') ? 'json'
+                      : (lower === 'md' || lower === 'markdown' || lower === 'mdx') ? 'md'
+                      : 'text';
+        // 🆕 保存成功后：用真实的 ext 页签替换之前的「NewFile」占位页签
+        const extTabKey = 'ext:' + fullPath;
+        const newfileIdx = editorTabs.findIndex(t => t.key === 'newfile');
+        if (newfileIdx >= 0) editorTabs.splice(newfileIdx, 1);
+        touchEditorTab({ key: extTabKey, type: 'ext', id: baseName, path: fullPath, extType, title: baseName });
+        // 🆕 保存后不关窗（用户要求）：转入「编辑已有文件」状态——
+        //    绑定 externalFilePath 后，再次按「保存」会写回同一路径，不会重复生成新文件。
+        externalFilePath = fullPath;
+        currentEditorDocKey = extTabKey;
+        document.getElementById('modalTitle').textContent = '编辑文件：' + baseName;
+        updateFileTypeTabs(); // 进入编辑态：锁定类型页签、隐藏「文件类型」下拉、启用「删除」按钮
+        // 🆕 保存成功后：刷新文件列表 + 提示（否则用户跳回 Gallery 找不到文件，误以为没保存）
+        if (typeof loadFileListItems === 'function') loadFileListItems();
+        showToast(`已保存 ${baseName}（在「📋 文件」列表，底部页签也已登记）`, 'success');
+      } catch (e) {
+        console.error('[TodoList] 保存新文本文件失败:', e);
+        alert('保存文件失败：' + (e && e.message ? e.message : e));
+      }
+    }
+
     async function saveTask(closeAfterSave = true) {
       const textarea = document.getElementById('taskText');
       const htmlTextarea = document.getElementById('htmlText');
@@ -9279,6 +9727,15 @@
       const text = textarea.value.trim();
       const htmlValue = htmlTextarea.value.trim();
       const jsonValue = jsonTextarea.value.trim();
+
+      // ===== 🆕 新增态 + 文件类页签（md/html/json，或下拉选了其它扩展名）=====
+      //   统一按「文件类型」下拉所选扩展名命名并保存（自动命名），
+      //   使「能打开的文本类型」与「能新建的文本类型」完全一致。
+      const isNewFile = !editingId && !currentMdId && !currentJsonId && !currentHtmlId && !externalFilePath;
+      if (isNewFile && (activeFileTab === 'md' || activeFileTab === 'html' || activeFileTab === 'json')) {
+        await saveNewTextFile(closeAfterSave);
+        return;
+      }
 
       // ===== HTML 文件（纯 .html，无 todo 卡片结构）=====
       if (activeFileTab === 'html') {
@@ -9299,6 +9756,7 @@
           //    页签脏标记 / 关闭问询都依赖它（否则 Cmd+S 保存后关闭还会误报未保存）。
           captureEditSnapshot();
           if (closeAfterSave) { closeModal(undefined, undefined, true); }
+          showToast('已保存 ' + (externalFilePath ? externalFilePath.split('/').pop() : (currentHtmlId + '.html')), 'success');
         } catch (e) {
           console.error('[TodoList] 保存 HTML 文件失败:', e);
           alert('保存 HTML 文件失败：' + (e && e.message ? e.message : e));
@@ -9325,6 +9783,7 @@
           //    页签脏标记 / 关闭问询都依赖它（否则 Cmd+S 保存后关闭还会误报未保存）。
           captureEditSnapshot();
           if (closeAfterSave) { closeModal(undefined, undefined, true); }
+          showToast('已保存 ' + (externalFilePath ? externalFilePath.split('/').pop() : (currentJsonId + '.json')), 'success');
         } catch (e) {
           console.error('[TodoList] 保存 JSON 文件失败:', e);
           alert('保存 JSON 文件失败：' + (e && e.message ? e.message : e));
@@ -9351,6 +9810,7 @@
           //    页签脏标记 / 关闭问询都依赖它（否则 Cmd+S 保存后关闭还会误报未保存）。
           captureEditSnapshot();
           if (closeAfterSave) { closeModal(undefined, undefined, true); }
+          showToast('已保存 ' + (externalFilePath ? externalFilePath.split('/').pop() : (currentMdId + '.md')), 'success');
         } catch (e) {
           console.error('[TodoList] 保存 MD 文件失败:', e);
           alert('保存 MD 文件失败：' + (e && e.message ? e.message : e));
@@ -9458,6 +9918,8 @@
         // skipPrompt=true：已保存，无需再弹「问询后存档」
         closeModal(undefined, focusCardId, true);
       }
+      // 🆕 保存不关窗时也要有反馈（否则用户不知道到底存没存）
+      showToast(isEdit ? '已保存卡片' : '已新建卡片', 'success');
     }
 
     //  从外部创建 todo 卡片（供 capture.js 调用）
@@ -9626,38 +10088,40 @@
         if (fileListState.browseDir) {
           const res = await window.electronAPI.listAllFilesInDir(fileListState.browseDir);
           if (res && res.success && Array.isArray(res.data)) {
-            items = res.data.map(it => {
-              const ext = (it.name || '').split('.').pop().toLowerCase();
-              let type = 'json';
-              if (ext === 'md') type = 'md';
-              else if (ext === 'html') type = 'html';
-              else if (it.name.startsWith('todo-')) type = 'todo';
-              return { ...it, type };
-            });
+            items = res.data.map(it => ({ ...it, type: classifyFileType(it.name) }));
           }
         } else {
-          // 默认：从 PLUGINS_DATA_DIR 分别拉取 4 类文件
-          const todoRes = await window.electronAPI.listTodoFiles();
-          const mdRes = (window.electronAPI.listMdFiles)
-            ? await window.electronAPI.listMdFiles()
-            : { success: true, data: [] };
-          const htmlRes = (window.electronAPI.listHtmlFiles)
-            ? await window.electronAPI.listHtmlFiles()
-            : { success: true, data: [] };
-          const jsonRes = (window.electronAPI.listJsonFiles)
-            ? await window.electronAPI.listJsonFiles()
-            : { success: true, data: [] };
-          const todoItems = (todoRes && todoRes.success) ? (todoRes.data || []).map(it => ({ ...it, type: 'todo' })) : [];
-          const mdItems = (mdRes && mdRes.success) ? (mdRes.data || []).map(it => ({ ...it, type: 'md' })) : [];
-          const htmlItems = (htmlRes && htmlRes.success) ? (htmlRes.data || []).map(it => ({ ...it, type: 'html' })) : [];
-          const jsonItems = (jsonRes && jsonRes.success) ? (jsonRes.data || []).map(it => ({ ...it, type: 'json' })) : [];
-          items = todoItems.concat(mdItems, htmlItems, jsonItems);
+          // 默认：一次性列出 data 目录下所有文本类文件（todo卡片 / MD / HTML / JSON / 其它文本）
+          // 🆕 改用 listAllFilesInDir(默认 data 目录) 统一取全部文本文件，再按扩展名分类，
+          //    这样非 4 种类型的纯文本文件（txt/log/csv/...）也能在列表中出现并可编辑。
+          const dirRes = (window.electronAPI.getDataDir)
+            ? await window.electronAPI.getDataDir()
+            : { success: false };
+          const dirPath = (dirRes && dirRes.success && dirRes.data) ? dirRes.data : null;
+          if (dirPath && window.electronAPI.listAllFilesInDir) {
+            const allRes = await window.electronAPI.listAllFilesInDir(dirPath);
+            if (allRes && allRes.success && Array.isArray(allRes.data)) {
+              items = allRes.data.map(it => ({ ...it, type: classifyFileType(it.name) }));
+            }
+          } else {
+            // 兜底：仍按 4 类分别拉取（旧 IPC 路径），保证降级可用
+            const todoRes = await window.electronAPI.listTodoFiles();
+            const mdRes = (window.electronAPI.listMdFiles) ? await window.electronAPI.listMdFiles() : { success: true, data: [] };
+            const htmlRes = (window.electronAPI.listHtmlFiles) ? await window.electronAPI.listHtmlFiles() : { success: true, data: [] };
+            const jsonRes = (window.electronAPI.listJsonFiles) ? await window.electronAPI.listJsonFiles() : { success: true, data: [] };
+            const todoItems = (todoRes && todoRes.success) ? (todoRes.data || []).map(it => ({ ...it, type: 'todo' })) : [];
+            const mdItems = (mdRes && mdRes.success) ? (mdRes.data || []).map(it => ({ ...it, type: 'md' })) : [];
+            const htmlItems = (htmlRes && htmlRes.success) ? (htmlRes.data || []).map(it => ({ ...it, type: 'html' })) : [];
+            const jsonItems = (jsonRes && jsonRes.success) ? (jsonRes.data || []).map(it => ({ ...it, type: 'json' })) : [];
+            items = todoItems.concat(mdItems, htmlItems, jsonItems);
+          }
         }
         fileListState.items = items;
         fileListState.loaded = true;
         // 📂 更新底部目录按钮：显示当前浏览的目录（默认 data 或用户切换的临时目录）
         updateFileListDirBtn();
         renderFileList();
+        renderEditorFileList();
       } catch (e) {
         console.error('[TodoList] 加载文件列表失败:', e);
         if (footer) { const c = document.getElementById('fileListCount'); if (c) c.textContent = '加载失败：' + e.message; }
@@ -9666,8 +10130,6 @@
 
     // 📂 更新底部目录按钮的显示（名称 + tooltip 全路径）
     async function updateFileListDirBtn() {
-      const btn = document.getElementById('fileListDirBtn');
-      if (!btn) return;
       try {
         let dirPath = fileListState.browseDir;
         if (!dirPath) {
@@ -9676,22 +10138,27 @@
             : null;
           dirPath = (res && res.success && res.data) ? res.data : null;
         }
-        const resetBtn = document.getElementById('fileListResetBtn');
-        if (dirPath) {
-          const dirName = dirPath.split('/').pop() || dirPath.split('\\').pop() || 'data';
-          btn.title = dirPath + (fileListState.browseDir ? '\n（临时浏览，不影响默认 data 目录）' : '\n（默认资料目录）');
-          btn.textContent = '📂 ' + dirName;
-          // 临时浏览模式下按钮加个视觉区分
-          btn.classList.toggle('browsing', !!fileListState.browseDir);
-          // 仅在临时浏览模式下显示「返回默认目录」按钮
-          if (resetBtn) resetBtn.style.display = fileListState.browseDir ? '' : 'none';
-        } else {
-          btn.title = '无法获取路径';
-          btn.textContent = '📂';
-          btn.classList.remove('browsing');
-          if (resetBtn) resetBtn.style.display = 'none';
-        }
+        // 主画面 + 编辑器内共用同一 browseDir 状态，同步刷新两个目录按钮
+        updateOneFileListDirBtn(document.getElementById('fileListDirBtn'), document.getElementById('fileListResetBtn'), dirPath);
+        updateOneFileListDirBtn(document.getElementById('editorFileListDirBtn'), document.getElementById('editorFileListResetBtn'), dirPath);
       } catch { /* 静默 */ }
+    }
+
+    // 📂 同步刷新一组目录按钮（主画面 / 编辑器内）
+    function updateOneFileListDirBtn(btn, resetBtn, dirPath) {
+      if (!btn) return;
+      if (dirPath) {
+        const dirName = dirPath.split('/').pop() || dirPath.split('\\').pop() || 'data';
+        btn.title = dirPath + (fileListState.browseDir ? '\n（临时浏览，不影响默认 data 目录）' : '\n（默认资料目录）');
+        btn.textContent = '📂 ' + dirName;
+        btn.classList.toggle('browsing', !!fileListState.browseDir);
+        if (resetBtn) resetBtn.style.display = fileListState.browseDir ? '' : 'none';
+      } else {
+        btn.title = '无法获取路径';
+        btn.textContent = '📂';
+        btn.classList.remove('browsing');
+        if (resetBtn) resetBtn.style.display = 'none';
+      }
     }
 
     // 📂 清除临时浏览目录，返回默认 data 目录
@@ -9717,8 +10184,19 @@
       }
     }
 
-    // 排序 + 类型筛选后渲染（不动主数据，仅在内存里排一遍）
-    function renderFileList() {
+    // 按文件名归类文件类型（主画面 / 编辑器共用）。
+    // 已知 4 类：todo / md / html / json；其余一律归为 text（纯文本，用 MD 文本编辑器打开）。
+    function classifyFileType(name) {
+      const lower = (name || '').toLowerCase();
+      if (lower.startsWith('todo-') && lower.endsWith('.json')) return 'todo';
+      if (lower.endsWith('.md') || lower.endsWith('.markdown') || lower.endsWith('.mdx')) return 'md';
+      if (lower.endsWith('.html') || lower.endsWith('.htm')) return 'html';
+      if (lower.endsWith('.json') || lower.endsWith('.json5') || lower.endsWith('.jsonc')) return 'json';
+      return 'text';
+    }
+
+    // 排序 + 类型筛选（不动主数据，仅在内存里排一遍）；主画面与编辑器共用
+    function getSortedFilteredFileItems() {
       const key = fileListState.sortKey;
       const dir = fileListState.sortDir === 'asc' ? 1 : -1;
       let items = fileListState.items.slice().sort((a, b) => {
@@ -9732,6 +10210,65 @@
       if (fileListState.typeFilter && fileListState.typeFilter !== 'all') {
         items = items.filter(it => it.type === fileListState.typeFilter);
       }
+      return items;
+    }
+
+    // 单个文件项的 HTML（主画面与编辑器共用；onSelect 为点击处理函数名）
+    function fileListItemHtml(it, onSelect) {
+      const date = new Date(it.mtime);
+      const yyyy = date.getFullYear();
+      const mm = String(date.getMonth() + 1).padStart(2, '0');
+      const dd = String(date.getDate()).padStart(2, '0');
+      const hh = String(date.getHours()).padStart(2, '0');
+      const mi = String(date.getMinutes()).padStart(2, '0');
+      const timeStr = `${yyyy}-${mm}-${dd} ${hh}:${mi}`;
+      const sizeStr = formatFileSizeShort(it.size);
+      const isMd = it.type === 'md';
+      const isHtml = it.type === 'html';
+      const isJson = it.type === 'json';
+      const isText = it.type === 'text';
+      let statusText, statusClass, itemClass, itemType;
+      if (isMd) {
+        statusText = '📄 MD';
+        statusClass = 'md';
+        itemClass = '';
+        itemType = 'md';
+      } else if (isHtml) {
+        statusText = '📄 HTML';
+        statusClass = 'html';
+        itemClass = '';
+        itemType = 'html';
+      } else if (isJson) {
+        statusText = '📄 JSON';
+        statusClass = 'json';
+        itemClass = '';
+        itemType = 'json';
+      } else if (isText) {
+        statusText = '📄 文本';
+        statusClass = 'text';
+        itemClass = '';
+        itemType = 'text';
+      } else {
+        // 从内存查完成态；找不到（文件存在但内存未加载）按待完成兜底
+        const todo = (typeof todos !== 'undefined' && Array.isArray(todos))
+          ? todos.find(t => t.id === it.id)
+          : null;
+        const isCompleted = !!(todo && todo.completed);
+        statusText = isCompleted ? '已完成' : '待完成';
+        statusClass = isCompleted ? 'completed' : 'pending';
+        itemClass = isCompleted ? 'completed' : '';
+        itemType = 'todo';
+      }
+      return `<div class="file-list-item ${itemClass}" data-id="${escapeHtml(it.id)}" data-type="${itemType}" onclick="${onSelect}('${escapeHtml(it.id)}', '${itemType}')" title="${escapeHtml(it.name)}">
+        <span class="file-list-item-name">${escapeHtml(it.name)}</span>
+        <span class="file-list-item-meta">${timeStr} · ${sizeStr}</span>
+        <span class="file-list-item-status ${statusClass}">${statusText}</span>
+      </div>`;
+    }
+
+    // 渲染主画面文件列表面板
+    function renderFileList() {
+      const items = getSortedFilteredFileItems();
       const body = document.getElementById('fileListBody');
       const footer = document.getElementById('fileListFooter');
       if (!body || !footer) return;
@@ -9740,54 +10277,24 @@
         const c = document.getElementById('fileListCount'); if (c) c.textContent = '共 0 个文件';
         return;
       }
-      // 元信息格式：时间=YYYY-MM-DD HH:mm，大小=B/KB/MB（自动）
       // 状态徽标：todo 从内存 todos 查 completed；md 文件显示「📄 MD」徽标
-      body.innerHTML = items.map(it => {
-        const date = new Date(it.mtime);
-        const yyyy = date.getFullYear();
-        const mm = String(date.getMonth() + 1).padStart(2, '0');
-        const dd = String(date.getDate()).padStart(2, '0');
-        const hh = String(date.getHours()).padStart(2, '0');
-        const mi = String(date.getMinutes()).padStart(2, '0');
-        const timeStr = `${yyyy}-${mm}-${dd} ${hh}:${mi}`;
-        const sizeStr = formatFileSizeShort(it.size);
-        const isMd = it.type === 'md';
-        const isHtml = it.type === 'html';
-        const isJson = it.type === 'json';
-        let statusText, statusClass, itemClass, itemType;
-        if (isMd) {
-          statusText = '📄 MD';
-          statusClass = 'md';
-          itemClass = '';
-          itemType = 'md';
-        } else if (isHtml) {
-          statusText = '📄 HTML';
-          statusClass = 'html';
-          itemClass = '';
-          itemType = 'html';
-        } else if (isJson) {
-          statusText = '📄 JSON';
-          statusClass = 'json';
-          itemClass = '';
-          itemType = 'json';
-        } else {
-          // 从内存查完成态；找不到（文件存在但内存未加载）按待完成兜底
-          const todo = (typeof todos !== 'undefined' && Array.isArray(todos))
-            ? todos.find(t => t.id === it.id)
-            : null;
-          const isCompleted = !!(todo && todo.completed);
-          statusText = isCompleted ? '已完成' : '待完成';
-          statusClass = isCompleted ? 'completed' : 'pending';
-          itemClass = isCompleted ? 'completed' : '';
-          itemType = 'todo';
-        }
-        return `<div class="file-list-item ${itemClass}" data-id="${escapeHtml(it.id)}" data-type="${itemType}" onclick="selectFileListItem('${escapeHtml(it.id)}', '${itemType}')" title="${escapeHtml(it.name)}">
-          <span class="file-list-item-name">${escapeHtml(it.name)}</span>
-          <span class="file-list-item-meta">${timeStr} · ${sizeStr}</span>
-          <span class="file-list-item-status ${statusClass}">${statusText}</span>
-        </div>`;
-      }).join('');
+      body.innerHTML = items.map(it => fileListItemHtml(it, 'selectFileListItem')).join('');
       const c = document.getElementById('fileListCount'); if (c) c.textContent = `共 ${items.length} 个文件`;
+    }
+
+    // 🆕 渲染编辑器内「打开已有文件」面板（复用同一份 fileListState 与排序/筛选）
+    function renderEditorFileList() {
+      const items = getSortedFilteredFileItems();
+      const body = document.getElementById('editorFileListBody');
+      const footer = document.getElementById('editorFileListFooter');
+      if (!body || !footer) return;
+      if (items.length === 0) {
+        body.innerHTML = '';
+        const c = document.getElementById('editorFileListCount'); if (c) c.textContent = '共 0 个文件';
+        return;
+      }
+      body.innerHTML = items.map(it => fileListItemHtml(it, 'selectEditorFileListItem')).join('');
+      const c = document.getElementById('editorFileListCount'); if (c) c.textContent = `共 ${items.length} 个文件`;
     }
 
     // 简化的体积格式（B/KB/MB）—— 主进程已有完整版 formatFileSize，前端独立版本避免重复 IPC
@@ -9814,6 +10321,7 @@
         target.dataset.dir = fileListState.sortDir;
       }
       renderFileList();
+      renderEditorFileList();
     }
 
     // 🆕 切换文件类型筛选：全部 / 卡片(todo) / MD / HTML / JSON
@@ -9823,6 +10331,7 @@
       const btns = document.querySelectorAll('.file-list-type-btn');
       btns.forEach(b => b.classList.toggle('active', b.dataset.type === (type || 'all')));
       renderFileList();
+      renderEditorFileList();
     }
 
     // 📂 打开「临时浏览目录」下的外部文件（按绝对路径读取，保存时也写回原路径）
@@ -9837,14 +10346,19 @@
           alert('读取文件失败：' + (result && result.error ? result.error : '未知错误'));
           return;
         }
-        // 标记为外部文件模式
-        externalFilePath = fullPath;
-        editingId = null;
-        currentMdId = null;
-        currentJsonId = null;
-        currentHtmlId = null;
-        // 🆕 编辑器视图记忆：标记当前文档（恢复滚动位置用）
-        currentEditorDocKey = 'ext:' + fullPath;
+      // 标记为外部文件模式
+      externalFilePath = fullPath;
+      editingId = null;
+      currentMdId = null;
+      currentJsonId = null;
+      currentHtmlId = null;
+      // 🆕 外部文件模式下 switchFileTypeTab 会提前 return（不调 updateDrawerMetadataVisibility），
+      //    这里显式刷新一次「删除」按钮可用性（有真实文件 → 可点）
+      updateDeleteBtnVisibility();
+      // 开启新外部文件前清空旧快照，避免 touchEditorTab/renderSheetTabs 用旧快照误标 dirty
+      editSnapshot = null;
+      // 🆕 编辑器视图记忆：标记当前文档（恢复滚动位置用）
+      currentEditorDocKey = 'ext:' + fullPath;
 
         const textarea = document.getElementById('taskText');
         const htmlTextarea = document.getElementById('htmlText');
@@ -9955,6 +10469,35 @@
           captureEditSnapshot();
         }
 
+        else if (type === 'text') {
+          // 纯文本文件（txt/log/csv/js/py/...）：复用 MD 文本编辑器（即纯文本编辑），保存写回原路径
+          activeFileTab = 'md';
+          previewMode = 0;
+          document.getElementById('modalTitle').textContent = '编辑文本文件：' + fileName;
+          textarea.value = result.content || '';
+          htmlTextarea.value = '';
+          jsonTextarea.value = '';
+          textarea.style.display = '';
+          htmlTextarea.style.display = 'none';
+          jsonTextarea.style.display = 'none';
+          btn.classList.remove('active');
+          btn.textContent = '编辑文本';
+          btn.title = '点击切换到 Markdown 预览';
+          if (jsonTools) jsonTools.style.display = 'none';
+          if (htmlTools) htmlTools.style.display = 'none';
+          switchFileTypeTab('md');
+          // 🆕 底部 Sheet 页签：登记/激活本外部文件（extType 记 'text' 以区分 MD 文件）
+          touchEditorTab({ key: 'ext:' + fullPath, type: 'ext', id: fileName, path: fullPath, extType: 'text', title: fileName });
+          document.getElementById('modalOverlay').style.display = 'flex';
+          textarea.focus();
+          autoGrowTextarea(textarea);
+          resetEditorScrollToTop();
+          // 🆕 编辑器视图记忆：恢复到上次离开的编辑文本滚动位置（有记忆才定位，否则保持顶部）
+          restoreEditorViewAll();
+          resetEditorHistory(textarea);
+          captureEditSnapshot();
+        }
+
         updateFileTypeTabs();
       } catch (e) {
         console.error('[TodoList] 打开外部文件失败:', e);
@@ -10021,6 +10564,14 @@
         openEditHtmlModal(id);
         return;
       }
+      // 其它文本文件（txt/log/csv/js/py/...）：以纯文本模式用 MD 文本编辑器打开（写回原路径）
+      if (type === 'text') {
+        const item = fileListState.items.find(it => it.id === id && it.type === 'text');
+        if (!item) { alert('找不到文件项'); return; }
+        const fullPath = item.path || (fileListState.browseDir ? fileListState.browseDir + '/' + item.name : item.name);
+        openExternalFile(fullPath, item.name, 'text');
+        return;
+      }
       // 防御：若卡片已被过滤（标签/状态筛选）导致 .todo-item 不存在，给出一次提示
       const card = document.querySelector(`.todo-item[data-id="${id}"]`);
       if (!card) {
@@ -10029,6 +10580,64 @@
       }
       // 320ms 等待面板关闭动画 + 焦点位移完成再触发滚动，避免抖动
       setTimeout(() => focusResizedCard(id), 100);
+    }
+
+    // 🆕 编辑器内「打开已有文件」：点击文件项 → 直接在编辑器内打开（不滚动 Gallery）
+    // 复用主画面同一套 fileListState / 打开函数；todo 卡片走 openEditModal（而非滚动主画面）
+    async function selectEditorFileListItem(id, type) {
+      closeEditorFileList();
+      // 📂 临时浏览目录模式：md/json/html 外部文件走 read-file-by-path 打开
+      if (fileListState.browseDir && type !== 'todo') {
+        const item = fileListState.items.find(it => it.id === id && it.type === type);
+        if (!item) { alert('找不到文件项'); return; }
+        const fullPath = fileListState.browseDir + '/' + item.name;
+        openExternalFile(fullPath, item.name, type);
+        return;
+      }
+      if (type === 'md') { openEditMdModal(id); return; }
+      if (type === 'json') { openEditJsonModal(id); return; }
+      if (type === 'html') { openEditHtmlModal(id); return; }
+      // 其它文本文件（txt/log/csv/js/py/...）：以纯文本模式用 MD 文本编辑器打开（写回原路径）
+      if (type === 'text') {
+        const item = fileListState.items.find(it => it.id === id && it.type === 'text');
+        if (!item) { alert('找不到文件项'); return; }
+        const fullPath = item.path || (fileListState.browseDir ? fileListState.browseDir + '/' + item.name : item.name);
+        openExternalFile(fullPath, item.name, 'text');
+        return;
+      }
+      // todo 卡片：在编辑器内打开（找不到则 openEditModal 自身 no-op）
+      openEditModal(id);
+    }
+
+    // 🆕 编辑器内「打开已有文件」面板的开关（position:fixed，避免被 .editor-main overflow 裁剪）
+    let editorFileListOpen = false;
+    function toggleEditorFileList() {
+      if (editorFileListOpen) { closeEditorFileList(); return; }
+      const btn = document.getElementById('editorFileListBtn');
+      const panel = document.getElementById('editorFileListPanel');
+      if (!btn || !panel) return;
+      editorFileListOpen = true;
+      btn.classList.add('open');
+      panel.classList.add('open');
+      // 依据触发按钮位置定位（视口坐标），并夹住右/下边界防溢出
+      const rect = btn.getBoundingClientRect();
+      let left = Math.max(8, rect.left);
+      let top = rect.bottom + 6;
+      const maxLeft = window.innerWidth - panel.offsetWidth - 8;
+      if (left > maxLeft) left = Math.max(8, maxLeft);
+      const maxTop = window.innerHeight - panel.offsetHeight - 8;
+      if (top > maxTop) top = Math.max(8, maxTop);
+      panel.style.left = left + 'px';
+      panel.style.top = top + 'px';
+      // 每次打开重新拉取最新文件资料
+      loadFileListItems();
+    }
+    function closeEditorFileList() {
+      editorFileListOpen = false;
+      const btn = document.getElementById('editorFileListBtn');
+      const panel = document.getElementById('editorFileListPanel');
+      if (btn) btn.classList.remove('open');
+      if (panel) panel.classList.remove('open');
     }
 
     // 🆕 卡片间跳转：处理 .card-jump-link 的点击。
@@ -10327,6 +10936,18 @@
       // ESC 关闭
       document.addEventListener('keydown', (e) => {
         if (e.key === 'Escape' && fileListState.open) closeFileList();
+      });
+      // 🆕 编辑器内「打开已有文件」面板：绑定触发按钮 + 面板内阻止冒泡 + 外部点击/ESC 关闭
+      const editorBtn = document.getElementById('editorFileListBtn');
+      if (editorBtn) editorBtn.addEventListener('click', (e) => { e.stopPropagation(); toggleEditorFileList(); });
+      const editorPanel = document.getElementById('editorFileListPanel');
+      if (editorPanel) editorPanel.addEventListener('click', (e) => e.stopPropagation());
+      // 排序按钮（.file-list-sort-btn）已在上方 querySelectorAll 中统一绑定 → 编辑器排序按钮自动生效
+      document.addEventListener('click', () => {
+        if (editorFileListOpen) closeEditorFileList();
+      });
+      document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && editorFileListOpen) closeEditorFileList();
       });
     }
 

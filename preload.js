@@ -232,8 +232,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getDataDir: () => ipcRenderer.invoke('get-data-dir'),
   openDirDialog: () => ipcRenderer.invoke('open-dir-dialog'),
   listAllFilesInDir: (dir) => ipcRenderer.invoke('list-all-files-in-dir', dir),
+  getTextExtensions: () => ipcRenderer.invoke('get-text-extensions'),
   readFileByPath: (absolutePath) => ipcRenderer.invoke('read-file-by-path', absolutePath),
   saveFileByPath: (absolutePath, content) => ipcRenderer.invoke('save-file-by-path', absolutePath, content),
+  deleteFileByPath: (absolutePath, allowedRoot) => ipcRenderer.invoke('delete-file-by-path', absolutePath, allowedRoot),
 
   // MD 纯文本文件存储（与 todo 卡片完全分离，不进 Gallery）
   listMdFiles: () => ipcRenderer.invoke('list-md-files'),

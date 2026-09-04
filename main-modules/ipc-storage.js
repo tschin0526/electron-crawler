@@ -17,6 +17,32 @@ let PLUGINS_DATA_DIR;
 let getMainWindow;
 let setCurrentServiceCard;
 
+// 🆕 文本类扩展名白名单（模块级常量，供「列出文件」与「返回支持的文本扩展名」两处共用）
+//   带点前缀（如 '.txt'）；覆盖 todo-Json / 一般Json / md / html 之外的所有纯文本类型。
+const TEXT_EXTS = [
+  '.txt', '.text', '.log', '.csv', '.tsv',
+  '.md', '.markdown', '.mdx',
+  '.html', '.htm',
+  '.json', '.json5', '.jsonc',
+  '.yaml', '.yml', '.toml', '.ini', '.conf', '.config', '.properties', '.cfg', '.xml',
+  '.js', '.mjs', '.cjs', '.jsx', '.ts', '.tsx', '.vue', '.svelte',
+  '.css', '.scss', '.less', '.pcss',
+  '.py', '.pyw', '.rb', '.sh', '.bash', '.zsh', '.fish', '.ps1', '.bat', '.cmd',
+  '.sql', '.graphql', '.gql',
+  '.c', '.h', '.cpp', '.cc', '.cxx', '.hpp', '.hxx',
+  '.java', '.kt', '.kts', '.go', '.rs', '.swift',
+  '.php', '.lua', '.pl', '.pm', '.r', '.m', '.mm',
+  '.cs', '.vb', '.fs', '.fsx', '.scala', '.groovy', '.dart', '.ex', '.exs', '.erl',
+  '.env', '.gitignore', '.dockerignore', '.editorconfig', '.npmrc', '.gitattributes', '.gitmodules', '.nvmrc', '.babelrc', '.eslintrc',
+  '.vimrc', '.tex', '.rst', '.adoc', '.asciidoc', '.rdoc', '.org', '.wiki', '.diff', '.patch'
+];
+const TEXT_EXTS_SET = new Set(TEXT_EXTS);
+// 无扩展名但约定为文本的文件名
+const TEXT_NOEXT = new Set([
+  'makefile', 'dockerfile', 'rakefile', 'gemfile', 'vagrantfile', 'readme', 'license',
+  'changelog', 'copying', 'install', 'authors', 'contributing', 'todo', 'news', 'changes'
+]);
+
 // 用于 API 服务器加载网点数据
 function loadBookmarksForAPI() {
   try {
@@ -395,18 +421,22 @@ function init(shared) {
     }
   });
 
-  // 📂 列出指定目录下所有编辑器支持的文件（todo卡片/MD/HTML/JSON），用于临时切换浏览目录
+  // 📂 列出指定目录下所有「文本类」文件，用于文件列表（默认 data 目录 / 临时切换浏览目录都走这里）
   // - 不影响 PLUGINS_DATA_DIR（默认资料来源不变）
-  // - 返回格式与 list-todo-files / list-md-files 等一致：{ name, id, size, mtime } + type 由前端按扩展名判定
+  // - 返回格式与 list-todo-files / list-md-files 等一致：{ name, id, size, mtime, path }
+  //   + type 由前端按扩展名判定（todo / md / html / json / text）
   ipcMain.handle('list-all-files-in-dir', async (_event, dir) => {
     try {
       if (!dir || !fs.existsSync(dir)) {
         return { success: true, data: [] };
       }
-      const supportedExts = ['.json', '.md', '.html'];
       const files = fs.readdirSync(dir).filter(f => {
-        const ext = path.extname(f).toLowerCase();
-        return supportedExts.includes(ext);
+        // 跳过隐藏文件（. 开头）与目录
+        if (f.startsWith('.')) return false;
+        const lower = f.toLowerCase();
+        const ext = path.extname(lower);
+        if (ext) return TEXT_EXTS_SET.has(ext);
+        return TEXT_NOEXT.has(lower);
       });
       const list = [];
       for (const file of files) {
@@ -414,16 +444,17 @@ function init(shared) {
           const filePath = path.join(dir, file);
           const stat = fs.statSync(filePath);
           if (!stat.isFile()) continue;
+          // id 必须与默认 list-todo-files 一致：先剥真实扩展名，再去掉 "todo-" 前缀
+          let base = file;
+          const ext = path.extname(file);
+          if (ext) base = base.slice(0, -ext.length);
+          if (base.toLowerCase().startsWith('todo-')) base = base.slice('todo-'.length);
           list.push({
             name: file,
-            // id 必须与默认 list-todo-files 一致：todo 文件去掉 "todo-" 前缀（否则 Gallery 卡片 data-id 对不上，无法滚动/闪烁）
-            id: (() => {
-              let base = file.replace(/\.(json|md|html)$/i, '');
-              if (base.startsWith('todo-')) base = base.slice('todo-'.length);
-              return base;
-            })(),
+            id: base,
             size: stat.size,
             mtime: stat.mtimeMs,
+            path: filePath, // 🆕 绝对路径，前端打开时直接复用，无需自行拼接
           });
         } catch { /* 单文件 stat 失败跳过 */ }
       }
@@ -431,6 +462,12 @@ function init(shared) {
     } catch (e) {
       return { success: false, error: e.message };
     }
+  });
+
+  // 🆕 返回支持的文本扩展名列表（带点前缀，如 '.txt'），供前端「新增文件→保存」时选类型。
+  //   与 list-all-files-in-dir 的白名单完全一致，保证「能打开的」与「能新建的」类型一致。
+  ipcMain.handle('get-text-extensions', async () => {
+    return { success: true, data: TEXT_EXTS.slice() };
   });
 
   // 📖 按绝对路径读取文件内容（用于「临时浏览目录」模式下打开外部文件）
@@ -466,6 +503,50 @@ function init(shared) {
         fs.mkdirSync(dir, { recursive: true });
       }
       fs.writeFileSync(normalized, content, 'utf8');
+      return { success: true, path: normalized };
+    } catch (e) {
+      return { success: false, error: e.message };
+    }
+  });
+
+  // 🗑 按绝对路径删除文件（编辑器「删除」按钮用，配合前端二次确认）
+  //    安全守卫（缺一不可）：
+  //      1. 路径必须是非空字符串；
+  //      2. 必须真实存在且是「普通文件」（目录直接拒绝，杜绝 rm -rf 类风险）；
+  //      3. 若调用方传了 allowedRoot，则目标必须位于该根目录内（防止越权删到别处）；
+  //      4. 绝不允许删除应用自身安装目录（__dirname）内的文件。
+  ipcMain.handle('delete-file-by-path', async (_event, absolutePath, allowedRoot) => {
+    try {
+      if (!absolutePath || typeof absolutePath !== 'string') {
+        return { success: false, error: '路径参数无效' };
+      }
+      const normalized = path.resolve(absolutePath);
+      if (!fs.existsSync(normalized)) {
+        return { success: false, error: '文件不存在：' + normalized };
+      }
+      const st = fs.statSync(normalized);
+      if (!st.isFile()) {
+        return { success: false, error: '只能删除文件，不能删除目录' };
+      }
+      // 守卫 3：必须在允许的根目录内
+      const roots = [];
+      if (allowedRoot && typeof allowedRoot === 'string' && allowedRoot.trim()) {
+        roots.push(path.resolve(allowedRoot));
+      }
+      if (PLUGINS_DATA_DIR) roots.push(path.resolve(PLUGINS_DATA_DIR));
+      if (roots.length) {
+        const ok = roots.some(r => normalized === r || normalized.startsWith(r + path.sep));
+        if (!ok) {
+          return { success: false, error: '不允许删除该目录之外的文件：' + normalized };
+        }
+      }
+      // 守卫 4：不允许删应用自身安装目录
+      const appRoot = path.resolve(__dirname, '..');
+      if (normalized.startsWith(appRoot + path.sep)) {
+        return { success: false, error: '不允许删除应用安装目录内的文件' };
+      }
+      fs.unlinkSync(normalized);
+      console.log(`[IPC] delete-file-by-path 已删除: ${normalized}`);
       return { success: true, path: normalized };
     } catch (e) {
       return { success: false, error: e.message };
