@@ -17,6 +17,11 @@ let PLUGINS_DATA_DIR;
 let getMainWindow;
 let setCurrentServiceCard;
 
+// ToDo 卡片目录配置文件固定放在项目根目录，避免配置位置随 ToDo 目录变化而无法查找。
+const TODO_CONFIG_FILE_NAME = 'todolist-config.json';
+const TODO_MIGRATION_MARKER = '.todolist-data-dir-migrated';
+const TODO_CONFIG_PATH = path.join(__dirname, '..', TODO_CONFIG_FILE_NAME);
+
 // 🆕 文本类扩展名白名单（模块级常量，供「列出文件」与「返回支持的文本扩展名」两处共用）
 //   带点前缀（如 '.txt'）；覆盖 todo-Json / 一般Json / md / html 之外的所有纯文本类型。
 const TEXT_EXTS = [
@@ -135,6 +140,60 @@ function init(shared) {
   getMainWindow = shared.getMainWindow;
   setCurrentServiceCard = shared.setCurrentServiceCard;
 
+  // 读取可选的 ToDo 卡片目录配置；缺失/无效时保持原有 data 目录行为。
+  function resolveTodoDataDir() {
+    const fallbackDir = path.resolve(PLUGINS_DATA_DIR);
+    const configPath = TODO_CONFIG_PATH;
+    try {
+      if (!fs.existsSync(configPath)) return fallbackDir;
+      const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+      const configuredDir = config && typeof config.todoDataDir === 'string'
+        ? config.todoDataDir.trim()
+        : '';
+      if (!configuredDir) return fallbackDir;
+      const resolvedDir = path.resolve(fallbackDir, configuredDir);
+      if (fs.existsSync(resolvedDir) && !fs.statSync(resolvedDir).isDirectory()) {
+        console.warn(`[Main] ToDo 配置目录不是文件夹，回退默认目录: ${resolvedDir}`);
+        return fallbackDir;
+      }
+      if (!fs.existsSync(resolvedDir)) fs.mkdirSync(resolvedDir, { recursive: true });
+      console.log(`[Main] ToDo 卡片目录: ${resolvedDir}`);
+      return resolvedDir;
+    } catch (error) {
+      console.warn(`[Main] 读取 ${TODO_CONFIG_FILE_NAME} 失败，回退默认 data 目录:`, error.message);
+      return fallbackDir;
+    }
+  }
+
+  const TODO_DATA_DIR = resolveTodoDataDir();
+
+  // 首次切换到自定义目录时迁移旧卡片；目标已有同名文件则保留目标文件，不覆盖用户资料。
+  const defaultTodoDir = path.resolve(PLUGINS_DATA_DIR);
+  const migrationMarker = path.join(path.dirname(TODO_CONFIG_PATH), TODO_MIGRATION_MARKER);
+  if (TODO_DATA_DIR !== defaultTodoDir && fs.existsSync(defaultTodoDir) && !fs.existsSync(migrationMarker)) {
+    try {
+      fs.mkdirSync(TODO_DATA_DIR, { recursive: true });
+      const configuredTodoFiles = fs.readdirSync(TODO_DATA_DIR)
+        .filter(file => /^todo-.*\.json$/i.test(file));
+      const legacyTodoFiles = fs.readdirSync(defaultTodoDir)
+        .filter(file => /^todo-.*\.json$/i.test(file));
+      // 目标目录已有卡片时视为用户已完成初始化，避免把默认目录中的旧文件重新补回。
+      if (configuredTodoFiles.length === 0) {
+        for (const file of legacyTodoFiles) {
+          const source = path.join(defaultTodoDir, file);
+          const target = path.join(TODO_DATA_DIR, file);
+          if (!fs.existsSync(target)) fs.renameSync(source, target);
+        }
+        if (legacyTodoFiles.length) {
+          console.log(`[Main] 已将 ${legacyTodoFiles.length} 个 ToDo 卡片迁移到: ${TODO_DATA_DIR}`);
+        }
+      }
+      fs.writeFileSync(migrationMarker, new Date().toISOString() + '\n', 'utf8');
+    } catch (error) {
+      console.warn('[Main] 迁移旧 ToDo 卡片失败，将继续使用配置目录:', error.message);
+    }
+  }
+
   // ========== 常用爬取网点数据持久化 ==========
   ipcMain.handle('load-bookmarks', () => {
     try {
@@ -225,29 +284,29 @@ function init(shared) {
   });
 
   // ========== ToDo 卡片独立文件存储（每个卡片一个 JSON） ==========
-  // 文件命名：todo-{id}.json，存放在 PLUGINS_DATA_DIR 下
+  // 文件命名：todo-{id}.json，存放在配置后的 TODO_DATA_DIR 下
 
   // 从旧的 todolist.json 迁移到独立文件
   async function migrateOldTodolistFile() {
-    const oldFile = path.join(PLUGINS_DATA_DIR, 'todolist.json');
+    const oldFile = path.join(TODO_DATA_DIR, 'todolist.json');
     if (!fs.existsSync(oldFile)) return;
     try {
       const data = fs.readFileSync(oldFile, 'utf8');
       const oldTodos = JSON.parse(data);
       if (!Array.isArray(oldTodos) || oldTodos.length === 0) return;
 
-      if (!fs.existsSync(PLUGINS_DATA_DIR)) {
-        fs.mkdirSync(PLUGINS_DATA_DIR, { recursive: true });
+      if (!fs.existsSync(TODO_DATA_DIR)) {
+        fs.mkdirSync(TODO_DATA_DIR, { recursive: true });
       }
       for (const todo of oldTodos) {
         if (!todo.id) continue;
-        const filePath = path.join(PLUGINS_DATA_DIR, `todo-${todo.id}.json`);
+        const filePath = path.join(TODO_DATA_DIR, `todo-${todo.id}.json`);
         if (!fs.existsSync(filePath)) {
           fs.writeFileSync(filePath, JSON.stringify(todo, null, 2), 'utf8');
         }
       }
       // 重命名旧文件为备份，避免重复迁移
-      const backupFile = path.join(PLUGINS_DATA_DIR, 'todolist.json.bak');
+      const backupFile = path.join(TODO_DATA_DIR, 'todolist.json.bak');
       fs.renameSync(oldFile, backupFile);
       console.log(`[Main] ✅ 已从 todolist.json 迁移 ${oldTodos.length} 条到独立文件，旧文件备份为 todolist.json.bak`);
     } catch (error) {
@@ -257,17 +316,17 @@ function init(shared) {
   ipcMain.handle('load-todos', async () => {
     try {
       // 确保目录存在
-      if (!fs.existsSync(PLUGINS_DATA_DIR)) {
-        fs.mkdirSync(PLUGINS_DATA_DIR, { recursive: true });
+      if (!fs.existsSync(TODO_DATA_DIR)) {
+        fs.mkdirSync(TODO_DATA_DIR, { recursive: true });
       }
       // 尝试从旧的 todolist.json 迁移
       await migrateOldTodolistFile();
-      const files = fs.readdirSync(PLUGINS_DATA_DIR)
+      const files = fs.readdirSync(TODO_DATA_DIR)
         .filter(f => f.startsWith('todo-') && f.endsWith('.json'));
       const todos = [];
       for (const file of files) {
         try {
-          const filePath = path.join(PLUGINS_DATA_DIR, file);
+          const filePath = path.join(TODO_DATA_DIR, file);
           const data = fs.readFileSync(filePath, 'utf8');
           const todo = JSON.parse(data);
           if (todo && typeof todo === 'object') {
@@ -296,15 +355,15 @@ function init(shared) {
 
   ipcMain.handle('save-todos', async (event, todos) => {
     try {
-      if (!fs.existsSync(PLUGINS_DATA_DIR)) {
-        fs.mkdirSync(PLUGINS_DATA_DIR, { recursive: true });
+      if (!fs.existsSync(TODO_DATA_DIR)) {
+        fs.mkdirSync(TODO_DATA_DIR, { recursive: true });
       }
       const currentIds = new Set((todos || []).map(t => t.id));
       let writeCount = 0;
       // 只写入有变化的文件（对比内容，避免不必要的写入）
       for (const todo of todos) {
         if (!todo.id) continue;
-        const filePath = path.join(PLUGINS_DATA_DIR, `todo-${todo.id}.json`);
+        const filePath = path.join(TODO_DATA_DIR, `todo-${todo.id}.json`);
         const newContent = JSON.stringify(todo, null, 2);
         // 如果文件已存在且内容相同，跳过写入
         if (fs.existsSync(filePath)) {
@@ -315,12 +374,12 @@ function init(shared) {
         writeCount++;
       }
       // 清理孤儿文件（磁盘上有但数据中已不存在的 todo-*.json）
-      const files = fs.readdirSync(PLUGINS_DATA_DIR)
+      const files = fs.readdirSync(TODO_DATA_DIR)
         .filter(f => f.startsWith('todo-') && f.endsWith('.json'));
       for (const file of files) {
         const fileId = file.replace('todo-', '').replace('.json', '');
         if (!currentIds.has(fileId)) {
-          fs.unlinkSync(path.join(PLUGINS_DATA_DIR, file));
+          fs.unlinkSync(path.join(TODO_DATA_DIR, file));
           console.log(`[Main] 清理孤儿 todo 文件: ${file}`);
         }
       }
@@ -334,7 +393,7 @@ function init(shared) {
 
   ipcMain.handle('delete-todo-file', async (event, todoId) => {
     try {
-      const jsonPath = path.join(PLUGINS_DATA_DIR, `todo-${todoId}.json`);
+      const jsonPath = path.join(TODO_DATA_DIR, `todo-${todoId}.json`);
       if (fs.existsSync(jsonPath)) {
         fs.unlinkSync(jsonPath);
         console.log(`[Main] 已删除 todo 文件: todo-${todoId}.json`);
@@ -346,9 +405,9 @@ function init(shared) {
     }
   });
 
-  // 📁 归档：将 todo-{id}.json 从 data 移动到 data/archived/（同名子目录）
+  // 📁 归档：将 todo-{id}.json 移动到 ToDo 目录下的 archived/（同名子目录）
   // 用 fs.renameSync 一步完成「移动 = 复制到子目录 + 删原文件」原子操作；archived/ 不存在则递归创建。
-  // 子目录被 save-todos 的孤儿清理逻辑忽略（只扫描 PLUGINS_DATA_DIR 顶层 todo-*.json），
+  // 子目录被 save-todos 的孤儿清理逻辑忽略（只扫描 TODO_DATA_DIR 顶层 todo-*.json），
   // 所以归档后即使该 todo 不在内存列表里、save-todos 也不会误删归档文件。
   ipcMain.handle('archive-todo', async (event, todoId) => {
     try {
@@ -359,11 +418,11 @@ function init(shared) {
       if (!/^[\p{L}\p{N}_\-\s]+$/u.test(todoId)) {
         return { success: false, error: 'todoId 含非法字符（只允许中文、英文、数字、横线、下划线、空格）' };
       }
-      const archivedDir = path.join(PLUGINS_DATA_DIR, 'archived');
+      const archivedDir = path.join(TODO_DATA_DIR, 'archived');
       if (!fs.existsSync(archivedDir)) {
         fs.mkdirSync(archivedDir, { recursive: true });
       }
-      const srcPath = path.join(PLUGINS_DATA_DIR, `todo-${todoId}.json`);
+      const srcPath = path.join(TODO_DATA_DIR, `todo-${todoId}.json`);
       const dstPath = path.join(archivedDir, `todo-${todoId}.json`);
       if (!fs.existsSync(srcPath)) {
         return { success: false, error: '源文件不存在（可能已归档或删除）' };
@@ -386,7 +445,7 @@ function init(shared) {
   // - 只数 todo-*.json 前缀的文件，忽略可能的非 todo 文件
   ipcMain.handle('get-archived-count', async () => {
     try {
-      const archivedDir = path.join(PLUGINS_DATA_DIR, 'archived');
+      const archivedDir = path.join(TODO_DATA_DIR, 'archived');
       if (!fs.existsSync(archivedDir)) {
         return { success: true, count: 0 };
       }
@@ -402,6 +461,31 @@ function init(shared) {
   // 📂 返回资料目录的绝对路径（前端「文件列表」底部按钮展示用）
   ipcMain.handle('get-data-dir', async () => {
     return { success: true, data: PLUGINS_DATA_DIR };
+  });
+
+  // 返回 ToDo 卡片实际目录；普通 MD/JSON/HTML 文件仍使用 get-data-dir。
+  ipcMain.handle('get-todo-data-dir', async () => {
+    return { success: true, data: TODO_DATA_DIR };
+  });
+
+  // 保存 ToDo 卡片目录配置；配置文件始终位于项目根目录。
+  ipcMain.handle('save-todo-data-dir-config', async (_event, todoDataDir) => {
+    try {
+      if (typeof todoDataDir !== 'string' || !todoDataDir.trim()) {
+        return { success: false, error: 'ToDo 目录不能为空' };
+      }
+      const configuredDir = path.resolve(PLUGINS_DATA_DIR, todoDataDir.trim());
+      if (fs.existsSync(configuredDir) && !fs.statSync(configuredDir).isDirectory()) {
+        return { success: false, error: '选择的路径不是目录' };
+      }
+      if (!fs.existsSync(configuredDir)) fs.mkdirSync(configuredDir, { recursive: true });
+      const configPath = TODO_CONFIG_PATH;
+      fs.writeFileSync(configPath, JSON.stringify({ todoDataDir: todoDataDir.trim() }, null, 2) + '\n', 'utf8');
+      return { success: true, configPath, dataDir: configuredDir };
+    } catch (error) {
+      console.error('[Main] 保存 ToDo 目录配置失败:', error);
+      return { success: false, error: error.message };
+    }
   });
 
   // 📂 弹出原生文件夹选择对话框（前端点击「📂 目录」按钮触发）
@@ -544,13 +628,22 @@ function init(shared) {
       // 守卫 3：必须在允许的根目录内
       const roots = [];
       if (allowedRoot && typeof allowedRoot === 'string' && allowedRoot.trim()) {
-        roots.push(path.resolve(allowedRoot));
+        const resolvedAllowed = path.resolve(allowedRoot);
+        if (!roots.includes(resolvedAllowed)) {
+          roots.push(resolvedAllowed);
+        }
       }
-      if (PLUGINS_DATA_DIR) roots.push(path.resolve(PLUGINS_DATA_DIR));
+      if (PLUGINS_DATA_DIR) {
+        const resolvedDataDir = path.resolve(PLUGINS_DATA_DIR);
+        if (!roots.includes(resolvedDataDir)) {
+          roots.push(resolvedDataDir);
+        }
+      }
       if (roots.length) {
         const ok = roots.some(r => normalized === r || normalized.startsWith(r + path.sep));
         if (!ok) {
-          return { success: false, error: '不允许删除该目录之外的文件：' + normalized };
+          const allowedDirs = roots.map(r => r);
+          return { success: false, error: `不允许删除「${allowedDirs.join('、')}」目录之外的文件：\n${normalized}` };
         }
       }
       // 守卫 4：不允许删应用自身安装目录
@@ -567,20 +660,20 @@ function init(shared) {
   });
 
   // 📋 列出 todos 资料目录下所有 todo-{id}.json 的文件元数据（供前端「文件列表」下拉使用）
-  // - 只列 PLUGINS_DATA_DIR 顶层（与「已归档」互相独立）
+  // - 只列 TODO_DATA_DIR 顶层（与「已归档」互相独立）
   // - 每条记录：name（todo-{id}.json）、id（去前缀后缀）、size（字节）、mtime（毫秒时间戳）
   // - 排序由前端按用户当前选择的「名称/时间/大小」决定，主进程仅保证数据齐全
   ipcMain.handle('list-todo-files', async () => {
     try {
-      if (!fs.existsSync(PLUGINS_DATA_DIR)) {
+      if (!fs.existsSync(TODO_DATA_DIR)) {
         return { success: true, data: [] };
       }
-      const files = fs.readdirSync(PLUGINS_DATA_DIR)
+      const files = fs.readdirSync(TODO_DATA_DIR)
         .filter(f => f.startsWith('todo-') && f.endsWith('.json'));
       const list = [];
       for (const file of files) {
         try {
-          const filePath = path.join(PLUGINS_DATA_DIR, file);
+          const filePath = path.join(TODO_DATA_DIR, file);
           const stat = fs.statSync(filePath);
           list.push({
             name: file,
@@ -617,8 +710,8 @@ function init(shared) {
       if (oldId === newId) {
         return { success: false, error: '新旧 ID 相同，无需重命名' };
       }
-      const srcPath = path.join(PLUGINS_DATA_DIR, `todo-${oldId}.json`);
-      const dstPath = path.join(PLUGINS_DATA_DIR, `todo-${newId}.json`);
+      const srcPath = path.join(TODO_DATA_DIR, `todo-${oldId}.json`);
+      const dstPath = path.join(TODO_DATA_DIR, `todo-${newId}.json`);
       if (!fs.existsSync(srcPath)) {
         return { success: false, error: `源文件不存在: todo-${oldId}.json` };
       }
@@ -655,10 +748,10 @@ function init(shared) {
     if (!id || typeof id !== 'string') return null;
     // 拒绝路径分隔符和 ..，防止穿越到 data 目录之外
     if (id.includes('..') || id.includes(path.sep) || id.includes('/')) return null;
-    const filePath = path.join(PLUGINS_DATA_DIR, `${id}.md`);
+    const filePath = path.join(TODO_DATA_DIR, `${id}.md`);
     // 最终解析后的绝对路径必须在 data 目录内
     const resolved = path.resolve(filePath);
-    const base = path.resolve(PLUGINS_DATA_DIR);
+    const base = path.resolve(TODO_DATA_DIR);
     if (!resolved.startsWith(base + path.sep) && resolved !== base) return null;
     return resolved;
   }
@@ -666,15 +759,15 @@ function init(shared) {
   // 📋 列出 data 目录下所有 *.md 的元数据（供前端「文件列表」下拉使用）
   ipcMain.handle('list-md-files', async () => {
     try {
-      if (!fs.existsSync(PLUGINS_DATA_DIR)) {
+      if (!fs.existsSync(TODO_DATA_DIR)) {
         return { success: true, data: [] };
       }
-      const files = fs.readdirSync(PLUGINS_DATA_DIR)
+      const files = fs.readdirSync(TODO_DATA_DIR)
         .filter(f => f.endsWith('.md'));
       const list = [];
       for (const file of files) {
         try {
-          const filePath = path.join(PLUGINS_DATA_DIR, file);
+          const filePath = path.join(TODO_DATA_DIR, file);
           const stat = fs.statSync(filePath);
           list.push({
             name: file,
@@ -718,8 +811,8 @@ function init(shared) {
       if (!filePath) {
         return { success: false, error: 'id 非法或包含路径穿越字符' };
       }
-      if (!fs.existsSync(PLUGINS_DATA_DIR)) {
-        fs.mkdirSync(PLUGINS_DATA_DIR, { recursive: true });
+      if (!fs.existsSync(TODO_DATA_DIR)) {
+        fs.mkdirSync(TODO_DATA_DIR, { recursive: true });
       }
       const mdContent = (content || '').replace(/\r\n/g, '\n');
       fs.writeFileSync(filePath, mdContent, 'utf8');
@@ -758,10 +851,10 @@ function init(shared) {
     if (!id || typeof id !== 'string') return null;
     // 拒绝路径分隔符和 ..，防止穿越到 data 目录之外；也拒绝 todo- 前缀（那是卡片专用）
     if (id.includes('..') || id.includes(path.sep) || id.includes('/') || id.startsWith('todo-')) return null;
-    const filePath = path.join(PLUGINS_DATA_DIR, `${id}.json`);
+    const filePath = path.join(TODO_DATA_DIR, `${id}.json`);
     // 最终解析后的绝对路径必须在 data 目录内
     const resolved = path.resolve(filePath);
-    const base = path.resolve(PLUGINS_DATA_DIR);
+    const base = path.resolve(TODO_DATA_DIR);
     if (!resolved.startsWith(base + path.sep) && resolved !== base) return null;
     return resolved;
   }
@@ -770,15 +863,15 @@ function init(shared) {
   //     排除系统专用 todo-*.json 卡片文件（那些走 list-todo-files）。
   ipcMain.handle('list-json-files', async () => {
     try {
-      if (!fs.existsSync(PLUGINS_DATA_DIR)) {
+      if (!fs.existsSync(TODO_DATA_DIR)) {
         return { success: true, data: [] };
       }
-      const files = fs.readdirSync(PLUGINS_DATA_DIR)
+      const files = fs.readdirSync(TODO_DATA_DIR)
         .filter(f => f.endsWith('.json') && !f.startsWith('todo-'));
       const list = [];
       for (const file of files) {
         try {
-          const filePath = path.join(PLUGINS_DATA_DIR, file);
+          const filePath = path.join(TODO_DATA_DIR, file);
           const stat = fs.statSync(filePath);
           list.push({
             name: file,
@@ -822,8 +915,8 @@ function init(shared) {
       if (!filePath) {
         return { success: false, error: 'id 非法或包含路径穿越字符' };
       }
-      if (!fs.existsSync(PLUGINS_DATA_DIR)) {
-        fs.mkdirSync(PLUGINS_DATA_DIR, { recursive: true });
+      if (!fs.existsSync(TODO_DATA_DIR)) {
+        fs.mkdirSync(TODO_DATA_DIR, { recursive: true });
       }
       const jsonContent = (content || '').replace(/\r\n/g, '\n');
       fs.writeFileSync(filePath, jsonContent, 'utf8');
@@ -861,9 +954,9 @@ function init(shared) {
   function resolveHtmlFilePath(id) {
     if (!id || typeof id !== 'string') return null;
     if (id.includes('..') || id.includes(path.sep) || id.includes('/')) return null;
-    const filePath = path.join(PLUGINS_DATA_DIR, `${id}.html`);
+    const filePath = path.join(TODO_DATA_DIR, `${id}.html`);
     const resolved = path.resolve(filePath);
-    const base = path.resolve(PLUGINS_DATA_DIR);
+    const base = path.resolve(TODO_DATA_DIR);
     if (!resolved.startsWith(base + path.sep) && resolved !== base) return null;
     return resolved;
   }
@@ -871,15 +964,15 @@ function init(shared) {
   // 📋 列出 data 目录下所有 *.html 的元数据（供前端「文件列表」下拉使用）
   ipcMain.handle('list-html-files', async () => {
     try {
-      if (!fs.existsSync(PLUGINS_DATA_DIR)) {
+      if (!fs.existsSync(TODO_DATA_DIR)) {
         return { success: true, data: [] };
       }
-      const files = fs.readdirSync(PLUGINS_DATA_DIR)
+      const files = fs.readdirSync(TODO_DATA_DIR)
         .filter(f => f.endsWith('.html'));
       const list = [];
       for (const file of files) {
         try {
-          const filePath = path.join(PLUGINS_DATA_DIR, file);
+          const filePath = path.join(TODO_DATA_DIR, file);
           const stat = fs.statSync(filePath);
           list.push({
             name: file,
@@ -923,8 +1016,8 @@ function init(shared) {
       if (!filePath) {
         return { success: false, error: 'id 非法或包含路径穿越字符' };
       }
-      if (!fs.existsSync(PLUGINS_DATA_DIR)) {
-        fs.mkdirSync(PLUGINS_DATA_DIR, { recursive: true });
+      if (!fs.existsSync(TODO_DATA_DIR)) {
+        fs.mkdirSync(TODO_DATA_DIR, { recursive: true });
       }
       const htmlContent = (content || '').replace(/\r\n/g, '\n');
       fs.writeFileSync(filePath, htmlContent, 'utf8');

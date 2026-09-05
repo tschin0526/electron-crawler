@@ -230,6 +230,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // 📋 列出 todos 资料目录下所有 todo-{id}.json 的文件元数据（前端「文件列表」下拉）
   listTodoFiles: () => ipcRenderer.invoke('list-todo-files'),
   getDataDir: () => ipcRenderer.invoke('get-data-dir'),
+  getTodoDataDir: () => ipcRenderer.invoke('get-todo-data-dir'),
+  saveTodoDataDirConfig: (dir) => ipcRenderer.invoke('save-todo-data-dir-config', dir),
   openDirDialog: () => ipcRenderer.invoke('open-dir-dialog'),
   listAllFilesInDir: (dir) => ipcRenderer.invoke('list-all-files-in-dir', dir),
   getTextExtensions: () => ipcRenderer.invoke('get-text-extensions'),
