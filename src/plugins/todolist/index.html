@@ -3580,91 +3580,323 @@
 
           <!-- HTML 工具（仅在 HTML 文本/预览时显示） -->
           <div class="editor-toolbar-group" id="htmlTools" style="display:none;">
-            <div class="md-tool-dropdown" data-md-dropdown>
-              <button class="md-tool-dropbtn" onclick="toggleMdDropdown(this)" title="HTML 文字格式">格式<span class="caret">▾</span></button>
-              <div class="md-tool-dropmenu">
-                <button class="md-tool-dropitem" onclick="insertHtmlTag('<b>', '</b>')">粗体 <kbd>&lt;b&gt;</kbd></button>
-                <button class="md-tool-dropitem" onclick="insertHtmlTag('<i>', '</i>')">斜体 <kbd>&lt;i&gt;</kbd></button>
-                <button class="md-tool-dropitem" onclick="insertHtmlTag('<u>', '</u>')">下划线 <kbd>&lt;u&gt;</kbd></button>
-                <button class="md-tool-dropitem" onclick="insertHtmlTag('<s>', '</s>')">删除线 <kbd>&lt;s&gt;</kbd></button>
-                <button class="md-tool-dropitem" onclick="insertHtmlTag('<mark>', '</mark>')">高亮 <kbd>&lt;mark&gt;</kbd></button>
-                <button class="md-tool-dropitem" onclick="insertHtmlTag('<big>', '</big>')">放大 <kbd>&lt;big&gt;</kbd></button>
-                <button class="md-tool-dropitem" onclick="insertHtmlTag('<small>', '</small>')">缩小 <kbd>&lt;small&gt;</kbd></button>
-                <button class="md-tool-dropitem" onclick="insertHtmlTag('<sub>', '</sub>')">下标 <kbd>&lt;sub&gt;</kbd></button>
-                <button class="md-tool-dropitem" onclick="insertHtmlTag('<sup>', '</sup>')">上标 <kbd>&lt;sup&gt;</kbd></button>
-              </div>
+
+          <!-- 行内文本格式 -->
+          <div class="md-tool-dropdown" data-md-dropdown>
+            <button class="md-tool-dropbtn" onclick="toggleMdDropdown(this)" title="行内文字格式（HTML 标签）">格式<span class="caret">▾</span></button>
+            <div class="md-tool-dropmenu">
+              <div class="md-tool-dropgroup">常规</div>
+              <button class="md-tool-dropitem" onclick="insertHtmlTag('<b>', '</b>')">粗体 <kbd>&lt;b&gt;</kbd></button>
+              <button class="md-tool-dropitem" onclick="insertHtmlTag('<i>', '</i>')">斜体 <kbd>&lt;i&gt;</kbd></button>
+              <button class="md-tool-dropitem" onclick="insertHtmlTag('<u>', '</u>')">下划线 <kbd>&lt;u&gt;</kbd></button>
+              <button class="md-tool-dropitem" onclick="insertHtmlTag('<s>', '</s>')">删除线 <kbd>&lt;s&gt;</kbd></button>
+              <button class="md-tool-dropitem" onclick="insertHtmlTag('<mark>', '</mark>')">高亮 <kbd>&lt;mark&gt;</kbd></button>
+              <div class="md-tool-dropgroup">语义化（同效果、更利于检索与朗读）</div>
+              <button class="md-tool-dropitem" onclick="insertHtmlTag('<strong>', '</strong>')">强调 <kbd>&lt;strong&gt;</kbd></button>
+              <button class="md-tool-dropitem" onclick="insertHtmlTag('<em>', '</em>')">重读 <kbd>&lt;em&gt;</kbd></button>
+              <button class="md-tool-dropitem" onclick="insertHtmlTag('<del>', '</del>')">已删除 <kbd>&lt;del&gt;</kbd></button>
+              <button class="md-tool-dropitem" onclick="insertHtmlTag('<ins>', '</ins>')">新增 <kbd>&lt;ins&gt;</kbd></button>
+              <div class="md-tool-dropgroup">代码与技术文本</div>
+              <button class="md-tool-dropitem" onclick="insertHtmlTag('<code>', '</code>')">行内代码 <kbd>&lt;code&gt;</kbd></button>
+              <button class="md-tool-dropitem" onclick="insertHtmlTag('<kbd>', '</kbd>')">按键 <kbd>&lt;kbd&gt;</kbd></button>
+              <button class="md-tool-dropitem" onclick="insertHtmlTag('<samp>', '</samp>')">程序输出 <kbd>&lt;samp&gt;</kbd></button>
+              <button class="md-tool-dropitem" onclick="insertHtmlTag('<var>', '</var>')">变量 <kbd>&lt;var&gt;</kbd></button>
+              <div class="md-tool-dropgroup">上下标与字号</div>
+              <button class="md-tool-dropitem" onclick="insertHtmlTag('<sup>', '</sup>')">上标 <kbd>&lt;sup&gt;</kbd></button>
+              <button class="md-tool-dropitem" onclick="insertHtmlTag('<sub>', '</sub>')">下标 <kbd>&lt;sub&gt;</kbd></button>
+              <button class="md-tool-dropitem" onclick="insertHtmlTag('<big>', '</big>')">放大 <kbd>&lt;big&gt;</kbd></button>
+              <button class="md-tool-dropitem" onclick="insertHtmlTag('<small>', '</small>')">缩小 <kbd>&lt;small&gt;</kbd></button>
+              <button class="md-tool-dropitem" onclick="insertHtmlTag('<q>', '</q>')">短引用 <kbd>&lt;q&gt;</kbd></button>
+              <button class="md-tool-dropitem" onclick="insertHtmlTag('<abbr title=&quot;全称&quot;>', '</abbr>')">缩写 <kbd>&lt;abbr&gt;</kbd></button>
             </div>
-            <div class="md-tool-dropdown" data-md-dropdown>
-              <button class="md-tool-dropbtn" onclick="toggleMdDropdown(this)" title="HTML 结构与布局">结构<span class="caret">▾</span></button>
-              <div class="md-tool-dropmenu">
-                <button class="md-tool-dropitem" onclick="insertHtmlTag('<h1>', '</h1>')">标题 1 <kbd>&lt;h1&gt;</kbd></button>
-                <button class="md-tool-dropitem" onclick="insertHtmlTag('<h2>', '</h2>')">标题 2 <kbd>&lt;h2&gt;</kbd></button>
-                <button class="md-tool-dropitem" onclick="insertHtmlTag('<h3>', '</h3>')">标题 3 <kbd>&lt;h3&gt;</kbd></button>
-                <button class="md-tool-dropitem" onclick="insertHtmlTag('<p>', '</p>')">段落 <kbd>&lt;p&gt;</kbd></button>
-                <button class="md-tool-dropitem" onclick="insertHtmlTag('<center>', '</center>')">居中 <kbd>&lt;center&gt;</kbd></button>
-                <button class="md-tool-dropitem" onclick="insertHtmlTag('<div>\n', '\n</div>')">块级 div <kbd>&lt;div&gt;</kbd></button>
-                <button class="md-tool-dropitem" onclick="insertHtmlTag('<span>', '</span>')">行内 span <kbd>&lt;span&gt;</kbd></button>
-                <button class="md-tool-dropitem" onclick="insertHtmlTag('<br>')">换行 <kbd>&lt;br&gt;</kbd></button>
-                <button class="md-tool-dropitem" onclick="insertHtmlTag('<hr>')">水平线 <kbd>&lt;hr&gt;</kbd></button>
+          </div>
+
+          <!-- 样式：style 属性（颜色 / 字号 / 字体 / 字重 / 行高 / 字距 / 对齐） -->
+          <div class="md-tool-dropdown" data-md-dropdown>
+            <button class="md-tool-dropbtn" onclick="toggleMdDropdown(this)" title="用 style 属性设置文字外观">样式<span class="caret">▾</span></button>
+            <div class="md-tool-dropmenu">
+              <div class="md-tool-submenu" data-md-submenu>
+                <button class="md-tool-dropitem has-submenu">文字颜色 <span class="sub-caret">▸</span><kbd>color</kbd></button>
+                <div class="md-tool-sublist">
+                  <button class="md-tool-dropitem" onclick="insertHtmlStyle('color', '#ef4444')"><span class="md-color-dot" style="background:#ef4444"></span>红色</button>
+                  <button class="md-tool-dropitem" onclick="insertHtmlStyle('color', '#f97316')"><span class="md-color-dot" style="background:#f97316"></span>橙色</button>
+                  <button class="md-tool-dropitem" onclick="insertHtmlStyle('color', '#f59e0b')"><span class="md-color-dot" style="background:#f59e0b"></span>琥珀</button>
+                  <button class="md-tool-dropitem" onclick="insertHtmlStyle('color', '#eab308')"><span class="md-color-dot" style="background:#eab308"></span>黄色</button>
+                  <button class="md-tool-dropitem" onclick="insertHtmlStyle('color', '#22c55e')"><span class="md-color-dot" style="background:#22c55e"></span>绿色</button>
+                  <button class="md-tool-dropitem" onclick="insertHtmlStyle('color', '#06b6d4')"><span class="md-color-dot" style="background:#06b6d4"></span>青色</button>
+                  <button class="md-tool-dropitem" onclick="insertHtmlStyle('color', '#3b82f6')"><span class="md-color-dot" style="background:#3b82f6"></span>蓝色</button>
+                  <button class="md-tool-dropitem" onclick="insertHtmlStyle('color', '#a855f7')"><span class="md-color-dot" style="background:#a855f7"></span>紫色</button>
+                  <button class="md-tool-dropitem" onclick="insertHtmlStyle('color', '#ec4899')"><span class="md-color-dot" style="background:#ec4899"></span>粉色</button>
+                  <button class="md-tool-dropitem" onclick="insertHtmlStyle('color', '#64748b')"><span class="md-color-dot" style="background:#64748b"></span>钢灰</button>
+                </div>
               </div>
-            </div>
-            <div class="md-tool-dropdown" data-md-dropdown>
-              <button class="md-tool-dropbtn" onclick="toggleMdDropdown(this)" title="HTML 列表与表格">列表/表<span class="caret">▾</span></button>
-              <div class="md-tool-dropmenu">
-                <button class="md-tool-dropitem" onclick="insertHtmlTag('<ul>\n  <li>', '</li>\n</ul>')">无序列表 <kbd>&lt;ul&gt;</kbd></button>
-                <button class="md-tool-dropitem" onclick="insertHtmlTag('<ol>\n  <li>', '</li>\n</ol>')">有序列表 <kbd>&lt;ol&gt;</kbd></button>
-                <button class="md-tool-dropitem" onclick="insertHtmlTag('<li>', '</li>')">列表项 <kbd>&lt;li&gt;</kbd></button>
-                <button class="md-tool-dropitem" onclick="insertHtmlRaw('<table border="1">\n  <tr><th>表头</th></tr>\n  <tr><td>数据</td></tr>\n</table>')">表格模板 <kbd>&lt;table&gt;</kbd></button>
+              <div class="md-tool-submenu" data-md-submenu>
+                <button class="md-tool-dropitem has-submenu">背景色 <span class="sub-caret">▸</span><kbd>background</kbd></button>
+                <div class="md-tool-sublist">
+                  <button class="md-tool-dropitem" onclick="insertHtmlStyle('background', '#fee2e2')"><span class="md-color-dot" style="background:#fee2e2"></span>浅红</button>
+                  <button class="md-tool-dropitem" onclick="insertHtmlStyle('background', '#ffedd5')"><span class="md-color-dot" style="background:#ffedd5"></span>浅橙</button>
+                  <button class="md-tool-dropitem" onclick="insertHtmlStyle('background', '#fef9c3')"><span class="md-color-dot" style="background:#fef9c3"></span>浅黄</button>
+                  <button class="md-tool-dropitem" onclick="insertHtmlStyle('background', '#dcfce7')"><span class="md-color-dot" style="background:#dcfce7"></span>浅绿</button>
+                  <button class="md-tool-dropitem" onclick="insertHtmlStyle('background', '#cffafe')"><span class="md-color-dot" style="background:#cffafe"></span>浅青</button>
+                  <button class="md-tool-dropitem" onclick="insertHtmlStyle('background', '#dbeafe')"><span class="md-color-dot" style="background:#dbeafe"></span>浅蓝</button>
+                  <button class="md-tool-dropitem" onclick="insertHtmlStyle('background', '#f3e8ff')"><span class="md-color-dot" style="background:#f3e8ff"></span>浅紫</button>
+                  <button class="md-tool-dropitem" onclick="insertHtmlStyle('background', '#fce7f3')"><span class="md-color-dot" style="background:#fce7f3"></span>浅粉</button>
+                  <button class="md-tool-dropitem" onclick="insertHtmlStyle('background', '#f1f5f9')"><span class="md-color-dot" style="background:#f1f5f9"></span>浅灰</button>
+                  <button class="md-tool-dropitem" onclick="insertHtmlStyle('background', '#1e293b; color: #e2e8f0')"><span class="md-color-dot" style="background:#1e293b"></span>深底浅字</button>
+                </div>
               </div>
-            </div>
-            <div class="md-tool-dropdown" data-md-dropdown>
-              <button class="md-tool-dropbtn" onclick="toggleMdDropdown(this)" title="HTML 空白与链接">其它<span class="caret">▾</span></button>
-              <div class="md-tool-dropmenu">
-                <button class="md-tool-dropitem" onclick="insertHtmlRaw('&amp;nbsp;')">不换行空格 <kbd>&amp;nbsp;</kbd></button>
-                <button class="md-tool-dropitem" onclick="insertHtmlRaw('&amp;ensp;')">半角空格 <kbd>&amp;ensp;</kbd></button>
-                <button class="md-tool-dropitem" onclick="insertHtmlRaw('&amp;emsp;')">全角空格 <kbd>&amp;emsp;</kbd></button>
-                <button class="md-tool-dropitem" onclick="insertHtmlTag('<a href=\"url\">', '</a>')">链接 <kbd>&lt;a&gt;</kbd></button>
-                <button class="md-tool-dropitem" onclick="insertHtmlRaw('<img src=\"url\" width=\"200\">')">图片 <kbd>&lt;img&gt;</kbd></button>
-                <button class="md-tool-dropitem" onclick="insertHtmlTag('<span style=\"color:#ef4444\">', '</span>')">红色 <kbd>color</kbd></button>
-                <button class="md-tool-dropitem" onclick="insertHtmlTag('<span style=\"font-size:1.2em\">', '</span>')">字号 1.2em <kbd>font-size</kbd></button>
+              <div class="md-tool-submenu" data-md-submenu>
+                <button class="md-tool-dropitem has-submenu">字号 <span class="sub-caret">▸</span><kbd>font-size</kbd></button>
+                <div class="md-tool-sublist">
+                  <button class="md-tool-dropitem" onclick="insertHtmlStyle('font-size', '0.8em')">特小 <kbd>0.8em</kbd></button>
+                  <button class="md-tool-dropitem" onclick="insertHtmlStyle('font-size', '0.9em')">小 <kbd>0.9em</kbd></button>
+                  <button class="md-tool-dropitem" onclick="insertHtmlStyle('font-size', '1em')">标准 <kbd>1em</kbd></button>
+                  <button class="md-tool-dropitem" onclick="insertHtmlStyle('font-size', '1.1em')">略大 <kbd>1.1em</kbd></button>
+                  <button class="md-tool-dropitem" onclick="insertHtmlStyle('font-size', '1.25em')">中大 <kbd>1.25em</kbd></button>
+                  <button class="md-tool-dropitem" onclick="insertHtmlStyle('font-size', '1.5em')">大 <kbd>1.5em</kbd></button>
+                  <button class="md-tool-dropitem" onclick="insertHtmlStyle('font-size', '2em')">特大 <kbd>2em</kbd></button>
+                </div>
               </div>
+              <div class="md-tool-submenu" data-md-submenu>
+                <button class="md-tool-dropitem has-submenu">字体 <span class="sub-caret">▸</span><kbd>font-family</kbd></button>
+                <div class="md-tool-sublist">
+                  <div class="md-tool-dropgroup">中文</div>
+                  <button class="md-tool-dropitem" onclick="insertHtmlFont('STHeiti', ['Heiti SC','PingFang SC','sans-serif'])"><span style="font-family:'STHeiti','Heiti SC',sans-serif">黑体 · STHeiti</span></button>
+                  <button class="md-tool-dropitem" onclick="insertHtmlFont('Hiragino Sans GB', ['Hiragino Sans','PingFang SC','sans-serif'])"><span style="font-family:'Hiragino Sans GB','Hiragino Sans',sans-serif">冬青黑体 · Hiragino Sans GB</span></button>
+                  <button class="md-tool-dropitem" onclick="insertHtmlFont('PingFang SC', ['PingFang SC','sans-serif'])"><span style="font-family:'PingFang SC',sans-serif">苹方 · PingFang SC</span></button>
+                  <button class="md-tool-dropitem" onclick="insertHtmlFont('Songti SC', ['Songti','STSong','华文宋体','宋体-简','serif'])"><span style="font-family:'Songti SC','Songti',serif">宋体 · Songti SC</span></button>
+                  <button class="md-tool-dropitem" onclick="insertHtmlFont('Kaiti SC', ['Kai','楷体-简','STKaiti','华文楷体','cursive'])"><span style="font-family:'Kaiti SC','Kai',cursive">楷体 · Kaiti SC</span></button>
+                  <button class="md-tool-dropitem" onclick="insertHtmlFont('STFangsong', ['FangSong','华文仿宋','仿宋','serif'])"><span style="font-family:'STFangsong','FangSong',serif">仿宋 · STFangsong</span></button>
+                  <button class="md-tool-dropitem" onclick="insertHtmlFont('Yuanti SC', ['圆体-简','STYuanti','sans-serif'])"><span style="font-family:'Yuanti SC','圆体-简',sans-serif">圆体 · Yuanti SC</span></button>
+                  <div class="md-tool-dropgroup">拉丁 / 等宽</div>
+                  <button class="md-tool-dropitem" onclick="insertHtmlFont('Arial', ['Helvetica','sans-serif'])"><span style="font-family:Arial,Helvetica,sans-serif">Arial</span></button>
+                  <button class="md-tool-dropitem" onclick="insertHtmlFont('Georgia', ['Times New Roman','serif'])"><span style="font-family:Georgia,'Times New Roman',serif">Georgia</span></button>
+                  <button class="md-tool-dropitem" onclick="insertHtmlFont('Menlo', ['SF Mono','Courier New','monospace'])"><span style="font-family:Menlo,'SF Mono',monospace">等宽代码 · Menlo</span></button>
+                  <div class="md-tool-dropgroup">重置 / 自定义</div>
+                  <button class="md-tool-dropitem" onclick="insertHtmlStyle('font-family', 'inherit !important')">系统默认 <kbd>inherit</kbd></button>
+                </div>
+              </div>
+              <div class="md-tool-dropgroup">字重 / 行高 / 字距</div>
+              <button class="md-tool-dropitem" onclick="insertHtmlStyle('font-weight', '400')">字重 常规 <kbd>400</kbd></button>
+              <button class="md-tool-dropitem" onclick="insertHtmlStyle('font-weight', '600')">字重 半粗 <kbd>600</kbd></button>
+              <button class="md-tool-dropitem" onclick="insertHtmlStyle('font-weight', '700')">字重 加粗 <kbd>700</kbd></button>
+              <button class="md-tool-dropitem" onclick="insertHtmlStyle('line-height', '1.5')">行高 1.5 <kbd>line-height</kbd></button>
+              <button class="md-tool-dropitem" onclick="insertHtmlStyle('line-height', '1.8')">行高 1.8 <kbd>line-height</kbd></button>
+              <button class="md-tool-dropitem" onclick="insertHtmlStyle('line-height', '2')">行高 2 <kbd>line-height</kbd></button>
+              <button class="md-tool-dropitem" onclick="insertHtmlStyle('letter-spacing', '0.05em')">字距 0.05em <kbd>letter-spacing</kbd></button>
+              <button class="md-tool-dropitem" onclick="insertHtmlStyle('letter-spacing', '0.2em')">字距 0.2em <kbd>letter-spacing</kbd></button>
+              <div class="md-tool-dropgroup">对齐（块级，用 div 包裹）</div>
+              <button class="md-tool-dropitem" onclick="insertHtmlStyle('text-align', 'left', '文本', 'div')">左对齐 <kbd>left</kbd></button>
+              <button class="md-tool-dropitem" onclick="insertHtmlStyle('text-align', 'center', '文本', 'div')">居中 <kbd>center</kbd></button>
+              <button class="md-tool-dropitem" onclick="insertHtmlStyle('text-align', 'right', '文本', 'div')">右对齐 <kbd>right</kbd></button>
+              <button class="md-tool-dropitem" onclick="insertHtmlStyle('text-align', 'justify', '文本', 'div')">两端对齐 <kbd>justify</kbd></button>
             </div>
-            <span class="md-tool-sep"></span>
-            <button class="md-tool-btn" onclick="insertHtmlRaw('&amp;nbsp;')" title="不换行空格">&amp;nbsp;</button>
-            <button class="md-tool-btn" onclick="insertHtmlTag('<br>')" title="换行">&lt;br&gt;</button>
-            <button class="md-tool-btn" onclick="insertHtmlTag('<center>', '</center>')" title="居中">center</button>
-            <button class="md-tool-btn" onclick="insertHtmlTag('<big>', '</big>')" title="放大">big</button>
-            <button class="md-tool-btn" onclick="insertHtmlTag('<small>', '</small>')" title="缩小">small</button>
+          </div>
+
+          <!-- 结构：块级标签与 HTML5 语义区块 -->
+          <div class="md-tool-dropdown" data-md-dropdown>
+            <button class="md-tool-dropbtn" onclick="toggleMdDropdown(this)" title="块级结构与 HTML5 语义标签">结构<span class="caret">▾</span></button>
+            <div class="md-tool-dropmenu">
+              <div class="md-tool-dropgroup">标题与段落</div>
+              <button class="md-tool-dropitem" onclick="insertHtmlTag('<h1>', '</h1>')">标题 1 <kbd>&lt;h1&gt;</kbd></button>
+              <button class="md-tool-dropitem" onclick="insertHtmlTag('<h2>', '</h2>')">标题 2 <kbd>&lt;h2&gt;</kbd></button>
+              <button class="md-tool-dropitem" onclick="insertHtmlTag('<h3>', '</h3>')">标题 3 <kbd>&lt;h3&gt;</kbd></button>
+              <button class="md-tool-dropitem" onclick="insertHtmlTag('<h4>', '</h4>')">标题 4 <kbd>&lt;h4&gt;</kbd></button>
+              <button class="md-tool-dropitem" onclick="insertHtmlTag('<p>', '</p>')">段落 <kbd>&lt;p&gt;</kbd></button>
+              <button class="md-tool-dropitem" onclick="insertHtmlTag('<br>')">换行 <kbd>&lt;br&gt;</kbd></button>
+              <button class="md-tool-dropitem" onclick="insertHtmlTag('<hr>')">水平线 <kbd>&lt;hr&gt;</kbd></button>
+              <div class="md-tool-dropgroup">HTML5 语义区块</div>
+              <button class="md-tool-dropitem" onclick="insertHtmlTag('<header>', '</header>')">页眉 <kbd>&lt;header&gt;</kbd></button>
+              <button class="md-tool-dropitem" onclick="insertHtmlTag('<nav>', '</nav>')">导航 <kbd>&lt;nav&gt;</kbd></button>
+              <button class="md-tool-dropitem" onclick="insertHtmlTag('<main>', '</main>')">主体 <kbd>&lt;main&gt;</kbd></button>
+              <button class="md-tool-dropitem" onclick="insertHtmlTag('<section>', '</section>')">章节 <kbd>&lt;section&gt;</kbd></button>
+              <button class="md-tool-dropitem" onclick="insertHtmlTag('<article>', '</article>')">文章 <kbd>&lt;article&gt;</kbd></button>
+              <button class="md-tool-dropitem" onclick="insertHtmlTag('<aside>', '</aside>')">侧栏 <kbd>&lt;aside&gt;</kbd></button>
+              <button class="md-tool-dropitem" onclick="insertHtmlTag('<footer>', '</footer>')">页脚 <kbd>&lt;footer&gt;</kbd></button>
+              <button class="md-tool-dropitem" onclick="insertHtmlTag('<address>', '</address>')">联系信息 <kbd>&lt;address&gt;</kbd></button>
+              <div class="md-tool-dropgroup">图文与折叠</div>
+              <button class="md-tool-dropitem" onclick="insertHtmlTag('<figure>', '</figure>')">图文块 <kbd>&lt;figure&gt;</kbd></button>
+              <button class="md-tool-dropitem" onclick="insertHtmlTag('<figcaption>', '</figcaption>')">图注 <kbd>&lt;figcaption&gt;</kbd></button>
+              <button class="md-tool-dropitem" onclick="insertHtmlTag('<blockquote>', '</blockquote>')">长引用 <kbd>&lt;blockquote&gt;</kbd></button>
+              <button class="md-tool-dropitem" onclick="insertHtmlTag('<pre>', '</pre>')">预格式文本 <kbd>&lt;pre&gt;</kbd></button>
+              <button class="md-tool-dropitem" onclick="insertHtmlRaw('<details>\n  <summary>点击展开</summary>\n  详细内容\n</details>')">折叠块 <kbd>&lt;details&gt;</kbd></button>
+              <button class="md-tool-dropitem" onclick="insertHtmlTag('<time datetime=&quot;2026-01-01&quot;>', '</time>')">时间 <kbd>&lt;time&gt;</kbd></button>
+            </div>
+          </div>
+
+          <!-- 布局：flex / grid / 卡片等常用版式模板 -->
+          <div class="md-tool-dropdown" data-md-dropdown>
+            <button class="md-tool-dropbtn" onclick="toggleMdDropdown(this)" title="常用版式模板（flex / grid / 卡片）">布局<span class="caret">▾</span></button>
+            <div class="md-tool-dropmenu">
+              <div class="md-tool-dropgroup">弹性排列</div>
+              <button class="md-tool-dropitem" onclick='insertHtmlRaw(`<div style="display:flex; gap:8px;">\n  <div>左</div>\n  <div>右</div>\n</div>`)'>横向排列 <kbd>flex row</kbd></button>
+              <button class="md-tool-dropitem" onclick='insertHtmlRaw(`<div style="display:flex; flex-direction:column; gap:8px;">\n  <div>上</div>\n  <div>下</div>\n</div>`)'>纵向排列 <kbd>flex column</kbd></button>
+              <button class="md-tool-dropitem" onclick='insertHtmlRaw(`<div style="display:flex; justify-content:space-between; align-items:center;">\n  <span>左侧</span>\n  <span>右侧</span>\n</div>`)'>两端对齐 <kbd>space-between</kbd></button>
+              <div class="md-tool-dropgroup">网格分栏</div>
+              <button class="md-tool-dropitem" onclick='insertHtmlRaw(`<div style="display:grid; grid-template-columns:1fr 1fr; gap:8px;">\n  <div>左栏</div>\n  <div>右栏</div>\n</div>`)'>两栏均分 <kbd>1fr 1fr</kbd></button>
+              <button class="md-tool-dropitem" onclick='insertHtmlRaw(`<div style="display:grid; grid-template-columns:1fr 2fr; gap:8px;">\n  <div>窄栏</div>\n  <div>宽栏</div>\n</div>`)'>两栏 1:2 <kbd>1fr 2fr</kbd></button>
+              <button class="md-tool-dropitem" onclick='insertHtmlRaw(`<div style="display:grid; grid-template-columns:repeat(3, 1fr); gap:8px;">\n  <div>一</div>\n  <div>二</div>\n  <div>三</div>\n</div>`)'>三栏均分 <kbd>repeat(3,1fr)</kbd></button>
+              <div class="md-tool-dropgroup">容器</div>
+              <button class="md-tool-dropitem" onclick='insertHtmlRaw(`<div style="max-width:640px; margin:0 auto;">\n  居中内容\n</div>`)'>居中容器 <kbd>margin auto</kbd></button>
+              <button class="md-tool-dropitem" onclick='insertHtmlRaw(`<div style="border:1px solid #e2e8f0; border-radius:8px; padding:12px;">\n  卡片内容\n</div>`)'>卡片容器 <kbd>border+radius</kbd></button>
+              <button class="md-tool-dropitem" onclick='insertHtmlRaw(`<div style="border-left:3px solid #3b82f6; padding-left:10px;">\n  提示内容\n</div>`)'>左侧标示条 <kbd>border-left</kbd></button>
+              <button class="md-tool-dropitem" onclick='insertHtmlRaw(`<div style="overflow-x:auto;">\n  <table></table>\n</div>`)'>横向滚动容器 <kbd>overflow-x</kbd></button>
+            </div>
+          </div>
+
+          <!-- 列表与表格 -->
+          <div class="md-tool-dropdown" data-md-dropdown>
+            <button class="md-tool-dropbtn" onclick="toggleMdDropdown(this)" title="列表与表格">列表/表<span class="caret">▾</span></button>
+            <div class="md-tool-dropmenu">
+              <div class="md-tool-dropgroup">列表</div>
+              <button class="md-tool-dropitem" onclick="insertHtmlTag('<ul>\n  <li>', '</li>\n</ul>')">无序列表 <kbd>&lt;ul&gt;</kbd></button>
+              <button class="md-tool-dropitem" onclick="insertHtmlTag('<ol>\n  <li>', '</li>\n</ol>')">有序列表 <kbd>&lt;ol&gt;</kbd></button>
+              <button class="md-tool-dropitem" onclick="insertHtmlTag('<li>', '</li>')">列表项 <kbd>&lt;li&gt;</kbd></button>
+              <button class="md-tool-dropitem" onclick="insertHtmlRaw('<dl>\n  <dt>术语</dt>\n  <dd>说明</dd>\n</dl>')">定义列表 <kbd>&lt;dl&gt;</kbd></button>
+              <button class="md-tool-dropitem" onclick="insertHtmlTag('<dt>', '</dt>')">术语 <kbd>&lt;dt&gt;</kbd></button>
+              <button class="md-tool-dropitem" onclick="insertHtmlTag('<dd>', '</dd>')">说明 <kbd>&lt;dd&gt;</kbd></button>
+              <div class="md-tool-dropgroup">表格</div>
+              <button class="md-tool-dropitem" onclick="insertHtmlRaw('<table border=&quot;1&quot;>\n  <tr><th>表头</th></tr>\n  <tr><td>数据</td></tr>\n</table>')">简单表格 <kbd>&lt;table&gt;</kbd></button>
+              <button class="md-tool-dropitem" onclick='insertHtmlRaw(`<table border="1" style="border-collapse:collapse; width:100%;">\n  <caption>表标题</caption>\n  <thead>\n    <tr><th>列1</th><th>列2</th></tr>\n  </thead>\n  <tbody>\n    <tr><td>数据</td><td>数据</td></tr>\n  </tbody>\n</table>`)'>完整表格 <kbd>thead+tbody</kbd></button>
+              <button class="md-tool-dropitem" onclick="insertHtmlTag('<thead>', '</thead>')">表头区 <kbd>&lt;thead&gt;</kbd></button>
+              <button class="md-tool-dropitem" onclick="insertHtmlTag('<tbody>', '</tbody>')">表体区 <kbd>&lt;tbody&gt;</kbd></button>
+              <button class="md-tool-dropitem" onclick="insertHtmlTag('<tr>', '</tr>')">行 <kbd>&lt;tr&gt;</kbd></button>
+              <button class="md-tool-dropitem" onclick="insertHtmlTag('<th>', '</th>')">表头格 <kbd>&lt;th&gt;</kbd></button>
+              <button class="md-tool-dropitem" onclick="insertHtmlTag('<td>', '</td>')">数据格 <kbd>&lt;td&gt;</kbd></button>
+              <button class="md-tool-dropitem" onclick="insertHtmlRaw('<td colspan=&quot;2&quot;>跨 2 列</td>')">跨列 <kbd>colspan</kbd></button>
+              <button class="md-tool-dropitem" onclick="insertHtmlRaw('<td rowspan=&quot;2&quot;>跨 2 行</td>')">跨行 <kbd>rowspan</kbd></button>
+              <button class="md-tool-dropitem" onclick="insertHtmlTag('<caption>', '</caption>')">表标题 <kbd>&lt;caption&gt;</kbd></button>
+            </div>
+          </div>
+
+          <!-- 媒体与链接 -->
+          <div class="md-tool-dropdown" data-md-dropdown>
+            <button class="md-tool-dropbtn" onclick="toggleMdDropdown(this)" title="链接、图片与多媒体">媒体/链接<span class="caret">▾</span></button>
+            <div class="md-tool-dropmenu">
+              <div class="md-tool-dropgroup">链接</div>
+              <button class="md-tool-dropitem" onclick="insertHtmlTag('<a href=&quot;url&quot;>', '</a>')">普通链接 <kbd>&lt;a&gt;</kbd></button>
+              <button class="md-tool-dropitem" onclick="insertHtmlTag('<a href=&quot;url&quot; target=&quot;_blank&quot; rel=&quot;noopener&quot;>', '</a>')">新窗口打开 <kbd>target</kbd></button>
+              <button class="md-tool-dropitem" onclick="insertHtmlTag('<a href=&quot;#锚点id&quot;>', '</a>')">页内锚点 <kbd>#id</kbd></button>
+              <button class="md-tool-dropitem" onclick="insertHtmlTag('<a href=&quot;mailto:someone@example.com&quot;>', '</a>')">邮件 <kbd>mailto:</kbd></button>
+              <button class="md-tool-dropitem" onclick="insertHtmlTag('<a href=&quot;tel:+8613800000000&quot;>', '</a>')">电话 <kbd>tel:</kbd></button>
+              <button class="md-tool-dropitem" onclick="insertHtmlTag('<a href=&quot;url&quot; download>', '</a>')">下载 <kbd>download</kbd></button>
+              <div class="md-tool-dropgroup">图片</div>
+              <button class="md-tool-dropitem" onclick="insertHtmlRaw('<img src=&quot;url&quot; alt=&quot;说明&quot; width=&quot;200&quot;>')">图片 <kbd>&lt;img&gt;</kbd></button>
+              <button class="md-tool-dropitem" onclick="insertHtmlRaw('<img src=&quot;url&quot; alt=&quot;说明&quot; style=&quot;max-width:100%; height:auto;&quot;>')">自适应图片 <kbd>max-width</kbd></button>
+              <button class="md-tool-dropitem" onclick='insertHtmlRaw(`<figure>\n  <img src="url" alt="说明" style="max-width:100%;">\n  <figcaption>图注</figcaption>\n</figure>`)'>带图注的图 <kbd>figure</kbd></button>
+              <div class="md-tool-dropgroup">音视频与嵌入</div>
+              <button class="md-tool-dropitem" onclick='insertHtmlRaw(`<video src="url" controls style="max-width:100%;"></video>`)'>视频 <kbd>&lt;video&gt;</kbd></button>
+              <button class="md-tool-dropitem" onclick='insertHtmlRaw(`<audio src="url" controls></audio>`)'>音频 <kbd>&lt;audio&gt;</kbd></button>
+              <button class="md-tool-dropitem" onclick='insertHtmlRaw(`<iframe src="url" width="100%" height="400" frameborder="0"></iframe>`)'>内嵌框架 <kbd>&lt;iframe&gt;</kbd></button>
+              <button class="md-tool-dropitem" onclick='insertHtmlRaw(`<svg width="100" height="100" viewBox="0 0 100 100">\n  <circle cx="50" cy="50" r="40" fill="#3b82f6"></circle>\n</svg>`)'>SVG 图形 <kbd>&lt;svg&gt;</kbd></button>
+            </div>
+          </div>
+
+          <!-- 工具：整理 / 转换 / 校验 / 实体 -->
+          <div class="md-tool-dropdown" data-md-dropdown>
+            <button class="md-tool-dropbtn" onclick="toggleMdDropdown(this)" title="整理、转换与校验">工具<span class="caret">▾</span></button>
+            <div class="md-tool-dropmenu">
+              <div class="md-tool-dropgroup">整理全文</div>
+              <button class="md-tool-dropitem" onclick="formatHtml('pretty')">缩进整理 <kbd>格式化</kbd></button>
+              <button class="md-tool-dropitem" onclick="formatHtml('compact')">压缩（去换行缩进）</button>
+              <button class="md-tool-dropitem" onclick="formatHtml('validate')">标签配对检查 <kbd>校验</kbd></button>
+              <div class="md-tool-dropgroup">转换</div>
+              <button class="md-tool-dropitem" onclick="formatHtml('escape')">源码转义为文本 <kbd>&amp;lt;</kbd></button>
+              <button class="md-tool-dropitem" onclick="formatHtml('unescape')">文本反转义为源码</button>
+              <button class="md-tool-dropitem" onclick="formatHtml('strip')">去掉标签取纯文本</button>
+              <div class="md-tool-dropgroup">空白与不可见字符</div>
+              <button class="md-tool-dropitem" onclick="insertHtmlRaw('&amp;nbsp;')">不换行空格 <kbd>&amp;nbsp;</kbd></button>
+              <button class="md-tool-dropitem" onclick="insertHtmlRaw('&amp;ensp;')">半角空格 <kbd>&amp;ensp;</kbd></button>
+              <button class="md-tool-dropitem" onclick="insertHtmlRaw('&amp;emsp;')">全角空格 <kbd>&amp;emsp;</kbd></button>
+              <button class="md-tool-dropitem" onclick="insertHtmlRaw('　')">全角空格（字符） <kbd>U+3000</kbd></button>
+              <button class="md-tool-dropitem" onclick="insertHtmlRaw('​')">零宽空格 <kbd>U+200B</kbd></button>
+              <div class="md-tool-dropgroup">常用实体</div>
+              <button class="md-tool-dropitem" onclick="insertHtmlRaw('&amp;copy;')">版权 © <kbd>&amp;copy;</kbd></button>
+              <button class="md-tool-dropitem" onclick="insertHtmlRaw('&amp;reg;')">商标 ® <kbd>&amp;reg;</kbd></button>
+              <button class="md-tool-dropitem" onclick="insertHtmlRaw('&amp;trade;')">商标 ™ <kbd>&amp;trade;</kbd></button>
+              <button class="md-tool-dropitem" onclick="insertHtmlRaw('&amp;hellip;')">省略号 … <kbd>&amp;hellip;</kbd></button>
+              <button class="md-tool-dropitem" onclick="insertHtmlRaw('&amp;mdash;')">破折号 — <kbd>&amp;mdash;</kbd></button>
+              <button class="md-tool-dropitem" onclick="insertHtmlRaw('&amp;times;')">乘号 × <kbd>&amp;times;</kbd></button>
+              <button class="md-tool-dropitem" onclick="insertHtmlRaw('&amp;deg;')">度 ° <kbd>&amp;deg;</kbd></button>
+              <button class="md-tool-dropitem" onclick="insertHtmlRaw('&amp;plusmn;')">正负 ± <kbd>&amp;plusmn;</kbd></button>
+              <button class="md-tool-dropitem" onclick="insertHtmlRaw('&amp;check;')">对勾 ✓ <kbd>&amp;check;</kbd></button>
+              <button class="md-tool-dropitem" onclick="insertHtmlComment()">插入注释 <kbd>&lt;!-- --&gt;</kbd></button>
+            </div>
+          </div>
+
+          <span class="md-tool-sep"></span>
+          <button class="md-tool-btn" onclick="formatHtml('pretty')" title="缩进整理（块级标签独占一行并缩进）">缩进</button>
+          <button class="md-tool-btn" onclick="formatHtml('validate')" title="标签配对检查">校验</button>
+          <button class="md-tool-btn" onclick="insertHtmlRaw('&amp;nbsp;')" title="不换行空格">&amp;nbsp;</button>
+          <button class="md-tool-btn" onclick="insertHtmlTag('<br>')" title="换行">&lt;br&gt;</button>
+          <button class="md-tool-btn" onclick="insertHtmlComment()" title="插入注释">&lt;!----&gt;</button>
+          <button class="md-tool-btn" onclick="insertHtmlStyle('text-align', 'center', '文本', 'div')" title="居中">center</button>
           </div>
 
           <!-- JSON 工具（仅在 JSON 文本/预览时显示） -->
           <div class="editor-toolbar-group" id="jsonTools" style="display:none;">
-            <button class="md-tool-btn" onclick="formatJson('pretty')" title="格式化（2空格缩进）">格式化</button>
-            <button class="md-tool-btn" onclick="formatJson('compact')" title="压缩成一行">压缩</button>
-            <button class="md-tool-btn" onclick="formatJson('escape')" title="转义为字符串">转义</button>
-            <button class="md-tool-btn" onclick="formatJson('unescape')" title="反转义字符串">反转义</button>
-            <button class="md-tool-btn" onclick="formatJson('validate')" title="校验 JSON 语法">校验</button>
-            <span class="md-tool-sep"></span>
-            <div class="md-tool-dropdown" data-md-dropdown>
-              <button class="md-tool-dropbtn" onclick="toggleMdDropdown(this)" title="插入 JSON 片段">插入<span class="caret">▾</span></button>
-              <div class="md-tool-dropmenu">
-                <button class="md-tool-dropitem" onclick="insertJsonRaw('\"\"')">字符串 <kbd>""</kbd></button>
-                <button class="md-tool-dropitem" onclick="insertJsonRaw('[]')">空数组 <kbd>[]</kbd></button>
-                <button class="md-tool-dropitem" onclick="insertJsonRaw('{}')">空对象 <kbd>{}</kbd></button>
-                <button class="md-tool-dropitem" onclick="insertJsonRaw('true')">true</button>
-                <button class="md-tool-dropitem" onclick="insertJsonRaw('false')">false</button>
-                <button class="md-tool-dropitem" onclick="insertJsonRaw('null')">null</button>
-                <button class="md-tool-dropitem" onclick="insertJsonRaw('{\n  \"text\": \"\"\n}')">text 字段</button>
-                <button class="md-tool-dropitem" onclick="insertJsonRaw('{\n  \"htmlContent\": \"\"\n}')">htmlContent 字段</button>
-                <button class="md-tool-dropitem" onclick="insertJsonRaw('{\n  \"tags\": []\n}')">tags 字段</button>
-                <div class="md-tool-dropgroup">JSON 表格范例</div>
-                <button class="md-tool-dropitem" onclick='insertJsonRaw(`[\n  "苹果",\n  "香蕉",\n  "橘子"\n]`)' title="一维表格：纯字符串数组，最简单的列表">一维·字符串列表 <kbd>[…]</kbd></button>
-                <button class="md-tool-dropitem" onclick='insertJsonRaw(`[\n  { "name": "苹果", "qty": 3 },\n  { "name": "香蕉", "qty": 5 },\n  { "name": "橘子", "qty": 2 }\n]`)' title="一维表格：每行一个对象，列名即 key；最常见的表格形式">一维·行对象表 <kbd>[{}]</kbd></button>
-                <button class="md-tool-dropitem" onclick='insertJsonRaw(`[\n  ["姓名", "年龄", "城市"],\n  ["张三", 28, "北京"],\n  ["李四", 30, "上海"],\n  ["王五", 25, "广州"]\n]`)' title="二维表格：数组嵌套数组；第一行为表头，其余为数据行（对齐 Obsidian / Excel 直读）">二维·字符串+数字表 <kbd>[[…]]</kbd></button>
-                <button class="md-tool-dropitem" onclick='insertJsonRaw(`[\n  [\n    { "key": "姓名", "value": "张三" },\n    { "key": "年龄", "value": 28 }\n  ],\n  [\n    { "key": "姓名", "value": "李四" },\n    { "key": "年龄", "value": 30 }\n  ]\n]`)' title="二维表格：每格是一个 {key, value} 对象，方便扩展元数据（如单位、格式）">二维·键值格表 <kbd>[[{…}]]</kbd></button>
-                <button class="md-tool-dropitem" onclick='insertJsonRaw(`{\n  "title": "员工花名册",\n  "columns": ["姓名", "年龄", "城市"],\n  "rows": [\n    ["张三", 28, "北京"],\n    ["李四", 30, "上海"]\n  ]\n}`)' title="自描述表格：title 是表名，columns 是表头，rows 是数据；前端可直接渲染为 <table>">二维·自描述表 <kbd>{title,…}</kbd></button>
-              </div>
+
+          <!-- 整理 / 修复 / 转换 / 检查 -->
+          <div class="md-tool-dropdown" data-md-dropdown>
+            <button class="md-tool-dropbtn" onclick="toggleMdDropdown(this)" title="整理、修复、转换与检查">工具<span class="caret">▾</span></button>
+            <div class="md-tool-dropmenu">
+              <div class="md-tool-dropgroup">整理</div>
+              <button class="md-tool-dropitem" onclick="formatJson('pretty')">格式化（2 空格缩进） <kbd>pretty</kbd></button>
+              <button class="md-tool-dropitem" onclick="formatJson('pretty4')">格式化（4 空格缩进） <kbd>4 spaces</kbd></button>
+              <button class="md-tool-dropitem" onclick="formatJson('compact')">压缩成一行 <kbd>minify</kbd></button>
+              <button class="md-tool-dropitem" onclick="formatJson('sortKeys')">按键名排序（递归） <kbd>sort</kbd></button>
+              <button class="md-tool-dropitem" onclick="formatJson('unique')">顶层数组去重 <kbd>unique</kbd></button>
+              <div class="md-tool-dropgroup">修复（修完先验证，写不坏）</div>
+              <button class="md-tool-dropitem" onclick="formatJson('fixQuotes')">单引号 → 双引号 <kbd>' → "</kbd></button>
+              <button class="md-tool-dropitem" onclick="formatJson('stripCommas')">去掉尾逗号 <kbd>[1,2,]</kbd></button>
+              <div class="md-tool-dropgroup">转换</div>
+              <button class="md-tool-dropitem" onclick="formatJson('escape')">转义为 JSON 字符串 <kbd>stringify</kbd></button>
+              <button class="md-tool-dropitem" onclick="formatJson('unescape')">反转义还原 <kbd>parse</kbd></button>
+              <div class="md-tool-dropgroup">检查</div>
+              <button class="md-tool-dropitem" onclick="formatJson('validate')" title="语法错误时自动跳到出错位置并选中">校验语法（失败时定位） <kbd>✓</kbd></button>
+              <button class="md-tool-dropitem" onclick="formatJson('stats')">统计信息（类型/项数/深度/字节）</button>
             </div>
+          </div>
+
+          <!-- 插入片段 -->
+          <div class="md-tool-dropdown" data-md-dropdown>
+            <button class="md-tool-dropbtn" onclick="toggleMdDropdown(this)" title="插入 JSON 片段与模板">插入<span class="caret">▾</span></button>
+            <div class="md-tool-dropmenu">
+              <div class="md-tool-dropgroup">基础值</div>
+              <button class="md-tool-dropitem" onclick="insertJsonRaw('&quot;&quot;')">字符串 <kbd>""</kbd></button>
+              <button class="md-tool-dropitem" onclick="insertJsonRaw('0')">数字 <kbd>0</kbd></button>
+              <button class="md-tool-dropitem" onclick="insertJsonRaw('[]')">空数组 <kbd>[]</kbd></button>
+              <button class="md-tool-dropitem" onclick="insertJsonRaw('{}')">空对象 <kbd>{}</kbd></button>
+              <button class="md-tool-dropitem" onclick="insertJsonRaw('true')">true</button>
+              <button class="md-tool-dropitem" onclick="insertJsonRaw('false')">false</button>
+              <button class="md-tool-dropitem" onclick="insertJsonRaw('null')">null</button>
+              <div class="md-tool-dropgroup">动态值（插入当时的值）</div>
+              <button class="md-tool-dropitem" onclick="insertJsonNow()">当前时间 ISO 8601 <kbd>now</kbd></button>
+              <button class="md-tool-dropitem" onclick="insertJsonUuid()">UUID v4 <kbd>uuid</kbd></button>
+              <div class="md-tool-dropgroup">todo 卡片字段</div>
+              <button class="md-tool-dropitem" onclick='insertJsonRaw(`"text": ""`)'>text 正文</button>
+              <button class="md-tool-dropitem" onclick='insertJsonRaw(`"htmlContent": ""`)'>htmlContent HTML</button>
+              <button class="md-tool-dropitem" onclick='insertJsonRaw(`"tags": []`)'>tags 标签</button>
+              <button class="md-tool-dropitem" onclick='insertJsonRaw(`"attachments": []`)'>attachments 附件</button>
+              <button class="md-tool-dropitem" onclick='insertJsonRaw(`"bgColor": ""`)'>bgColor 背景色</button>
+              <button class="md-tool-dropitem" onclick='insertJsonRaw(`"completed": false`)'>completed 完成</button>
+              <button class="md-tool-dropitem" onclick='insertJsonRaw(`"completedAt": null`)'>completedAt 完成时间</button>
+              <button class="md-tool-dropitem" onclick='insertJsonRaw(`"createdAt": 0`)'>createdAt 创建时间</button>
+              <button class="md-tool-dropitem" onclick='insertJsonRaw(`"updatedAt": 0`)'>updatedAt 更新时间</button>
+              <div class="md-tool-dropgroup">JSON 表格范例</div>
+              <button class="md-tool-dropitem" onclick='insertJsonRaw(`[\n  "苹果",\n  "香蕉",\n  "橘子"\n]`)' title="一维表格：纯字符串数组，最简单的列表">一维·字符串列表 <kbd>[…]</kbd></button>
+              <button class="md-tool-dropitem" onclick='insertJsonRaw(`[\n  { "name": "苹果", "qty": 3 },\n  { "name": "香蕉", "qty": 5 },\n  { "name": "橘子", "qty": 2 }\n]`)' title="一维表格：每行一个对象，列名即 key；最常见的表格形式">一维·行对象表 <kbd>[{}]</kbd></button>
+              <button class="md-tool-dropitem" onclick='insertJsonRaw(`[\n  ["姓名", "年龄", "城市"],\n  ["张三", 28, "北京"],\n  ["李四", 30, "上海"],\n  ["王五", 25, "广州"]\n]`)' title="二维表格：数组嵌套数组；第一行为表头，其余为数据行（对齐 Obsidian / Excel 直读）">二维·字符串+数字表 <kbd>[[…]]</kbd></button>
+              <button class="md-tool-dropitem" onclick='insertJsonRaw(`[\n  [\n    { "key": "姓名", "value": "张三" },\n    { "key": "年龄", "value": 28 }\n  ],\n  [\n    { "key": "姓名", "value": "李四" },\n    { "key": "年龄", "value": 30 }\n  ]\n]`)' title="二维表格：每格是一个 {key, value} 对象，方便扩展元数据（如单位、格式）">二维·键值格表 <kbd>[[{…}]]</kbd></button>
+              <button class="md-tool-dropitem" onclick='insertJsonRaw(`{\n  "title": "员工花名册",\n  "columns": ["姓名", "年龄", "城市"],\n  "rows": [\n    ["张三", 28, "北京"],\n    ["李四", 30, "上海"]\n  ]\n}`)' title="自描述表格：title 是表名，columns 是表头，rows 是数据；前端可直接渲染为 <table>">二维·自描述表 <kbd>{title,…}</kbd></button>
+            </div>
+          </div>
+
+          <span class="md-tool-sep"></span>
+          <button class="md-tool-btn" onclick="formatJson('pretty')" title="格式化（2 空格缩进）">格式化</button>
+          <button class="md-tool-btn" onclick="formatJson('compact')" title="压缩成一行">压缩</button>
+          <button class="md-tool-btn" onclick="formatJson('sortKeys')" title="按键名排序（递归）">排序</button>
+          <button class="md-tool-btn" onclick="formatJson('validate')" title="校验语法（失败时跳到出错位置）">校验</button>
           </div>
 
           <span style="flex:1" data-page-node-id="rYQS1EpVAsBLVKB3hOouqm"></span>
@@ -4130,13 +4362,23 @@
       closeAllMdDropdowns();
     }
 
+    // 🔤 构造 font-family 的 CSS 值：带 fallback 链时按顺序拼接，通用族名（serif/sans-serif/…）不加引号。
+    //    MD 工具栏与 HTML 工具栏共用，保证两处字体写法一致（单一可信来源）。
+    function buildFontCssValue(name, fallbacks) {
+      const list = [name].concat(fallbacks || []);
+      return list.map(function (f) {
+        const s = String(f);
+        if (/^(serif|sans-serif|monospace|cursive|fantasy|system-ui|inherit)$/i.test(s)) return s;
+        return "'" + s.replace(/'/g, "\\'") + "'";
+      }).join(', ');
+    }
+
     // 🔤 字体选择器：把选中文字（或占位符）用 <span style="font-family:…"> 包裹
     // 用独立函数避免 onclick 里 font 名带空格时的引号嵌套地狱
     function insertFont(family) {
-      const cssVal = "'" + String(family).replace(/'/g, "\\'") + "'";
       // 用 !important 确保覆盖父元素继承的 font-family（body 的 -apple-system 在 macOS 上就是 PingFang SC，
       // 不加 !important 时设苹方=设默认，看起来"没效果"）
-      const before = '<span style="font-family: ' + cssVal + ' !important">';
+      const before = '<span style="font-family: ' + buildFontCssValue(family) + ' !important">';
       insertMd(before, '</span>');
     }
 
@@ -4146,14 +4388,7 @@
     // Songti / Arial Unicode 等少数中文字体），浏览器找不到就静默回落到默认苹方，
     // 导致「大部分字体点了没效果」。现在只列真实存在的字体，并带 fallback 链保证可降级。
     function insertFontFamily(name, fallbacks, label) {
-      const list = [name].concat(fallbacks || []);
-      const cssVal = list.map(function (f) {
-        const s = String(f);
-        // 通用族名（serif/sans-serif/monospace/cursive）不加引号
-        if (/^(serif|sans-serif|monospace|cursive|fantasy|system-ui|inherit)$/i.test(s)) return s;
-        return "'" + s.replace(/'/g, "\\'") + "'";
-      }).join(', ');
-      const before = '<span style="font-family: ' + cssVal + ' !important">';
+      const before = '<span style="font-family: ' + buildFontCssValue(name, fallbacks) + ' !important">';
       insertMd(before, '</span>');
     }
 
@@ -4167,22 +4402,39 @@
     }
 
     // ========== HTML / JSON 编辑器的通用插入辅助函数 ==========
-    // 在指定 textarea 的光标处插入 before + selected + after
-    function insertIntoTextarea(textarea, before, after) {
+    // 在指定 textarea 的光标处插入 before + 内容 + after
+    // placeholder：未选中文字时插入的占位内容（并自动选中，方便直接覆写）；不传则只插空标签
+    function insertIntoTextarea(textarea, before, after, placeholder) {
       if (!textarea) return;
       const start = textarea.selectionStart;
       const end = textarea.selectionEnd;
       const selected = textarea.value.substring(start, end);
-      const replacement = before + (selected || '') + (after || '');
+      const body = selected || placeholder || '';
+      const replacement = before + body + (after || '');
       textarea.value = textarea.value.substring(0, start) + replacement + textarea.value.substring(end);
       const savedScrollTop = textarea.scrollTop;
       textarea.focus({ preventScroll: true });
       const newCursor = start + before.length + (selected ? selected.length : 0);
-      textarea.setSelectionRange(newCursor, newCursor + (selected ? selected.length : 0));
+      // 仅在「无选区 + 有占位」时选中占位内容；其余情况光标落在插入内容之后（保持原有行为）
+      const selLen = (!selected && placeholder) ? placeholder.length : 0;
+      textarea.setSelectionRange(newCursor, newCursor + selLen);
       textarea.scrollTop = savedScrollTop;
       pushEditorHistory(textarea, true);
       autoGrowTextarea(textarea);
       closeAllMdDropdowns();
+    }
+
+    // 🎯 跳到指定字符区间并选中，同时把它滚到可视区中部（语法错误定位用；
+    //    与「编辑时不乱滚」不冲突——这是用户显式触发的跳转，不是打字时的被动滚动）
+    function revealInTextarea(textarea, index, length) {
+      if (!textarea || index == null) return;
+      const end = Math.min(textarea.value.length, index + (length || 1));
+      textarea.focus({ preventScroll: true });
+      textarea.setSelectionRange(index, end);
+      const cs = getComputedStyle(textarea);
+      const lineH = parseFloat(cs.lineHeight) || parseFloat(cs.fontSize) || 16;
+      const line = textarea.value.slice(0, index).split('\n').length;
+      textarea.scrollTop = Math.max(0, (line - 1) * lineH - textarea.clientHeight / 2);
     }
 
     function insertHtmlTag(before, after) {
@@ -4197,36 +4449,437 @@
       insertIntoTextarea(document.getElementById('jsonText'), text, '');
     }
 
-    // JSON 工具栏：格式化 / 压缩 / 转义 / 反转义 / 校验
+    // ========== HTML 编辑器专用工具 ==========
+    // 行内元素：格式化时不另起一行（把 <b>粗</b> 拆成三行会很难看）
+    const HTML_INLINE_TAGS = ['a','abbr','b','bdi','bdo','big','br','cite','code','data','del','dfn','em','i','img','input','ins','kbd','mark','q','s','samp','small','span','strong','sub','sup','time','u','var','wbr'];
+    // 空元素（void）：没有闭合标签，不改变缩进层级
+    const HTML_VOID_TAGS = ['area','base','br','col','embed','hr','img','input','link','meta','param','source','track','wbr'];
+    // 原始文本元素：内部空白与换行必须原样保留，格式化不得改写
+    const HTML_RAW_TAGS = ['script','style','pre','textarea'];
+    // 文本级容器：其开始标签后面紧跟的文字留在同一行（<p>内容</p> 不拆成三行）
+    const HTML_TEXT_LEVEL_TAGS = ['p','h1','h2','h3','h4','h5','h6','li','td','th','dt','dd','title','label','button','figcaption','summary','option','caption'];
+
+    // 把 HTML 切成 token 序列：{ type: 'tag' | 'text' | 'comment', text }
+    function htmlTokenize(src) {
+      const tokens = [];
+      const re = /<!--[\s\S]*?-->|<!\[CDATA\[[\s\S]*?\]\]>|<!\w[^>]*>|<\/[^>]*>|<[^>]*>/g;
+      let last = 0;
+      let m;
+      while ((m = re.exec(src)) !== null) {
+        if (m.index > last) tokens.push({ type: 'text', text: src.slice(last, m.index) });
+        tokens.push({ type: m[0].slice(0, 4) === '<!--' ? 'comment' : 'tag', text: m[0] });
+        last = re.lastIndex;
+      }
+      if (last < src.length) tokens.push({ type: 'text', text: src.slice(last) });
+      return tokens;
+    }
+
+    // '<div class="x">' → 'div'，'</DIV >' → 'div'
+    function htmlTagName(tagText) {
+      const m = /^<\/?\s*([a-zA-Z][\w:-]*)/.exec(tagText);
+      return m ? m[1].toLowerCase() : '';
+    }
+
+    // 🧹 缩进整理：块级标签独占一行并缩进，行内标签与文本并排，script/style/pre/textarea 内部原样保留
+    function htmlBeautify(src) {
+      const INDENT = '  ';
+      const lines = [];
+      let depth = 0;
+      let line = '';
+      let rawName = null;   // 当前处于哪个 raw 元素内部
+      let rawBuf = '';
+      let stickyIndex = -1; // 正在「行内续写」的行下标（紧跟在文本级容器开始标签之后）
+      let stickyTag = '';   // 该行对应的文本级容器标签名（闭合时并回同一行）
+
+      const flush = () => { if (line.trim()) lines.push(line.replace(/\s+$/, '')); line = ''; };
+      const pad = () => INDENT.repeat(depth > 0 ? depth : 0);
+      const append = (str) => {
+        if (stickyIndex >= 0) {
+          const prev = lines[stickyIndex];
+          lines[stickyIndex] = prev + (/>$/.test(prev) ? str.replace(/^\s+/, '') : str);
+          return;
+        }
+        if (!line) line = pad();
+        line += str;
+      };
+
+      htmlTokenize(String(src)).forEach(t => {
+        // raw 元素内部：整段原样搬运（含换行），直到对应闭合标签
+        if (rawName) {
+          rawBuf += t.text;
+          if (t.type === 'tag' && /^<\//.test(t.text) && htmlTagName(t.text) === rawName) {
+            // 第一行接在开始标签同一行，其余行原样另起（保持 raw 内容的真实换行）
+            const parts = rawBuf.split('\n');
+            lines[lines.length - 1] += parts[0];
+            for (let i = 1; i < parts.length; i++) lines.push(parts[i]);
+            rawName = null;
+            rawBuf = '';
+          }
+          return;
+        }
+        if (t.type === 'comment') { stickyIndex = -1; flush(); lines.push(pad() + t.text); return; }
+        if (t.type === 'text') {
+          const collapsed = t.text.replace(/\s+/g, ' ');
+          if (!collapsed.trim()) { if (line && !/\s$/.test(line)) line += ' '; return; }
+          append(collapsed);
+          return;
+        }
+        const name = htmlTagName(t.text);
+        const isClose = /^<\//.test(t.text);
+        if (!isClose && HTML_RAW_TAGS.indexOf(name) >= 0) {
+          stickyIndex = -1;
+          flush();
+          lines.push(pad() + t.text);
+          rawName = name;
+          return;
+        }
+        // 行内标签并入当前行（不清 sticky，否则 <p>文本 <b>粗</b></p> 会被拆行）
+        if (HTML_INLINE_TAGS.indexOf(name) >= 0) { append(t.text); return; }
+        // 文本级容器的闭合标签并回同一行：<p>内容</p> / <li>一</li> 不拆行
+        if (isClose && stickyIndex >= 0 && name === stickyTag) {
+          lines[stickyIndex] += t.text;
+          stickyIndex = -1;
+          stickyTag = '';
+          if (depth > 0) depth--;
+          return;
+        }
+        stickyIndex = -1; // 其余块级标签：结束上一段的行内续写
+        stickyTag = '';
+        flush();
+        if (isClose) {
+          if (depth > 0) depth--;
+          lines.push(pad() + t.text);
+        } else {
+          lines.push(pad() + t.text);
+          const selfClose = /\/\s*>$/.test(t.text);
+          if (HTML_VOID_TAGS.indexOf(name) < 0 && !selfClose) {
+            depth++;
+            if (HTML_TEXT_LEVEL_TAGS.indexOf(name) >= 0) {
+              stickyIndex = lines.length - 1;
+              stickyTag = name;
+            }
+          }
+        }
+      });
+      flush();
+      return lines.join('\n');
+    }
+
+    // 🗜 压缩：去掉换行与缩进；token 之间原本存在的空白一律收敛为恰好一个空格（HTML 中空白等价，
+    //    因此行内元素之间不会被意外粘连）；raw 元素内部原样保留
+    function htmlCompact(src) {
+      let out = '';
+      let rawName = null;
+      htmlTokenize(String(src)).forEach(t => {
+        if (rawName) {
+          out += t.text;
+          if (t.type === 'tag' && /^<\//.test(t.text) && htmlTagName(t.text) === rawName) rawName = null;
+          return;
+        }
+        if (t.type === 'comment') { out += t.text; return; }
+        if (t.type === 'text') {
+          const collapsed = t.text.replace(/\s+/g, ' ');
+          if (!collapsed.trim()) { if (out && !/\s$/.test(out)) out += ' '; return; }
+          out += collapsed;
+          return;
+        }
+        const name = htmlTagName(t.text);
+        if (!/^<\//.test(t.text) && HTML_RAW_TAGS.indexOf(name) >= 0) rawName = name;
+        out += t.text;
+      });
+      return out.replace(/\s+$/, '');
+    }
+
+    // 🔍 标签配对检查：报告第一个「未闭合 / 多余闭合 / 不匹配」的标签，并给出行号
+    function htmlValidateTags(src) {
+      const text = String(src);
+      // raw 块里的字符可能形似标签（脚本中的 '<div>'），先按行号等量抹平再检查，保证行号不偏移
+      const cleaned = text.replace(/<(script|style|pre|textarea)\b[\s\S]*?<\/\1\s*>/gi, (m) => m.replace(/[^\n]/g, ' '));
+      const re = /<!--[\s\S]*?-->|<\/\s*([a-zA-Z][\w:-]*)\s*>|<\s*([a-zA-Z][\w:-]*)[^>]*>/g;
+      const stack = [];
+      let m;
+      while ((m = re.exec(cleaned)) !== null) {
+        if (m[0].slice(0, 4) === '<!--') continue;
+        const line = cleaned.slice(0, m.index).split('\n').length;
+        if (m[1]) { // 闭合标签
+          const open = stack.pop();
+          if (!open) return { ok: false, index: m.index, length: m[0].length, message: '第 ' + line + ' 行的 ' + m[0] + ' 多余：没有对应的开始标签' };
+          if (open.name !== m[1].toLowerCase()) {
+            return { ok: false, index: m.index, length: m[0].length, message: '第 ' + line + ' 行的 ' + m[0] + ' 与第 ' + open.line + ' 行的 <' + open.name + '> 不匹配' };
+          }
+        } else {    // 开始标签
+          const name = m[2].toLowerCase();
+          if (HTML_VOID_TAGS.indexOf(name) < 0 && !/\/\s*>$/.test(m[0])) stack.push({ name: name, line: line });
+        }
+      }
+      if (stack.length) {
+        const open = stack[stack.length - 1];
+        return { ok: false, index: null, message: '<' + open.name + '> 未闭合（开始于第 ' + open.line + ' 行）' };
+      }
+      return { ok: true };
+    }
+
+    // 转义 / 反转义：把当前源码变成可直接显示的文本，或反向还原
+    function htmlEscapeText(s) {
+      return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
+    function htmlUnescapeText(s) {
+      return String(s)
+        .replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+        .replace(/&quot;/g, '"').replace(/&#0?39;/g, "'")
+        .replace(/&nbsp;/g, '\u00a0')
+        .replace(/&amp;/g, '&'); // &amp; 必须最后处理，否则会二次解码
+    }
+
+    // 📄 去掉标签取纯文本：块级结束变成换行，<br> 变成换行，脚本样式整段剔除
+    function htmlStripTags(src) {
+      return String(src)
+        .replace(/<!--[\s\S]*?-->/g, '')
+        .replace(/<(script|style)\b[\s\S]*?<\/\1\s*>/gi, '')
+        .replace(/<br\s*\/?>/gi, '\n')
+        .replace(/<\/(p|div|li|tr|h[1-6]|section|article)\s*>/gi, '\n')
+        .replace(/<[^>]*>/g, '')
+        .replace(/&nbsp;/g, ' ')
+        .replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&')
+        .replace(/[ \t]+\n/g, '\n')
+        .replace(/\n{3,}/g, '\n\n')
+        .trim();
+    }
+
+    // 🎨 style 属性包裹：<tag style="prop: value">选中文字</tag>（未选中时插入占位并选中，与 MD 工具栏一致）
+    //    tag 默认 span；行内无效的属性（如 text-align）传 div
+    function insertHtmlStyle(prop, value, placeholder, tag) {
+      const el = tag || 'span';
+      insertIntoTextarea(document.getElementById('htmlText'),
+        '<' + el + ' style="' + prop + ': ' + value + '">', '</' + el + '>', placeholder || '文本');
+    }
+
+    // 🔤 字体：与 MD 的字体菜单共用同一套 fallback 链构造逻辑
+    function insertHtmlFont(name, fallbacks) {
+      insertHtmlStyle('font-family', buildFontCssValue(name, fallbacks) + ' !important');
+    }
+
+    function insertHtmlComment() {
+      insertIntoTextarea(document.getElementById('htmlText'), '<!-- ', ' -->', '注释');
+    }
+
+    // HTML 工具栏统一入口：pretty / compact / escape / unescape / strip / validate
+    function formatHtml(action) {
+      const ta = document.getElementById('htmlText');
+      if (!ta) return;
+      const raw = ta.value;
+      let next = null;
+      let done = '';
+      if (action === 'pretty') { next = htmlBeautify(raw); done = '缩进整理'; }
+      else if (action === 'compact') { next = htmlCompact(raw); done = '压缩'; }
+      else if (action === 'escape') { next = htmlEscapeText(raw); done = '转义'; }
+      else if (action === 'unescape') { next = htmlUnescapeText(raw); done = '反转义'; }
+      else if (action === 'strip') { next = htmlStripTags(raw); done = '转为纯文本'; }
+      else if (action === 'validate') {
+        const res = htmlValidateTags(raw);
+        if (res.ok) { showToast('HTML 标签配对正确', 'success'); return; }
+        showToast(res.message, 'danger');
+        if (res.index !== null) revealInTextarea(ta, res.index, res.length);
+        return;
+      }
+      if (next === null) return;
+      if (next === raw) { showToast('HTML 无需' + done, 'info'); return; }
+      ta.value = next;
+      pushEditorHistory(ta, true);
+      autoGrowTextarea(ta);
+      showToast('HTML 已' + done, 'success');
+    }
+
+    // JSON 工具栏统一入口：
+    //   pretty / pretty4 / compact / sortKeys / unique / escape / unescape /
+    //   fixQuotes（单引号→双引号）/ stripCommas（去尾逗号）/ stats / validate（失败时定位到出错处）
     function formatJson(action) {
-      const textarea = document.getElementById('jsonText');
-      if (!textarea) return;
-      const raw = textarea.value;
+      const ta = document.getElementById('jsonText');
+      if (!ta) return;
+      const raw = ta.value;
       try {
-        if (action === 'pretty') {
-          textarea.value = JSON.stringify(JSON.parse(raw), null, 2);
-        } else if (action === 'compact') {
-          textarea.value = JSON.stringify(JSON.parse(raw));
-        } else if (action === 'escape') {
-          textarea.value = JSON.stringify(raw);
+        if (action === 'validate') {
+          JSON.parse(raw);
+          showToast('JSON 语法正确', 'success');
+          return;
+        }
+        if (action === 'stats') {
+          showToast(jsonStats(JSON.parse(raw), raw), 'info');
+          return;
+        }
+        let next = null;
+        let done = '';
+        if (action === 'escape') {
+          next = JSON.stringify(raw);
+          done = '转义';
         } else if (action === 'unescape') {
           // 若当前文本是一个 JSON 字符串（如 "{\"a\":1}"），则解出其中的内容；
           // 若解出的是对象/数组，再格式化回 JSON；若解出的是普通字符串，直接写回。
           const val = JSON.parse(raw);
-          textarea.value = (typeof val === 'string') ? val : JSON.stringify(val, null, 2);
-        } else if (action === 'validate') {
-          JSON.parse(raw);
-          if (typeof showStatus === 'function') showStatus('JSON 语法正确', 'success');
-          else alert('JSON 语法正确');
+          next = (typeof val === 'string') ? val : JSON.stringify(val, null, 2);
+          done = '反转义';
+        } else if (action === 'fixQuotes' || action === 'stripCommas') {
+          // 修复型操作：两类常见手误（单引号 / 尾逗号）一并修复（各自独立处理字符串边界，可安全叠加），
+          // 改完必须能解析才写回（绝不写出坏 JSON）
+          const fixed = jsonStripTrailingCommas(jsonFixSingleQuotes(raw));
+          JSON.parse(fixed);
+          next = fixed;
+          done = (action === 'fixQuotes') ? '修复引号' : '去除尾逗号';
+        } else {
+          const data = JSON.parse(raw);
+          if (action === 'pretty') { next = JSON.stringify(data, null, 2); done = '格式化'; }
+          else if (action === 'pretty4') { next = JSON.stringify(data, null, 4); done = '格式化（4 空格）'; }
+          else if (action === 'compact') { next = JSON.stringify(data); done = '压缩'; }
+          else if (action === 'sortKeys') { next = JSON.stringify(jsonSortKeys(data), null, 2); done = '按键名排序'; }
+          else if (action === 'unique') {
+            if (!Array.isArray(data)) { showToast('去重只支持顶层为数组的内容', 'danger'); return; }
+            next = JSON.stringify(jsonUnique(data), null, 2);
+            done = '去重';
+          }
         }
-        if (action !== 'validate') {
-          pushEditorHistory(textarea, true);
-          autoGrowTextarea(textarea);
-        }
+        if (next === null) return;
+        if (next === raw) { showToast('JSON 无需' + done, 'info'); return; }
+        ta.value = next;
+        pushEditorHistory(ta, true);
+        autoGrowTextarea(ta);
+        showToast('JSON 已' + done, 'success');
       } catch (e) {
-        if (typeof showStatus === 'function') showStatus('JSON 处理失败：' + (e && e.message ? e.message : e), 'error');
-        else alert('JSON 处理失败：' + (e && e.message ? e.message : e));
+        const msg = String((e && e.message) || e);
+        showToast('JSON 处理失败：' + msg, 'danger');
+        const pos = jsonErrorPosition(msg, raw);
+        if (pos) revealInTextarea(ta, pos.index, pos.length);
       }
+    }
+
+    // 从 JSON 报错消息里取出错位置（三种 V8 消息形态，按可靠性依次尝试）：
+    //   ① "… in JSON at position N (line L column C)"  —— 直接换算字符偏移
+    //   ② "… in JSON at position N"                    —— 老版本格式
+    //   ③ "Unexpected token 'X', ...<片段>" is not valid JSON —— 新版已不带行列号，
+    //      只能用消息里附带的原文片段在文本中反查，再在片段里找那个非法字符
+    function jsonErrorPosition(message, text) {
+      const body = String(text);
+      let m = /line (\d+) column (\d+)/i.exec(message);
+      if (m) {
+        const line = parseInt(m[1], 10);
+        const col = parseInt(m[2], 10);
+        const lines = body.split('\n');
+        let index = 0;
+        for (let i = 0; i < line - 1 && i < lines.length; i++) index += lines[i].length + 1;
+        return { index: index + Math.max(0, col - 1), length: 1 };
+      }
+      m = /position (\d+)/i.exec(message);
+      if (m) return { index: parseInt(m[1], 10), length: 1 };
+      const token = (/'([^']*)'/.exec(message) || [])[1] || '';
+      m = /\.\.\.([\s\S]*?)" is not valid JSON$/.exec(message);
+      if (m && m[1]) {
+        const snippet = m[1];
+        const at = body.indexOf(snippet);
+        if (at >= 0) {
+          const found = token ? snippet.indexOf(token) : -1;
+          return { index: at + (found >= 0 ? found : Math.max(0, snippet.length - 1)), length: 1 };
+        }
+      }
+      return null;
+    }
+
+    // 递归按键名字典序排序（数组内的元素顺序保持不变）
+    function jsonSortKeys(value) {
+      if (Array.isArray(value)) return value.map(jsonSortKeys);
+      if (value && typeof value === 'object') {
+        const out = {};
+        Object.keys(value).sort().forEach((k) => { out[k] = jsonSortKeys(value[k]); });
+        return out;
+      }
+      return value;
+    }
+
+    // 顶层数组去重：按序列化后的值比较，保留首次出现的顺序
+    function jsonUnique(arr) {
+      const seen = new Set();
+      const out = [];
+      arr.forEach((item) => {
+        const key = JSON.stringify(item);
+        if (seen.has(key)) return;
+        seen.add(key);
+        out.push(item);
+      });
+      return out;
+    }
+
+    // 单引号 → 双引号：只替换「字符串外」的定界引号，字符串内部的单引号原样保留，
+    // 单引号串里出现的双引号自动转义，避免修出 {"a": "say "hi""} 这种坏 JSON
+    function jsonFixSingleQuotes(text) {
+      let out = '';
+      let quote = ''; // 当前字符串的定界引号；'' 表示不在字符串内
+      for (let i = 0; i < text.length; i++) {
+        const ch = text[i];
+        const prev = i > 0 ? text[i - 1] : '';
+        if (quote) {
+          if (ch === quote && prev !== '\\') { out += '"'; quote = ''; continue; }
+          if (quote === "'" && ch === '"' && prev !== '\\') { out += '\\"'; continue; }
+          out += ch;
+          continue;
+        }
+        if (ch === '"' || ch === "'") { quote = ch; out += '"'; continue; }
+        out += ch;
+      }
+      return out;
+    }
+
+    // 去掉对象/数组最后一项后面的尾逗号（JSON5 写法）；同样只在字符串外动作
+    function jsonStripTrailingCommas(text) {
+      let out = '';
+      let quote = '';
+      for (let i = 0; i < text.length; i++) {
+        const ch = text[i];
+        if (quote) {
+          out += ch;
+          if (ch === quote && text[i - 1] !== '\\') quote = '';
+          continue;
+        }
+        if (ch === '"' || ch === "'") { quote = ch; out += ch; continue; }
+        if (ch === ',' && /^\s*[}\]]/.test(text.slice(i + 1))) continue; // 尾逗号：丢弃
+        out += ch;
+      }
+      return out;
+    }
+
+    // 📊 统计：顶层类型 / 顶层项数 / 嵌套深度 / 字节数
+    function jsonStats(data, raw) {
+      const depthOf = (v) => {
+        if (Array.isArray(v)) return v.length ? 1 + Math.max.apply(null, v.map(depthOf)) : 1;
+        if (v && typeof v === 'object') {
+          const ks = Object.keys(v);
+          return ks.length ? 1 + Math.max.apply(null, ks.map((k) => depthOf(v[k]))) : 1;
+        }
+        return 0;
+      };
+      const type = Array.isArray(data) ? '数组' : (data && typeof data === 'object' ? '对象' : typeof data);
+      const count = Array.isArray(data) ? data.length : (data && typeof data === 'object' ? Object.keys(data).length : 0);
+      const bytes = (typeof TextEncoder === 'function') ? new TextEncoder().encode(raw).length : raw.length;
+      return '类型：' + type + '　顶层项数：' + count + '　嵌套深度：' + depthOf(data) + '　字节数：' + bytes;
+    }
+
+    // 🕒 当前时间戳（ISO 8601）
+    function insertJsonNow() {
+      insertJsonRaw('"' + new Date().toISOString() + '"');
+    }
+
+    // 🆔 UUID v4：优先用 crypto.randomUUID，不可用时退化为等价的随机数版本
+    function insertJsonUuid() {
+      if (window.crypto && typeof window.crypto.randomUUID === 'function') {
+        insertJsonRaw('"' + window.crypto.randomUUID() + '"');
+        return;
+      }
+      const HEX = '0123456789abcdef';
+      let out = '';
+      for (let i = 0; i < 36; i++) {
+        if (i === 8 || i === 13 || i === 18 || i === 23) out += '-';
+        else if (i === 14) out += '4';
+        else if (i === 19) out += HEX[(Math.random() * 4 | 0) + 8];
+        else out += HEX[Math.random() * 16 | 0];
+      }
+      insertJsonRaw('"' + out + '"');
     }
 
     // 🆕 插入目录（TOC，文内跳转）
