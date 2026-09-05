@@ -48,3 +48,7 @@ Thumbs.db
 
 # 分析文档
 ../mode-comparison-analysis.md
+
+# 运行时生成：todo 数据目录迁移标记与本机数据目录配置（含本机绝对路径，不可入库）
+.todolist-data-dir-migrated
+todolist-config.json
