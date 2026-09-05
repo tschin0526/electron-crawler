@@ -491,6 +491,19 @@ function init(shared) {
     }
   });
 
+  // 🔎 新增文件保存前检查目标路径，避免意外覆盖已有文件。
+  ipcMain.handle('check-file-exists', async (_event, absolutePath) => {
+    try {
+      if (!absolutePath || typeof absolutePath !== 'string') {
+        return { success: false, exists: false, error: '路径参数无效' };
+      }
+      const normalized = path.resolve(absolutePath);
+      return { success: true, exists: fs.existsSync(normalized), path: normalized };
+    } catch (e) {
+      return { success: false, exists: false, error: e.message };
+    }
+  });
+
   // 💾 按绝对路径保存文件内容（用于「临时浏览目录」模式下保存外部文件）
   ipcMain.handle('save-file-by-path', async (_event, absolutePath, content) => {
     try {

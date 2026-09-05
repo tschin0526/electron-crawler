@@ -234,6 +234,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   listAllFilesInDir: (dir) => ipcRenderer.invoke('list-all-files-in-dir', dir),
   getTextExtensions: () => ipcRenderer.invoke('get-text-extensions'),
   readFileByPath: (absolutePath) => ipcRenderer.invoke('read-file-by-path', absolutePath),
+  checkFileExists: (absolutePath) => ipcRenderer.invoke('check-file-exists', absolutePath),
   saveFileByPath: (absolutePath, content) => ipcRenderer.invoke('save-file-by-path', absolutePath, content),
   deleteFileByPath: (absolutePath, allowedRoot) => ipcRenderer.invoke('delete-file-by-path', absolutePath, allowedRoot),
 

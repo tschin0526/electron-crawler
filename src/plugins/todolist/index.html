@@ -4048,6 +4048,10 @@
           <label class="form-label" for="newFileNameInput">文件名称</label>
           <input type="text" id="newFileNameInput" placeholder="例如：会议记录" oninput="onNewFileNameInput(this)" onkeydown="onNewFileNameKeydown(event)" style="width:100%;padding:6px 8px;border:1px solid var(--border-color);border-radius:6px;background:var(--bg-input,#fff);color:var(--text-color,#1e293b);font-size:13px;" />
           <div class="form-hint" id="newFileNameHint" style="margin-top:4px;font-size:12px;color:var(--text-tertiary,#94a3b8);">留空则自动命名（如 file-时间戳.txt）</div>
+          <div style="display:flex;align-items:center;gap:6px;margin-top:7px;">
+            <button type="button" class="btn btn-secondary" onclick="selectNewFileDir()" title="选择新文件保存目录">选择目录</button>
+            <span id="newFileDirLabel" style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;color:var(--text-tertiary,#94a3b8);" title="未选择时保存到默认 data 目录">默认 data 目录</span>
+          </div>
         </div>
         <div class="modal-header-actions" data-page-node-id="IBqvx04ddWYZeUk26Q0Bbo">
           <!-- 🆕 编辑器内「新增文件」：打开新增态，编辑器自带 fileTypeTabs 可选择类型 -->
@@ -5239,6 +5243,8 @@
     const editorHistories = new WeakMap();
     const HISTORY_MAX = 200;
     const HISTORY_DEBOUNCE = 500; // 连续输入 500ms 内合并为一步
+    const AUTO_SAVE_INTERVAL = 10000;
+    let autoSaveInFlight = false;
 
     function getEditorHistory(textarea) {
       let h = editorHistories.get(textarea);
@@ -5353,6 +5359,19 @@
         }
       });
     });
+
+    async function autoSaveEditor() {
+      const overlay = document.getElementById('modalOverlay');
+      if (autoSaveInFlight || !overlay || overlay.style.display !== 'flex' || !hasUnsavedChanges()) return;
+      autoSaveInFlight = true;
+      try {
+        await saveTask(false, true);
+      } finally {
+        autoSaveInFlight = false;
+      }
+    }
+
+    setInterval(autoSaveEditor, AUTO_SAVE_INTERVAL);
 
     // 文本编辑区块高度跟随内容（clamp 由 CSS min/max-height 约束），
     // 与渲染区块(.md-preview)行为一致，切换模式时区块大小不再跳变
@@ -9728,6 +9747,25 @@
       syncNewFileTabTitle();
     }
 
+    function updateNewFileDirLabel() {
+      const label = document.getElementById('newFileDirLabel');
+      if (!label) return;
+      label.textContent = newFileDir || '默认 data 目录';
+      label.title = newFileDir || '未选择时保存到默认 data 目录';
+    }
+
+    async function selectNewFileDir() {
+      if (!window.electronAPI || !window.electronAPI.openDirDialog) return;
+      try {
+        const result = await window.electronAPI.openDirDialog();
+        if (!result || !result.success || !result.data) return;
+        newFileDir = result.data;
+        updateNewFileDirLabel();
+      } catch (e) {
+        console.error('[TodoList] 选择新文件保存目录失败:', e);
+      }
+    }
+
     // 🆕 文件名输入框按 Enter：确认输入（页签此时已随输入实时同步），收起输入焦点
     function onNewFileNameKeydown(e) {
       if (e && e.key === 'Enter') {
@@ -9775,6 +9813,8 @@
     let newFileExt = '.txt';
     // 🆕 新增态用户设定的文件名（不含扩展名）；为空时退回自动命名 file-{ts}
     let newFileName = '';
+    // 🆕 新增文本文件保存目录；为空时固定使用默认 data 目录
+    let newFileDir = null;
     let textExtensionsLoaded = false;
 
     // 从主进程拉取支持的文本扩展名白名单，填充「文件类型」下拉（与「开启→文本」一致）
@@ -9845,8 +9885,10 @@
       if (extGroup) extGroup.style.display = 'none';
       // 🆕 重置文件名输入（每次新增都从空开始）
       newFileName = '';
+      newFileDir = fileListState.browseDir || null;
       const nameInput = document.getElementById('newFileNameInput');
       if (nameInput) nameInput.value = '';
+      updateNewFileDirLabel();
       const nameGroup = document.getElementById('newFileNameGroup');
       if (nameGroup) nameGroup.style.display = 'none';
       ensureTextExtensions();
@@ -10684,7 +10726,7 @@
     // 🆕 新增态保存文本文件：按「文件类型」下拉所选扩展名，自动命名后写入 data 目录。
     //    - .html/.htm → 取 HTML 编辑器内容；.json/.json5/.jsonc → 取 JSON 编辑器内容；其余取 MD 文本编辑器内容。
     //    - 保存走 save-file-by-path（写 data 目录下 `{前缀}-{时间戳}{扩展名}`），任意扩展名皆可。
-    async function saveNewTextFile(closeAfterSave = true) {
+    async function saveNewTextFile(closeAfterSave = true, silent = false) {
       const ext = (newFileExt || '.txt').toLowerCase();
       const lower = ext.replace(/^\./, '');
       const textarea = document.getElementById('taskText');
@@ -10703,17 +10745,24 @@
         prefix = 'file';
       }
       if (!content || !content.trim()) {
-        alert('请输入内容');
+        if (!silent) alert('请输入内容');
         return;
       }
       try {
-        const dirRes = (window.electronAPI && window.electronAPI.getDataDir)
-          ? await window.electronAPI.getDataDir()
-          : null;
-        const dirPath = (dirRes && dirRes.success && dirRes.data) ? dirRes.data : null;
-        if (!dirPath) { alert('无法获取数据目录'); return; }
+        let dirPath = newFileDir;
+        if (!dirPath) {
+          const dirRes = (window.electronAPI && window.electronAPI.getDataDir)
+            ? await window.electronAPI.getDataDir()
+            : null;
+          dirPath = (dirRes && dirRes.success && dirRes.data) ? dirRes.data : null;
+        }
+        if (!dirPath) { if (!silent) alert('无法获取保存目录'); return; }
         // 🆕 文件名：优先用户设定的名称（去掉用户可能手动输入的后缀/空格）；为空退回自动命名
         let baseName = (newFileName || '').trim();
+        if (baseName && /[\\/]/.test(baseName)) {
+          if (!silent) alert('文件名称不能包含路径分隔符，请仅输入文件名');
+          return;
+        }
         if (baseName) {
           // 用户可能已带扩展名输入，去掉已有扩展名再拼所选扩展名，避免出现 xx.md.txt
           baseName = baseName.replace(/\.[A-Za-z0-9]+$/, '');
@@ -10721,7 +10770,23 @@
         } else {
           baseName = `${prefix}-${Date.now().toString()}${ext}`;
         }
-        const fullPath = dirPath + '/' + baseName;
+        const saveDir = newFileDir || dirPath;
+        const fullPath = saveDir.replace(/[\\/]$/, '') + '/' + baseName;
+        const exists = (window.electronAPI && window.electronAPI.checkFileExists)
+          ? await window.electronAPI.checkFileExists(fullPath)
+          : null;
+        if (!exists || !exists.success) {
+          const message = '无法确认目标文件是否已存在，已禁止保存：' + fullPath;
+          console.error('[TodoList] ' + message, exists && exists.error ? exists.error : '检查功能不可用');
+          if (!silent) alert(message);
+          return;
+        }
+        if (exists.exists) {
+          const message = '文件已存在，禁止保存：' + fullPath + '\n请更换文件名称或保存目录。';
+          console.error('[TodoList] ' + message);
+          if (!silent) alert(message);
+          return;
+        }
         if (window.electronAPI && window.electronAPI.saveFileByPath) {
           await window.electronAPI.saveFileByPath(fullPath, content);
         } else {
@@ -10750,14 +10815,14 @@
         updateFileTypeTabs(); // 进入编辑态：锁定类型页签、隐藏「文件类型」下拉、启用「删除」按钮
         // 🆕 保存成功后：刷新文件列表 + 提示（否则用户跳回 Gallery 找不到文件，误以为没保存）
         if (typeof loadFileListItems === 'function') loadFileListItems();
-        showToast(`已保存 ${baseName}（在「📋 文件」列表，底部页签也已登记）`, 'success');
+        if (!silent) showToast(`已保存 ${baseName}（在「📋 文件」列表，底部页签也已登记）`, 'success');
       } catch (e) {
         console.error('[TodoList] 保存新文本文件失败:', e);
-        alert('保存文件失败：' + (e && e.message ? e.message : e));
+        if (!silent) alert('保存文件失败：' + (e && e.message ? e.message : e));
       }
     }
 
-    async function saveTask(closeAfterSave = true) {
+    async function saveTask(closeAfterSave = true, silent = false) {
       const textarea = document.getElementById('taskText');
       const htmlTextarea = document.getElementById('htmlText');
       const jsonTextarea = document.getElementById('jsonText');
@@ -10770,14 +10835,14 @@
       //   使「能打开的文本类型」与「能新建的文本类型」完全一致。
       const isNewFile = !editingId && !currentMdId && !currentJsonId && !currentHtmlId && !externalFilePath;
       if (isNewFile && (activeFileTab === 'md' || activeFileTab === 'html' || activeFileTab === 'json')) {
-        await saveNewTextFile(closeAfterSave);
+        await saveNewTextFile(closeAfterSave, silent);
         return;
       }
 
       // ===== HTML 文件（纯 .html，无 todo 卡片结构）=====
       if (activeFileTab === 'html') {
         if (!htmlValue) {
-          alert('请输入 HTML 内容');
+          if (!silent) alert('请输入 HTML 内容');
           return;
         }
         try {
@@ -10793,10 +10858,10 @@
           //    页签脏标记 / 关闭问询都依赖它（否则 Cmd+S 保存后关闭还会误报未保存）。
           captureEditSnapshot();
           if (closeAfterSave) { closeModal(undefined, undefined, true); }
-          showToast('已保存 ' + (externalFilePath ? externalFilePath.split('/').pop() : (currentHtmlId + '.html')), 'success');
+          if (!silent) showToast('已保存 ' + (externalFilePath ? externalFilePath.split('/').pop() : (currentHtmlId + '.html')), 'success');
         } catch (e) {
           console.error('[TodoList] 保存 HTML 文件失败:', e);
-          alert('保存 HTML 文件失败：' + (e && e.message ? e.message : e));
+          if (!silent) alert('保存 HTML 文件失败：' + (e && e.message ? e.message : e));
         }
         return;
       }
@@ -10804,7 +10869,7 @@
       // ===== 一般 JSON 文件（纯 .json，无 todo 卡片结构）=====
       if (activeFileTab === 'json') {
         if (!jsonValue) {
-          alert('请输入 JSON 内容');
+          if (!silent) alert('请输入 JSON 内容');
           return;
         }
         try {
@@ -10820,10 +10885,10 @@
           //    页签脏标记 / 关闭问询都依赖它（否则 Cmd+S 保存后关闭还会误报未保存）。
           captureEditSnapshot();
           if (closeAfterSave) { closeModal(undefined, undefined, true); }
-          showToast('已保存 ' + (externalFilePath ? externalFilePath.split('/').pop() : (currentJsonId + '.json')), 'success');
+          if (!silent) showToast('已保存 ' + (externalFilePath ? externalFilePath.split('/').pop() : (currentJsonId + '.json')), 'success');
         } catch (e) {
           console.error('[TodoList] 保存 JSON 文件失败:', e);
-          alert('保存 JSON 文件失败：' + (e && e.message ? e.message : e));
+          if (!silent) alert('保存 JSON 文件失败：' + (e && e.message ? e.message : e));
         }
         return;
       }
@@ -10831,7 +10896,7 @@
       // ===== MD 文件（纯 .md，无 JSON / 无标签·颜色·附件等元数据）=====
       if (activeFileTab === 'md') {
         if (!text) {
-          alert('请输入内容');
+          if (!silent) alert('请输入内容');
           return;
         }
         try {
@@ -10847,10 +10912,10 @@
           //    页签脏标记 / 关闭问询都依赖它（否则 Cmd+S 保存后关闭还会误报未保存）。
           captureEditSnapshot();
           if (closeAfterSave) { closeModal(undefined, undefined, true); }
-          showToast('已保存 ' + (externalFilePath ? externalFilePath.split('/').pop() : (currentMdId + '.md')), 'success');
+          if (!silent) showToast('已保存 ' + (externalFilePath ? externalFilePath.split('/').pop() : (currentMdId + '.md')), 'success');
         } catch (e) {
           console.error('[TodoList] 保存 MD 文件失败:', e);
-          alert('保存 MD 文件失败：' + (e && e.message ? e.message : e));
+          if (!silent) alert('保存 MD 文件失败：' + (e && e.message ? e.message : e));
         }
         return;
       }
@@ -10860,17 +10925,17 @@
       const isJsonMode = previewMode === 4 || previewMode === 5;
       if (previewMode === 2) {
         if (!htmlValue) {
-          alert('请输入 HTML 内容');
+          if (!silent) alert('请输入 HTML 内容');
           return;
         }
       } else if (isJsonMode) {
         if (!jsonValue) {
-          alert('请输入 JSON 内容');
+          if (!silent) alert('请输入 JSON 内容');
           return;
         }
       } else {
         if (!text) {
-          alert('请输入任务内容');
+          if (!silent) alert('请输入任务内容');
           return;
         }
       }
@@ -10887,7 +10952,7 @@
             try {
               const parsed = JSON.parse(jsonValue);
               if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-                alert('JSON 必须是一个对象');
+                if (!silent) alert('JSON 必须是一个对象');
                 return;
               }
               parsed.id = editingId;
@@ -10898,7 +10963,7 @@
               document.getElementById('taskText').value = (typeof todo.text === 'string') ? todo.text : '';
               document.getElementById('htmlText').value = (typeof todo.htmlContent === 'string') ? todo.htmlContent : '';
             } catch (e) {
-              alert('JSON 格式错误：' + (e && e.message ? e.message : e));
+              if (!silent) alert('JSON 格式错误：' + (e && e.message ? e.message : e));
               return;
             }
           } else {
@@ -10921,11 +10986,11 @@
           try {
             newTodo = JSON.parse(jsonValue);
           } catch (e) {
-            alert('JSON 格式错误：' + (e && e.message ? e.message : e));
+            if (!silent) alert('JSON 格式错误：' + (e && e.message ? e.message : e));
             return;
           }
           if (!newTodo || typeof newTodo !== 'object' || Array.isArray(newTodo)) {
-            alert('JSON 必须是一个对象');
+            if (!silent) alert('JSON 必须是一个对象');
             return;
           }
         } else {
@@ -10956,7 +11021,7 @@
         closeModal(undefined, focusCardId, true);
       }
       // 🆕 保存不关窗时也要有反馈（否则用户不知道到底存没存）
-      showToast(isEdit ? '已保存卡片' : '已新建卡片', 'success');
+      if (!silent) showToast(isEdit ? '已保存卡片' : '已新建卡片', 'success');
     }
 
     //  从外部创建 todo 卡片（供 capture.js 调用）
