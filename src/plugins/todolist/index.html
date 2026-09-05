@@ -1260,6 +1260,11 @@
     body.dark .md-preview input[type="checkbox"]:checked::before {
       background: #1e293b;
     }
+    /* 暗色模式：未勾选的方框边线改金黄色，避免与深色背景对比度过低看不清 */
+    body.dark .todo-text input[type="checkbox"]:not(:checked),
+    body.dark .md-preview input[type="checkbox"]:not(:checked) {
+      border-color: #fbbf24;
+    }
     .todo-text li:has(input[type="checkbox"]:checked),
     .md-preview li:has(input[type="checkbox"]:checked) {
       text-decoration: line-through;
@@ -2647,6 +2652,104 @@
       border-color: var(--primary-border);
     }
 
+    /* 模式切换组合按钮：左边主按钮（循环切换）+ 右边倒三角（下拉选单） */
+    .md-toggle-group {
+      display: inline-flex;
+      align-items: stretch;
+      position: relative;
+    }
+    .md-toggle-group .md-toggle-btn {
+      border-radius: 50px 0 0 50px;
+      border-right: none;
+      display: inline-flex;
+      align-items: center;
+    }
+    .md-toggle-arrow {
+      display: inline-flex;
+      align-items: center;
+      font-size: 9px;
+      padding: 3px 7px 3px 3px;
+      border-radius: 0 50px 50px 0;
+      border: 1px solid var(--border-color);
+      border-left: 1px solid var(--border-color);
+      cursor: pointer;
+      color: var(--text-secondary);
+      background: #fff;
+      transition: all 0.2s;
+      user-select: none;
+    }
+    /* 组合按钮整体 hover：两段一起高亮 */
+    .md-toggle-group:hover .md-toggle-btn,
+    .md-toggle-group:hover .md-toggle-arrow {
+      background: var(--primary-light);
+      color: #4338ca;
+      border-color: var(--primary-border);
+    }
+    .md-toggle-group .md-toggle-btn.active,
+    .md-toggle-group .md-toggle-btn.active + .md-toggle-arrow,
+    .md-toggle-group:hover .md-toggle-btn.active {
+      background: var(--primary-light);
+      color: #4338ca;
+      border-color: var(--primary-border);
+    }
+
+    /* 模式下拉选单（position:fixed 由 JS 定位——toolbar 有 overflow-x:auto 会裁切 absolute 子元素） */
+    .mode-dropdown {
+      display: none;
+      position: fixed;
+      z-index: 10000;
+      background: #fff;
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      box-shadow: var(--shadow-md);
+      padding: 4px;
+      min-width: 150px;
+    }
+    .mode-dropdown.show { display: block; }
+    .mode-dropdown-item {
+      padding: 6px 12px;
+      font-size: 12px;
+      color: var(--text-primary);
+      border-radius: 6px;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    .mode-dropdown-item:hover {
+      background: var(--primary-light);
+      color: #4338ca;
+    }
+    .mode-dropdown-item.current {
+      font-weight: 600;
+      color: #4338ca;
+      background: var(--primary-light);
+    }
+    body.dark .mode-dropdown {
+      background: #1e293b;
+      border-color: #334155;
+    }
+    body.dark .mode-dropdown-item { color: #e2e8f0; }
+    body.dark .mode-dropdown-item:hover {
+      background: rgba(99,102,241,0.14);
+      color: #eff6ff;
+    }
+    body.dark .mode-dropdown-item.current {
+      background: rgba(99,102,241,0.16);
+      color: #eff6ff;
+    }
+    body.dark .md-toggle-arrow { background: #111827; color: #e2e8f0; border-color: #334155; }
+    body.dark .md-toggle-group:hover .md-toggle-btn,
+    body.dark .md-toggle-group:hover .md-toggle-arrow {
+      background: rgba(99,102,241,0.14);
+      color: #eff6ff;
+      border-color: #4338ca;
+    }
+    body.dark .md-toggle-group .md-toggle-btn.active,
+    body.dark .md-toggle-group .md-toggle-btn.active + .md-toggle-arrow {
+      background: rgba(99,102,241,0.16);
+      color: #eff6ff;
+      border-color: #4338ca;
+    }
+
     /* Markdown preview area
        渲染模式（md-preview 无 bg，与 modal-body 同色）下需用边框圈出编辑区域边界，
        否则与面板背景融为一体看不见。左右下三边与 toolbar 的上下边共同形成闭合外框。 */
@@ -3910,7 +4013,11 @@
           <button id="genMdBtn" onclick="generateMdFromHtml()" title="将当前 HTML 转为 Markdown 文本" style="display:none;padding:2px 8px;border:1px solid #334155;border-radius:4px;background:#1e293b;color:#fbbf24;font-size:11px;cursor:pointer;margin-right:2px;" data-page-node-id="5wtSeQzn524aAUW9Mdbrwq">生成MD</button>
           <button id="genHtmlBtn" onclick="generateHtmlFromMd()" title="将当前 Markdown 转为 HTML 文本" style="display:none;padding:2px 8px;border:1px solid #334155;border-radius:4px;background:#1e293b;color:#34d399;font-size:11px;cursor:pointer;margin-right:2px;" data-page-node-id="JaYl2VijZBq5TAZrACRbtN">生成HTML</button>
           <button id="delHtmlBtn" onclick="deleteHtmlContent()" title="删除 HTML 内容，卡片回到 Markdown 模式" style="display:none;padding:2px 8px;border:1px solid #334155;border-radius:4px;background:#1e293b;color:#f87171;font-size:11px;cursor:pointer;margin-right:8px;" data-page-node-id="DelHtmlBtn1">删除HTML</button>
-          <span class="md-toggle-btn" id="mdToggleBtn" onclick="toggleMdPreview()" data-page-node-id="MvIl4qAC20v16McYbgnhsf">编辑文本</span>
+          <span class="md-toggle-group" id="mdToggleGroup">
+            <span class="md-toggle-btn" id="mdToggleBtn" onclick="toggleMdPreview()" data-page-node-id="MvIl4qAC20v16McYbgnhsf">编辑文本</span>
+            <span class="md-toggle-arrow" id="mdToggleArrow" onclick="openModeDropdown(event)" title="选择模式">▾</span>
+            <div class="mode-dropdown" id="modeDropdown"></div>
+          </span>
           <button class="md-tool-btn" onclick="closeModal()" title="关闭" style="margin-left:6px;color:#94a3b8;" data-page-node-id="IeiM7U26O8JuXaDWjX3q0H">✕</button>
         </div>
         <textarea class="form-textarea" id="taskText" placeholder="输入任务内容（支持 Markdown）..." style="border-top:none;border-radius:0 0 8px 8px;"></textarea>
@@ -5374,7 +5481,100 @@
       if (handle) handle.title = collapsed ? '展开 操作面板' : '收起 操作面板';
     }
 
-    function toggleMdPreview() {
+    // ============================================================
+    // 🆕 模式下拉选单：右上角组合按钮右缘的倒三角 → 快速切换到指定模式
+    // ============================================================
+    const MODE_LABELS = {
+      0: '📝 编辑文本',
+      1: '👁 Markdown 预览',
+      2: '📝 编辑HTML文本',
+      3: '👁 HTML 预览',
+      4: '📝 编辑JSON文本',
+      5: '👁 JSON 预览'
+    };
+
+    // 根据当前文件类型列出可用模式（与 toggleMdPreview 的循环逻辑同一套判定）
+    function getAvailableModes() {
+      let hasHtmlContent = false;
+      if (editingId) {
+        const todo = todos.find(t => t.id === editingId);
+        hasHtmlContent = !!(todo && todo.htmlContent);
+      }
+      if (activeFileTab === 'md') return [0, 1];
+      if (activeFileTab === 'html') return [2, 3];
+      if (activeFileTab === 'json') return [4, 5];
+      // todo 卡片：JSON 内容永远存在（卡片本身就是 JSON）；HTML 相关模式仅有 htmlContent 时提供
+      const modes = [0, 1];
+      if (hasHtmlContent) modes.push(2, 3);
+      modes.push(4, 5);
+      return modes;
+    }
+
+    function openModeDropdown(e) {
+      if (e) e.stopPropagation();
+      const dd = document.getElementById('modeDropdown');
+      const arrow = document.getElementById('mdToggleArrow');
+      if (!dd || !arrow) return;
+      if (dd.classList.contains('show')) {
+        dd.classList.remove('show');
+        return;
+      }
+      const modes = getAvailableModes();
+      dd.innerHTML = modes.map(m =>
+        `<div class="mode-dropdown-item ${m === previewMode ? 'current' : ''}" onclick="selectModeFromDropdown(${m})">${MODE_LABELS[m] || ('模式 ' + m)}</div>`
+      ).join('');
+      dd.classList.add('show');
+      // fixed 定位：选单右缘对齐倒三角右缘，顶边贴倒三角下方 4px
+      const rect = arrow.getBoundingClientRect();
+      const dw = dd.offsetWidth;
+      dd.style.left = Math.max(8, rect.right - dw) + 'px';
+      dd.style.top = (rect.bottom + 4) + 'px';
+    }
+
+    function selectModeFromDropdown(mode) {
+      closeModeDropdown();
+      if (typeof mode === 'number' && mode !== previewMode) {
+        toggleMdPreview(mode);
+      }
+    }
+
+    function closeModeDropdown() {
+      const dd = document.getElementById('modeDropdown');
+      if (dd) dd.classList.remove('show');
+    }
+
+    // 点选单外部 / 按 ESC → 关闭模式选单
+    document.addEventListener('click', () => closeModeDropdown());
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') closeModeDropdown();
+    });
+
+    // ============================================================
+    // 🆕 统一控制三组编辑器工具栏（mdTools / htmlTools / jsonTools）的互斥显隐。
+    // 所有「打开文档」的入口（todo 卡片 / MD / JSON / HTML 文件 / 外部文件 / 新增）
+    // 都必须调用本函数，否则上一个文档的工具栏会残留在画面上（如 HTML 文件页签
+    // 出现 Markdown 的「格式/字体/段落…」菜单）。
+    //   mode 0/1 → mdTools；2/3 → htmlTools；4/5 → jsonTools
+    // ============================================================
+    function setEditorToolbars(mode) {
+      const mdTools = document.getElementById('mdTools');
+      const htmlTools = document.getElementById('htmlTools');
+      const jsonTools = document.getElementById('jsonTools');
+      if (mdTools) mdTools.style.display = 'none';
+      if (htmlTools) htmlTools.style.display = 'none';
+      if (jsonTools) jsonTools.style.display = 'none';
+      if (mode === 0 || mode === 1) {
+        if (mdTools) mdTools.style.display = 'flex';
+      } else if (mode === 2 || mode === 3) {
+        if (htmlTools) htmlTools.style.display = 'flex';
+      } else if (mode === 4 || mode === 5) {
+        if (jsonTools) jsonTools.style.display = 'flex';
+      }
+    }
+
+    // targetMode（可选）：指定要应用的模式（页签切换后恢复记忆的模式用）；不传则循环切换到下一个模式
+    function toggleMdPreview(targetMode) {
+      closeModeDropdown();
       // 切换模式时重置搜索状态
       clearSearchHighlights();
       searchMatches = [];
@@ -5405,7 +5605,10 @@
       const isHtmlFileTab = activeFileTab === 'html';
       // 一般 JSON 文件页签：只在「JSON 文本编辑(4) ↔ JSON 预览(5)」两态间切换
       const isJsonFileTab = activeFileTab === 'json';
-      if (isMdFileTab) {
+      if (typeof targetMode === 'number') {
+        // 指定模式：直接应用（页签切换后恢复该页签记忆的模式）
+        previewMode = targetMode;
+      } else if (isMdFileTab) {
         previewMode = previewMode === 0 ? 1 : 0;
       } else if (isHtmlFileTab) {
         previewMode = previewMode === 2 ? 3 : 2;
@@ -6697,6 +6900,8 @@
     let editorViewMemory = {};
     let currentEditorDocKey = null;
     const EDITOR_VIEW_LS_KEY = 'todolist-editor-view-v1';
+    // 🆕 页签模式记忆：编辑器内切换页签时，记住每个文档右上角的模式；退出编辑器即清空（重进还原为默认）
+    let editorModeMemory = {};
 
     function loadEditorViewMemory() {
       editorViewMemory = {};
@@ -6800,6 +7005,19 @@
     let activeTabKey = null;  // 当前页签的 key
     let lastActiveTabKey = null;  // 上次离开编辑器时的活动页签 key（用于「编辑」按钮停驻）
     const EDITOR_TABS_LS_KEY = 'todolist-editor-tabs-v1';
+    // 🆕 跨刷新持久化「上次离开编辑器时所在页签」：activeTabKey 设定时同步落盘，
+    // 刷新后 init() 读回 → ✏️ 按钮仍停在上次离开编辑器前所在的页签（页签已不存在则自动回退）
+    const EDITOR_LAST_ACTIVE_TAB_LS_KEY = 'todolist-editor-last-active-tab-v1';
+    function persistLastActiveTab(key) {
+      lastActiveTabKey = key || null;
+      try { localStorage.setItem(EDITOR_LAST_ACTIVE_TAB_LS_KEY, key || ''); } catch (e) {}
+    }
+    function loadLastActiveTab() {
+      try {
+        const k = localStorage.getItem(EDITOR_LAST_ACTIVE_TAB_LS_KEY);
+        if (k && editorTabs.some(t => t.key === k)) lastActiveTabKey = k;
+      } catch (e) {}
+    }
     // 页签只显示标题文字，类型不占版面 —— 改在 title 提示里给出（悬停可见）
     const SHEET_TAB_TYPE_LABEL = { todo: 'todo 卡片', md: 'MD 文件', json: 'JSON 文件', html: 'HTML 文件', ext: '外部文件', newfile: '新文件' };
 
@@ -6860,6 +7078,7 @@
         editorTabs.push(tab);
       }
       activeTabKey = tab.key;
+      persistLastActiveTab(tab.key); // 🆕 同步落盘，刷新后仍可停驻此页签
       // 刚打开的文档必然与快照一致 → 清掉脏标记
       const cur = editorTabs.find(t => t.key === tab.key);
       if (cur) delete cur.dirty;
@@ -6975,6 +7194,10 @@
       // 离开前：记录脏标记 + 立即落盘当前文档的滚动位置（用旧的 currentEditorDocKey）
       markCurrentTabDirty();
       flushEditorView();
+      // 🆕 离开前：记住当前文档右上角的模式（页签切换不丢模式；退出编辑器才清空）
+      if (currentEditorDocKey != null) {
+        editorModeMemory[currentEditorDocKey] = previewMode;
+      }
 
       if (tab.type === 'todo') {
         if (!todos.some(t => t.id === tab.id)) {
@@ -6991,12 +7214,24 @@
         await openEditHtmlModal(tab.id);
       } else if (tab.type === 'ext') {
         await openExternalFile(tab.path, tab.title, tab.extType);
+      } else if (tab.type === 'newfile') {
+        // 🆕 NewFile 占位页签：上次停在「新增文件」态就还原新增态（否则点 ✏️ 无反应）
+        openAddModal();
       }
       // 打开失败（文件被删 / 读取异常）时不要把页签置为活动
       if (currentEditorDocKey === key) {
         activeTabKey = key;
+        persistLastActiveTab(key); // 🆕 同步落盘，刷新后仍可停驻此页签
         const cur = editorTabs.find(t => t.key === key);
         if (cur) delete cur.dirty;
+        // 🆕 恢复该页签记忆的右上角模式（与 open* 设置的默认模式不同才需要恢复）
+        const savedMode = editorModeMemory[key];
+        if (typeof savedMode === 'number' && savedMode !== previewMode) {
+          toggleMdPreview(savedMode);
+          // 模式切换可能回填编辑器（如 HTML 模式从 Markdown 生成 HTML），重拍快照，
+          // 避免页签切换被误判为「有未保存改动」
+          captureEditSnapshot();
+        }
       }
       saveEditorTabs();
       renderSheetTabs();
@@ -7019,6 +7254,7 @@
       const idx = editorTabs.findIndex(t => t.key === key);
       if (idx < 0) return;
       editorTabs.splice(idx, 1);
+      delete editorModeMemory[key]; // 页签已移除，清掉它的模式记忆
       if (activeTabKey === key) activeTabKey = null;
       saveEditorTabs();
       renderSheetTabs();
@@ -7029,6 +7265,7 @@
       const idx = editorTabs.findIndex(t => t.key === key);
       if (idx < 0) return;
       editorTabs.splice(idx, 1);
+      delete editorModeMemory[key]; // 页签已移除，清掉它的模式记忆
       saveEditorTabs();
       if (!editorTabs.length) {
         activeTabKey = null;
@@ -9634,6 +9871,7 @@
       renderPendingAttachments();
       setTodoColorPicker('');
       previewMode = 0;
+      setEditorToolbars(0); // 🆕 工具栏互斥：进入文本编辑模式（清掉其他文档残留的 HTML/JSON 菜单）
       document.getElementById('mdPreview').classList.remove('show');
       document.getElementById('taskText').style.display = '';
       document.getElementById('htmlText').style.display = 'none';
@@ -9704,6 +9942,7 @@
       renderPendingAttachments();
       setTodoColorPicker(todo.bgColor || '');
       previewMode = 0;
+      setEditorToolbars(0); // 🆕 工具栏互斥：进入文本编辑模式（清掉其他文档残留的 HTML/JSON 菜单）
       document.getElementById('mdPreview').classList.remove('show');
       document.getElementById('taskText').style.display = '';
       document.getElementById('htmlText').style.display = 'none';
@@ -9764,6 +10003,7 @@
         renderPendingAttachments();
         setTodoColorPicker('');
         previewMode = 0;
+        setEditorToolbars(0); // 🆕 工具栏互斥：进入文本编辑模式（清掉其他文档残留的 HTML/JSON 菜单）
         const preview = document.getElementById('mdPreview');
         const textarea = document.getElementById('taskText');
         const htmlTextarea = document.getElementById('htmlText');
@@ -9847,8 +10087,7 @@
         document.getElementById('genHtmlBtn').style.display = 'none';
         const delHtmlBtn = document.getElementById('delHtmlBtn');
         if (delHtmlBtn) delHtmlBtn.style.display = 'none';
-        const jsonTools = document.getElementById('jsonTools');
-        if (jsonTools) jsonTools.style.display = 'flex';
+        setEditorToolbars(4); // 🆕 工具栏互斥：JSON 编辑菜单（清掉其他文档残留的 MD/HTML 菜单）
         searchMatches = [];
         currentMatchIndex = -1;
         lastSearchEnterQuery = '';
@@ -9919,8 +10158,7 @@
         document.getElementById('genHtmlBtn').style.display = 'none';
         const delHtmlBtn = document.getElementById('delHtmlBtn');
         if (delHtmlBtn) delHtmlBtn.style.display = 'none';
-        const htmlTools = document.getElementById('htmlTools');
-        if (htmlTools) htmlTools.style.display = 'flex';
+        setEditorToolbars(2); // 🆕 工具栏互斥：HTML 编辑菜单（清掉其他文档残留的 MD/JSON 菜单）
         searchMatches = [];
         currentMatchIndex = -1;
         lastSearchEnterQuery = '';
@@ -10247,6 +10485,8 @@
       // 🆕 编辑器视图记忆：关闭时立即落盘最后滚动位置，并清除当前文档标识
       flushEditorView();
       currentEditorDocKey = null;
+      // 🆕 页签模式记忆：退出编辑器即清空（重进编辑器时模式还原为默认）
+      editorModeMemory = {};
       // 🆕 搜索历史：关闭 modal 时收起下拉选单
       hideSearchHistory();
     }
@@ -11162,8 +11402,6 @@
         const jsonTextarea = document.getElementById('jsonText');
         const preview = document.getElementById('mdPreview');
         const btn = document.getElementById('mdToggleBtn');
-        const jsonTools = document.getElementById('jsonTools');
-        const htmlTools = document.getElementById('htmlTools');
 
         // 通用清理
         preview.classList.remove('show');
@@ -11197,8 +11435,7 @@
           btn.classList.remove('active');
           btn.textContent = '编辑文本';
           btn.title = '点击切换到 Markdown 预览';
-          if (jsonTools) jsonTools.style.display = 'none';
-          if (htmlTools) htmlTools.style.display = 'none';
+          setEditorToolbars(0); // 🆕 工具栏互斥：MD 编辑菜单（清掉 HTML/JSON 菜单并补显示 MD 菜单）
           switchFileTypeTab('md');
           // 🆕 底部 Sheet 页签：登记/激活本外部文件
           touchEditorTab({ key: 'ext:' + fullPath, type: 'ext', id: fileName, path: fullPath, extType: 'md', title: fileName });
@@ -11224,8 +11461,7 @@
           btn.classList.add('active');
           btn.textContent = '编辑JSON文本';
           btn.title = '点击切换到 JSON 预览';
-          if (jsonTools) jsonTools.style.display = 'flex';
-          if (htmlTools) htmlTools.style.display = 'none';
+          setEditorToolbars(4); // 🆕 工具栏互斥：JSON 编辑菜单（含清掉 MD 菜单）
           switchFileTypeTab('json');
           // 🆕 底部 Sheet 页签：登记/激活本外部文件
           touchEditorTab({ key: 'ext:' + fullPath, type: 'ext', id: fileName, path: fullPath, extType: 'json', title: fileName });
@@ -11251,8 +11487,7 @@
           btn.classList.add('active');
           btn.textContent = '编辑HTML文本';
           btn.title = '点击切换到 HTML 预览';
-          if (jsonTools) jsonTools.style.display = 'none';
-          if (htmlTools) htmlTools.style.display = 'flex';
+          setEditorToolbars(2); // 🆕 工具栏互斥：HTML 编辑菜单（含清掉 MD 菜单）
           switchFileTypeTab('html');
           // 🆕 底部 Sheet 页签：登记/激活本外部文件
           touchEditorTab({ key: 'ext:' + fullPath, type: 'ext', id: fileName, path: fullPath, extType: 'html', title: fileName });
@@ -11280,8 +11515,7 @@
           btn.classList.remove('active');
           btn.textContent = '编辑文本';
           btn.title = '点击切换到 Markdown 预览';
-          if (jsonTools) jsonTools.style.display = 'none';
-          if (htmlTools) htmlTools.style.display = 'none';
+          setEditorToolbars(0); // 🆕 工具栏互斥：文本编辑菜单（清掉 HTML/JSON 菜单并补显示 MD 菜单）
           switchFileTypeTab('md');
           // 🆕 底部 Sheet 页签：登记/激活本外部文件（extType 记 'text' 以区分 MD 文件）
           touchEditorTab({ key: 'ext:' + fullPath, type: 'ext', id: fileName, path: fullPath, extType: 'text', title: fileName });
@@ -11667,6 +11901,8 @@
       loadEditorViewMemory();
       // 🆕 底部 Sheet 页签：恢复上次会话打开过的文件列表（仅索引，内容点击时才读盘）
       loadEditorTabs();
+      // 🆕 跨刷新停驻：读回上次离开编辑器前所在页签（✏️ 按钮据此停驻）
+      loadLastActiveTab();
       renderSheetTabs();
       bindSheetTabStrip();
       // 🆕 搜索历史：恢复上次会话记住的搜索内容（下拉选单用）
