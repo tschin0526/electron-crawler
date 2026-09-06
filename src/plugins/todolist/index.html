@@ -522,6 +522,26 @@
       border-color: #fbbf24;
     }
     /* 🆕 只看：文件类型筛选行 */
+    /* 🆕 文件面板：档名搜索框（主画面 / 编辑器共用一套样式） */
+    .file-list-search-row {
+      padding: 6px 8px;
+      border-bottom: 1px solid var(--border-color);
+      flex-shrink: 0;
+    }
+    .file-list-search {
+      width: 100%;
+      box-sizing: border-box;
+      padding: 5px 8px;
+      border: 1px solid var(--border-color);
+      border-radius: 6px;
+      background: var(--bg-color);
+      color: var(--text-primary);
+      font-size: 12px;
+      outline: none;
+    }
+    .file-list-search:focus { border-color: var(--primary-color); }
+    .file-list-search::placeholder { color: var(--text-secondary); }
+
     .file-list-type-filter {
       display: flex;
       align-items: center;
@@ -2159,6 +2179,37 @@
     body.dark .file-path-value.clickable {
       color: #a5b4fc;
     }
+    /* 🆕 新增态「选择目录」区块：按钮与路径分成上下两行，窄侧栏下按钮不变形、路径完整换行显示 */
+    .new-file-dir-row {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 6px;
+      margin-top: 7px;
+    }
+    /* 🆕 选择目录按钮：覆盖全局 .btn 的 36×36 圆形，改成贴合文字的标准矩形（小圆角），
+       避免 4 个汉字被圆形硬挤变形溢出容器 */
+    .new-file-dir-row .btn {
+      flex: 0 0 auto;
+      width: auto;
+      height: auto;
+      padding: 4px 12px;
+      border-radius: 4px;
+      white-space: nowrap;
+      font-size: 12px;
+    }
+    #newFileDirLabel {
+      width: 100%;
+      box-sizing: border-box;
+      white-space: normal !important;   /* 覆盖内联 nowrap：允许换行完整显示 */
+      word-break: break-all;
+      line-height: 1.5;
+      min-width: 0;
+      overflow: visible;
+      text-overflow: clip;
+      font-size: 12px;
+      color: var(--text-tertiary, #94a3b8);
+    }
     body.dark .file-path-value.clickable:hover {
       color: #818cf8;
     }
@@ -3448,6 +3499,10 @@
               <button type="button" class="file-list-type-btn" data-type="json" onclick="setFileListTypeFilter('json')">JSON</button>
               <button type="button" class="file-list-type-btn" data-type="text" onclick="setFileListTypeFilter('text')">文本</button>
             </div>
+            <!-- 🆕 档名搜索：按输入关键字过滤文件名（主画面文件面板） -->
+            <div class="file-list-search-row">
+              <input type="text" class="file-list-search" id="fileListSearchInput" placeholder="🔍 搜索文件名…" oninput="setFileListNameFilter(this.value)" onkeydown="handleFileListSearchKeydown(event)">
+            </div>
             <div class="file-list-body" id="fileListBody" data-page-node-id="2B5RWUFgbeHMEOvnXcOgPj"></div>
             <div class="file-list-footer" id="fileListFooter" data-page-node-id="tLCOCV3xkGCO2ah2swAShl"><span id="fileListCount">共 0 个文件</span><button class="file-list-dir-btn" id="fileListResetBtn" title="返回 todolist-config.json 设定的默认 ToDo 目录" onclick="resetBrowseDir()" style="display:none">↩ 默认</button><button class="file-list-dir-btn" id="fileListDirBtn" title="点击切换浏览目录…" onclick="switchBrowseDir()">📂</button></div>
           </div>
@@ -4186,9 +4241,9 @@
           <label class="form-label" for="newFileNameInput">文件名称</label>
           <input type="text" id="newFileNameInput" placeholder="例如：会议记录" oninput="onNewFileNameInput(this)" onkeydown="onNewFileNameKeydown(event)" style="width:100%;padding:6px 8px;border:1px solid var(--border-color);border-radius:6px;background:var(--bg-input,#fff);color:var(--text-color,#1e293b);font-size:13px;" />
           <div class="form-hint" id="newFileNameHint" style="margin-top:4px;font-size:12px;color:var(--text-tertiary,#94a3b8);">留空则自动命名（如 file-时间戳.txt）</div>
-          <div style="display:flex;align-items:center;gap:6px;margin-top:7px;">
+          <div class="new-file-dir-row">
             <button type="button" class="btn btn-secondary" onclick="selectNewFileDir()" title="选择新文件保存目录">选择目录</button>
-            <span id="newFileDirLabel" style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;color:var(--text-tertiary,#94a3b8);" title="未选择时保存到 todolist-config.json 设定的默认目录">读取默认目录...</span>
+            <span id="newFileDirLabel" title="未选择时保存到 todolist-config.json 设定的默认目录">读取默认目录...</span>
           </div>
         </div>
         <div class="modal-header-actions" data-page-node-id="IBqvx04ddWYZeUk26Q0Bbo">
@@ -4210,6 +4265,10 @@
               <button type="button" class="file-list-type-btn" data-type="html" onclick="setFileListTypeFilter('html')">HTML</button>
               <button type="button" class="file-list-type-btn" data-type="json" onclick="setFileListTypeFilter('json')">JSON</button>
               <button type="button" class="file-list-type-btn" data-type="text" onclick="setFileListTypeFilter('text')">文本</button>
+            </div>
+            <!-- 🆕 档名搜索：按输入关键字过滤文件名（编辑器「打开已有文件」面板） -->
+            <div class="file-list-search-row">
+              <input type="text" class="file-list-search" id="editorFileListSearchInput" placeholder="🔍 搜索文件名…" oninput="setFileListNameFilter(this.value)" onkeydown="handleFileListSearchKeydown(event)">
             </div>
             <div class="file-list-body" id="editorFileListBody"></div>
             <div class="file-list-footer" id="editorFileListFooter">
@@ -11510,7 +11569,7 @@
     //     2. 切换排序标签 → 重排 + 重渲列表
     //     3. 点击列表项 → 关闭面板 + focusResizedCard(id)（滚动 + 金边闪 3 秒）
     //     4. 点击面板外 → 关闭面板
-    let fileListState = { open: false, sortKey: 'mtime', sortDir: 'desc', items: [], loaded: false, browseDir: null, isConfiguredDefaultDir: false, typeFilter: 'all' };
+    let fileListState = { open: false, sortKey: 'mtime', sortDir: 'desc', items: [], loaded: false, browseDir: null, isConfiguredDefaultDir: false, typeFilter: 'all', nameFilter: '' };
     // 📂 外部文件模式：非 null 时表示当前正在编辑一个「临时浏览目录」下的文件，值为绝对路径
     // 保存时走 saveFileByPath 而非默认的 PLUGINS_DATA_DIR 下的 IPC
     let externalFilePath = null;
@@ -11529,6 +11588,9 @@
         fileListState.open = true;
         trigger.classList.add('open');
         panel.classList.add('open');
+        // 🆕 打开后聚焦档名搜索框，可直接输入过滤
+        const search = document.getElementById('fileListSearchInput');
+        if (search) search.focus({ preventScroll: true });
         // 每次按开都重新拉取最新资料（用户改名/新建/删除/外部修改文件后能立刻反映）
         loadFileListItems();
       }
@@ -11684,7 +11746,7 @@
       return type;
     }
 
-    // 排序 + 类型筛选（不动主数据，仅在内存里排一遍）；主画面与编辑器共用
+    // 排序 + 名称搜索 + 类型筛选（不动主数据，仅在内存里排一遍）；主画面与编辑器共用
     function getSortedFilteredFileItems() {
       const key = fileListState.sortKey;
       const dir = fileListState.sortDir === 'asc' ? 1 : -1;
@@ -11695,11 +11757,36 @@
         }
         return ((a[key] || 0) - (b[key] || 0)) * dir;
       });
+      // 🆕 档名搜索：不区分大小写的包含匹配
+      if (fileListState.nameFilter) {
+        const kw = fileListState.nameFilter.toLowerCase();
+        items = items.filter(it => (it.name || '').toLowerCase().includes(kw));
+      }
       // 🆕 类型筛选：非 'all' 时只保留匹配 type 的文件
       if (fileListState.typeFilter && fileListState.typeFilter !== 'all') {
         items = items.filter(it => it.type === fileListState.typeFilter);
       }
       return items;
+    }
+
+    // 🆕 档名搜索输入：更新过滤关键字并重渲两个面板（共用同一份状态，值同步到两个输入框）
+    function setFileListNameFilter(value) {
+      fileListState.nameFilter = (value || '').trim();
+      const a = document.getElementById('fileListSearchInput');
+      const b = document.getElementById('editorFileListSearchInput');
+      [a, b].forEach(el => { if (el && el.value !== value) el.value = value; });
+      renderFileList();
+      renderEditorFileList();
+    }
+
+    // 🆕 搜索框按键：ESC 清空关键字并回到全量列表（面板保持打开）
+    function handleFileListSearchKeydown(e) {
+      if (e && e.key === 'Escape') {
+        e.stopPropagation(); // 不触发面板的 ESC 关闭
+        setFileListNameFilter('');
+        const active = document.activeElement;
+        if (active && active.classList && active.classList.contains('file-list-search')) active.value = '';
+      }
     }
 
     // 单个文件项的 HTML（主画面与编辑器共用；onSelect 为点击处理函数名）
@@ -11763,7 +11850,7 @@
       if (!body || !footer) return;
       if (items.length === 0) {
         body.innerHTML = '';
-        const c = document.getElementById('fileListCount'); if (c) c.textContent = '共 0 个文件';
+        const c = document.getElementById('fileListCount'); if (c) c.textContent = fileListState.nameFilter ? '无匹配文件' : '共 0 个文件';
         return;
       }
       // 状态徽标：todo 从内存 todos 查 completed；md 文件显示「📄 MD」徽标
@@ -11779,7 +11866,7 @@
       if (!body || !footer) return;
       if (items.length === 0) {
         body.innerHTML = '';
-        const c = document.getElementById('editorFileListCount'); if (c) c.textContent = '共 0 个文件';
+        const c = document.getElementById('editorFileListCount'); if (c) c.textContent = fileListState.nameFilter ? '无匹配文件' : '共 0 个文件';
         return;
       }
       body.innerHTML = items.map(it => fileListItemHtml(it, 'selectEditorFileListItem')).join('');
@@ -12116,6 +12203,9 @@
       if (top > maxTop) top = Math.max(8, maxTop);
       panel.style.left = left + 'px';
       panel.style.top = top + 'px';
+      // 🆕 打开后聚焦档名搜索框，可直接输入过滤
+      const search = document.getElementById('editorFileListSearchInput');
+      if (search) search.focus({ preventScroll: true });
       // 每次打开重新拉取最新文件资料
       loadFileListItems();
     }
