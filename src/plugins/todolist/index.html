@@ -9831,10 +9831,13 @@
       if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', () => {
           setTimeout(checkBridgeHealth, 1000);
+          // 🆕 初始化 editorBrowseDir（在 fileListState 和 localStorage 都就绪后）
+          // 初始化已在 init() 中完成，这里不再重复调用
           setTimeout(initFilePathDisplay, 100);
         });
       } else {
         setTimeout(checkBridgeHealth, 1000);
+        // 初始化已在 init() 中完成，这里不再重复调用
         setTimeout(initFilePathDisplay, 100);
       }
     })();
@@ -10122,26 +10125,34 @@
           filePathValue.title = 'todolist-config.json 设定的默认目录';
         }
         if (currentDirValue) {
-          // 优先显示编辑器浏览目录（持久化），其次显示配置后的默认目录
+          // 统一使用 editorBrowseDir（持久化），与外部文件模式保持一致
           if (editorBrowseDir) {
             currentDirValue.textContent = '📂 ' + editorBrowseDir;
             currentDirValue.title = '点击切换目录';
             currentDirValue.classList.add('clickable');
           } else {
-            const api = window.electronAPI || {};
-            const getDir = api.getTodoDataDir;
-            if (getDir) {
-              getDir().then(res => {
-                if (res && res.success && res.data) {
-                  currentDirValue.textContent = '📂 ' + res.data;
-                  currentDirValue.title = '点击切换目录';
-                  currentDirValue.classList.add('clickable');
-                }
-              }).catch(() => {
-                currentDirValue.textContent = '📂 ToDo 默认目录';
-              });
+            // 没有持久化目录时，使用 fileListState.browseDir（与外部文件模式一致）
+            const browseDir = fileListState && fileListState.browseDir;
+            if (browseDir) {
+              currentDirValue.textContent = '📂 ' + browseDir;
+              currentDirValue.title = '点击切换目录';
+              currentDirValue.classList.add('clickable');
             } else {
-              currentDirValue.textContent = '📂 ToDo 默认目录';
+              const api = window.electronAPI || {};
+              const getDir = api.getTodoDataDir;
+              if (getDir) {
+                getDir().then(res => {
+                  if (res && res.success && res.data) {
+                    currentDirValue.textContent = '📂 ' + res.data;
+                    currentDirValue.title = '点击切换目录';
+                    currentDirValue.classList.add('clickable');
+                  }
+                }).catch(() => {
+                  currentDirValue.textContent = '📂 ToDo 默认目录';
+                });
+              } else {
+                currentDirValue.textContent = '📂 ToDo 默认目录';
+              }
             }
           }
         }
@@ -10157,19 +10168,8 @@
     let editorBrowseDir = null;
     let editorBrowseDirPersisted = false; // 是否已持久化到 localStorage
 
-    // 🆕 初始化时从 localStorage 加载持久化的浏览目录
-    (function initEditorBrowseDir() {
-      try {
-        const persisted = localStorage.getItem('editorBrowseDir');
-        if (persisted) {
-          editorBrowseDir = persisted;
-          editorBrowseDirPersisted = true;
-          console.log('[TodoList] 已加载持久化的编辑目录:', editorBrowseDir);
-        }
-      } catch (e) {
-        console.warn('[TodoList] 加载持久化目录失败:', e);
-      }
-    })();
+    // 🆕 初始化时从 localStorage 加载持久化的浏览目录（延迟到 DOM 就绪后执行，避免 fileListState 未初始化）
+    // 实际初始化在 DOMContentLoaded 处理器中统一进行
 
     // 点击切换当前浏览目录
     async function switchEditorBrowseDir() {
@@ -10177,9 +10177,11 @@
       try {
         const res = await window.electronAPI.openDirDialog();
         if (!res || !res.success || !res.data) return;
-        // 设置编辑器专用的浏览目录（不影响主画面的 fileListState.browseDir）
+        // 设置编辑器专用的浏览目录（同时同步到 fileListState.browseDir 保持一致）
         editorBrowseDir = res.data;
+        fileListState.browseDir = res.data;
         editorBrowseDirPersisted = true;
+        fileListState.isConfiguredDefaultDir = false; // 标记为临时浏览目录
         // 持久化到 localStorage
         try {
           localStorage.setItem('editorBrowseDir', res.data);
@@ -12482,6 +12484,24 @@
       loadLastActiveTab();
       renderSheetTabs();
       bindSheetTabStrip();
+      // 🆕 初始化 editorBrowseDir：从 localStorage 加载或从 fileListState.browseDir 同步
+      try {
+        const persisted = localStorage.getItem('editorBrowseDir');
+        if (persisted) {
+          editorBrowseDir = persisted;
+          editorBrowseDirPersisted = true;
+          // 同步到 fileListState.browseDir 保持一致
+          fileListState.browseDir = persisted;
+          fileListState.isConfiguredDefaultDir = false;
+          console.log('[TodoList] 已加载持久化的编辑目录:', editorBrowseDir);
+        }
+      } catch (e) {
+        console.warn('[TodoList] 加载持久化目录失败:', e);
+      }
+      // 🆕 同步 editorBrowseDir 到 fileListState.browseDir（如果 fileListState.browseDir 已设置）
+      if (!editorBrowseDir && fileListState.browseDir) {
+        editorBrowseDir = fileListState.browseDir;
+      }
       // 🆕 搜索历史：恢复上次会话记住的搜索内容（下拉选单用）
       loadSearchHistory();
       await loadTodos();
