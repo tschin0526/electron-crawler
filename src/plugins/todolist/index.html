@@ -10098,7 +10098,7 @@
           filePathValue.textContent = externalFilePath;
           filePathValue.title = externalFilePath;
         }
-        // 显示编辑器浏览目录（优先使用 editorBrowseDir，其次 fileListState.browseDir）
+        // 显示当前浏览目录，不使用当前文件所在目录替代浏览目录。
         if (currentDirValue) {
           const browseDir = editorBrowseDir || (fileListState && fileListState.browseDir);
           if (browseDir) {
@@ -10107,10 +10107,17 @@
             currentDirValue.classList.add('clickable');
           } else {
             const api = window.electronAPI || {};
-            const externalDir = String(externalFilePath).replace(/[\\/][^\\/]*$/, '');
-            if (externalDir) {
-              currentDirValue.textContent = '📂 ' + externalDir;
-              currentDirValue.title = '点击切换目录';
+            const getDir = api.getTodoDataDir;
+            if (getDir) {
+              getDir().then(res => {
+                if (res && res.success && res.data) {
+                  currentDirValue.textContent = '📂 ' + res.data;
+                  currentDirValue.title = '点击切换目录';
+                  currentDirValue.classList.add('clickable');
+                }
+              }).catch(() => {
+                currentDirValue.textContent = '📂 ToDo 默认目录';
+              });
             } else {
               currentDirValue.textContent = '📂 ToDo 默认目录';
             }
