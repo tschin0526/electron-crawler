@@ -10095,9 +10095,9 @@
           filePathValue.textContent = externalFilePath;
           filePathValue.title = externalFilePath;
         }
-        // 显示当前浏览目录（可点击切换）
+        // 显示编辑器浏览目录（优先使用 editorBrowseDir，其次 fileListState.browseDir）
         if (currentDirValue) {
-          const browseDir = fileListState && fileListState.browseDir;
+          const browseDir = editorBrowseDir || (fileListState && fileListState.browseDir);
           if (browseDir) {
             currentDirValue.textContent = '📂 ' + browseDir;
             currentDirValue.title = '点击切换目录';
@@ -10122,20 +10122,27 @@
           filePathValue.title = 'todolist-config.json 设定的默认目录';
         }
         if (currentDirValue) {
-          const api = window.electronAPI || {};
-          const getDir = api.getTodoDataDir;
-          if (getDir) {
-            getDir().then(res => {
-              if (res && res.success && res.data) {
-                currentDirValue.textContent = '📂 ' + res.data;
-                currentDirValue.title = '点击切换目录';
-                currentDirValue.classList.add('clickable');
-              }
-            }).catch(() => {
-              currentDirValue.textContent = '📂 ToDo 默认目录';
-            });
+          // 优先显示编辑器浏览目录（持久化），其次显示配置后的默认目录
+          if (editorBrowseDir) {
+            currentDirValue.textContent = '📂 ' + editorBrowseDir;
+            currentDirValue.title = '点击切换目录';
+            currentDirValue.classList.add('clickable');
           } else {
-            currentDirValue.textContent = '📂 ToDo 默认目录';
+            const api = window.electronAPI || {};
+            const getDir = api.getTodoDataDir;
+            if (getDir) {
+              getDir().then(res => {
+                if (res && res.success && res.data) {
+                  currentDirValue.textContent = '📂 ' + res.data;
+                  currentDirValue.title = '点击切换目录';
+                  currentDirValue.classList.add('clickable');
+                }
+              }).catch(() => {
+                currentDirValue.textContent = '📂 ToDo 默认目录';
+              });
+            } else {
+              currentDirValue.textContent = '📂 ToDo 默认目录';
+            }
           }
         }
         section.classList.add('show');
@@ -10146,13 +10153,37 @@
       }
     }
 
+    // 🆕 编辑器内「目前所在目录」独立状态（持久化，不因切换页签而改变）
+    let editorBrowseDir = null;
+    let editorBrowseDirPersisted = false; // 是否已持久化到 localStorage
+
+    // 🆕 初始化时从 localStorage 加载持久化的浏览目录
+    (function initEditorBrowseDir() {
+      try {
+        const persisted = localStorage.getItem('editorBrowseDir');
+        if (persisted) {
+          editorBrowseDir = persisted;
+          editorBrowseDirPersisted = true;
+          console.log('[TodoList] 已加载持久化的编辑目录:', editorBrowseDir);
+        }
+      } catch (e) {
+        console.warn('[TodoList] 加载持久化目录失败:', e);
+      }
+    })();
+
     // 点击切换当前浏览目录
     async function switchEditorBrowseDir() {
       if (!window.electronAPI || !window.electronAPI.openDirDialog) return;
       try {
         const res = await window.electronAPI.openDirDialog();
         if (!res || !res.success || !res.data) return;
-        fileListState.browseDir = res.data;
+        // 设置编辑器专用的浏览目录（不影响主画面的 fileListState.browseDir）
+        editorBrowseDir = res.data;
+        editorBrowseDirPersisted = true;
+        // 持久化到 localStorage
+        try {
+          localStorage.setItem('editorBrowseDir', res.data);
+        } catch (e) { /* 静默忽略 */ }
         fileListState.loaded = false;
         await updateFileListDirBtn();
         loadFileListItems();
