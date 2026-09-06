@@ -11679,10 +11679,16 @@
         }
         fileListState.items = items;
         fileListState.loaded = true;
+        // 🆕 同步 editorBrowseDir 到 fileListState.browseDir（保持一致性）
+        if (!editorBrowseDir && fileListState.browseDir) {
+          editorBrowseDir = fileListState.browseDir;
+        }
         // 📂 更新底部目录按钮：显示当前浏览的目录（默认 data 或用户切换的临时目录）
         updateFileListDirBtn();
         renderFileList();
         renderEditorFileList();
+        // 🆕 刷新路径显示
+        updateFilePathDisplay();
       } catch (e) {
         console.error('[TodoList] 加载文件列表失败:', e);
         if (footer) { const c = document.getElementById('fileListCount'); if (c) c.textContent = '加载失败：' + e.message; }
@@ -11737,9 +11743,14 @@
       }
       fileListState.browseDir = res.data;
       fileListState.isConfiguredDefaultDir = true;
+      // 🆕 同时同步 editorBrowseDir，保持两者一致
+      editorBrowseDir = res.data;
+      editorBrowseDirPersisted = false; // 重置持久化标记（因为这是默认目录，不是用户选择的）
       fileListState.loaded = false;
       await updateFileListDirBtn();
       loadFileListItems();
+      // 🆕 刷新路径显示
+      updateFilePathDisplay();
     }
 
     // 📂 点击目录按钮 → 弹出原生文件夹选择器 → 切换浏览目录
@@ -11750,9 +11761,18 @@
         if (!res || !res.success || !res.data) return; // 用户取消或失败
         fileListState.browseDir = res.data;
         fileListState.isConfiguredDefaultDir = false;
+        // 🆕 同步到 editorBrowseDir，保持编辑器内显示一致
+        editorBrowseDir = res.data;
+        editorBrowseDirPersisted = true;
+        // 持久化到 localStorage
+        try {
+          localStorage.setItem('editorBrowseDir', res.data);
+        } catch (e) { /* 静默忽略 */ }
         fileListState.loaded = false; // 强制重新加载
         await updateFileListDirBtn();
         loadFileListItems();
+        // 🆕 刷新路径显示
+        updateFilePathDisplay();
       } catch (e) {
         console.error('[TodoList] 切换浏览目录失败:', e);
       }
