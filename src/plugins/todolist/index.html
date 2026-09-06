@@ -7538,6 +7538,18 @@
     async function closeSheetTab(key) {
       const tab = editorTabs.find(t => t.key === key);
       if (!tab) return;
+      
+      // 确认提示：防止误触
+      const tabTitle = tab.title || tab.id || key;
+      const tabPath = tab.path || '';
+      const tabDir = tabPath ? `文件路径：${tabPath}` : '（无路径）';
+      const confirmMsg = tabPath
+        ? `确定要关闭页签「${tabTitle}」吗？\n\n${tabDir}\n\n（此操作仅关闭页签，不会删除文件）`
+        : `确定要关闭页签「${tabTitle}」吗？\n\n（此操作仅关闭页签，不会删除文件）`;
+      if (!confirm(confirmMsg)) {
+        return;
+      }
+      
       if (key === activeTabKey) {
         if (hasUnsavedChanges()) { openUnsavedConfirm('closeTab', { key }); return; }
         await removeSheetTab(key);
