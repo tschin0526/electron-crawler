@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="theme-color" content="#2563eb" />
+  <title>MD 編輯器 Lite</title>
+  <link rel="manifest" href="manifest.json" />
+  <link rel="stylesheet" href="style.css" />
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/core.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/javascript.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/python.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/bash.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/css.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/xml.min.js"></script>
+</head>
+<body>
+  <div id="app">
+    <!-- 頂部工具列 -->
+    <header class="toolbar">
+      <div class="toolbar-left">
+        <button id="btn-open" class="btn btn-primary" title="從 iCloud 打開文件">
+          <span class="icon">📂</span>
+          <span class="label">打開</span>
+        </button>
+        <button id="btn-save" class="btn btn-success" title="保存文件到 iCloud">
+          <span class="icon">💾</span>
+          <span class="label">保存</span>
+        </button>
+      </div>
+      <div class="toolbar-center">
+        <input type="file" id="file-input" accept=".md,.markdown,.txt" style="display:none" />
+        <span id="file-name" class="file-name">未打開文件</span>
+      </div>
+      <div class="toolbar-right">
+        <button id="btn-preview" class="btn btn-secondary" title="切換預覽模式">
+          <span class="icon">👁️</span>
+          <span class="label">預覽</span>
+        </button>
+        <button id="btn-theme" class="btn btn-secondary" title="切換暗色模式">
+          <span class="icon">🌙</span>
+        </button>
+      </div>
+    </header>
+
+    <!-- 主編輯區域 -->
+    <main class="editor-container">
+      <div id="editor-pane" class="pane editor-pane">
+        <textarea id="editor" class="editor" placeholder="在此輸入 Markdown 內容...&#10;&#10;支持從 iCloud Drive 打開 .md 文件進行編輯"></textarea>
+      </div>
+      <div id="preview-pane" class="pane preview-pane hidden">
+        <div id="preview" class="preview"></div>
+      </div>
+    </main>
+
+    <!-- 狀態列 -->
+    <footer class="status-bar">
+      <span id="status-text">就緒</span>
+      <span id="word-count"></span>
+    </footer>
+
+    <!-- 提示消息 -->
+    <div id="toast" class="toast hidden"></div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
