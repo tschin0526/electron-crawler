@@ -336,6 +336,14 @@
       background: #c7d2fe;
     }
 
+    /* 🆕 Gallery 刷新按鈕：載入時圖示旋轉動畫 */
+    .refresh-btn-icon { display: inline-block; line-height: 1; }
+    .refresh-btn-icon.spinning { animation: refresh-spin 0.8s linear infinite; }
+    @keyframes refresh-spin {
+      from { transform: rotate(0deg); }
+      to   { transform: rotate(360deg); }
+    }
+
     .btn-secondary {
       background: #f1f5f9;
       color: var(--text-secondary);
@@ -3469,6 +3477,7 @@
       <div class="btn-group" data-page-node-id="UlLnfiTwpKi0LmsjDpH1GD">
         <button class="btn btn-primary" onclick="openAddModal()" title="添加文件" data-page-node-id="JZ4R7jBK2QWolHWtvVUnKE">➕</button>
         <button class="btn btn-primary" onclick="openEditQuick()" title="编辑最近的文件" data-page-node-id="tU3Jm5xWcN9oQe1h0kZ7Rp">✏️</button>
+        <button class="btn btn-primary" id="refreshGalleryBtn" type="button" onclick="refreshGalleryData()" title="重新整理卡片資料（從磁盤重新載入）"><span class="refresh-btn-icon">🔄</span></button>
       </div>
       <div class="search-wrapper" data-page-node-id="lpsvAbEpZ8FVZnprD6mZJI">
         <span class="search-box-wrap">
@@ -4508,6 +4517,29 @@
       refreshArchivedCount();
       // 🆕 读取所有卡片 JSON 的磁盘大小 → 运行时变量（不写入任何 JSON）
       await refreshTodoFileSizes();
+    }
+
+    // 🆕 Gallery 刷新按鈕：從磁盤重新載入所有 todo 卡片資料並重繪畫廊
+    async function refreshGalleryData() {
+      const btn = document.getElementById('refreshGalleryBtn');
+      const icon = btn ? btn.querySelector('.refresh-btn-icon') : null;
+      if (btn) btn.disabled = true;
+      if (icon) icon.classList.add('spinning');
+      try {
+        // loadTodos() 只重新載入記憶體資料，不會自動重繪，需手動觸發以下重繪
+        await loadTodos();
+        refreshTodoTabTitles();
+        renderTagFilter();
+        renderTodos();
+        updateStats();
+        showToast(`已重新整理卡片資料（${todos.length} 張）`, 'success');
+      } catch (err) {
+        console.error('[TodoList] 刷新卡片資料失敗:', err);
+        showToast('刷新失敗：' + (err && err.message ? err.message : err), 'danger');
+      } finally {
+        if (btn) btn.disabled = false;
+        if (icon) icon.classList.remove('spinning');
+      }
     }
 
     async function saveTodos() {

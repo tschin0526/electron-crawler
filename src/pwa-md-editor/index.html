@@ -1,17 +1,20 @@
 <!DOCTYPE html>
-<html lang="zh-TW">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
-  <meta name="apple-mobile-web-app-capable" content="yes" />
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-  <meta name="theme-color" content="#0f172a" />
+<html lang="zh-TW" data-page-node-id="Whi3hF535z8a7ssiXRgjzU">
+<head data-page-node-id="xVQxmtF3b6ZcLhDdYNNyM1">
+  <meta charset="UTF-8" data-page-node-id="ZLRyiqh0x3DMRDw8oY00Cb" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" data-page-node-id="am4wiDIUnqBGHgQGJ39oA9" />
+  <meta name="apple-mobile-web-app-capable" content="yes" data-page-node-id="SYO5m1tGwFsm9d6aG8APFf" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" data-page-node-id="uyFvnxvjJkAtZ6vwHEZeSY" />
+  <meta name="theme-color" content="#0f172a" data-page-node-id="yiMmNsdbWd1BWxLzxKcmrU" />
   <title>MD 編輯器 Lite</title>
-  <link rel="manifest" href="manifest.json" />
-  <link rel="apple-touch-icon" href="icon-192.png" />
-  <link rel="icon" type="image/svg+xml" href="icon.svg" />
-  <link rel="stylesheet" href="style.css" />
+  <link rel="manifest" href="manifest.json" data-page-node-id="RYmo30YmX6LdeZXpYJd4pZ" />
+  <link rel="apple-touch-icon" href="icon-192.png" data-page-node-id="O0oAK92VYN4nppkiMvphgO" />
+  <link rel="icon" type="image/svg+xml" href="icon.svg" data-page-node-id="tgrBpFvwSKwe7BFOV44T57" />
+  <link rel="stylesheet" href="style.css" data-page-node-id="83BzEspcJAUJFbiogDqe2N" />
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/marked-emoji@4/lib/marked-emoji.umd.js"></script>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css" data-page-node-id="GNRXknWh9AOAUFB5wifDUR">
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/core.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/javascript.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/python.min.js"></script>
@@ -19,112 +22,175 @@
   <script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/css.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/xml.min.js"></script>
 </head>
-<body class="dark-mode">
-  <div id="app">
+<body class="dark-mode" data-page-node-id="GZeBmQKBqvnxjZSjr7KdEy">
+  <div id="app" data-page-node-id="ChfBCJXCNspVzr49nMEFF4">
     <!-- 頂部工具列 -->
-    <header class="toolbar region">
-      <div class="toolbar-left">
-        <button id="btn-open" class="btn btn-secondary" title="從 iCloud 打開文字檔（md/json/html/code…）">打開</button>
-        <button id="btn-save" class="btn btn-secondary" title="保存文件到 iCloud">保存</button>
-        <button id="btn-reset" class="btn btn-secondary" title="清除所有緩存並重新載入應用">重置</button>
+    <header class="toolbar region" data-page-node-id="H1799o7Bi43iFcVqikgGoy">
+      <div class="toolbar-left" data-page-node-id="3Bhm48LoEza4EaPuCBP0eM">
+        <button id="btn-open" class="btn btn-secondary" title="從 iCloud 打開文字檔（md/json/html/code…）" data-page-node-id="jBuTh5OaGcNyn4H9q1NSLY">打開</button>
+        <button id="btn-save" class="btn btn-secondary" title="保存文件到 iCloud" data-page-node-id="xI9aHNProtF19uKHlU9Iy2">保存</button>
+        <button id="btn-reset" class="btn btn-secondary" title="清除所有緩存並重新載入應用" data-page-node-id="OFInZmGq0dd8SGCfjeFRp2">重置</button>
       </div>
-      <div class="toolbar-center">
-        <input type="file" id="file-input" accept=".md,.markdown,.mdx,.txt,.text,.log,.csv,.tsv,.html,.htm,.json,.json5,.jsonc,.yaml,.yml,.toml,.ini,.conf,.config,.properties,.cfg,.xml,.js,.mjs,.cjs,.jsx,.ts,.tsx,.vue,.svelte,.css,.scss,.less,.py,.rb,.sh,.bash,.zsh,.fish,.ps1,.bat,.cmd,.sql,.graphql,.gql,.c,.h,.cpp,.cc,.hpp,.java,.kt,.go,.rs,.swift,.php,.lua,.r,.cs,.scala,.dart,.ex,.erl,.env,.gitignore,.editorconfig,.tex,.rst,.diff,.patch" style="display:none" />
-        <span id="file-name" class="file-name">未打開文件</span>
+      <div class="toolbar-center" data-page-node-id="DBVXYuSyz7BpTGkEZ2IiLj">
+        <input type="file" id="file-input" accept=".md,.markdown,.mdx,.txt,.text,.log,.csv,.tsv,.html,.htm,.json,.json5,.jsonc,.yaml,.yml,.toml,.ini,.conf,.config,.properties,.cfg,.xml,.js,.mjs,.cjs,.jsx,.ts,.tsx,.vue,.svelte,.css,.scss,.less,.py,.rb,.sh,.bash,.zsh,.fish,.ps1,.bat,.cmd,.sql,.graphql,.gql,.c,.h,.cpp,.cc,.hpp,.java,.kt,.go,.rs,.swift,.php,.lua,.r,.cs,.scala,.dart,.ex,.erl,.env,.gitignore,.editorconfig,.tex,.rst,.diff,.patch" style="display:none" data-page-node-id="ahnBqONLSIh2nJB0SkRIx6" />
+        <span id="file-name" class="file-name" data-page-node-id="QBa1VlJLq9aZiZ2eIlwNQj">未打開文件</span>
         <!-- 🆕 todo 卡片模式徽章：打開符合 todo 卡片結構的 JSON 後顯示，提示用戶保存時會合併原結構 -->
-        <span id="todo-mode-badge" class="todo-badge" title="保存時自動合併原 JSON 結構，只覆寫 text/updatedAt 字段">📇 todo 卡片</span>
+        <span id="todo-mode-badge" class="todo-badge" title="保存時自動合併原 JSON 結構，只覆寫 text/updatedAt 字段" data-page-node-id="jh8nIwOyChaeT5SooKW639">📇 todo 卡片</span>
       </div>
-      <div class="toolbar-right">
-        <button id="btn-theme" class="btn btn-secondary" title="切換暗色模式">主題</button>
+      <div class="toolbar-right" data-page-node-id="4K77WVtNYWyKHa4hRVYk9w">
+        <button id="btn-theme" class="btn btn-secondary" title="切換暗色模式" data-page-node-id="hLWrMiTBWGwsKBhLrpSKLw">主題</button>
       </div>
     </header>
 
     <!-- 視圖切換頁簽 -->
-    <nav class="tabbar region" id="tabbar">
-      <button class="tab active" data-view="edit" title="編輯文本">
-        <span class="icon">✏️</span><span class="label">編輯文本</span>
+    <nav class="tabbar region" id="tabbar" data-page-node-id="ZBSS2o0zbmlAwUVKbGcUH1">
+      <button class="tab active" data-view="edit" title="編輯文本" data-page-node-id="W8j6RPOvHj8ZpZupOqFOzA">
+        <span class="icon" data-page-node-id="Ye8sL6ab3GDbwNy4nERPBp">✏️</span><span class="label" data-page-node-id="E36O6Ln2avhWGACSkGBtYR">編輯文本</span>
       </button>
-      <button class="tab" data-view="preview" title="MD 預覽">
-        <span class="icon">👁️</span><span class="label">MD 預覽</span>
+      <button class="tab" data-view="preview" title="MD 預覽" data-page-node-id="OiN5FxjRQA6qzXefjdKbbW">
+        <span class="icon" data-page-node-id="H1MIcWRKb3BuxgJCEiNG4W">👁️</span><span class="label" data-page-node-id="75RXULKl5EadyEBEK0kI3t">MD 預覽</span>
       </button>
-      <button class="tab" data-view="split" title="分屏：邊寫邊看">
-        <span class="icon">▥</span><span class="label">分屏</span>
+      <button class="tab" data-view="split" title="分屏：邊寫邊看" data-page-node-id="kqNKtPHbp2uSksgG3ilsNF">
+        <span class="icon" data-page-node-id="FU5YVZKGkneBx5SubgYXjE">▥</span><span class="label" data-page-node-id="OIBzKhvy3A0sXsCqiWKr0j">分屏</span>
       </button>
     </nav>
 
-    <!-- Markdown 編輯工具列（輕量版：常用標記一鍵插入） -->
-    <div class="md-toolbar region" id="md-toolbar">
+    <!-- Markdown 編輯工具列（參考 todo 編輯器完整功能移植） -->
+    <div class="md-toolbar region" id="md-toolbar" data-page-node-id="viVqkHg4Jaf9AMqfmrzgMV">
       <!-- 格式 -->
-      <div class="md-dropdown" data-md-dropdown>
-        <button class="md-dropbtn" onclick="toggleMdDropdown(this)" title="文字格式">格式<span class="caret">▾</span></button>
-        <div class="md-dropmenu">
-          <button class="md-dropitem" onclick="insertMd('**', '**')">粗体 <kbd>**</kbd></button>
-          <button class="md-dropitem" onclick="insertMd('*', '*')">斜体 <kbd>*</kbd></button>
-          <button class="md-dropitem" onclick="insertMd('~~', '~~')">删除线 <kbd>~~</kbd></button>
-          <button class="md-dropitem" onclick="insertMd('<mark>', '</mark>')">高亮 <kbd>&lt;mark&gt;</kbd></button>
-          <button class="md-dropitem" onclick="insertMd('<u>', '</u>')">下划线 <kbd>&lt;u&gt;</kbd></button>
+      <div class="md-dropdown" data-md-dropdown data-page-node-id="CY8ke0n8IdAINSo1LcW7jo">
+        <button class="md-dropbtn" onclick="toggleMdDropdown(this)" title="文字格式" data-page-node-id="25ioAW882yUCTn6SxCvBSa">格式<span class="caret" data-page-node-id="5gOQ4Lk1GyFGRvTr6LR9yV">▾</span></button>
+        <div class="md-dropmenu" data-page-node-id="iAoy8pDqQJY40AZIsl2Pvn">
+          <button class="md-dropitem" onclick="insertMd('**', '**')" data-page-node-id="bqvwDH59OCaS06hlzICg90">粗体 <kbd data-page-node-id="UX5jTbWpxRmBZhF3jvcwUL">**</kbd></button>
+          <button class="md-dropitem" onclick="insertMd('*', '*')" data-page-node-id="BPjPcnphOzKPl9l7plcD97">斜体 <kbd data-page-node-id="HV8ejtt04YqiH7PF1GqrEU">*</kbd></button>
+          <button class="md-dropitem" onclick="insertMd('~~', '~~')" data-page-node-id="meMludHdCGvKXk7TJYXRrR">删除线 <kbd data-page-node-id="OBVGBfFr5EzP61Q4L0VZt4">~~</kbd></button>
+          <button class="md-dropitem" onclick="insertMd('<mark data-page-node-id="Y4jX7zynnc8ZJK3d798h44">', '</mark>')">高亮 <kbd data-page-node-id="bAyaIglu6tMPb6cDxz5bOC">&lt;mark&gt;</kbd></button>
+          <button class="md-dropitem" onclick="insertMd('<u data-page-node-id="8ImRn5ZCXslAgeEWzd2i10">', '</u>')">下划线 <kbd data-page-node-id="9YOJwvee2odx0iZGAYZEjF">&lt;u&gt;</kbd></button>
+          <button class="md-dropitem" onclick="insertMd('<sup data-page-node-id="Vx969ZYFdVNBS8u2LFCH0y">', '</sup>')">上标 <kbd data-page-node-id="hz6ivBbnx7e2GIPktSYe2g">&lt;sup&gt;</kbd></button>
+          <button class="md-dropitem" onclick="insertMd('<sub data-page-node-id="UuxADanzk4QdiFH3lk3nzg">', '</sub>')">下标 <kbd data-page-node-id="sZ2etZyT6d3UesBycGPkGr">&lt;sub&gt;</kbd></button>
+          <div class="md-dropgroup" data-page-node-id="ZmUbbDSadN9Lg6HWrwrJfW">颜色</div>
+          <button class="md-dropitem" onclick="insertMd('<span style=&quot;color:#ef4444&quot; data-page-node-id="3SLXBwrZqJ9nRJvKixdk4l">', '</span>')"><span class="md-color-dot" style="background:#ef4444" data-page-node-id="g3h5eTq6i2SBRhsSQf0eKf"></span>红色</button>
+          <button class="md-dropitem" onclick="insertMd('<span style=&quot;color:#f97316&quot; data-page-node-id="fIaPTwTK3up0JpxpR0GCdH">', '</span>')"><span class="md-color-dot" style="background:#f97316" data-page-node-id="8uXbGm8M67xAefW16U6PyD"></span>橙色</button>
+          <button class="md-dropitem" onclick="insertMd('<span style=&quot;color:#f59e0b&quot; data-page-node-id="GchHNwmDaS6dMniKEKIn9A">', '</span>')"><span class="md-color-dot" style="background:#f59e0b" data-page-node-id="37xGm8YigOidzOvQlODBMh"></span>琥珀</button>
+          <button class="md-dropitem" onclick="insertMd('<span style=&quot;color:#eab308&quot; data-page-node-id="xEVr8BWZBLIC1YBdn8TNoF">', '</span>')"><span class="md-color-dot" style="background:#eab308" data-page-node-id="UpgcgH5ee8Wr3MbAQEODxY"></span>黄色</button>
+          <button class="md-dropitem" onclick="insertMd('<span style=&quot;color:#22c55e&quot; data-page-node-id="PrFDfo8Dv6CZ0y0HxNHaBw">', '</span>')"><span class="md-color-dot" style="background:#22c55e" data-page-node-id="VJZ5joDQ44Iy1sGbAp0m2A"></span>绿色</button>
+          <button class="md-dropitem" onclick="insertMd('<span style=&quot;color:#06b6d4&quot; data-page-node-id="rPV6LGsoIpv0AU1HOHAzA7">', '</span>')"><span class="md-color-dot" style="background:#06b6d4" data-page-node-id="POrpbKHgXpv3PqgBEKnD5V"></span>青色</button>
+          <button class="md-dropitem" onclick="insertMd('<span style=&quot;color:#3b82f6&quot; data-page-node-id="4JvE2Eu1QhXjCwulPFDSoD">', '</span>')"><span class="md-color-dot" style="background:#3b82f6" data-page-node-id="27tQWcnTR5GLQLb1RRDl0W"></span>蓝色</button>
+          <button class="md-dropitem" onclick="insertMd('<span style=&quot;color:#a855f7&quot; data-page-node-id="HiNBYrPMB6jWwGjy69PImx">', '</span>')"><span class="md-color-dot" style="background:#a855f7" data-page-node-id="F8WGATGpX7yDnY2QGQtBnr"></span>紫色</button>
+          <button class="md-dropitem" onclick="insertMd('<span style=&quot;color:#ec4899&quot; data-page-node-id="kdWhX6WVOXpYhLlHy6c35O">', '</span>')"><span class="md-color-dot" style="background:#ec4899" data-page-node-id="ld7uJg6lwGPXYFBPt37QWK"></span>粉色</button>
+          <button class="md-dropitem" onclick="insertMd('<span style=&quot;color:#64748b&quot; data-page-node-id="FUPPoMlQdxIrTT7Pb53jTB">', '</span>')"><span class="md-color-dot" style="background:#64748b" data-page-node-id="o850jBf62jBjDi6F44lDzp"></span>钢灰</button>
         </div>
       </div>
 
-      <!-- 标题 -->
-      <div class="md-dropdown" data-md-dropdown>
-        <button class="md-dropbtn" onclick="toggleMdDropdown(this)" title="标题">标题<span class="caret">▾</span></button>
-        <div class="md-dropmenu">
-          <button class="md-dropitem" onclick="insertMd('# ', '')">标题 1 <kbd>#</kbd></button>
-          <button class="md-dropitem" onclick="insertMd('## ', '')">标题 2 <kbd>##</kbd></button>
-          <button class="md-dropitem" onclick="insertMd('### ', '')">标题 3 <kbd>###</kbd></button>
-          <button class="md-dropitem" onclick="insertMd('#### ', '')">标题 4 <kbd>####</kbd></button>
-          <button class="md-dropitem" onclick="insertMd('##### ', '')">标题 5 <kbd>#####</kbd></button>
-          <button class="md-dropitem" onclick="insertMd('###### ', '')">标题 6 <kbd>######</kbd></button>
+      <!-- 字体 -->
+      <div class="md-dropdown" data-md-dropdown data-page-node-id="T2J7vRqJyM3lcRDdm1WW3z">
+        <button class="md-dropbtn" onclick="toggleMdDropdown(this)" title="文字字体" data-page-node-id="OE8QffM7RxIQhjuLq5gpgT">字体<span class="caret" data-page-node-id="YH8pgpEiUcqxGoEflo5EM2">▾</span></button>
+        <div class="md-dropmenu" data-page-node-id="yYtZOhZSkvzk9Wt2yPMsLn">
+          <button class="md-dropitem" onclick="insertFontFamily('inherit', [], '系统默认')" data-page-node-id="V4dB7exeJLweoTEO7Nsi4Y">系统默认 <kbd data-page-node-id="kxfzRjfXc1bHjmlY27woCe">inherit</kbd></button>
+          <div class="md-dropgroup" data-page-node-id="LUYWehBw2RgFy1qPLkJdBZ">中文</div>
+          <button class="md-dropitem" onclick="insertFontFamily('PingFang SC', ['Microsoft YaHei', 'Noto Sans CJK SC', 'sans-serif'], '苹方')" data-page-node-id="wRewjqqHBTHHMX10P5P9JW">苹方</button>
+          <button class="md-dropitem" onclick="insertFontFamily('Songti SC', ['SimSun', 'STSong', 'serif'], '宋体')" data-page-node-id="0xDJEpwQ2kIkwvgihV3s6D">宋体</button>
+          <button class="md-dropitem" onclick="insertFontFamily('Heiti SC', ['Microsoft YaHei', 'SimHei', 'sans-serif'], '黑体')" data-page-node-id="51hC3xAjNBtPN4ocvrKGsi">黑体</button>
+          <button class="md-dropitem" onclick="insertFontFamily('Kaiti SC', ['Kai', 'STKaiti', 'serif'], '楷体')" data-page-node-id="A14DFG0fhQB7QgCA0x8298">楷体</button>
+          <button class="md-dropitem" onclick="insertFontFamily('Hiragino Sans GB', ['Microsoft YaHei', 'sans-serif'], '冬青黑体')" data-page-node-id="LNNNUbMoukxDw6VTZoIyW2">冬青黑体</button>
+          <div class="md-dropgroup" data-page-node-id="ZWy9IosDXUWxTHkgRiz60e">英文</div>
+          <button class="md-dropitem" onclick="insertFontFamily('Times New Roman', ['Times', 'serif'], 'Times')" data-page-node-id="LyPu5ONDGzGfSCSrGgvPbY">Times</button>
+          <button class="md-dropitem" onclick="insertFontFamily('Arial', ['Helvetica', 'sans-serif'], 'Arial')" data-page-node-id="1CJB507jH9jFnjFnkJDfu5">Arial</button>
+          <button class="md-dropitem" onclick="insertFontFamily('Courier New', ['Courier', 'monospace'], 'Courier')" data-page-node-id="INy1IErHCnT8CPDpZPVxFE">Courier</button>
+          <button class="md-dropitem" onclick="insertFontFamily('Georgia', ['Times New Roman', 'serif'], 'Georgia')" data-page-node-id="LrttMrAFfpM77vit4Acbvi">Georgia</button>
+          <button class="md-dropitem" onclick="insertFontFamily('Verdana', ['Geneva', 'sans-serif'], 'Verdana')" data-page-node-id="V41Pm9GxHTT0R7EaDDnh6H">Verdana</button>
+          <button class="md-dropitem" onclick="insertCustomFont()" data-page-node-id="PUgCaOVX4JXsW5D0Eyk3h1">✏️ 自定义字体…</button>
         </div>
       </div>
 
-      <!-- 列表 / 引用 -->
-      <div class="md-dropdown" data-md-dropdown>
-        <button class="md-dropbtn" onclick="toggleMdDropdown(this)" title="列表与引用">列表<span class="caret">▾</span></button>
-        <div class="md-dropmenu">
-          <button class="md-dropitem" onclick="insertMd('- ', '')">无序列表 <kbd>-</kbd></button>
-          <button class="md-dropitem" onclick="insertMd('1. ', '')">有序列表 <kbd>1.</kbd></button>
-          <button class="md-dropitem" onclick="insertMd('- [ ] ', '')">任务列表 <kbd>[]</kbd></button>
-          <button class="md-dropitem" onclick="insertMd('> ', '')">引用 <kbd>&gt;</kbd></button>
+      <!-- 段落 -->
+      <div class="md-dropdown" data-md-dropdown data-page-node-id="Dtn4G0PriIy922oOVOv0Sk">
+        <button class="md-dropbtn" onclick="toggleMdDropdown(this)" title="段落结构" data-page-node-id="AJm0gFqMzs8prLy7OXGvzy">段落<span class="caret" data-page-node-id="gGObUnjsgL1OFOeCPGrm2c">▾</span></button>
+        <div class="md-dropmenu" data-page-node-id="9DNwS4hKjBRdxD5FDmgJhT">
+          <button class="md-dropitem" onclick="insertMd('# ', '')" data-page-node-id="WqdRvOHPGNSA2zWOE18diS">标题 1 <kbd data-page-node-id="sPVfFkF8WdbWDWGwBOLoHo">#</kbd></button>
+          <button class="md-dropitem" onclick="insertMd('## ', '')" data-page-node-id="GymZhPBA0PjBx3BwmgBQj5">标题 2 <kbd data-page-node-id="ETwj1j3vJAyS5eGZGDkDkZ">##</kbd></button>
+          <button class="md-dropitem" onclick="insertMd('### ', '')" data-page-node-id="GL4VBrrFvBERbJSVXhFt5r">标题 3 <kbd data-page-node-id="vUeJmVw4oHq5HJT0SnbYnh">###</kbd></button>
+          <button class="md-dropitem" onclick="insertMd('#### ', '')" data-page-node-id="Sd0XPjc0ff7LzqTAW6DgA3">标题 4 <kbd data-page-node-id="Gcbnkciiv7cC6kvuZ5ghxu">####</kbd></button>
+          <button class="md-dropitem" onclick="insertMd('##### ', '')" data-page-node-id="4C3wOUua2IGWK3T2CiE9as">标题 5 <kbd data-page-node-id="Hqo6FUc2hRq2uf2zkGFrf1">#####</kbd></button>
+          <button class="md-dropitem" onclick="insertMd('###### ', '')" data-page-node-id="cuuGjEmRgLh8ThJjx0UgvO">标题 6 <kbd data-page-node-id="5aYre33dXAYWSgDgP48MSc">######</kbd></button>
+          <button class="md-dropitem" onclick="insertMd('- ', '')" data-page-node-id="RnnvuqzbHH6YHFOkWZQF43">无序列表 <kbd data-page-node-id="tvMNkPVQhO1PvHiB3mBmsW">-</kbd></button>
+          <button class="md-dropitem" onclick="insertMd('1. ', '')" data-page-node-id="t9wGZBwabW8f6qXjt3tVbe">有序列表 <kbd data-page-node-id="C0vBkY41dqmuhIaGeKLgdk">1.</kbd></button>
+          <button class="md-dropitem" onclick="insertMd('- [ ] ', '')" data-page-node-id="ZcqPM4WHUKEmfhwGbV49YS">任务列表 <kbd data-page-node-id="4UyH3B9BEfKK5UxU18aeXX">[]</kbd></button>
+          <button class="md-dropitem" onclick="insertMd(' data-page-node-id="DDto2LCku1eWdKBEkYj6B5"> ', '')">引用 <kbd data-page-node-id="AZeQgkTiGZ8kjAl2h2Fi5H">&gt;</kbd></button>
+          <button class="md-dropitem" onclick="insertMd('---\n', '')" data-page-node-id="os5hQmjY8iXjmOu6ZPBqxF">分隔线 <kbd data-page-node-id="DgB7WdV0l2QcZM2VDOhuGB">---</kbd></button>
+          <button class="md-dropitem" onclick="insertMd('`', '`')" data-page-node-id="hkR61y3fSzkGqJOUHJbhiX">行内代码 <kbd data-page-node-id="eVhS7lIFIaTQyCHJ1whKYN">`</kbd></button>
+          <button class="md-dropitem" onclick="insertMd('```\n', '\n```')" data-page-node-id="HBegBeHJGFFVM2YOj1ETFb">代码块 <kbd data-page-node-id="dD2qbUoKNZhIa3pBFOPZbL">```</kbd></button>
+          <button class="md-dropitem" onclick="insertMd('| 列1 | 列2 |\n| --- | --- |\n| 数据 | 数据 |', '')" data-page-node-id="r1WPS6COsXQoP95DD0KCxl">表格</button>
+          <div class="md-dropgroup" data-page-node-id="kkMzQS4cPw9RbtBcUsX5e0">目录</div>
+          <button class="md-dropitem" onclick="insertMd('[TOC]\n', '')" data-page-node-id="VzNxiRSAYVvBhU5FO7Eqpd">目录 [TOC]</button>
+          <button class="md-dropitem" onclick="insertMd('[目录](#标题-1)\n', '')" data-page-node-id="QxDf4yXnYoBf8vWDFcFZlU">文内跳转</button>
+          <div class="md-dropgroup" data-page-node-id="4LB2OkFXhJNElEnaPjP5iB">HTML 实体</div>
+          <button class="md-dropitem" onclick="insertRaw('&nbsp;')" data-page-node-id="4m3ux3ilAfsl7opg7WWEsS">不换行空格 <kbd data-page-node-id="XBslBkWuKleEBXNubi2DgM">&amp;nbsp;</kbd></button>
+          <button class="md-dropitem" onclick="insertRaw('&emsp;')" data-page-node-id="aRaRrKgsxobq5tN5dY7K8K">全角空白 <kbd data-page-node-id="D3fhCyX8NaBs7AOREb7zyr">&amp;emsp;</kbd></button>
+          <button class="md-dropitem" onclick="insertRaw('&ensp;')" data-page-node-id="LB8fw2PPnvtap88mkIPOiQ">半角空白 <kbd data-page-node-id="u97JFeu0X2yYRuZJBhcyqu">&amp;ensp;</kbd></button>
+          <button class="md-dropitem" onclick="insertRaw('<br data-page-node-id="WAn7dCJ5P4cjEhAAqsjrke">')">软回车 <kbd data-page-node-id="Xj8IjEhqCbDns7vsBW10Ur">&lt;br&gt;</kbd></button>
+          <div class="md-dropgroup" data-page-node-id="1QBl6oxSBMLeGuKlcfz5uk">公式</div>
+          <button class="md-dropitem" onclick="insertMd('$', '$')" data-page-node-id="wCDMFAon3tXwiQXicZod9m">行内公式 <kbd data-page-node-id="DKslfBIW0GFmHJ8VFAbKvt">$</kbd></button>
+          <button class="md-dropitem" onclick="insertMd('$$\n', '\n$$')" data-page-node-id="stQWNHWbEBz9gvY8AGHj2W">块级公式 <kbd data-page-node-id="lHuTVTUvf2EyeV4Q0N7ptl">$$</kbd></button>
         </div>
       </div>
 
-      <!-- 链接 / 代码 -->
-      <div class="md-dropdown" data-md-dropdown>
-        <button class="md-dropbtn" onclick="toggleMdDropdown(this)" title="链接、图片、代码">插入<span class="caret">▾</span></button>
-        <div class="md-dropmenu">
-          <button class="md-dropitem" onclick="insertMd('[', '](url)')">链接 <kbd>[]()</kbd></button>
-          <button class="md-dropitem" onclick="insertMd('![', '](url)')">图片 <kbd>![]()</kbd></button>
-          <button class="md-dropitem" onclick="insertMd('`', '`')">行内代码 <kbd>`</kbd></button>
-          <button class="md-dropitem" onclick="insertMd('```\n', '\n```')">代码块 <kbd>```</kbd></button>
-          <button class="md-dropitem" onclick="insertMd('| 列1 | 列2 |\n| --- | --- |\n| 数据 | 数据 |', '')">表格</button>
-          <button class="md-dropitem" onclick="insertMd('---\n', '')">分隔线 <kbd>---</kbd></button>
+      <!-- 表格计算 -->
+      <div class="md-dropdown" data-md-dropdown data-page-node-id="4l5cSISRvVxVMHZUoE9xdx">
+        <button class="md-dropbtn" onclick="toggleMdDropdown(this)" title="表格计算" data-page-node-id="x1ouUaMm1divWWVvXauZLc">表格计算<span class="caret" data-page-node-id="CyCCipTq4NLgZIkxPasn10">▾</span></button>
+        <div class="md-dropmenu" data-page-node-id="fopYf9yA09eyRilgUAR9tb">
+          <div class="md-dropgroup" data-page-node-id="MER57tR3IqP1llBLzW6s9s">列宽 {{cols:}}</div>
+          <button class="md-dropitem" onclick="insertMd('{{cols: 50% 50%}}', '')" data-page-node-id="HFEyFB9gIOyMztSiZlBPCq">2列 均分</button>
+          <button class="md-dropitem" onclick="insertMd('{{cols: 33% 67%}}', '')" data-page-node-id="DVBjyE3owtFkeNuKjnYEPu">2列 1:2</button>
+          <button class="md-dropitem" onclick="insertMd('{{cols: 67% 33%}}', '')" data-page-node-id="laZuYCWjzFpbZhyHJH1NBT">2列 2:1</button>
+          <button class="md-dropitem" onclick="insertMd('{{cols: 33% 34% 33%}}', '')" data-page-node-id="UdWC5EPpXIal3hCDNv2G0n">3列 均分</button>
+          <button class="md-dropitem" onclick="insertMd('{{cols: 50% 25% 25%}}', '')" data-page-node-id="AuruCBXRTUZFmhRyuneong">3列 2:1:1</button>
+          <button class="md-dropitem" onclick="insertMd('{{cols: 25% 25% 25% 25%}}', '')" data-page-node-id="bWvwXaFRvD8Q0TCsMP6IJJ">4列 均分</button>
+          <div class="md-dropgroup" data-page-node-id="8Du2W88sz8eirbnlkPXRe1">公式 / 排序 / 变量</div>
+          <button class="md-dropitem" onclick="insertMd('{{calc}}\n', '')" data-page-node-id="ED3fEOtzqREQ0t2nS9EJPv">计算表标记 <kbd data-page-node-id="gS80yINEG9sIobLs1vOvVv">{{calc}}</kbd></button>
+          <button class="md-dropitem" onclick="insertMd('{{sort: 1 asc}}', '')" data-page-node-id="HxFu15pXVrKq6bApNWyzWo">排序标记 <kbd data-page-node-id="pHIAz8BiBEhAqglAmmV6h4">{{sort:}}</kbd></button>
+          <button class="md-dropitem" onclick="insertMd('{{let: 名称 值}}', '')" data-page-node-id="jDAb1mDuUCSdn7COZ6OJA2">命名变量 <kbd data-page-node-id="jF9wxxqQLvGsSiAtns5tyM">{{let:}}</kbd></button>
+          <button class="md-dropitem" onclick="insertMd('=ROW()', '')" data-page-node-id="INhTqyzHTTARnm1zBwlFpB">序号（原始行） <kbd data-page-node-id="s19AYHPSnKywYXcWpEtHWW">=ROW()</kbd></button>
+          <button class="md-dropitem" onclick="insertMd('=SORTROW()', '')" data-page-node-id="AnM7TucPNuCFmYj2f5K97P">序号（排序后） <kbd data-page-node-id="k7Cl6hPitjR6G0vEnEgyfR">=SORTROW()</kbd></button>
+          <button class="md-dropitem" onclick="insertMd('{{=', '}}')" data-page-node-id="bkcaiYynUaQy6JB5lKsAq3">行内公式 <kbd data-page-node-id="RUMUtI0iMtEklaAj3EVdfW">{{=}}</kbd></button>
+        </div>
+      </div>
+
+      <!-- 链接 / 跳转 -->
+      <div class="md-dropdown" data-md-dropdown data-page-node-id="K1P6EmOee0HF5SzmlFHFw6">
+        <button class="md-dropbtn" onclick="toggleMdDropdown(this)" title="链接与跳转" data-page-node-id="6EHei7htgdXazq4D9eQVHr">链接/跳转<span class="caret" data-page-node-id="y67tnVybQGk598Hnj876Zy">▾</span></button>
+        <div class="md-dropmenu" data-page-node-id="ymOkhzsyVHQipCyoLcVpSR">
+          <button class="md-dropitem" onclick="insertMd('[', '](url)')" data-page-node-id="H4M20KIjKbOoP06NPr5B1E">普通链接 <kbd data-page-node-id="fRwbl72BHkINM5F9E8FzVb">[]()</kbd></button>
+          <button class="md-dropitem" onclick="insertMd('![', '](url)')" data-page-node-id="xZG9swouR2lzeRiyhrKRGz">图片 <kbd data-page-node-id="pSeT20tMkqCeIwml7IFqOo">![]()</kbd></button>
+          <button class="md-dropitem" onclick="insertMd('![', '](url =200x150)')" data-page-node-id="YwYtOQG00pyGqUupcDYtEF">图片(定宽高) <kbd data-page-node-id="ahY1JthmJ6tQrvaV7gA5F7">=WxH</kbd></button>
+          <button class="md-dropitem" onclick="insertMd('{{row}}\n![说明](url =200)\n![说明](url =200)\n{{endrow}}\n', '')" data-page-node-id="SDINUhDw2ULhc9pM0ZhWRY">并排图组模板 <kbd data-page-node-id="iMlZimH5mMtYgSABYKCZCs">{{row}}</kbd></button>
         </div>
       </div>
     </div>
 
     <!-- 主編輯區域 -->
-    <main class="editor-container" id="editor-container" data-view="edit">
-      <div id="editor-pane" class="pane editor-pane region">
+    <main class="editor-container" id="editor-container" data-view="edit" data-page-node-id="4lifpnYRioAK2vdbugOaDi">
+      <div id="editor-pane" class="pane editor-pane region" data-page-node-id="1mwUIwO64NpAhDQXx0d0WX">
         <textarea id="editor" class="editor" placeholder="在此輸入內容...&#10;&#10;支持從 iCloud Drive 打開 .md / .json / .html / 程式碼等文字檔進行編輯"></textarea>
       </div>
-      <div id="preview-pane" class="pane preview-pane region">
-        <div id="preview" class="preview"></div>
+      <div id="preview-pane" class="pane preview-pane region" data-page-node-id="EYhIlTOhzwJjMUzU6PWw9A">
+        <div id="preview" class="preview" data-page-node-id="nVFjSH28JrcvAirXNDtYaa"></div>
       </div>
     </main>
 
     <!-- 狀態列 -->
-    <footer class="status-bar region">
-      <span id="status-text">就緒</span>
-      <span id="word-count"></span>
-      <span id="app-version" class="app-version" title="應用版本"></span>
+    <footer class="status-bar region" data-page-node-id="OAnAmY1sLt9LHhmDhPeEAH">
+      <span id="status-text" data-page-node-id="bhkNGBPkRTRvAYWDy9wkTL">就緒</span>
+      <span id="word-count" data-page-node-id="MFWuklNNkJsAx2eMV7kL6z"></span>
+      <span id="app-version" class="app-version" title="應用版本" data-page-node-id="S3rRxZotQbka1m6KGv6eN7"></span>
     </footer>
 
     <!-- 提示消息 -->
-    <div id="toast" class="toast hidden"></div>
+    <div id="toast" class="toast hidden" data-page-node-id="YGJVJYLNtM72nHCk1lJbHb"></div>
   </div>
 
+  <!-- Markdown 渲染管線（從 todo 編輯器移植的擴展語法支援），必須在 app.js 之前載入 -->
+  <script src="md-renderer.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

@@ -540,3 +540,207 @@ body {
 ::-webkit-scrollbar-thumb:hover {
   background: var(--text-secondary);
 }
+
+/* ============================================================
+   Markdown 渲染管線延伸樣式
+   移植自 todo 編輯器，作用域從 .todo-text / .md-preview 改成 .preview
+   ============================================================ */
+
+/* 工具列：顏色色塊 + 分組標題 */
+.md-color-dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  margin-right: 6px;
+  vertical-align: -1px;
+}
+.dark-mode .md-color-dot {
+  border-color: rgba(255, 255, 255, 0.2);
+}
+.md-dropgroup {
+  padding: 6px 12px 2px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  border-top: 1px solid var(--border);
+  margin-top: 4px;
+}
+.md-dropgroup:first-child {
+  border-top: none;
+  margin-top: 0;
+}
+
+/* 並排圖組 {{row}}…{{endrow}} */
+.preview .img-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: flex-start;
+  margin: 0.5em 0;
+}
+.preview .img-row img {
+  margin: 0;
+  max-height: 320px;
+  width: auto;
+  object-fit: contain;
+  border-radius: 6px;
+}
+.preview hr {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 1em 0;
+}
+.preview del {
+  color: var(--text-secondary);
+}
+
+/* 卡片跳轉 / 新窗 / 圖片新窗 / 原窗 / 執行 等協議連結 */
+.preview a.card-jump-link {
+  cursor: pointer;
+  color: #2563eb;
+  text-decoration: underline dotted;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 2px;
+}
+.preview a.card-jump-link:hover { color: #1d4ed8; text-decoration: underline solid; }
+.dark-mode .preview a.card-jump-link { color: #7dd3fc; }
+.dark-mode .preview a.card-jump-link:hover { color: #bae6fd; }
+
+.preview a.card-win-link {
+  cursor: pointer;
+  color: #0d9488;
+  text-decoration: underline dotted;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 2px;
+}
+.preview a.card-win-link:hover { color: #0f766e; text-decoration: underline solid; }
+.dark-mode .preview a.card-win-link { color: #5eead4; }
+.dark-mode .preview a.card-win-link:hover { color: #99f6e4; }
+
+.preview a.card-win-img-link {
+  cursor: pointer;
+  color: #7c3aed;
+  text-decoration: underline dotted;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 2px;
+}
+.preview a.card-win-img-link:hover { color: #6d28d9; text-decoration: underline solid; }
+.dark-mode .preview a.card-win-img-link { color: #a78bfa; }
+.dark-mode .preview a.card-win-img-link:hover { color: #c4b5fd; }
+
+.preview a.card-cur-link {
+  cursor: pointer;
+  color: #ea580c;
+  text-decoration: underline dotted;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 2px;
+}
+.preview a.card-cur-link:hover { color: #c2410c; text-decoration: underline solid; }
+.dark-mode .preview a.card-cur-link { color: #fdba74; }
+.dark-mode .preview a.card-cur-link:hover { color: #fed7aa; }
+
+.preview span.card-disabled-link {
+  color: var(--text-secondary);
+  font-style: italic;
+  cursor: not-allowed;
+  text-decoration: line-through;
+}
+
+/* 參考標記：※ 圓圈 / ▣ 圓角矩形 / ◎ 空心圓 / ↑ 上 / ↓ 下 */
+.preview a.ref-num,
+.preview a.ref-card,
+.preview a.ref-circle,
+.preview a.ref-up,
+.preview a.ref-down {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.6em;
+  height: 1.6em;
+  padding: 0 0.3em;
+  margin: 0 0.12em;
+  font-size: 1em;
+  font-weight: 700;
+  line-height: 1;
+  color: #ffffff !important;
+  background: #6366f1;
+  border-radius: 999px;
+  text-decoration: none;
+  vertical-align: middle;
+  cursor: pointer;
+}
+.preview a.ref-card { border-radius: 6px; background: #8b5cf6; }
+.preview a.ref-circle { border-radius: 50%; background: #ec4899; }
+.preview a.ref-up { border-radius: 6px; background: #16a34a; }
+.preview a.ref-down { border-radius: 6px; background: #dc2626; }
+.preview a.ref-num:hover,
+.preview a.ref-card:hover,
+.preview a.ref-circle:hover,
+.preview a.ref-up:hover,
+.preview a.ref-down:hover { filter: brightness(1.12); }
+.dark-mode .preview a.ref-num,
+.dark-mode .preview a.ref-card,
+.dark-mode .preview a.ref-circle,
+.dark-mode .preview a.ref-up,
+.dark-mode .preview a.ref-down { color: #ffffff !important; }
+
+/* 計算表 {{calc}} / {{let:}} / =ROW() / =SORTROW() */
+.preview table.calc-table td.calc-cell,
+.preview table.calc-table th.calc-cell {
+  background: rgba(102, 126, 234, 0.10);
+  font-variant-numeric: tabular-nums;
+}
+.dark-mode .preview table.calc-table td.calc-cell,
+.dark-mode .preview table.calc-table th.calc-cell {
+  background: rgba(129, 140, 248, 0.16);
+}
+.preview table.calc-table td.calc-cell[title],
+.preview table.calc-table th.calc-cell[title] { cursor: help; }
+
+/* 行內公式 {{=expr}} */
+.preview .inline-calc {
+  background: rgba(102, 126, 234, 0.10);
+  border-radius: 3px;
+  padding: 0 2px;
+  font-variant-numeric: tabular-nums;
+}
+.dark-mode .preview .inline-calc { background: rgba(129, 140, 248, 0.16); }
+.preview .inline-calc[title] { cursor: help; }
+
+/* 列寬標記 {{cols:}} 注入：固定佈局讓寬度精確生效 */
+.preview table.fixed-cols {
+  table-layout: fixed;
+  width: 100%;
+}
+
+/* 已處理的標記段落（{{calc}} / {{cols}}）從視圖隱藏 */
+p[data-calc-marker="true"],
+p[data-cols-marker="true"] { display: none; }
+
+/* 目錄 [TOC] */
+.preview .md-toc {
+  list-style: none;
+  padding: 8px 14px;
+  margin: 1em 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+}
+.preview .md-toc li { margin: 0.25em 0; line-height: 1.5; }
+.preview .md-toc a { color: var(--primary); text-decoration: none; }
+.preview .md-toc a:hover { text-decoration: underline; }
+.preview .md-toc-h1 { padding-left: 0; font-weight: 600; }
+.preview .md-toc-h2 { padding-left: 1em; }
+.preview .md-toc-h3 { padding-left: 2em; }
+.preview .md-toc-h4 { padding-left: 3em; }
+.preview .md-toc-h5 { padding-left: 4em; }
+.preview .md-toc-h6 { padding-left: 5em; }
+
+/* KaTeX 暗色模式：數學式隨主題配色 */
+.dark-mode .preview .katex { color: var(--text); }
+

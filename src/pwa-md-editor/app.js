@@ -8,7 +8,7 @@ const VIEWS = ['edit', 'preview', 'split'];
 
 // 📌 應用版本號（單一可信來源）。
 // 每次改動都要 +1，方便在手機上確認跑的是不是最新版（狀態列左下角會顯示）。
-const APP_VERSION = '0.7.3';
+const APP_VERSION = '0.7.9';
 
 // 可處理的文字檔副檔名白名單（對齊 todo 編輯器 TEXT_EXTS，取常用子集）
 const TEXT_EXTS = [
@@ -117,8 +117,30 @@ function init() {
   if ('serviceWorker' in navigator) {
     const swPath = new URL('./sw.js', document.baseURI).href;
     navigator.serviceWorker.register(swPath)
-      .then(reg => console.log('SW 註冊成功', reg))
+      .then(reg => {
+        console.log('SW 註冊成功', reg);
+        // 🆕 檢測到新 SW 版本 → 等它接管後自動刷新一次，確保拿到最新資源
+        //    （緩存優先策略下，若 SW 更新但頁面不刷新，會一直用舊快取）
+        if (reg.waiting) {
+          reg.waiting.postMessage({ type: 'SKIP_WAITING' });
+        }
+        reg.addEventListener('updatefound', () => {
+          const newWorker = reg.installing;
+          if (newWorker) {
+            newWorker.addEventListener('statechange', () => {
+              if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+                newWorker.postMessage({ type: 'SKIP_WAITING' });
+              }
+            });
+          }
+        });
+      })
       .catch(err => console.warn('SW 註冊失敗（離線功能不可用）', err));
+
+    // 🆕 新 SW 接管後自動刷新，避免停留在舊頁面/舊緩存
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      window.location.reload();
+    });
   }
 }
 
@@ -200,6 +222,60 @@ function insertMd(before, after) {
   // 程序化修改要手動觸發 input，保持 isDirty / 預覽 / 字數統計同步
   ta.dispatchEvent(new Event('input', { bubbles: true }));
 
+  closeAllMdDropdowns();
+}
+
+// 構造 font-family 的 CSS 值：帶 fallback 鏈時按順序拼接，通用族名（serif/sans-serif/…）不加引號。
+// MD 工具列共用，保證各處字體寫法一致（單一可信來源，對齊 todo 編輯器）。
+function buildFontCssValue(name, fallbacks) {
+  const list = [name].concat(fallbacks || []);
+  return list.map(function (f) {
+    const s = String(f);
+    if (/^(serif|sans-serif|monospace|cursive|fantasy|system-ui|inherit)$/i.test(s)) return s;
+    return "'" + s.replace(/'/g, "\\'") + "'";
+  }).join(', ');
+}
+
+// 字體選擇器：把選中文字（或占位符）用 <span style="font-family:…"> 包裹。
+// 用獨立函數避免 onclick 裡 font 名帶空格時的引號嵌套地獄。
+function insertFont(family) {
+  // 用 !important 確保覆蓋父元素繼承的 font-family（body 的 -apple-system 在 macOS 上就是 PingFang SC，
+  // 不加 !important 時設苹方=設默認，看起來「沒效果」）
+  const before = '<span style="font-family: ' + buildFontCssValue(family) + ' !important">';
+  insertMd(before, '</span>');
+}
+
+// 字體選擇器（帶 fallback 鏈）：name 為首選字體，fallbacks 為候選回退列表。
+function insertFontFamily(name, fallbacks, label) {
+  const before = '<span style="font-family: ' + buildFontCssValue(name, fallbacks) + ' !important">';
+  insertMd(before, '</span>');
+}
+
+// 自定義字體：讓用戶輸入任意 font-family（支持逗號分隔多個候選）
+function insertCustomFont() {
+  const input = window.prompt('輸入 font-family（可填多個，逗號分隔，如：Arial, sans-serif）', '');
+  if (!input) return;
+  const family = input.trim();
+  if (!family) return;
+  insertFont(family);
+}
+
+// 直接把「字面文本/字符」原樣寫到光標處（不經過 :短碼:，也不會套用「文本」占位符）。
+// 供「HTML 實體」子菜單調用——這些項要插的就是空格字符或 HTML 實體文本（&nbsp; 等）本身，
+// 而非把它們當作包裹選中文字的前/後綴，所以用單獨的 insertRaw 而非 insertMd。
+function insertRaw(text) {
+  if (!text) return;
+  const ta = elements.editor;
+  const start = ta.selectionStart;
+  const end = ta.selectionEnd;
+  ta.value = ta.value.substring(0, start) + text + ta.value.substring(end);
+  const savedScrollTop = ta.scrollTop;
+  ta.focus({ preventScroll: true });
+  const newCursor = start + text.length;
+  ta.setSelectionRange(newCursor, newCursor);
+  ta.scrollTop = savedScrollTop;
+  // 程序化修改要手動觸發 input，保持 isDirty / 預覽 / 字數統計同步
+  ta.dispatchEvent(new Event('input', { bubbles: true }));
   closeAllMdDropdowns();
 }
 
@@ -317,7 +393,20 @@ function readFileAsText(file) {
 
 // 重置：清除所有本地緩存（localStorage / Service Worker 快取）並重新載入整個應用。
 // 用途：當 iCloud 檔案內容看起來「沒更新」時，釋放快取後整頁重載，強制回到乾淨狀態。
+// 🛡️ 防誤按：需輸入授權碼 123456 才執行。
 async function handleReset() {
+  // 確認閘門：要求輸入 123456，未輸入正確授權碼一律中止。
+  let input = null;
+  try {
+    input = window.prompt('此操作會清除所有快取並重新載入。\n請輸入授權碼 123456 以繼續：', '');
+  } catch (_) {
+    input = null;
+  }
+  if (input !== '123456') {
+    showToast('已取消重置（授權碼不正確）', 'error');
+    return;
+  }
+
   try {
     // 1) 清空本程式的 localStorage（主題/視圖/草稿等全部清除）
     localStorage.clear();
@@ -604,8 +693,7 @@ function updatePreview() {
   // 預覽不可見時不浪費渲染（純編輯模式完全看不到）
   if (state.view === 'edit') return;
 
-  // 🛡️ 防護：marked 與 hljs 都是外部 CDN，加載失敗時不讓整頁崩潰
-  const hasMarked = (typeof marked !== 'undefined' && typeof marked.parse === 'function');
+  // 🛡️ 防護：hljs 是外部 CDN，加載失敗時不讓整頁崩潰（md 渲染管線自帶 marked 可用性檢查）
   const hasHljs = (typeof hljs !== 'undefined' && typeof hljs.highlightElement === 'function');
 
   // 非 Markdown 檔（json/html/code/csv…）：預覽直接顯示語法高亮的純文字，不跑 marked
@@ -623,24 +711,16 @@ function updatePreview() {
     return;
   }
 
-  if (!hasMarked) {
-    elements.preview.innerHTML = '<p class="error">Markdown 渲染庫未載入（請檢查網絡連線後重新整理）</p>';
+  // Markdown / todo 卡片模式：使用移植自 todo 編輯器的完整渲染管線
+  // （calc/sort/cols/katex/emoji/圖片定寬高/並排圖組/目錄… 與主程式一致）。
+  // 帶 force:true 表示這是「原文 → 渲染」而非已渲染 HTML 的再處理。
+  if (typeof renderMarkdown !== 'function') {
+    elements.preview.innerHTML = '<p class="error">Markdown 渲染管線未載入（請檢查網絡連線後重新整理）</p>';
     return;
   }
 
   try {
-    elements.preview.innerHTML = marked.parse(content || '');
-
-    // 應用語法高亮（僅在 hljs 可用時）
-    if (hasHljs) {
-      elements.preview.querySelectorAll('pre code').forEach((block) => {
-        try {
-          hljs.highlightElement(block);
-        } catch (e) {
-          // 未註冊的語言類別不影響整體渲染，跳過即可
-        }
-      });
-    }
+    elements.preview.innerHTML = renderMarkdown(content || '', { force: true });
   } catch (error) {
     console.error('預覽渲染失敗:', error);
     elements.preview.innerHTML = '<p class="error">預覽渲染失敗：' + (error && error.message ? error.message : error) + '</p>';

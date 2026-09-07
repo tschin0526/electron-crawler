@@ -2,7 +2,7 @@
   "name": "MD 編輯器 Lite",
   "short_name": "MD Editor",
   "description": "輕量級 Markdown 編輯器，支持 iCloud 文件讀取與保存",
-  "version": "0.7.3",
+  "version": "0.7.9",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",
