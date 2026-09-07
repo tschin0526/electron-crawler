@@ -52,3 +52,7 @@ Thumbs.db
 # 运行时生成：todo 数据目录迁移标记与本机数据目录配置（含本机绝对路径，不可入库）
 .todolist-data-dir-migrated
 todolist-config.json
+
+# PWA 编辑器：mkcert 本地证书与私钥（含局域网 IP，严禁入库）
+src/pwa-md-editor/cert.pem
+src/pwa-md-editor/key.pem

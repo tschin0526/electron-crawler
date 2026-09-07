@@ -240,6 +240,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   saveFileByPath: (absolutePath, content) => ipcRenderer.invoke('save-file-by-path', absolutePath, content),
   deleteFileByPath: (absolutePath, allowedRoot) => ipcRenderer.invoke('delete-file-by-path', absolutePath, allowedRoot),
 
+  // todo 卡片：按 id 实时重读单个卡片文件（打开卡片前同步 iCloud/外部变更）
+  readTodoFile: (id) => ipcRenderer.invoke('read-todo-file', id),
+
   // MD 纯文本文件存储（与 todo 卡片完全分离，不进 Gallery）
   listMdFiles: () => ipcRenderer.invoke('list-md-files'),
   readMdFile: (id) => ipcRenderer.invoke('read-md-file', id),

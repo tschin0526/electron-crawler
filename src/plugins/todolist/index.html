@@ -10393,7 +10393,25 @@
       document.getElementById('modalTitle').textContent = '编辑文件';
     }
 
-    function openEditModal(id) {
+    async function openEditModal(id) {
+      // 🆕 打开前先从磁盘实时重读该卡片文件，覆盖内存 todos 对应项，
+      //    让「关闭页签再开」也能拿到 iCloud/外部同步后的最新内容（不再依赖启动时的旧缓存）。
+      if (window.electronAPI && window.electronAPI.readTodoFile) {
+        try {
+          const fresh = await window.electronAPI.readTodoFile(id);
+          if (fresh && fresh.success && fresh.todo) {
+            const idx = todos.findIndex(t => t.id === id);
+            if (idx >= 0) {
+              todos[idx] = fresh.todo;
+            } else {
+              todos.push(fresh.todo);
+            }
+          }
+        } catch (_) {
+          // 重读失败则回退内存数据，不阻塞打开
+        }
+      }
+
       const todo = todos.find(t => t.id === id);
       if (!todo) return;
 

@@ -756,6 +756,43 @@ function init(shared) {
     return resolved;
   }
 
+  // 校验 todo 卡片 id（即不带 todo- 前缀和 .json 扩展名的 basename）不会导致路径穿越
+  function resolveTodoFilePath(id) {
+    if (!id || typeof id !== 'string') return null;
+    // 拒绝路径分隔符和 ..，防止穿越到 data 目录之外
+    if (id.includes('..') || id.includes(path.sep) || id.includes('/')) return null;
+    const filePath = path.join(TODO_DATA_DIR, `todo-${id}.json`);
+    // 最终解析后的绝对路径必须在 data 目录内
+    const resolved = path.resolve(filePath);
+    const base = path.resolve(TODO_DATA_DIR);
+    if (!resolved.startsWith(base + path.sep) && resolved !== base) return null;
+    return resolved;
+  }
+
+  // 📖 读取单个 todo 卡片文件（用于打开卡片时实时从磁盘重读，反映 iCloud 等外部变更）
+  ipcMain.handle('read-todo-file', async (event, id) => {
+    try {
+      const filePath = resolveTodoFilePath(id);
+      if (!filePath) {
+        return { success: false, error: 'id 非法或包含路径穿越字符' };
+      }
+      if (!fs.existsSync(filePath)) {
+        return { success: false, error: 'todo 文件不存在' };
+      }
+      const data = fs.readFileSync(filePath, 'utf8');
+      const todo = JSON.parse(data);
+      if (!todo || typeof todo !== 'object') {
+        return { success: false, error: 'todo 文件内容非法' };
+      }
+      // 文件名即唯一标识（与 load-todos 对齐）
+      todo.id = id;
+      return { success: true, todo };
+    } catch (error) {
+      console.error(`[Main] 读取 todo 文件失败: ${id}`, error);
+      return { success: false, error: error.message };
+    }
+  });
+
   // 📋 列出 data 目录下所有 *.md 的元数据（供前端「文件列表」下拉使用）
   ipcMain.handle('list-md-files', async () => {
     try {

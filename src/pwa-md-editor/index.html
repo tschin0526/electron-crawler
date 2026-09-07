@@ -2,12 +2,14 @@
 <html lang="zh-TW">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-  <meta name="theme-color" content="#2563eb" />
+  <meta name="theme-color" content="#0f172a" />
   <title>MD 編輯器 Lite</title>
   <link rel="manifest" href="manifest.json" />
+  <link rel="apple-touch-icon" href="icon-192.png" />
+  <link rel="icon" type="image/svg+xml" href="icon.svg" />
   <link rel="stylesheet" href="style.css" />
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/core.min.js"></script>
@@ -17,49 +19,106 @@
   <script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/css.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/languages/xml.min.js"></script>
 </head>
-<body>
+<body class="dark-mode">
   <div id="app">
     <!-- 頂部工具列 -->
-    <header class="toolbar">
+    <header class="toolbar region">
       <div class="toolbar-left">
-        <button id="btn-open" class="btn btn-primary" title="從 iCloud 打開文件">
-          <span class="icon">📂</span>
-          <span class="label">打開</span>
-        </button>
-        <button id="btn-save" class="btn btn-success" title="保存文件到 iCloud">
-          <span class="icon">💾</span>
-          <span class="label">保存</span>
-        </button>
+        <button id="btn-open" class="btn btn-secondary" title="從 iCloud 打開文字檔（md/json/html/code…）">打開</button>
+        <button id="btn-save" class="btn btn-secondary" title="保存文件到 iCloud">保存</button>
+        <button id="btn-reset" class="btn btn-secondary" title="清除所有緩存並重新載入應用">重置</button>
       </div>
       <div class="toolbar-center">
-        <input type="file" id="file-input" accept=".md,.markdown,.txt" style="display:none" />
+        <input type="file" id="file-input" accept=".md,.markdown,.mdx,.txt,.text,.log,.csv,.tsv,.html,.htm,.json,.json5,.jsonc,.yaml,.yml,.toml,.ini,.conf,.config,.properties,.cfg,.xml,.js,.mjs,.cjs,.jsx,.ts,.tsx,.vue,.svelte,.css,.scss,.less,.py,.rb,.sh,.bash,.zsh,.fish,.ps1,.bat,.cmd,.sql,.graphql,.gql,.c,.h,.cpp,.cc,.hpp,.java,.kt,.go,.rs,.swift,.php,.lua,.r,.cs,.scala,.dart,.ex,.erl,.env,.gitignore,.editorconfig,.tex,.rst,.diff,.patch" style="display:none" />
         <span id="file-name" class="file-name">未打開文件</span>
+        <!-- 🆕 todo 卡片模式徽章：打開符合 todo 卡片結構的 JSON 後顯示，提示用戶保存時會合併原結構 -->
+        <span id="todo-mode-badge" class="todo-badge" title="保存時自動合併原 JSON 結構，只覆寫 text/updatedAt 字段">📇 todo 卡片</span>
       </div>
       <div class="toolbar-right">
-        <button id="btn-preview" class="btn btn-secondary" title="切換預覽模式">
-          <span class="icon">👁️</span>
-          <span class="label">預覽</span>
-        </button>
-        <button id="btn-theme" class="btn btn-secondary" title="切換暗色模式">
-          <span class="icon">🌙</span>
-        </button>
+        <button id="btn-theme" class="btn btn-secondary" title="切換暗色模式">主題</button>
       </div>
     </header>
 
-    <!-- 主編輯區域 -->
-    <main class="editor-container">
-      <div id="editor-pane" class="pane editor-pane">
-        <textarea id="editor" class="editor" placeholder="在此輸入 Markdown 內容...&#10;&#10;支持從 iCloud Drive 打開 .md 文件進行編輯"></textarea>
+    <!-- 視圖切換頁簽 -->
+    <nav class="tabbar region" id="tabbar">
+      <button class="tab active" data-view="edit" title="編輯文本">
+        <span class="icon">✏️</span><span class="label">編輯文本</span>
+      </button>
+      <button class="tab" data-view="preview" title="MD 預覽">
+        <span class="icon">👁️</span><span class="label">MD 預覽</span>
+      </button>
+      <button class="tab" data-view="split" title="分屏：邊寫邊看">
+        <span class="icon">▥</span><span class="label">分屏</span>
+      </button>
+    </nav>
+
+    <!-- Markdown 編輯工具列（輕量版：常用標記一鍵插入） -->
+    <div class="md-toolbar region" id="md-toolbar">
+      <!-- 格式 -->
+      <div class="md-dropdown" data-md-dropdown>
+        <button class="md-dropbtn" onclick="toggleMdDropdown(this)" title="文字格式">格式<span class="caret">▾</span></button>
+        <div class="md-dropmenu">
+          <button class="md-dropitem" onclick="insertMd('**', '**')">粗体 <kbd>**</kbd></button>
+          <button class="md-dropitem" onclick="insertMd('*', '*')">斜体 <kbd>*</kbd></button>
+          <button class="md-dropitem" onclick="insertMd('~~', '~~')">删除线 <kbd>~~</kbd></button>
+          <button class="md-dropitem" onclick="insertMd('<mark>', '</mark>')">高亮 <kbd>&lt;mark&gt;</kbd></button>
+          <button class="md-dropitem" onclick="insertMd('<u>', '</u>')">下划线 <kbd>&lt;u&gt;</kbd></button>
+        </div>
       </div>
-      <div id="preview-pane" class="pane preview-pane hidden">
+
+      <!-- 标题 -->
+      <div class="md-dropdown" data-md-dropdown>
+        <button class="md-dropbtn" onclick="toggleMdDropdown(this)" title="标题">标题<span class="caret">▾</span></button>
+        <div class="md-dropmenu">
+          <button class="md-dropitem" onclick="insertMd('# ', '')">标题 1 <kbd>#</kbd></button>
+          <button class="md-dropitem" onclick="insertMd('## ', '')">标题 2 <kbd>##</kbd></button>
+          <button class="md-dropitem" onclick="insertMd('### ', '')">标题 3 <kbd>###</kbd></button>
+          <button class="md-dropitem" onclick="insertMd('#### ', '')">标题 4 <kbd>####</kbd></button>
+          <button class="md-dropitem" onclick="insertMd('##### ', '')">标题 5 <kbd>#####</kbd></button>
+          <button class="md-dropitem" onclick="insertMd('###### ', '')">标题 6 <kbd>######</kbd></button>
+        </div>
+      </div>
+
+      <!-- 列表 / 引用 -->
+      <div class="md-dropdown" data-md-dropdown>
+        <button class="md-dropbtn" onclick="toggleMdDropdown(this)" title="列表与引用">列表<span class="caret">▾</span></button>
+        <div class="md-dropmenu">
+          <button class="md-dropitem" onclick="insertMd('- ', '')">无序列表 <kbd>-</kbd></button>
+          <button class="md-dropitem" onclick="insertMd('1. ', '')">有序列表 <kbd>1.</kbd></button>
+          <button class="md-dropitem" onclick="insertMd('- [ ] ', '')">任务列表 <kbd>[]</kbd></button>
+          <button class="md-dropitem" onclick="insertMd('> ', '')">引用 <kbd>&gt;</kbd></button>
+        </div>
+      </div>
+
+      <!-- 链接 / 代码 -->
+      <div class="md-dropdown" data-md-dropdown>
+        <button class="md-dropbtn" onclick="toggleMdDropdown(this)" title="链接、图片、代码">插入<span class="caret">▾</span></button>
+        <div class="md-dropmenu">
+          <button class="md-dropitem" onclick="insertMd('[', '](url)')">链接 <kbd>[]()</kbd></button>
+          <button class="md-dropitem" onclick="insertMd('![', '](url)')">图片 <kbd>![]()</kbd></button>
+          <button class="md-dropitem" onclick="insertMd('`', '`')">行内代码 <kbd>`</kbd></button>
+          <button class="md-dropitem" onclick="insertMd('```\n', '\n```')">代码块 <kbd>```</kbd></button>
+          <button class="md-dropitem" onclick="insertMd('| 列1 | 列2 |\n| --- | --- |\n| 数据 | 数据 |', '')">表格</button>
+          <button class="md-dropitem" onclick="insertMd('---\n', '')">分隔线 <kbd>---</kbd></button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 主編輯區域 -->
+    <main class="editor-container" id="editor-container" data-view="edit">
+      <div id="editor-pane" class="pane editor-pane region">
+        <textarea id="editor" class="editor" placeholder="在此輸入內容...&#10;&#10;支持從 iCloud Drive 打開 .md / .json / .html / 程式碼等文字檔進行編輯"></textarea>
+      </div>
+      <div id="preview-pane" class="pane preview-pane region">
         <div id="preview" class="preview"></div>
       </div>
     </main>
 
     <!-- 狀態列 -->
-    <footer class="status-bar">
+    <footer class="status-bar region">
       <span id="status-text">就緒</span>
       <span id="word-count"></span>
+      <span id="app-version" class="app-version" title="應用版本"></span>
     </footer>
 
     <!-- 提示消息 -->

@@ -17,6 +17,15 @@
   --text-secondary: #6b7280;
   --border: #e5e7eb;
   --shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+
+  /* 金色邊界線 */
+  --gold: #c9a227;
+  --gold-wash: rgba(201, 162, 39, 0.14);
+  /* 區域之間的間隙底色（從縫隙露出來，襯托金色邊框） */
+  --frame: #e7edf5;
+  /* 極小間隙 */
+  --gap: 4px;
+  --radius: 6px;
 }
 
 .dark-mode {
@@ -26,13 +35,19 @@
   --text-secondary: #94a3b8;
   --border: #334155;
   --shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+
+  --gold: #d9be6a;
+  --gold-wash: rgba(217, 190, 106, 0.16);
+  --frame: #060b16;
 }
 
 body {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-  background: var(--bg);
+  background: var(--frame);
   color: var(--text);
   height: 100vh;
+  /* dvh = 動態視口高度，iOS Safari 地址欄收起/展開時不會把狀態列頂出畫面 */
+  height: 100dvh;
   overflow: hidden;
   transition: background 0.3s, color 0.3s;
 }
@@ -41,6 +56,22 @@ body {
   display: flex;
   flex-direction: column;
   height: 100vh;
+  height: 100dvh;
+  /* 區域之間統一留極小間隙，外圈也留一圈 */
+  gap: var(--gap);
+  /* iPhone 瀏海/底部橫條：用 max() 讓間隙至少 4px，有安全區時自動讓位 */
+  padding: max(var(--gap), env(safe-area-inset-top))
+           max(var(--gap), env(safe-area-inset-right))
+           max(var(--gap), env(safe-area-inset-bottom))
+           max(var(--gap), env(safe-area-inset-left));
+  background: var(--frame);
+}
+
+/* 每個區域：金色細邊框 + 自帶底色，形成明確邊界 */
+.region {
+  border: 1px solid var(--gold);
+  border-radius: var(--radius);
+  background: var(--bg-secondary);
 }
 
 /* 工具列 */
@@ -48,10 +79,8 @@ body {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 12px 16px;
-  background: var(--bg-secondary);
-  border-bottom: 1px solid var(--border);
-  box-shadow: var(--shadow);
+  padding: 8px 12px;
+  flex: 0 0 auto;
   z-index: 100;
 }
 
@@ -75,6 +104,24 @@ body {
   display: block;
 }
 
+/* todo 卡片模式徽章：打開 todo-*.json 結構時顯示，提示用戶保存會合併原結構 */
+.todo-badge {
+  display: none;            /* 預設隱藏，JS 依 state.todoMode 切換 */
+  margin-left: 8px;
+  padding: 2px 8px;
+  font-size: 11px;
+  font-weight: 500;
+  color: #fff;
+  background: var(--gold);
+  border-radius: 10px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.dark-mode .todo-badge {
+  background: var(--gold);
+  color: #1a1a1a;
+}
+
 /* 按鈕樣式 */
 .btn {
   display: flex;
@@ -92,24 +139,6 @@ body {
 
 .btn:active {
   transform: scale(0.96);
-}
-
-.btn-primary {
-  background: var(--primary);
-  color: white;
-}
-
-.btn-primary:hover {
-  background: var(--primary-dark);
-}
-
-.btn-success {
-  background: var(--success);
-  color: white;
-}
-
-.btn-success:hover {
-  background: var(--success-dark);
 }
 
 .btn-secondary {
@@ -130,40 +159,185 @@ body {
   display: inline;
 }
 
-/* 編輯器區域 */
+/* 視圖切換頁簽 */
+.tabbar {
+  display: flex;
+  gap: var(--gap);
+  padding: var(--gap);
+  flex: 0 0 auto;
+}
+
+.tab {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 7px 8px;
+  min-width: 0;
+  border: 1px solid transparent;
+  border-radius: calc(var(--radius) - 2px);
+  background: transparent;
+  color: var(--text-secondary);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: color 0.2s, background 0.2s, border-color 0.2s;
+}
+
+.tab:active {
+  transform: scale(0.97);
+}
+
+.tab:hover {
+  color: var(--text);
+  background: var(--bg);
+}
+
+.tab.active {
+  border-color: var(--gold);
+  background: var(--gold-wash);
+  color: var(--text);
+}
+
+.tab .label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Markdown 編輯工具列（輕量版，金色主題） */
+.md-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px 6px;
+  flex: 0 0 auto;
+  flex-wrap: nowrap;
+  /* ⚠️ 不能设 overflow-x:auto —— 一旦 overflow 非 visible，工具栏变成滚动容器，
+     会裁剪 position:fixed 的下拉菜单，导致菜单被后面的编辑区挡住看不见。 */
+  overflow: visible;
+}
+
+.md-dropdown {
+  position: relative;
+  display: inline-flex;
+  flex-shrink: 0;
+}
+
+.md-dropbtn {
+  padding: 4px 8px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-family: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  transition: color 0.15s, background 0.15s, border-color 0.15s;
+}
+
+.md-dropbtn:hover,
+.md-dropdown.open > .md-dropbtn {
+  background: var(--gold-wash);
+  color: var(--text);
+  border-color: var(--gold);
+}
+
+.md-dropbtn .caret {
+  font-size: 9px;
+  opacity: 0.7;
+}
+
+.md-dropmenu {
+  display: none;
+  position: fixed;            /* 脱离 toolbar 的 overflow 裁剪 */
+  min-width: 150px;
+  max-height: 70vh;
+  overflow-y: auto;
+  background: var(--bg-secondary);
+  border: 1px solid var(--gold);
+  border-radius: 6px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.15);
+  z-index: 10000;             /* 必须高于所有区域（含编辑器区），确保不被遮挡 */
+  padding: 4px 0;
+}
+
+.md-dropdown.open > .md-dropmenu {
+  display: block;
+}
+
+.md-dropitem {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 6px 12px;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  font-size: 13px;
+  font-family: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+  line-height: 1.4;
+}
+
+.md-dropitem:hover {
+  background: var(--gold-wash);
+}
+
+.md-dropitem kbd {
+  float: right;
+  font-size: 11px;
+  color: var(--text-secondary);
+  margin-left: 12px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+/* 編輯器區域：本身不畫框，讓兩個 pane 各自成為金色區域 */
 .editor-container {
   flex: 1;
   display: flex;
+  flex-direction: row;
+  gap: var(--gap);
   overflow: hidden;
+  min-height: 0;
   position: relative;
 }
 
 .pane {
-  flex: 1;
-  overflow: auto;
-  padding: 20px;
+  flex: 1 1 50%;
+  min-width: 0;
+  min-height: 0;
+  padding: 12px 14px;
 }
 
+/* 可見性只用容器上的 data-view 控制，JS 不必逐個加減 class */
+.editor-container[data-view="edit"] .preview-pane { display: none; }
+.editor-container[data-view="preview"] .editor-pane { display: none; }
+
 .editor-pane {
+  display: flex;
+  overflow: hidden;
   background: var(--bg-secondary);
 }
 
 .preview-pane {
-  background: var(--bg);
-  display: none;
-}
-
-.preview-pane.active {
   display: block;
-}
-
-.editor-pane.hidden {
-  display: none;
+  overflow: auto;
+  /* 與編輯區用不同底色，一眼分得清哪邊是原文、哪邊是渲染結果 */
+  background: var(--bg);
 }
 
 #editor {
+  flex: 1;
   width: 100%;
-  height: 100%;
+  min-width: 0;
   border: none;
   outline: none;
   resize: none;
@@ -261,11 +435,21 @@ body {
 .status-bar {
   display: flex;
   justify-content: space-between;
-  padding: 8px 16px;
-  background: var(--bg-secondary);
-  border-top: 1px solid var(--border);
+  align-items: center;
+  gap: 12px;
+  padding: 7px 12px;
+  flex: 0 0 auto;
   font-size: 12px;
   color: var(--text-secondary);
+}
+
+/* 版本號：狀態列左下角，金色小字，方便確認跑的是不是最新版 */
+.app-version {
+  flex-shrink: 0;
+  font-size: 11px;
+  color: var(--gold);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  letter-spacing: 0.02em;
 }
 
 /* Toast 提示 */
@@ -306,16 +490,12 @@ body {
 /* 響應式設計 */
 @media (max-width: 768px) {
   .toolbar {
-    padding: 10px 12px;
+    padding: 6px 8px;
     gap: 8px;
   }
 
-  .btn .label {
-    display: none;
-  }
-
   .btn {
-    padding: 8px 12px;
+    padding: 8px 10px;
   }
 
   .file-name {
@@ -323,25 +503,22 @@ body {
   }
 
   .pane {
-    padding: 16px;
+    padding: 10px 12px;
   }
 
   #editor {
     font-size: 14px;
   }
-}
 
-@media (min-width: 769px) {
-  .editor-container {
-    flex-direction: row;
+  .tab {
+    font-size: 12px;
+    padding: 6px 4px;
+    gap: 4px;
   }
 
-  .editor-pane, .preview-pane {
-    flex: 1;
-  }
-
-  .preview-pane.active {
-    border-left: 1px solid var(--border);
+  /* 窄屏分屏改成上下各半；左右各半會擠到沒法看 */
+  .editor-container[data-view="split"] {
+    flex-direction: column;
   }
 }
 
