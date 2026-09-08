@@ -29,6 +29,7 @@
       --seg-active: #ffffff;
       --grid-line: #ececf1;
       --modal-overlay: rgba(0, 0, 0, 0.4);
+      --list-alt: #f5f5f7;
     }
 
     body.dark {
@@ -42,6 +43,7 @@
       --seg-active: #636366;
       --grid-line: #2c2c2e;
       --modal-overlay: rgba(0, 0, 0, 0.6);
+      --list-alt: #131315;
     }
 
     * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -251,6 +253,8 @@
       overflow: hidden;
       white-space: nowrap;
       text-overflow: ellipsis;
+      background: var(--ev-color);
+      border: 1px solid var(--ev-color);
     }
     .ev-chip.all-day {
       color: #fff;
@@ -321,6 +325,8 @@
       line-height: 1.3;
       overflow: hidden;
       cursor: pointer;
+      background: var(--ev-color);
+      border: 1px solid var(--ev-color);
       border-left: 3px solid rgba(0,0,0,0.2);
       z-index: 2;
     }
@@ -361,6 +367,168 @@
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
+    }
+
+    /* 深色模式：事件颜色只渲染为边框，不填充背景、不改字体颜色 */
+    body.dark .ev-chip,
+    body.dark .ev-block {
+      background: transparent;
+      border-color: var(--ev-color);
+    }
+
+    /* 事件上的「关联 Todo 卡片」标记：每关联一个显示一个 */
+    .ev-link {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 14px;
+      height: 14px;
+      padding: 0 2px;
+      margin-left: 3px;
+      font-size: 9px;
+      line-height: 1;
+      border-radius: 7px;
+      background: rgba(0, 0, 0, 0.18);
+      color: #fff;
+      cursor: pointer;
+      vertical-align: middle;
+      flex: none;
+      white-space: nowrap;
+    }
+    .ev-link:hover { background: rgba(0, 0, 0, 0.38); }
+    body.dark .ev-link {
+      background: rgba(0, 122, 255, 0.22);
+      color: var(--blue);
+    }
+    body.dark .ev-link:hover { background: var(--blue); color: #fff; }
+
+    /* ===== 标签（参考 TodoList 抽屉设定） ===== */
+    .tag-selector { display: flex; flex-direction: column; gap: 6px; }
+    .tag-input {
+      width: 100%;
+      padding: 9px 12px;
+      border: 1px solid var(--border);
+      border-radius: 9px;
+      background: var(--bg);
+      color: var(--text);
+      font-size: 15px;
+      font-family: inherit;
+      box-sizing: border-box;
+    }
+    .tag-input:focus { outline: none; border-color: var(--blue); }
+    .tag-options { display: flex; flex-wrap: wrap; gap: 6px; }
+    .tag-option {
+      padding: 3px 10px;
+      border-radius: 50px;
+      font-size: 12px;
+      border: 1px solid var(--border);
+      background: var(--bg);
+      color: var(--text-secondary);
+      cursor: pointer;
+      user-select: none;
+      font-weight: 500;
+      transition: all .15s;
+    }
+    .tag-option:hover { border-color: var(--blue); color: var(--blue); }
+    .tag-option.selected {
+      background: rgba(0, 122, 255, 0.12);
+      color: var(--blue);
+      border-color: var(--blue);
+    }
+
+    /* 标签展示色（12 色，与 TodoList 一致） */
+    .tag-color-1 { background:#dbeafe; color:#1d4ed8; }
+    .tag-color-2 { background:#fce7f3; color:#be185d; }
+    .tag-color-3 { background:#fee2e2; color:#dc2626; }
+    .tag-color-4 { background:#dcfce7; color:#166534; }
+    .tag-color-5 { background:#fef3c7; color:#d97706; }
+    .tag-color-6 { background:#e0e7ff; color:#6366f1; }
+    .tag-color-7 { background:#d1fae5; color:#059669; }
+    .tag-color-8 { background:#f3e8ff; color:#9333ea; }
+    .tag-color-9 { background:#fed7aa; color:#ea580c; }
+    .tag-color-10 { background:#e2e8f0; color:#475569; }
+    .tag-color-11 { background:#fef9c3; color:#ca8a04; }
+    .tag-color-12 { background:#ede9fe; color:#7c3aed; }
+
+    /* 事件条上的标签圆点（用深色主题色填充，悬停显示标签名） */
+    .ev-tags { display: inline-flex; gap: 3px; margin-left: 2px; align-items: center; flex: none; }
+    .tag-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; flex: none; }
+    .tag-dot.tag-color-1 { background:#1d4ed8; }
+    .tag-dot.tag-color-2 { background:#be185d; }
+    .tag-dot.tag-color-3 { background:#dc2626; }
+    .tag-dot.tag-color-4 { background:#166534; }
+    .tag-dot.tag-color-5 { background:#d97706; }
+    .tag-dot.tag-color-6 { background:#6366f1; }
+    .tag-dot.tag-color-7 { background:#059669; }
+    .tag-dot.tag-color-8 { background:#9333ea; }
+    .tag-dot.tag-color-9 { background:#ea580c; }
+    .tag-dot.tag-color-10 { background:#475569; }
+    .tag-dot.tag-color-11 { background:#ca8a04; }
+    .tag-dot.tag-color-12 { background:#7c3aed; }
+
+    /* ===== 过滤工具栏（搜索 / 状态 / 标签过滤） ===== */
+    .cal-toolbar {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 12px;
+      border-bottom: 1px solid var(--border);
+      background: var(--bg);
+      flex-wrap: wrap;
+      flex-shrink: 0;
+    }
+    .cal-toolbar .tb-search input {
+      padding: 5px 10px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--card);
+      color: var(--text);
+      font-size: 13px;
+      width: 150px;
+      outline: none;
+      box-sizing: border-box;
+    }
+    .cal-toolbar .tb-search input:focus { border-color: var(--blue); }
+    .cal-toolbar .status-btn {
+      padding: 4px 10px;
+      border: 1px solid var(--border);
+      border-radius: 7px;
+      background: var(--card);
+      color: var(--text-secondary);
+      font-size: 12px;
+      cursor: pointer;
+    }
+    .cal-toolbar .status-btn.active {
+      background: var(--blue);
+      color: #fff;
+      border-color: var(--blue);
+    }
+    .tb-tags { display: flex; align-items: center; gap: 6px; }
+    .filter-label { font-size: 12px; color: var(--text-secondary); }
+    .tag-filter { display: flex; gap: 6px; flex-wrap: wrap; }
+    .tag-chip {
+      padding: 3px 9px;
+      border-radius: 50px;
+      border: 1px solid var(--border);
+      font-size: 12px;
+      cursor: pointer;
+      color: var(--text-secondary);
+      background: var(--card);
+      user-select: none;
+    }
+    .tag-chip.active {
+      background: var(--blue);
+      color: #fff;
+      border-color: var(--blue);
+    }
+
+    /* 详情浮层标签 chip */
+    .ev-popover .pp-tags { margin-top: 4px; display: flex; flex-wrap: wrap; gap: 4px; }
+    .ev-popover .pp-tag {
+      padding: 1px 8px;
+      border-radius: 50px;
+      font-size: 11px;
+      font-weight: 500;
     }
 
     /* ===== 弹窗 ===== */
@@ -436,6 +604,26 @@
     }
     .color-dot.selected { border-color: var(--text); }
 
+    /* 未保存变更确认弹窗 */
+    .confirm-overlay { z-index: 110; }
+    .confirm-modal { width: min(400px, 90vw); }
+    .confirm-modal .confirm-msg {
+      font-size: 14px;
+      color: var(--text);
+      line-height: 1.6;
+      margin-bottom: 6px;
+      word-break: break-word;
+    }
+    .confirm-modal .confirm-fields {
+      font-size: 13px;
+      color: var(--text-secondary);
+      line-height: 1.5;
+      background: var(--bg-elevated);
+      border-radius: 8px;
+      padding: 8px 10px;
+      word-break: break-word;
+    }
+
     .modal .actions {
       display: flex;
       gap: 10px;
@@ -463,6 +651,64 @@
       color: var(--text-secondary);
       font-size: 14px;
       pointer-events: none;
+    }
+
+    /* ===== 事件列表视图（表格） ===== */
+    .list-scroll {
+      position: absolute;
+      inset: 0;
+      overflow-y: auto;
+      overscroll-behavior: contain;
+    }
+    .lt-table { padding: 0 8px 12px; }
+    .lt-row {
+      display: grid;
+      grid-template-columns: 110px 86px minmax(150px, 1.1fr) 1fr;
+      gap: 10px;
+      align-items: center;
+      min-height: 30px;
+      padding: 3px 10px;
+      border-radius: 4px;
+      font-size: 13px;
+      cursor: pointer;
+    }
+    .lt-row.alt { background: var(--list-alt); }
+    .lt-row.lt-head {
+      position: sticky;
+      top: 0;
+      z-index: 2;
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--text-secondary);
+      background: var(--bg);
+      border-bottom: 1px solid var(--border);
+      min-height: 26px;
+      border-radius: 0;
+      cursor: default;
+    }
+    .lt-row.lt-head:hover { background: var(--bg); }
+    .lt-row:hover { background: var(--bg-elevated); }
+    .lt-date { white-space: nowrap; min-width: 0; font-weight: 500; }
+    .lt-date .week { color: var(--text-secondary); font-size: 12px; font-weight: 400; }
+    .lt-date .today-badge {
+      font-size: 10px;
+      font-weight: 600;
+      color: var(--red);
+      border: 1px solid var(--red);
+      border-radius: 4px;
+      padding: 0 3px;
+      margin-left: 4px;
+    }
+    .lt-time { color: var(--text-secondary); white-space: nowrap; }
+    .lt-main { display: flex; align-items: center; gap: 6px; min-width: 0; font-weight: 500; }
+    .lt-main .t { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .lt-swatch { width: 4px; height: 15px; border-radius: 2px; flex-shrink: 0; }
+    .lt-info {
+      color: var(--text-secondary);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      min-width: 0;
     }
 
     /* ===== 事件详情浮层 ===== */
@@ -516,7 +762,100 @@
       gap: 8px;
     }
     .ev-popover .pp-actions .btn { flex: 1; }
+
+    /* ===== 关联 Todo 卡片 ===== */
+    .todo-link-wrap { position: relative; }
+    .todo-link-panel {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      min-height: 38px;
+      padding: 6px 8px;
+      border: 1px dashed var(--border);
+      border-radius: 8px;
+      cursor: text;
+      outline: none;
+      transition: border-color .15s;
+    }
+    .todo-link-panel:hover, .todo-link-panel:focus { border-color: var(--blue); }
+    .todo-placeholder { font-size: 12px; color: var(--text-secondary); line-height: 24px; }
+    .todo-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 2px 6px 2px 10px;
+      border-radius: 12px;
+      border: 1px solid var(--blue);
+      background: rgba(0, 122, 255, 0.12);
+      color: var(--blue);
+      font-size: 12px;
+      font-weight: 500;
+      max-width: 100%;
+    }
+    .todo-chip .t-chip-text {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      max-width: 180px;
+    }
+    .todo-chip .t-chip-x {
+      width: 16px;
+      height: 16px;
+      line-height: 14px;
+      text-align: center;
+      border-radius: 50%;
+      cursor: pointer;
+      color: var(--blue);
+      flex-shrink: 0;
+    }
+    .todo-chip .t-chip-x:hover { background: rgba(0, 122, 255, 0.25); }
+    .todo-dropdown {
+      position: absolute;
+      top: calc(100% + 4px);
+      left: 0;
+      right: 0;
+      max-height: 220px;
+      overflow-y: auto;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+      z-index: 20;
+      display: none;
+    }
+    .todo-dropdown.show { display: block; }
+    .todo-dropdown-item {
+      padding: 8px 10px;
+      font-size: 13px;
+      cursor: pointer;
+      color: var(--text);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .todo-dropdown-item:hover { background: rgba(0, 122, 255, 0.08); }
+    .todo-dropdown-empty { padding: 10px; font-size: 12px; color: var(--text-secondary); text-align: center; }
+
+    .ev-popover .pp-todos {
+      margin-top: 4px;
+      padding-top: 8px;
+      border-top: 1px solid var(--border);
+    }
+    .ev-popover .pp-todos-title {
+      font-size: 12px;
+      color: var(--text-secondary);
+      margin-bottom: 6px;
+    }
+    .ev-popover .pp-todo-item {
+      font-size: 13px;
+      padding: 4px 0;
+      cursor: pointer;
+      color: var(--blue);
+      word-break: break-word;
+    }
+    .ev-popover .pp-todo-item:hover { text-decoration: underline; }
   </style>
+  <script src="../todolist/vendor/marked.min.js"></script>
 </head>
 <body>
   <div class="cal-header">
@@ -526,11 +865,26 @@
     <button class="cal-nav-btn" id="prevBtn" title="上一段">‹</button>
     <button class="cal-nav-btn" id="nextBtn" title="下一段">›</button>
     <div class="cal-seg" id="viewSeg">
+      <button data-view="list">事件</button>
       <button data-view="day">日</button>
       <button data-view="week">周</button>
       <button data-view="month">月</button>
     </div>
     <button class="cal-add-btn" id="addBtn" title="新增行程">＋</button>
+  </div>
+
+  <div class="cal-toolbar">
+    <div class="tb-search">
+      <input type="text" id="searchInput" placeholder="🔍 搜索行程...">
+    </div>
+    <div class="tb-status" id="statusFilter">
+      <button class="status-btn active" data-status="all" title="全部">全部</button>
+      <button class="status-btn" data-status="upcoming" title="只看今天及今后">今后</button>
+    </div>
+    <div class="tb-tags">
+      <span class="filter-label">标签:</span>
+      <div class="tag-filter" id="tagFilter"></div>
+    </div>
   </div>
 
   <div class="cal-weekdays" id="weekdays"></div>
@@ -578,10 +932,37 @@
         <label>颜色</label>
         <div class="color-palette" id="colorPalette"></div>
       </div>
+      <div class="field">
+        <label>关联 Todo 卡片（双击或按 ? 添加）</label>
+        <div class="todo-link-wrap">
+          <div class="todo-link-panel" id="todoLinkPanel" tabindex="0" title="双击或按 ? 打开选单"></div>
+          <div class="todo-dropdown" id="todoDropdown"></div>
+        </div>
+      </div>
+      <div class="field">
+        <label>标签（回车新增，点击选择）</label>
+        <div class="tag-selector">
+          <input type="text" class="tag-input" id="tagInput" placeholder="#标签">
+          <div class="tag-options" id="tagOptions"></div>
+        </div>
+      </div>
       <div class="actions">
         <button class="btn btn-danger" id="deleteBtn" style="display:none;">删除</button>
         <button class="btn btn-ghost" id="cancelBtn">取消</button>
         <button class="btn btn-primary" id="saveBtn">保存</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 未保存变更确认弹窗 -->
+  <div class="modal-overlay confirm-overlay" id="confirmOverlay">
+    <div class="modal confirm-modal">
+      <h3>未保存的更改</h3>
+      <p class="confirm-msg" id="confirmMsg"></p>
+      <div class="actions">
+        <button class="btn btn-ghost" id="confirmCancelBtn">取消</button>
+        <button class="btn btn-ghost" id="confirmDiscardBtn">不保存</button>
+        <button class="btn btn-primary" id="confirmSaveBtn">保存</button>
       </div>
     </div>
   </div>
@@ -598,11 +979,19 @@
       const WEEK_START = 1; // 周一为一周开始
 
       const state = {
-        view: 'month',       // month | week | day
+        view: 'month',       // month | week | day | list
         cursor: new Date(),  // 锚点日期
         events: [],          // 行程数组
+        todos: [],           // Todo 卡片列表（用于关联）
+        linkedTodoIds: [],   // 当前弹窗所选关联卡片 id
+        selectedTags: [],    // 当前弹窗所选标签
+        tagFilter: [],       // 标签过滤（空 = 全部，OR 逻辑）
+        statusFilter: 'all', // 'all' | 'upcoming'（今后）
+        searchQuery: '',     // 搜索关键词
         editingId: null,     // 正在编辑的行程 id
         popoverId: null,     // 当前详情浮层展示的事件 id（用于 toggle）
+        snapshot: null,      // 编辑弹窗打开时的字段快照（用于变更检测）
+        confirmCallback: null, // 未保存确认框的回调
       };
 
       const storeKey = 'calendar';
@@ -665,6 +1054,228 @@
 
       function genId() { return 'ev-' + Date.now() + '-' + Math.random().toString(36).slice(2, 7); }
 
+      // ===== Todo 卡片（关联） =====
+      async function loadTodosList() {
+        try {
+          if (window.electronAPI && typeof window.electronAPI.loadTodos === 'function') {
+            const res = await window.electronAPI.loadTodos();
+            state.todos = Array.isArray(res && res.data) ? res.data : [];
+          } else {
+            state.todos = [];
+          }
+        } catch (e) {
+          console.error('[Calendar] 加载 Todo 卡片失败:', e);
+          state.todos = [];
+        }
+      }
+
+      // 卡片标题：与 TodoList 编辑器页签 / 卡片标题同一套提取逻辑
+      function todoTitle(todo) {
+        const t = extractFirstLineTitle(todo && todo.text || '');
+        return (t || '(无标题)').slice(0, 80);
+      }
+
+      // 从 markdown 文本提取「第一段纯文本标题」——与 TodoList 的 extractFirstLineTitle 一致：
+      // 取首个空行前的整段，剥 HTML 标签与 markdown 标记符（# > 列表 代码 加粗 斜体 删除线），折叠换行。
+      function extractFirstLineTitle(text) {
+        if (!text) return '';
+        let firstBlock = text.split(/\r?\n\r?\n/)[0] || '';
+        if (text.indexOf('\n\n') === -1 && text.indexOf('\r\n\r\n') === -1) {
+          firstBlock = firstBlock.split(/\r?\n/)[0] || '';
+        }
+        if (!firstBlock) return '';
+        let plain;
+        try {
+          const doc = new DOMParser().parseFromString('<div>' + firstBlock + '</div>', 'text/html');
+          plain = (doc.body.textContent || '');
+        } catch (e) {
+          plain = firstBlock.replace(/<!--[\s\S]*?-->/g, '')
+            .replace(/<\/?[a-zA-Z][^>]*>/g, '')
+            .replace(/&nbsp;/g, ' ')
+            .replace(/&amp;/g, '&')
+            .replace(/&lt;/g, '<')
+            .replace(/&gt;/g, '>')
+            .replace(/&quot;/g, '"')
+            .replace(/&#39;/g, "'");
+        }
+        plain = plain
+          .replace(/^#+\s*/, '')
+          .replace(/^>\s*/, '')
+          .replace(/^[-*+]\s+/, '')
+          .replace(/^\d+\.\s+/, '')
+          .replace(/`([^`]+)`/g, '$1')
+          .replace(/\*\*([^*]+)\*\*/g, '$1')
+          .replace(/\*([^*]+)\*/g, '$1')
+          .replace(/__([^_]+)__/g, '$1')
+          .replace(/_([^_]+)_/g, '$1')
+          .replace(/~~([^~]+)~~/g, '$1')
+          .replace(/\r?\n/g, ' ');
+        return plain.trim();
+      }
+
+      // 事件条上的「关联卡片标记」HTML：每关联一个显示一个 🔗，悬停 title 显示卡片名
+      function linkTagsHtml(ev) {
+        const ids = ev.todoIds || [];
+        if (!ids.length) return '';
+        return ids.map(id => {
+          const t = state.todos.find(x => x.id === id);
+          const name = t ? todoTitle(t) : id;
+          return '<span class="ev-link" data-tid="' + escapeHtml(id) + '" title="🔗 ' + escapeHtml(name) + '">🔗</span>';
+        }).join('');
+      }
+
+      // ===== 标签（参考 TodoList） =====
+      function getAllEventTags() {
+        const s = new Set();
+        state.events.forEach(ev => (ev.tags || []).forEach(t => { if (t) s.add(t); }));
+        return Array.from(s);
+      }
+
+      function getTagColorClass(tag) {
+        let hash = 0;
+        for (let i = 0; i < tag.length; i++) hash = tag.charCodeAt(i) + ((hash << 5) - hash);
+        return 'tag-color-' + (Math.abs(hash) % 12 + 1);
+      }
+
+      function renderTagSelector() {
+        const opts = $('tagOptions');
+        if (!opts) return;
+        const all = Array.from(new Set(getAllEventTags().concat(state.selectedTags)));
+        opts.innerHTML = all.map(t => {
+          const sel = state.selectedTags.indexOf(t) >= 0;
+          return '<span class="tag-option' + (sel ? ' selected' : '') + '" data-tag="' + escapeHtml(t) + '" title="' + escapeHtml(t) + '">' + escapeHtml(t) + '</span>';
+        }).join('');
+      }
+
+      // 事件条上的标签圆点
+      function tagsDotsHtml(ev) {
+        const tags = (ev.tags || []).filter(Boolean);
+        if (!tags.length) return '';
+        return '<span class="ev-tags">' + tags.map(t =>
+          '<span class="tag-dot ' + getTagColorClass(t) + '" title="' + escapeHtml(t) + '"></span>'
+        ).join('') + '</span>';
+      }
+
+      // 工具栏：标签过滤 chips
+      function renderTagFilter() {
+        const el = $('tagFilter');
+        if (!el) return;
+        const tags = getAllEventTags();
+        const allActive = state.tagFilter.length === 0;
+        let html = '<span class="tag-chip' + (allActive ? ' active' : '') + '" data-tag="">全部</span>';
+        tags.forEach(t => {
+          const on = state.tagFilter.indexOf(t) >= 0;
+          html += '<span class="tag-chip' + (on ? ' active' : '') + '" data-tag="' + escapeHtml(t) + '">' + escapeHtml(t) + '</span>';
+        });
+        el.innerHTML = html;
+      }
+
+      function updateStatusActive() {
+        $('statusFilter').querySelectorAll('.status-btn').forEach(b => {
+          b.classList.toggle('active', b.getAttribute('data-status') === state.statusFilter);
+        });
+      }
+
+      // 应用「状态 / 标签 / 搜索」过滤后的行程列表
+      function filteredEvents() {
+        const today = fmtDate(new Date());
+        return state.events.filter(ev => {
+          if (state.statusFilter === 'upcoming' && ev.date < today) return false;
+          if (state.tagFilter.length > 0) {
+            const tags = ev.tags || [];
+            if (!state.tagFilter.some(t => tags.includes(t))) return false;
+          }
+          if (state.searchQuery) {
+            const q = state.searchQuery;
+            const hay = [ev.title, ev.location, ev.notes || '', (ev.tags || []).join(' ')].join(' ').toLowerCase();
+            if (!hay.includes(q)) return false;
+          }
+          return true;
+        });
+      }
+
+      function renderTodoLinkPanel() {
+        const panel = $('todoLinkPanel');
+        if (!panel) return;
+        if (!state.linkedTodoIds.length) {
+          panel.innerHTML = '<div class="todo-placeholder">' +
+            (state.todos.length ? '双击或按 ? 选择要关联的卡片' : '暂无 Todo 卡片') + '</div>';
+          return;
+        }
+        panel.innerHTML = state.linkedTodoIds.map(id => {
+          const t = state.todos.find(x => x.id === id);
+          const name = t ? todoTitle(t) : id;
+          return '<span class="todo-chip" data-id="' + escapeHtml(id) + '" title="' + escapeHtml(name) + '">' +
+            '<span class="t-chip-text">' + escapeHtml(name) + '</span>' +
+            '<span class="t-chip-x" data-id="' + escapeHtml(id) + '" title="移除">✕</span></span>';
+        }).join('');
+      }
+
+      function renderTodoDropdown() {
+        const dd = $('todoDropdown');
+        if (!dd) return;
+        const candidates = state.todos.filter(t => state.linkedTodoIds.indexOf(t.id) < 0);
+        if (!candidates.length) {
+          dd.innerHTML = '<div class="todo-dropdown-empty">已无更多卡片可选</div>';
+          return;
+        }
+        dd.innerHTML = candidates.map(t =>
+          '<div class="todo-dropdown-item" data-id="' + escapeHtml(t.id) + '">' + escapeHtml(todoTitle(t)) + '</div>'
+        ).join('');
+      }
+
+      function openTodoDropdown() {
+        if (!state.todos.length) return;
+        renderTodoDropdown();
+        $('todoDropdown').classList.add('show');
+      }
+      function closeTodoDropdown() { $('todoDropdown').classList.remove('show'); }
+      function toggleTodoDropdown() {
+        if ($('todoDropdown').classList.contains('show')) closeTodoDropdown();
+        else openTodoDropdown();
+      }
+      function addTodoLink(id) {
+        if (!id || state.linkedTodoIds.indexOf(id) >= 0) return;
+        state.linkedTodoIds.push(id);
+        renderTodoLinkPanel();
+        const candidates = state.todos.filter(t => state.linkedTodoIds.indexOf(t.id) < 0);
+        if (candidates.length) renderTodoDropdown();
+        else closeTodoDropdown();
+      }
+      function removeTodoLink(id) {
+        const i = state.linkedTodoIds.indexOf(id);
+        if (i >= 0) state.linkedTodoIds.splice(i, 1);
+        renderTodoLinkPanel();
+        if ($('todoDropdown').classList.contains('show')) renderTodoDropdown();
+      }
+
+      // 用 marked 把卡片 markdown 渲染成 html，供 MD 浏览器（open-card-window）展示
+      function renderTodoHtml(todo) {
+        let text = (todo && todo.text) || '';
+        if (typeof marked !== 'undefined' && typeof marked.parse === 'function') {
+          marked.setOptions({ breaks: true, gfm: true });
+          return marked.parse(text);
+        }
+        return '<pre>' + escapeHtml(text) + '</pre>';
+      }
+
+      async function browseTodo(id) {
+        const todo = state.todos.find(t => t.id === id);
+        if (!todo) { alert('未找到该 Todo 卡片'); return; }
+        if (window.electronAPI && typeof window.electronAPI.invoke === 'function') {
+          const html = renderTodoHtml(todo);
+          const dark = document.body.classList.contains('dark');
+          await window.electronAPI.invoke('open-card-window', {
+            id: todo.id,
+            title: '卡片：' + todoTitle(todo),
+            html: html,
+            dark: dark,
+          });
+        } else {
+          alert('当前环境不支持打开卡片窗口');
+        }
+      }
+
       // ===== DOM 引用 =====
       const $ = (id) => document.getElementById(id);
 
@@ -672,8 +1283,15 @@
       function render() {
         renderTitle();
         renderWeekdays();
+        renderTagFilter();
+        updateStatusActive();
+        // 列表视图隐藏前后翻页按钮（全量展示，无需翻页）
+        const isList = state.view === 'list';
+        $('prevBtn').style.visibility = isList ? 'hidden' : 'visible';
+        $('nextBtn').style.visibility = isList ? 'hidden' : 'visible';
         if (state.view === 'month') renderMonth();
         else if (state.view === 'week') renderWeek();
+        else if (state.view === 'list') renderList();
         else renderDay();
         updateSegActive();
       }
@@ -684,6 +1302,8 @@
         const m = d.getMonth() + 1;
         if (state.view === 'month' || state.view === 'week') {
           $('calTitle').innerHTML = y + '年' + m + '月';
+        } else if (state.view === 'list') {
+          $('calTitle').innerHTML = '事件<span class="sub">' + filteredEvents().length + ' 个行程</span>';
         } else {
           $('calTitle').innerHTML = m + '月' + d.getDate() + '日 ' +
             '<span class="sub">' + WD_FULL[(d.getDay() + 6) % 7] + '</span>';
@@ -719,7 +1339,7 @@
 
       // ---- 事件工具 ----
       function eventsOn(date) {
-        return state.events.filter(e => e.date === fmtDate(date));
+        return filteredEvents().filter(e => e.date === fmtDate(date));
       }
       function sortEvents(arr) {
         return arr.slice().sort((a, b) => {
@@ -755,9 +1375,9 @@
             const show = evs.slice(0, 3);
             show.forEach(e => {
               const c = e.color || COLORS[0];
-              html += '<div class="ev-chip" data-id="' + e.id + '" style="background:' + c + '">' +
+              html += '<div class="ev-chip" data-id="' + e.id + '" style="--ev-color:' + c + '">' +
                 (e.allDay ? '⏰ ' : pad(timeToMin(e.startTime) / 60 | 0) + ':' + pad(timeToMin(e.startTime) % 60) + ' ') +
-                escapeHtml(e.title) + '</div>';
+                escapeHtml(e.title) + linkTagsHtml(e) + tagsDotsHtml(e) + '</div>';
             });
             if (evs.length > 3) html += '<div class="ev-more">+' + (evs.length - 3) + ' 更多</div>';
             html += '</div></div>';
@@ -817,8 +1437,8 @@
           allDayByCol.forEach((arr, ci) => {
             html += '<div class="allday-col" data-date="' + fmtDate(dayDates[ci]) + '">';
             arr.forEach(e => {
-              html += '<div class="ev-block all-day" data-id="' + e.id + '" style="background:' + (e.color || COLORS[0]) + '">' +
-                escapeHtml(e.title) + '</div>';
+              html += '<div class="ev-block all-day" data-id="' + e.id + '" style="--ev-color:' + (e.color || COLORS[0]) + '">' +
+                escapeHtml(e.title) + linkTagsHtml(e) + tagsDotsHtml(e) + '</div>';
             });
             html += '</div>';
           });
@@ -847,8 +1467,8 @@
             const width = 100 / cols;
             const left = c * width;
             const cbg = e.color || COLORS[0];
-            html += '<div class="ev-block" data-id="' + e.id + '" style="top:' + top + 'px;height:' + height + 'px;left:calc(' + left + '% + 1px);width:calc(' + width + '% - 3px);background:' + cbg + '">' +
-              '<div class="t">' + escapeHtml(e.title) + '</div>' +
+            html += '<div class="ev-block" data-id="' + e.id + '" style="top:' + top + 'px;height:' + height + 'px;left:calc(' + left + '% + 1px);width:calc(' + width + '% - 3px);--ev-color:' + cbg + '">' +
+              '<div class="t">' + escapeHtml(e.title) + linkTagsHtml(e) + tagsDotsHtml(e) + '</div>' +
               (e.location ? '<div class="loc">' + escapeHtml('📍 ' + e.location) + '</div>' : '') +
               '</div>';
           });
@@ -886,6 +1506,76 @@
         for (let i = 0; i < 7; i++) days.push(addDays(start, i));
         body.innerHTML = buildTimeGrid(days, { hourH: 48 });
         scrollToNow();
+      }
+
+      // ===== 事件列表视图（表格） =====
+      function renderList() {
+        const body = $('calBody');
+        const filtered = filteredEvents();
+        if (filtered.length === 0) {
+          const msg = state.events.length === 0 ? '暂无行程' : '没有符合过滤条件的行程';
+          body.innerHTML = '<div class="list-scroll"><div class="empty-hint">' + msg + '</div></div>';
+          return;
+        }
+
+        // 排序：日期升序，同日全天在前，再按开始时间
+        const sorted = filtered.slice().sort((a, b) => {
+          if (a.date !== b.date) return a.date < b.date ? -1 : 1;
+          if (a.allDay !== b.allDay) return a.allDay ? -1 : 1;
+          return timeToMin(a.startTime || '00:00') - timeToMin(b.startTime || '00:00');
+        });
+
+        const today = fmtDate(new Date());
+        let html = '<div class="list-scroll"><div class="lt-table">';
+        // 表头
+        html += '<div class="lt-row lt-head"><span class="lt-date">日期</span><span class="lt-time">时间</span><span class="lt-main">事件</span><span class="lt-info">地点 / 备注</span></div>';
+
+        let lastDate = null;
+        let parity = 0;
+        for (const ev of sorted) {
+          const isNewDate = ev.date !== lastDate;
+          if (isNewDate) { parity = 1 - parity; lastDate = ev.date; }
+
+          let dateCell = '';
+          if (isNewDate) {
+            const d = parseDate(ev.date);
+            const isToday = ev.date === today;
+            dateCell = (d.getMonth() + 1) + '月' + d.getDate() + '日' +
+              '<span class="week">' + WD_FULL[(d.getDay() + 6) % 7] + '</span>' +
+              (isToday ? '<span class="today-badge">今天</span>' : '');
+          }
+
+          const timeText = ev.allDay ? '全天' : (ev.startTime + '-' + ev.endTime);
+          let info = '';
+          if (ev.location) info += '📍' + ev.location;
+          if (ev.notes) info += (info ? ' · ' : '') + ev.notes;
+
+          html += '<div class="lt-row' + (parity ? ' alt' : '') + '" data-id="' + ev.id + '" data-date="' + ev.date + '">' +
+            '<span class="lt-date">' + dateCell + '</span>' +
+            '<span class="lt-time">' + timeText + '</span>' +
+            '<span class="lt-main"><span class="lt-swatch" style="background:' + (ev.color || COLORS[0]) + '"></span><span class="t">' + escapeHtml(ev.title) + linkTagsHtml(ev) + tagsDotsHtml(ev) + '</span></span>' +
+            '<span class="lt-info" title="' + escapeHtml(info) + '">' + escapeHtml(info) + '</span>' +
+            '</div>';
+        }
+        html += '</div></div>';
+        body.innerHTML = html;
+        scrollToListToday();
+      }
+
+      function scrollToListToday() {
+        requestAnimationFrame(() => {
+          const scroller = document.querySelector('.list-scroll');
+          if (!scroller) return;
+          const today = fmtDate(new Date());
+          const rows = scroller.querySelectorAll('.lt-row[data-date]');
+          if (!rows.length) return;
+          let target = null;
+          for (const r of rows) {
+            if (r.getAttribute('data-date') >= today) { target = r; break; }
+          }
+          if (!target) target = rows[rows.length - 1];
+          scroller.scrollTop = Math.max(0, target.offsetTop - 30);
+        });
       }
 
       function scrollToNow() {
@@ -933,6 +1623,30 @@
         ).join('');
       }
 
+      // 读取弹窗当前所有字段值（标题/日期/时间/地点/备注/颜色/全天）
+      function captureSnapshot() {
+        return {
+          title: $('evTitle').value,
+          date: $('evDate').value,
+          start: $('evStart').value,
+          end: $('evEnd').value,
+          location: $('evLocation').value,
+          notes: $('evNotes').value,
+          color: getSelectedColor(),
+          allDay: !!state.allDay,
+          todoIds: state.linkedTodoIds.slice().sort().join(','),
+          tags: state.selectedTags.slice().sort().join(','),
+        };
+      }
+      const CHANGE_FIELDS = { title: '标题', date: '日期', start: '开始时间', end: '结束时间', location: '地点', notes: '备注', color: '颜色', allDay: '全天', todoIds: '关联卡片', tags: '标签' };
+      function getChangedFields() {
+        const s = state.snapshot;
+        if (!s) return [];
+        const cur = captureSnapshot();
+        return Object.keys(CHANGE_FIELDS).filter(k => cur[k] !== s[k]);
+      }
+      function hasModalChanges() { return getChangedFields().length > 0; }
+
       function openNewEvent(defaultDate) {
         state.editingId = null;
         $('modalTitle').textContent = '新增行程';
@@ -952,6 +1666,11 @@
         $('evNotes').value = '';
         setAllDay(false);
         buildColorPalette(COLORS[0]);
+        state.linkedTodoIds = [];
+        renderTodoLinkPanel();
+        state.selectedTags = [];
+        renderTagSelector();
+        state.snapshot = captureSnapshot();
         openModal();
       }
 
@@ -969,6 +1688,11 @@
         $('evNotes').value = ev.notes || '';
         setAllDay(!!ev.allDay);
         buildColorPalette(ev.color || COLORS[0]);
+        state.linkedTodoIds = (ev.todoIds || []).slice();
+        renderTodoLinkPanel();
+        state.selectedTags = (ev.tags || []).slice();
+        renderTagSelector();
+        state.snapshot = captureSnapshot();
         openModal();
       }
 
@@ -1010,6 +1734,24 @@
         html += '<div class="pp-row"><span class="k">📅</span><span class="v">' + escapeHtml(dateText) + '</span></div>';
         if (ev.location) html += '<div class="pp-row"><span class="k">📍</span><span class="v">' + escapeHtml(ev.location) + '</span></div>';
         if (ev.notes) html += '<div class="pp-notes">' + escapeHtml(ev.notes) + '</div>';
+        const tags = (ev.tags || []).filter(Boolean);
+        if (tags.length) {
+          html += '<div class="pp-tags">';
+          tags.forEach(t => {
+            html += '<span class="pp-tag ' + getTagColorClass(t) + '">' + escapeHtml(t) + '</span>';
+          });
+          html += '</div>';
+        }
+        const linked = (ev.todoIds || [])
+          .map(tid => state.todos.find(t => t.id === tid))
+          .filter(Boolean);
+        if (linked.length) {
+          html += '<div class="pp-todos"><div class="pp-todos-title">🔗 关联 Todo 卡片（点击查看）</div>';
+          linked.forEach(t => {
+            html += '<div class="pp-todo-item" data-id="' + escapeHtml(t.id) + '">' + escapeHtml(todoTitle(t)) + '</div>';
+          });
+          html += '</div>';
+        }
         html += '<div class="pp-actions"><button class="btn btn-primary" id="ppEditBtn">编辑</button></div>';
 
         pop.innerHTML = html;
@@ -1037,7 +1779,32 @@
       }
 
       function openModal() { $('modalOverlay').classList.add('show'); setTimeout(() => $('evTitle').focus(), 50); }
-      function closeModal() { $('modalOverlay').classList.remove('show'); state.editingId = null; }
+      function closeModal() { $('modalOverlay').classList.remove('show'); state.editingId = null; state.snapshot = null; closeTodoDropdown(); }
+
+      // 请求关闭编辑弹窗：有未保存变更时先弹确认框，让用户选择保存/不保存/取消
+      function requestCloseModal() {
+        if (hasModalChanges()) {
+          const fields = getChangedFields().map(f => CHANGE_FIELDS[f]);
+          $('confirmMsg').innerHTML = '你对以下内容做了修改：' +
+            '<div class="confirm-fields">' + fields.join('、') + '</div>' +
+            '请选择：保存更改、不保存直接关闭，或取消继续编辑。';
+          openConfirmUnsaved(save => {
+            if (save) saveEvent();
+            else closeModal();
+          });
+        } else {
+          closeModal();
+        }
+      }
+
+      function openConfirmUnsaved(onSave) {
+        state.confirmCallback = onSave;
+        $('confirmOverlay').classList.add('show');
+      }
+      function closeConfirm() {
+        $('confirmOverlay').classList.remove('show');
+        state.confirmCallback = null;
+      }
 
       function getSelectedColor() {
         const sel = document.querySelector('.color-dot.selected');
@@ -1065,6 +1832,8 @@
           location: $('evLocation').value.trim(),
           notes: $('evNotes').value.trim(),
           color: getSelectedColor(),
+          todoIds: state.linkedTodoIds.slice(),
+          tags: state.selectedTags.slice(),
         };
 
         if (state.editingId) {
@@ -1088,13 +1857,16 @@
       function bindEvents() {
         $('prevBtn').addEventListener('click', () => nav(-1));
         $('nextBtn').addEventListener('click', () => nav(1));
-        $('todayBtn').addEventListener('click', goToday);
+        $('todayBtn').addEventListener('click', () => {
+          if (state.view === 'list') scrollToListToday();  // 事件列表：滚动到今天/最近
+          else goToday();
+        });
         $('addBtn').addEventListener('click', () => openNewEvent(fmtDate(state.cursor)));
         $('viewSeg').addEventListener('click', (e) => {
           const b = e.target.closest('button');
           if (b) setView(b.dataset.view);
         });
-        $('cancelBtn').addEventListener('click', closeModal);
+        $('cancelBtn').addEventListener('click', requestCloseModal);
         $('saveBtn').addEventListener('click', saveEvent);
         $('deleteBtn').addEventListener('click', deleteEvent);
         $('allDayToggle').addEventListener('click', () => setAllDay(!state.allDay));
@@ -1104,13 +1876,102 @@
           document.querySelectorAll('.color-dot').forEach(d => d.classList.remove('selected'));
           dot.classList.add('selected');
         });
+        // 关联 Todo 卡片：双击或按 ? 打开选单；点 ✕ 移除
+        $('todoLinkPanel').addEventListener('dblclick', (e) => {
+          if (e.target.closest('.t-chip-x')) return;
+          toggleTodoDropdown();
+        });
+        $('todoLinkPanel').addEventListener('keydown', (e) => {
+          if (e.key === '?') { e.preventDefault(); toggleTodoDropdown(); }
+        });
+        $('todoLinkPanel').addEventListener('click', (e) => {
+          const x = e.target.closest('.t-chip-x');
+          if (x) removeTodoLink(x.getAttribute('data-id'));
+        });
+        // 下拉选单：点选一项 → 逐笔填入栏位
+        $('todoDropdown').addEventListener('click', (e) => {
+          const item = e.target.closest('.todo-dropdown-item');
+          if (item) addTodoLink(item.getAttribute('data-id'));
+        });
+        // 标签：回车新增；点选 toggle
+        $('tagInput').addEventListener('keydown', (e) => {
+          if (e.key === 'Enter') {
+            e.preventDefault();
+            let tag = $('tagInput').value.trim();
+            if (tag.startsWith('#')) tag = tag.substring(1);
+            if (tag && state.selectedTags.indexOf(tag) < 0) {
+              state.selectedTags.push(tag);
+              $('tagInput').value = '';
+              renderTagSelector();
+            }
+          }
+        });
+        $('tagOptions').addEventListener('click', (e) => {
+          const opt = e.target.closest('.tag-option');
+          if (!opt) return;
+          const tag = opt.getAttribute('data-tag');
+          const i = state.selectedTags.indexOf(tag);
+          if (i >= 0) state.selectedTags.splice(i, 1);
+          else state.selectedTags.push(tag);
+          renderTagSelector();
+        });
+        // 工具栏过滤：搜索 / 状态 / 标签
+        $('searchInput').addEventListener('input', (e) => {
+          state.searchQuery = e.target.value.trim().toLowerCase();
+          render();
+        });
+        $('statusFilter').addEventListener('click', (e) => {
+          const btn = e.target.closest('.status-btn');
+          if (!btn) return;
+          state.statusFilter = btn.getAttribute('data-status');
+          render();
+        });
+        $('tagFilter').addEventListener('click', (e) => {
+          const chip = e.target.closest('.tag-chip');
+          if (!chip) return;
+          const tag = chip.getAttribute('data-tag');
+          if (tag === '') state.tagFilter = [];
+          else {
+            const i = state.tagFilter.indexOf(tag);
+            if (i >= 0) state.tagFilter.splice(i, 1);
+            else state.tagFilter.push(tag);
+          }
+          render();
+        });
+        // 点击栏位外部 → 关闭下拉选单
+        document.addEventListener('click', (e) => {
+          if (e.target.closest('.todo-link-wrap')) return;
+          closeTodoDropdown();
+        });
+        // 详情浮层：点关联卡片 → 打开 MD 浏览器查看内容
+        $('evPopover').addEventListener('click', (e) => {
+          const item = e.target.closest('.pp-todo-item[data-id]');
+          if (item) browseTodo(item.getAttribute('data-id'));
+        });
         $('modalOverlay').addEventListener('click', (e) => {
-          if (e.target === $('modalOverlay')) closeModal();
+          if (e.target === $('modalOverlay')) requestCloseModal();
+        });
+        // 未保存确认框按钮
+        $('confirmSaveBtn').addEventListener('click', () => {
+          const cb = state.confirmCallback;
+          closeConfirm();
+          if (cb) cb(true);
+        });
+        $('confirmDiscardBtn').addEventListener('click', () => {
+          const cb = state.confirmCallback;
+          closeConfirm();
+          if (cb) cb(false);
+        });
+        $('confirmCancelBtn').addEventListener('click', closeConfirm);
+        $('confirmOverlay').addEventListener('click', (e) => {
+          if (e.target === $('confirmOverlay')) closeConfirm();
         });
 
-        // 内容区点击委托：事件条 toggle 详情浮层
+        // 内容区点击委托：事件条 toggle 详情浮层；点关联标记则浏览对应卡片 MD
         $('calBody').addEventListener('click', (e) => {
-          const chip = e.target.closest('.ev-chip, .ev-block');
+          const link = e.target.closest('.ev-link[data-tid]');
+          if (link) { browseTodo(link.getAttribute('data-tid')); return; }
+          const chip = e.target.closest('.ev-chip, .ev-block, .lt-row[data-id]');
           if (chip) {
             const id = chip.getAttribute('data-id');
             if (id && id !== '') { toggleDetailPopover(id, chip); return; }
@@ -1119,6 +1980,7 @@
 
         // 内容区双击：跳转到日模式（避免单击误触）
         $('calBody').addEventListener('dblclick', (e) => {
+          if (e.target.closest('.ev-link')) return; // 双击关联标记不跳转
           // 月视图双击空白 → 切到该日
           const dayCell = e.target.closest('.cal-month-day');
           if (dayCell && state.view === 'month') {
@@ -1146,7 +2008,7 @@
           const pop = $('evPopover');
           if (pop.style.display === 'none') return;
           if (pop.contains(e.target)) return;
-          if (e.target.closest('.ev-chip, .ev-block')) return; // 点事件条由 calBody 处理（切换/打开）
+          if (e.target.closest('.ev-chip, .ev-block, .lt-row[data-id]')) return; // 点事件条由 calBody 处理（切换/打开）
           closePopover();
         });
         window.addEventListener('scroll', closePopover, true);
@@ -1156,7 +2018,8 @@
         document.addEventListener('keydown', (e) => {
           if (e.key === 'Escape') {
             if ($('evPopover').style.display !== 'none') { closePopover(); return; }
-            closeModal();
+            if ($('confirmOverlay').classList.contains('show')) { closeConfirm(); return; }
+            requestCloseModal();
           }
           if ((e.metaKey || e.ctrlKey) && e.key === 's') { e.preventDefault(); saveEvent(); }
         });
@@ -1175,7 +2038,7 @@
       async function init() {
         loadTheme();
         bindEvents();
-        await loadEvents();
+        await Promise.all([loadEvents(), loadTodosList()]);
         render();
       }
 
