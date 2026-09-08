@@ -1,0 +1,1186 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>📅 行事历</title>
+  <style>
+    :root {
+      --red: #FF3B30;
+      --orange: #FF9500;
+      --yellow: #FFCC00;
+      --green: #34C759;
+      --teal: #5AC8FA;
+      --blue: #007AFF;
+      --indigo: #5856D6;
+      --purple: #AF52DE;
+      --pink: #FF2D55;
+      --brown: #A2845E;
+      --gray: #8E8E93;
+
+      --bg: #ffffff;
+      --bg-elevated: #f2f2f7;
+      --card: #ffffff;
+      --text: #000000;
+      --text-secondary: #8e8e93;
+      --border: #e5e5ea;
+      --today-text: #ffffff;
+      --seg-bg: #e9e9eb;
+      --seg-active: #ffffff;
+      --grid-line: #ececf1;
+      --modal-overlay: rgba(0, 0, 0, 0.4);
+    }
+
+    body.dark {
+      --bg: #000000;
+      --bg-elevated: #1c1c1e;
+      --card: #1c1c1e;
+      --text: #ffffff;
+      --text-secondary: #98989d;
+      --border: #2c2c2e;
+      --seg-bg: #2c2c2e;
+      --seg-active: #636366;
+      --grid-line: #2c2c2e;
+      --modal-overlay: rgba(0, 0, 0, 0.6);
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { height: 100%; overflow: hidden; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'PingFang SC', 'Helvetica Neue', Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      display: flex;
+      flex-direction: column;
+      -webkit-font-smoothing: antialiased;
+      user-select: none;
+    }
+
+    /* ===== 顶部工具列 ===== */
+    .cal-header {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 10px 16px;
+      border-bottom: 1px solid var(--border);
+      background: var(--bg);
+      flex-shrink: 0;
+      min-height: 52px;
+    }
+    .cal-title {
+      font-size: 20px;
+      font-weight: 600;
+      min-width: 130px;
+      white-space: nowrap;
+    }
+    .cal-title .sub {
+      font-size: 12px;
+      font-weight: 400;
+      color: var(--text-secondary);
+    }
+    .cal-today-btn {
+      border: none;
+      background: none;
+      color: var(--red);
+      font-size: 15px;
+      font-weight: 600;
+      cursor: pointer;
+      padding: 6px 10px;
+      border-radius: 8px;
+      white-space: nowrap;
+    }
+    .cal-today-btn:hover { background: var(--bg-elevated); }
+    .cal-spacer { flex: 1; }
+
+    .cal-nav-btn {
+      width: 32px; height: 32px;
+      border: none;
+      background: none;
+      color: var(--red);
+      font-size: 18px;
+      cursor: pointer;
+      border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .cal-nav-btn:hover { background: var(--bg-elevated); }
+    .cal-nav-btn:disabled { opacity: 0.3; cursor: default; }
+
+    /* 分段控件（日/周/月） */
+    .cal-seg {
+      display: inline-flex;
+      background: var(--seg-bg);
+      border-radius: 8px;
+      padding: 2px;
+      gap: 2px;
+    }
+    .cal-seg button {
+      border: none;
+      background: none;
+      color: var(--text);
+      font-size: 14px;
+      padding: 6px 14px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-weight: 500;
+      white-space: nowrap;
+    }
+    .cal-seg button.active {
+      background: var(--seg-active);
+      box-shadow: 0 1px 3px rgba(0,0,0,0.15);
+    }
+
+    .cal-add-btn {
+      width: 32px; height: 32px;
+      border: none;
+      background: none;
+      color: var(--red);
+      font-size: 24px;
+      line-height: 1;
+      cursor: pointer;
+      border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .cal-add-btn:hover { background: var(--bg-elevated); }
+
+    /* ===== 星期标题列 ===== */
+    .cal-weekdays {
+      display: grid;
+      grid-template-columns: 56px repeat(7, 1fr);
+      border-bottom: 1px solid var(--border);
+      background: var(--bg);
+      flex-shrink: 0;
+    }
+    .cal-weekdays .gutter { border-right: 1px solid var(--border); }
+    .cal-weekdays .wd {
+      text-align: center;
+      padding: 8px 0 6px;
+      font-size: 13px;
+      color: var(--text-secondary);
+      font-weight: 500;
+    }
+    .cal-weekdays .wd.today {
+      color: var(--red);
+      font-weight: 700;
+    }
+    .cal-weekdays .wd .date-num {
+      display: block;
+      width: 30px; height: 30px;
+      line-height: 30px;
+      margin: 2px auto 0;
+      border-radius: 50%;
+      font-size: 15px;
+      font-weight: 600;
+      color: var(--text);
+    }
+    .cal-weekdays .wd.today .date-num {
+      background: var(--red);
+      color: var(--today-text);
+    }
+
+    /* ===== 内容区 ===== */
+    .cal-body {
+      flex: 1;
+      min-height: 0;
+      overflow: hidden;
+      position: relative;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* ---------- 月视图 ---------- */
+    .cal-month {
+      display: grid;
+      grid-template-columns: repeat(7, 1fr);
+      flex: 1;
+      min-height: 0;
+    }
+    .cal-month .m-head {
+      text-align: center;
+      padding: 8px 0 4px;
+      font-size: 12px;
+      color: var(--text-secondary);
+      border-bottom: 1px solid var(--grid-line);
+    }
+    .cal-month-day {
+      border-right: 1px solid var(--grid-line);
+      border-bottom: 1px solid var(--grid-line);
+      padding: 4px;
+      cursor: pointer;
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+      overflow: hidden;
+      position: relative;
+    }
+    .cal-month-day:nth-child(7n) { border-right: none; }
+    .cal-month-day.adjacent { background: var(--bg-elevated); }
+    .cal-month-day.adjacent .dnum { color: var(--text-secondary); }
+    .cal-month-day .dnum {
+      width: 26px; height: 26px;
+      line-height: 26px;
+      text-align: center;
+      border-radius: 50%;
+      font-size: 14px;
+      font-weight: 500;
+      flex-shrink: 0;
+    }
+    .cal-month-day.is-today .dnum {
+      background: var(--red);
+      color: var(--today-text);
+      font-weight: 700;
+    }
+    .cal-month-day .ev-list {
+      flex: 1;
+      min-height: 0;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      margin-top: 2px;
+    }
+    .ev-chip {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      border-radius: 4px;
+      padding: 1px 4px;
+      font-size: 11px;
+      line-height: 16px;
+      color: #fff;
+      cursor: pointer;
+      overflow: hidden;
+      white-space: nowrap;
+      text-overflow: ellipsis;
+    }
+    .ev-chip.all-day {
+      color: #fff;
+    }
+    .ev-more {
+      font-size: 10px;
+      color: var(--text-secondary);
+      padding-left: 4px;
+    }
+
+    /* ---------- 日 / 周视图 时间网格 ---------- */
+    .cal-timegrid-scroll {
+      flex: 1;
+      min-height: 0;
+      overflow-y: auto;
+      overflow-x: hidden;
+      position: relative;
+    }
+    .cal-timegrid {
+      display: grid;
+      grid-template-columns: 56px repeat(var(--cols, 1), 1fr);
+      position: relative;
+      min-height: calc(24 * var(--hour-h, 56px));
+    }
+    .tg-gutter {
+      border-right: 1px solid var(--border);
+      position: relative;
+    }
+    .tg-hour-label {
+      position: absolute;
+      right: 8px;
+      transform: translateY(-50%);
+      font-size: 11px;
+      color: var(--text-secondary);
+    }
+    .tg-col {
+      border-right: 1px solid var(--grid-line);
+      position: relative;
+    }
+    .tg-col:last-child { border-right: none; }
+    .tg-hour-line {
+      position: absolute;
+      left: 0; right: 0;
+      height: 1px;
+      background: var(--grid-line);
+    }
+    .tg-now-line {
+      position: absolute;
+      left: -56px; right: 0;
+      height: 2px;
+      background: var(--red);
+      z-index: 5;
+    }
+    .tg-now-dot {
+      position: absolute;
+      left: -56px;
+      width: 7px; height: 7px;
+      border-radius: 50%;
+      background: var(--red);
+      transform: translate(53px, -2.5px);
+    }
+    .ev-block {
+      position: absolute;
+      border-radius: 6px;
+      padding: 3px 6px;
+      color: #fff;
+      font-size: 12px;
+      line-height: 1.3;
+      overflow: hidden;
+      cursor: pointer;
+      border-left: 3px solid rgba(0,0,0,0.2);
+      z-index: 2;
+    }
+    .ev-block .t { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .ev-block .loc { font-size: 10px; opacity: 0.9; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+    /* 全天事件条 */
+    .allday-strip {
+      border-bottom: 1px solid var(--border);
+      padding: 4px 0 6px;
+      display: grid;
+      grid-template-columns: 56px repeat(var(--cols, 1), 1fr);
+      gap: 2px 4px;
+      background: var(--bg);
+      flex-shrink: 0;
+      max-height: 132px;
+      overflow-y: auto;
+    }
+    .allday-strip .label {
+      font-size: 11px;
+      color: var(--text-secondary);
+      text-align: right;
+      padding-right: 6px;
+      padding-top: 4px;
+    }
+    .allday-col {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      min-width: 0;
+      min-height: 0;
+    }
+    .ev-block.all-day {
+      position: static;
+      width: auto;
+      padding: 3px 8px;
+      min-width: 0;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    /* ===== 弹窗 ===== */
+    .modal-overlay {
+      position: fixed;
+      inset: 0;
+      background: var(--modal-overlay);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 100;
+    }
+    .modal-overlay.show { display: flex; }
+    .modal {
+      width: min(460px, 92vw);
+      background: var(--card);
+      border-radius: 16px;
+      padding: 18px 20px;
+      max-height: 90vh;
+      overflow-y: auto;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+    }
+    .modal h3 { font-size: 17px; margin-bottom: 14px; }
+    .modal .field { margin-bottom: 12px; }
+    .modal label { font-size: 12px; color: var(--text-secondary); display: block; margin-bottom: 4px; }
+    .modal input[type="text"], .modal textarea, .modal input[type="time"], .modal input[type="date"] {
+      width: 100%;
+      padding: 9px 12px;
+      border: 1px solid var(--border);
+      border-radius: 9px;
+      background: var(--bg);
+      color: var(--text);
+      font-size: 15px;
+      font-family: inherit;
+    }
+    .modal textarea { resize: vertical; min-height: 64px; }
+    .modal .row { display: flex; gap: 10px; }
+    .modal .row > .field { flex: 1; }
+    .modal .all-day-toggle {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 14px;
+      cursor: pointer;
+    }
+    .switch {
+      position: relative;
+      width: 44px; height: 27px;
+      background: var(--seg-bg);
+      border-radius: 27px;
+      flex-shrink: 0;
+      transition: background 0.2s;
+    }
+    .switch::after {
+      content: '';
+      position: absolute;
+      top: 2px; left: 2px;
+      width: 23px; height: 23px;
+      background: #fff;
+      border-radius: 50%;
+      transition: transform 0.2s;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+    }
+    .switch.on { background: var(--green); }
+    .switch.on::after { transform: translateX(17px); }
+
+    .color-palette { display: flex; flex-wrap: wrap; gap: 8px; }
+    .color-dot {
+      width: 26px; height: 26px;
+      border-radius: 50%;
+      cursor: pointer;
+      border: 2px solid transparent;
+    }
+    .color-dot.selected { border-color: var(--text); }
+
+    .modal .actions {
+      display: flex;
+      gap: 10px;
+      margin-top: 18px;
+    }
+    .btn {
+      border: none;
+      border-radius: 9px;
+      padding: 10px 16px;
+      font-size: 15px;
+      cursor: pointer;
+      font-weight: 500;
+      flex: 1;
+    }
+    .btn-primary { background: var(--red); color: #fff; }
+    .btn-ghost { background: var(--bg-elevated); color: var(--text); }
+    .btn-danger { background: none; color: var(--red); flex: 0 0 auto; }
+
+    .empty-hint {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--text-secondary);
+      font-size: 14px;
+      pointer-events: none;
+    }
+
+    /* ===== 事件详情浮层 ===== */
+    .ev-popover {
+      position: fixed;
+      z-index: 90;
+      width: 300px;
+      max-width: calc(100vw - 24px);
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      box-shadow: 0 16px 48px rgba(0, 0, 0, 0.4);
+      padding: 14px;
+      display: none;
+    }
+    .ev-popover .pp-title {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 16px;
+      font-weight: 700;
+      margin-bottom: 10px;
+      word-break: break-word;
+    }
+    .ev-popover .pp-swatch {
+      width: 12px;
+      height: 12px;
+      border-radius: 4px;
+      flex-shrink: 0;
+    }
+    .ev-popover .pp-row {
+      display: flex;
+      gap: 8px;
+      font-size: 13px;
+      margin-bottom: 6px;
+      align-items: flex-start;
+    }
+    .ev-popover .pp-row .k { flex-shrink: 0; }
+    .ev-popover .pp-row .v { word-break: break-word; }
+    .ev-popover .pp-notes {
+      font-size: 13px;
+      color: var(--text-secondary);
+      white-space: pre-wrap;
+      word-break: break-word;
+      margin: 4px 0 10px;
+      padding-top: 8px;
+      border-top: 1px solid var(--border);
+    }
+    .ev-popover .pp-actions {
+      display: flex;
+      gap: 8px;
+    }
+    .ev-popover .pp-actions .btn { flex: 1; }
+  </style>
+</head>
+<body>
+  <div class="cal-header">
+    <button class="cal-today-btn" id="todayBtn" title="回到今天">今天</button>
+    <div class="cal-title" id="calTitle"></div>
+    <div class="cal-spacer"></div>
+    <button class="cal-nav-btn" id="prevBtn" title="上一段">‹</button>
+    <button class="cal-nav-btn" id="nextBtn" title="下一段">›</button>
+    <div class="cal-seg" id="viewSeg">
+      <button data-view="day">日</button>
+      <button data-view="week">周</button>
+      <button data-view="month">月</button>
+    </div>
+    <button class="cal-add-btn" id="addBtn" title="新增行程">＋</button>
+  </div>
+
+  <div class="cal-weekdays" id="weekdays"></div>
+
+  <div class="cal-body" id="calBody"></div>
+
+  <!-- 新增 / 编辑弹窗 -->
+  <div class="modal-overlay" id="modalOverlay">
+    <div class="modal">
+      <h3 id="modalTitle">新增行程</h3>
+      <div class="field">
+        <input type="text" id="evTitle" placeholder="标题">
+      </div>
+      <div class="field">
+        <div class="all-day-toggle" id="allDayToggle">
+          <span class="switch" id="allDaySwitch"></span>
+          <span>全天</span>
+        </div>
+      </div>
+      <div class="row">
+        <div class="field">
+          <label>日期</label>
+          <input type="date" id="evDate">
+        </div>
+      </div>
+      <div class="row" id="timeRow">
+        <div class="field">
+          <label>开始</label>
+          <input type="time" id="evStart">
+        </div>
+        <div class="field">
+          <label>结束</label>
+          <input type="time" id="evEnd">
+        </div>
+      </div>
+      <div class="field">
+        <label>地点（可选）</label>
+        <input type="text" id="evLocation" placeholder="地点">
+      </div>
+      <div class="field">
+        <label>备注（可选）</label>
+        <textarea id="evNotes" placeholder="备注"></textarea>
+      </div>
+      <div class="field">
+        <label>颜色</label>
+        <div class="color-palette" id="colorPalette"></div>
+      </div>
+      <div class="actions">
+        <button class="btn btn-danger" id="deleteBtn" style="display:none;">删除</button>
+        <button class="btn btn-ghost" id="cancelBtn">取消</button>
+        <button class="btn btn-primary" id="saveBtn">保存</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 事件详情浮层（展开显示更多讯息） -->
+  <div class="ev-popover" id="evPopover"></div>
+
+  <script>
+    (function () {
+      // ===== 基础常量与状态 =====
+      const COLORS = ['#FF3B30','#FF9500','#FFCC00','#34C759','#5AC8FA','#007AFF','#5856D6','#AF52DE','#FF2D55','#A2845E','#8E8E93'];
+      const WD_SHORT = ['一','二','三','四','五','六','日'];
+      const WD_FULL = ['周一','周二','周三','周四','周五','周六','周日'];
+      const WEEK_START = 1; // 周一为一周开始
+
+      const state = {
+        view: 'month',       // month | week | day
+        cursor: new Date(),  // 锚点日期
+        events: [],          // 行程数组
+        editingId: null,     // 正在编辑的行程 id
+        popoverId: null,     // 当前详情浮层展示的事件 id（用于 toggle）
+      };
+
+      const storeKey = 'calendar';
+      const themeKey = 'calendarTheme';
+
+      // ===== 日期工具 =====
+      function pad(n) { return n < 10 ? '0' + n : '' + n; }
+      function fmtDate(d) { return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()); }
+      function parseDate(str) {
+        const [y, m, d] = str.split('-').map(Number);
+        return new Date(y, m - 1, d);
+      }
+      function isSameDay(a, b) {
+        return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+      }
+      function addDays(d, n) { const r = new Date(d); r.setDate(r.getDate() + n); return r; }
+      function addMonths(d, n) { return new Date(d.getFullYear(), d.getMonth() + n, 1); }
+      function startOfWeek(d) {
+        const r = new Date(d);
+        const dow = (r.getDay() + 6) % 7; // 周一=0
+        r.setDate(r.getDate() - dow);
+        return r;
+      }
+      function timeToMin(t) {
+        if (!t) return 0;
+        const [h, m] = t.split(':').map(Number);
+        return h * 60 + m;
+      }
+      function minToTime(m) {
+        m = Math.max(0, Math.min(24 * 60, m));
+        return pad(Math.floor(m / 60)) + ':' + pad(m % 60);
+      }
+
+      // ===== 数据持久化（JSON 文件，经 preload 桥接，浏览器环境退回 localStorage） =====
+      async function loadEvents() {
+        try {
+          if (window.electronAPI && typeof window.electronAPI.loadPluginData === 'function') {
+            const res = await window.electronAPI.loadPluginData(storeKey);
+            state.events = Array.isArray(res && res.data) ? res.data : [];
+          } else {
+            const raw = localStorage.getItem(storeKey);
+            state.events = raw ? JSON.parse(raw) : [];
+          }
+        } catch (e) {
+          console.error('[Calendar] 加载失败:', e);
+          state.events = [];
+        }
+      }
+      async function saveEvents() {
+        try {
+          if (window.electronAPI && typeof window.electronAPI.savePluginData === 'function') {
+            await window.electronAPI.savePluginData(storeKey, state.events);
+          } else {
+            localStorage.setItem(storeKey, JSON.stringify(state.events));
+          }
+        } catch (e) {
+          console.error('[Calendar] 保存失败:', e);
+        }
+      }
+
+      function genId() { return 'ev-' + Date.now() + '-' + Math.random().toString(36).slice(2, 7); }
+
+      // ===== DOM 引用 =====
+      const $ = (id) => document.getElementById(id);
+
+      // ===== 渲染主入口 =====
+      function render() {
+        renderTitle();
+        renderWeekdays();
+        if (state.view === 'month') renderMonth();
+        else if (state.view === 'week') renderWeek();
+        else renderDay();
+        updateSegActive();
+      }
+
+      function renderTitle() {
+        const d = state.cursor;
+        const y = d.getFullYear();
+        const m = d.getMonth() + 1;
+        if (state.view === 'month' || state.view === 'week') {
+          $('calTitle').innerHTML = y + '年' + m + '月';
+        } else {
+          $('calTitle').innerHTML = m + '月' + d.getDate() + '日 ' +
+            '<span class="sub">' + WD_FULL[(d.getDay() + 6) % 7] + '</span>';
+        }
+      }
+
+      function updateSegActive() {
+        $('viewSeg').querySelectorAll('button').forEach(b => {
+          b.classList.toggle('active', b.dataset.view === state.view);
+        });
+      }
+
+      function renderWeekdays() {
+        const el = $('weekdays');
+        // 仅周视图显示「星期+日期」表头（与 7 列时间网格对齐）；
+        // 月视图由网格自身的星期行承担，日视图由标题栏显示完整日期。
+        if (state.view !== 'week') {
+          el.style.display = 'none';
+          return;
+        }
+        el.style.display = 'grid';
+        const today = new Date();
+        let html = '<div class="gutter"></div>';
+        for (let i = 0; i < 7; i++) {
+          const d = addDays(startOfWeek(state.cursor), i);
+          const isToday = isSameDay(d, today);
+          const cls = isToday ? 'wd today' : 'wd';
+          html += '<div class="' + cls + '" data-date="' + fmtDate(d) + '">' + WD_FULL[i] +
+            '<span class="date-num">' + d.getDate() + '</span></div>';
+        }
+        el.innerHTML = html;
+      }
+
+      // ---- 事件工具 ----
+      function eventsOn(date) {
+        return state.events.filter(e => e.date === fmtDate(date));
+      }
+      function sortEvents(arr) {
+        return arr.slice().sort((a, b) => {
+          if (a.allDay !== b.allDay) return a.allDay ? -1 : 1;
+          return timeToMin(a.startTime) - timeToMin(b.startTime);
+        });
+      }
+
+      // ===== 月视图 =====
+      function renderMonth() {
+        const body = $('calBody');
+        const y = state.cursor.getFullYear();
+        const m = state.cursor.getMonth();
+        const first = new Date(y, m, 1);
+        const startOffset = (first.getDay() + 6) % 7;
+        const gridStart = addDays(first, -startOffset);
+        const today = new Date();
+
+        let html = '<div class="cal-month">';
+        // 星期表头
+        for (let i = 0; i < 7; i++) html += '<div class="m-head">' + WD_SHORT[i] + '</div>';
+        // 6 周 × 7 天
+        for (let row = 0; row < 6; row++) {
+          for (let col = 0; col < 7; col++) {
+            const d = addDays(gridStart, row * 7 + col);
+            const adjacent = d.getMonth() !== m;
+            const isToday = isSameDay(d, today);
+            const cls = 'cal-month-day' + (adjacent ? ' adjacent' : '') + (isToday ? ' is-today' : '');
+            const evs = sortEvents(eventsOn(d));
+            html += '<div class="' + cls + '" data-date="' + fmtDate(d) + '">';
+            html += '<div class="dnum">' + d.getDate() + '</div>';
+            html += '<div class="ev-list">';
+            const show = evs.slice(0, 3);
+            show.forEach(e => {
+              const c = e.color || COLORS[0];
+              html += '<div class="ev-chip" data-id="' + e.id + '" style="background:' + c + '">' +
+                (e.allDay ? '⏰ ' : pad(timeToMin(e.startTime) / 60 | 0) + ':' + pad(timeToMin(e.startTime) % 60) + ' ') +
+                escapeHtml(e.title) + '</div>';
+            });
+            if (evs.length > 3) html += '<div class="ev-more">+' + (evs.length - 3) + ' 更多</div>';
+            html += '</div></div>';
+          }
+        }
+        html += '</div>';
+        body.innerHTML = html;
+      }
+
+      // ---- 重叠布局：把时间冲突的事件分配到并排列 ----
+      function layoutDay(evs) {
+        const items = evs.map(e => ({
+          e,
+          start: timeToMin(e.startTime),
+          end: Math.max(timeToMin(e.endTime), timeToMin(e.startTime) + 15),
+        })).sort((a, b) => a.start - b.start || a.end - b.end);
+
+        const result = [];
+        let cluster = [], clusterEnd = -1;
+        const flush = () => {
+          if (!cluster.length) return;
+          const cols = []; // 每列占用到的结束时间
+          cluster.forEach(it => {
+            let placed = false;
+            for (let ci = 0; ci < cols.length; ci++) {
+              if (cols[ci] <= it.start) { cols[ci] = it.end; it.col = ci; placed = true; break; }
+            }
+            if (!placed) { it.col = cols.length; cols.push(it.end); }
+          });
+          cluster.forEach(it => { it.cols = cols.length; result.push(it); });
+          cluster = [];
+          clusterEnd = -1;
+        };
+        items.forEach(it => {
+          if (it.start >= clusterEnd) { flush(); }
+          cluster.push(it);
+          clusterEnd = Math.max(clusterEnd, it.end);
+        });
+        flush();
+        return result;
+      }
+
+      // ---- 时间网格（日/周共用） ----
+      function buildTimeGrid(dayDates, opts) {
+        const hourH = opts.hourH || 56;
+        const now = new Date();
+        const today = new Date();
+        const n = dayDates.length;
+
+        // 全天事件：按「所属星期列」放置（与时间网格的 56px + N 列对齐）
+        const allDayByCol = dayDates.map(d => eventsOn(d).filter(e => e.allDay));
+        const hasAllDay = allDayByCol.some(arr => arr.length > 0);
+        let html = '';
+        if (hasAllDay) {
+          html += '<div class="allday-strip" style="--cols:' + n + '">';
+          html += '<div class="label">全天</div>';
+          allDayByCol.forEach((arr, ci) => {
+            html += '<div class="allday-col" data-date="' + fmtDate(dayDates[ci]) + '">';
+            arr.forEach(e => {
+              html += '<div class="ev-block all-day" data-id="' + e.id + '" style="background:' + (e.color || COLORS[0]) + '">' +
+                escapeHtml(e.title) + '</div>';
+            });
+            html += '</div>';
+          });
+          html += '</div>';
+        }
+
+        html += '<div class="cal-timegrid-scroll"><div class="cal-timegrid" style="--cols:' + n + ';--hour-h:' + hourH + 'px;">';
+        // 左侧时间刻度
+        html += '<div class="tg-gutter">';
+        for (let h = 0; h <= 23; h++) {
+          html += '<div class="tg-hour-label" style="top:' + (h * hourH) + 'px">' + pad(h) + ':00</div>';
+        }
+        html += '</div>';
+
+        // 列
+        dayDates.forEach((d, ci) => {
+          html += '<div class="tg-col" data-date="' + fmtDate(d) + '">';
+          for (let h = 0; h <= 23; h++) {
+            html += '<div class="tg-hour-line" style="top:' + (h * hourH) + 'px"></div>';
+          }
+          // 事件块
+          const timed = layoutDay(eventsOn(d).filter(e => !e.allDay));
+          timed.forEach(({ e, start, end, col: c, cols }) => {
+            const top = start / 60 * hourH;
+            const height = Math.max((end - start) / 60 * hourH, 18);
+            const width = 100 / cols;
+            const left = c * width;
+            const cbg = e.color || COLORS[0];
+            html += '<div class="ev-block" data-id="' + e.id + '" style="top:' + top + 'px;height:' + height + 'px;left:calc(' + left + '% + 1px);width:calc(' + width + '% - 3px);background:' + cbg + '">' +
+              '<div class="t">' + escapeHtml(e.title) + '</div>' +
+              (e.location ? '<div class="loc">' + escapeHtml('📍 ' + e.location) + '</div>' : '') +
+              '</div>';
+          });
+          html += '</div>';
+        });
+
+        // 当前时间线（仅当天）
+        dayDates.forEach((d, ci) => {
+          if (isSameDay(d, today)) {
+            const mins = now.getHours() * 60 + now.getMinutes();
+            const top = mins / 60 * hourH;
+            html += '<div class="tg-now-line" style="top:' + top + 'px" data-date="' + fmtDate(d) + '"></div>';
+          }
+        });
+
+        html += '</div></div>';
+        return html;
+      }
+
+      function renderDay() {
+        const body = $('calBody');
+        const d = state.cursor;
+        body.innerHTML = buildTimeGrid([d], { hourH: 56 });
+        // 当天没有任何行程时，显示空状态提示，避免误以为出错
+        if (eventsOn(d).length === 0) {
+          body.insertAdjacentHTML('beforeend', '<div class="empty-hint">这一天没有行程</div>');
+        }
+        scrollToNow();
+      }
+
+      function renderWeek() {
+        const body = $('calBody');
+        const start = startOfWeek(state.cursor);
+        const days = [];
+        for (let i = 0; i < 7; i++) days.push(addDays(start, i));
+        body.innerHTML = buildTimeGrid(days, { hourH: 48 });
+        scrollToNow();
+      }
+
+      function scrollToNow() {
+        requestAnimationFrame(() => {
+          const scroller = document.querySelector('.cal-timegrid-scroll');
+          if (scroller) {
+            const now = new Date();
+            const target = (now.getHours() * 60 + now.getMinutes()) / 60 * (state.view === 'day' ? 56 : 48) - 120;
+            scroller.scrollTop = Math.max(0, target);
+          }
+        });
+      }
+
+      function escapeHtml(s) {
+        return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({
+          '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+        })[c]);
+      }
+
+      // ===== 导航 =====
+      function nav(dir) {
+        if (state.view === 'month') state.cursor = addMonths(state.cursor, dir);
+        else if (state.view === 'week') state.cursor = addDays(state.cursor, dir * 7);
+        else state.cursor = addDays(state.cursor, dir);
+        render();
+      }
+
+      function goToday() {
+        state.cursor = new Date();
+        render();
+      }
+
+      function setView(v) {
+        // 保留 cursor 原始日期作为「日视图锚点」（周视图渲染时自行用 startOfWeek 计算所在周），
+        // 这样从周视图切回日视图时不会丢到周一。
+        state.view = v;
+        closePopover();
+        render();
+      }
+
+      // ===== 事件弹窗 =====
+      function buildColorPalette(selected) {
+        $('colorPalette').innerHTML = COLORS.map(c =>
+          '<div class="color-dot' + (c === selected ? ' selected' : '') + '" data-color="' + c + '" style="background:' + c + '"></div>'
+        ).join('');
+      }
+
+      function openNewEvent(defaultDate) {
+        state.editingId = null;
+        $('modalTitle').textContent = '新增行程';
+        $('deleteBtn').style.display = 'none';
+
+        const now = new Date();
+        let startMin = (now.getHours() * 60 + now.getMinutes());
+        startMin = Math.ceil(startMin / 30) * 30;
+        if (startMin >= 24 * 60) startMin = 0;
+        const endMin = startMin + 60;
+
+        $('evTitle').value = '';
+        $('evDate').value = defaultDate || fmtDate(now);
+        $('evStart').value = minToTime(startMin);
+        $('evEnd').value = minToTime(Math.min(endMin, 24 * 60));
+        $('evLocation').value = '';
+        $('evNotes').value = '';
+        setAllDay(false);
+        buildColorPalette(COLORS[0]);
+        openModal();
+      }
+
+      function openEditEvent(id) {
+        const ev = state.events.find(e => e.id === id);
+        if (!ev) return;
+        state.editingId = id;
+        $('modalTitle').textContent = '编辑行程';
+        $('deleteBtn').style.display = '';
+        $('evTitle').value = ev.title || '';
+        $('evDate').value = ev.date || fmtDate(new Date());
+        $('evStart').value = ev.startTime || '';
+        $('evEnd').value = ev.endTime || '';
+        $('evLocation').value = ev.location || '';
+        $('evNotes').value = ev.notes || '';
+        setAllDay(!!ev.allDay);
+        buildColorPalette(ev.color || COLORS[0]);
+        openModal();
+      }
+
+      function setAllDay(on) {
+        state.allDay = on;
+        $('allDaySwitch').classList.toggle('on', on);
+        $('timeRow').style.display = on ? 'none' : 'flex';
+      }
+
+      // ===== 事件详情浮层（展开显示更多讯息） =====
+      function closePopover() {
+        $('evPopover').style.display = 'none';
+        state.popoverId = null;
+      }
+
+      function toggleDetailPopover(id, anchor) {
+        const pop = $('evPopover');
+        const isOpen = pop.style.display !== 'none';
+        // 已打开同一个事件 → 再点一次关闭（toggle）
+        if (isOpen && state.popoverId === id) {
+          closePopover();
+          return;
+        }
+        openDetailPopover(id, anchor);
+      }
+
+      function openDetailPopover(id, anchor) {
+        const ev = state.events.find(e => e.id === id);
+        if (!ev) return;
+        const pop = $('evPopover');
+        state.popoverId = id;
+
+        const dateObj = parseDate(ev.date || fmtDate(new Date()));
+        const dateText = dateObj.getFullYear() + '年' + (dateObj.getMonth() + 1) + '月' + dateObj.getDate() + '日 ' + WD_FULL[(dateObj.getDay() + 6) % 7];
+        const timeText = ev.allDay ? '全天' : (ev.startTime || '') + ' - ' + (ev.endTime || '');
+
+        let html = '<div class="pp-title"><span class="pp-swatch" style="background:' + (ev.color || COLORS[0]) + '"></span>' + escapeHtml(ev.title) + '</div>';
+        html += '<div class="pp-row"><span class="k">⏱</span><span class="v">' + escapeHtml(timeText) + '</span></div>';
+        html += '<div class="pp-row"><span class="k">📅</span><span class="v">' + escapeHtml(dateText) + '</span></div>';
+        if (ev.location) html += '<div class="pp-row"><span class="k">📍</span><span class="v">' + escapeHtml(ev.location) + '</span></div>';
+        if (ev.notes) html += '<div class="pp-notes">' + escapeHtml(ev.notes) + '</div>';
+        html += '<div class="pp-actions"><button class="btn btn-primary" id="ppEditBtn">编辑</button></div>';
+
+        pop.innerHTML = html;
+        pop.style.display = 'block';
+
+        // 定位：优先在事件下方，超出视口底/右则回退
+        const rect = anchor.getBoundingClientRect();
+        let left = rect.left;
+        let top = rect.bottom + 8;
+        const maxLeft = window.innerWidth - pop.offsetWidth - 12;
+        if (left > maxLeft) left = maxLeft;
+        if (left < 12) left = 12;
+        pop.style.left = left + 'px';
+        pop.style.top = top + 'px';
+        if (top + pop.offsetHeight > window.innerHeight - 8) {
+          top = rect.top - pop.offsetHeight - 8;
+          if (top < 8) top = 8;
+          pop.style.top = top + 'px';
+        }
+
+        $('ppEditBtn').addEventListener('click', () => {
+          closePopover();
+          openEditEvent(id);
+        });
+      }
+
+      function openModal() { $('modalOverlay').classList.add('show'); setTimeout(() => $('evTitle').focus(), 50); }
+      function closeModal() { $('modalOverlay').classList.remove('show'); state.editingId = null; }
+
+      function getSelectedColor() {
+        const sel = document.querySelector('.color-dot.selected');
+        return sel ? sel.getAttribute('data-color') : COLORS[0];
+      }
+
+      function saveEvent() {
+        const title = $('evTitle').value.trim();
+        if (!title) { alert('请输入行程标题'); return; }
+        const date = $('evDate').value;
+        if (!date) { alert('请选择日期'); return; }
+        const allDay = !!(state.allDay);
+        let startTime = '', endTime = '';
+        if (!allDay) {
+          startTime = $('evStart').value || '09:00';
+          endTime = $('evEnd').value || '10:00';
+          if (timeToMin(endTime) <= timeToMin(startTime)) { alert('结束时间需晚于开始时间'); return; }
+        }
+        const data = {
+          title,
+          date,
+          allDay,
+          startTime,
+          endTime,
+          location: $('evLocation').value.trim(),
+          notes: $('evNotes').value.trim(),
+          color: getSelectedColor(),
+        };
+
+        if (state.editingId) {
+          const idx = state.events.findIndex(e => e.id === state.editingId);
+          if (idx >= 0) state.events[idx] = Object.assign({}, state.events[idx], data);
+        } else {
+          data.id = genId();
+          state.events.push(data);
+        }
+        saveEvents().then(() => { closeModal(); render(); });
+      }
+
+      function deleteEvent() {
+        if (!state.editingId) return;
+        if (!confirm('确定删除此行程吗？')) return;
+        state.events = state.events.filter(e => e.id !== state.editingId);
+        saveEvents().then(() => { closeModal(); render(); });
+      }
+
+      // ===== 事件绑定 =====
+      function bindEvents() {
+        $('prevBtn').addEventListener('click', () => nav(-1));
+        $('nextBtn').addEventListener('click', () => nav(1));
+        $('todayBtn').addEventListener('click', goToday);
+        $('addBtn').addEventListener('click', () => openNewEvent(fmtDate(state.cursor)));
+        $('viewSeg').addEventListener('click', (e) => {
+          const b = e.target.closest('button');
+          if (b) setView(b.dataset.view);
+        });
+        $('cancelBtn').addEventListener('click', closeModal);
+        $('saveBtn').addEventListener('click', saveEvent);
+        $('deleteBtn').addEventListener('click', deleteEvent);
+        $('allDayToggle').addEventListener('click', () => setAllDay(!state.allDay));
+        $('colorPalette').addEventListener('click', (e) => {
+          const dot = e.target.closest('.color-dot');
+          if (!dot) return;
+          document.querySelectorAll('.color-dot').forEach(d => d.classList.remove('selected'));
+          dot.classList.add('selected');
+        });
+        $('modalOverlay').addEventListener('click', (e) => {
+          if (e.target === $('modalOverlay')) closeModal();
+        });
+
+        // 内容区点击委托：事件条 toggle 详情浮层
+        $('calBody').addEventListener('click', (e) => {
+          const chip = e.target.closest('.ev-chip, .ev-block');
+          if (chip) {
+            const id = chip.getAttribute('data-id');
+            if (id && id !== '') { toggleDetailPopover(id, chip); return; }
+          }
+        });
+
+        // 内容区双击：跳转到日模式（避免单击误触）
+        $('calBody').addEventListener('dblclick', (e) => {
+          // 月视图双击空白 → 切到该日
+          const dayCell = e.target.closest('.cal-month-day');
+          if (dayCell && state.view === 'month') {
+            state.cursor = parseDate(dayCell.getAttribute('data-date'));
+            setView('day');
+            return;
+          }
+          // 周视图双击某一天列 → 切到该天的日视图
+          const tgCol = e.target.closest('.tg-col, .allday-col');
+          if (tgCol && state.view === 'week') {
+            const dd = tgCol.getAttribute('data-date');
+            if (dd) { state.cursor = parseDate(dd); setView('day'); }
+          }
+        });
+
+        // 周视图星期表头双击 → 切到该天日视图
+        $('weekdays').addEventListener('dblclick', (e) => {
+          if (state.view !== 'week') return;
+          const wd = e.target.closest('.wd[data-date]');
+          if (wd) { state.cursor = parseDate(wd.getAttribute('data-date')); setView('day'); }
+        });
+
+        // 详情浮层：点击浮层外部 / 滚动 / 窗口尺寸变化时关闭
+        document.addEventListener('click', (e) => {
+          const pop = $('evPopover');
+          if (pop.style.display === 'none') return;
+          if (pop.contains(e.target)) return;
+          if (e.target.closest('.ev-chip, .ev-block')) return; // 点事件条由 calBody 处理（切换/打开）
+          closePopover();
+        });
+        window.addEventListener('scroll', closePopover, true);
+        window.addEventListener('resize', closePopover);
+
+        // 键盘
+        document.addEventListener('keydown', (e) => {
+          if (e.key === 'Escape') {
+            if ($('evPopover').style.display !== 'none') { closePopover(); return; }
+            closeModal();
+          }
+          if ((e.metaKey || e.ctrlKey) && e.key === 's') { e.preventDefault(); saveEvent(); }
+        });
+      }
+
+      // ===== 主题 =====
+      function loadTheme() {
+        try {
+          const urlTheme = new URLSearchParams(window.location.search).get('theme');
+          if (urlTheme === 'dark' || urlTheme === 'light') localStorage.setItem(themeKey, urlTheme);
+          const saved = localStorage.getItem(themeKey);
+          if (saved === 'dark') document.body.classList.add('dark');
+        } catch (e) {}
+      }
+
+      async function init() {
+        loadTheme();
+        bindEvents();
+        await loadEvents();
+        render();
+      }
+
+      init();
+    })();
+  </script>
+</body>
+</html>
