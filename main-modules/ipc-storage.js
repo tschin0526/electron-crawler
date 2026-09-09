@@ -21,6 +21,8 @@ let setCurrentServiceCard;
 const TODO_CONFIG_FILE_NAME = 'todolist-config.json';
 const TODO_MIGRATION_MARKER = '.todolist-data-dir-migrated';
 const TODO_CONFIG_PATH = path.join(__dirname, '..', TODO_CONFIG_FILE_NAME);
+const CALENDAR_CONFIG_FILE_NAME = 'calender-config.json';
+const CALENDAR_CONFIG_PATH = path.join(__dirname, '..', CALENDAR_CONFIG_FILE_NAME);
 
 // 🆕 文本类扩展名白名单（模块级常量，供「列出文件」与「返回支持的文本扩展名」两处共用）
 //   带点前缀（如 '.txt'）；覆盖 todo-Json / 一般Json / md / html 之外的所有纯文本类型。
@@ -167,6 +169,44 @@ function init(shared) {
 
   const TODO_DATA_DIR = resolveTodoDataDir();
 
+  function resolveCalendarDataDir() {
+    const fallbackDir = path.resolve(PLUGINS_DATA_DIR);
+    try {
+      if (!fs.existsSync(CALENDAR_CONFIG_PATH)) return fallbackDir;
+      const config = JSON.parse(fs.readFileSync(CALENDAR_CONFIG_PATH, 'utf8'));
+      const configuredDir = config && typeof config.calendarDataDir === 'string'
+        ? config.calendarDataDir.trim()
+        : '';
+      if (!configuredDir) return fallbackDir;
+      const resolvedDir = path.resolve(fallbackDir, configuredDir);
+      if (fs.existsSync(resolvedDir) && !fs.statSync(resolvedDir).isDirectory()) {
+        console.warn(`[Main] 日历配置目录不是文件夹，回退默认目录: ${resolvedDir}`);
+        return fallbackDir;
+      }
+      if (!fs.existsSync(resolvedDir)) fs.mkdirSync(resolvedDir, { recursive: true });
+      console.log(`[Main] 日历数据目录: ${resolvedDir}`);
+      return resolvedDir;
+    } catch (error) {
+      console.warn(`[Main] 读取 ${CALENDAR_CONFIG_FILE_NAME} 失败，回退默认 data 目录:`, error.message);
+      return fallbackDir;
+    }
+  }
+
+  const CALENDAR_DATA_DIR = resolveCalendarDataDir();
+
+  const defaultCalendarFile = path.join(path.resolve(PLUGINS_DATA_DIR), 'calendar.json');
+  const configuredCalendarFile = path.join(CALENDAR_DATA_DIR, 'calendar.json');
+  if (CALENDAR_DATA_DIR !== path.resolve(PLUGINS_DATA_DIR)
+      && fs.existsSync(defaultCalendarFile)
+      && !fs.existsSync(configuredCalendarFile)) {
+    try {
+      fs.copyFileSync(defaultCalendarFile, configuredCalendarFile);
+      console.log(`[Main] 已将 calendar.json 复制到: ${CALENDAR_DATA_DIR}`);
+    } catch (error) {
+      console.warn('[Main] 复制旧 calendar.json 失败，将继续使用配置目录:', error.message);
+    }
+  }
+
   // 首次切换到自定义目录时迁移旧卡片；目标已有同名文件则保留目标文件，不覆盖用户资料。
   const defaultTodoDir = path.resolve(PLUGINS_DATA_DIR);
   const migrationMarker = path.join(path.dirname(TODO_CONFIG_PATH), TODO_MIGRATION_MARKER);
@@ -250,7 +290,8 @@ function init(shared) {
   // 打包模式：应用包同级目录/data/（方便用户访问）
   ipcMain.handle('load-plugin-data', async (event, pluginName) => {
     try {
-      const dataFile = path.join(PLUGINS_DATA_DIR, `${pluginName}.json`);
+      const dataDir = pluginName === 'calendar' ? CALENDAR_DATA_DIR : PLUGINS_DATA_DIR;
+      const dataFile = path.join(dataDir, `${pluginName}.json`);
 
       if (!fs.existsSync(dataFile)) {
         console.log(`[Main] 插件数据文件不存在，返回空数据: ${dataFile}`);
@@ -269,11 +310,12 @@ function init(shared) {
 
   ipcMain.handle('save-plugin-data', async (event, pluginName, data) => {
     try {
-      if (!fs.existsSync(PLUGINS_DATA_DIR)) {
-        fs.mkdirSync(PLUGINS_DATA_DIR, { recursive: true });
+      const dataDir = pluginName === 'calendar' ? CALENDAR_DATA_DIR : PLUGINS_DATA_DIR;
+      if (!fs.existsSync(dataDir)) {
+        fs.mkdirSync(dataDir, { recursive: true });
       }
 
-      const dataFile = path.join(PLUGINS_DATA_DIR, `${pluginName}.json`);
+      const dataFile = path.join(dataDir, `${pluginName}.json`);
       fs.writeFileSync(dataFile, JSON.stringify(data, null, 2), 'utf8');
       console.log(`[Main] 插件数据已保存: ${dataFile}`);
       return { success: true };
@@ -468,6 +510,10 @@ function init(shared) {
     return { success: true, data: TODO_DATA_DIR };
   });
 
+  ipcMain.handle('get-calendar-data-dir', async () => {
+    return { success: true, data: CALENDAR_DATA_DIR };
+  });
+
   // 保存 ToDo 卡片目录配置；配置文件始终位于项目根目录。
   ipcMain.handle('save-todo-data-dir-config', async (_event, todoDataDir) => {
     try {
@@ -484,6 +530,24 @@ function init(shared) {
       return { success: true, configPath, dataDir: configuredDir };
     } catch (error) {
       console.error('[Main] 保存 ToDo 目录配置失败:', error);
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('save-calendar-data-dir-config', async (_event, calendarDataDir) => {
+    try {
+      if (typeof calendarDataDir !== 'string' || !calendarDataDir.trim()) {
+        return { success: false, error: '日历目录不能为空' };
+      }
+      const configuredDir = path.resolve(PLUGINS_DATA_DIR, calendarDataDir.trim());
+      if (fs.existsSync(configuredDir) && !fs.statSync(configuredDir).isDirectory()) {
+        return { success: false, error: '选择的路径不是目录' };
+      }
+      if (!fs.existsSync(configuredDir)) fs.mkdirSync(configuredDir, { recursive: true });
+      fs.writeFileSync(CALENDAR_CONFIG_PATH, JSON.stringify({ calendarDataDir: calendarDataDir.trim() }, null, 2) + '\n', 'utf8');
+      return { success: true, configPath: CALENDAR_CONFIG_PATH, dataDir: configuredDir };
+    } catch (error) {
+      console.error('[Main] 保存日历目录配置失败:', error);
       return { success: false, error: error.message };
     }
   });
@@ -654,6 +718,62 @@ function init(shared) {
       fs.unlinkSync(normalized);
       console.log(`[IPC] delete-file-by-path 已删除: ${normalized}`);
       return { success: true, path: normalized };
+    } catch (e) {
+      return { success: false, error: e.message };
+    }
+  });
+
+  // ✏️ 通用文件改名（按绝对路径）：MD / JSON / HTML / 任意文本文件都走这里。
+  // - 守卫与 delete-file-by-path 完全对齐：路径非空 / 源必须存在且是普通文件 /
+  //   新旧路径都必须在 allowedRoot（browseDir 或 data 目录）内 / 不在应用安装目录内
+  // - 另加：目标文件已存在 → 报错（避免覆盖丢数据）；新文件名拒绝 / \ .. 等穿越字符
+  // - 用 fs.renameSync 一步完成；同盘下原子操作
+  ipcMain.handle('rename-file-by-path', async (_event, oldAbsolutePath, newAbsolutePath, allowedRoot) => {
+    try {
+      if (!oldAbsolutePath || !newAbsolutePath || typeof oldAbsolutePath !== 'string' || typeof newAbsolutePath !== 'string') {
+        return { success: false, error: '路径参数无效' };
+      }
+      const newName = path.basename(newAbsolutePath);
+      if (newName.includes('/') || newName.includes('\\') || newName.includes('..')) {
+        return { success: false, error: '新文件名不能包含 / \\ .. 等字符' };
+      }
+      const srcPath = path.resolve(oldAbsolutePath);
+      const dstPath = path.resolve(newAbsolutePath);
+      if (!fs.existsSync(srcPath)) {
+        return { success: false, error: '文件不存在：' + srcPath };
+      }
+      const st = fs.statSync(srcPath);
+      if (!st.isFile()) {
+        return { success: false, error: '只能重命名文件，不能重命名目录' };
+      }
+      if (fs.existsSync(dstPath)) {
+        return { success: false, error: '目标文件已存在：' + dstPath + '（先删除或换个名字）' };
+      }
+      if (srcPath === dstPath) {
+        return { success: false, error: '新旧路径相同，无需重命名' };
+      }
+      // 守卫：新旧路径都必须落在允许的根目录内（与 delete-file-by-path 同一套 roots 逻辑）
+      const roots = [];
+      if (allowedRoot && typeof allowedRoot === 'string' && allowedRoot.trim()) {
+        roots.push(path.resolve(allowedRoot));
+      }
+      if (PLUGINS_DATA_DIR) {
+        const resolvedDataDir = path.resolve(PLUGINS_DATA_DIR);
+        if (!roots.includes(resolvedDataDir)) roots.push(resolvedDataDir);
+      }
+      const inAllowed = (p) => roots.some(r => p === r || p.startsWith(r + path.sep));
+      if (roots.length && (!inAllowed(srcPath) || !inAllowed(dstPath))) {
+        const allowedDirs = roots.map(r => r);
+        return { success: false, error: `只允许改名「${allowedDirs.join('、')}」目录内的文件：\n${srcPath}` };
+      }
+      // 守卫：不允许改动应用自身安装目录内的文件
+      const appRoot = path.resolve(__dirname, '..');
+      if (srcPath.startsWith(appRoot + path.sep) || dstPath.startsWith(appRoot + path.sep)) {
+        return { success: false, error: '不允许改动应用安装目录内的文件' };
+      }
+      fs.renameSync(srcPath, dstPath);
+      console.log(`[IPC] rename-file-by-path 已改名: ${srcPath} -> ${dstPath}`);
+      return { success: true, path: dstPath, name: newName };
     } catch (e) {
       return { success: false, error: e.message };
     }

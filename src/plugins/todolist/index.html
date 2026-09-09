@@ -1825,6 +1825,41 @@
     body.dark .rename-confirm-msg {
       color: #e2e8f0;
     }
+    /* 通用文件改名对话框（renameFileDialogOverlay）：输入框 + 提示行 */
+    #renameFileDialogOverlay {
+      align-items: center;
+      justify-content: center;
+      z-index: 2000;
+      background-color: rgba(0, 0, 0, 0.45);
+    }
+    .rename-dialog-input {
+      width: 100%;
+      box-sizing: border-box;
+      padding: 8px 10px;
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      background: var(--bg-input, #fff);
+      color: var(--text-color, #1e293b);
+      font-size: 14px;
+      font-family: 'Monaco', 'Consolas', monospace;
+      margin-bottom: 8px;
+    }
+    .rename-dialog-input:focus {
+      outline: none;
+      border-color: #7c3aed;
+    }
+    .rename-dialog-hint {
+      margin: 0 0 14px;
+      font-size: 12px;
+      line-height: 1.5;
+      color: var(--text-tertiary, #94a3b8);
+      word-break: break-all;
+    }
+    body.dark .rename-dialog-input {
+      background: #0f172a;
+      color: #e2e8f0;
+      border-color: rgba(148, 163, 184, 0.3);
+    }
 
     .modal {
       background-color: var(--card-bg);
@@ -4289,6 +4324,9 @@
           <button class="btn btn-text btn-secondary" id="editorReturnBtn" onclick="returnFromEditorLink()" style="display:none;color:#7c3aed;border:1px solid #7c3aed;" title="返回来源卡片（关闭编辑器并滚回原卡片位置）">↩ 返回</button>
           <!-- 📧 发邮件按钮已移除（用户要求）：todo 编辑器里没必要发邮件，Gallery 卡片上已有同功能 -->
           <button class="btn btn-text btn-primary" onclick="closeModal()" title="关闭编辑器，返回 Gallery" data-page-node-id="vmsMk5SyBCqpSx17cKICP9">返回</button>
+          <!-- ✏️ 编辑器内「改名」：当前文件改名（todo 卡片走原内联流程；MD/JSON/HTML/文本走通用改名对话框）；
+               与「删除」「保存」同款样式，禁用态仅靠 disabled + opacity 区分 -->
+          <button class="btn btn-text btn-primary" id="editorRenameFileBtn" type="button" onclick="renameCurrentFile()" title="修改当前文件名（todo 卡片 / MD / JSON / HTML / 文本）">改名</button>
           <!-- 🆕 编辑器内「删除」：删除当前打开的文件（todo 卡片 / MD / JSON / HTML / 任意文本文件）；
                样式与「保存」统一（用户要求五个按钮同款），禁用态仅靠 disabled + opacity 区分 -->
           <button class="btn btn-text btn-primary" id="editorDeleteFileBtn" type="button" onclick="deleteCurrentFile()" title="删除当前文件（从磁盘删除，不可恢复）">删除</button>
@@ -4357,6 +4395,20 @@
       <div class="rename-confirm-actions" data-page-node-id="gBZL6YoxC6ZgRjmkmWsBef">
         <button class="btn btn-secondary" onclick="confirmRenameDiscard()" data-page-node-id="FebTu2h4GP6NTYYyZifkPv">放弃</button>
         <button class="btn btn-primary" onclick="confirmRenameSave()" data-page-node-id="dsFDAB3JsC16P3X37cZVnC">保存</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ✏️ 通用文件改名对话框：todo 卡片之外的所有文件类别（MD / JSON / HTML / 任意文本文件）。
+       结构与 renameConfirmOverlay 同款（rename-confirm-box），多一个文件名输入框 -->
+  <div class="modal-overlay" id="renameFileDialogOverlay" style="display: none;" onclick="if(event.target===event.currentTarget) closeRenameFileDialog()">
+    <div class="rename-confirm-box" onclick="event.stopPropagation()">
+      <p class="rename-confirm-msg" id="renameFileDialogTitle">修改文件名</p>
+      <input type="text" class="rename-dialog-input" id="renameFileDialogInput" maxlength="128" spellcheck="false" onkeydown="renameFileDialogKeydown(event)" />
+      <div class="rename-dialog-hint" id="renameFileDialogHint"></div>
+      <div class="rename-confirm-actions">
+        <button class="btn btn-secondary" onclick="closeRenameFileDialog()">取消</button>
+        <button class="btn btn-primary" onclick="confirmRenameFileDialog()">确定</button>
       </div>
     </div>
   </div>
@@ -10128,6 +10180,16 @@
       btn.title = hasFile
         ? '删除当前文件（从磁盘删除，不可恢复）'
         : '当前是新增状态，磁盘上还没有文件可删除';
+      // 「改名」按钮与「删除」同款禁用逻辑：新增态磁盘上没有文件，无可改名
+      const renameBtn = document.getElementById('editorRenameFileBtn');
+      if (renameBtn) {
+        renameBtn.disabled = !hasFile;
+        renameBtn.style.opacity = hasFile ? '' : '0.4';
+        renameBtn.style.cursor = hasFile ? '' : 'not-allowed';
+        renameBtn.title = hasFile
+          ? '修改当前文件名（todo 卡片 / MD / JSON / HTML / 文本）'
+          : '当前是新增状态，磁盘上还没有文件可改名';
+      }
     }
 
     // 更新文件路径显示
@@ -10882,6 +10944,166 @@
         btn.onclick = startRenameJsonFile;
       }
       if (nameEl) nameEl.style.display = '';
+    }
+
+    // ========== ✏️ 通用文件改名（MD / JSON / HTML / 任意文本文件） ==========
+    // 顶栏「改名」按钮入口：todo 卡片沿用上面的内联改名流程；其余类别走通用对话框。
+    // 改名走后端 rename-file-by-path（守卫与 delete-file-by-path 对齐），
+    // 成功后同步：Sheet 页签 key/title/path、modalTitle、运行时 id（currentMdId 等）、路径显示。
+    // 未保存的编辑缓冲不受影响——改名后继续编辑，保存时写入新文件。
+    function renameCurrentFile() {
+      const target = currentFileTarget();
+      if (!target) {
+        showToast('当前是新增状态，磁盘上还没有文件可改名');
+        return;
+      }
+      // todo 卡片：复用现有内联改名 UI（jsonFileRow 里的输入框 + 确认框）
+      if (target.kind === 'todo') {
+        startRenameJsonFile();
+        return;
+      }
+      openRenameFileDialog(target);
+    }
+
+    // 改名对话框上下文：{ oldPath, oldName, keepExt, ext, oldKey, allowedRoot, kind }
+    let renameFileDialogCtx = null;
+
+    async function openRenameFileDialog(target) {
+      const api = window.electronAPI || {};
+      let oldPath = null;
+      let allowedRoot = null;
+      let keepExt = true;
+      let ext = '';
+      let oldKey = null;
+
+      if (target.kind === 'ext') {
+        // 外部文件：按绝对路径改名，扩展名可一并修改
+        oldPath = target.path;
+        allowedRoot = (fileListState && fileListState.browseDir) || null;
+        if (!allowedRoot) {
+          const dirRes = api.getTodoDataDir ? await api.getTodoDataDir() : null;
+          if (dirRes && dirRes.success && dirRes.data) allowedRoot = dirRes.data;
+        }
+        keepExt = false;
+        oldKey = 'ext:' + oldPath;
+      } else {
+        // data 目录内的 MD / JSON / HTML：id = 主文件名，扩展名固定不变
+        const dirRes = api.getTodoDataDir ? await api.getTodoDataDir() : null;
+        if (!dirRes || !dirRes.success || !dirRes.data) {
+          alert('无法获取 data 目录，改名失败');
+          return;
+        }
+        allowedRoot = dirRes.data;
+        if (target.kind === 'md') { ext = '.md'; oldKey = 'md:' + currentMdId; }
+        else if (target.kind === 'json') { ext = '.json'; oldKey = 'json:' + currentJsonId; }
+        else { ext = '.html'; oldKey = 'html:' + currentHtmlId; }
+        oldPath = allowedRoot.replace(/\/+$/, '') + '/' + target.name;
+      }
+
+      renameFileDialogCtx = {
+        oldPath,
+        oldName: target.name,
+        keepExt,
+        ext,
+        oldKey,
+        allowedRoot,
+        kind: target.kind
+      };
+
+      const overlay = document.getElementById('renameFileDialogOverlay');
+      const input = document.getElementById('renameFileDialogInput');
+      const hint = document.getElementById('renameFileDialogHint');
+      const title = document.getElementById('renameFileDialogTitle');
+      if (title) title.textContent = `修改文件名：${target.name}`;
+      if (input) {
+        // 主文件名预填并预选中，扩展名固定时只改主名更顺手
+        input.value = keepExt ? target.name.slice(0, -ext.length) : target.name;
+        input.focus();
+        input.select();
+      }
+      if (hint) {
+        hint.textContent = keepExt
+          ? `只修改主文件名，扩展名 ${ext} 固定不变（Enter 确认 / Esc 取消）`
+          : '可修改完整文件名（含扩展名）（Enter 确认 / Esc 取消）';
+      }
+      if (overlay) overlay.style.display = 'flex';
+    }
+
+    function renameFileDialogKeydown(e) {
+      if (e.key === 'Enter') { e.preventDefault(); confirmRenameFileDialog(); }
+      else if (e.key === 'Escape') { e.preventDefault(); closeRenameFileDialog(); }
+    }
+
+    function closeRenameFileDialog() {
+      const overlay = document.getElementById('renameFileDialogOverlay');
+      if (overlay) overlay.style.display = 'none';
+      renameFileDialogCtx = null;
+    }
+
+    async function confirmRenameFileDialog() {
+      const ctx = renameFileDialogCtx;
+      const input = document.getElementById('renameFileDialogInput');
+      if (!ctx || !input) return;
+      const val = input.value.trim();
+      if (!val) { alert('文件名不能为空'); input.focus(); return; }
+      if (val.includes('/') || val.includes('\\') || val.includes('..')) {
+        alert('文件名不能包含 / \\ .. 等路径字符');
+        input.focus();
+        return;
+      }
+      const newName = ctx.keepExt ? (val + ctx.ext) : val;
+      if (newName === ctx.oldName) { closeRenameFileDialog(); return; }
+      const oldDir = ctx.oldPath.replace(/[/\\][^/\\]+$/, '');
+      const newPath = oldDir + '/' + newName;
+      try {
+        const r = await window.electronAPI.renameFileByPath(ctx.oldPath, newPath, ctx.allowedRoot);
+        if (!r || !r.success) {
+          alert('改名失败：' + ((r && r.error) || '未知错误'));
+          return; // 保留对话框，用户可换个名字重试
+        }
+      } catch (e) {
+        console.error('[TodoList] 改名失败:', e);
+        alert('改名失败：' + (e && e.message ? e.message : e));
+        return;
+      }
+
+      // 计算新页签 key + 新运行时 id，同步内存状态
+      let newKey = ctx.oldKey;
+      let newBase = newName;
+      if (ctx.keepExt) newBase = newName.slice(0, -ctx.ext.length);
+      if (ctx.kind === 'md') { currentMdId = newBase; newKey = 'md:' + newBase; }
+      else if (ctx.kind === 'json') { currentJsonId = newBase; newKey = 'json:' + newBase; }
+      else if (ctx.kind === 'html') { currentHtmlId = newBase; newKey = 'html:' + newBase; }
+      else { externalFilePath = newPath; newKey = 'ext:' + newPath; }
+
+      // 同步 Sheet 页签（key 变了：原地改，保留 dirty 标记）
+      const tab = editorTabs.find(t => t.key === ctx.oldKey);
+      if (tab) {
+        tab.key = newKey;
+        tab.title = newName;
+        tab.id = newName;
+        if (tab.path) tab.path = newPath;
+      }
+      if (activeTabKey === ctx.oldKey) {
+        activeTabKey = newKey;
+        persistLastActiveTab(newKey);
+      }
+      saveEditorTabs();
+      renderSheetTabs();
+      // 编辑器视图记忆跟随新 key（滚动位置记忆 key 与页签 key 同源）
+      currentEditorDocKey = newKey;
+      // 标题 / 路径显示跟随更新
+      const modalTitle = document.getElementById('modalTitle');
+      if (modalTitle && modalTitle.textContent.includes(ctx.oldName)) {
+        modalTitle.textContent = modalTitle.textContent.replace(ctx.oldName, newName);
+      }
+      updateFilePathDisplay();
+
+      closeRenameFileDialog();
+      // 刷新「打开已有文件」列表（编辑器内 + 主画面共用同一份 fileListState）
+      if (typeof loadFileListItems === 'function') loadFileListItems();
+      showToast(`已改名：${ctx.oldName} → ${newName}`, 'success');
+      console.log(`[TodoList] 文件已改名: ${ctx.oldPath} -> ${newPath}`);
     }
 
     // ========== 编辑退出前的「未保存更改」检测 + 问询后存档 ==========

@@ -232,6 +232,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getDataDir: () => ipcRenderer.invoke('get-data-dir'),
   getTodoDataDir: () => ipcRenderer.invoke('get-todo-data-dir'),
   saveTodoDataDirConfig: (dir) => ipcRenderer.invoke('save-todo-data-dir-config', dir),
+  getCalendarDataDir: () => ipcRenderer.invoke('get-calendar-data-dir'),
+  saveCalendarDataDirConfig: (dir) => ipcRenderer.invoke('save-calendar-data-dir-config', dir),
   openDirDialog: () => ipcRenderer.invoke('open-dir-dialog'),
   listAllFilesInDir: (dir) => ipcRenderer.invoke('list-all-files-in-dir', dir),
   getTextExtensions: () => ipcRenderer.invoke('get-text-extensions'),
@@ -239,6 +241,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   checkFileExists: (absolutePath) => ipcRenderer.invoke('check-file-exists', absolutePath),
   saveFileByPath: (absolutePath, content) => ipcRenderer.invoke('save-file-by-path', absolutePath, content),
   deleteFileByPath: (absolutePath, allowedRoot) => ipcRenderer.invoke('delete-file-by-path', absolutePath, allowedRoot),
+  // ✏️ 通用文件改名（按绝对路径，MD/JSON/HTML/任意文本共用；守卫见主进程 rename-file-by-path）
+  renameFileByPath: (oldAbsolutePath, newAbsolutePath, allowedRoot) => ipcRenderer.invoke('rename-file-by-path', oldAbsolutePath, newAbsolutePath, allowedRoot),
 
   // todo 卡片：按 id 实时重读单个卡片文件（打开卡片前同步 iCloud/外部变更）
   readTodoFile: (id) => ipcRenderer.invoke('read-todo-file', id),

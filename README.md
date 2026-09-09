@@ -103,6 +103,18 @@ ToDo 卡片默认保存在应用的 `data` 目录中。若需要将 `todo-*.json
 
 该配置只影响系统内定的 ToDo 卡片文件；普通 JSON、MD、HTML 和其他文本文件仍使用原来的默认 `data` 目录。
 
+## 📅 日历数据目录配置
+
+日历行程默认保存在 `data/calendar.json`。打开日历页面右上角的设置菜单，选择「设定 calendar.json 的默认目录」即可保存目录配置。配置会写入项目根目录的 `calender-config.json`：
+
+```json
+{
+   "calendarDataDir": "/Users/你的用户名/Documents/calendar-data"
+}
+```
+
+配置目录不存在时会自动创建；配置文件不存在、格式错误、目录参数为空或目标路径不是目录时，会回退到默认 `data` 目录。配置在应用启动时读取，修改后请重启应用。首次切换目录时，已有的 `data/calendar.json` 会复制到新目录。
+
 ## 🔌 内置 HTTP API
 
 应用启动后监听 `0.0.0.0:3000`：

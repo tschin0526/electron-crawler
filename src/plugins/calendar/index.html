@@ -144,6 +144,51 @@
     }
     .cal-add-btn:hover { background: var(--bg-elevated); }
 
+    .cal-settings-wrap { position: relative; }
+    .cal-settings-btn {
+      width: 32px; height: 32px;
+      border: none;
+      background: none;
+      color: var(--text);
+      font-size: 19px;
+      cursor: pointer;
+      border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .cal-settings-btn:hover, .cal-settings-btn.active { background: var(--bg-elevated); }
+    .cal-settings-menu {
+      position: absolute;
+      right: 0;
+      top: calc(100% + 8px);
+      width: 280px;
+      padding: 8px;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      box-shadow: 0 12px 30px rgba(0,0,0,0.25);
+      z-index: 30;
+    }
+    .cal-settings-menu button {
+      width: 100%;
+      border: none;
+      background: none;
+      color: var(--text);
+      text-align: left;
+      padding: 8px;
+      border-radius: 7px;
+      cursor: pointer;
+      font-size: 13px;
+    }
+    .cal-settings-menu button:hover { background: var(--bg-elevated); }
+    .cal-settings-current {
+      display: block;
+      margin-top: 5px;
+      color: var(--text-secondary);
+      font-size: 11px;
+      line-height: 1.4;
+      word-break: break-all;
+    }
+
     /* ===== 星期标题列 ===== */
     .cal-weekdays {
       display: grid;
@@ -871,6 +916,15 @@
       <button data-view="month">月</button>
     </div>
     <button class="cal-add-btn" id="addBtn" title="新增行程">＋</button>
+    <div class="cal-settings-wrap">
+      <button class="cal-settings-btn" id="calendarSettingsBtn" title="日历设置" aria-label="日历设置">⚙️</button>
+      <div class="cal-settings-menu" id="calendarSettingsMenu" style="display:none;">
+        <button type="button" id="chooseCalendarDataDirBtn">
+          📁 设定 calendar.md 的默认目录
+          <span class="cal-settings-current" id="calendarSettingsCurrentDir">当前目录：读取中...</span>
+        </button>
+      </div>
+    </div>
   </div>
 
   <div class="cal-toolbar">
@@ -995,6 +1049,7 @@
       };
 
       const storeKey = 'calendar';
+      const storeFile = 'calendar.md';
       const themeKey = 'calendarTheme';
 
       // ===== 日期工具 =====
@@ -1025,15 +1080,137 @@
         return pad(Math.floor(m / 60)) + ':' + pad(m % 60);
       }
 
-      // ===== 数据持久化（JSON 文件，经 preload 桥接，浏览器环境退回 localStorage） =====
+      // ===== 数据持久化（MD 文件，经 preload 桥接，浏览器环境退回 localStorage） =====
+      // 落盘文件：{日历数据目录}/calendar.md（目录由主进程 get-calendar-data-dir 解析，支持自定义默认目录）
+
+      // 取得日历数据目录绝对路径（主进程根据 calender-config.json 的 calendarDataDir 解析）
+      async function getDataDir() {
+        const api = window.electronAPI || {};
+        try {
+          if (api.getCalendarDataDir) {
+            const res = await api.getCalendarDataDir();
+            if (res && res.success && res.data) return res.data;
+          }
+        } catch (e) { /* ignore */ }
+        return '';
+      }
+
+      // ===== MD 序列化 =====
+      function mdEscape(s) {
+        // 字段值写在反引号内，值中若含反引号会破坏结构，这里统一替换成单引号保安全
+        return String(s == null ? '' : s).replace(/`/g, "'");
+      }
+      function eventToMarkdown(ev) {
+        const tagsJson = JSON.stringify(Array.isArray(ev.tags) ? ev.tags : []);
+        const todoJson = JSON.stringify(Array.isArray(ev.todoIds) ? ev.todoIds : []);
+        const color = '"' + String(ev.color || '').replace(/^"|"$/g, '') + '"';
+        let s = '## EVENT \n';
+        s += '- title: `' + mdEscape(ev.title) + '`\n';
+        s += '- date: `' + mdEscape(ev.date) + '`\n';
+        s += '- allDay: `' + (ev.allDay ? 'true' : 'false') + '`\n';
+        s += '- startTime: `' + mdEscape(ev.startTime) + '`\n';
+        s += '- endTime: `' + mdEscape(ev.endTime) + '`\n';
+        s += '- location: `' + mdEscape(ev.location) + '`\n';
+        s += '- color: `' + color + '`\n';
+        s += '- tags: `' + tagsJson + '`\n';
+        s += '- todoIds: `' + todoJson + '`\n';
+        s += '- Remark:\n```\n' + String(ev.notes || '') + '\n```\n';
+        return s;
+      }
+      function eventsToMarkdown(events) {
+        const head = '# 日历行程\n\n> 每条行程以 `## EVENT` 分隔，字段值写在反引号内，Remark 用代码块保存多行备注。\n\n';
+        if (!events || !events.length) return head;
+        return head + events.map(eventToMarkdown).join('\n');
+      }
+
+      // ===== MD 解析 =====
+      function parseArrField(s) {
+        s = (s || '').trim();
+        if (!s) return [];
+        try { const a = JSON.parse(s); return Array.isArray(a) ? a : []; }
+        catch (e) { return []; }
+      }
+      function parseEventBlock(block) {
+        // 先把 Remark 代码块与字段头部切开，避免备注内容干扰字段解析
+        let remark = '';
+        let head = block;
+        const ri = block.indexOf('- Remark:');
+        if (ri >= 0) {
+          head = block.slice(0, ri);
+          const after = block.slice(ri + '- Remark:'.length);
+          const m = after.match(/```([\s\S]*)```/);
+          if (m) {
+            remark = m[1].replace(/^\n/, '').replace(/\n$/, '');
+            if (remark.trim() === '') remark = '';
+          }
+        }
+        const get = (name) => {
+          const m = head.match(new RegExp('- ' + name + ': `([^`]*)`'));
+          return m ? m[1] : '';
+        };
+        const title = get('title');
+        if (!title) return null;
+        let color = get('color').trim();
+        if (color.length >= 2 && color[0] === '"' && color[color.length - 1] === '"') color = color.slice(1, -1);
+        return {
+          id: genId(),
+          title: title,
+          date: get('date'),
+          allDay: get('allDay') === 'true',
+          startTime: get('startTime'),
+          endTime: get('endTime'),
+          location: get('location'),
+          color: color || COLORS[0],
+          tags: parseArrField(get('tags')),
+          todoIds: parseArrField(get('todoIds')),
+          notes: remark,
+        };
+      }
+      function parseMarkdownEvents(md) {
+        if (!md) return [];
+        const events = [];
+        const blocks = String(md).split(/^##[ \t]*EVENT[ \t]*$/m);
+        for (const block of blocks) {
+          const ev = parseEventBlock(block);
+          if (ev) events.push(ev);
+        }
+        return events;
+      }
+
+      // 迁移旧 calendar.json（一次性）：读旧 json → 写回 md，旧 json 保留不删
+      async function migrateLegacyJson() {
+        const api = window.electronAPI || {};
+        if (!api.loadPluginData) return false;
+        try {
+          const res = await api.loadPluginData(storeKey);
+          const arr = Array.isArray(res && res.data) ? res.data : [];
+          if (!arr.length) return false;
+          state.events = arr; // 旧 json 含 id，直接保留
+          await saveEvents();
+          return true;
+        } catch (e) { return false; }
+      }
+
       async function loadEvents() {
         try {
-          if (window.electronAPI && typeof window.electronAPI.loadPluginData === 'function') {
-            const res = await window.electronAPI.loadPluginData(storeKey);
-            state.events = Array.isArray(res && res.data) ? res.data : [];
+          if (window.electronAPI && typeof window.electronAPI.readFileByPath === 'function') {
+            const dir = await getDataDir();
+            const file = dir ? (dir + '/calendar.md') : 'calendar.md';
+            const res = await window.electronAPI.readFileByPath(file);
+            if (res && res.success && typeof res.content === 'string' && res.content.trim()) {
+              state.events = parseMarkdownEvents(res.content);
+              return;
+            }
+            if (await migrateLegacyJson()) return;
+            state.events = [];
           } else {
-            const raw = localStorage.getItem(storeKey);
-            state.events = raw ? JSON.parse(raw) : [];
+            const md = localStorage.getItem(storeFile);
+            if (md && md.trim()) {
+              state.events = parseMarkdownEvents(md);
+            } else {
+              const raw = localStorage.getItem(storeKey);
+              state.events = raw && raw.trim().startsWith('[') ? JSON.parse(raw) : [];
+            }
           }
         } catch (e) {
           console.error('[Calendar] 加载失败:', e);
@@ -1042,10 +1219,14 @@
       }
       async function saveEvents() {
         try {
-          if (window.electronAPI && typeof window.electronAPI.savePluginData === 'function') {
-            await window.electronAPI.savePluginData(storeKey, state.events);
+          const md = eventsToMarkdown(state.events);
+          if (window.electronAPI && typeof window.electronAPI.saveFileByPath === 'function') {
+            const dir = await getDataDir();
+            const file = dir ? (dir + '/calendar.md') : 'calendar.md';
+            await window.electronAPI.saveFileByPath(file, md);
           } else {
-            localStorage.setItem(storeKey, JSON.stringify(state.events));
+            localStorage.setItem(storeFile, md);
+            localStorage.removeItem(storeKey);
           }
         } catch (e) {
           console.error('[Calendar] 保存失败:', e);
@@ -1862,6 +2043,15 @@
           else goToday();
         });
         $('addBtn').addEventListener('click', () => openNewEvent(fmtDate(state.cursor)));
+        $('calendarSettingsBtn').addEventListener('click', async () => {
+          const menu = $('calendarSettingsMenu');
+          const button = $('calendarSettingsBtn');
+          const opening = menu.style.display === 'none' || !menu.style.display;
+          menu.style.display = opening ? 'block' : 'none';
+          button.classList.toggle('active', opening);
+          if (opening) await updateCalendarSettingsCurrentDir();
+        });
+        $('chooseCalendarDataDirBtn').addEventListener('click', chooseCalendarDataDir);
         $('viewSeg').addEventListener('click', (e) => {
           const b = e.target.closest('button');
           if (b) setView(b.dataset.view);
@@ -1943,6 +2133,10 @@
           if (e.target.closest('.todo-link-wrap')) return;
           closeTodoDropdown();
         });
+        document.addEventListener('click', (e) => {
+          if (e.target.closest('.cal-settings-wrap')) return;
+          closeCalendarSettingsMenu();
+        });
         // 详情浮层：点关联卡片 → 打开 MD 浏览器查看内容
         $('evPopover').addEventListener('click', (e) => {
           const item = e.target.closest('.pp-todo-item[data-id]');
@@ -2023,6 +2217,50 @@
           }
           if ((e.metaKey || e.ctrlKey) && e.key === 's') { e.preventDefault(); saveEvent(); }
         });
+      }
+
+      async function updateCalendarSettingsCurrentDir() {
+        const label = $('calendarSettingsCurrentDir');
+        if (!label) return;
+        try {
+          const api = window.electronAPI || {};
+          const result = api.getCalendarDataDir ? await api.getCalendarDataDir() : null;
+          const dir = result && result.success && result.data ? result.data : '默认 data 目录';
+          label.textContent = '当前目录：' + dir;
+          label.title = dir;
+        } catch (error) {
+          label.textContent = '当前目录：默认 data 目录';
+        }
+      }
+
+      function closeCalendarSettingsMenu() {
+        const menu = $('calendarSettingsMenu');
+        const button = $('calendarSettingsBtn');
+        if (!menu) return;
+        menu.style.display = 'none';
+        if (button) button.classList.remove('active');
+      }
+
+      async function chooseCalendarDataDir() {
+        const api = window.electronAPI || {};
+        if (!api.openDirDialog || !api.saveCalendarDataDirConfig) {
+          alert('当前版本不支持设置日历目录');
+          return;
+        }
+        try {
+          const selected = await api.openDirDialog();
+          if (!selected || !selected.success || !selected.data) return;
+          const result = await api.saveCalendarDataDirConfig(selected.data);
+          if (!result || !result.success) {
+            alert('保存日历默认目录失败：' + ((result && result.error) || '未知错误'));
+            return;
+          }
+          closeCalendarSettingsMenu();
+          alert('日历默认目录已保存，重启应用后生效');
+        } catch (error) {
+          console.error('[Calendar] 设置日历默认目录失败:', error);
+          alert('设置日历默认目录失败：' + (error.message || error));
+        }
       }
 
       // ===== 主题 =====
