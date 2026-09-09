@@ -144,6 +144,26 @@
     }
     .cal-add-btn:hover { background: var(--bg-elevated); }
 
+    /* ↻ 刷新按钮：从磁盘重新载入行程数据（calendar.md）+ Todo 卡片；加载中图标旋转 */
+    .cal-refresh-btn {
+      width: 32px; height: 32px;
+      border: none;
+      background: none;
+      color: var(--text);
+      font-size: 22px;
+      font-weight: 600;
+      line-height: 1;
+      cursor: pointer;
+      border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .cal-refresh-btn:hover { background: var(--bg-elevated); }
+    .cal-refresh-btn.spinning { animation: cal-refresh-spin 0.8s linear infinite; pointer-events: none; }
+    @keyframes cal-refresh-spin {
+      from { transform: rotate(0deg); }
+      to   { transform: rotate(360deg); }
+    }
+
     .cal-settings-wrap { position: relative; }
     .cal-settings-btn {
       width: 32px; height: 32px;
@@ -915,6 +935,7 @@
       <button data-view="week">周</button>
       <button data-view="month">月</button>
     </div>
+    <button class="cal-refresh-btn" id="refreshBtn" title="刷新行程数据（从 calendar.md 重新载入）" aria-label="刷新行程数据">↻</button>
     <button class="cal-add-btn" id="addBtn" title="新增行程">＋</button>
     <div class="cal-settings-wrap">
       <button class="cal-settings-btn" id="calendarSettingsBtn" title="日历设置" aria-label="日历设置">⚙️</button>
@@ -1083,7 +1104,7 @@
       // ===== 数据持久化（MD 文件，经 preload 桥接，浏览器环境退回 localStorage） =====
       // 落盘文件：{日历数据目录}/calendar.md（目录由主进程 get-calendar-data-dir 解析，支持自定义默认目录）
 
-      // 取得日历数据目录绝对路径（主进程根据 calender-config.json 的 calendarDataDir 解析）
+      // 取得日历数据目录绝对路径（主进程根据 calendar-config.json 的 calendarDataDir 解析）
       async function getDataDir() {
         const api = window.electronAPI || {};
         try {
@@ -2043,6 +2064,7 @@
           else goToday();
         });
         $('addBtn').addEventListener('click', () => openNewEvent(fmtDate(state.cursor)));
+        $('refreshBtn').addEventListener('click', refreshEventData);
         $('calendarSettingsBtn').addEventListener('click', async () => {
           const menu = $('calendarSettingsMenu');
           const button = $('calendarSettingsBtn');
@@ -2271,6 +2293,23 @@
           const saved = localStorage.getItem(themeKey);
           if (saved === 'dark') document.body.classList.add('dark');
         } catch (e) {}
+      }
+
+      // ↻ 刷新按钮：从磁盘重新载入行程数据（calendar.md）+ 关联 Todo 卡片，并重绘画面。
+      //   对齐 TodoList 插件的「刷新」（refreshGalleryData）：加载中图标旋转，完成后重绘；
+      //   localStorage 后备模式同样有效（重读 localStorage）。
+      async function refreshEventData() {
+        const btn = $('refreshBtn');
+        if (btn) btn.classList.add('spinning');
+        try {
+          await Promise.all([loadEvents(), loadTodosList()]);
+          render();
+          console.log(`[Calendar] 已刷新行程数据（${state.events.length} 条）`);
+        } catch (err) {
+          console.error('[Calendar] 刷新行程数据失败:', err);
+        } finally {
+          if (btn) btn.classList.remove('spinning');
+        }
       }
 
       async function init() {

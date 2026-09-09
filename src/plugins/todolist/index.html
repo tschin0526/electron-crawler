@@ -336,8 +336,8 @@
       background: #c7d2fe;
     }
 
-    /* 🆕 Gallery 刷新按鈕：載入時圖示旋轉動畫 */
-    .refresh-btn-icon { display: inline-block; line-height: 1; }
+    /* 🆕 Gallery 刷新按鈕：載入時圖示旋轉動畫；↻ 字形比汉字视觉小，加大一档才与相邻按钮协调 */
+    .refresh-btn-icon { display: inline-block; line-height: 1; font-size: 17px; }
     .refresh-btn-icon.spinning { animation: refresh-spin 0.8s linear infinite; }
     @keyframes refresh-spin {
       from { transform: rotate(0deg); }
@@ -369,6 +369,12 @@
       padding: 0 14px;
       border-radius: 50px;
       font-size: 13px;
+    }
+    /* ↻ 编辑器「重读」按钮：↻ 字形偏小，加大一档并与汉字按钮对齐 */
+    #editorReloadBtn {
+      font-size: 16px;
+      font-weight: 600;
+      line-height: 1;
     }
 
     .search-box {
@@ -1860,6 +1866,85 @@
       color: #e2e8f0;
       border-color: rgba(148, 163, 184, 0.3);
     }
+
+    /* ===== 📅 行程视图（calendar.md 专用）：与 Lite 版同款视觉 ===== */
+    #calEventsPane, #tlEvFormOverlay {
+      --ev-bg: #0f172a; --ev-card: #1e293b; --ev-text: #e2e8f0;
+      --ev-muted: #94a3b8; --ev-border: #334155; --ev-primary: #7c3aed;
+    }
+    body:not(.dark) #calEventsPane, body:not(.dark) #tlEvFormOverlay {
+      --ev-bg: #f8fafc; --ev-card: #ffffff; --ev-text: #1f2937;
+      --ev-muted: #6b7280; --ev-border: #e5e7eb; --ev-primary: #2563eb;
+    }
+    .cal-events-pane {
+      flex: 1; min-height: 0; overflow: auto;
+      background: var(--ev-bg); color: var(--ev-text);
+      padding: 10px 12px; font-size: 14px;
+    }
+    .ev-toolbar { display: flex; align-items: center; gap: 10px; padding-bottom: 8px; }
+    .ev-toolbar-flex { flex: 1; }
+    .ev-hint-text { font-size: 11px; color: var(--ev-muted); }
+    .ev-mode-seg { display: flex; border: 1px solid var(--ev-border); border-radius: 8px; overflow: hidden; }
+    .ev-mode-seg button { border: none; background: var(--ev-card); color: var(--ev-muted); font-size: 13px; padding: 4px 14px; cursor: pointer; }
+    .ev-mode-seg button.active { background: var(--ev-primary); color: #fff; }
+    .ev-add-btn { border: 1px solid var(--ev-primary); background: var(--ev-card); color: var(--ev-primary); font-size: 13px; padding: 4px 12px; border-radius: 8px; cursor: pointer; }
+    .ev-add-btn:hover { background: var(--ev-primary); color: #fff; }
+    .ev-monthnav { display: flex; align-items: center; gap: 10px; padding-bottom: 6px; }
+    .ev-monthnav button { border: 1px solid var(--ev-border); background: var(--ev-card); color: var(--ev-text); font-size: 15px; padding: 2px 10px; border-radius: 8px; cursor: pointer; }
+    #tlEvMonthTitle { flex: 1; text-align: center; font-size: 15px; font-weight: 600; }
+    .ev-today-mini { font-size: 12px !important; padding: 3px 10px !important; }
+    .events-list { max-width: 860px; margin: 0 auto; padding-bottom: 20px; }
+    .ev-empty { padding: 40px 16px; text-align: center; color: var(--ev-muted); font-size: 13px; line-height: 1.7; }
+    .ev-date {
+      position: sticky; top: 0; z-index: 1; padding: 8px 12px; margin-top: 6px;
+      background: var(--ev-card); border-bottom: 1px solid var(--ev-border);
+      font-weight: 600; font-size: 13px; color: var(--ev-text);
+      display: flex; align-items: center; gap: 8px;
+    }
+    .ev-date .ev-week { color: var(--ev-muted); font-weight: 400; font-size: 12px; }
+    .ev-date.today { color: var(--ev-primary); }
+    .ev-day-add { margin-left: auto; border: 1px solid var(--ev-primary); background: transparent; color: var(--ev-primary); font-size: 11px; padding: 2px 8px; border-radius: 6px; cursor: pointer; font-weight: 400; }
+    .ev-today-badge { background: var(--ev-primary); color: #fff; font-size: 11px; padding: 1px 8px; border-radius: 99px; font-weight: 500; }
+    .ev-item { display: flex; gap: 10px; padding: 8px 12px; border-bottom: 1px solid var(--ev-border); background: var(--ev-card); }
+    .ev-item.past { opacity: 0.55; }
+    .ev-swatch { flex: 0 0 auto; width: 10px; height: 10px; border-radius: 50%; margin-top: 5px; }
+    .ev-body { flex: 1; min-width: 0; }
+    .ev-title { font-size: 14px; font-weight: 500; color: var(--ev-text); word-break: break-word; }
+    .ev-tags { margin-left: 8px; font-size: 12px; color: var(--ev-muted); font-weight: 400; }
+    .ev-meta { margin-top: 2px; font-size: 12px; color: var(--ev-muted); }
+    .ev-notes { margin-top: 4px; font-size: 12px; color: var(--ev-muted); white-space: pre-wrap; word-break: break-word; }
+    .ev-actions { flex: 0 0 auto; display: flex; flex-direction: column; gap: 4px; }
+    .ev-actions button { border: 1px solid var(--ev-border); background: var(--ev-bg); color: var(--ev-muted); font-size: 11px; padding: 2px 8px; border-radius: 6px; cursor: pointer; }
+    .ev-actions button:hover { border-color: var(--ev-primary); color: var(--ev-primary); }
+    .ev-month-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; padding-bottom: 8px; max-width: 860px; margin: 0 auto; }
+    .ev-mc-head { text-align: center; font-size: 11px; color: var(--ev-muted); padding: 4px 0; }
+    .ev-cell { min-height: 74px; background: var(--ev-card); border-radius: 4px; padding: 3px 4px; overflow: hidden; cursor: pointer; border: 1px solid transparent; }
+    .ev-cell.out { opacity: 0.35; }
+    .ev-cell.selected { border-color: var(--ev-primary); }
+    .ev-daynum { display: inline-block; font-size: 11px; min-width: 18px; text-align: center; padding: 1px 0; border-radius: 99px; color: var(--ev-text); }
+    .ev-cell.today .ev-daynum { background: var(--ev-primary); color: #fff; }
+    .ev-chip { display: flex; align-items: center; gap: 3px; font-size: 11px; line-height: 1.3; margin-top: 2px; color: var(--ev-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .ev-chip .dot { width: 6px; height: 6px; border-radius: 50%; flex: 0 0 auto; }
+    .ev-more { font-size: 10px; color: var(--ev-muted); margin-top: 2px; }
+    /* 行程表单 */
+    .tl-ev-form-overlay { position: fixed; inset: 0; z-index: 12000; background: rgba(0,0,0,0.55); display: flex; align-items: center; justify-content: center; padding: 20px; }
+    .tl-ev-form-box { width: 100%; max-width: 440px; max-height: 88vh; overflow: auto; background: var(--ev-card); border: 1px solid var(--ev-border); border-radius: 12px; padding: 18px; }
+    .tl-ev-form-title { font-size: 16px; font-weight: 600; color: var(--ev-text); margin-bottom: 12px; }
+    .tl-ev-f-label { display: block; font-size: 12px; color: var(--ev-muted); margin-bottom: 10px; }
+    .tl-ev-f-label input[type="text"], .tl-ev-f-label input[type="date"], .tl-ev-f-label input[type="time"], .tl-ev-f-label textarea {
+      display: block; width: 100%; margin-top: 4px; padding: 7px 10px;
+      border: 1px solid var(--ev-border); border-radius: 8px;
+      background: var(--ev-bg); color: var(--ev-text); font-size: 14px; font-family: inherit;
+    }
+    #tlEvFNotes { resize: vertical; min-height: 64px; }
+    .tl-ev-f-check { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--ev-text); margin-bottom: 10px; cursor: pointer; }
+    .tl-ev-f-row { display: flex; gap: 10px; }
+    .tl-ev-f-row .tl-ev-f-label { flex: 1; }
+    .ev-f-colors { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 6px; }
+    .ev-f-colors .sw { width: 22px; height: 22px; border-radius: 50%; cursor: pointer; border: 2px solid transparent; }
+    .ev-f-colors .sw.selected { border-color: var(--ev-text); }
+    .tl-ev-form-actions { display: flex; align-items: center; gap: 10px; margin-top: 12px; }
+    .tl-ev-form-hint { margin-top: 10px; font-size: 11px; line-height: 1.5; color: var(--ev-muted); }
 
     .modal {
       background-color: var(--card-bg);
@@ -3512,7 +3597,7 @@
       <div class="btn-group" data-page-node-id="UlLnfiTwpKi0LmsjDpH1GD">
         <button class="btn btn-primary" onclick="openAddModal()" title="添加文件" data-page-node-id="JZ4R7jBK2QWolHWtvVUnKE">➕</button>
         <button class="btn btn-primary" onclick="openEditQuick()" title="编辑最近的文件" data-page-node-id="tU3Jm5xWcN9oQe1h0kZ7Rp">✏️</button>
-        <button class="btn btn-primary" id="refreshGalleryBtn" type="button" onclick="refreshGalleryData()" title="重新整理卡片資料（從磁盤重新載入）"><span class="refresh-btn-icon">🔄</span></button>
+        <button class="btn btn-primary" id="refreshGalleryBtn" type="button" onclick="refreshGalleryData()" title="重新整理卡片資料（從磁盤重新載入）"><span class="refresh-btn-icon">↻</span></button>
       </div>
       <div class="search-wrapper" data-page-node-id="lpsvAbEpZ8FVZnprD6mZJI">
         <span class="search-box-wrap">
@@ -4249,12 +4334,37 @@
             <span class="md-toggle-arrow" id="mdToggleArrow" onclick="openModeDropdown(event)" title="选择模式">▾</span>
             <div class="mode-dropdown" id="modeDropdown"></div>
           </span>
+          <!-- 📅 行程视图开关：仅当打开 calendar.md（行程应用数据文件）时显示 -->
+          <span class="md-toggle-btn" id="calEventsBtn" onclick="toggleCalEventsView()" title="行程视图（calendar.md）：列表 / 月模式，支持新增编辑" style="display:none">📅 行程</span>
           <button class="md-tool-btn" onclick="closeModal()" title="关闭" style="margin-left:6px;color:#94a3b8;" data-page-node-id="IeiM7U26O8JuXaDWjX3q0H">✕</button>
         </div>
         <textarea class="form-textarea" id="taskText" placeholder="输入任务内容（支持 Markdown）..." style="border-top:none;border-radius:0 0 8px 8px;"></textarea>
         <textarea class="form-textarea" id="htmlText" placeholder="HTML 源码编辑..." style="display:none;border-top:none;border-radius:0 0 8px 8px;font-family:'Monaco','Consolas',monospace;font-size:13px;white-space:pre;overflow-x:auto;"></textarea>
         <textarea class="form-textarea" id="jsonText" placeholder="JSON 源码编辑..." style="display:none;border-top:none;border-radius:0 0 8px 8px;font-family:'Monaco','Consolas',monospace;font-size:13px;white-space:pre;overflow-x:auto;"></textarea>
         <div class="md-preview" id="mdPreview" data-page-node-id="drImIYSWJSMVITbt0Otl3f"></div>
+        <!-- 📅 行程视图面板（calendar.md 专用）：解析 ## EVENT 块，列表/月模式 + 新增/编辑/删除 -->
+        <div class="cal-events-pane" id="calEventsPane" style="display:none">
+          <div class="ev-toolbar">
+            <div class="ev-mode-seg">
+              <button type="button" id="tlEvModeList" class="active">列表</button>
+              <button type="button" id="tlEvModeMonth">月</button>
+            </div>
+            <span class="ev-toolbar-flex"></span>
+            <span class="ev-hint-text">编辑后按「保存」写回 calendar.md</span>
+            <button type="button" class="ev-add-btn" id="tlEvAddBtn">＋ 新增行程</button>
+          </div>
+          <div class="ev-monthnav" id="tlEvMonthNav" style="display:none">
+            <button type="button" id="tlEvPrevMonth">‹</button>
+            <span id="tlEvMonthTitle"></span>
+            <button type="button" id="tlEvNextMonth">›</button>
+            <button type="button" class="ev-today-mini" id="tlEvTodayBtn">今天</button>
+          </div>
+          <div id="tlEvList" class="events-list"></div>
+          <div id="tlEvMonthWrap" style="display:none">
+            <div id="tlEvMonthGrid" class="ev-month-grid"></div>
+            <div id="tlEvDayList" class="events-list"></div>
+          </div>
+        </div>
       </div>
 
       <!-- 侧边手柄：点击收起/展开操作面板 -->
@@ -4327,6 +4437,8 @@
           <!-- ✏️ 编辑器内「改名」：当前文件改名（todo 卡片走原内联流程；MD/JSON/HTML/文本走通用改名对话框）；
                与「删除」「保存」同款样式，禁用态仅靠 disabled + opacity 区分 -->
           <button class="btn btn-text btn-primary" id="editorRenameFileBtn" type="button" onclick="renameCurrentFile()" title="修改当前文件名（todo 卡片 / MD / JSON / HTML / 文本）">改名</button>
+          <!-- ↻ 编辑器内「重读」：从磁盘重新载入当前文件（丢弃未保存改动），对齐 Gallery 刷新语义 -->
+          <button class="btn btn-text btn-primary" id="editorReloadBtn" type="button" onclick="reloadCurrentDoc()" title="从磁盘重新载入当前文件（丢弃未保存改动）">↻</button>
           <!-- 🆕 编辑器内「删除」：删除当前打开的文件（todo 卡片 / MD / JSON / HTML / 任意文本文件）；
                样式与「保存」统一（用户要求五个按钮同款），禁用态仅靠 disabled + opacity 区分 -->
           <button class="btn btn-text btn-primary" id="editorDeleteFileBtn" type="button" onclick="deleteCurrentFile()" title="删除当前文件（从磁盘删除，不可恢复）">删除</button>
@@ -4410,6 +4522,31 @@
         <button class="btn btn-secondary" onclick="closeRenameFileDialog()">取消</button>
         <button class="btn btn-primary" onclick="confirmRenameFileDialog()">确定</button>
       </div>
+    </div>
+  </div>
+
+  <!-- 📅 行程新增/编辑表单（calendar.md 专用）：写入编辑器缓冲，按「保存」落盘 -->
+  <div id="tlEvFormOverlay" class="tl-ev-form-overlay" style="display:none">
+    <div class="tl-ev-form-box">
+      <div class="tl-ev-form-title" id="tlEvFormTitle">新增行程</div>
+      <label class="tl-ev-f-label">标题<input type="text" id="tlEvFTitle" maxlength="200" placeholder="行程标题"></label>
+      <label class="tl-ev-f-label">日期<input type="date" id="tlEvFDate"></label>
+      <label class="tl-ev-f-check"><input type="checkbox" id="tlEvFAllday" onchange="tlToggleAllDay()"> 全天</label>
+      <div class="tl-ev-f-row">
+        <label class="tl-ev-f-label">开始<input type="time" id="tlEvFStart"></label>
+        <label class="tl-ev-f-label">结束<input type="time" id="tlEvFEnd"></label>
+      </div>
+      <label class="tl-ev-f-label">地点<input type="text" id="tlEvFLocation" maxlength="200" placeholder="可留空"></label>
+      <div class="tl-ev-f-label">颜色<div id="tlEvFColors" class="ev-f-colors"></div></div>
+      <label class="tl-ev-f-label">标签（逗号分隔）<input type="text" id="tlEvFTags" maxlength="200" placeholder="例如：生活, 工作"></label>
+      <label class="tl-ev-f-label">备注<textarea id="tlEvFNotes" rows="3" placeholder="可留空，支持多行"></textarea></label>
+      <div class="tl-ev-form-actions">
+        <button type="button" class="btn btn-secondary" id="tlEvFormDelete" style="display:none" onclick="tlDeleteFromForm()">删除</button>
+        <span style="flex:1"></span>
+        <button type="button" class="btn btn-secondary" onclick="tlCloseEventForm()">取消</button>
+        <button type="button" class="btn btn-primary" onclick="tlSaveEventForm()">写入编辑内容</button>
+      </div>
+      <div class="tl-ev-form-hint">写入后按编辑器「保存」，把改动写回 calendar.md</div>
     </div>
   </div>
 
@@ -5997,6 +6134,22 @@
         }
       }
 
+      // 📅 行程视图收尾：
+      //    (1) 用户一旦通过模式选单 / 切换按钮选取任何常规模式，就视为退出行程视图，
+      //        否则下方 `if (calEventsView)` 的钩子会把画面又拉回行程面板，看起来像点不动。
+      //    (2) 清掉 showCalEventsPaneOnly() 加在 #mdPreview 上的内联 display:none ——
+      //        内联样式优先级高于样式表里的 `.md-preview.show { display:block }`，
+      //        不清掉的话，只要曾进入过一次行程视图，MD / HTML / JSON 三种预览就会永久空白
+      //        （三种预览共用 #mdPreview 这一个容器）。
+      if (calEventsView) {
+        calEventsView = false;
+        const calBtn = document.getElementById('calEventsBtn');
+        if (calBtn) calBtn.classList.remove('active');
+      }
+      const calEventsPaneEl = document.getElementById('calEventsPane');
+      if (calEventsPaneEl) calEventsPaneEl.style.display = 'none';
+      preview.style.display = '';
+
       // 应用模式
       const genMdBtn = document.getElementById('genMdBtn');
       const genHtmlBtn = document.getElementById('genHtmlBtn');
@@ -6120,6 +6273,8 @@
         genMdBtn.style.display = 'none';
         genHtmlBtn.style.display = 'none';
       }
+      // 📅 行程视图接管：不按 previewMode 显示四个容器（只显示行程面板）
+      if (calEventsView) { showCalEventsPaneOnly(); return; }
       // 🆕 编辑器视图记忆：切换模式后，恢复到当前可见容器（编辑文本 / 预览）的上次滚动位置
       restoreEditorViewAll();
     }
@@ -10190,7 +10345,419 @@
           ? '修改当前文件名（todo 卡片 / MD / JSON / HTML / 文本）'
           : '当前是新增状态，磁盘上还没有文件可改名';
       }
+      // 「重读」按钮同款禁用逻辑：新增态磁盘上没有文件，无可重读
+      const reloadBtn = document.getElementById('editorReloadBtn');
+      if (reloadBtn) {
+        reloadBtn.disabled = !hasFile;
+        reloadBtn.style.opacity = hasFile ? '' : '0.4';
+        reloadBtn.style.cursor = hasFile ? '' : 'not-allowed';
+        reloadBtn.title = hasFile
+          ? '从磁盘重新载入当前文件（丢弃未保存改动）'
+          : '当前是新增状态，磁盘上还没有文件可重读';
+      }
+      // 📅 行程视图开关：仅 calendar.md 可见
+      updateCalEventsBtnVisibility();
     }
+
+    // ========== 📅 行程视图（calendar.md 专用）：列表 / 月模式 + 新增·编辑·删除 ==========
+    // 与 Lite（pwa-md-editor）同一套实现：解析 ## EVENT 块；编辑写回 taskText 缓冲，按「保存」落盘。
+    let calEventsView = false;
+    let tlCalMode = 'list';
+    let tlCalCursor = new Date();
+    let tlCalSelected = null;
+    let tlCalEvents = [];
+    let tlEvFormUid = null;
+    let tlEvFormColor = null;
+    const TL_CAL_COLORS = ['#FF3B30', '#FF9500', '#FFCC00', '#34C759', '#5AC8FA', '#007AFF', '#5856D6', '#AF52DE', '#FF2D55', '#A2845E', '#8E8E93'];
+
+    // 当前编辑器打开的文件是不是 calendar.md（行程应用数据文件）
+    function isCalendarMdDoc() {
+      const t = currentFileTarget();
+      if (!t) return false;
+      const name = String(t.name || '').toLowerCase();
+      if (name !== 'calendar.md') return false;
+      return t.kind === 'md' || (t.kind === 'ext' && /\.md$/i.test(name));
+    }
+
+    // 显示/隐藏「📅 行程」开关；文件不是 calendar.md 时若停在行程视图则退回编辑模式
+    function updateCalEventsBtnVisibility() {
+      const btn = document.getElementById('calEventsBtn');
+      const show = isCalendarMdDoc();
+      if (btn) {
+        btn.style.display = show ? '' : 'none';
+        btn.classList.toggle('active', show && calEventsView);
+      }
+      if (!show && calEventsView) setCalEventsView(false);
+    }
+
+    function toggleCalEventsView() {
+      setCalEventsView(!calEventsView);
+    }
+
+    function setCalEventsView(on) {
+      if (on && !isCalendarMdDoc()) return;
+      calEventsView = !!on;
+      const btn = document.getElementById('calEventsBtn');
+      if (btn) btn.classList.toggle('active', calEventsView);
+      if (calEventsView) {
+        showCalEventsPaneOnly();
+        tlRenderEventsContent();
+      } else {
+        // 交还给原模式：这里先收掉面板，再由 toggleMdPreview 按 previewMode 重新显示
+        // （toggleMdPreview 内部会一并清掉 #mdPreview 上的内联 display:none）
+        const pane = document.getElementById('calEventsPane');
+        if (pane) pane.style.display = 'none';
+        toggleMdPreview(previewMode);
+      }
+    }
+
+    // 行程视图下：隐藏三个输入框 + 预览 + 三套工具栏，只显示行程面板
+    function showCalEventsPaneOnly() {
+      const ids = ['taskText', 'htmlText', 'jsonText', 'mdPreview'];
+      ids.forEach((id) => { const el = document.getElementById(id); if (el) el.style.display = 'none'; });
+      ['mdTools', 'htmlTools', 'jsonTools'].forEach((id) => { const el = document.getElementById(id); if (el) el.style.display = 'none'; });
+      const pane = document.getElementById('calEventsPane');
+      if (pane) pane.style.display = '';
+    }
+
+    // ===== 解析（与桌面 calendar 插件 parseMarkdownEvents 对齐） =====
+    function tlParseArr(s) {
+      s = (s || '').trim();
+      if (!s) return [];
+      try { const a = JSON.parse(s); return Array.isArray(a) ? a : []; } catch (e) { return []; }
+    }
+    function tlParseBlock(block, idx) {
+      let remark = '';
+      let head = block;
+      const ri = block.indexOf('- Remark:');
+      if (ri >= 0) {
+        head = block.slice(0, ri);
+        const m = block.slice(ri + '- Remark:'.length).match(/```([\s\S]*)```/);
+        if (m) {
+          remark = m[1].replace(/^\n/, '').replace(/\n$/, '');
+          if (remark.trim() === '') remark = '';
+        }
+      }
+      const get = (name) => {
+        const m = head.match(new RegExp('- ' + name + ': `([^`]*)`'));
+        return m ? m[1] : '';
+      };
+      const title = get('title');
+      if (!title) return null;
+      let color = get('color').trim();
+      if (color.length >= 2 && color[0] === '"' && color[color.length - 1] === '"') color = color.slice(1, -1);
+      return {
+        idx, uid: 'evp' + idx, title,
+        date: get('date'),
+        allDay: get('allDay') === 'true',
+        startTime: get('startTime'),
+        endTime: get('endTime'),
+        location: get('location'),
+        color: color || TL_CAL_COLORS[0],
+        tags: tlParseArr(get('tags')),
+        notes: remark
+      };
+    }
+    function tlParseEvents(md) {
+      if (!md) return [];
+      const out = [];
+      const blocks = String(md).split(/^##[ \t]*EVENT[ \t]*$/m);
+      for (let i = 0; i < blocks.length; i++) {
+        const ev = tlParseBlock(blocks[i], i);
+        if (ev) out.push(ev);
+      }
+      return out;
+    }
+
+    // ===== 序列化（与桌面 calendar 插件 eventsToMarkdown 逐字节对齐） =====
+    function tlMdEscape(s) { return String(s == null ? '' : s).replace(/`/g, "'"); }
+    function tlEventToMarkdown(ev) {
+      const tagsJson = JSON.stringify(Array.isArray(ev.tags) ? ev.tags : []);
+      const todoJson = JSON.stringify(Array.isArray(ev.todoIds) ? ev.todoIds : []);
+      const color = '"' + String(ev.color || '').replace(/^"|"$/g, '') + '"';
+      let s = '## EVENT \n';
+      s += '- title: `' + tlMdEscape(ev.title) + '`\n';
+      s += '- date: `' + tlMdEscape(ev.date) + '`\n';
+      s += '- allDay: `' + (ev.allDay ? 'true' : 'false') + '`\n';
+      s += '- startTime: `' + tlMdEscape(ev.startTime) + '`\n';
+      s += '- endTime: `' + tlMdEscape(ev.endTime) + '`\n';
+      s += '- location: `' + tlMdEscape(ev.location) + '`\n';
+      s += '- color: `' + color + '`\n';
+      s += '- tags: `' + tagsJson + '`\n';
+      s += '- todoIds: `' + todoJson + '`\n';
+      s += '- Remark:\n```\n' + String(ev.notes || '') + '\n```\n';
+      return s;
+    }
+    function tlEventsToMarkdown(events) {
+      const head = '# 日历行程\n\n> 每条行程以 `## EVENT` 分隔，字段值写在反引号内，Remark 用代码块保存多行备注。\n\n';
+      if (!events || !events.length) return head;
+      return head + events.map(tlEventToMarkdown).join('\n');
+    }
+
+    function tlFmtDate(d) {
+      return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+    }
+    function tlTimeToMin(t) {
+      const m = String(t || '').match(/^(\d{1,2}):(\d{2})/);
+      return m ? (+m[1]) * 60 + (+m[2]) : 0;
+    }
+    function tlSorted(events) {
+      return events.slice().sort((a, b) => {
+        if (a.date !== b.date) return a.date < b.date ? -1 : 1;
+        if (a.allDay !== b.allDay) return a.allDay ? -1 : 1;
+        return tlTimeToMin(a.startTime) - tlTimeToMin(b.startTime);
+      });
+    }
+    function tlGenId() { return 'ev-' + Date.now() + '-' + Math.random().toString(36).slice(2, 7); }
+    function tlEscapeHtml(s) {
+      return String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+    }
+
+    // ===== 渲染 =====
+    function tlRenderEventsContent() {
+      if (!calEventsView) return;
+      const month = tlCalMode === 'month';
+      const setDisp = (id, v) => { const el = document.getElementById(id); if (el) el.style.display = v; };
+      setDisp('tlEvMonthNav', month ? '' : 'none');
+      setDisp('tlEvMonthWrap', month ? '' : 'none');
+      setDisp('tlEvList', month ? 'none' : '');
+      const lb = document.getElementById('tlEvModeList'); if (lb) lb.classList.toggle('active', !month);
+      const mb = document.getElementById('tlEvModeMonth'); if (mb) mb.classList.toggle('active', month);
+      const content = document.getElementById('taskText').value;
+      if (month) tlRenderMonth(content);
+      else tlRenderList(content);
+    }
+
+    function tlSetMode(mode) {
+      tlCalMode = (mode === 'month') ? 'month' : 'list';
+      if (tlCalMode === 'month' && !tlCalSelected) tlCalSelected = tlFmtDate(new Date());
+      tlRenderEventsContent();
+    }
+
+    function tlDateHeader(date, today) {
+      const m = String(date || '').match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+      const WD = ['日', '一', '二', '三', '四', '五', '六'];
+      let label = '日期未知', week = '';
+      if (m) {
+        const d = new Date(+m[1], +m[2] - 1, +m[3]);
+        label = (+m[2]) + '月' + (+m[3]) + '日';
+        week = WD[d.getDay()];
+      }
+      const isToday = date === today;
+      return '<div class="ev-date' + (isToday ? ' today' : '') + '">' + label +
+        (week ? '<span class="ev-week">週' + week + '</span>' : '') +
+        (isToday ? '<span class="ev-today-badge">今天</span>' : '') + '</div>';
+    }
+
+    function tlItemHtml(ev, today) {
+      const time = ev.allDay ? '全天' : ((ev.startTime || '') + (ev.endTime ? '-' + ev.endTime : ''));
+      return '<div class="ev-item' + (ev.date < today ? ' past' : '') + '">' +
+        '<span class="ev-swatch" style="background:' + tlEscapeHtml(ev.color) + '"></span>' +
+        '<div class="ev-body">' +
+        '<div class="ev-title">' + tlEscapeHtml(ev.title) +
+        (ev.tags && ev.tags.length ? '<span class="ev-tags">' + ev.tags.map((t) => '#' + tlEscapeHtml(t)).join(' ') + '</span>' : '') +
+        '</div>' +
+        '<div class="ev-meta">' + tlEscapeHtml(time) + (ev.location ? ' · 📍' + tlEscapeHtml(ev.location) : '') + '</div>' +
+        (ev.notes ? '<div class="ev-notes">' + tlEscapeHtml(ev.notes) + '</div>' : '') +
+        '</div>' +
+        '<div class="ev-actions">' +
+        '<button type="button" onclick="tlOpenEventForm(\'' + ev.uid + '\')">编辑</button>' +
+        '<button type="button" onclick="tlDeleteEvent(\'' + ev.uid + '\')">删除</button>' +
+        '</div></div>';
+    }
+
+    function tlRenderList(content) {
+      const list = document.getElementById('tlEvList');
+      if (!list) return;
+      tlCalEvents = tlParseEvents(content);
+      if (!tlCalEvents.length) {
+        list.innerHTML = '<div class="ev-empty">尚未有行程<br><span style="font-size:12px">点右上「＋ 新增行程」，或切回文本编辑直接改 calendar.md</span></div>';
+        return;
+      }
+      const today = tlFmtDate(new Date());
+      let html = '', last = null;
+      for (const ev of tlSorted(tlCalEvents)) {
+        if (ev.date !== last) { last = ev.date; html += tlDateHeader(ev.date, today); }
+        html += tlItemHtml(ev, today);
+      }
+      list.innerHTML = html;
+    }
+
+    function tlRenderMonth(content) {
+      tlCalEvents = tlParseEvents(content);
+      const cur = tlCalCursor;
+      const y = cur.getFullYear(), m = cur.getMonth();
+      const t = document.getElementById('tlEvMonthTitle');
+      if (t) t.textContent = y + '年' + (m + 1) + '月';
+      const byDate = {};
+      tlCalEvents.forEach((ev) => { (byDate[ev.date] = byDate[ev.date] || []).push(ev); });
+      if (!tlCalSelected) tlCalSelected = tlFmtDate(new Date());
+      const today = tlFmtDate(new Date());
+      const first = new Date(y, m, 1);
+      const offset = (first.getDay() + 6) % 7;
+      const start = new Date(y, m, 1 - offset);
+      let html = ['一', '二', '三', '四', '五', '六', '日'].map((h) => '<div class="ev-mc-head">' + h + '</div>').join('');
+      for (let i = 0; i < 42; i++) {
+        const d = new Date(start.getFullYear(), start.getMonth(), start.getDate() + i);
+        const ds = tlFmtDate(d);
+        const out = d.getMonth() !== m;
+        const evs = tlSorted(byDate[ds] || []);
+        let chips = '';
+        for (let j = 0; j < Math.min(3, evs.length); j++) {
+          chips += '<div class="ev-chip"><span class="dot" style="background:' + tlEscapeHtml(evs[j].color) + '"></span>' + tlEscapeHtml(evs[j].title) + '</div>';
+        }
+        if (evs.length > 3) chips += '<div class="ev-more">+' + (evs.length - 3) + '</div>';
+        html += '<div class="ev-cell' + (out ? ' out' : '') + (ds === today ? ' today' : '') + (ds === tlCalSelected ? ' selected' : '') +
+          '" onclick="tlSelectDate(\'' + ds + '\')"><span class="ev-daynum">' + d.getDate() + '</span>' + chips + '</div>';
+      }
+      const grid = document.getElementById('tlEvMonthGrid');
+      if (grid) grid.innerHTML = html;
+      tlRenderDayList();
+    }
+
+    function tlSelectDate(ds) {
+      tlCalSelected = ds;
+      tlRenderMonth(document.getElementById('taskText').value);
+    }
+
+    function tlRenderDayList() {
+      const list = document.getElementById('tlEvDayList');
+      if (!list) return;
+      const ds = tlCalSelected || tlFmtDate(new Date());
+      const today = tlFmtDate(new Date());
+      const m = String(ds).match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+      const WD = ['日', '一', '二', '三', '四', '五', '六'];
+      const d = m ? new Date(+m[1], +m[2] - 1, +m[3]) : new Date();
+      const evs = tlSorted(tlCalEvents.filter((e) => e.date === ds));
+      let html = '<div class="ev-date' + (ds === today ? ' today' : '') + '">' +
+        (m ? (+m[2]) + '月' + (+m[3]) + '日' : '日期未知') +
+        '<span class="ev-week">週' + WD[d.getDay()] + '</span>' +
+        (ds === today ? '<span class="ev-today-badge">今天</span>' : '') +
+        '<span class="ev-week">· ' + evs.length + ' 条</span>' +
+        '<button type="button" class="ev-day-add" onclick="tlOpenEventForm(null, \'' + ds + '\')">＋ 此日新增</button></div>';
+      if (!evs.length) html += '<div class="ev-empty">这一天没有行程</div>';
+      else for (const ev of evs) html += tlItemHtml(ev, today);
+      list.innerHTML = html;
+    }
+
+    // ===== 新增 / 编辑 / 删除（写入 taskText 缓冲） =====
+    function tlOpenEventForm(uid, defaultDate) {
+      if (!isCalendarMdDoc()) return;
+      tlCalEvents = tlParseEvents(document.getElementById('taskText').value);
+      tlEvFormUid = null;
+      let ev = null;
+      if (uid) {
+        ev = tlCalEvents.find((x) => x.uid === uid);
+        if (!ev) { showToast('找不到该条行程（内容可能已被修改）', 'danger'); return; }
+        tlEvFormUid = uid;
+      }
+      const today = tlFmtDate(new Date());
+      document.getElementById('tlEvFormTitle').textContent = uid ? '编辑行程' : '新增行程';
+      document.getElementById('tlEvFTitle').value = ev ? ev.title : '';
+      document.getElementById('tlEvFDate').value = ev ? ev.date : (defaultDate || (tlCalMode === 'month' ? tlCalSelected : today) || today);
+      document.getElementById('tlEvFAllday').checked = ev ? ev.allDay : false;
+      document.getElementById('tlEvFStart').value = ev ? ev.startTime : '';
+      document.getElementById('tlEvFEnd').value = ev ? ev.endTime : '';
+      tlToggleAllDay();
+      document.getElementById('tlEvFLocation').value = ev ? ev.location : '';
+      tlEvFormColor = ev ? ev.color : TL_CAL_COLORS[0];
+      document.getElementById('tlEvFTags').value = ev && ev.tags ? ev.tags.join(', ') : '';
+      document.getElementById('tlEvFNotes').value = ev ? ev.notes : '';
+      document.getElementById('tlEvFormDelete').style.display = uid ? '' : 'none';
+      tlRenderColors();
+      document.getElementById('tlEvFormOverlay').style.display = 'flex';
+      document.getElementById('tlEvFTitle').focus();
+    }
+
+    function tlToggleAllDay() {
+      const allDay = document.getElementById('tlEvFAllday').checked;
+      document.getElementById('tlEvFStart').disabled = allDay;
+      document.getElementById('tlEvFEnd').disabled = allDay;
+    }
+
+    function tlRenderColors() {
+      const box = document.getElementById('tlEvFColors');
+      if (!box) return;
+      box.innerHTML = TL_CAL_COLORS.map((c) =>
+        '<span class="sw' + (c === tlEvFormColor ? ' selected' : '') + '" data-color="' + c + '" style="background:' + c + '" onclick="tlPickColor(\'' + c + '\')"></span>'
+      ).join('');
+    }
+    function tlPickColor(c) {
+      tlEvFormColor = c;
+      tlRenderColors();
+    }
+
+    function tlCloseEventForm() {
+      const ov = document.getElementById('tlEvFormOverlay');
+      if (ov) ov.style.display = 'none';
+      tlEvFormUid = null;
+      tlEvFormColor = null;
+    }
+
+    function tlSaveEventForm() {
+      const title = document.getElementById('tlEvFTitle').value.trim();
+      const date = document.getElementById('tlEvFDate').value;
+      if (!title) { alert('请输入标题'); return; }
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) { alert('请选择日期'); return; }
+      const allDay = document.getElementById('tlEvFAllday').checked;
+      const ev = {
+        uid: tlEvFormUid || tlGenId(),
+        title, date, allDay,
+        startTime: allDay ? '' : document.getElementById('tlEvFStart').value,
+        endTime: allDay ? '' : document.getElementById('tlEvFEnd').value,
+        location: document.getElementById('tlEvFLocation').value.trim(),
+        color: tlEvFormColor || TL_CAL_COLORS[0],
+        tags: document.getElementById('tlEvFTags').value.split(/[,，]/).map((s) => s.trim()).filter(Boolean),
+        notes: document.getElementById('tlEvFNotes').value.replace(/\r\n/g, '\n')
+      };
+      // 以当前编辑内容为准重新解析（保留用户手改过的其它条目），再 upsert
+      tlCalEvents = tlParseEvents(document.getElementById('taskText').value);
+      const i = tlCalEvents.findIndex((x) => x.uid === ev.uid);
+      if (i >= 0) tlCalEvents[i] = ev; else tlCalEvents.push(ev);
+      tlApplyEventsToBuffer();
+      tlCloseEventForm();
+      showToast('已写入编辑内容，按「保存」写回 calendar.md', 'success');
+    }
+
+    function tlDeleteEvent(uid) {
+      tlCalEvents = tlParseEvents(document.getElementById('taskText').value);
+      const ev = tlCalEvents.find((x) => x.uid === uid);
+      if (!ev) { showToast('找不到该条行程（内容可能已被修改）', 'danger'); return; }
+      if (!confirm('确定删除行程「' + ev.title + '」（' + ev.date + '）吗？\n\n写入后按「保存」才会真正写回文件。')) return;
+      tlCalEvents = tlCalEvents.filter((x) => x.uid !== uid);
+      tlApplyEventsToBuffer();
+      showToast('已删除「' + ev.title + '」，按「保存」写回文件', 'success');
+    }
+
+    function tlDeleteFromForm() {
+      if (!tlEvFormUid) return;
+      const uid = tlEvFormUid;
+      tlCloseEventForm();
+      tlDeleteEvent(uid);
+    }
+
+    // 序列化整份 calendar.md 写回 taskText（不动 editSnapshot → 未保存检测自动判定为脏，「保存」亮起）
+    function tlApplyEventsToBuffer() {
+      const md = tlEventsToMarkdown(tlCalEvents);
+      const ta = document.getElementById('taskText');
+      ta.value = md;
+      if (typeof autoGrowTextarea === 'function') autoGrowTextarea(ta);
+      if (typeof markCurrentTabDirty === 'function') markCurrentTabDirty();
+      tlRenderEventsContent();
+    }
+
+    // 事件绑定（DOM 就绪时执行一次）
+    (function bindCalendarEventsUI() {
+      const on = (id, ev, fn) => { const el = document.getElementById(id); if (el) el.addEventListener(ev, fn); };
+      on('tlEvModeList', 'click', () => tlSetMode('list'));
+      on('tlEvModeMonth', 'click', () => tlSetMode('month'));
+      on('tlEvAddBtn', 'click', () => tlOpenEventForm(null));
+      on('tlEvPrevMonth', 'click', () => { tlCalCursor = new Date(tlCalCursor.getFullYear(), tlCalCursor.getMonth() - 1, 1); tlRenderEventsContent(); });
+      on('tlEvNextMonth', 'click', () => { tlCalCursor = new Date(tlCalCursor.getFullYear(), tlCalCursor.getMonth() + 1, 1); tlRenderEventsContent(); });
+      on('tlEvTodayBtn', 'click', () => { tlCalCursor = new Date(); tlCalSelected = tlFmtDate(new Date()); tlRenderEventsContent(); });
+      const ov = document.getElementById('tlEvFormOverlay');
+      if (ov) ov.addEventListener('click', (e) => { if (e.target === ov) tlCloseEventForm(); });
+    })();
 
     // 更新文件路径显示
     function updateFilePathDisplay() {
@@ -10944,6 +11511,33 @@
         btn.onclick = startRenameJsonFile;
       }
       if (nameEl) nameEl.style.display = '';
+    }
+
+    // ↻ 编辑器内「重读」：从磁盘重新载入当前文档（丢弃未保存改动）。
+    //   复用 activateSheetTab：todo → openEditModal(id)（内部 readTodoFile 重读磁盘）；
+    //   md/json/html/ext → openExternalFile(path) 重读磁盘。加载后 captureEditSnapshot 清脏标记。
+    //   有未保存更改时先 confirm 问询，避免误丢编辑内容；新增态无文件可重读，直接提示。
+    async function reloadCurrentDoc() {
+      const target = currentFileTarget();
+      if (!target) {
+        showToast('当前是新增状态，磁盘上还没有文件可重读');
+        return;
+      }
+      if (hasUnsavedChanges()) {
+        if (!confirm('当前有未保存的更改，重读将丢弃这些更改。\n\n确定从磁盘重新载入「' + target.name + '」吗？')) return;
+      }
+      const key = activeTabKey || target.key;
+      if (!key || !editorTabs.some(t => t.key === key)) {
+        showToast('未找到当前页签，无法重读');
+        return;
+      }
+      try {
+        await activateSheetTab(key); // 内部：重读磁盘 → 重建编辑器内容 → captureEditSnapshot（清脏标记）
+        showToast('已从磁盘重新载入：' + target.name, 'success');
+      } catch (e) {
+        console.error('[TodoList] 重读当前文件失败:', e);
+        alert('重读失败：' + (e && e.message ? e.message : e));
+      }
     }
 
     // ========== ✏️ 通用文件改名（MD / JSON / HTML / 任意文本文件） ==========

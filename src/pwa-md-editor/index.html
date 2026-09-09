@@ -27,14 +27,17 @@
     <!-- 頂部工具列 -->
     <header class="toolbar region" data-page-node-id="H1799o7Bi43iFcVqikgGoy">
       <div class="toolbar-left" data-page-node-id="3Bhm48LoEza4EaPuCBP0eM">
-        <button id="btn-open" class="btn btn-secondary" title="從 iCloud 打開文字檔（md/json/html/code…）" data-page-node-id="jBuTh5OaGcNyn4H9q1NSLY">打開</button>
+        <button id="btn-open" class="btn btn-secondary" title="從 iCloud 開啟文字檔（md/json/html/code…）" data-page-node-id="jBuTh5OaGcNyn4H9q1NSLY">開啟</button>
         <button id="btn-save" class="btn btn-secondary" title="保存文件到 iCloud" data-page-node-id="xI9aHNProtF19uKHlU9Iy2">保存</button>
         <button id="btn-reset" class="btn btn-secondary" title="清除所有緩存並重新載入應用" data-page-node-id="OFInZmGq0dd8SGCfjeFRp2">重置</button>
       </div>
       <div class="toolbar-center" data-page-node-id="DBVXYuSyz7BpTGkEZ2IiLj">
-        <input type="file" id="file-input" accept=".md,.markdown,.mdx,.txt,.text,.log,.csv,.tsv,.html,.htm,.json,.json5,.jsonc,.yaml,.yml,.toml,.ini,.conf,.config,.properties,.cfg,.xml,.js,.mjs,.cjs,.jsx,.ts,.tsx,.vue,.svelte,.css,.scss,.less,.py,.rb,.sh,.bash,.zsh,.fish,.ps1,.bat,.cmd,.sql,.graphql,.gql,.c,.h,.cpp,.cc,.hpp,.java,.kt,.go,.rs,.swift,.php,.lua,.r,.cs,.scala,.dart,.ex,.erl,.env,.gitignore,.editorconfig,.tex,.rst,.diff,.patch" style="display:none" data-page-node-id="ahnBqONLSIh2nJB0SkRIx6" />
-        <span id="file-name" class="file-name" data-page-node-id="QBa1VlJLq9aZiZ2eIlwNQj">未打開文件</span>
-        <!-- 🆕 todo 卡片模式徽章：打開符合 todo 卡片結構的 JSON 後顯示，提示用戶保存時會合併原結構 -->
+                <!-- 🛡️ 不设 accept 过滤：iOS Safari 对 .md 这类无系统 UTI 注册的扩展名会解析失败，
+             导致文件在选择器里灰掉不可选（.json/.txt 等系统认识的反而正常）。
+             改为显示全部文件，选中后由 app.js 的 isTextFile 白名单校验兜底（非文字档 toast 拒绝）。 -->
+        <input type="file" id="file-input" style="display:none" data-page-node-id="ahnBqONLSIh2nJB0SkRIx6" />
+        <span id="file-name" class="file-name" data-page-node-id="QBa1VlJLq9aZiZ2eIlwNQj">未開啟文件</span>
+        <!-- 🆕 todo 卡片模式徽章：開啟符合 todo 卡片結構的 JSON 後顯示，提示用戶保存時會合併原結構 -->
         <span id="todo-mode-badge" class="todo-badge" title="保存時自動合併原 JSON 結構，只覆寫 text/updatedAt 字段" data-page-node-id="jh8nIwOyChaeT5SooKW639">📇 todo 卡片</span>
       </div>
       <div class="toolbar-right" data-page-node-id="4K77WVtNYWyKHa4hRVYk9w">
@@ -52,6 +55,10 @@
       </button>
       <button class="tab" data-view="split" title="分屏：邊寫邊看" data-page-node-id="kqNKtPHbp2uSksgG3ilsNF">
         <span class="icon" data-page-node-id="FU5YVZKGkneBx5SubgYXjE">▥</span><span class="label" data-page-node-id="OIBzKhvy3A0sXsCqiWKr0j">分屏</span>
+      </button>
+      <!-- 📅 行程視圖：僅當開啟的是 calendar.md（行程應用的數據文件）時顯示，只讀查看行程列表 -->
+      <button class="tab" data-view="events" id="tab-events" title="行程視圖（僅 calendar.md）" style="display:none">
+        <span class="icon">📅</span><span class="label">行程</span>
       </button>
     </nav>
 
@@ -171,10 +178,32 @@
     <!-- 主編輯區域 -->
     <main class="editor-container" id="editor-container" data-view="edit" data-page-node-id="4lifpnYRioAK2vdbugOaDi">
       <div id="editor-pane" class="pane editor-pane region" data-page-node-id="1mwUIwO64NpAhDQXx0d0WX">
-        <textarea id="editor" class="editor" placeholder="在此輸入內容...&#10;&#10;支持從 iCloud Drive 打開 .md / .json / .html / 程式碼等文字檔進行編輯"></textarea>
+        <textarea id="editor" class="editor" placeholder="在此輸入內容...&#10;&#10;支持從 iCloud Drive 開啟 .md / .json / .html / 程式碼等文字檔進行編輯"></textarea>
       </div>
       <div id="preview-pane" class="pane preview-pane region" data-page-node-id="EYhIlTOhzwJjMUzU6PWw9A">
         <div id="preview" class="preview" data-page-node-id="nVFjSH28JrcvAirXNDtYaa"></div>
+      </div>
+      <!-- 📅 行程視圖（calendar.md 專用）：解析 ## EVENT 塊渲染行程列表；支持月視圖與新增/編輯（寫回編輯緩衝，按「保存」落盤） -->
+      <div id="events-pane" class="pane events-pane region">
+        <div class="ev-toolbar">
+          <div class="ev-mode-seg">
+            <button type="button" id="ev-mode-list" class="active">列表</button>
+            <button type="button" id="ev-mode-month">月</button>
+          </div>
+          <span class="ev-toolbar-flex"></span>
+          <button type="button" class="ev-add-btn" id="ev-add-btn">＋ 新增行程</button>
+        </div>
+        <div class="ev-monthnav" id="ev-month-nav" style="display:none">
+          <button type="button" id="ev-prev-month">‹</button>
+          <span id="ev-month-title"></span>
+          <button type="button" id="ev-next-month">›</button>
+          <button type="button" class="ev-today-mini" id="ev-today-btn">今天</button>
+        </div>
+        <div id="events-list" class="events-list"></div>
+        <div id="ev-month-wrap" style="display:none">
+          <div id="ev-month-grid" class="ev-month-grid"></div>
+          <div id="ev-day-list" class="events-list"></div>
+        </div>
       </div>
     </main>
 
@@ -187,6 +216,34 @@
 
     <!-- 提示消息 -->
     <div id="toast" class="toast hidden" data-page-node-id="YGJVJYLNtM72nHCk1lJbHb"></div>
+
+    <!-- 📅 行程新增/編輯表單（calendar.md 專用）：保存到編輯緩衝，再按頂欄「保存」寫回文件 -->
+    <div id="ev-form-overlay" class="ev-form-overlay" style="display:none">
+      <div class="ev-form-box">
+        <div class="ev-form-title" id="ev-form-title">新增行程</div>
+        <label class="ev-f-label">標題<input type="text" id="ev-f-title" maxlength="200" placeholder="行程標題"></label>
+        <label class="ev-f-label">日期<input type="date" id="ev-f-date"></label>
+        <label class="ev-f-check"><input type="checkbox" id="ev-f-allday"> 全天</label>
+        <div class="ev-f-row">
+          <label class="ev-f-label">開始<input type="time" id="ev-f-start"></label>
+          <label class="ev-f-label">結束<input type="time" id="ev-f-end"></label>
+        </div>
+        <label class="ev-f-label">地點<input type="text" id="ev-f-location" maxlength="200" placeholder="可留空"></label>
+        <div class="ev-f-label">顏色<div id="ev-f-colors" class="ev-f-colors"></div></div>
+        <label class="ev-f-label">標籤（逗號分隔）<input type="text" id="ev-f-tags" maxlength="200" placeholder="例如：生活, 工作"></label>
+        <label class="ev-f-label">備註<textarea id="ev-f-notes" rows="3" placeholder="可留空，支持多行"></textarea>
+          <!-- ↕ 拖拽手柄：iOS Safari 不支持 textarea 原生 resize 手柄，自绘实现上下拉动高度 -->
+          <div class="ev-f-resize" id="ev-f-resize" title="拖動調整備註框高度"><span></span></div>
+        </label>
+        <div class="ev-form-actions">
+          <button type="button" class="btn btn-secondary" id="ev-form-delete" style="display:none">刪除</button>
+          <span class="ev-toolbar-flex"></span>
+          <button type="button" class="btn btn-secondary" id="ev-form-cancel">取消</button>
+          <button type="button" class="btn btn-primary" id="ev-form-save">寫入編輯內容</button>
+        </div>
+        <div class="ev-form-hint">寫入後按頂欄「保存」，在分享面板選「儲存到檔案」→ 覆蓋原 calendar.md</div>
+      </div>
+    </div>
   </div>
 
   <!-- Markdown 渲染管線（從 todo 編輯器移植的擴展語法支援），必須在 app.js 之前載入 -->

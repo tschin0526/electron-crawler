@@ -15,7 +15,7 @@
 
 ## 功能特性
 
-- ✅ 從 iCloud Drive 打開**任意文字檔**（md / json / html / 程式碼 / csv / 設定檔 …）
+- ✅ 從 iCloud Drive 開啟**任意文字檔**（md / json / html / 程式碼 / csv / 設定檔 …）
 - ✅ Markdown 即時預覽（.md / .markdown / .mdx）
 - ✅ 非 Markdown 檔自動切語法高亮預覽（js / py / json / html / css / sh …）
 - ✅ 語法高亮
@@ -28,11 +28,11 @@
 
 ## 使用方法
 
-### 打開文件
-1. 點擊「打開」按鈕
+### 開啟文件
+1. 點擊「開啟」按鈕
 2. 在文件選擇器中導航到 iCloud Drive
 3. 選擇任意文字檔（`.md` / `.json` / `.html` / `.js` / `.py` / `.csv` / `.txt` 等）
-4. `.md` 檔走 Markdown 預覽；其它檔走語法高亮純文字預覽
+4. `.md` 檔自動切到分屏視圖（編輯 + 預覽同時顯示）；其它檔保持編輯視圖
 
 ### 保存文件
 1. 編輯完成後點擊「保存」按鈕

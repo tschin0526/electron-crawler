@@ -11,7 +11,8 @@
 
 // 快取名帶版本：每次改資源內容或 SW 邏輯都要 bump 版本號，
 // 讓舊快取名自動失效、activate 階段清掉，確保用戶一定拿到最新資源。
-const CACHE_NAME = 'md-editor-lite-v6';
+// v12：備註框自繪拖拽手柄（iOS 無原生 resize）
+const CACHE_NAME = 'md-editor-lite-v12';
 const ASSETS = [
   './',
   './index.html',

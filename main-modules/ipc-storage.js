@@ -21,8 +21,11 @@ let setCurrentServiceCard;
 const TODO_CONFIG_FILE_NAME = 'todolist-config.json';
 const TODO_MIGRATION_MARKER = '.todolist-data-dir-migrated';
 const TODO_CONFIG_PATH = path.join(__dirname, '..', TODO_CONFIG_FILE_NAME);
-const CALENDAR_CONFIG_FILE_NAME = 'calender-config.json';
+// 拼写修正：calender → calendar。旧 calender-config.json 在首次读取时自动迁移为 calendar-config.json（旧文件保留不删）
+const CALENDAR_CONFIG_FILE_NAME = 'calendar-config.json';
+const CALENDAR_CONFIG_LEGACY_FILE_NAME = 'calender-config.json';
 const CALENDAR_CONFIG_PATH = path.join(__dirname, '..', CALENDAR_CONFIG_FILE_NAME);
+const CALENDAR_CONFIG_LEGACY_PATH = path.join(__dirname, '..', CALENDAR_CONFIG_LEGACY_FILE_NAME);
 
 // 🆕 文本类扩展名白名单（模块级常量，供「列出文件」与「返回支持的文本扩展名」两处共用）
 //   带点前缀（如 '.txt'）；覆盖 todo-Json / 一般Json / md / html 之外的所有纯文本类型。
@@ -172,8 +175,28 @@ function init(shared) {
   function resolveCalendarDataDir() {
     const fallbackDir = path.resolve(PLUGINS_DATA_DIR);
     try {
-      if (!fs.existsSync(CALENDAR_CONFIG_PATH)) return fallbackDir;
-      const config = JSON.parse(fs.readFileSync(CALENDAR_CONFIG_PATH, 'utf8'));
+      // 🔁 一次性迁移：旧拼写错误的 calender-config.json → calendar-config.json（旧文件保留不删）
+      if (!fs.existsSync(CALENDAR_CONFIG_PATH) && fs.existsSync(CALENDAR_CONFIG_LEGACY_PATH)) {
+        try {
+          fs.copyFileSync(CALENDAR_CONFIG_LEGACY_PATH, CALENDAR_CONFIG_PATH);
+          console.log(`[Main] 已迁移 ${CALENDAR_CONFIG_LEGACY_FILE_NAME} → ${CALENDAR_CONFIG_FILE_NAME}（旧文件保留）`);
+        } catch (me) {
+          console.warn('[Main] 日历配置文件迁移失败，继续读旧文件:', me.message);
+          return readCalendarDirFrom(fallbackDir, CALENDAR_CONFIG_LEGACY_PATH, CALENDAR_CONFIG_LEGACY_FILE_NAME);
+        }
+      }
+      return readCalendarDirFrom(fallbackDir, CALENDAR_CONFIG_PATH, CALENDAR_CONFIG_FILE_NAME);
+    } catch (error) {
+      console.warn(`[Main] 读取 ${CALENDAR_CONFIG_FILE_NAME} 失败，回退默认 data 目录:`, error.message);
+      return fallbackDir;
+    }
+  }
+
+  // 从指定配置文件解析日历数据目录（resolveCalendarDataDir 的读取部分，抽出便于迁移回退）
+  function readCalendarDirFrom(fallbackDir, configPath, fileName) {
+    try {
+      if (!fs.existsSync(configPath)) return fallbackDir;
+      const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
       const configuredDir = config && typeof config.calendarDataDir === 'string'
         ? config.calendarDataDir.trim()
         : '';
@@ -187,7 +210,7 @@ function init(shared) {
       console.log(`[Main] 日历数据目录: ${resolvedDir}`);
       return resolvedDir;
     } catch (error) {
-      console.warn(`[Main] 读取 ${CALENDAR_CONFIG_FILE_NAME} 失败，回退默认 data 目录:`, error.message);
+      console.warn(`[Main] 读取 ${fileName} 失败，回退默认 data 目录:`, error.message);
       return fallbackDir;
     }
   }

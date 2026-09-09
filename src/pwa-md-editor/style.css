@@ -104,7 +104,7 @@ body {
   display: block;
 }
 
-/* todo 卡片模式徽章：打開 todo-*.json 結構時顯示，提示用戶保存會合併原結構 */
+/* todo 卡片模式徽章：開啟 todo-*.json 結構時顯示，提示用戶保存會合併原結構 */
 .todo-badge {
   display: none;            /* 預設隱藏，JS 依 state.todoMode 切換 */
   margin-left: 8px;
@@ -320,6 +320,99 @@ body {
 /* 可見性只用容器上的 data-view 控制，JS 不必逐個加減 class */
 .editor-container[data-view="edit"] .preview-pane { display: none; }
 .editor-container[data-view="preview"] .editor-pane { display: none; }
+/* 📅 行程視圖（calendar.md 專用） */
+.editor-container[data-view="events"] .editor-pane,
+.editor-container[data-view="events"] .preview-pane { display: none; }
+
+/* 行程視圖：日期分組的只讀列表（配色跟隨明暗主題變量） */
+.events-pane { display: none; overflow: auto; background: var(--bg); }
+.editor-container[data-view="events"] .events-pane { display: block; }
+.events-list { max-width: 720px; margin: 0 auto; padding-bottom: 24px; }
+.ev-empty { padding: 40px 16px; text-align: center; color: var(--text-secondary); font-size: 14px; line-height: 1.7; }
+.ev-date {
+  position: sticky; top: 0; z-index: 1;
+  padding: 10px 14px; margin-top: 6px;
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border);
+  font-weight: 600; font-size: 14px; color: var(--text);
+  display: flex; align-items: center; gap: 8px;
+}
+.ev-date .ev-week { color: var(--text-secondary); font-weight: 400; font-size: 12px; }
+.ev-date.today { color: var(--primary); }
+.ev-today-badge { background: var(--primary); color: #fff; font-size: 11px; padding: 1px 8px; border-radius: 99px; font-weight: 500; }
+.ev-item { display: flex; gap: 10px; padding: 10px 14px; border-bottom: 1px solid var(--border); background: var(--bg-secondary); }
+.ev-item.past { opacity: 0.55; }
+.ev-swatch { flex: 0 0 auto; width: 10px; height: 10px; border-radius: 50%; margin-top: 5px; }
+.ev-body { flex: 1; min-width: 0; }
+.ev-title { font-size: 15px; font-weight: 500; color: var(--text); word-break: break-word; }
+.ev-tags { margin-left: 8px; font-size: 12px; color: var(--text-secondary); font-weight: 400; }
+.ev-meta { margin-top: 2px; font-size: 12px; color: var(--text-secondary); }
+.ev-notes { margin-top: 4px; font-size: 12px; color: var(--text-secondary); white-space: pre-wrap; word-break: break-word; }
+
+/* 行程視圖工具欄：列表/月切換 + 新增 */
+.ev-toolbar { display: flex; align-items: center; gap: 10px; padding: 0 0 8px; }
+.ev-toolbar-flex { flex: 1; }
+.ev-mode-seg { display: flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+.ev-mode-seg button { border: none; background: var(--bg-secondary); color: var(--text-secondary); font-size: 13px; padding: 5px 14px; cursor: pointer; }
+.ev-mode-seg button.active { background: var(--primary); color: #fff; }
+.ev-add-btn { border: 1px solid var(--primary); background: var(--bg-secondary); color: var(--primary); font-size: 13px; padding: 5px 12px; border-radius: 8px; cursor: pointer; }
+.ev-add-btn:active { background: var(--primary); color: #fff; }
+
+/* 月視圖導航 */
+.ev-monthnav { display: flex; align-items: center; gap: 10px; padding: 0 0 6px; }
+.ev-monthnav button { border: 1px solid var(--border); background: var(--bg-secondary); color: var(--text); font-size: 15px; padding: 3px 10px; border-radius: 8px; cursor: pointer; }
+.ev-monthnav #ev-month-title { flex: 1; text-align: center; font-size: 15px; font-weight: 600; color: var(--text); }
+.ev-today-mini { font-size: 12px !important; padding: 4px 10px !important; }
+
+/* 月曆網格：週一開頭，單元格顯示日號 + 最多 2 條行程 chip */
+.ev-month-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; padding-bottom: 8px; }
+.ev-mc-head { text-align: center; font-size: 11px; color: var(--text-secondary); padding: 4px 0; }
+.ev-cell { min-height: 52px; background: var(--bg-secondary); border-radius: 4px; padding: 2px 3px; overflow: hidden; cursor: pointer; border: 1px solid transparent; }
+.ev-cell.out { opacity: 0.35; }
+.ev-cell.selected { border-color: var(--primary); }
+.ev-daynum { display: inline-block; font-size: 11px; min-width: 18px; text-align: center; padding: 1px 0; border-radius: 99px; color: var(--text); }
+.ev-cell.today .ev-daynum { background: var(--primary); color: #fff; }
+.ev-chip { display: flex; align-items: center; gap: 3px; font-size: 9px; line-height: 1.25; margin-top: 1px; color: var(--text); white-space: nowrap; overflow: hidden; }
+.ev-chip .dot { width: 5px; height: 5px; border-radius: 50%; flex: 0 0 auto; }
+.ev-more { font-size: 9px; color: var(--text-secondary); margin-top: 1px; }
+
+/* 行程條目操作（編輯/刪除） */
+.ev-actions { flex: 0 0 auto; display: flex; flex-direction: column; gap: 4px; }
+.ev-actions button { border: 1px solid var(--border); background: var(--bg); color: var(--text-secondary); font-size: 11px; padding: 2px 8px; border-radius: 6px; cursor: pointer; }
+.ev-actions button:active { background: var(--gold-wash); }
+
+/* 📅 行程新增/編輯表單 */
+.ev-form-overlay { position: fixed; inset: 0; z-index: 3000; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; padding: 16px; }
+.ev-form-box { width: 100%; max-width: 420px; max-height: 90vh; overflow: auto; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 12px; padding: 16px; }
+.ev-form-title { font-size: 16px; font-weight: 600; color: var(--text); margin-bottom: 12px; }
+.ev-f-label { display: block; font-size: 12px; color: var(--text-secondary); margin-bottom: 10px; }
+.ev-f-label input[type="text"], .ev-f-label input[type="date"], .ev-f-label input[type="time"], .ev-f-label textarea {
+  display: block; width: 100%; margin-top: 4px; padding: 8px 10px;
+  border: 1px solid var(--border); border-radius: 8px;
+  background: var(--bg); color: var(--text); font-size: 14px;
+  font-family: inherit; -webkit-appearance: none;
+}
+/* ↕ 備註框：禁用原生 resize（iOS 不支持），高度由自繪手柄拖拽控制 */
+#ev-f-notes { resize: none; min-height: 60px; overflow: auto; }
+.ev-f-resize {
+  margin-top: 4px; padding: 6px 0;
+  display: flex; align-items: center; justify-content: center;
+  cursor: ns-resize; touch-action: none; /* 阻止拖動時頁面滾動 */
+  -webkit-user-select: none; user-select: none;
+}
+.ev-f-resize span {
+  display: block; width: 44px; height: 5px; border-radius: 3px;
+  background: var(--border); border: 1px solid var(--text-secondary);
+}
+.ev-f-resize:active span { background: var(--text-secondary); }
+.ev-f-check { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--text); margin-bottom: 10px; cursor: pointer; }
+.ev-f-row { display: flex; gap: 10px; }
+.ev-f-row .ev-f-label { flex: 1; }
+.ev-f-colors { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 6px; }
+.ev-f-colors .sw { width: 24px; height: 24px; border-radius: 50%; cursor: pointer; border: 2px solid transparent; }
+.ev-f-colors .sw.selected { border-color: var(--text); box-shadow: 0 0 0 2px var(--bg-secondary) inset; }
+.ev-form-actions { display: flex; align-items: center; gap: 10px; margin-top: 12px; }
+.ev-form-hint { margin-top: 10px; font-size: 11px; line-height: 1.5; color: var(--text-secondary); }
 
 .editor-pane {
   display: flex;

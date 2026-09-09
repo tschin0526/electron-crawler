@@ -4,11 +4,11 @@
  */
 
 // 視圖模式：edit = 只編輯 / preview = 只預覽 / split = 分屏（邊寫邊看）
-const VIEWS = ['edit', 'preview', 'split'];
+const VIEWS = ['edit', 'preview', 'split', 'events'];
 
 // 📌 應用版本號（單一可信來源）。
 // 每次改動都要 +1，方便在手機上確認跑的是不是最新版（狀態列左下角會顯示）。
-const APP_VERSION = '0.7.9';
+const APP_VERSION = '0.7.15';
 
 // 可處理的文字檔副檔名白名單（對齊 todo 編輯器 TEXT_EXTS，取常用子集）
 const TEXT_EXTS = [
@@ -75,11 +75,18 @@ const state = {
   view: 'edit',
   isDarkMode: true,  // 預設暗色模式（無 localStorage 記錄 / 重置後即為黑夜模式）
   lastContent: '',
-  // 🆕 todo 卡片模式：打開 todo-*.json（符合 todo 卡片結構）後進入此模式，
+  // 🆕 todo 卡片模式：開啟 todo-*.json（符合 todo 卡片結構）後進入此模式，
   //    編輯器只顯示 markdown 正文（text 字段）；存檔前把改後的 text 合回原物件
   //    再整體序列化，保留所有其它字段（tags/bgColor/attachments/createdAt/...）。
   todoMode: false,
-  originalTodo: null  // 打開時的完整原始 todo 物件（保存時以此為基礎合併）
+  originalTodo: null,  // 開啟時的完整原始 todo 物件（保存時以此為基礎合併）
+  // 📅 行程視圖（calendar.md 專用）
+  calMode: 'list',              // 'list' | 'month'
+  calCursor: new Date(),        // 月視圖當前月份
+  calSelectedDate: null,        // 月視圖選中日期（YYYY-MM-DD）
+  calEvents: [],                // 工作副本（含 uid；每次渲染/編輯前從編輯器緩衝重新解析）
+  evFormUid: null,              // 編輯表單當前目標 uid（null = 新增）
+  evFormColor: null             // 編輯表單當前選中顏色
 };
 
 // DOM 元素
@@ -90,6 +97,34 @@ const elements = {
   btnTheme: document.getElementById('btn-theme'),
   fileInput: document.getElementById('file-input'),
   fileName: document.getElementById('file-name'),
+  tabEvents: document.getElementById('tab-events'),
+  eventsList: document.getElementById('events-list'),
+  evModeList: document.getElementById('ev-mode-list'),
+  evModeMonth: document.getElementById('ev-mode-month'),
+  evAddBtn: document.getElementById('ev-add-btn'),
+  evMonthNav: document.getElementById('ev-month-nav'),
+  evMonthTitle: document.getElementById('ev-month-title'),
+  evPrevMonth: document.getElementById('ev-prev-month'),
+  evNextMonth: document.getElementById('ev-next-month'),
+  evTodayBtn: document.getElementById('ev-today-btn'),
+  evMonthWrap: document.getElementById('ev-month-wrap'),
+  evMonthGrid: document.getElementById('ev-month-grid'),
+  evDayList: document.getElementById('ev-day-list'),
+  evFormOverlay: document.getElementById('ev-form-overlay'),
+  evFormTitle: document.getElementById('ev-form-title'),
+  evFormDelete: document.getElementById('ev-form-delete'),
+  evFormCancel: document.getElementById('ev-form-cancel'),
+  evFormSave: document.getElementById('ev-form-save'),
+  evFTitle: document.getElementById('ev-f-title'),
+  evFDate: document.getElementById('ev-f-date'),
+  evFAllday: document.getElementById('ev-f-allday'),
+  evFStart: document.getElementById('ev-f-start'),
+  evFEnd: document.getElementById('ev-f-end'),
+  evFLocation: document.getElementById('ev-f-location'),
+  evFColors: document.getElementById('ev-f-colors'),
+  evFTags: document.getElementById('ev-f-tags'),
+  evFNotes: document.getElementById('ev-f-notes'),
+  evFResize: document.getElementById('ev-f-resize'),
   editor: document.getElementById('editor'),
   editorContainer: document.getElementById('editor-container'),
   preview: document.getElementById('preview'),
@@ -146,7 +181,7 @@ function init() {
 
 // 設置事件監聽
 function setupEventListeners() {
-  // 打開文件
+  // 開啟文件
   elements.btnOpen.addEventListener('click', () => {
     elements.fileInput.click();
   });
@@ -158,6 +193,54 @@ function setupEventListeners() {
 
   // 重置：清除所有緩存並重新載入整個應用
   elements.btnReset.addEventListener('click', handleReset);
+
+  // 📅 行程視圖（calendar.md）：模式切換 / 月曆導航 / 新增 / 條目編輯刪除（事件委派）
+  if (elements.evModeList) elements.evModeList.addEventListener('click', () => setCalMode('list'));
+  if (elements.evModeMonth) elements.evModeMonth.addEventListener('click', () => setCalMode('month'));
+  if (elements.evAddBtn) elements.evAddBtn.addEventListener('click', () => openEventForm(null));
+  if (elements.evPrevMonth) elements.evPrevMonth.addEventListener('click', () => { state.calCursor = new Date(state.calCursor.getFullYear(), state.calCursor.getMonth() - 1, 1); renderEventsContent(); });
+  if (elements.evNextMonth) elements.evNextMonth.addEventListener('click', () => { state.calCursor = new Date(state.calCursor.getFullYear(), state.calCursor.getMonth() + 1, 1); renderEventsContent(); });
+  if (elements.evTodayBtn) elements.evTodayBtn.addEventListener('click', () => { state.calCursor = new Date(); state.calSelectedDate = calendarFmtDate(new Date()); renderEventsContent(); });
+  if (elements.evMonthGrid) elements.evMonthGrid.addEventListener('click', (e) => {
+    const cell = e.target.closest('.ev-cell[data-date]');
+    if (!cell) return;
+    state.calSelectedDate = cell.getAttribute('data-date');
+    renderCalMonth(elements.editor.value);
+  });
+  // 條目「編輯/刪除」按鈕：列表視圖與月視圖日列表共用一套委派
+  if (elements.eventsList) elements.eventsList.addEventListener('click', onEvListClick);
+  if (elements.evDayList) elements.evDayList.addEventListener('click', onEvListClick);
+  // 表單
+  if (elements.evFormSave) elements.evFormSave.addEventListener('click', saveEventForm);
+  if (elements.evFormCancel) elements.evFormCancel.addEventListener('click', closeEventForm);
+  if (elements.evFormDelete) elements.evFormDelete.addEventListener('click', deleteEventFromForm);
+  if (elements.evFAllday) elements.evFAllday.addEventListener('change', () => {
+    elements.evFStart.disabled = elements.evFAllday.checked;
+    elements.evFEnd.disabled = elements.evFAllday.checked;
+  });
+  if (elements.evFormOverlay) elements.evFormOverlay.addEventListener('click', (e) => {
+    if (e.target === elements.evFormOverlay) closeEventForm(); // 點遮罩 = 取消
+  });
+  // ↕ 備註框高度拖拽手柄：iOS Safari 不支持 textarea 原生 resize，用 Pointer Events 自繪（觸屏/鼠標通用）
+  if (elements.evFResize && elements.evFNotes) {
+    elements.evFResize.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      const startY = e.clientY;
+      const startH = elements.evFNotes.offsetHeight;
+      const onMove = (ev) => {
+        const h = Math.max(60, Math.min(420, startH + (ev.clientY - startY)));
+        elements.evFNotes.style.height = h + 'px';
+      };
+      const onEnd = () => {
+        document.removeEventListener('pointermove', onMove);
+        document.removeEventListener('pointerup', onEnd);
+        document.removeEventListener('pointercancel', onEnd);
+      };
+      document.addEventListener('pointermove', onMove);
+      document.addEventListener('pointerup', onEnd);
+      document.addEventListener('pointercancel', onEnd);
+    });
+  }
 
   // 視圖切換頁簽（事件委派，頁簽增減不用改這裡）
   elements.tabbar.addEventListener('click', (e) => {
@@ -342,9 +425,9 @@ async function handleFileSelect(event) {
       originalTodo = JSON.parse(content);
       editorContent = originalTodo.text || '';
       todoMode = true;
-      showToast(`已打開 todo 卡片：${file.name}（只編輯正文，原結構保存時合併）`, 'success');
+      showToast(`已開啟 todo 卡片：${file.name}（只編輯正文，原結構保存時合併）`, 'success');
     } else {
-      showToast(`已打開：${file.name}`, 'success');
+      showToast(`已開啟：${file.name}`, 'success');
     }
 
     // 更新狀態
@@ -367,6 +450,17 @@ async function handleFileSelect(event) {
     updateWordCount();
     updateStatus();
 
+    // 🆕 開啟 .md 文件 → 自動切到「分屏」視圖，同時看到編輯與預覽。
+    // 預設是 edit 視圖（純文字），用戶可能誤以為「沒預覽」；切到 split 立即展示 Markdown 渲染結果。
+    // todo 卡片模式（json 但 text 是 md）也走 split，這樣能看到渲染效果；其他 json/html/程式碼 保持 edit。
+    // 📅 calendar.md（行程應用數據文件）→ 自動切到「行程」視圖，只讀查看行程列表
+    updateEventsTabVisibility();
+    if (isCalendarMd()) {
+      setView('events');
+    } else if (state.currentFile.type === 'md' || state.todoMode) {
+      setView('split');
+    }
+
   } catch (error) {
     console.error('讀取文件失敗:', error);
     showToast(`讀取失敗：${error.message}`, 'error');
@@ -384,12 +478,15 @@ function updateTodoModeBadge() {
 function readFileAsText(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
-    
+
     reader.onload = (e) => resolve(e.target.result);
     reader.onerror = (e) => reject(new Error('無法讀取文件'));
     reader.readAsText(file, 'UTF-8');
   });
 }
+
+// ⚠️ 不提供「刷新（重读当前文件）」按钮：iOS 文件选择器返回的 File 對象是內容快照，
+//    重讀拿不到 iCloud 的最新內容（永遠同一份），功能無意義。要拿最新內容請重新「開啟」文件。
 
 // 重置：清除所有本地緩存（localStorage / Service Worker 快取）並重新載入整個應用。
 // 用途：當 iCloud 檔案內容看起來「沒更新」時，釋放快取後整頁重載，強制回到乾淨狀態。
@@ -456,7 +553,7 @@ async function handleSave() {
     saveAsJson = true;
   }
 
-  // 如果是新文件（未打開過），提示輸入檔名後存出
+  // 如果是新文件（未開啟過），提示輸入檔名後存出
   if (!state.currentFile) {
     const name = promptFilename('untitled.md');
     if (name === null) return; // 用戶取消
@@ -693,6 +790,12 @@ function updatePreview() {
   // 預覽不可見時不浪費渲染（純編輯模式完全看不到）
   if (state.view === 'edit') return;
 
+  // 📅 行程視圖（calendar.md 專用）：渲染行程列表 / 月曆而非 markdown
+  if (state.view === 'events') {
+    renderEventsContent();
+    return;
+  }
+
   // 🛡️ 防護：hljs 是外部 CDN，加載失敗時不讓整頁崩潰（md 渲染管線自帶 marked 可用性檢查）
   const hasHljs = (typeof hljs !== 'undefined' && typeof hljs.highlightElement === 'function');
 
@@ -735,6 +838,392 @@ function escapeHtml(s) {
     .replace(/>/g, '&gt;');
 }
 
+// ===== 📅 行程視圖（calendar.md 專用，只讀查看） =====
+// calendar.md 是行程應用（桌面版 calendar 插件）的數據文件：以 `## EVENT` 分隔的塊 + 反引號字段 + Remark 代碼塊。
+// 解析邏輯與 calendar 插件的 parseMarkdownEvents 對齊（單向解析，本視圖不寫回）。
+
+function isCalendarMd() {
+  return !!(state.currentFile && String(state.currentFile.name || '').toLowerCase() === 'calendar.md');
+}
+
+// 顯示/隱藏「行程」頁簽；文件不是 calendar.md 時若停在行程視圖則退回分屏
+function updateEventsTabVisibility() {
+  if (!elements.tabEvents) return;
+  const show = isCalendarMd();
+  elements.tabEvents.style.display = show ? '' : 'none';
+  if (!show && state.view === 'events') setView('split');
+}
+
+function parseCalendarArrField(s) {
+  s = (s || '').trim();
+  if (!s) return [];
+  try { const a = JSON.parse(s); return Array.isArray(a) ? a : []; }
+  catch (e) { return []; }
+}
+
+function parseCalendarEventBlock(block, idx) {
+  // 先把 Remark 代碼塊與字段頭部切開，避免備注內容干擾字段解析（與 calendar 插件一致）
+  let remark = '';
+  let head = block;
+  const ri = block.indexOf('- Remark:');
+  if (ri >= 0) {
+    head = block.slice(0, ri);
+    const after = block.slice(ri + '- Remark:'.length);
+    const m = after.match(/```([\s\S]*)```/);
+    if (m) {
+      remark = m[1].replace(/^\n/, '').replace(/\n$/, '');
+      if (remark.trim() === '') remark = '';
+    }
+  }
+  const get = (name) => {
+    const m = head.match(new RegExp('- ' + name + ': `([^`]*)`'));
+    return m ? m[1] : '';
+  };
+  const title = get('title');
+  if (!title) return null;
+  let color = get('color').trim();
+  if (color.length >= 2 && color[0] === '"' && color[color.length - 1] === '"') color = color.slice(1, -1);
+  return {
+    idx,
+    uid: 'evp' + idx,  // 确定性 uid：同一內容多次解析結果一致，供編輯/刪除定位
+    title,
+    date: get('date'),
+    allDay: get('allDay') === 'true',
+    startTime: get('startTime'),
+    endTime: get('endTime'),
+    location: get('location'),
+    color: color || '#3b82f6',
+    tags: parseCalendarArrField(get('tags')),
+    notes: remark
+  };
+}
+
+function parseCalendarEvents(md) {
+  if (!md) return [];
+  const events = [];
+  const blocks = String(md).split(/^##[ \t]*EVENT[ \t]*$/m);
+  for (let i = 0; i < blocks.length; i++) {
+    const ev = parseCalendarEventBlock(blocks[i], i);
+    if (ev) events.push(ev);
+  }
+  return events;
+}
+
+function calendarFmtDate(d) {
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+}
+
+function calendarTimeToMin(t) {
+  const m = String(t || '').match(/^(\d{1,2}):(\d{2})/);
+  return m ? (+m[1]) * 60 + (+m[2]) : 0;
+}
+
+// 渲染行程列表：日期升序分組，過去行程淡化，今天高亮；每條帶「編輯/刪除」
+function renderEventsList(content) {
+  const list = elements.eventsList;
+  if (!list) return;
+  state.calEvents = parseCalendarEvents(content);
+  if (!state.calEvents.length) {
+    list.innerHTML = '<div class="ev-empty">尚未有行程<br><span style="font-size:12px">點右上「＋ 新增行程」，或編輯 calendar.md 原文（以 ## EVENT 分隔）</span></div>';
+    return;
+  }
+  const today = calendarFmtDate(new Date());
+  const sorted = sortedCalEvents(state.calEvents);
+
+  let html = '';
+  let lastDate = null;
+  for (const ev of sorted) {
+    if (ev.date !== lastDate) {
+      lastDate = ev.date;
+      html += calDateHeaderHtml(ev.date, today);
+    }
+    html += evItemHtml(ev, today);
+  }
+  list.innerHTML = html;
+}
+
+// 條目排序：日期升序 → 同日全天在前 → 開始時間
+function sortedCalEvents(events) {
+  return events.slice().sort((a, b) => {
+    if (a.date !== b.date) return a.date < b.date ? -1 : 1;
+    if (a.allDay !== b.allDay) return a.allDay ? -1 : 1;
+    return calendarTimeToMin(a.startTime) - calendarTimeToMin(b.startTime);
+  });
+}
+
+function calDateHeaderHtml(date, today) {
+  const m = String(date || '').match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+  const WD = ['日', '一', '二', '三', '四', '五', '六'];
+  let label = '日期未知';
+  let week = '';
+  if (m) {
+    const d = new Date(+m[1], +m[2] - 1, +m[3]);
+    label = (+m[2]) + '月' + (+m[3]) + '日';
+    week = WD[d.getDay()];
+  }
+  const isToday = date === today;
+  return '<div class="ev-date' + (isToday ? ' today' : '') + '">' + label +
+    (week ? '<span class="ev-week">週' + week + '</span>' : '') +
+    (isToday ? '<span class="ev-today-badge">今天</span>' : '') +
+    '</div>';
+}
+
+// 單條行程 HTML（列表視圖與月視圖日列表共用；含編輯/刪除按鈕，走事件委派）
+function evItemHtml(ev, today) {
+  const time = ev.allDay ? '全天' : ((ev.startTime || '') + (ev.endTime ? '-' + ev.endTime : ''));
+  const past = ev.date < today;
+  return '<div class="ev-item' + (past ? ' past' : '') + '">' +
+    '<span class="ev-swatch" style="background:' + escapeHtml(ev.color) + '"></span>' +
+    '<div class="ev-body">' +
+    '<div class="ev-title">' + escapeHtml(ev.title) +
+    (ev.tags && ev.tags.length ? '<span class="ev-tags">' + ev.tags.map(t => '#' + escapeHtml(t)).join(' ') + '</span>' : '') +
+    '</div>' +
+    '<div class="ev-meta">' + escapeHtml(time) + (ev.location ? ' · 📍' + escapeHtml(ev.location) : '') + '</div>' +
+    (ev.notes ? '<div class="ev-notes">' + escapeHtml(ev.notes) + '</div>' : '') +
+    '</div>' +
+    '<div class="ev-actions">' +
+    '<button type="button" data-ev-edit="' + escapeHtml(ev.uid) + '">編輯</button>' +
+    '<button type="button" data-ev-del="' + escapeHtml(ev.uid) + '">刪除</button>' +
+    '</div></div>';
+}
+
+// ===== 📅 行程月視圖 + 新增/編輯（寫回編輯緩衝，按頂欄「保存」落盤） =====
+
+// 與桌面 calendar 插件完全一致的 11 色 iOS 色板
+const CAL_COLORS = ['#FF3B30', '#FF9500', '#FFCC00', '#34C759', '#5AC8FA', '#007AFF', '#5856D6', '#AF52DE', '#FF2D55', '#A2845E', '#8E8E93'];
+
+function genCalId() {
+  return 'ev-' + Date.now() + '-' + Math.random().toString(36).slice(2, 7);
+}
+
+// 序列化：與桌面 calendar 插件的 eventToMarkdown/eventsToMarkdown 逐字節對齊（桌面端要能讀回）
+function calMdEscape(s) {
+  return String(s == null ? '' : s).replace(/`/g, "'");
+}
+function calEventToMarkdown(ev) {
+  const tagsJson = JSON.stringify(Array.isArray(ev.tags) ? ev.tags : []);
+  const todoJson = JSON.stringify(Array.isArray(ev.todoIds) ? ev.todoIds : []);
+  const color = '"' + String(ev.color || '').replace(/^"|"$/g, '') + '"';
+  let s = '## EVENT \n';
+  s += '- title: `' + calMdEscape(ev.title) + '`\n';
+  s += '- date: `' + calMdEscape(ev.date) + '`\n';
+  s += '- allDay: `' + (ev.allDay ? 'true' : 'false') + '`\n';
+  s += '- startTime: `' + calMdEscape(ev.startTime) + '`\n';
+  s += '- endTime: `' + calMdEscape(ev.endTime) + '`\n';
+  s += '- location: `' + calMdEscape(ev.location) + '`\n';
+  s += '- color: `' + color + '`\n';
+  s += '- tags: `' + tagsJson + '`\n';
+  s += '- todoIds: `' + todoJson + '`\n';
+  s += '- Remark:\n```\n' + String(ev.notes || '') + '\n```\n';
+  return s;
+}
+function calEventsToMarkdown(events) {
+  const head = '# 日历行程\n\n> 每条行程以 `## EVENT` 分隔，字段值写在反引号内，Remark 用代码块保存多行备注。\n\n';
+  if (!events || !events.length) return head;
+  return head + events.map(calEventToMarkdown).join('\n');
+}
+
+// 視圖總入口（updatePreview 的 events 分支調用）：按模式渲染列表或月曆
+function renderEventsContent() {
+  if (!isCalendarMd()) return;
+  syncEventsModeUI();
+  const content = elements.editor.value;
+  if (state.calMode === 'month') renderCalMonth(content);
+  else renderEventsList(content);
+}
+
+function setCalMode(mode) {
+  state.calMode = (mode === 'month') ? 'month' : 'list';
+  if (state.calMode === 'month' && !state.calSelectedDate) state.calSelectedDate = calendarFmtDate(new Date());
+  renderEventsContent();
+}
+
+// 同步工具欄按鈕態 + 列表/月容器可見性
+function syncEventsModeUI() {
+  const month = state.calMode === 'month';
+  if (elements.evModeList) elements.evModeList.classList.toggle('active', !month);
+  if (elements.evModeMonth) elements.evModeMonth.classList.toggle('active', month);
+  if (elements.evMonthNav) elements.evMonthNav.style.display = month ? '' : 'none';
+  if (elements.evMonthWrap) elements.evMonthWrap.style.display = month ? '' : 'none';
+  if (elements.eventsList) elements.eventsList.style.display = month ? 'none' : '';
+}
+
+// 月曆：6x7 網格（週一開頭），單元格顯示日號 + 最多 2 條 chip + 溢出數；下方渲染選中日的行程列表
+function renderCalMonth(content) {
+  state.calEvents = parseCalendarEvents(content);
+  const cur = state.calCursor;
+  const y = cur.getFullYear(), m = cur.getMonth();
+  if (elements.evMonthTitle) elements.evMonthTitle.textContent = y + '年' + (m + 1) + '月';
+  const byDate = {};
+  state.calEvents.forEach(ev => { (byDate[ev.date] = byDate[ev.date] || []).push(ev); });
+  if (!state.calSelectedDate) state.calSelectedDate = calendarFmtDate(new Date());
+  const todayStr = calendarFmtDate(new Date());
+  const first = new Date(y, m, 1);
+  const offset = (first.getDay() + 6) % 7; // 週一開頭
+  const start = new Date(y, m, 1 - offset);
+  const HEADS = ['一', '二', '三', '四', '五', '六', '日'];
+  let html = HEADS.map(h => '<div class="ev-mc-head">' + h + '</div>').join('');
+  for (let i = 0; i < 42; i++) {
+    const d = new Date(start.getFullYear(), start.getMonth(), start.getDate() + i);
+    const ds = calendarFmtDate(d);
+    const out = d.getMonth() !== m;
+    const evs = sortedCalEvents(byDate[ds] || []);
+    let chips = '';
+    for (let j = 0; j < Math.min(2, evs.length); j++) {
+      chips += '<div class="ev-chip"><span class="dot" style="background:' + escapeHtml(evs[j].color) + '"></span>' + escapeHtml(evs[j].title) + '</div>';
+    }
+    if (evs.length > 2) chips += '<div class="ev-more">+' + (evs.length - 2) + '</div>';
+    html += '<div class="ev-cell' + (out ? ' out' : '') + (ds === todayStr ? ' today' : '') + (ds === state.calSelectedDate ? ' selected' : '') + '" data-date="' + ds + '">' +
+      '<span class="ev-daynum">' + d.getDate() + '</span>' + chips + '</div>';
+  }
+  if (elements.evMonthGrid) elements.evMonthGrid.innerHTML = html;
+  renderCalDayList();
+}
+
+// 月視圖下方：選中日期的行程列表（含編輯/刪除 + 該日新增入口）
+function renderCalDayList() {
+  const list = elements.evDayList;
+  if (!list) return;
+  const ds = state.calSelectedDate || calendarFmtDate(new Date());
+  const today = calendarFmtDate(new Date());
+  const m = String(ds).match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+  const WD = ['日', '一', '二', '三', '四', '五', '六'];
+  const d = m ? new Date(+m[1], +m[2] - 1, +m[3]) : new Date();
+  const evs = sortedCalEvents(state.calEvents.filter(e => e.date === ds));
+  let html = '<div class="ev-date' + (ds === today ? ' today' : '') + '">' +
+    (m ? (+m[2]) + '月' + (+m[3]) + '日' : '日期未知') +
+    '<span class="ev-week">週' + WD[d.getDay()] + '</span>' +
+    (ds === today ? '<span class="ev-today-badge">今天</span>' : '') +
+    '<span class="ev-week">· ' + evs.length + ' 條</span>' +
+    '<span class="ev-toolbar-flex"></span>' +
+    '<button type="button" class="ev-day-add" data-ev-add-on="' + escapeHtml(ds) + '">＋ 此日新增</button>' +
+    '</div>';
+  if (!evs.length) {
+    html += '<div class="ev-empty">這一天沒有行程</div>';
+  } else {
+    for (const ev of evs) html += evItemHtml(ev, today);
+  }
+  list.innerHTML = html;
+}
+
+// 條目操作（事件委派）：編輯 / 刪除 / 月視圖「此日新增」
+function onEvListClick(e) {
+  const editBtn = e.target.closest('[data-ev-edit]');
+  if (editBtn) { openEventForm(editBtn.getAttribute('data-ev-edit')); return; }
+  const delBtn = e.target.closest('[data-ev-del]');
+  if (delBtn) { deleteEventByUid(delBtn.getAttribute('data-ev-del')); return; }
+  const addBtn = e.target.closest('[data-ev-add-on]');
+  if (addBtn) { openEventForm(null, addBtn.getAttribute('data-ev-add-on')); return; }
+}
+
+// 打開表單：uid 為 null = 新增（預設日期 = 月視圖選中日或今天）；uid 有值 = 編輯該條
+function openEventForm(uid, defaultDate) {
+  if (!isCalendarMd()) return;
+  state.calEvents = parseCalendarEvents(elements.editor.value);
+  state.evFormUid = null;
+  let ev = null;
+  if (uid) {
+    ev = state.calEvents.find(x => x.uid === uid) || null;
+    if (!ev) { showToast('找不到該條行程（內容可能已被修改）', 'error'); return; }
+    state.evFormUid = uid;
+  }
+  const today = calendarFmtDate(new Date());
+  elements.evFormTitle.textContent = uid ? '編輯行程' : '新增行程';
+  elements.evFTitle.value = ev ? ev.title : '';
+  elements.evFDate.value = ev ? ev.date : (defaultDate || (state.calMode === 'month' ? state.calSelectedDate : today) || today);
+  elements.evFAllday.checked = ev ? ev.allDay : false;
+  elements.evFStart.value = ev ? ev.startTime : '';
+  elements.evFEnd.value = ev ? ev.endTime : '';
+  elements.evFStart.disabled = elements.evFAllday.checked;
+  elements.evFEnd.disabled = elements.evFAllday.checked;
+  elements.evFLocation.value = ev ? ev.location : '';
+  state.evFormColor = ev ? ev.color : CAL_COLORS[0];
+  elements.evFTags.value = ev && ev.tags ? ev.tags.join(', ') : '';
+  elements.evFNotes.value = ev ? ev.notes : '';
+  elements.evFormDelete.style.display = uid ? '' : 'none';
+  renderEvColorSwatches();
+  elements.evFormOverlay.style.display = 'flex';
+  elements.evFTitle.focus();
+}
+
+function renderEvColorSwatches() {
+  if (!elements.evFColors) return;
+  elements.evFColors.innerHTML = CAL_COLORS.map(c =>
+    '<span class="sw' + (c === state.evFormColor ? ' selected' : '') + '" data-color="' + c + '" style="background:' + c + '"></span>'
+  ).join('');
+  // 色板選擇（一次性委派，openEventForm 每次重建）
+  elements.evFColors.onclick = (e) => {
+    const sw = e.target.closest('.sw[data-color]');
+    if (!sw) return;
+    state.evFormColor = sw.getAttribute('data-color');
+    elements.evFColors.querySelectorAll('.sw').forEach(x => x.classList.toggle('selected', x.getAttribute('data-color') === state.evFormColor));
+  };
+}
+
+function closeEventForm() {
+  if (elements.evFormOverlay) elements.evFormOverlay.style.display = 'none';
+  state.evFormUid = null;
+  state.evFormColor = null;
+}
+
+// 表單「寫入編輯內容」：校驗 → upsert 工作副本 → 重新序列化整份 calendar.md → 寫回編輯器緩衝（isDirty = true）
+// ⚠️ 不直接落盤：iOS 無法直接寫原文件，走現有「保存」流程（分享面板 → 儲存到檔案 → 覆蓋）
+function saveEventForm() {
+  const title = elements.evFTitle.value.trim();
+  const date = elements.evFDate.value;
+  if (!title) { alert('請輸入標題'); elements.evFTitle.focus(); return; }
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) { alert('請選擇日期'); elements.evFDate.focus(); return; }
+  const allDay = elements.evFAllday.checked;
+  const ev = {
+    uid: state.evFormUid || genCalId(),
+    title,
+    date,
+    allDay,
+    startTime: allDay ? '' : elements.evFStart.value,
+    endTime: allDay ? '' : elements.evFEnd.value,
+    location: elements.evFLocation.value.trim(),
+    color: state.evFormColor || CAL_COLORS[0],
+    tags: elements.evFTags.value.split(/[,，]/).map(s => s.trim()).filter(Boolean),
+    notes: elements.evFNotes.value.replace(/\r\n/g, '\n')
+  };
+  // 以當前編輯器內容為基準重新解析（保留用戶可能手改過的其它條目），再 upsert
+  state.calEvents = parseCalendarEvents(elements.editor.value);
+  const i = state.calEvents.findIndex(x => x.uid === ev.uid);
+  if (i >= 0) state.calEvents[i] = ev;
+  else state.calEvents.push(ev);
+  applyEventsToEditor();
+  closeEventForm();
+  showToast('已寫入編輯內容，按頂欄「保存」存回文件', 'success');
+}
+
+// 刪除：confirm → 從工作副本移除 → 寫回編輯器緩衝
+function deleteEventByUid(uid) {
+  state.calEvents = parseCalendarEvents(elements.editor.value);
+  const ev = state.calEvents.find(x => x.uid === uid);
+  if (!ev) { showToast('找不到該條行程（內容可能已被修改）', 'error'); return; }
+  if (!window.confirm('確定刪除行程「' + ev.title + '」（' + ev.date + '）嗎？\n\n寫入後按「保存」才會真正存回文件。')) return;
+  state.calEvents = state.calEvents.filter(x => x.uid !== uid);
+  applyEventsToEditor();
+  showToast('已刪除「' + ev.title + '」，按「保存」存回文件', 'success');
+}
+
+function deleteEventFromForm() {
+  if (!state.evFormUid) return;
+  const uid = state.evFormUid;
+  closeEventForm();
+  deleteEventByUid(uid);
+}
+
+// 把工作副本序列化為 calendar.md 全文寫回編輯器緩衝；
+// lastContent 不動 → isDirty = true → 頂欄「保存」亮起，由用戶決定何時落盤
+function applyEventsToEditor() {
+  elements.editor.value = calEventsToMarkdown(state.calEvents);
+  state.isDirty = elements.editor.value !== state.lastContent;
+  updateStatus();
+  updateWordCount();
+  updatePreview(); // 重新渲染行程列表 / 月曆
+}
+
 // 切換暗色模式
 function toggleTheme() {
   state.isDarkMode = !state.isDarkMode;
@@ -770,7 +1259,7 @@ function handleKeyboard(e) {
     handleSave();
   }
   
-  // Ctrl/Cmd + O 打開
+  // Ctrl/Cmd + O 開啟
   if ((e.ctrlKey || e.metaKey) && e.key === 'o') {
     e.preventDefault();
     elements.fileInput.click();
@@ -849,6 +1338,7 @@ function restoreDraft() {
       // 恢復後清除草稿，避免下次重複覆蓋
       localStorage.removeItem('md-editor-draft');
       localStorage.removeItem('md-editor-draft-name');
+      updateEventsTabVisibility(); // 📅 草稿若來自 calendar.md，恢復「行程」頁簽可見性
       showToast('已恢復上次未保存的內容', 'info');
     }
   } catch (e) { /* 忽略 */ }
