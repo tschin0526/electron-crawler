@@ -12,13 +12,18 @@
 // 快取名帶版本：每次改資源內容或 SW 邏輯都要 bump 版本號，
 // 讓舊快取名自動失效、activate 階段清掉，確保用戶一定拿到最新資源。
 // v12：備註框自繪拖拽手柄（iOS 無原生 resize）
-const CACHE_NAME = 'md-editor-lite-v14';
+// v15：更換 App 圖示（3D 紫葡萄），一併預緩存圖示檔
+const CACHE_NAME = 'md-editor-lite-v15';
 const ASSETS = [
   './',
   './index.html',
   './style.css',
   './app.js',
-  './manifest.json'
+  './manifest.json',
+  './icon.svg',
+  './icon-180.png',
+  './icon-192.png',
+  './icon-512.png'
 ];
 
 // 網絡超時上限（ms）：超過就視為「連不上」，立刻回退快取，避免內網不可達時無限等待。
