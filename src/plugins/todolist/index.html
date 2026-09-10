@@ -12168,6 +12168,10 @@
     }
 
     async function saveTask(closeAfterSave = true, silent = false) {
+      // 🆕 本次保存是否「新建了 todo 卡片」——记录新卡片 id，供保存后切换编辑器状态用。
+      //    不切态的话，10 秒一次的自动保存 / 用户再点「保存」都会重复走新增分支，
+      //    以新的 Date.now() 生成不同档名，重复落盘一堆 todo-<时间戳>.json（严重 bug）。
+      let newlyCreatedTodoId = null;
       const textarea = document.getElementById('taskText');
       const htmlTextarea = document.getElementById('htmlText');
       const jsonTextarea = document.getElementById('jsonText');
@@ -12383,9 +12387,15 @@
         newTodo.updatedAt = Date.now();
         newTodo.completedAt = newTodo.completedAt || null;
         todos.unshift(newTodo);
+        // 🆕 记录刚新建的卡片 id（下面保存成功后要把编辑器切到「编辑该卡片」态）
+        newlyCreatedTodoId = newTodo.id;
       }
 
       const isEdit = !!editingId;
+      // 🆕 【重复建档根因修复】新增卡片保存成功后，立即把编辑器从「新增态」切到「编辑该卡片」态。
+      //    此前不切态 → editingId 仍为 null → 自动保存（每 10s）/ 再次点「保存」都会重新走
+      //    上面的新增分支，用新的 Date.now() 作 id，于是以不同档名重复落盘。
+      if (!isEdit && newlyCreatedTodoId) enterTodoEditStateAfterCreate(newlyCreatedTodoId);
       await saveTodos();
       // 🆕 同上：保存成功后刷新快照，避免刚存过的文档仍被判定为"有未保存改动"
       captureEditSnapshot();
@@ -12397,6 +12407,32 @@
       }
       // 🆕 保存不关窗时也要有反馈（否则用户不知道到底存没存）
       if (!silent) showToast(isEdit ? '已保存卡片' : '已新建卡片', 'success');
+    }
+
+    // 🆕 新增卡片首次落盘后，把编辑器切到「编辑该卡片」状态。
+    //   - editingId / currentEditorDocKey 指向该卡片 → 之后所有保存（含自动保存）都走编辑分支写回同一文件
+    //   - 底部 Sheet 页签：用真实的 todo:<id> 页签替换「NewFile」占位页签（保持原位置）
+    //   - 标题 / JSON 文本 / 删除·改名·重读按钮 / 文件列表 一并同步，行为与 openEditModal 对齐
+    function enterTodoEditStateAfterCreate(id) {
+      if (!id) return;
+      editingId = id;
+      const todoTabKey = 'todo:' + id;
+      const nfIdx = editorTabs.findIndex(t => t.key === 'newfile');
+      if (nfIdx >= 0) editorTabs.splice(nfIdx, 1);
+      touchEditorTab({ key: todoTabKey, type: 'todo', id: id, title: 'ToDo卡片' });
+      currentEditorDocKey = todoTabKey;
+      const titleEl = document.getElementById('modalTitle');
+      if (titleEl) titleEl.textContent = '编辑文件';
+      // JSON 编辑框同步为这张卡片的完整 JSON（含刚生成的 id），避免下次保存写入旧 id
+      const todo = todos.find(t => t.id === id);
+      if (todo) {
+        const jsonEl = document.getElementById('jsonText');
+        if (jsonEl) jsonEl.value = JSON.stringify(todo, null, 2);
+      }
+      updateFileTypeTabs();
+      updateFilePathDisplay();
+      updateDeleteBtnVisibility();
+      if (typeof loadFileListItems === 'function') loadFileListItems();
     }
 
     //  从外部创建 todo 卡片（供 capture.js 调用）
