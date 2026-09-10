@@ -1907,6 +1907,11 @@
     .ev-today-badge { background: var(--ev-primary); color: #fff; font-size: 11px; padding: 1px 8px; border-radius: 99px; font-weight: 500; }
     .ev-item { display: flex; gap: 10px; padding: 8px 12px; border-bottom: 1px solid var(--ev-border); background: var(--ev-card); }
     .ev-item.past { opacity: 0.55; }
+    /* 完成状态勾选框（清单上直接切换完成 / 未完成） */
+    .ev-check { flex: 0 0 auto; width: 16px; height: 16px; margin: 3px 0 0; accent-color: var(--ev-primary); cursor: pointer; }
+    .ev-item.done .ev-title { text-decoration: line-through; color: var(--ev-muted); font-weight: 400; }
+    .ev-item.done .ev-meta, .ev-item.done .ev-notes { opacity: 0.7; }
+    .ev-chip.done { text-decoration: line-through; opacity: 0.6; }
     .ev-swatch { flex: 0 0 auto; width: 10px; height: 10px; border-radius: 50%; margin-top: 5px; }
     .ev-body { flex: 1; min-width: 0; }
     .ev-title { font-size: 14px; font-weight: 500; color: var(--ev-text); word-break: break-word; }
@@ -4531,7 +4536,10 @@
       <div class="tl-ev-form-title" id="tlEvFormTitle">新增行程</div>
       <label class="tl-ev-f-label">标题<input type="text" id="tlEvFTitle" maxlength="200" placeholder="行程标题"></label>
       <label class="tl-ev-f-label">日期<input type="date" id="tlEvFDate"></label>
-      <label class="tl-ev-f-check"><input type="checkbox" id="tlEvFAllday" onchange="tlToggleAllDay()"> 全天</label>
+      <div class="tl-ev-f-row">
+        <label class="tl-ev-f-check"><input type="checkbox" id="tlEvFAllday" onchange="tlToggleAllDay()"> 全天</label>
+        <label class="tl-ev-f-check"><input type="checkbox" id="tlEvFDone"> 已完成</label>
+      </div>
       <div class="tl-ev-f-row">
         <label class="tl-ev-f-label">开始<input type="time" id="tlEvFStart"></label>
         <label class="tl-ev-f-label">结束<input type="time" id="tlEvFEnd"></label>
@@ -10450,11 +10458,15 @@
         idx, uid: 'evp' + idx, title,
         date: get('date'),
         allDay: get('allDay') === 'true',
+        // 完成状态：旧文件没有 - done 栏位 → 视为未设定 = 未完成
+        done: get('done') === 'true',
         startTime: get('startTime'),
         endTime: get('endTime'),
         location: get('location'),
         color: color || TL_CAL_COLORS[0],
         tags: tlParseArr(get('tags')),
+        // 修复：此前缺读 todoIds，往返保存会把 calendar 插件写入的关联卡片清空
+        todoIds: tlParseArr(get('todoIds')),
         notes: remark
       };
     }
@@ -10479,6 +10491,8 @@
       s += '- title: `' + tlMdEscape(ev.title) + '`\n';
       s += '- date: `' + tlMdEscape(ev.date) + '`\n';
       s += '- allDay: `' + (ev.allDay ? 'true' : 'false') + '`\n';
+      // 完成状态：永远显式写出（与桌面 calendar 插件同一栏位、同一顺序）
+      s += '- done: `' + (ev.done ? 'true' : 'false') + '`\n';
       s += '- startTime: `' + tlMdEscape(ev.startTime) + '`\n';
       s += '- endTime: `' + tlMdEscape(ev.endTime) + '`\n';
       s += '- location: `' + tlMdEscape(ev.location) + '`\n';
@@ -10551,7 +10565,9 @@
 
     function tlItemHtml(ev, today) {
       const time = ev.allDay ? '全天' : ((ev.startTime || '') + (ev.endTime ? '-' + ev.endTime : ''));
-      return '<div class="ev-item' + (ev.date < today ? ' past' : '') + '">' +
+      return '<div class="ev-item' + (ev.date < today ? ' past' : '') + (ev.done ? ' done' : '') + '">' +
+        '<input type="checkbox" class="ev-check" onchange="tlToggleDone(\'' + ev.uid + '\', this.checked)"' +
+        (ev.done ? ' checked' : '') + ' title="勾选＝已完成，取消勾选＝未完成">' +
         '<span class="ev-swatch" style="background:' + tlEscapeHtml(ev.color) + '"></span>' +
         '<div class="ev-body">' +
         '<div class="ev-title">' + tlEscapeHtml(ev.title) +
@@ -10604,7 +10620,7 @@
         const evs = tlSorted(byDate[ds] || []);
         let chips = '';
         for (let j = 0; j < Math.min(3, evs.length); j++) {
-          chips += '<div class="ev-chip"><span class="dot" style="background:' + tlEscapeHtml(evs[j].color) + '"></span>' + tlEscapeHtml(evs[j].title) + '</div>';
+          chips += '<div class="ev-chip' + (evs[j].done ? ' done' : '') + '"><span class="dot" style="background:' + tlEscapeHtml(evs[j].color) + '"></span>' + (evs[j].done ? '✓ ' : '') + tlEscapeHtml(evs[j].title) + '</div>';
         }
         if (evs.length > 3) chips += '<div class="ev-more">+' + (evs.length - 3) + '</div>';
         html += '<div class="ev-cell' + (out ? ' out' : '') + (ds === today ? ' today' : '') + (ds === tlCalSelected ? ' selected' : '') +
@@ -10656,6 +10672,8 @@
       document.getElementById('tlEvFTitle').value = ev ? ev.title : '';
       document.getElementById('tlEvFDate').value = ev ? ev.date : (defaultDate || (tlCalMode === 'month' ? tlCalSelected : today) || today);
       document.getElementById('tlEvFAllday').checked = ev ? ev.allDay : false;
+      // 完成状态：新增默认未完成（旧文件没有 - done 栏位时解析也是未完成）
+      document.getElementById('tlEvFDone').checked = ev ? !!ev.done : false;
       document.getElementById('tlEvFStart').value = ev ? ev.startTime : '';
       document.getElementById('tlEvFEnd').value = ev ? ev.endTime : '';
       tlToggleAllDay();
@@ -10703,6 +10721,7 @@
       const ev = {
         uid: tlEvFormUid || tlGenId(),
         title, date, allDay,
+        done: document.getElementById('tlEvFDone').checked,
         startTime: allDay ? '' : document.getElementById('tlEvFStart').value,
         endTime: allDay ? '' : document.getElementById('tlEvFEnd').value,
         location: document.getElementById('tlEvFLocation').value.trim(),
@@ -10734,6 +10753,16 @@
       const uid = tlEvFormUid;
       tlCloseEventForm();
       tlDeleteEvent(uid);
+    }
+
+    // 清单上的「完成」勾选框：切换 done → 序列化写回 taskText 缓冲（按「保存」才落盘）
+    function tlToggleDone(uid, done) {
+      tlCalEvents = tlParseEvents(document.getElementById('taskText').value);
+      const ev = tlCalEvents.find((x) => x.uid === uid);
+      if (!ev) { showToast('找不到该条行程（内容可能已被修改）', 'danger'); return; }
+      ev.done = !!done;
+      tlApplyEventsToBuffer(); // 内部会重绘行程视图
+      showToast(ev.done ? '已标记完成，按「保存」写回 calendar.md' : '已取消完成，按「保存」写回 calendar.md', 'success');
     }
 
     // 序列化整份 calendar.md 写回 taskText（不动 editSnapshot → 未保存检测自动判定为脏，「保存」亮起）

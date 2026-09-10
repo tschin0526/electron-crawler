@@ -8,7 +8,7 @@ const VIEWS = ['edit', 'preview', 'split', 'events'];
 
 // 📌 應用版本號（單一可信來源）。
 // 每次改動都要 +1，方便在手機上確認跑的是不是最新版（狀態列左下角會顯示）。
-const APP_VERSION = '0.7.15';
+const APP_VERSION = '0.7.17';
 
 // 可處理的文字檔副檔名白名單（對齊 todo 編輯器 TEXT_EXTS，取常用子集）
 const TEXT_EXTS = [
@@ -118,6 +118,7 @@ const elements = {
   evFTitle: document.getElementById('ev-f-title'),
   evFDate: document.getElementById('ev-f-date'),
   evFAllday: document.getElementById('ev-f-allday'),
+  evFDone: document.getElementById('ev-f-done'),
   evFStart: document.getElementById('ev-f-start'),
   evFEnd: document.getElementById('ev-f-end'),
   evFLocation: document.getElementById('ev-f-location'),
@@ -126,6 +127,7 @@ const elements = {
   evFNotes: document.getElementById('ev-f-notes'),
   evFResize: document.getElementById('ev-f-resize'),
   editor: document.getElementById('editor'),
+  mdToolbar: document.getElementById('md-toolbar'),
   editorContainer: document.getElementById('editor-container'),
   preview: document.getElementById('preview'),
   tabbar: document.getElementById('tabbar'),
@@ -775,6 +777,10 @@ function setView(view) {
   // 誰顯示完全交給 CSS（容器上的 data-view），JS 不逐個加減 class
   elements.editorContainer.dataset.view = view;
 
+  // MD 編輯工具列（格式/字體/段落/表格計算/鏈接跳轉…）只在「要編輯文本」的視圖顯示：
+  // edit（編輯文本）/ split（分屏，含編輯區）顯示；preview（MD 預覽）與 events（行事曆）隱藏。
+  if (elements.mdToolbar) elements.mdToolbar.style.display = (view === 'edit' || view === 'split') ? '' : 'none';
+
   elements.tabbar.querySelectorAll('.tab').forEach((tab) => {
     tab.classList.toggle('active', tab.dataset.view === view);
   });
@@ -889,11 +895,15 @@ function parseCalendarEventBlock(block, idx) {
     title,
     date: get('date'),
     allDay: get('allDay') === 'true',
+    // 完成狀態：舊檔案沒有 - done 欄位 → 視為未設定 = 未完成
+    done: get('done') === 'true',
     startTime: get('startTime'),
     endTime: get('endTime'),
     location: get('location'),
     color: color || '#3b82f6',
     tags: parseCalendarArrField(get('tags')),
+    // 修復：此前缺讀 todoIds，往返保存會把 calendar 插件寫入的關聯卡片清空
+    todoIds: parseCalendarArrField(get('todoIds')),
     notes: remark
   };
 }
@@ -972,7 +982,9 @@ function calDateHeaderHtml(date, today) {
 function evItemHtml(ev, today) {
   const time = ev.allDay ? '全天' : ((ev.startTime || '') + (ev.endTime ? '-' + ev.endTime : ''));
   const past = ev.date < today;
-  return '<div class="ev-item' + (past ? ' past' : '') + '">' +
+  return '<div class="ev-item' + (past ? ' past' : '') + (ev.done ? ' done' : '') + '">' +
+    '<input type="checkbox" class="ev-check" data-ev-done="' + escapeHtml(ev.uid) + '"' +
+    (ev.done ? ' checked' : '') + ' title="勾選＝已完成">' +
     '<span class="ev-swatch" style="background:' + escapeHtml(ev.color) + '"></span>' +
     '<div class="ev-body">' +
     '<div class="ev-title">' + escapeHtml(ev.title) +
@@ -1008,6 +1020,8 @@ function calEventToMarkdown(ev) {
   s += '- title: `' + calMdEscape(ev.title) + '`\n';
   s += '- date: `' + calMdEscape(ev.date) + '`\n';
   s += '- allDay: `' + (ev.allDay ? 'true' : 'false') + '`\n';
+  // 完成狀態：永遠顯式寫出（與桌面 calendar 插件同一欄位、同一順序）
+  s += '- done: `' + (ev.done ? 'true' : 'false') + '`\n';
   s += '- startTime: `' + calMdEscape(ev.startTime) + '`\n';
   s += '- endTime: `' + calMdEscape(ev.endTime) + '`\n';
   s += '- location: `' + calMdEscape(ev.location) + '`\n';
@@ -1070,7 +1084,7 @@ function renderCalMonth(content) {
     const evs = sortedCalEvents(byDate[ds] || []);
     let chips = '';
     for (let j = 0; j < Math.min(2, evs.length); j++) {
-      chips += '<div class="ev-chip"><span class="dot" style="background:' + escapeHtml(evs[j].color) + '"></span>' + escapeHtml(evs[j].title) + '</div>';
+      chips += '<div class="ev-chip' + (evs[j].done ? ' done' : '') + '"><span class="dot" style="background:' + escapeHtml(evs[j].color) + '"></span>' + (evs[j].done ? '✓ ' : '') + escapeHtml(evs[j].title) + '</div>';
     }
     if (evs.length > 2) chips += '<div class="ev-more">+' + (evs.length - 2) + '</div>';
     html += '<div class="ev-cell' + (out ? ' out' : '') + (ds === todayStr ? ' today' : '') + (ds === state.calSelectedDate ? ' selected' : '') + '" data-date="' + ds + '">' +
@@ -1108,6 +1122,9 @@ function renderCalDayList() {
 
 // 條目操作（事件委派）：編輯 / 刪除 / 月視圖「此日新增」
 function onEvListClick(e) {
+  // 完成勾選框：切換 done → 寫回編輯緩衝（按頂欄「保存」才落盤）
+  const doneChk = e.target.closest('[data-ev-done]');
+  if (doneChk) { toggleEventDone(doneChk.getAttribute('data-ev-done'), doneChk.checked); return; }
   const editBtn = e.target.closest('[data-ev-edit]');
   if (editBtn) { openEventForm(editBtn.getAttribute('data-ev-edit')); return; }
   const delBtn = e.target.closest('[data-ev-del]');
@@ -1132,6 +1149,8 @@ function openEventForm(uid, defaultDate) {
   elements.evFTitle.value = ev ? ev.title : '';
   elements.evFDate.value = ev ? ev.date : (defaultDate || (state.calMode === 'month' ? state.calSelectedDate : today) || today);
   elements.evFAllday.checked = ev ? ev.allDay : false;
+  // 完成狀態：新增預設未完成（舊檔案沒有 - done 欄位時解析也是未完成）
+  elements.evFDone.checked = ev ? !!ev.done : false;
   elements.evFStart.value = ev ? ev.startTime : '';
   elements.evFEnd.value = ev ? ev.endTime : '';
   elements.evFStart.disabled = elements.evFAllday.checked;
@@ -1179,6 +1198,7 @@ function saveEventForm() {
     title,
     date,
     allDay,
+    done: elements.evFDone.checked,
     startTime: allDay ? '' : elements.evFStart.value,
     endTime: allDay ? '' : elements.evFEnd.value,
     location: elements.evFLocation.value.trim(),
@@ -1212,6 +1232,16 @@ function deleteEventFromForm() {
   const uid = state.evFormUid;
   closeEventForm();
   deleteEventByUid(uid);
+}
+
+// 清單上的「完成」勾選框：切換 done → 寫回編輯緩衝（applyEventsToEditor 內會重繪行程視圖）
+function toggleEventDone(uid, done) {
+  state.calEvents = parseCalendarEvents(elements.editor.value);
+  const ev = state.calEvents.find(x => x.uid === uid);
+  if (!ev) { showToast('找不到該條行程（內容可能已被修改）', 'error'); return; }
+  ev.done = !!done;
+  applyEventsToEditor();
+  showToast(ev.done ? '已標記完成，按「保存」存回文件' : '已取消完成，按「保存」存回文件', 'success');
 }
 
 // 把工作副本序列化為 calendar.md 全文寫回編輯器緩衝；

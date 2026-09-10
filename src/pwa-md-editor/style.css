@@ -342,6 +342,11 @@ body {
 .ev-today-badge { background: var(--primary); color: #fff; font-size: 11px; padding: 1px 8px; border-radius: 99px; font-weight: 500; }
 .ev-item { display: flex; gap: 10px; padding: 10px 14px; border-bottom: 1px solid var(--border); background: var(--bg-secondary); }
 .ev-item.past { opacity: 0.55; }
+/* 完成狀態勾選框（清單上直接切換完成 / 未完成） */
+.ev-check { flex: 0 0 auto; width: 18px; height: 18px; margin: 2px 0 0; accent-color: var(--primary, #3b82f6); cursor: pointer; }
+.ev-item.done .ev-title { text-decoration: line-through; color: var(--text-secondary); font-weight: 400; }
+.ev-item.done .ev-meta, .ev-item.done .ev-notes { opacity: 0.7; }
+.ev-chip.done { text-decoration: line-through; opacity: 0.6; }
 .ev-swatch { flex: 0 0 auto; width: 10px; height: 10px; border-radius: 50%; margin-top: 5px; }
 .ev-body { flex: 1; min-width: 0; }
 .ev-title { font-size: 15px; font-weight: 500; color: var(--text); word-break: break-word; }

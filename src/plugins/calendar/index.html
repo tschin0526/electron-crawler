@@ -324,6 +324,11 @@
     .ev-chip.all-day {
       color: #fff;
     }
+    /* 已完成行程：删除线 + 半透明，与未完成区分（月视图 chip / 日周视图 block 共用） */
+    .ev-chip.done,
+    .ev-block.done { opacity: 0.55; }
+    .ev-chip.done { text-decoration: line-through; }
+    .ev-block.done .t { text-decoration: line-through; font-weight: 500; }
     .ev-more {
       font-size: 10px;
       color: var(--text-secondary);
@@ -728,7 +733,8 @@
     .lt-table { padding: 0 8px 12px; }
     .lt-row {
       display: grid;
-      grid-template-columns: 110px 86px minmax(150px, 1.1fr) 1fr;
+      /* 完成(checkbox) | 日期 | 时间 | 事件 | 地点备注 */
+      grid-template-columns: 34px 110px 86px minmax(150px, 1.1fr) 1fr;
       gap: 10px;
       align-items: center;
       min-height: 30px;
@@ -737,6 +743,17 @@
       font-size: 13px;
       cursor: pointer;
     }
+    /* 完成状态列：checkbox 直接点选切换完成 / 未完成 */
+    .lt-done { display: flex; align-items: center; justify-content: center; }
+    .lt-check {
+      width: 15px; height: 15px; margin: 0;
+      accent-color: var(--primary, #3b82f6);
+      cursor: pointer;
+    }
+    /* 已完成：整行淡化 + 标题加删除线 */
+    .lt-row.done .lt-main .t,
+    .lt-row.done .lt-info { text-decoration: line-through; color: var(--text-secondary); }
+    .lt-row.done .lt-main { font-weight: 400; }
     .lt-row.alt { background: var(--list-alt); }
     .lt-row.lt-head {
       position: sticky;
@@ -803,6 +820,18 @@
       height: 12px;
       border-radius: 4px;
       flex-shrink: 0;
+    }
+    /* 已完成：标题删除线 + 绿色「✓ 已完成」小徽章 */
+    .ev-popover .pp-title.done { text-decoration: line-through; color: var(--text-secondary); }
+    .ev-popover .pp-done-badge {
+      flex-shrink: 0;
+      font-size: 10px;
+      font-weight: 600;
+      text-decoration: none;
+      color: #fff;
+      background: var(--green);
+      border-radius: 4px;
+      padding: 1px 5px;
     }
     .ev-popover .pp-row {
       display: flex;
@@ -973,10 +1002,18 @@
       <div class="field">
         <input type="text" id="evTitle" placeholder="标题">
       </div>
-      <div class="field">
-        <div class="all-day-toggle" id="allDayToggle">
-          <span class="switch" id="allDaySwitch"></span>
-          <span>全天</span>
+      <div class="row">
+        <div class="field">
+          <div class="all-day-toggle" id="allDayToggle">
+            <span class="switch" id="allDaySwitch"></span>
+            <span>全天</span>
+          </div>
+        </div>
+        <div class="field">
+          <div class="all-day-toggle" id="doneToggle">
+            <span class="switch" id="doneSwitch"></span>
+            <span>已完成</span>
+          </div>
         </div>
       </div>
       <div class="row">
@@ -1064,6 +1101,8 @@
         statusFilter: 'all', // 'all' | 'upcoming'（今后）
         searchQuery: '',     // 搜索关键词
         editingId: null,     // 正在编辑的行程 id
+        allDay: false,       // 弹窗「全天」开关
+        done: false,         // 弹窗「已完成」开关（未设定 = 未完成）
         popoverId: null,     // 当前详情浮层展示的事件 id（用于 toggle）
         snapshot: null,      // 编辑弹窗打开时的字段快照（用于变更检测）
         confirmCallback: null, // 未保存确认框的回调
@@ -1129,6 +1168,8 @@
         s += '- title: `' + mdEscape(ev.title) + '`\n';
         s += '- date: `' + mdEscape(ev.date) + '`\n';
         s += '- allDay: `' + (ev.allDay ? 'true' : 'false') + '`\n';
+        // 完成状态：永远显式写出（true / false）。旧文件没有这一栏 → 解析时视为未设定 = 未完成。
+        s += '- done: `' + (ev.done ? 'true' : 'false') + '`\n';
         s += '- startTime: `' + mdEscape(ev.startTime) + '`\n';
         s += '- endTime: `' + mdEscape(ev.endTime) + '`\n';
         s += '- location: `' + mdEscape(ev.location) + '`\n';
@@ -1178,6 +1219,8 @@
           title: title,
           date: get('date'),
           allDay: get('allDay') === 'true',
+          // 未设定（旧文件没有 - done 栏位）= 未完成
+          done: get('done') === 'true',
           startTime: get('startTime'),
           endTime: get('endTime'),
           location: get('location'),
@@ -1577,7 +1620,8 @@
             const show = evs.slice(0, 3);
             show.forEach(e => {
               const c = e.color || COLORS[0];
-              html += '<div class="ev-chip" data-id="' + e.id + '" style="--ev-color:' + c + '">' +
+              html += '<div class="ev-chip' + (e.done ? ' done' : '') + '" data-id="' + e.id + '" style="--ev-color:' + c + '" title="' + (e.done ? '已完成：' : '') + escapeHtml(e.title) + '">' +
+                (e.done ? '✓ ' : '') +
                 (e.allDay ? '⏰ ' : pad(timeToMin(e.startTime) / 60 | 0) + ':' + pad(timeToMin(e.startTime) % 60) + ' ') +
                 escapeHtml(e.title) + linkTagsHtml(e) + tagsDotsHtml(e) + '</div>';
             });
@@ -1639,8 +1683,8 @@
           allDayByCol.forEach((arr, ci) => {
             html += '<div class="allday-col" data-date="' + fmtDate(dayDates[ci]) + '">';
             arr.forEach(e => {
-              html += '<div class="ev-block all-day" data-id="' + e.id + '" style="--ev-color:' + (e.color || COLORS[0]) + '">' +
-                escapeHtml(e.title) + linkTagsHtml(e) + tagsDotsHtml(e) + '</div>';
+              html += '<div class="ev-block all-day' + (e.done ? ' done' : '') + '" data-id="' + e.id + '" style="--ev-color:' + (e.color || COLORS[0]) + '">' +
+                (e.done ? '✓ ' : '') + escapeHtml(e.title) + linkTagsHtml(e) + tagsDotsHtml(e) + '</div>';
             });
             html += '</div>';
           });
@@ -1669,8 +1713,8 @@
             const width = 100 / cols;
             const left = c * width;
             const cbg = e.color || COLORS[0];
-            html += '<div class="ev-block" data-id="' + e.id + '" style="top:' + top + 'px;height:' + height + 'px;left:calc(' + left + '% + 1px);width:calc(' + width + '% - 3px);--ev-color:' + cbg + '">' +
-              '<div class="t">' + escapeHtml(e.title) + linkTagsHtml(e) + tagsDotsHtml(e) + '</div>' +
+            html += '<div class="ev-block' + (e.done ? ' done' : '') + '" data-id="' + e.id + '" style="top:' + top + 'px;height:' + height + 'px;left:calc(' + left + '% + 1px);width:calc(' + width + '% - 3px);--ev-color:' + cbg + '">' +
+              '<div class="t">' + (e.done ? '✓ ' : '') + escapeHtml(e.title) + linkTagsHtml(e) + tagsDotsHtml(e) + '</div>' +
               (e.location ? '<div class="loc">' + escapeHtml('📍 ' + e.location) + '</div>' : '') +
               '</div>';
           });
@@ -1730,7 +1774,7 @@
         const today = fmtDate(new Date());
         let html = '<div class="list-scroll"><div class="lt-table">';
         // 表头
-        html += '<div class="lt-row lt-head"><span class="lt-date">日期</span><span class="lt-time">时间</span><span class="lt-main">事件</span><span class="lt-info">地点 / 备注</span></div>';
+        html += '<div class="lt-row lt-head"><span class="lt-done">完成</span><span class="lt-date">日期</span><span class="lt-time">时间</span><span class="lt-main">事件</span><span class="lt-info">地点 / 备注</span></div>';
 
         let lastDate = null;
         let parity = 0;
@@ -1752,7 +1796,8 @@
           if (ev.location) info += '📍' + ev.location;
           if (ev.notes) info += (info ? ' · ' : '') + ev.notes;
 
-          html += '<div class="lt-row' + (parity ? ' alt' : '') + '" data-id="' + ev.id + '" data-date="' + ev.date + '">' +
+          html += '<div class="lt-row' + (parity ? ' alt' : '') + (ev.done ? ' done' : '') + '" data-id="' + ev.id + '" data-date="' + ev.date + '">' +
+            '<span class="lt-done"><input type="checkbox" class="lt-check" data-done="' + escapeHtml(ev.id) + '"' + (ev.done ? ' checked' : '') + ' title="勾选＝已完成"></span>' +
             '<span class="lt-date">' + dateCell + '</span>' +
             '<span class="lt-time">' + timeText + '</span>' +
             '<span class="lt-main"><span class="lt-swatch" style="background:' + (ev.color || COLORS[0]) + '"></span><span class="t">' + escapeHtml(ev.title) + linkTagsHtml(ev) + tagsDotsHtml(ev) + '</span></span>' +
@@ -1836,11 +1881,12 @@
           notes: $('evNotes').value,
           color: getSelectedColor(),
           allDay: !!state.allDay,
+          done: !!state.done,
           todoIds: state.linkedTodoIds.slice().sort().join(','),
           tags: state.selectedTags.slice().sort().join(','),
         };
       }
-      const CHANGE_FIELDS = { title: '标题', date: '日期', start: '开始时间', end: '结束时间', location: '地点', notes: '备注', color: '颜色', allDay: '全天', todoIds: '关联卡片', tags: '标签' };
+      const CHANGE_FIELDS = { title: '标题', date: '日期', start: '开始时间', end: '结束时间', location: '地点', notes: '备注', color: '颜色', allDay: '全天', done: '已完成', todoIds: '关联卡片', tags: '标签' };
       function getChangedFields() {
         const s = state.snapshot;
         if (!s) return [];
@@ -1867,6 +1913,7 @@
         $('evLocation').value = '';
         $('evNotes').value = '';
         setAllDay(false);
+        setDone(false);
         buildColorPalette(COLORS[0]);
         state.linkedTodoIds = [];
         renderTodoLinkPanel();
@@ -1889,6 +1936,7 @@
         $('evLocation').value = ev.location || '';
         $('evNotes').value = ev.notes || '';
         setAllDay(!!ev.allDay);
+        setDone(!!ev.done);
         buildColorPalette(ev.color || COLORS[0]);
         state.linkedTodoIds = (ev.todoIds || []).slice();
         renderTodoLinkPanel();
@@ -1902,6 +1950,12 @@
         state.allDay = on;
         $('allDaySwitch').classList.toggle('on', on);
         $('timeRow').style.display = on ? 'none' : 'flex';
+      }
+
+      // 完成状态开关：新增时默认「未完成」；旧文件没有 - done 栏位时也是未完成
+      function setDone(on) {
+        state.done = !!on;
+        $('doneSwitch').classList.toggle('on', state.done);
       }
 
       // ===== 事件详情浮层（展开显示更多讯息） =====
@@ -1931,7 +1985,8 @@
         const dateText = dateObj.getFullYear() + '年' + (dateObj.getMonth() + 1) + '月' + dateObj.getDate() + '日 ' + WD_FULL[(dateObj.getDay() + 6) % 7];
         const timeText = ev.allDay ? '全天' : (ev.startTime || '') + ' - ' + (ev.endTime || '');
 
-        let html = '<div class="pp-title"><span class="pp-swatch" style="background:' + (ev.color || COLORS[0]) + '"></span>' + escapeHtml(ev.title) + '</div>';
+        let html = '<div class="pp-title' + (ev.done ? ' done' : '') + '"><span class="pp-swatch" style="background:' + (ev.color || COLORS[0]) + '"></span>' +
+          (ev.done ? '<span class="pp-done-badge">✓ 已完成</span>' : '') + escapeHtml(ev.title) + '</div>';
         html += '<div class="pp-row"><span class="k">⏱</span><span class="v">' + escapeHtml(timeText) + '</span></div>';
         html += '<div class="pp-row"><span class="k">📅</span><span class="v">' + escapeHtml(dateText) + '</span></div>';
         if (ev.location) html += '<div class="pp-row"><span class="k">📍</span><span class="v">' + escapeHtml(ev.location) + '</span></div>';
@@ -2034,6 +2089,7 @@
           location: $('evLocation').value.trim(),
           notes: $('evNotes').value.trim(),
           color: getSelectedColor(),
+          done: !!state.done,
           todoIds: state.linkedTodoIds.slice(),
           tags: state.selectedTags.slice(),
         };
@@ -2053,6 +2109,14 @@
         if (!confirm('确定删除此行程吗？')) return;
         state.events = state.events.filter(e => e.id !== state.editingId);
         saveEvents().then(() => { closeModal(); render(); });
+      }
+
+      // 直接切换某条行程的完成状态（列表视图 checkbox）：改内存 → 落盘 → 重绘
+      function toggleEventDone(id, done) {
+        const ev = state.events.find(e => e.id === id);
+        if (!ev) return;
+        ev.done = !!done;
+        saveEvents().then(() => render());
       }
 
       // ===== 事件绑定 =====
@@ -2082,6 +2146,7 @@
         $('saveBtn').addEventListener('click', saveEvent);
         $('deleteBtn').addEventListener('click', deleteEvent);
         $('allDayToggle').addEventListener('click', () => setAllDay(!state.allDay));
+        $('doneToggle').addEventListener('click', () => setDone(!state.done));
         $('colorPalette').addEventListener('click', (e) => {
           const dot = e.target.closest('.color-dot');
           if (!dot) return;
@@ -2184,9 +2249,15 @@
         });
 
         // 内容区点击委托：事件条 toggle 详情浮层；点关联标记则浏览对应卡片 MD
+        // 列表视图完成勾选：用 change 事件（键盘空格也能触发），落盘后重绘
+        $('calBody').addEventListener('change', (e) => {
+          const chk = e.target.closest('.lt-check[data-done]');
+          if (chk) { toggleEventDone(chk.getAttribute('data-done'), chk.checked); return; }
+        });
         $('calBody').addEventListener('click', (e) => {
           const link = e.target.closest('.ev-link[data-tid]');
           if (link) { browseTodo(link.getAttribute('data-tid')); return; }
+          if (e.target.closest('.lt-check')) return; // 勾选框交给 change，不展开详情浮层
           const chip = e.target.closest('.ev-chip, .ev-block, .lt-row[data-id]');
           if (chip) {
             const id = chip.getAttribute('data-id');
