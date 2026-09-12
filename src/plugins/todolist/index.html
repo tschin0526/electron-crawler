@@ -10558,9 +10558,10 @@
         week = WD[d.getDay()];
       }
       const isToday = date === today;
-      return '<div class="ev-date' + (isToday ? ' today' : '') + '">' + label +
+      return '<div class="ev-date' + (isToday ? ' today' : '') + '" data-ev-date="' + tlEscapeHtml(date) + '">' + label +
         (week ? '<span class="ev-week">週' + week + '</span>' : '') +
-        (isToday ? '<span class="ev-today-badge">今天</span>' : '') + '</div>';
+        (isToday ? '<span class="ev-today-badge">今天</span>' : '') +
+        '<button type="button" class="ev-day-add" onclick="tlOpenEventForm(null, \'' + date + '\')">＋ 新增</button></div>';
     }
 
     function tlItemHtml(ev, today) {
@@ -10597,6 +10598,26 @@
         html += tlItemHtml(ev, today);
       }
       list.innerHTML = html;
+      // 自动滚动到今天或最近未来日期的悬浮条
+      tlScrollToNearestDate(list);
+    }
+
+    // 自动滚动到离今天最近的日期悬浮条（优先今天，其次最近未来日期，最后最后一个）
+    function tlScrollToNearestDate(list) {
+      if (!list) return;
+      const headers = list.querySelectorAll('.ev-date[data-ev-date]');
+      if (!headers.length) return;
+      const today = tlFmtDate(new Date());
+      // 1. 精确匹配今天
+      for (let i = 0; i < headers.length; i++) {
+        if (headers[i].dataset.evDate === today) { headers[i].scrollIntoView({ block: 'start' }); return; }
+      }
+      // 2. 找最近未来日期
+      for (let i = 0; i < headers.length; i++) {
+        if (headers[i].dataset.evDate > today) { headers[i].scrollIntoView({ block: 'start' }); return; }
+      }
+      // 3. 全是过去日期 → 滚到最后一个
+      headers[headers.length - 1].scrollIntoView({ block: 'start' });
     }
 
     function tlRenderMonth(content) {

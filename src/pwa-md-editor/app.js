@@ -950,6 +950,26 @@ function renderEventsList(content) {
     html += evItemHtml(ev, today);
   }
   list.innerHTML = html;
+  // 自動滾動到今天或最近未來日期的懸浮條
+  scrollToNearestDate(list);
+}
+
+// 自動滾動到離今天最近的日期懸浮條（優先今天，其次最近未來日期，最後最後一個）
+function scrollToNearestDate(list) {
+  if (!list) return;
+  const headers = list.querySelectorAll('.ev-date[data-ev-date]');
+  if (!headers.length) return;
+  const today = calendarFmtDate(new Date());
+  // 1. 精確匹配今天
+  for (let i = 0; i < headers.length; i++) {
+    if (headers[i].dataset.evDate === today) { headers[i].scrollIntoView({ block: 'start' }); return; }
+  }
+  // 2. 找最近未來日期
+  for (let i = 0; i < headers.length; i++) {
+    if (headers[i].dataset.evDate > today) { headers[i].scrollIntoView({ block: 'start' }); return; }
+  }
+  // 3. 全是過去日期 → 滾到最後一個
+  headers[headers.length - 1].scrollIntoView({ block: 'start' });
 }
 
 // 條目排序：日期升序 → 同日全天在前 → 開始時間
@@ -972,10 +992,10 @@ function calDateHeaderHtml(date, today) {
     week = WD[d.getDay()];
   }
   const isToday = date === today;
-  return '<div class="ev-date' + (isToday ? ' today' : '') + '">' + label +
+  return '<div class="ev-date' + (isToday ? ' today' : '') + '" data-ev-date="' + escapeHtml(date) + '">' + label +
     (week ? '<span class="ev-week">週' + week + '</span>' : '') +
     (isToday ? '<span class="ev-today-badge">今天</span>' : '') +
-    '</div>';
+    '<button type="button" class="ev-day-add" data-ev-add-on="' + escapeHtml(date) + '">＋ 新增</button></div>';
 }
 
 // 單條行程 HTML（列表視圖與月視圖日列表共用；含編輯/刪除按鈕，走事件委派）

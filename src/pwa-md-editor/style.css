@@ -340,6 +340,8 @@ body {
 .ev-date .ev-week { color: var(--text-secondary); font-weight: 400; font-size: 12px; }
 .ev-date.today { color: var(--primary); }
 .ev-today-badge { background: var(--primary); color: #fff; font-size: 11px; padding: 1px 8px; border-radius: 99px; font-weight: 500; }
+.ev-day-add { margin-left: auto; border: 1px solid var(--primary); background: transparent; color: var(--primary); font-size: 11px; padding: 3px 10px; border-radius: 6px; cursor: pointer; font-weight: 400; flex-shrink: 0; }
+.ev-day-add:active { background: var(--primary); color: #fff; }
 .ev-item { display: flex; gap: 10px; padding: 10px 14px; border-bottom: 1px solid var(--border); background: var(--bg-secondary); }
 .ev-item.past { opacity: 0.55; }
 /* 完成狀態勾選框（清單上直接切換完成 / 未完成） */
