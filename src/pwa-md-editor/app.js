@@ -81,12 +81,14 @@ const state = {
   todoMode: false,
   originalTodo: null,  // 開啟時的完整原始 todo 物件（保存時以此為基礎合併）
   // 📅 行程視圖（calendar.md 專用）
-  calMode: 'list',              // 'list' | 'month'
-  calCursor: new Date(),        // 月視圖當前月份
+  calMode: 'list',              // 'list' | 'day' | 'week' | 'month'
+  calCursor: new Date(),        // 當前游標日期（月視圖＝該月；日視圖＝當天；週視圖＝該週內某天）
   calSelectedDate: null,        // 月視圖選中日期（YYYY-MM-DD）
   calEvents: [],                // 工作副本（含 uid；每次渲染/編輯前從編輯器緩衝重新解析）
+  calTagFilter: [],             // 🏷 標籤過濾（空＝全部；OR 邏輯，任一標籤命中即顯示）
   evFormUid: null,              // 編輯表單當前目標 uid（null = 新增）
-  evFormColor: null             // 編輯表單當前選中顏色
+  evFormColor: null,            // 編輯表單當前選中顏色
+  evFormTodoIds: []             // 🔗 編輯表單當前關聯的 Todo 卡片 id（寫回 todoIds 字段）
 };
 
 // DOM 元素
@@ -100,8 +102,12 @@ const elements = {
   tabEvents: document.getElementById('tab-events'),
   eventsList: document.getElementById('events-list'),
   evModeList: document.getElementById('ev-mode-list'),
+  evModeDay: document.getElementById('ev-mode-day'),
+  evModeWeek: document.getElementById('ev-mode-week'),
   evModeMonth: document.getElementById('ev-mode-month'),
   evAddBtn: document.getElementById('ev-add-btn'),
+  evTagBar: document.getElementById('ev-tagbar'),
+  evTagFilter: document.getElementById('ev-tag-filter'),
   evMonthNav: document.getElementById('ev-month-nav'),
   evMonthTitle: document.getElementById('ev-month-title'),
   evPrevMonth: document.getElementById('ev-prev-month'),
@@ -110,6 +116,7 @@ const elements = {
   evMonthWrap: document.getElementById('ev-month-wrap'),
   evMonthGrid: document.getElementById('ev-month-grid'),
   evDayList: document.getElementById('ev-day-list'),
+  evWeekWrap: document.getElementById('ev-week-wrap'),
   evFormOverlay: document.getElementById('ev-form-overlay'),
   evFormTitle: document.getElementById('ev-form-title'),
   evFormDelete: document.getElementById('ev-form-delete'),
@@ -125,6 +132,9 @@ const elements = {
   evFLocation: document.getElementById('ev-f-location'),
   evFColors: document.getElementById('ev-f-colors'),
   evFTags: document.getElementById('ev-f-tags'),
+  evFTodoPanel: document.getElementById('ev-f-todo-panel'),
+  evFTodoInput: document.getElementById('ev-f-todo-input'),
+  evFTodoAdd: document.getElementById('ev-f-todo-add'),
   evFNotes: document.getElementById('ev-f-notes'),
   evFResize: document.getElementById('ev-f-resize'),
   editor: document.getElementById('editor'),
@@ -199,20 +209,57 @@ function setupEventListeners() {
 
   // 📅 行程視圖（calendar.md）：模式切換 / 月曆導航 / 新增 / 條目編輯刪除（事件委派）
   if (elements.evModeList) elements.evModeList.addEventListener('click', () => setCalMode('list'));
+  if (elements.evModeDay) elements.evModeDay.addEventListener('click', () => setCalMode('day'));
+  if (elements.evModeWeek) elements.evModeWeek.addEventListener('click', () => setCalMode('week'));
   if (elements.evModeMonth) elements.evModeMonth.addEventListener('click', () => setCalMode('month'));
   if (elements.evAddBtn) elements.evAddBtn.addEventListener('click', () => openEventForm(null));
-  if (elements.evPrevMonth) elements.evPrevMonth.addEventListener('click', () => { state.calCursor = new Date(state.calCursor.getFullYear(), state.calCursor.getMonth() - 1, 1); renderEventsContent(); });
-  if (elements.evNextMonth) elements.evNextMonth.addEventListener('click', () => { state.calCursor = new Date(state.calCursor.getFullYear(), state.calCursor.getMonth() + 1, 1); renderEventsContent(); });
+  // ‹ › 依當前模式步進：月→月、週→週、日→日
+  if (elements.evPrevMonth) elements.evPrevMonth.addEventListener('click', () => calStepCursor(-1));
+  if (elements.evNextMonth) elements.evNextMonth.addEventListener('click', () => calStepCursor(1));
   if (elements.evTodayBtn) elements.evTodayBtn.addEventListener('click', () => { state.calCursor = new Date(); state.calSelectedDate = calendarFmtDate(new Date()); renderEventsContent(); });
   if (elements.evMonthGrid) elements.evMonthGrid.addEventListener('click', (e) => {
+    // 先判斷是否點到行程 chip（帶 data-ev-edit）→ 直接開表單，不再觸發選日
+    const chip = e.target.closest('.ev-chip[data-ev-edit]');
+    if (chip) { openEventForm(chip.getAttribute('data-ev-edit')); return; }
     const cell = e.target.closest('.ev-cell[data-date]');
     if (!cell) return;
     state.calSelectedDate = cell.getAttribute('data-date');
     renderCalMonth(elements.editor.value);
   });
-  // 條目「編輯/刪除」按鈕：列表視圖與月視圖日列表共用一套委派
+  // 🏷 標籤過濾條：點選切換（OR 邏輯，可多選）
+  if (elements.evTagFilter) elements.evTagFilter.addEventListener('click', (e) => {
+    const chip = e.target.closest('.ev-tag-chip');
+    if (!chip) return;
+    const t = chip.getAttribute('data-tag');
+    const i = state.calTagFilter.indexOf(t);
+    if (i >= 0) state.calTagFilter.splice(i, 1);
+    else state.calTagFilter.push(t);
+    renderEventsContent();
+  });
+  // 條目「編輯/刪除」按鈕：列表視圖、月視圖日列表、日/週時間網格共用一套委派
   if (elements.eventsList) elements.eventsList.addEventListener('click', onEvListClick);
   if (elements.evDayList) elements.evDayList.addEventListener('click', onEvListClick);
+  if (elements.evWeekWrap) elements.evWeekWrap.addEventListener('click', onEvListClick);
+  // 🔗 表單內關聯 Todo 卡片面板：chip 的 ✕ 移除 / 輸入框 ＋ 新增
+  if (elements.evFTodoPanel) elements.evFTodoPanel.addEventListener('click', (e) => {
+    const x = e.target.closest('.ev-todo-chip-x');
+    if (x) calEvRemoveTodoLink(x.getAttribute('data-id'));
+  });
+  if (elements.evFTodoAdd) elements.evFTodoAdd.addEventListener('click', () => {
+    if (!elements.evFTodoInput) return;
+    const v = (elements.evFTodoInput.value || '').trim();
+    if (!v) return;
+    calEvAddTodoLink(v);
+    elements.evFTodoInput.value = '';
+  });
+  if (elements.evFTodoInput) elements.evFTodoInput.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter') return;
+    e.preventDefault();
+    const v = (elements.evFTodoInput.value || '').trim();
+    if (!v) return;
+    calEvAddTodoLink(v);
+    elements.evFTodoInput.value = '';
+  });
   // 表單
   if (elements.evFormSave) elements.evFormSave.addEventListener('click', saveEventForm);
   if (elements.evFormCancel) elements.evFormCancel.addEventListener('click', closeEventForm);
@@ -969,19 +1016,230 @@ function calOccSort(a, b) {
   return calendarTimeToMin(a.ev.startTime) - calendarTimeToMin(b.ev.startTime);
 }
 // 月視圖單元格內的跨天色條 / 普通 chip
+// ⚠️ 帶 data-ev-edit：月格上的 chip 點擊直接開表單（走事件委派，見 setupEventListeners 的 evMonthGrid）
 function calSpanChipHtml(ev, pos) {
+  const links = calEventTodoLinks(ev);
+  const edit = ' data-ev-edit="' + escapeHtml(ev.uid) + '"';
   // 单日 → 普通 chip（圆点+标题）
   if (pos === 'single') {
-    return '<div class="ev-chip' + (ev.done ? ' done' : '') + '"><span class="dot" style="background:' + escapeHtml(ev.color) + '"></span>' + (ev.done ? '✓ ' : '') + escapeHtml(ev.title) + '</div>';
+    return '<div class="ev-chip' + (ev.done ? ' done' : '') + '"' + edit + '><span class="dot" style="background:' + escapeHtml(ev.color) + '"></span>' + (ev.done ? '✓ ' : '') + escapeHtml(ev.title) + links + '</div>';
   }
   // 跨天：start/end 显示标题作起止标识，middle 渲染为连续色条（不重复标题，悬停可见）
   const cls = 'ev-chip span ' + pos + (ev.done ? ' done' : '');
   const dot = '<span class="dot" style="background:' + escapeHtml(ev.color) + '"></span>';
   let inner = '';
-  if (pos === 'start') inner = dot + (ev.done ? '✓ ' : '') + escapeHtml(ev.title);
+  if (pos === 'start') inner = dot + (ev.done ? '✓ ' : '') + escapeHtml(ev.title) + links;
   else if (pos === 'end') inner = (ev.done ? '✓ ' : '') + escapeHtml(ev.title);
   const tip = (pos === 'middle') ? ' title="' + escapeHtml(ev.title) + '"' : '';
-  return '<div class="' + cls + '" style="background:' + escapeHtml(ev.color) + '"' + tip + '>' + inner + '</div>';
+  return '<div class="' + cls + '" style="--ev-color:' + escapeHtml(ev.color) + '"' + tip + edit + '>' + inner + '</div>';
+}
+
+// ===== 🏷 標籤過濾 / 跨天展開 / 時間網格 輔助（移植自桌面 TodoList 日曆模式）=====
+// 事件是否滿足當前標籤過濾（空＝全部；OR 邏輯：任一標籤命中即顯示）
+function calEventMatchesTag(ev) {
+  if (!state.calTagFilter.length) return true;
+  const tags = ev.tags || [];
+  return state.calTagFilter.some((t) => tags.indexOf(t) >= 0);
+}
+// 取某天出現的所有事件（含跨天展開），並套用標籤過濾
+function calEventsOnDay(dateStr) {
+  const out = [];
+  state.calEvents.forEach((ev) => {
+    if (!calEventMatchesTag(ev)) return;
+    calEventOccurrences(ev).forEach((o) => { if (o.date === dateStr) out.push({ ev: o.ev, pos: o.pos }); });
+  });
+  return out;
+}
+// 日期加減（回傳新的本地日期物件，避免改到原物件）
+function calAddDays(d, n) { const r = new Date(d.getFullYear(), d.getMonth(), d.getDate()); r.setDate(r.getDate() + n); return r; }
+// 取某天所在週的 7 天（週一開頭）
+function calWeekDays(d) {
+  const cur = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  const dow = (cur.getDay() + 6) % 7; // 週一 = 0
+  cur.setDate(cur.getDate() - dow);
+  const out = [];
+  for (let i = 0; i < 7; i++) out.push(new Date(cur.getFullYear(), cur.getMonth(), cur.getDate() + i));
+  return out;
+}
+// 重疊佈局：把時間衝突的事件分配到並排列（移植自桌面 layoutDay 的 cluster packing）
+function calLayoutDay(evs) {
+  const items = evs.map((e) => ({
+    e,
+    start: calendarTimeToMin(e.startTime),
+    end: Math.max(calendarTimeToMin(e.endTime), calendarTimeToMin(e.startTime) + 15),
+  })).sort((a, b) => a.start - b.start || a.end - b.end);
+  const result = [];
+  let cluster = [], clusterEnd = -1;
+  const flush = () => {
+    if (!cluster.length) return;
+    const cols = [];
+    cluster.forEach((it) => {
+      let placed = false;
+      for (let ci = 0; ci < cols.length; ci++) {
+        if (cols[ci] <= it.start) { cols[ci] = it.end; it.col = ci; placed = true; break; }
+      }
+      if (!placed) { it.col = cols.length; cols.push(it.end); }
+    });
+    cluster.forEach((it) => { it.cols = cols.length; result.push(it); });
+    cluster = [];
+    clusterEnd = -1;
+  };
+  items.forEach((it) => {
+    if (it.start >= clusterEnd) flush();
+    cluster.push(it);
+    clusterEnd = Math.max(clusterEnd, it.end);
+  });
+  flush();
+  return result;
+}
+// 行程條上的 🔗 關聯標記
+// ⚠️ 與桌面的差異：LITE 是通用 MD 編輯器，沒有 todo 卡片清單可解析標題 → 直接顯示卡片 id
+function calEventTodoLinks(ev) {
+  const ids = ev.todoIds || [];
+  if (!ids.length) return '';
+  return ids.map((id) => '<span class="ev-link" title="🔗 ' + escapeHtml(id) + '">🔗</span>').join('');
+}
+// 標籤過濾條：無標籤時整條隱藏
+function renderCalTagBar() {
+  const bar = elements.evTagBar;
+  const filter = elements.evTagFilter;
+  if (!bar || !filter) return;
+  const tags = new Set();
+  state.calEvents.forEach((ev) => (ev.tags || []).forEach((t) => { if (t) tags.add(t); }));
+  if (!tags.size) { bar.style.display = 'none'; filter.innerHTML = ''; return; }
+  // ⚠️ 必須顯式給 'flex'：CSS 裡 .ev-tagbar 預設 display:none，清空 inline style 會被 CSS 覆蓋回隱藏
+  bar.style.display = 'flex';
+  filter.innerHTML = Array.from(tags).map((t) => {
+    const active = state.calTagFilter.indexOf(t) >= 0;
+    return '<span class="ev-tag-chip' + (active ? ' active' : '') + '" data-tag="' + escapeHtml(t) + '">' + escapeHtml(t) + '</span>';
+  }).join('');
+}
+// 日 / 週視圖 時間網格（移植自桌面 renderTimeGrid；事件委派用 data-ev-edit）
+function renderCalTimeGrid(dayDates) {
+  const wrap = elements.evWeekWrap;
+  if (!wrap) return;
+  const hourH = dayDates.length > 1 ? 48 : 56;   // 週視圖列窄 → 小時格矮一點
+  const n = dayDates.length;
+  const todayStr = calendarFmtDate(new Date());
+  const now = new Date();
+  const allDayByCol = dayDates.map((d) => calEventsOnDay(calendarFmtDate(d)).filter((o) => o.ev.allDay));
+  const hasAllDay = allDayByCol.some((arr) => arr.length > 0);
+  const WD = ['日', '一', '二', '三', '四', '五', '六'];
+  let html = '';
+  // 🗓 欄位日期標題：讓每一「直行」看得出是哪一天（與桌面端對齊）
+  //    ⚠️ 與時間網格共用同一套 grid 模板，且 column-gap 必須為 0，否則會累積漂移導致對不齊
+  html += '<div class="ev-tg-head" style="--cols:' + n + '"><div class="ev-tg-head-gutter"></div>';
+  dayDates.forEach((d) => {
+    const ds = calendarFmtDate(d);
+    const dm = String(ds).match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+    const label = dm ? (+dm[2]) + '/' + (+dm[3]) : ds;
+    html += '<div class="ev-tg-head-cell' + (ds === todayStr ? ' today' : '') + '" data-date="' + ds + '">' +
+      '<span class="dow">週' + WD[d.getDay()] + '</span><span class="dnum">' + label + '</span></div>';
+  });
+  html += '</div>';
+  if (hasAllDay) {
+    html += '<div class="ev-allday-strip" style="--cols:' + n + '"><div class="label">全天</div>';
+    allDayByCol.forEach((arr, ci) => {
+      html += '<div class="ev-allday-col" data-date="' + calendarFmtDate(dayDates[ci]) + '">';
+      arr.forEach(({ ev }) => {
+        html += '<div class="ev-block all-day' + (ev.done ? ' done' : '') + '" data-ev-edit="' + escapeHtml(ev.uid) + '" style="--ev-color:' + escapeHtml(ev.color || CAL_COLORS[0]) + '">' +
+          (ev.done ? '✓ ' : '') + escapeHtml(ev.title) + calEventTodoLinks(ev) + '</div>';
+      });
+      html += '</div>';
+    });
+    html += '</div>';
+  }
+  html += '<div class="ev-timegrid-scroll"><div class="ev-timegrid" style="--cols:' + n + ';--hour-h:' + hourH + 'px;">';
+  html += '<div class="ev-tg-gutter">';
+  for (let h = 0; h <= 23; h++) html += '<div class="ev-tg-hour-label" style="top:' + (h * hourH) + 'px">' + String(h).padStart(2, '0') + ':00</div>';
+  html += '</div>';
+  dayDates.forEach((d) => {
+    html += '<div class="ev-tg-col" data-date="' + calendarFmtDate(d) + '">';
+    for (let h = 0; h <= 23; h++) html += '<div class="ev-tg-hour-line" style="top:' + (h * hourH) + 'px"></div>';
+    const timed = calLayoutDay(calEventsOnDay(calendarFmtDate(d)).filter((o) => !o.ev.allDay).map((o) => o.ev));
+    timed.forEach(({ e, start, end, col, cols }) => {
+      const top = start / 60 * hourH;
+      const height = Math.max((end - start) / 60 * hourH, 18);
+      const width = 100 / cols;
+      const left = col * width;
+      const cbg = e.color || CAL_COLORS[0];
+      // 時間範圍 + 備註（與桌面端對齊）：夠高（>=64px）才顯示備註，超出由 CSS line-clamp / overflow 裁掉
+      const tm = (e.allDay || !e.startTime) ? '' : (e.startTime + (e.endTime ? '–' + e.endTime : ''));
+      const notes = (!e.allDay && height >= 64 && e.notes) ? String(e.notes).slice(0, 400) : '';
+      html += '<div class="ev-block' + (e.done ? ' done' : '') + '" data-ev-edit="' + escapeHtml(e.uid) + '" style="top:' + top + 'px;height:' + height + 'px;left:calc(' + left + '% + 1px);width:calc(' + width + '% - 3px);--ev-color:' + escapeHtml(cbg) + '">' +
+        '<div class="t">' + (e.done ? '✓ ' : '') + escapeHtml(e.title) + calEventTodoLinks(e) + '</div>' +
+        (tm ? '<div class="tm">' + escapeHtml(tm) + '</div>' : '') +
+        (e.location ? '<div class="loc">' + escapeHtml('📍 ' + e.location) + '</div>' : '') +
+        (notes ? '<div class="notes">' + escapeHtml(notes) + '</div>' : '') +
+        '</div>';
+    });
+    html += '</div>';
+  });
+  // 現在時間線：僅當今天落在顯示範圍內
+  dayDates.forEach((d) => {
+    if (calendarFmtDate(d) === todayStr) {
+      const mins = now.getHours() * 60 + now.getMinutes();
+      html += '<div class="ev-tg-now-line" style="top:' + (mins / 60 * hourH) + 'px"></div>';
+    }
+  });
+  html += '</div></div>';
+  wrap.innerHTML = html;
+  // 初次進入自動捲到「現在時間前 2 小時」
+  requestAnimationFrame(() => {
+    const sc = wrap.querySelector('.ev-timegrid-scroll');
+    if (sc) sc.scrollTop = Math.max(0, now.getHours() * hourH + now.getMinutes() - 120);
+  });
+}
+// 導航列標題：依模式顯示「月 / 週區間 / 單日」
+function calCursorTitle() {
+  const WD = ['日', '一', '二', '三', '四', '五', '六'];
+  if (state.calMode === 'day') {
+    const d = state.calCursor;
+    return (d.getMonth() + 1) + '月' + d.getDate() + '日 週' + WD[d.getDay()];
+  }
+  if (state.calMode === 'week') {
+    const ds = calWeekDays(state.calCursor);
+    return (ds[0].getMonth() + 1) + '/' + ds[0].getDate() + ' – ' + (ds[6].getMonth() + 1) + '/' + ds[6].getDate();
+  }
+  return state.calCursor.getFullYear() + '年' + (state.calCursor.getMonth() + 1) + '月';
+}
+// 上/下一期：按當前模式步進（月→月、週→週、日→日）
+function calStepCursor(dir) {
+  if (state.calMode === 'week') state.calCursor = calAddDays(state.calCursor, dir * 7);
+  else if (state.calMode === 'day') state.calCursor = calAddDays(state.calCursor, dir);
+  else state.calCursor = new Date(state.calCursor.getFullYear(), state.calCursor.getMonth() + dir, 1);
+  if (state.calMode === 'month' && !state.calSelectedDate) state.calSelectedDate = calendarFmtDate(state.calCursor);
+  renderEventsContent();
+}
+
+// ===== 🔗 表單內「關聯 Todo 卡片」面板 =====
+// ⚠️ LITE 端沒有 todo 卡片清單（無法像桌面一樣下拉選卡片標題），
+//    故以「卡片 id」為單位顯示 / 移除，並提供輸入框手動新增；
+//    寫回的字段與桌面完全一致（todoIds），桌面上仍會正常解析成卡片標題。
+function calRenderEvTodoLinkPanel() {
+  const panel = elements.evFTodoPanel;
+  if (!panel) return;
+  if (!state.evFormTodoIds.length) {
+    panel.innerHTML = '<div class="ev-todo-placeholder">尚無關聯卡片（在下方輸入卡片 id 後按 ＋）</div>';
+    return;
+  }
+  panel.innerHTML = state.evFormTodoIds.map((id) =>
+    '<span class="ev-todo-chip" data-id="' + escapeHtml(id) + '" title="' + escapeHtml(id) + '">' +
+    '<span class="ev-todo-chip-text">' + escapeHtml(id) + '</span>' +
+    '<span class="ev-todo-chip-x" data-id="' + escapeHtml(id) + '" title="移除">✕</span></span>'
+  ).join('');
+}
+function calEvAddTodoLink(id) {
+  id = String(id || '').trim();
+  if (!id) return;
+  if (state.evFormTodoIds.indexOf(id) >= 0) { showToast('該卡片 id 已關聯', 'error'); return; }
+  state.evFormTodoIds.push(id);
+  calRenderEvTodoLinkPanel();
+}
+function calEvRemoveTodoLink(id) {
+  const i = state.evFormTodoIds.indexOf(id);
+  if (i >= 0) state.evFormTodoIds.splice(i, 1);
+  calRenderEvTodoLinkPanel();
 }
 
 // 渲染行程列表：日期升序分組，過去行程淡化，今天高亮；每條帶「編輯/刪除」
@@ -994,7 +1252,16 @@ function renderEventsList(content) {
     return;
   }
   const today = calendarFmtDate(new Date());
-  const sorted = sortedCalEvents(state.calEvents);
+  // 🏷 套用標籤過濾（過濾後為空 → 提示「沒有符合的行程」，與無行程區分）
+  const visible = state.calEvents.filter(calEventMatchesTag);
+  if (!visible.length) {
+    list.innerHTML = '<div class="ev-empty">' +
+      (state.calEvents.length ? '沒有符合所選標籤的行程<br><span style="font-size:12px">點上方標籤可取消篩選</span>'
+        : '尚未有行程<br><span style="font-size:12px">點右上「＋ 新增行程」，或編輯 calendar.md 原文（以 ## EVENT 分隔）</span>') +
+      '</div>';
+    return;
+  }
+  const sorted = sortedCalEvents(visible);
 
   let html = '';
   let lastDate = null;
@@ -1075,6 +1342,7 @@ function evItemHtml(ev, today) {
     '<div class="ev-body">' +
     '<div class="ev-title">' + escapeHtml(ev.title) + spanBadge +
     (ev.tags && ev.tags.length ? '<span class="ev-tags">' + ev.tags.map(t => '#' + escapeHtml(t)).join(' ') + '</span>' : '') +
+    calEventTodoLinks(ev) +
     '</div>' +
     '<div class="ev-meta">' + escapeHtml(time) + (ev.location ? ' · 📍' + escapeHtml(ev.location) : '') + '</div>' +
     (ev.notes ? '<div class="ev-notes">' + escapeHtml(ev.notes) + '</div>' : '') +
@@ -1129,24 +1397,43 @@ function renderEventsContent() {
   if (!isCalendarMd()) return;
   syncEventsModeUI();
   const content = elements.editor.value;
-  if (state.calMode === 'month') renderCalMonth(content);
-  else renderEventsList(content);
+  const isMonth = state.calMode === 'month';
+  const isWeek = state.calMode === 'week';
+  const isDay = state.calMode === 'day';
+  const isGrid = isWeek || isDay;          // 日 / 週共用時間網格
+  // 先解析一次供標籤條與日/週網格使用（月/列表的渲染函式內部會再解析一次，結果相同）
+  state.calEvents = parseCalendarEvents(content);
+  renderCalTagBar();
+  if (isMonth) renderCalMonth(content);
+  else if (isGrid) {
+    renderCalTimeGrid(isDay ? [state.calCursor] : calWeekDays(state.calCursor));
+    if (elements.evMonthTitle) elements.evMonthTitle.textContent = calCursorTitle();
+  } else renderEventsList(content);
 }
 
 function setCalMode(mode) {
-  state.calMode = (mode === 'month') ? 'month' : 'list';
+  state.calMode = (mode === 'month') ? 'month' : (mode === 'week') ? 'week' : (mode === 'day') ? 'day' : 'list';
   if (state.calMode === 'month' && !state.calSelectedDate) state.calSelectedDate = calendarFmtDate(new Date());
   renderEventsContent();
 }
 
-// 同步工具欄按鈕態 + 列表/月容器可見性
+// 同步工具欄按鈕態 + 列表 / 月曆 / 時間網格容器可見性
 function syncEventsModeUI() {
-  const month = state.calMode === 'month';
-  if (elements.evModeList) elements.evModeList.classList.toggle('active', !month);
+  const mode = state.calMode;
+  const month = mode === 'month';
+  const isDay = mode === 'day';
+  const isWeek = mode === 'week';
+  const isGrid = isWeek || isDay;
+  if (elements.evModeList) elements.evModeList.classList.toggle('active', mode === 'list');
+  if (elements.evModeDay) elements.evModeDay.classList.toggle('active', isDay);
+  if (elements.evModeWeek) elements.evModeWeek.classList.toggle('active', isWeek);
   if (elements.evModeMonth) elements.evModeMonth.classList.toggle('active', month);
-  if (elements.evMonthNav) elements.evMonthNav.style.display = month ? '' : 'none';
+  // 導航列：列表模式不需要（沒有游標概念）
+  if (elements.evMonthNav) elements.evMonthNav.style.display = (month || isGrid) ? '' : 'none';
   if (elements.evMonthWrap) elements.evMonthWrap.style.display = month ? '' : 'none';
-  if (elements.eventsList) elements.eventsList.style.display = month ? 'none' : '';
+  // ⚠️ 同上：#ev-week-wrap 的 CSS 預設是 display:none，顯示時要顯式給 'flex'
+  if (elements.evWeekWrap) elements.evWeekWrap.style.display = isGrid ? 'flex' : 'none';
+  if (elements.eventsList) elements.eventsList.style.display = mode === 'list' ? '' : 'none';
 }
 
 // 月曆：6x7 網格（週一開頭），單元格顯示日號 + 最多 2 條 chip + 溢出數；下方渲染選中日的行程列表
@@ -1156,7 +1443,8 @@ function renderCalMonth(content) {
   const y = cur.getFullYear(), m = cur.getMonth();
   if (elements.evMonthTitle) elements.evMonthTitle.textContent = y + '年' + (m + 1) + '月';
   const occByDate = {};
-  state.calEvents.forEach(ev => { calEventOccurrences(ev).forEach(o => { (occByDate[o.date] = occByDate[o.date] || []).push(o); }); });
+  // 🏷 套用標籤過濾後才展開成逐日出現（跨天行程整條過濾，不做逐日拆分）
+  state.calEvents.filter(calEventMatchesTag).forEach(ev => { calEventOccurrences(ev).forEach(o => { (occByDate[o.date] = occByDate[o.date] || []).push(o); }); });
   if (!state.calSelectedDate) state.calSelectedDate = calendarFmtDate(new Date());
   const todayStr = calendarFmtDate(new Date());
   const first = new Date(y, m, 1);
@@ -1190,7 +1478,7 @@ function renderCalDayList() {
   const m = String(ds).match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
   const WD = ['日', '一', '二', '三', '四', '五', '六'];
   const d = m ? new Date(+m[1], +m[2] - 1, +m[3]) : new Date();
-  const evs = sortedCalEvents(state.calEvents.filter(e => e.date === ds || (e.endDate && ds > e.date && ds <= e.endDate)));
+  const evs = sortedCalEvents(state.calEvents.filter(e => (e.date === ds || (e.endDate && ds > e.date && ds <= e.endDate)) && calEventMatchesTag(e)));
   let html = '<div class="ev-date' + (ds === today ? ' today' : '') + '">' +
     (m ? (+m[2]) + '月' + (+m[3]) + '日' : '日期未知') +
     '<span class="ev-week">週' + WD[d.getDay()] + '</span>' +
@@ -1246,6 +1534,10 @@ function openEventForm(uid, defaultDate) {
   elements.evFLocation.value = ev ? ev.location : '';
   state.evFormColor = ev ? ev.color : CAL_COLORS[0];
   elements.evFTags.value = ev && ev.tags ? ev.tags.join(', ') : '';
+  // 🔗 關聯 Todo 卡片：帶入該行程原本的 todoIds（slice 複製，避免改到工作副本）
+  state.evFormTodoIds = ev ? (ev.todoIds || []).slice() : [];
+  calRenderEvTodoLinkPanel();
+  if (elements.evFTodoInput) elements.evFTodoInput.value = '';
   elements.evFNotes.value = ev ? ev.notes : '';
   elements.evFormDelete.style.display = uid ? '' : 'none';
   renderEvColorSwatches();
@@ -1271,6 +1563,7 @@ function closeEventForm() {
   if (elements.evFormOverlay) elements.evFormOverlay.style.display = 'none';
   state.evFormUid = null;
   state.evFormColor = null;
+  state.evFormTodoIds = [];
 }
 
 // 表單「寫入編輯內容」：校驗 → upsert 工作副本 → 重新序列化整份 calendar.md → 寫回編輯器緩衝（isDirty = true）
@@ -1297,6 +1590,8 @@ function saveEventForm() {
     location: elements.evFLocation.value.trim(),
     color: state.evFormColor || CAL_COLORS[0],
     tags: elements.evFTags.value.split(/[,，]/).map(s => s.trim()).filter(Boolean),
+    // 🔗 修復：此前漏寫 todoIds → 每次編輯存檔都會把桌面端建立的關聯卡片清空
+    todoIds: state.evFormTodoIds.slice(),
     notes: elements.evFNotes.value.replace(/\r\n/g, '\n')
   };
   // 以當前編輯器內容為基準重新解析（保留用戶可能手改過的其它條目），再 upsert

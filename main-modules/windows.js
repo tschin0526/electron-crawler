@@ -178,13 +178,9 @@ function createWindow() {
   // 同步主窗口引用回 main.js（供其他模组/逻辑访问）
   setMainWindowCallback(mainWindow);
 
-  if (isCalendarMode) {
-    // 🆕 独立模式：加载行事历插件，可通过 ?theme=dark|light 指定主题
-    const search = '?standalone=1' + (themeArg ? '&theme=' + themeArg : '');
-    mainWindow.loadFile('src/plugins/calendar/index.html', { search });
-    console.log('📌 [Main] 独立模式：主窗口已加载行事历（standalone=1' + (themeArg ? '，主题=' + themeArg : '') + '）');
-  } else if (isTodolistMode) {
-    // 🆕 独立模式：加载 TodoList，并通过查询参数告知它处于 standalone 模式（隐藏邮件按钮）+ 可选主题
+  if (isCalendarMode || isTodolistMode) {
+    // 🆕 独立模式：加载 TodoList（内含已迁移完整的行事历功能：列表/月/周/日视图、标签过滤、Todo 关联）。
+    // 原独立「行事历插件」(src/plugins/calendar) 已删除；--calendar 现等价复用 TodoList 独立模式。
     const search = '?standalone=1' + (themeArg ? '&theme=' + themeArg : '');
     mainWindow.loadFile('src/plugins/todolist/index.html', { search });
     console.log('📌 [Main] 独立模式：主窗口已加载 TodoList（standalone=1' + (themeArg ? '，主题=' + themeArg : '') + '）');

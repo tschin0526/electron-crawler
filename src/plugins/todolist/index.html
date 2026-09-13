@@ -1876,12 +1876,16 @@
       --ev-bg: #f8fafc; --ev-card: #ffffff; --ev-text: #1f2937;
       --ev-muted: #6b7280; --ev-border: #e5e7eb; --ev-primary: #2563eb;
     }
+    /* ⚠️ 行程面板＝ flex 欄：工具列 / 標籤條 / 導航列「悬浮」固定在頂部不隨內容滾動，
+       只有內容區（列表 / 月曆 / 時間網格）各自內部滾動（與手機 LITE 版行為一致）。
+       不要再改回 overflow:auto —— 那會讓工具列與標籤條一起被捲走。 */
     .cal-events-pane {
-      flex: 1; min-height: 0; overflow: auto;
+      flex: 1; min-height: 0; overflow: hidden;
+      display: flex; flex-direction: column;
       background: var(--ev-bg); color: var(--ev-text);
       padding: 10px 12px; font-size: 14px;
     }
-    .ev-toolbar { display: flex; align-items: center; gap: 10px; padding-bottom: 8px; }
+    .ev-toolbar { flex: 0 0 auto; display: flex; align-items: center; gap: 10px; padding-bottom: 8px; }
     .ev-toolbar-flex { flex: 1; }
     .ev-hint-text { font-size: 11px; color: var(--ev-muted); }
     .ev-mode-seg { display: flex; border: 1px solid var(--ev-border); border-radius: 8px; overflow: hidden; }
@@ -1889,11 +1893,15 @@
     .ev-mode-seg button.active { background: var(--ev-primary); color: #fff; }
     .ev-add-btn { border: 1px solid var(--ev-primary); background: var(--ev-card); color: var(--ev-primary); font-size: 13px; padding: 4px 12px; border-radius: 8px; cursor: pointer; }
     .ev-add-btn:hover { background: var(--ev-primary); color: #fff; }
-    .ev-monthnav { display: flex; align-items: center; gap: 10px; padding-bottom: 6px; }
+    .ev-monthnav { flex: 0 0 auto; display: flex; align-items: center; gap: 10px; padding-bottom: 6px; }
     .ev-monthnav button { border: 1px solid var(--ev-border); background: var(--ev-card); color: var(--ev-text); font-size: 15px; padding: 2px 10px; border-radius: 8px; cursor: pointer; }
     #tlEvMonthTitle { flex: 1; text-align: center; font-size: 15px; font-weight: 600; }
     .ev-today-mini { font-size: 12px !important; padding: 3px 10px !important; }
-    .events-list { max-width: 860px; margin: 0 auto; padding-bottom: 20px; }
+    /* 列表容器＝內容滾動區（工具列/標籤條固定在其上方，不隨之捲動）。
+       ⚠️ .events-list 同時被 #tlEvList 與 #tlEvDayList 使用；後者在 #tlEvMonthWrap 內（block 父層），
+          flex 屬性在那裡無效，僅靠 #tlEvMonthWrap 自身滾動。 */
+    .events-list { max-width: 860px; margin: 0 auto; padding-bottom: 20px; width: 100%; flex: 1 1 auto; min-height: 0; overflow-y: auto; }
+    #tlEvMonthWrap { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
     .ev-empty { padding: 40px 16px; text-align: center; color: var(--ev-muted); font-size: 13px; line-height: 1.7; }
     .ev-date {
       position: sticky; top: 0; z-index: 1; padding: 8px 12px; margin-top: 6px;
@@ -1934,12 +1942,75 @@
     /* 跨天行程：列表項徽章 + 月視圖跨日色條 */
     .ev-span-badge { margin-left: 6px; font-size: 10px; font-weight: 400; color: var(--ev-primary); border: 1px solid var(--ev-primary); padding: 0 6px; border-radius: 99px; white-space: nowrap; }
     .ev-item.multi .ev-meta { color: var(--ev-primary); font-weight: 500; }
-    .ev-chip.span { color: #fff; border-radius: 0; margin-top: 2px; height: 16px; padding: 0 4px; overflow: hidden; }
+    .ev-chip.span { color: #fff; border-radius: 0; margin-top: 2px; height: 16px; padding: 0; overflow: hidden; display: flex; align-items: center; background: var(--ev-color); }
     .ev-chip.span .dot { flex: 0 0 auto; }
     .ev-chip.span.start { border-top-left-radius: 5px; border-bottom-left-radius: 5px; padding-left: 5px; }
     .ev-chip.span.end { border-top-right-radius: 5px; border-bottom-right-radius: 5px; padding-right: 5px; }
     .ev-chip.span.middle { min-height: 16px; }
     .ev-chip.span.done { opacity: 0.55; text-decoration: line-through; }
+    /* 标签过滤条 */
+    .ev-tagbar { flex: 0 0 auto; display: flex; align-items: center; gap: 8px; padding: 6px 12px; border-bottom: 1px solid var(--ev-border); background: var(--ev-card); flex-wrap: wrap; }
+    .ev-tagbar-label { font-size: 12px; color: var(--ev-muted); flex: 0 0 auto; }
+    .ev-tag-filter { display: flex; flex-wrap: wrap; gap: 6px; }
+    .ev-tag-chip { font-size: 12px; padding: 2px 10px; border-radius: 99px; border: 1px solid var(--ev-border); background: var(--ev-bg); color: var(--ev-muted); cursor: pointer; }
+    .ev-tag-chip.active { background: var(--ev-primary); color: #fff; border-color: var(--ev-primary); }
+
+    /* ===== 日 / 周视图 时间网格（移植自 calendar 插件） ===== */
+    .ev-week-wrap { flex: 1 1 auto; display: flex; flex-direction: column; min-height: 0; }
+    .ev-timegrid-scroll { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; position: relative; max-width: 920px; margin: 0 auto; width: 100%; }
+    /* 🗓 欄位日期標題：每一直行代表哪一天（週視圖必備）
+       ⚠️ 對齊三要素：同一套 grid 模板 + 與 .ev-timegrid-scroll 相同的 max-width/margin + 沒有 column-gap */
+    .ev-tg-head { display: grid; grid-template-columns: 52px repeat(var(--cols, 1), 1fr); background: var(--ev-card); border-bottom: 1px solid var(--ev-border); flex-shrink: 0; width: 100%; max-width: 920px; margin: 0 auto; }
+    .ev-tg-head-gutter { border-right: 1px solid var(--ev-border); }
+    .ev-tg-head-cell { padding: 3px 4px; text-align: center; font-size: 12px; color: var(--ev-muted); border-right: 1px solid var(--ev-border); overflow: hidden; white-space: nowrap; }
+    .ev-tg-head-cell:last-child { border-right: none; }
+    .ev-tg-head-cell .dow { display: block; font-size: 10px; }
+    .ev-tg-head-cell .dnum { display: block; font-weight: 600; color: var(--ev-text); }
+    .ev-tg-head-cell.today .dow { color: var(--ev-primary); }
+    .ev-tg-head-cell.today .dnum { color: var(--ev-primary); }
+    .ev-timegrid { display: grid; grid-template-columns: 52px repeat(var(--cols, 1), 1fr); position: relative; min-height: calc(24 * var(--hour-h, 52px)); }
+    .ev-tg-gutter { border-right: 1px solid var(--ev-border); position: relative; }
+    .ev-tg-hour-label { position: absolute; right: 6px; transform: translateY(-50%); font-size: 11px; color: var(--ev-muted); }
+    .ev-tg-col { border-right: 1px solid var(--ev-border); position: relative; }
+    .ev-tg-col:last-child { border-right: none; }
+    .ev-tg-hour-line { position: absolute; left: 0; right: 0; height: 1px; background: var(--ev-border); }
+    .ev-tg-now-line { position: absolute; left: -52px; right: 0; height: 2px; background: var(--ev-primary); z-index: 5; }
+    .ev-tg-now-dot { position: absolute; left: -52px; width: 7px; height: 7px; border-radius: 50%; background: var(--ev-primary); transform: translate(49px, -2.5px); }
+    .ev-block { position: absolute; border-radius: 6px; padding: 3px 6px; color: #fff; font-size: 12px; line-height: 1.3; overflow: hidden; cursor: pointer; background: var(--ev-color); border: 1px solid var(--ev-color); border-left: 3px solid rgba(0,0,0,0.2); z-index: 2; }
+    .ev-block .t { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .ev-block .tm { font-size: 10px; opacity: 0.85; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    /* 備註：只在夠高的方塊裡由 JS 輸出；line-clamp 限 6 行，超過由 .ev-block 的 overflow:hidden 裁掉 */
+    .ev-block .notes { margin-top: 2px; font-size: 11px; line-height: 1.35; opacity: 0.95; white-space: pre-wrap; word-break: break-word; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 6; -webkit-box-orient: vertical; }
+    .ev-block .loc { font-size: 10px; opacity: 0.9; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .ev-block.done { opacity: 0.55; }
+    /* 🌙 黑夜模式：文字統一白色，設定的顏色只作為事件「外框」（邊框）顏色，背景改用深色面板。
+       白天模式不變（顏色＝背景色塊）。跨天色條（.ev-chip.span）同理——顏色經由 --ev-color 傳入。 */
+    body.dark .ev-block { background: var(--ev-card); border-color: var(--ev-color); border-left: 3px solid var(--ev-color); color: #fff; }
+    body.dark .ev-chip.span { background: var(--ev-card); border: 1px solid var(--ev-color); }
+    /* ⚠️ 對齊修復：原本沒有 max-width/margin（span 滿寬 1030px）而時間網格被 .ev-timegrid-scroll 限成 920px 並置中，
+       導致全天條與時間網格整整錯開 55px；再加上 column-gap 4px × 7 會累積 28px 漂移 → 行程「卡在兩天中間」。
+       解法：① 與 .ev-timegrid-scroll 用同一套 max-width/margin；② column-gap 歸 0，改由 .ev-allday-col 的內距留白。 */
+    .ev-allday-strip { border-bottom: 1px solid var(--ev-border); padding: 4px 0 6px; display: grid; grid-template-columns: 52px repeat(var(--cols, 1), 1fr); gap: 2px 0; background: var(--ev-card); flex-shrink: 0; max-height: 132px; overflow-y: auto; width: 100%; max-width: 920px; margin: 0 auto; }
+    .ev-allday-strip .label { font-size: 11px; color: var(--ev-muted); text-align: right; padding-right: 6px; padding-top: 4px; }
+    .ev-allday-col { display: flex; flex-direction: column; gap: 2px; min-width: 0; min-height: 0; padding: 0 2px; }
+    .ev-block.all-day { position: static; width: auto; padding: 3px 8px; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .ev-link-tag { display: inline-block; margin-left: 4px; font-size: 9px; opacity: 0.85; background: rgba(255,255,255,0.22); border-radius: 6px; padding: 0 4px; }
+    /* 行程条 / 月格上的 🔗 关联标记 */
+    .ev-link { margin-left: 3px; font-size: 10px; opacity: 0.9; }
+    /* 表单内「关联 Todo 卡片」面板 */
+    .ev-todo-link-panel { min-height: 30px; border: 1px dashed var(--ev-border); border-radius: 8px; padding: 5px 8px; background: var(--ev-bg); cursor: pointer; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+    .ev-todo-link-panel:focus { outline: 2px solid var(--ev-primary); outline-offset: 1px; }
+    .ev-todo-placeholder { font-size: 12px; color: var(--ev-muted); }
+    .ev-todo-chip { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; padding: 2px 4px 2px 10px; border-radius: 99px; background: var(--ev-primary); color: #fff; max-width: 100%; }
+    .ev-todo-chip-text { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 200px; }
+    .ev-todo-chip-x { cursor: pointer; opacity: 0.85; font-size: 11px; padding: 0 2px; }
+    .ev-todo-chip-x:hover { opacity: 1; }
+    .ev-todo-dropdown { margin-top: 6px; border: 1px solid var(--ev-border); border-radius: 8px; background: var(--ev-card); max-height: 180px; overflow-y: auto; display: none; }
+    .ev-todo-dropdown.show { display: block; }
+    .ev-todo-dropdown-item { font-size: 13px; padding: 7px 10px; cursor: pointer; border-bottom: 1px solid var(--ev-border); }
+    .ev-todo-dropdown-item:last-child { border-bottom: none; }
+    .ev-todo-dropdown-item:hover { background: var(--ev-primary); color: #fff; }
+    .ev-todo-dropdown-empty { font-size: 12px; color: var(--ev-muted); padding: 10px; }
     /* 行程表单 */
     .tl-ev-form-overlay { position: fixed; inset: 0; z-index: 12000; background: rgba(0,0,0,0.55); display: flex; align-items: center; justify-content: center; padding: 20px; }
     .tl-ev-form-box { width: 100%; max-width: 440px; max-height: 88vh; overflow: auto; background: var(--ev-card); border: 1px solid var(--ev-border); border-radius: 12px; padding: 18px; }
@@ -4361,11 +4432,17 @@
           <div class="ev-toolbar">
             <div class="ev-mode-seg">
               <button type="button" id="tlEvModeList" class="active">列表</button>
+              <button type="button" id="tlEvModeDay">日</button>
+              <button type="button" id="tlEvModeWeek">周</button>
               <button type="button" id="tlEvModeMonth">月</button>
             </div>
             <span class="ev-toolbar-flex"></span>
             <span class="ev-hint-text">编辑后按「保存」写回 calendar.md</span>
             <button type="button" class="ev-add-btn" id="tlEvAddBtn">＋ 新增行程</button>
+          </div>
+          <div class="ev-tagbar" id="tlEvTagBar" style="display:none">
+            <span class="ev-tagbar-label">标签:</span>
+            <div class="ev-tag-filter" id="tlEvTagFilter"></div>
           </div>
           <div class="ev-monthnav" id="tlEvMonthNav" style="display:none">
             <button type="button" id="tlEvPrevMonth">‹</button>
@@ -4374,6 +4451,7 @@
             <button type="button" class="ev-today-mini" id="tlEvTodayBtn">今天</button>
           </div>
           <div id="tlEvList" class="events-list"></div>
+          <div id="tlEvWeekWrap" class="ev-week-wrap" style="display:none"></div>
           <div id="tlEvMonthWrap" style="display:none">
             <div id="tlEvMonthGrid" class="ev-month-grid"></div>
             <div id="tlEvDayList" class="events-list"></div>
@@ -4557,6 +4635,10 @@
       <label class="tl-ev-f-label">地点<input type="text" id="tlEvFLocation" maxlength="200" placeholder="可留空"></label>
       <div class="tl-ev-f-label">颜色<div id="tlEvFColors" class="ev-f-colors"></div></div>
       <label class="tl-ev-f-label">标签（逗号分隔）<input type="text" id="tlEvFTags" maxlength="200" placeholder="例如：生活, 工作"></label>
+      <div class="tl-ev-f-label">关联 Todo 卡片
+        <div id="tlEvTodoLinkPanel" class="ev-todo-link-panel" tabindex="0" title="点此或按 ? 选择要关联的卡片"></div>
+        <div id="tlEvTodoDropdown" class="ev-todo-dropdown"></div>
+      </div>
       <label class="tl-ev-f-label">备注<textarea id="tlEvFNotes" rows="3" placeholder="可留空，支持多行"></textarea></label>
       <div class="tl-ev-form-actions">
         <button type="button" class="btn btn-secondary" id="tlEvFormDelete" style="display:none" onclick="tlDeleteFromForm()">删除</button>
@@ -10384,6 +10466,8 @@
     let tlCalCursor = new Date();
     let tlCalSelected = null;
     let tlCalEvents = [];
+    let tlCalTagFilter = [];   // 标签过滤（空＝全部；OR 逻辑：事件 tags 命中任一即显示）
+    let tlEvFormTodoIds = [];   // 表单内「关联 Todo 卡片」临时列表（仅编辑期，不污染存档对象）
     let tlEvFormUid = null;
     let tlEvFormColor = null;
     const TL_CAL_COLORS = ['#FF3B30', '#FF9500', '#FFCC00', '#34C759', '#5AC8FA', '#007AFF', '#5856D6', '#AF52DE', '#FF2D55', '#A2845E', '#8E8E93'];
@@ -10547,10 +10631,9 @@
       return Math.round((d2 - d1) / 86400000) + 1;
     }
     function tlRangeLabel(a, b, st, et) {
-      if (st || et) return tlMdShort(a) + ' ' + (st || '') + ' – ' + tlMdShort(b) + ' ' + (et || '');
-      return tlMdShort(a) + ' – ' + tlMdShort(b);
+      if (st || et) return tlMdShort(a) + ' ' + (st || '') + ' \u2013 ' + tlMdShort(b) + ' ' + (et || '');
+      return tlMdShort(a) + ' \u2013 ' + tlMdShort(b);
     }
-    // 把一条行程展开成「逐日出现」数组（跨天行程每天一条，带 start/middle/end 位置）
     function tlEventOccurrences(ev) {
       const out = [];
       if (tlIsMultiDay(ev)) {
@@ -10576,38 +10659,267 @@
       if (a.ev.allDay !== b.ev.allDay) return a.ev.allDay ? -1 : 1;
       return tlTimeToMin(a.ev.startTime) - tlTimeToMin(b.ev.startTime);
     }
-    // 月視圖單元格內的跨天色條 / 普通 chip
     function tlSpanChipHtml(ev, pos) {
-      // 单日 / 跨天中间日 → 回退到普通 chip 样式（带圆点+标题）
-      if (pos === 'single' || pos === 'middle') {
-        return '<div class="ev-chip' + (ev.done ? ' done' : '') + '"><span class="dot" style="background:' + tlEscapeHtml(ev.color) + '"></span>' + (tlEscapeHtml(ev.done) ? '✓ ' : '') + tlEscapeHtml(ev.title) + '</div>';
+      // 单日 → 普通 chip（圆点+标题）；跨天 start/middle/end → 连续色条
+      const links = tlEventTodoLinks(ev);
+      if (pos === 'single') {
+        return '<div class="ev-chip' + (ev.done ? ' done' : '') + '" onclick="tlOpenEventFromChip(event,\'' + tlEscapeHtml(ev.uid) + '\')"><span class="dot" style="background:' + tlEscapeHtml(ev.color) + '"></span>' + (ev.done ? '\u2713 ' : '') + tlEscapeHtml(ev.title) + links + '</div>';
       }
       const cls = 'ev-chip span ' + pos + (ev.done ? ' done' : '');
       const dot = '<span class="dot" style="background:' + tlEscapeHtml(ev.color) + '"></span>';
       let inner = '';
-      if (pos === 'start') inner = dot + (ev.done ? '✓ ' : '') + tlEscapeHtml(ev.title);
-      else if (pos === 'end') inner = (ev.done ? '✓ ' : '') + tlEscapeHtml(ev.title);
-      return '<div class="' + cls + '" style="background:' + tlEscapeHtml(ev.color) + '">' + inner + '</div>';
+      if (pos === 'start') inner = dot + (ev.done ? '\u2713 ' : '') + tlEscapeHtml(ev.title) + links;
+      return '<div class="' + cls + '" style="--ev-color:' + tlEscapeHtml(ev.color) + '" onclick="tlOpenEventFromChip(event,\'' + tlEscapeHtml(ev.uid) + '\')">' + inner + '</div>';
+    }
+
+    // ===== 标签过滤 / 跨天展开 / 时间网格 辅助 =====
+    // 事件是否满足当前标签过滤（空＝全部；OR 逻辑）
+    function tlEventMatchesTag(ev) {
+      if (!tlCalTagFilter.length) return true;
+      const tags = ev.tags || [];
+      return tlCalTagFilter.some((t) => tags.indexOf(t) >= 0);
+    }
+    // 取某天出现的所有事件（含跨天展开），并套用标签过滤
+    function tlEventsOnDay(dateStr) {
+      const out = [];
+      tlCalEvents.forEach((ev) => {
+        if (!tlEventMatchesTag(ev)) return;
+        tlEventOccurrences(ev).forEach((o) => { if (o.date === dateStr) out.push({ ev: o.ev, pos: o.pos }); });
+      });
+      return out;
+    }
+    function tlAddDays(d, n) { const r = new Date(d.getFullYear(), d.getMonth(), d.getDate()); r.setDate(r.getDate() + n); return r; }
+    function tlWeekDays(d) {
+      const cur = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+      const dow = (cur.getDay() + 6) % 7; // 周一=0
+      cur.setDate(cur.getDate() - dow);
+      const out = [];
+      for (let i = 0; i < 7; i++) out.push(new Date(cur.getFullYear(), cur.getMonth(), cur.getDate() + i));
+      return out;
+    }
+    // 重叠布局：把时间冲突的事件分配到并排列（移植自 calendar 插件的 layoutDay）
+    function tlLayoutDay(evs) {
+      const items = evs.map((e) => ({
+        e,
+        start: tlTimeToMin(e.startTime),
+        end: Math.max(tlTimeToMin(e.endTime), tlTimeToMin(e.startTime) + 15),
+      })).sort((a, b) => a.start - b.start || a.end - b.end);
+      const result = [];
+      let cluster = [], clusterEnd = -1;
+      const flush = () => {
+        if (!cluster.length) return;
+        const cols = [];
+        cluster.forEach((it) => {
+          let placed = false;
+          for (let ci = 0; ci < cols.length; ci++) {
+            if (cols[ci] <= it.start) { cols[ci] = it.end; it.col = ci; placed = true; break; }
+          }
+          if (!placed) { it.col = cols.length; cols.push(it.end); }
+        });
+        cluster.forEach((it) => { it.cols = cols.length; result.push(it); });
+        cluster = [];
+        clusterEnd = -1;
+      };
+      items.forEach((it) => {
+        if (it.start >= clusterEnd) flush();
+        cluster.push(it);
+        clusterEnd = Math.max(clusterEnd, it.end);
+      });
+      flush();
+      return result;
+    }
+    // 事件条上的 🔗 关联标记
+    function tlEventTodoLinks(ev) {
+      const ids = ev.todoIds || [];
+      if (!ids.length) return '';
+      return ids.map((id) => {
+        const t = (typeof todos !== 'undefined') ? todos.find((x) => x.id === id) : null;
+        const name = t ? tlTodoTitle(t) : id;
+        return '<span class="ev-link" title="\ud83d\udd17 ' + tlEscapeHtml(name) + '">\ud83d\udd17</span>';
+      }).join('');
+    }
+    function tlTodoTitle(t) {
+      if (!t) return '';
+      const title = t.title || (typeof t.text === 'string' ? t.text.split('\n')[0] : '') || '';
+      return (title.trim()) || '(未命名卡片)';
+    }
+    // 标签过滤条
+    function tlRenderTagBar() {
+      const bar = document.getElementById('tlEvTagBar');
+      const filter = document.getElementById('tlEvTagFilter');
+      if (!bar || !filter) return;
+      const tags = new Set();
+      tlCalEvents.forEach((ev) => (ev.tags || []).forEach((t) => { if (t) tags.add(t); }));
+      if (!tags.size) { bar.style.display = 'none'; filter.innerHTML = ''; return; }
+      bar.style.display = '';
+      filter.innerHTML = Array.from(tags).map((t) => {
+        const active = tlCalTagFilter.indexOf(t) >= 0;
+        return '<span class="ev-tag-chip' + (active ? ' active' : '') + '" data-tag="' + tlEscapeHtml(t) + '">' + tlEscapeHtml(t) + '</span>';
+      }).join('');
+    }
+    // 日 / 周视图 时间网格（移植自 calendar 插件的 buildTimeGrid，使用 ev- 前缀类名）
+    function tlRenderTimeGrid(dayDates) {
+      const wrap = document.getElementById('tlEvWeekWrap');
+      if (!wrap) return;
+      const hourH = dayDates.length > 1 ? 48 : 56;
+      const n = dayDates.length;
+      const todayStr = tlFmtDate(new Date());
+      const now = new Date();
+      const allDayByCol = dayDates.map((d) => tlEventsOnDay(tlFmtDate(d)).filter((o) => o.ev.allDay));
+      const hasAllDay = allDayByCol.some((arr) => arr.length > 0);
+      const WD = ['日', '一', '二', '三', '四', '五', '六'];
+      let html = '';
+      // 🗓 欄位日期標題：讓每一「直行」看得出是哪一天。
+      //    ⚠️ 與時間網格共用同一套 grid 模板（52px + repeat(--cols,1fr)）且一樣受 max-width 限制 → 必定對齊
+      html += '<div class="ev-tg-head" style="--cols:' + n + '"><div class="ev-tg-head-gutter"></div>';
+      dayDates.forEach((d) => {
+        const ds = tlFmtDate(d);
+        const dm = String(ds).match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+        const label = dm ? (+dm[2]) + '/' + (+dm[3]) : ds;
+        html += '<div class="ev-tg-head-cell' + (ds === todayStr ? ' today' : '') + '" data-date="' + ds + '">' +
+          '<span class="dow">週' + WD[d.getDay()] + '</span><span class="dnum">' + label + '</span></div>';
+      });
+      html += '</div>';
+      if (hasAllDay) {
+        html += '<div class="ev-allday-strip" style="--cols:' + n + '"><div class="label">全天</div>';
+        allDayByCol.forEach((arr, ci) => {
+          html += '<div class="ev-allday-col" data-date="' + tlFmtDate(dayDates[ci]) + '">';
+          arr.forEach(({ ev }) => {
+            html += '<div class="ev-block all-day' + (ev.done ? ' done' : '') + '" data-uid="' + tlEscapeHtml(ev.uid) + '" onclick="tlOpenEventForm(\'' + tlEscapeHtml(ev.uid) + '\')" style="--ev-color:' + tlEscapeHtml(ev.color || TL_CAL_COLORS[0]) + '">' +
+              (ev.done ? '\u2713 ' : '') + tlEscapeHtml(ev.title) + tlEventTodoLinks(ev) + '</div>';
+          });
+          html += '</div>';
+        });
+        html += '</div>';
+      }
+      html += '<div class="ev-timegrid-scroll"><div class="ev-timegrid" style="--cols:' + n + ';--hour-h:' + hourH + 'px;">';
+      html += '<div class="ev-tg-gutter">';
+      for (let h = 0; h <= 23; h++) html += '<div class="ev-tg-hour-label" style="top:' + (h * hourH) + 'px">' + String(h).padStart(2, '0') + ':00</div>';
+      html += '</div>';
+      dayDates.forEach((d) => {
+        html += '<div class="ev-tg-col" data-date="' + tlFmtDate(d) + '">';
+        for (let h = 0; h <= 23; h++) html += '<div class="ev-tg-hour-line" style="top:' + (h * hourH) + 'px"></div>';
+        const timed = tlLayoutDay(tlEventsOnDay(tlFmtDate(d)).filter((o) => !o.ev.allDay).map((o) => o.ev));
+        timed.forEach(({ e, start, end, col, cols }) => {
+          const top = start / 60 * hourH;
+          const height = Math.max((end - start) / 60 * hourH, 18);
+          const width = 100 / cols;
+          const left = col * width;
+          const cbg = e.color || TL_CAL_COLORS[0];
+          // 時間範圍：有開始時間才顯示
+          const tm = (e.allDay || !e.startTime) ? '' : (e.startTime + (e.endTime ? '–' + e.endTime : ''));
+          // 備註：只有方塊夠高（日模式下 >=64px，約標題+時間+地點+兩行備註）才顯示，
+          //       用 -webkit-line-clamp 限行數，超出仍由 .ev-block 的 overflow:hidden 裁掉
+          const notes = (!e.allDay && height >= 64 && e.notes) ? String(e.notes).slice(0, 400) : '';
+          html += '<div class="ev-block' + (e.done ? ' done' : '') + '" data-uid="' + tlEscapeHtml(e.uid) + '" onclick="tlOpenEventForm(\'' + tlEscapeHtml(e.uid) + '\')" style="top:' + top + 'px;height:' + height + 'px;left:calc(' + left + '% + 1px);width:calc(' + width + '% - 3px);--ev-color:' + tlEscapeHtml(cbg) + '">' +
+            '<div class="t">' + (e.done ? '\u2713 ' : '') + tlEscapeHtml(e.title) + tlEventTodoLinks(e) + '</div>' +
+            (tm ? '<div class="tm">' + tlEscapeHtml(tm) + '</div>' : '') +
+            (e.location ? '<div class="loc">' + tlEscapeHtml('\ud83d\udccd ' + e.location) + '</div>' : '') +
+            (notes ? '<div class="notes">' + tlEscapeHtml(notes) + '</div>' : '') +
+            '</div>';
+        });
+        html += '</div>';
+      });
+      dayDates.forEach((d) => {
+        if (tlFmtDate(d) === todayStr) {
+          const mins = now.getHours() * 60 + now.getMinutes();
+          const top = mins / 60 * hourH;
+          html += '<div class="ev-tg-now-line" style="top:' + top + 'px" data-date="' + tlFmtDate(d) + '"></div>';
+        }
+      });
+      html += '</div></div>';
+      wrap.innerHTML = html;
+      requestAnimationFrame(() => {
+        const sc = wrap.querySelector('.ev-timegrid-scroll');
+        if (sc) sc.scrollTop = Math.max(0, now.getHours() * hourH + now.getMinutes() - 120);
+      });
+    }
+    // 行程条 / 月格点击打开表单（阻止冒泡到单元格选择）
+    function tlOpenEventFromChip(e, uid) { if (e) e.stopPropagation(); tlOpenEventForm(uid); }
+
+    // 表单内「关联 Todo 卡片」面板
+    function tlRenderEvTodoLinkPanel() {
+      const panel = document.getElementById('tlEvTodoLinkPanel');
+      if (!panel) return;
+      if (!tlEvFormTodoIds.length) {
+        const has = (typeof todos !== 'undefined') && todos.length;
+        panel.innerHTML = '<div class="ev-todo-placeholder">' + (has ? '点此或按 ? 选择要关联的卡片' : '暂无 Todo 卡片') + '</div>';
+        return;
+      }
+      panel.innerHTML = tlEvFormTodoIds.map((id) => {
+        const t = (typeof todos !== 'undefined') ? todos.find((x) => x.id === id) : null;
+        const name = t ? tlTodoTitle(t) : id;
+        return '<span class="ev-todo-chip" data-id="' + tlEscapeHtml(id) + '" title="' + tlEscapeHtml(name) + '"><span class="ev-todo-chip-text">' + tlEscapeHtml(name) + '</span><span class="ev-todo-chip-x" data-id="' + tlEscapeHtml(id) + '" title="移除">✕</span></span>';
+      }).join('');
+    }
+    function tlRenderEvTodoDropdown() {
+      const dd = document.getElementById('tlEvTodoDropdown');
+      if (!dd) return;
+      const candidates = ((typeof todos !== 'undefined') ? todos : []).filter((t) => tlEvFormTodoIds.indexOf(t.id) < 0);
+      if (!candidates.length) { dd.innerHTML = '<div class="ev-todo-dropdown-empty">已无更多卡片可选</div>'; return; }
+      dd.innerHTML = candidates.map((t) => '<div class="ev-todo-dropdown-item" data-id="' + tlEscapeHtml(t.id) + '">' + tlEscapeHtml(tlTodoTitle(t)) + '</div>').join('');
+    }
+    function tlEvToggleTodoDropdown() {
+      const dd = document.getElementById('tlEvTodoDropdown');
+      if (!dd) return;
+      if (dd.classList.contains('show')) { dd.classList.remove('show'); return; }
+      if (!(typeof todos !== 'undefined') || !todos.length) return;
+      tlRenderEvTodoDropdown();
+      dd.classList.add('show');
+    }
+    function tlEvAddTodoLink(id) {
+      if (!id || tlEvFormTodoIds.indexOf(id) >= 0) return;
+      tlEvFormTodoIds.push(id);
+      tlRenderEvTodoLinkPanel();
+      const left = ((typeof todos !== 'undefined') ? todos : []).filter((t) => tlEvFormTodoIds.indexOf(t.id) < 0);
+      if (left.length) tlRenderEvTodoDropdown();
+      else { const dd = document.getElementById('tlEvTodoDropdown'); if (dd) dd.classList.remove('show'); }
+    }
+    function tlEvRemoveTodoLink(id) {
+      const i = tlEvFormTodoIds.indexOf(id);
+      if (i >= 0) tlEvFormTodoIds.splice(i, 1);
+      tlRenderEvTodoLinkPanel();
+      const dd = document.getElementById('tlEvTodoDropdown');
+      if (dd && dd.classList.contains('show')) tlRenderEvTodoDropdown();
     }
 
     // ===== 渲染 =====
     function tlRenderEventsContent() {
       if (!calEventsView) return;
-      const month = tlCalMode === 'month';
+      const mode = tlCalMode;
+      const isMonth = mode === 'month';
+      const isWeek = mode === 'week';
+      const isDay = mode === 'day';
+      const isGrid = isWeek || isDay; // 日/周共用时间网格
       const setDisp = (id, v) => { const el = document.getElementById(id); if (el) el.style.display = v; };
-      setDisp('tlEvMonthNav', month ? '' : 'none');
-      setDisp('tlEvMonthWrap', month ? '' : 'none');
-      setDisp('tlEvList', month ? 'none' : '');
-      const lb = document.getElementById('tlEvModeList'); if (lb) lb.classList.toggle('active', !month);
-      const mb = document.getElementById('tlEvModeMonth'); if (mb) mb.classList.toggle('active', month);
+      setDisp('tlEvMonthNav', (isMonth || isGrid) ? '' : 'none');
+      setDisp('tlEvMonthWrap', isMonth ? '' : 'none');
+      setDisp('tlEvWeekWrap', isGrid ? '' : 'none');
+      setDisp('tlEvList', mode === 'list' ? '' : 'none');
+      const lb = document.getElementById('tlEvModeList'); if (lb) lb.classList.toggle('active', mode === 'list');
+      const db = document.getElementById('tlEvModeDay'); if (db) db.classList.toggle('active', isDay);
+      const wb = document.getElementById('tlEvModeWeek'); if (wb) wb.classList.toggle('active', isWeek);
+      const mb = document.getElementById('tlEvModeMonth'); if (mb) mb.classList.toggle('active', isMonth);
       const content = document.getElementById('taskText').value;
-      if (month) tlRenderMonth(content);
+      tlCalEvents = tlParseEvents(content);
+      tlRenderTagBar();
+      if (isMonth) tlRenderMonth(content);
+      else if (isGrid) tlRenderTimeGrid(isDay ? [tlCalCursor] : tlWeekDays(tlCalCursor));
       else tlRenderList(content);
     }
 
     function tlSetMode(mode) {
-      tlCalMode = (mode === 'month') ? 'month' : 'list';
+      tlCalMode = (mode === 'month') ? 'month' : (mode === 'week') ? 'week' : (mode === 'day') ? 'day' : 'list';
       if (tlCalMode === 'month' && !tlCalSelected) tlCalSelected = tlFmtDate(new Date());
+      tlRenderEventsContent();
+    }
+
+    // 上/下一期：按当前模式步进（月→月、周→周、日→日）
+    function tlCalStepCursor(dir) {
+      if (tlCalMode === 'week') tlCalCursor = tlAddDays(tlCalCursor, dir * 7);
+      else if (tlCalMode === 'day') tlCalCursor = tlAddDays(tlCalCursor, dir);
+      else tlCalCursor = new Date(tlCalCursor.getFullYear(), tlCalCursor.getMonth() + dir, 1);
+      if (tlCalMode === 'month' && !tlCalSelected) tlCalSelected = tlFmtDate(tlCalCursor);
       tlRenderEventsContent();
     }
 
@@ -10629,31 +10941,31 @@
 
     function tlItemHtml(ev, today) {
       const multi = tlIsMultiDay(ev);
-      // 跨天進行中（今天落在區間內）不視為過去 → 不淡化
       const past = ev.date < today && !(multi && ev.endDate >= today);
       let time;
       if (multi) {
         time = ev.allDay
-          ? (tlRangeLabel(ev.date, ev.endDate) + ' · 共' + tlSpanDays(ev.date, ev.endDate) + '天')
+          ? (tlRangeLabel(ev.date, ev.endDate) + ' \u00b7 \u5171' + tlSpanDays(ev.date, ev.endDate) + '\u5929')
           : tlRangeLabel(ev.date, ev.endDate, ev.startTime, ev.endTime);
       } else {
-        time = ev.allDay ? '全天' : ((ev.startTime || '') + (ev.endTime ? '-' + ev.endTime : ''));
+        time = ev.allDay ? '\u5168\u5929' : ((ev.startTime || '') + (ev.endTime ? '-' + ev.endTime : ''));
       }
-      const spanBadge = multi ? '<span class="ev-span-badge" title="跨天行程">⤢ 跨' + tlSpanDays(ev.date, ev.endDate) + '天</span>' : '';
+      const spanBadge = multi ? '<span class="ev-span-badge" title="\u8de8\u5929\u884c\u7a0b">\u2922 \u8de8' + tlSpanDays(ev.date, ev.endDate) + '\u5929</span>' : '';
       return '<div class="ev-item' + (past ? ' past' : '') + (ev.done ? ' done' : '') + (multi ? ' multi' : '') + '">' +
         '<input type="checkbox" class="ev-check" onchange="tlToggleDone(\'' + ev.uid + '\', this.checked)"' +
-        (ev.done ? ' checked' : '') + ' title="勾选＝已完成，取消勾选＝未完成">' +
+        (ev.done ? ' checked' : '') + ' title="\u52fe\u9009=\u5df2\u5b8c\u6210\uff0c\u53d6\u6d88\u52fe\u9009=\u672a\u5b8c\u6210">' +
         '<span class="ev-swatch" style="background:' + tlEscapeHtml(ev.color) + '"></span>' +
         '<div class="ev-body">' +
         '<div class="ev-title">' + tlEscapeHtml(ev.title) + spanBadge +
         (ev.tags && ev.tags.length ? '<span class="ev-tags">' + ev.tags.map((t) => '#' + tlEscapeHtml(t)).join(' ') + '</span>' : '') +
+        tlEventTodoLinks(ev) +
         '</div>' +
-        '<div class="ev-meta">' + tlEscapeHtml(time) + (ev.location ? ' · 📍' + tlEscapeHtml(ev.location) : '') + '</div>' +
+        '<div class="ev-meta">' + tlEscapeHtml(time) + (ev.location ? ' \u00b7 \ud83d\udccd' + tlEscapeHtml(ev.location) : '') + '</div>' +
         (ev.notes ? '<div class="ev-notes">' + tlEscapeHtml(ev.notes) + '</div>' : '') +
         '</div>' +
         '<div class="ev-actions">' +
-        '<button type="button" onclick="tlOpenEventForm(\'' + ev.uid + '\')">编辑</button>' +
-        '<button type="button" onclick="tlDeleteEvent(\'' + ev.uid + '\')">删除</button>' +
+        '<button type="button" onclick="tlOpenEventForm(\'' + ev.uid + '\')">\u7f16\u8f91</button>' +
+        '<button type="button" onclick="tlDeleteEvent(\'' + ev.uid + '\')">\u5220\u9664</button>' +
         '</div></div>';
     }
 
@@ -10667,7 +10979,7 @@
       }
       const today = tlFmtDate(new Date());
       let html = '', last = null;
-      for (const ev of tlSorted(tlCalEvents)) {
+      for (const ev of tlSorted(tlCalEvents.filter(tlEventMatchesTag))) {
         if (ev.date !== last) { last = ev.date; html += tlDateHeader(ev.date, today); }
         html += tlItemHtml(ev, today);
       }
@@ -10701,7 +11013,7 @@
       const t = document.getElementById('tlEvMonthTitle');
       if (t) t.textContent = y + '年' + (m + 1) + '月';
       const occByDate = {};
-      tlCalEvents.forEach((ev) => {
+      tlCalEvents.filter(tlEventMatchesTag).forEach((ev) => {
         tlEventOccurrences(ev).forEach((o) => { (occByDate[o.date] = occByDate[o.date] || []).push(o); });
       });
       if (!tlCalSelected) tlCalSelected = tlFmtDate(new Date());
@@ -10741,7 +11053,7 @@
       const m = String(ds).match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
       const WD = ['日', '一', '二', '三', '四', '五', '六'];
       const d = m ? new Date(+m[1], +m[2] - 1, +m[3]) : new Date();
-      const evs = tlSorted(tlCalEvents.filter((e) => e.date === ds || (e.endDate && ds > e.date && ds <= e.endDate));
+      const evs = tlSorted(tlCalEvents.filter((e) => (e.date === ds || (e.endDate && ds > e.date && ds <= e.endDate)) && tlEventMatchesTag(e)));
       let html = '<div class="ev-date' + (ds === today ? ' today' : '') + '">' +
         (m ? (+m[2]) + '月' + (+m[3]) + '日' : '日期未知') +
         '<span class="ev-week">週' + WD[d.getDay()] + '</span>' +
@@ -10780,6 +11092,8 @@
       document.getElementById('tlEvFTags').value = ev && ev.tags ? ev.tags.join(', ') : '';
       document.getElementById('tlEvFNotes').value = ev ? ev.notes : '';
       document.getElementById('tlEvFormDelete').style.display = uid ? '' : 'none';
+      tlEvFormTodoIds = ev ? (ev.todoIds || []).slice() : [];
+      tlRenderEvTodoLinkPanel();
       tlRenderColors();
       document.getElementById('tlEvFormOverlay').style.display = 'flex';
       document.getElementById('tlEvFTitle').focus();
@@ -10829,7 +11143,8 @@
         location: document.getElementById('tlEvFLocation').value.trim(),
         color: tlEvFormColor || TL_CAL_COLORS[0],
         tags: document.getElementById('tlEvFTags').value.split(/[,，]/).map((s) => s.trim()).filter(Boolean),
-        notes: document.getElementById('tlEvFNotes').value.replace(/\r\n/g, '\n')
+        notes: document.getElementById('tlEvFNotes').value.replace(/\r\n/g, '\n'),
+        todoIds: tlEvFormTodoIds.slice()
       };
       // 以当前编辑内容为准重新解析（保留用户手改过的其它条目），再 upsert
       tlCalEvents = tlParseEvents(document.getElementById('taskText').value);
@@ -10881,11 +11196,39 @@
     (function bindCalendarEventsUI() {
       const on = (id, ev, fn) => { const el = document.getElementById(id); if (el) el.addEventListener(ev, fn); };
       on('tlEvModeList', 'click', () => tlSetMode('list'));
+      on('tlEvModeDay', 'click', () => tlSetMode('day'));
+      on('tlEvModeWeek', 'click', () => tlSetMode('week'));
       on('tlEvModeMonth', 'click', () => tlSetMode('month'));
       on('tlEvAddBtn', 'click', () => tlOpenEventForm(null));
-      on('tlEvPrevMonth', 'click', () => { tlCalCursor = new Date(tlCalCursor.getFullYear(), tlCalCursor.getMonth() - 1, 1); tlRenderEventsContent(); });
-      on('tlEvNextMonth', 'click', () => { tlCalCursor = new Date(tlCalCursor.getFullYear(), tlCalCursor.getMonth() + 1, 1); tlRenderEventsContent(); });
+      on('tlEvPrevMonth', 'click', () => tlCalStepCursor(-1));
+      on('tlEvNextMonth', 'click', () => tlCalStepCursor(1));
       on('tlEvTodayBtn', 'click', () => { tlCalCursor = new Date(); tlCalSelected = tlFmtDate(new Date()); tlRenderEventsContent(); });
+      // 标签过滤 chips（事件委托）
+      const tf = document.getElementById('tlEvTagFilter');
+      if (tf) tf.addEventListener('click', (e) => {
+        const chip = e.target.closest('.ev-tag-chip');
+        if (!chip) return;
+        const t = chip.getAttribute('data-tag');
+        const i = tlCalTagFilter.indexOf(t);
+        if (i >= 0) tlCalTagFilter.splice(i, 1); else tlCalTagFilter.push(t);
+        tlRenderEventsContent();
+      });
+      // 关联 Todo 卡片面板
+      const tlp = document.getElementById('tlEvTodoLinkPanel');
+      if (tlp) {
+        tlp.addEventListener('dblclick', () => tlEvToggleTodoDropdown());
+        tlp.addEventListener('keydown', (e) => { if (e.key === '?' || e.key === '/') { e.preventDefault(); tlEvToggleTodoDropdown(); } });
+        tlp.addEventListener('click', (e) => {
+          const x = e.target.closest('.ev-todo-chip-x');
+          if (x) { tlEvRemoveTodoLink(x.getAttribute('data-id')); return; }
+          tlEvToggleTodoDropdown();
+        });
+      }
+      const tld = document.getElementById('tlEvTodoDropdown');
+      if (tld) tld.addEventListener('click', (e) => {
+        const item = e.target.closest('.ev-todo-dropdown-item');
+        if (item) tlEvAddTodoLink(item.getAttribute('data-id'));
+      });
       const ov = document.getElementById('tlEvFormOverlay');
       if (ov) ov.addEventListener('click', (e) => { if (e.target === ov) tlCloseEventForm(); });
     })();

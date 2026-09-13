@@ -325,9 +325,12 @@ body {
 .editor-container[data-view="events"] .preview-pane { display: none; }
 
 /* 行程視圖：日期分組的只讀列表（配色跟隨明暗主題變量） */
-.events-pane { display: none; overflow: auto; background: var(--bg); }
-.editor-container[data-view="events"] .events-pane { display: block; }
-.events-list { max-width: 720px; margin: 0 auto; padding-bottom: 24px; }
+/* ⚠️ 行程頁籤本身是 flex 欄：工具列/導航/標籤條自動高，內容區（列表 / 月曆 / 時間網格）
+   flex:1 各自內部滾動。這樣日/週視圖的時間網格才有「確定高度」可做內部滾動，
+   不必寫 calc(100vh - N) 這類魔術數字。 */
+.events-pane { display: none; overflow: hidden; background: var(--bg); }
+.editor-container[data-view="events"] .events-pane { display: flex; flex-direction: column; }
+.events-list { max-width: 720px; margin: 0 auto; padding-bottom: 24px; width: 100%; flex: 1 1 auto; min-height: 0; overflow-y: auto; }
 .ev-empty { padding: 40px 16px; text-align: center; color: var(--text-secondary); font-size: 14px; line-height: 1.7; }
 .ev-date {
   position: sticky; top: 0; z-index: 1;
@@ -372,6 +375,7 @@ body {
 .ev-today-mini { font-size: 12px !important; padding: 4px 10px !important; }
 
 /* 月曆網格：週一開頭，單元格顯示日號 + 最多 2 條行程 chip */
+#ev-month-wrap { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
 .ev-month-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; padding-bottom: 8px; }
 .ev-mc-head { text-align: center; font-size: 11px; color: var(--text-secondary); padding: 4px 0; }
 .ev-cell { min-height: 52px; background: var(--bg-secondary); border-radius: 4px; padding: 2px 3px; overflow: hidden; cursor: pointer; border: 1px solid transparent; }
@@ -385,12 +389,65 @@ body {
 /* 跨天行程：列表項徽章 + 月視圖跨日色條 */
 .ev-span-badge { margin-left: 6px; font-size: 10px; font-weight: 400; color: var(--primary); border: 1px solid var(--primary); padding: 0 6px; border-radius: 99px; white-space: nowrap; }
 .ev-item.multi .ev-meta { color: var(--primary); font-weight: 500; }
-.ev-chip.span { color: #fff; border-radius: 0; margin-top: 1px; height: 14px; padding: 0 3px; overflow: hidden; }
+.ev-chip.span { color: #fff; border-radius: 0; margin-top: 1px; height: 14px; padding: 0 3px; overflow: hidden; background: var(--ev-color); }
 .ev-chip.span .dot { flex: 0 0 auto; }
 .ev-chip.span.start { border-top-left-radius: 5px; border-bottom-left-radius: 5px; padding-left: 4px; }
 .ev-chip.span.end { border-top-right-radius: 5px; border-bottom-right-radius: 5px; padding-right: 4px; }
 .ev-chip.span.middle { min-height: 14px; }
 .ev-chip.span.done { opacity: 0.55; text-decoration: line-through; }
+
+/* 🏷 標籤過濾條（與桌面 TodoList 日曆模式對齊）：列出全文出現過的標籤，點選篩選 */
+.ev-tagbar { display: none; align-items: center; gap: 8px; padding: 0 0 8px; flex-wrap: wrap; flex: 0 0 auto; }
+.ev-tagbar-label { font-size: 12px; color: var(--text-secondary); flex: 0 0 auto; }
+.ev-tag-filter { display: flex; gap: 6px; flex-wrap: wrap; }
+.ev-tag-chip { font-size: 12px; padding: 2px 10px; border-radius: 99px; border: 1px solid var(--border); background: var(--bg-secondary); color: var(--text-secondary); cursor: pointer; }
+.ev-tag-chip.active { background: var(--primary); color: #fff; border-color: var(--primary); }
+
+/* 🔗 行程條上的關聯標記（桌面上會解析成卡片標題，LITE 端無卡片清單故顯示 id） */
+.ev-link { margin-left: 3px; font-size: 10px; opacity: 0.9; }
+
+/* 日 / 週視圖：時間網格 */
+#ev-week-wrap { display: none; flex: 1 1 auto; min-height: 0; flex-direction: column; }
+.ev-timegrid-scroll { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; position: relative; width: 100%; }
+/* ⚠️ 對齊修復：若平台使用「傳統捲軸」（會佔掉 8~15px 寬），下方的時間網格會比上方的
+   日期標題 / 全天條窄，欄位就對不齊（會出現「行程卡在兩天中間」）。
+   讓捲軸不佔寬度即可讓三者同寬；iOS Safari 本來就是覆蓋式捲軸，此規則無副作用。 */
+.ev-timegrid-scroll { scrollbar-width: none; }
+.ev-timegrid-scroll::-webkit-scrollbar { width: 0; height: 0; }
+/* 🗓 欄位日期標題：每一直行代表哪一天（週視圖必備）。
+   ⚠️ 對齊兩要素：與 .ev-timegrid 同一套 grid 模板 + column-gap 為 0（有 gap 會累積漂移） */
+.ev-tg-head { display: grid; grid-template-columns: 44px repeat(var(--cols, 1), 1fr); background: var(--bg-secondary); border-bottom: 1px solid var(--border); flex-shrink: 0; width: 100%; }
+.ev-tg-head-gutter { border-right: 1px solid var(--border); }
+.ev-tg-head-cell { padding: 3px 2px; text-align: center; font-size: 11px; color: var(--text-secondary); border-right: 1px solid var(--border); overflow: hidden; white-space: nowrap; }
+.ev-tg-head-cell:last-child { border-right: none; }
+.ev-tg-head-cell .dow { display: block; font-size: 10px; }
+.ev-tg-head-cell .dnum { display: block; font-weight: 600; color: var(--text); }
+.ev-tg-head-cell.today .dow { color: var(--primary); }
+.ev-tg-head-cell.today .dnum { color: var(--primary); }
+.ev-timegrid { display: grid; grid-template-columns: 44px repeat(var(--cols, 1), 1fr); position: relative; min-height: calc(24 * var(--hour-h, 52px)); }
+.ev-tg-gutter { border-right: 1px solid var(--border); position: relative; }
+.ev-tg-hour-label { position: absolute; right: 6px; transform: translateY(-50%); font-size: 11px; color: var(--text-secondary); }
+.ev-tg-col { border-right: 1px solid var(--border); position: relative; }
+.ev-tg-col:last-child { border-right: none; }
+.ev-tg-hour-line { position: absolute; left: 0; right: 0; height: 1px; background: var(--border); }
+.ev-tg-now-line { position: absolute; left: 0; right: 0; height: 2px; background: var(--primary); z-index: 5; }
+.ev-block { position: absolute; border-radius: 6px; padding: 3px 6px; color: #fff; font-size: 12px; line-height: 1.3; overflow: hidden; cursor: pointer; background: var(--ev-color); border: 1px solid var(--ev-color); border-left: 3px solid rgba(0,0,0,0.2); z-index: 2; }
+.ev-block .t { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ev-block .tm { font-size: 10px; opacity: 0.85; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* 備註：只在夠高的方塊裡由 JS 輸出；line-clamp 限 6 行，超過由 .ev-block 的 overflow:hidden 裁掉 */
+.ev-block .notes { margin-top: 2px; font-size: 11px; line-height: 1.35; opacity: 0.95; white-space: pre-wrap; word-break: break-word; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 6; -webkit-box-orient: vertical; }
+.ev-block .loc { font-size: 10px; opacity: 0.9; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ev-block.done { opacity: 0.55; }
+/* ⚠️ 對齊修復（同桌面端）：column-gap 4px × 7 會累積 28px 漂移 → 全天行程「卡在兩天中間」。
+   gap 歸 0 讓欄位軌道與時間網格完全一致，視覺留白改由 .ev-allday-col 的內距提供。 */
+.ev-allday-strip { border-bottom: 1px solid var(--border); padding: 4px 0 6px; display: grid; grid-template-columns: 44px repeat(var(--cols, 1), 1fr); gap: 2px 0; background: var(--bg-secondary); flex-shrink: 0; max-height: 132px; overflow-y: auto; width: 100%; }
+.ev-allday-strip .label { font-size: 11px; color: var(--text-secondary); text-align: right; padding-right: 6px; padding-top: 4px; }
+.ev-allday-col { display: flex; flex-direction: column; gap: 2px; min-width: 0; min-height: 0; padding: 0 2px; }
+.ev-block.all-day { position: static; width: auto; padding: 3px 8px; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* 🌙 黑夜模式：文字統一白色，設定的顏色只作為事件「外框」（邊框）顏色，背景改用深色面板。
+   白天模式不變（顏色＝背景色塊）。跨天色條（.ev-chip.span）同理——顏色經由 --ev-color 傳入。 */
+.dark-mode .ev-block { background: var(--bg-secondary); border-color: var(--ev-color); border-left: 3px solid var(--ev-color); color: #fff; }
+.dark-mode .ev-chip.span { background: var(--bg-secondary); border: 1px solid var(--ev-color); }
 
 /* 行程條目操作（編輯/刪除） */
 .ev-actions { flex: 0 0 auto; display: flex; flex-direction: column; gap: 4px; }
@@ -427,6 +484,17 @@ body {
 .ev-f-colors { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 6px; }
 .ev-f-colors .sw { width: 24px; height: 24px; border-radius: 50%; cursor: pointer; border: 2px solid transparent; }
 .ev-f-colors .sw.selected { border-color: var(--text); box-shadow: 0 0 0 2px var(--bg-secondary) inset; }
+/* 🔗 關聯 Todo 卡片面板（表單內）：已關聯 id 的 chip + 手動輸入新增 */
+.ev-todo-link-panel { min-height: 30px; border: 1px dashed var(--border); border-radius: 8px; padding: 5px 8px; background: var(--bg); display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 4px; }
+.ev-todo-placeholder { font-size: 12px; color: var(--text-secondary); }
+.ev-todo-chip { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; padding: 2px 4px 2px 10px; border-radius: 99px; background: var(--primary); color: #fff; max-width: 100%; }
+.ev-todo-chip-text { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 200px; }
+.ev-todo-chip-x { cursor: pointer; opacity: 0.85; font-size: 11px; padding: 0 2px; }
+.ev-todo-chip-x:hover { opacity: 1; }
+.ev-todo-add-row { display: flex; gap: 6px; margin-top: 6px; }
+.ev-todo-add-row input { flex: 1; min-width: 0; padding: 6px 8px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); color: var(--text); font-size: 13px; font-family: inherit; -webkit-appearance: none; }
+.ev-todo-add-row button { flex: 0 0 auto; border: 1px solid var(--primary); background: var(--bg-secondary); color: var(--primary); font-size: 13px; padding: 6px 12px; border-radius: 8px; cursor: pointer; }
+.ev-todo-add-row button:active { background: var(--primary); color: #fff; }
 .ev-form-actions { display: flex; align-items: center; gap: 10px; margin-top: 12px; }
 .ev-form-hint { margin-top: 10px; font-size: 11px; line-height: 1.5; color: var(--text-secondary); }
 

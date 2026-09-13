@@ -189,6 +189,8 @@
         <div class="ev-toolbar">
           <div class="ev-mode-seg">
             <button type="button" id="ev-mode-list" class="active">列表</button>
+            <button type="button" id="ev-mode-day">日</button>
+            <button type="button" id="ev-mode-week">週</button>
             <button type="button" id="ev-mode-month">月</button>
           </div>
           <span class="ev-toolbar-flex"></span>
@@ -200,11 +202,18 @@
           <button type="button" id="ev-next-month">›</button>
           <button type="button" class="ev-today-mini" id="ev-today-btn">今天</button>
         </div>
+        <!-- 🏷 標籤過濾條：列出 calendar.md 裡出現過的所有標籤，點選篩選（OR 邏輯，可多選） -->
+        <div class="ev-tagbar" id="ev-tagbar">
+          <span class="ev-tagbar-label">標籤</span>
+          <div class="ev-tag-filter" id="ev-tag-filter"></div>
+        </div>
         <div id="events-list" class="events-list"></div>
         <div id="ev-month-wrap" style="display:none">
           <div id="ev-month-grid" class="ev-month-grid"></div>
           <div id="ev-day-list" class="events-list"></div>
         </div>
+        <!-- 📅 日 / 週視圖時間網格容器（與月視圖互斥，由 syncEventsModeUI 切換） -->
+        <div id="ev-week-wrap"></div>
       </div>
     </main>
 
@@ -236,6 +245,14 @@
         <label class="ev-f-label">地點<input type="text" id="ev-f-location" maxlength="200" placeholder="可留空"></label>
         <div class="ev-f-label">顏色<div id="ev-f-colors" class="ev-f-colors"></div></div>
         <label class="ev-f-label">標籤（逗號分隔）<input type="text" id="ev-f-tags" maxlength="200" placeholder="例如：生活, 工作"></label>
+        <!-- 🔗 關聯 Todo 卡片：與桌面端共用 todoIds 字段；LITE 端無卡片清單可解析標題，故直接以 id 顯示/輸入 -->
+        <div class="ev-f-label">關聯 Todo 卡片（卡片 id）
+          <div id="ev-f-todo-panel" class="ev-todo-link-panel"></div>
+          <div class="ev-todo-add-row">
+            <input type="text" id="ev-f-todo-input" placeholder="輸入卡片 id 後按 ＋">
+            <button type="button" id="ev-f-todo-add">＋</button>
+          </div>
+        </div>
         <label class="ev-f-label">備註<textarea id="ev-f-notes" rows="3" placeholder="可留空，支持多行"></textarea>
           <!-- ↕ 拖拽手柄：iOS Safari 不支持 textarea 原生 resize 手柄，自绘实现上下拉动高度 -->
           <div class="ev-f-resize" id="ev-f-resize" title="拖動調整備註框高度"><span></span></div>
