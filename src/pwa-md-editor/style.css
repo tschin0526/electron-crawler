@@ -382,6 +382,15 @@ body {
 .ev-chip { display: flex; align-items: center; gap: 3px; font-size: 9px; line-height: 1.25; margin-top: 1px; color: var(--text); white-space: nowrap; overflow: hidden; }
 .ev-chip .dot { width: 5px; height: 5px; border-radius: 50%; flex: 0 0 auto; }
 .ev-more { font-size: 9px; color: var(--text-secondary); margin-top: 1px; }
+/* 跨天行程：列表項徽章 + 月視圖跨日色條 */
+.ev-span-badge { margin-left: 6px; font-size: 10px; font-weight: 400; color: var(--primary); border: 1px solid var(--primary); padding: 0 6px; border-radius: 99px; white-space: nowrap; }
+.ev-item.multi .ev-meta { color: var(--primary); font-weight: 500; }
+.ev-chip.span { color: #fff; border-radius: 0; margin-top: 1px; height: 14px; padding: 0 3px; overflow: hidden; }
+.ev-chip.span .dot { flex: 0 0 auto; }
+.ev-chip.span.start { border-top-left-radius: 5px; border-bottom-left-radius: 5px; padding-left: 4px; }
+.ev-chip.span.end { border-top-right-radius: 5px; border-bottom-right-radius: 5px; padding-right: 4px; }
+.ev-chip.span.middle { min-height: 14px; }
+.ev-chip.span.done { opacity: 0.55; text-decoration: line-through; }
 
 /* 行程條目操作（編輯/刪除） */
 .ev-actions { flex: 0 0 auto; display: flex; flex-direction: column; gap: 4px; }

@@ -117,6 +117,7 @@ const elements = {
   evFormSave: document.getElementById('ev-form-save'),
   evFTitle: document.getElementById('ev-f-title'),
   evFDate: document.getElementById('ev-f-date'),
+  evFEndDate: document.getElementById('ev-f-enddate'),
   evFAllday: document.getElementById('ev-f-allday'),
   evFDone: document.getElementById('ev-f-done'),
   evFStart: document.getElementById('ev-f-start'),
@@ -894,6 +895,7 @@ function parseCalendarEventBlock(block, idx) {
     uid: 'evp' + idx,  // 确定性 uid：同一內容多次解析結果一致，供編輯/刪除定位
     title,
     date: get('date'),
+    endDate: get('endDate'),
     allDay: get('allDay') === 'true',
     // 完成狀態：舊檔案沒有 - done 欄位 → 視為未設定 = 未完成
     done: get('done') === 'true',
@@ -926,6 +928,60 @@ function calendarFmtDate(d) {
 function calendarTimeToMin(t) {
   const m = String(t || '').match(/^(\d{1,2}):(\d{2})/);
   return m ? (+m[1]) * 60 + (+m[2]) : 0;
+}
+
+// ===== 跨天行程輔助 =====
+function calIsMultiDay(ev) { return !!(ev && ev.endDate && ev.endDate !== ev.date); }
+function calMdShort(d) { const m = String(d || '').match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/); return m ? (+m[1]) + '/' + (+m[2]) + '/' + (+m[3]) : (d || ''); }
+function calSpanDays(a, b) {
+  const d1 = new Date(a + 'T00:00:00'), d2 = new Date(b + 'T00:00:00');
+  if (isNaN(d1) || isNaN(d2)) return 1;
+  return Math.round((d2 - d1) / 86400000) + 1;
+}
+function calRangeLabel(a, b, st, et) {
+  if (st || et) return calMdShort(a) + ' ' + (st || '') + ' – ' + calMdShort(b) + ' ' + (et || '');
+  return calMdShort(a) + ' – ' + calMdShort(b);
+}
+// 把一條行程展開成「逐日出現」陣列（跨天行程每天一條，帶 start/middle/end 位置）
+function calEventOccurrences(ev) {
+  const out = [];
+  if (calIsMultiDay(ev)) {
+    let cur = new Date(ev.date + 'T00:00:00');
+    const end = new Date(ev.endDate + 'T00:00:00');
+    if (!isNaN(cur) && !isNaN(end)) {
+      while (cur <= end) {
+        const ds = calendarFmtDate(cur);
+        const pos = ds === ev.date ? 'start' : (ds === ev.endDate ? 'end' : 'middle');
+        out.push({ date: ds, ev, pos });
+        cur.setDate(cur.getDate() + 1);
+      }
+      return out;
+    }
+  }
+  out.push({ date: ev.date, ev, pos: 'single' });
+  return out;
+}
+function calOccSort(a, b) {
+  const aSpan = a.pos === 'single' ? 1 : 0, bSpan = b.pos === 'single' ? 1 : 0;
+  if (aSpan !== bSpan) return aSpan - bSpan;
+  if (a.ev.date !== b.ev.date) return a.ev.date < b.ev.date ? -1 : 1;
+  if (a.ev.allDay !== b.ev.allDay) return a.ev.allDay ? -1 : 1;
+  return calendarTimeToMin(a.ev.startTime) - calendarTimeToMin(b.ev.startTime);
+}
+// 月視圖單元格內的跨天色條 / 普通 chip
+function calSpanChipHtml(ev, pos) {
+  // 单日 → 普通 chip（圆点+标题）
+  if (pos === 'single') {
+    return '<div class="ev-chip' + (ev.done ? ' done' : '') + '"><span class="dot" style="background:' + escapeHtml(ev.color) + '"></span>' + (ev.done ? '✓ ' : '') + escapeHtml(ev.title) + '</div>';
+  }
+  // 跨天：start/end 显示标题作起止标识，middle 渲染为连续色条（不重复标题，悬停可见）
+  const cls = 'ev-chip span ' + pos + (ev.done ? ' done' : '');
+  const dot = '<span class="dot" style="background:' + escapeHtml(ev.color) + '"></span>';
+  let inner = '';
+  if (pos === 'start') inner = dot + (ev.done ? '✓ ' : '') + escapeHtml(ev.title);
+  else if (pos === 'end') inner = (ev.done ? '✓ ' : '') + escapeHtml(ev.title);
+  const tip = (pos === 'middle') ? ' title="' + escapeHtml(ev.title) + '"' : '';
+  return '<div class="' + cls + '" style="background:' + escapeHtml(ev.color) + '"' + tip + '>' + inner + '</div>';
 }
 
 // 渲染行程列表：日期升序分組，過去行程淡化，今天高亮；每條帶「編輯/刪除」
@@ -1000,14 +1056,24 @@ function calDateHeaderHtml(date, today) {
 
 // 單條行程 HTML（列表視圖與月視圖日列表共用；含編輯/刪除按鈕，走事件委派）
 function evItemHtml(ev, today) {
-  const time = ev.allDay ? '全天' : ((ev.startTime || '') + (ev.endTime ? '-' + ev.endTime : ''));
-  const past = ev.date < today;
-  return '<div class="ev-item' + (past ? ' past' : '') + (ev.done ? ' done' : '') + '">' +
+  const multi = calIsMultiDay(ev);
+  // 跨天進行中（今天落在區間內）不視為過去 → 不淡化
+  const past = ev.date < today && !(multi && ev.endDate >= today);
+  let time;
+  if (multi) {
+    time = ev.allDay
+      ? (calRangeLabel(ev.date, ev.endDate) + ' · 共' + calSpanDays(ev.date, ev.endDate) + '天')
+      : calRangeLabel(ev.date, ev.endDate, ev.startTime, ev.endTime);
+  } else {
+    time = ev.allDay ? '全天' : ((ev.startTime || '') + (ev.endTime ? '-' + ev.endTime : ''));
+  }
+  const spanBadge = multi ? '<span class="ev-span-badge" title="跨天行程">⤢ 跨' + calSpanDays(ev.date, ev.endDate) + '天</span>' : '';
+  return '<div class="ev-item' + (past ? ' past' : '') + (ev.done ? ' done' : '') + (multi ? ' multi' : '') + '">' +
     '<input type="checkbox" class="ev-check" data-ev-done="' + escapeHtml(ev.uid) + '"' +
     (ev.done ? ' checked' : '') + ' title="勾選＝已完成">' +
     '<span class="ev-swatch" style="background:' + escapeHtml(ev.color) + '"></span>' +
     '<div class="ev-body">' +
-    '<div class="ev-title">' + escapeHtml(ev.title) +
+    '<div class="ev-title">' + escapeHtml(ev.title) + spanBadge +
     (ev.tags && ev.tags.length ? '<span class="ev-tags">' + ev.tags.map(t => '#' + escapeHtml(t)).join(' ') + '</span>' : '') +
     '</div>' +
     '<div class="ev-meta">' + escapeHtml(time) + (ev.location ? ' · 📍' + escapeHtml(ev.location) : '') + '</div>' +
@@ -1039,6 +1105,7 @@ function calEventToMarkdown(ev) {
   let s = '## EVENT \n';
   s += '- title: `' + calMdEscape(ev.title) + '`\n';
   s += '- date: `' + calMdEscape(ev.date) + '`\n';
+  if (ev.endDate && ev.endDate !== ev.date) s += '- endDate: `' + calMdEscape(ev.endDate) + '`\n';
   s += '- allDay: `' + (ev.allDay ? 'true' : 'false') + '`\n';
   // 完成狀態：永遠顯式寫出（與桌面 calendar 插件同一欄位、同一順序）
   s += '- done: `' + (ev.done ? 'true' : 'false') + '`\n';
@@ -1088,8 +1155,8 @@ function renderCalMonth(content) {
   const cur = state.calCursor;
   const y = cur.getFullYear(), m = cur.getMonth();
   if (elements.evMonthTitle) elements.evMonthTitle.textContent = y + '年' + (m + 1) + '月';
-  const byDate = {};
-  state.calEvents.forEach(ev => { (byDate[ev.date] = byDate[ev.date] || []).push(ev); });
+  const occByDate = {};
+  state.calEvents.forEach(ev => { calEventOccurrences(ev).forEach(o => { (occByDate[o.date] = occByDate[o.date] || []).push(o); }); });
   if (!state.calSelectedDate) state.calSelectedDate = calendarFmtDate(new Date());
   const todayStr = calendarFmtDate(new Date());
   const first = new Date(y, m, 1);
@@ -1101,12 +1168,12 @@ function renderCalMonth(content) {
     const d = new Date(start.getFullYear(), start.getMonth(), start.getDate() + i);
     const ds = calendarFmtDate(d);
     const out = d.getMonth() !== m;
-    const evs = sortedCalEvents(byDate[ds] || []);
+    const occ = (occByDate[ds] || []).slice().sort(calOccSort);
     let chips = '';
-    for (let j = 0; j < Math.min(2, evs.length); j++) {
-      chips += '<div class="ev-chip' + (evs[j].done ? ' done' : '') + '"><span class="dot" style="background:' + escapeHtml(evs[j].color) + '"></span>' + (evs[j].done ? '✓ ' : '') + escapeHtml(evs[j].title) + '</div>';
+    for (let j = 0; j < Math.min(2, occ.length); j++) {
+      chips += calSpanChipHtml(occ[j].ev, occ[j].pos);
     }
-    if (evs.length > 2) chips += '<div class="ev-more">+' + (evs.length - 2) + '</div>';
+    if (occ.length > 2) chips += '<div class="ev-more">+' + (occ.length - 2) + '</div>';
     html += '<div class="ev-cell' + (out ? ' out' : '') + (ds === todayStr ? ' today' : '') + (ds === state.calSelectedDate ? ' selected' : '') + '" data-date="' + ds + '">' +
       '<span class="ev-daynum">' + d.getDate() + '</span>' + chips + '</div>';
   }
@@ -1123,7 +1190,7 @@ function renderCalDayList() {
   const m = String(ds).match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
   const WD = ['日', '一', '二', '三', '四', '五', '六'];
   const d = m ? new Date(+m[1], +m[2] - 1, +m[3]) : new Date();
-  const evs = sortedCalEvents(state.calEvents.filter(e => e.date === ds));
+  const evs = sortedCalEvents(state.calEvents.filter(e => e.date === ds || (e.endDate && ds > e.date && ds <= e.endDate)));
   let html = '<div class="ev-date' + (ds === today ? ' today' : '') + '">' +
     (m ? (+m[2]) + '月' + (+m[3]) + '日' : '日期未知') +
     '<span class="ev-week">週' + WD[d.getDay()] + '</span>' +
@@ -1168,6 +1235,7 @@ function openEventForm(uid, defaultDate) {
   elements.evFormTitle.textContent = uid ? '編輯行程' : '新增行程';
   elements.evFTitle.value = ev ? ev.title : '';
   elements.evFDate.value = ev ? ev.date : (defaultDate || (state.calMode === 'month' ? state.calSelectedDate : today) || today);
+  elements.evFEndDate.value = ev ? (ev.endDate || '') : '';
   elements.evFAllday.checked = ev ? ev.allDay : false;
   // 完成狀態：新增預設未完成（舊檔案沒有 - done 欄位時解析也是未完成）
   elements.evFDone.checked = ev ? !!ev.done : false;
@@ -1209,14 +1277,19 @@ function closeEventForm() {
 // ⚠️ 不直接落盤：iOS 無法直接寫原文件，走現有「保存」流程（分享面板 → 儲存到檔案 → 覆蓋）
 function saveEventForm() {
   const title = elements.evFTitle.value.trim();
-  const date = elements.evFDate.value;
+  let date = elements.evFDate.value;
+  let endDate = elements.evFEndDate.value;
   if (!title) { alert('請輸入標題'); elements.evFTitle.focus(); return; }
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) { alert('請選擇日期'); elements.evFDate.focus(); return; }
+  // 跨天：結束日早於起始日則互換；等於起始日視為單日（清空 endDate）
+  if (endDate && endDate < date) { const tmp = date; date = endDate; endDate = tmp; }
+  if (endDate === date) endDate = '';
   const allDay = elements.evFAllday.checked;
   const ev = {
     uid: state.evFormUid || genCalId(),
     title,
     date,
+    endDate: endDate || '',
     allDay,
     done: elements.evFDone.checked,
     startTime: allDay ? '' : elements.evFStart.value,

@@ -1167,6 +1167,7 @@
         let s = '## EVENT \n';
         s += '- title: `' + mdEscape(ev.title) + '`\n';
         s += '- date: `' + mdEscape(ev.date) + '`\n';
+        if (ev.endDate && ev.endDate !== ev.date) s += '- endDate: `' + mdEscape(ev.endDate) + '`\n';
         s += '- allDay: `' + (ev.allDay ? 'true' : 'false') + '`\n';
         // 完成状态：永远显式写出（true / false）。旧文件没有这一栏 → 解析时视为未设定 = 未完成。
         s += '- done: `' + (ev.done ? 'true' : 'false') + '`\n';
@@ -1218,6 +1219,7 @@
           id: genId(),
           title: title,
           date: get('date'),
+          endDate: get('endDate'),
           allDay: get('allDay') === 'true',
           // 未设定（旧文件没有 - done 栏位）= 未完成
           done: get('done') === 'true',

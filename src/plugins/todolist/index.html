@@ -1931,6 +1931,15 @@
     .ev-chip { display: flex; align-items: center; gap: 3px; font-size: 11px; line-height: 1.3; margin-top: 2px; color: var(--ev-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .ev-chip .dot { width: 6px; height: 6px; border-radius: 50%; flex: 0 0 auto; }
     .ev-more { font-size: 10px; color: var(--ev-muted); margin-top: 2px; }
+    /* 跨天行程：列表項徽章 + 月視圖跨日色條 */
+    .ev-span-badge { margin-left: 6px; font-size: 10px; font-weight: 400; color: var(--ev-primary); border: 1px solid var(--ev-primary); padding: 0 6px; border-radius: 99px; white-space: nowrap; }
+    .ev-item.multi .ev-meta { color: var(--ev-primary); font-weight: 500; }
+    .ev-chip.span { color: #fff; border-radius: 0; margin-top: 2px; height: 16px; padding: 0 4px; overflow: hidden; }
+    .ev-chip.span .dot { flex: 0 0 auto; }
+    .ev-chip.span.start { border-top-left-radius: 5px; border-bottom-left-radius: 5px; padding-left: 5px; }
+    .ev-chip.span.end { border-top-right-radius: 5px; border-bottom-right-radius: 5px; padding-right: 5px; }
+    .ev-chip.span.middle { min-height: 16px; }
+    .ev-chip.span.done { opacity: 0.55; text-decoration: line-through; }
     /* 行程表单 */
     .tl-ev-form-overlay { position: fixed; inset: 0; z-index: 12000; background: rgba(0,0,0,0.55); display: flex; align-items: center; justify-content: center; padding: 20px; }
     .tl-ev-form-box { width: 100%; max-width: 440px; max-height: 88vh; overflow: auto; background: var(--ev-card); border: 1px solid var(--ev-border); border-radius: 12px; padding: 18px; }
@@ -4536,6 +4545,7 @@
       <div class="tl-ev-form-title" id="tlEvFormTitle">新增行程</div>
       <label class="tl-ev-f-label">标题<input type="text" id="tlEvFTitle" maxlength="200" placeholder="行程标题"></label>
       <label class="tl-ev-f-label">日期<input type="date" id="tlEvFDate"></label>
+      <label class="tl-ev-f-label">结束日期（留空＝单日）<input type="date" id="tlEvFEndDate"></label>
       <div class="tl-ev-f-row">
         <label class="tl-ev-f-check"><input type="checkbox" id="tlEvFAllday" onchange="tlToggleAllDay()"> 全天</label>
         <label class="tl-ev-f-check"><input type="checkbox" id="tlEvFDone"> 已完成</label>
@@ -10457,6 +10467,7 @@
       return {
         idx, uid: 'evp' + idx, title,
         date: get('date'),
+        endDate: get('endDate'),
         allDay: get('allDay') === 'true',
         // 完成状态：旧文件没有 - done 栏位 → 视为未设定 = 未完成
         done: get('done') === 'true',
@@ -10490,6 +10501,7 @@
       let s = '## EVENT \n';
       s += '- title: `' + tlMdEscape(ev.title) + '`\n';
       s += '- date: `' + tlMdEscape(ev.date) + '`\n';
+      if (ev.endDate && ev.endDate !== ev.date) s += '- endDate: `' + tlMdEscape(ev.endDate) + '`\n';
       s += '- allDay: `' + (ev.allDay ? 'true' : 'false') + '`\n';
       // 完成状态：永远显式写出（与桌面 calendar 插件同一栏位、同一顺序）
       s += '- done: `' + (ev.done ? 'true' : 'false') + '`\n';
@@ -10525,6 +10537,57 @@
     function tlGenId() { return 'ev-' + Date.now() + '-' + Math.random().toString(36).slice(2, 7); }
     function tlEscapeHtml(s) {
       return String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+    }
+    // ===== 跨天行程辅助 =====
+    function tlIsMultiDay(ev) { return !!(ev && ev.endDate && ev.endDate !== ev.date); }
+    function tlMdShort(d) { const m = String(d || '').match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/); return m ? (+m[1]) + '/' + (+m[2]) : (d || ''); }
+    function tlSpanDays(a, b) {
+      const d1 = new Date(a + 'T00:00:00'), d2 = new Date(b + 'T00:00:00');
+      if (isNaN(d1) || isNaN(d2)) return 1;
+      return Math.round((d2 - d1) / 86400000) + 1;
+    }
+    function tlRangeLabel(a, b, st, et) {
+      if (st || et) return tlMdShort(a) + ' ' + (st || '') + ' – ' + tlMdShort(b) + ' ' + (et || '');
+      return tlMdShort(a) + ' – ' + tlMdShort(b);
+    }
+    // 把一条行程展开成「逐日出现」数组（跨天行程每天一条，带 start/middle/end 位置）
+    function tlEventOccurrences(ev) {
+      const out = [];
+      if (tlIsMultiDay(ev)) {
+        let cur = new Date(ev.date + 'T00:00:00');
+        const end = new Date(ev.endDate + 'T00:00:00');
+        if (!isNaN(cur) && !isNaN(end)) {
+          while (cur <= end) {
+            const ds = tlFmtDate(cur);
+            const pos = ds === ev.date ? 'start' : (ds === ev.endDate ? 'end' : 'middle');
+            out.push({ date: ds, ev, pos });
+            cur.setDate(cur.getDate() + 1);
+          }
+          return out;
+        }
+      }
+      out.push({ date: ev.date, ev, pos: 'single' });
+      return out;
+    }
+    function tlOccSort(a, b) {
+      const aSpan = a.pos === 'single' ? 1 : 0, bSpan = b.pos === 'single' ? 1 : 0;
+      if (aSpan !== bSpan) return aSpan - bSpan;
+      if (a.ev.date !== b.ev.date) return a.ev.date < b.ev.date ? -1 : 1;
+      if (a.ev.allDay !== b.ev.allDay) return a.ev.allDay ? -1 : 1;
+      return tlTimeToMin(a.ev.startTime) - tlTimeToMin(b.ev.startTime);
+    }
+    // 月視圖單元格內的跨天色條 / 普通 chip
+    function tlSpanChipHtml(ev, pos) {
+      // 单日 / 跨天中间日 → 回退到普通 chip 样式（带圆点+标题）
+      if (pos === 'single' || pos === 'middle') {
+        return '<div class="ev-chip' + (ev.done ? ' done' : '') + '"><span class="dot" style="background:' + tlEscapeHtml(ev.color) + '"></span>' + (tlEscapeHtml(ev.done) ? '✓ ' : '') + tlEscapeHtml(ev.title) + '</div>';
+      }
+      const cls = 'ev-chip span ' + pos + (ev.done ? ' done' : '');
+      const dot = '<span class="dot" style="background:' + tlEscapeHtml(ev.color) + '"></span>';
+      let inner = '';
+      if (pos === 'start') inner = dot + (ev.done ? '✓ ' : '') + tlEscapeHtml(ev.title);
+      else if (pos === 'end') inner = (ev.done ? '✓ ' : '') + tlEscapeHtml(ev.title);
+      return '<div class="' + cls + '" style="background:' + tlEscapeHtml(ev.color) + '">' + inner + '</div>';
     }
 
     // ===== 渲染 =====
@@ -10565,13 +10628,24 @@
     }
 
     function tlItemHtml(ev, today) {
-      const time = ev.allDay ? '全天' : ((ev.startTime || '') + (ev.endTime ? '-' + ev.endTime : ''));
-      return '<div class="ev-item' + (ev.date < today ? ' past' : '') + (ev.done ? ' done' : '') + '">' +
+      const multi = tlIsMultiDay(ev);
+      // 跨天進行中（今天落在區間內）不視為過去 → 不淡化
+      const past = ev.date < today && !(multi && ev.endDate >= today);
+      let time;
+      if (multi) {
+        time = ev.allDay
+          ? (tlRangeLabel(ev.date, ev.endDate) + ' · 共' + tlSpanDays(ev.date, ev.endDate) + '天')
+          : tlRangeLabel(ev.date, ev.endDate, ev.startTime, ev.endTime);
+      } else {
+        time = ev.allDay ? '全天' : ((ev.startTime || '') + (ev.endTime ? '-' + ev.endTime : ''));
+      }
+      const spanBadge = multi ? '<span class="ev-span-badge" title="跨天行程">⤢ 跨' + tlSpanDays(ev.date, ev.endDate) + '天</span>' : '';
+      return '<div class="ev-item' + (past ? ' past' : '') + (ev.done ? ' done' : '') + (multi ? ' multi' : '') + '">' +
         '<input type="checkbox" class="ev-check" onchange="tlToggleDone(\'' + ev.uid + '\', this.checked)"' +
         (ev.done ? ' checked' : '') + ' title="勾选＝已完成，取消勾选＝未完成">' +
         '<span class="ev-swatch" style="background:' + tlEscapeHtml(ev.color) + '"></span>' +
         '<div class="ev-body">' +
-        '<div class="ev-title">' + tlEscapeHtml(ev.title) +
+        '<div class="ev-title">' + tlEscapeHtml(ev.title) + spanBadge +
         (ev.tags && ev.tags.length ? '<span class="ev-tags">' + ev.tags.map((t) => '#' + tlEscapeHtml(t)).join(' ') + '</span>' : '') +
         '</div>' +
         '<div class="ev-meta">' + tlEscapeHtml(time) + (ev.location ? ' · 📍' + tlEscapeHtml(ev.location) : '') + '</div>' +
@@ -10626,8 +10700,10 @@
       const y = cur.getFullYear(), m = cur.getMonth();
       const t = document.getElementById('tlEvMonthTitle');
       if (t) t.textContent = y + '年' + (m + 1) + '月';
-      const byDate = {};
-      tlCalEvents.forEach((ev) => { (byDate[ev.date] = byDate[ev.date] || []).push(ev); });
+      const occByDate = {};
+      tlCalEvents.forEach((ev) => {
+        tlEventOccurrences(ev).forEach((o) => { (occByDate[o.date] = occByDate[o.date] || []).push(o); });
+      });
       if (!tlCalSelected) tlCalSelected = tlFmtDate(new Date());
       const today = tlFmtDate(new Date());
       const first = new Date(y, m, 1);
@@ -10638,12 +10714,12 @@
         const d = new Date(start.getFullYear(), start.getMonth(), start.getDate() + i);
         const ds = tlFmtDate(d);
         const out = d.getMonth() !== m;
-        const evs = tlSorted(byDate[ds] || []);
+        const occ = (occByDate[ds] || []).slice().sort(tlOccSort);
         let chips = '';
-        for (let j = 0; j < Math.min(3, evs.length); j++) {
-          chips += '<div class="ev-chip' + (evs[j].done ? ' done' : '') + '"><span class="dot" style="background:' + tlEscapeHtml(evs[j].color) + '"></span>' + (evs[j].done ? '✓ ' : '') + tlEscapeHtml(evs[j].title) + '</div>';
+        for (let j = 0; j < Math.min(3, occ.length); j++) {
+          chips += tlSpanChipHtml(occ[j].ev, occ[j].pos);
         }
-        if (evs.length > 3) chips += '<div class="ev-more">+' + (evs.length - 3) + '</div>';
+        if (occ.length > 3) chips += '<div class="ev-more">+' + (occ.length - 3) + '</div>';
         html += '<div class="ev-cell' + (out ? ' out' : '') + (ds === today ? ' today' : '') + (ds === tlCalSelected ? ' selected' : '') +
           '" onclick="tlSelectDate(\'' + ds + '\')"><span class="ev-daynum">' + d.getDate() + '</span>' + chips + '</div>';
       }
@@ -10665,7 +10741,7 @@
       const m = String(ds).match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
       const WD = ['日', '一', '二', '三', '四', '五', '六'];
       const d = m ? new Date(+m[1], +m[2] - 1, +m[3]) : new Date();
-      const evs = tlSorted(tlCalEvents.filter((e) => e.date === ds));
+      const evs = tlSorted(tlCalEvents.filter((e) => e.date === ds || (e.endDate && ds > e.date && ds <= e.endDate));
       let html = '<div class="ev-date' + (ds === today ? ' today' : '') + '">' +
         (m ? (+m[2]) + '月' + (+m[3]) + '日' : '日期未知') +
         '<span class="ev-week">週' + WD[d.getDay()] + '</span>' +
@@ -10692,6 +10768,7 @@
       document.getElementById('tlEvFormTitle').textContent = uid ? '编辑行程' : '新增行程';
       document.getElementById('tlEvFTitle').value = ev ? ev.title : '';
       document.getElementById('tlEvFDate').value = ev ? ev.date : (defaultDate || (tlCalMode === 'month' ? tlCalSelected : today) || today);
+      document.getElementById('tlEvFEndDate').value = ev ? (ev.endDate || '') : '';
       document.getElementById('tlEvFAllday').checked = ev ? ev.allDay : false;
       // 完成状态：新增默认未完成（旧文件没有 - done 栏位时解析也是未完成）
       document.getElementById('tlEvFDone').checked = ev ? !!ev.done : false;
@@ -10735,13 +10812,17 @@
 
     function tlSaveEventForm() {
       const title = document.getElementById('tlEvFTitle').value.trim();
-      const date = document.getElementById('tlEvFDate').value;
+      let date = document.getElementById('tlEvFDate').value;
+      let endDate = document.getElementById('tlEvFEndDate').value;
       if (!title) { alert('请输入标题'); return; }
       if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) { alert('请选择日期'); return; }
+      // 跨天：结束日早于起始日则互换；等于起始日视为单日（清空 endDate）
+      if (endDate && endDate < date) { const tmp = date; date = endDate; endDate = tmp; }
+      if (endDate === date) endDate = '';
       const allDay = document.getElementById('tlEvFAllday').checked;
       const ev = {
         uid: tlEvFormUid || tlGenId(),
-        title, date, allDay,
+        title, date, endDate: endDate || '', allDay,
         done: document.getElementById('tlEvFDone').checked,
         startTime: allDay ? '' : document.getElementById('tlEvFStart').value,
         endTime: allDay ? '' : document.getElementById('tlEvFEnd').value,
