@@ -392,8 +392,8 @@ body {
 .ev-chip.span { color: #fff; border-radius: 0; margin-top: 1px; height: 14px; padding: 0 3px; overflow: hidden; background: var(--ev-color); }
 .ev-chip.span .dot { flex: 0 0 auto; }
 .ev-chip.span.start { border-top-left-radius: 5px; border-bottom-left-radius: 5px; padding-left: 4px; }
-.ev-chip.span.end { border-top-right-radius: 5px; border-bottom-right-radius: 5px; padding-right: 4px; }
-.ev-chip.span.middle { min-height: 14px; }
+.ev-chip.span.end { border-top-right-radius: 5px; border-bottom-right-radius: 5px; padding-right: 4px; padding-left: 4px; }
+.ev-chip.span.middle { min-height: 14px; padding-left: 4px; }
 .ev-chip.span.done { opacity: 0.55; text-decoration: line-through; }
 
 /* 🏷 標籤過濾條（與桌面 TodoList 日曆模式對齊）：列出全文出現過的標籤，點選篩選 */

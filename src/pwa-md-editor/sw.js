@@ -13,12 +13,14 @@
 // 讓舊快取名自動失效、activate 階段清掉，確保用戶一定拿到最新資源。
 // v12：備註框自繪拖拽手柄（iOS 無原生 resize）
 // v15：更換 App 圖示（3D 紫葡萄），一併預緩存圖示檔
-const CACHE_NAME = 'md-editor-lite-v15';
+// v16：Calendar 特性編輯器抽離為獨立 calendar-editor.js（預緩存新文件）
+const CACHE_NAME = 'md-editor-lite-v16';
 const ASSETS = [
   './',
   './index.html',
   './style.css',
   './app.js',
+  './calendar-editor.js',
   './manifest.json',
   './icon.svg',
   './icon-180.png',
