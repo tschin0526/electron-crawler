@@ -136,6 +136,27 @@ function calOccSort(a, b) {
 }
 // 跨天行程的「第幾天」後綴：total>1 時回傳「 idx/total」（如 去峨眉山 1/5），單日行程不加
 function calSpanSuffix(idx, total) { return (total > 1 && idx > 0) ? ' ' + idx + '/' + total : ''; }
+// 📝 備註裡的 Markdown checkbox（- [ ] / - [x]）渲染成 ☐/☑ 樣式，且可點擊勾選/取消（寫回 notes 原文）。
+//    入參必須是「已 escape」的文本；支援任意縮進的 `- [ ]` / `- [x]` / `- [X]`。
+//    uid 為所屬行程（點擊時定位用）；fenced code block 內的行不當成 checkbox，避免誤判代碼。
+function calNotesWithChecks(esc, uid) {
+  let inFence = false;
+  return esc.split('\n').map((line, i) => {
+    if (/^\s*```/.test(line)) { inFence = !inFence; return line; }
+    if (inFence) return line;
+    const m = line.match(/^(\s*)-\s+\[([ xX])\]\s?(.*)$/);
+    if (!m) return line;
+    const done = m[2] !== ' ';
+    const cbAttr = uid
+      ? ' data-uid="' + escapeHtml(uid) + '" data-line="' + i + '"' +
+        ' onclick="calToggleNoteCheck(event,\'' + escapeHtml(uid) + '\',' + i + ')"' +
+        ' onkeydown="calCalCheckKey(event,\'' + escapeHtml(uid) + '\',' + i + ')"'
+      : '';
+    return m[1] + '<span class="ev-md-check' + (done ? ' done' : '') + '"' + cbAttr +
+      ' role="checkbox" aria-checked="' + (done ? 'true' : 'false') + '" tabindex="0">' +
+      '<span class="ev-cb">' + (done ? '✓' : '') + '</span>' + m[3] + '</span>';
+  }).join('\n');
+}
 // 🖱 日/週時間網格雙擊空白處快速新增：15 分鐘取整，默認時長 1 小時；全天條＝日期(全天)
 function calGridDblClickNew(e) {
   if (e.target.closest('.ev-block') || e.target.closest('button')) return; // 點在已有行程上不新增
@@ -314,7 +335,7 @@ function renderCalTimeGrid(dayDates) {
         '<div class="t">' + (e.done ? '✓ ' : '') + escapeHtml(e.title) + calEventTodoLinks(e) + '</div>' +
         (tm ? '<div class="tm">' + escapeHtml(tm) + '</div>' : '') +
         (e.location ? '<div class="loc">' + escapeHtml('📍 ' + e.location) + '</div>' : '') +
-        (notes ? '<div class="notes">' + escapeHtml(notes) + '</div>' : '') +
+        (notes ? '<div class="notes">' + calNotesWithChecks(escapeHtml(notes), e.uid) + '</div>' : '') +
         '</div>';
     });
     html += '</div>';
@@ -489,7 +510,7 @@ function evItemHtml(ev, today) {
     calEventTodoLinks(ev) +
     '</div>' +
     '<div class="ev-meta">' + escapeHtml(time) + (ev.location ? ' · 📍' + escapeHtml(ev.location) : '') + '</div>' +
-    (ev.notes ? '<div class="ev-notes">' + escapeHtml(ev.notes) + '</div>' : '') +
+    (ev.notes ? '<div class="ev-notes">' + calNotesWithChecks(escapeHtml(ev.notes), ev.uid) + '</div>' : '') +
     '</div>' +
     '<div class="ev-actions">' +
     '<button type="button" data-ev-edit="' + escapeHtml(ev.uid) + '">編輯</button>' +
@@ -775,6 +796,29 @@ function toggleEventDone(uid, done) {
   ev.done = !!done;
   applyEventsToEditor();
   showToast(ev.done ? '已標記完成，按「保存」存回文件' : '已取消完成，按「保存」存回文件', 'success');
+}
+
+// 備註裡的 Markdown checkbox 勾選/取消：定位 ev.notes 的對應行，互換 - [ ] ↔ - [x]，序列化寫回編輯緩衝（按「保存」才落盤）
+function calToggleNoteCheck(e, uid, line) {
+  if (e) { e.stopPropagation(); e.preventDefault(); } // 阻止冒泡到 .ev-block 開啟編輯表單
+  state.calEvents = parseCalendarEvents(elements.editor.value);
+  const ev = state.calEvents.find(x => x.uid === uid);
+  if (!ev) { showToast('找不到該條行程（內容可能已被修改）', 'error'); return; }
+  const lines = String(ev.notes || '').split('\n');
+  if (line < 0 || line >= lines.length) return;
+  const m = lines[line].match(/^(\s*)-\s+\[([ xX])\]\s?(.*)$/);
+  if (!m) return; // 該行已被用戶改得不再是 checkbox，跳過以免破壞原文
+  const done = m[2] !== ' ';
+  lines[line] = m[1] + '- [' + (done ? ' ' : 'x') + ']' + (m[3] ? ' ' + m[3] : '');
+  ev.notes = lines.join('\n');
+  applyEventsToEditor(); // 序列化 + 標髒 + 重繪（多天事件多列自動同步）
+  showToast(done ? '已取消勾選，按「保存」存回文件' : '已勾選，按「保存」存回文件', 'success');
+}
+function calCalCheckKey(e, uid, line) {
+  if (e && (e.key === ' ' || e.key === 'Spacebar' || e.key === 'Enter')) {
+    e.preventDefault();
+    calToggleNoteCheck(e, uid, line);
+  }
 }
 
 // 把工作副本序列化為 calendar.md 全文寫回編輯器緩衝；

@@ -213,6 +213,27 @@
     }
     // 跨天行程的「第幾天」後綴：total>1 時回傳「 idx/total」（如 去峨眉山 1/5），單日行程不加
     function tlSpanSuffix(idx, total) { return (total > 1 && idx > 0) ? ' ' + idx + '/' + total : ''; }
+    // 📝 備註裡的 Markdown checkbox（- [ ] / - [x]）渲染成 ☐/☑ 樣式，且可點擊勾選/取消（寫回 notes 原文）。
+    //    入參必須是「已 escape」的文本；支援任意縮進的 `- [ ]` / `- [x]` / `- [X]`。
+    //    uid 為所屬行程（點擊時定位用）；fenced code block 內的行不當成 checkbox，避免誤判代碼。
+    function tlNotesWithChecks(esc, uid) {
+      let inFence = false;
+      return esc.split('\n').map((line, i) => {
+        if (/^\s*```/.test(line)) { inFence = !inFence; return line; }
+        if (inFence) return line;
+        const m = line.match(/^(\s*)-\s+\[([ xX])\]\s?(.*)$/);
+        if (!m) return line;
+        const done = m[2] !== ' ';
+        const cbAttr = uid
+          ? ' data-uid="' + tlEscapeHtml(uid) + '" data-line="' + i + '"' +
+            ' onclick="tlToggleNoteCheck(event,\'' + tlEscapeHtml(uid) + '\',' + i + ')"' +
+            ' onkeydown="tlCalCheckKey(event,\'' + tlEscapeHtml(uid) + '\',' + i + ')"'
+          : '';
+        return m[1] + '<span class="ev-md-check' + (done ? ' done' : '') + '"' + cbAttr +
+          ' role="checkbox" aria-checked="' + (done ? 'true' : 'false') + '" tabindex="0">' +
+          '<span class="ev-cb">' + (done ? '\u2713' : '') + '</span>' + m[3] + '</span>';
+      }).join('\n');
+    }
     function tlSpanChipHtml(ev, pos, idx, total) {
       // 单日 → 普通 chip（圆点+标题）；跨天 start/middle/end → 连续色条
       const links = tlEventTodoLinks(ev);
@@ -371,7 +392,7 @@
             '<div class="t">' + (e.done ? '\u2713 ' : '') + tlEscapeHtml(e.title) + tlEventTodoLinks(e) + '</div>' +
             (tm ? '<div class="tm">' + tlEscapeHtml(tm) + '</div>' : '') +
             (e.location ? '<div class="loc">' + tlEscapeHtml('\ud83d\udccd ' + e.location) + '</div>' : '') +
-            (notes ? '<div class="notes">' + tlEscapeHtml(notes) + '</div>' : '') +
+            (notes ? '<div class="notes">' + tlNotesWithChecks(tlEscapeHtml(notes), e.uid) + '</div>' : '') +
             '</div>';
         });
         html += '</div>';
@@ -534,7 +555,7 @@
         tlEventTodoLinks(ev) +
         '</div>' +
         '<div class="ev-meta">' + tlEscapeHtml(time) + (ev.location ? ' \u00b7 \ud83d\udccd' + tlEscapeHtml(ev.location) : '') + '</div>' +
-        (ev.notes ? '<div class="ev-notes">' + tlEscapeHtml(ev.notes) + '</div>' : '') +
+        (ev.notes ? '<div class="ev-notes">' + tlNotesWithChecks(tlEscapeHtml(ev.notes), ev.uid) + '</div>' : '') +
         '</div>' +
         '<div class="ev-actions">' +
         '<button type="button" onclick="tlOpenEventForm(\'' + ev.uid + '\')">\u7f16\u8f91</button>' +
@@ -760,6 +781,29 @@
       ev.done = !!done;
       tlApplyEventsToBuffer(); // 内部会重绘行程视图
       showToast(ev.done ? '已标记完成，按「保存」写回 calendar.md' : '已取消完成，按「保存」写回 calendar.md', 'success');
+    }
+
+    // 備註裡的 Markdown checkbox 勾選/取消：定位 ev.notes 的對應行，互換 - [ ] ↔ - [x]，序列化寫回 taskText（按「保存」才落盤）
+    function tlToggleNoteCheck(e, uid, line) {
+      if (e) { e.stopPropagation(); e.preventDefault(); } // 阻止冒泡到 .ev-block 的 onclick 打開編輯表單
+      tlCalEvents = tlParseEvents(document.getElementById('taskText').value);
+      const ev = tlCalEvents.find((x) => x.uid === uid);
+      if (!ev) { showToast('找不到该条行程（内容可能已被修改）', 'danger'); return; }
+      const lines = String(ev.notes || '').split('\n');
+      if (line < 0 || line >= lines.length) return;
+      const m = lines[line].match(/^(\s*)-\s+\[([ xX])\]\s?(.*)$/);
+      if (!m) return; // 該行已被用戶改得不再是 checkbox，跳過以免破壞原文
+      const done = m[2] !== ' ';
+      lines[line] = m[1] + '- [' + (done ? ' ' : 'x') + ']' + (m[3] ? ' ' + m[3] : '');
+      ev.notes = lines.join('\n');
+      tlApplyEventsToBuffer(); // 序列化 + 標髒 + 重繪（多天事件多列自動同步）
+      showToast(done ? '已取消勾选，按「保存」写回 calendar.md' : '已勾选，按「保存」写回 calendar.md', 'success');
+    }
+    function tlCalCheckKey(e, uid, line) {
+      if (e && (e.key === ' ' || e.key === 'Spacebar' || e.key === 'Enter')) {
+        e.preventDefault();
+        tlToggleNoteCheck(e, uid, line);
+      }
     }
 
     // 序列化整份 calendar.md 写回 taskText（不动 editSnapshot → 未保存检测自动判定为脏，「保存」亮起）

@@ -437,6 +437,10 @@ body {
 /* 備註：只在夠高的方塊裡由 JS 輸出；line-clamp 限 6 行，超過由 .ev-block 的 overflow:hidden 裁掉 */
 .ev-block .notes { margin-top: 2px; font-size: 11px; line-height: 1.35; opacity: 0.95; white-space: pre-wrap; word-break: break-word; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 6; -webkit-box-orient: vertical; }
 .ev-block .loc { font-size: 10px; opacity: 0.9; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* 📝 備註 Markdown checkbox：- [ ] / - [x] → ☐/☑（只讀樣式，勾選項加刪除線） */
+.ev-cb { display: inline-block; min-width: 11px; height: 11px; border: 1px solid var(--border); border-radius: 3px; margin-right: 4px; vertical-align: -1px; text-align: center; font-size: 9px; line-height: 11px; color: #fff; }
+.ev-md-check.done .ev-cb { background: var(--primary); border-color: var(--primary); }
+.ev-md-check.done { text-decoration: line-through; opacity: 0.75; }
 .ev-block.done { opacity: 0.55; }
 /* ⚠️ 對齊修復（同桌面端）：column-gap 4px × 7 會累積 28px 漂移 → 全天行程「卡在兩天中間」。
    gap 歸 0 讓欄位軌道與時間網格完全一致，視覺留白改由 .ev-allday-col 的內距提供。 */
