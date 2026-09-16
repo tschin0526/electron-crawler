@@ -1900,7 +1900,7 @@
     /* 列表容器＝內容滾動區（工具列/標籤條固定在其上方，不隨之捲動）。
        ⚠️ .events-list 同時被 #tlEvList 與 #tlEvDayList 使用；後者在 #tlEvMonthWrap 內（block 父層），
           flex 屬性在那裡無效，僅靠 #tlEvMonthWrap 自身滾動。 */
-    .events-list { max-width: 860px; margin: 0 auto; padding-bottom: 20px; width: 100%; flex: 1 1 auto; min-height: 0; overflow-y: auto; }
+    .events-list { padding-bottom: 20px; width: 100%; flex: 1 1 auto; min-height: 0; overflow-y: auto; }
     #tlEvMonthWrap { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
     .ev-empty { padding: 40px 16px; text-align: center; color: var(--ev-muted); font-size: 13px; line-height: 1.7; }
     .ev-date {
@@ -1929,7 +1929,7 @@
     .ev-actions { flex: 0 0 auto; display: flex; flex-direction: column; gap: 4px; }
     .ev-actions button { border: 1px solid var(--ev-border); background: var(--ev-bg); color: var(--ev-muted); font-size: 11px; padding: 2px 8px; border-radius: 6px; cursor: pointer; }
     .ev-actions button:hover { border-color: var(--ev-primary); color: var(--ev-primary); }
-    .ev-month-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; padding-bottom: 8px; max-width: 860px; margin: 0 auto; }
+    .ev-month-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; padding-bottom: 8px; }
     .ev-mc-head { text-align: center; font-size: 11px; color: var(--ev-muted); padding: 4px 0; }
     .ev-cell { min-height: 74px; background: var(--ev-card); border-radius: 4px; padding: 3px 4px; overflow: hidden; cursor: pointer; border: 1px solid transparent; }
     .ev-cell.out { opacity: 0.35; }
@@ -1957,10 +1957,10 @@
 
     /* ===== 日 / 周视图 时间网格（移植自 calendar 插件） ===== */
     .ev-week-wrap { flex: 1 1 auto; display: flex; flex-direction: column; min-height: 0; }
-    .ev-timegrid-scroll { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; position: relative; max-width: 920px; margin: 0 auto; width: 100%; }
+    .ev-timegrid-scroll { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; position: relative; width: 100%; }
     /* 🗓 欄位日期標題：每一直行代表哪一天（週視圖必備）
-       ⚠️ 對齊三要素：同一套 grid 模板 + 與 .ev-timegrid-scroll 相同的 max-width/margin + 沒有 column-gap */
-    .ev-tg-head { display: grid; grid-template-columns: 52px repeat(var(--cols, 1), 1fr); background: var(--ev-card); border-bottom: 1px solid var(--ev-border); flex-shrink: 0; width: 100%; max-width: 920px; margin: 0 auto; }
+       ⚠️ 對齊三要素：同一套 grid 模板 + 三者同一寬度約束（全部滿寬，皆不再有 max-width/margin）+ 沒有 column-gap */
+    .ev-tg-head { display: grid; grid-template-columns: 52px repeat(var(--cols, 1), 1fr); background: var(--ev-card); border-bottom: 1px solid var(--ev-border); flex-shrink: 0; width: 100%; }
     .ev-tg-head-gutter { border-right: 1px solid var(--ev-border); }
     .ev-tg-head-cell { padding: 3px 4px; text-align: center; font-size: 12px; color: var(--ev-muted); border-right: 1px solid var(--ev-border); overflow: hidden; white-space: nowrap; }
     .ev-tg-head-cell:last-child { border-right: none; }
@@ -1991,10 +1991,10 @@
        白天模式不變（顏色＝背景色塊）。跨天色條（.ev-chip.span）同理——顏色經由 --ev-color 傳入。 */
     body.dark .ev-block { background: var(--ev-card); border-color: var(--ev-color); border-left: 3px solid var(--ev-color); color: #fff; }
     body.dark .ev-chip.span { background: var(--ev-card); border: 1px solid var(--ev-color); }
-    /* ⚠️ 對齊修復：原本沒有 max-width/margin（span 滿寬 1030px）而時間網格被 .ev-timegrid-scroll 限成 920px 並置中，
-       導致全天條與時間網格整整錯開 55px；再加上 column-gap 4px × 7 會累積 28px 漂移 → 行程「卡在兩天中間」。
-       解法：① 與 .ev-timegrid-scroll 用同一套 max-width/margin；② column-gap 歸 0，改由 .ev-allday-col 的內距留白。 */
-    .ev-allday-strip { border-bottom: 1px solid var(--ev-border); padding: 4px 0 6px; display: grid; grid-template-columns: 52px repeat(var(--cols, 1), 1fr); gap: 2px 0; background: var(--ev-card); flex-shrink: 0; max-height: 132px; overflow-y: auto; width: 100%; max-width: 920px; margin: 0 auto; }
+    /* ⚠️ 對齊不變量（現行）：全天條 / 日期標題 / 時間網格三者必須 ① 同一套 grid 模板 ② 同一寬度（全部 width:100% 滿寬，
+       不再有任何 max-width/margin auto）③ column-gap 歸 0（留白改用 .ev-allday-col 的內距）。
+       歷史坑：曾因三者 max-width 不一致（920 vs 滿寬）錯開 55px + column-gap 4px×7 累積 28px → 行程「卡在兩天中間」。 */
+    .ev-allday-strip { border-bottom: 1px solid var(--ev-border); padding: 4px 0 6px; display: grid; grid-template-columns: 52px repeat(var(--cols, 1), 1fr); gap: 2px 0; background: var(--ev-card); flex-shrink: 0; max-height: 132px; overflow-y: auto; width: 100%; }
     .ev-allday-strip .label { font-size: 11px; color: var(--ev-muted); text-align: right; padding-right: 6px; padding-top: 4px; }
     .ev-allday-col { display: flex; flex-direction: column; gap: 2px; min-width: 0; min-height: 0; padding: 0 2px; }
     .ev-block.all-day { position: static; width: auto; padding: 3px 8px; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -7803,7 +7803,15 @@
 
     // 切换页签：有未保存改动先问询（保存 / 不保存 / 取消），再加载目标文件
     async function switchToSheetTab(key) {
-      if (key === activeTabKey) return;
+      if (key === activeTabKey) {
+        // 🆕 点击「已激活」的页签：不重载文件（避免丢未保存改动），只重新断言资料感知编辑器。
+        //    calendar.md 若已退出行程视图（例如刚点了「编辑文本」切换按钮）后再点自己，
+        //    应重新进入行程视图——否则会停在文本编辑态、看起来像「第二次打开退化成文本编辑器」（用户实测 bug）。
+        //    行程视图始终从 #taskText 实时缓冲解析（tlRenderEventsContent），故不会丢未保存的文本编辑。
+        //    其他文件无专属编辑器 → 该调用为 no-op。
+        if (typeof tlPrioritizeDedicatedEditor === 'function') tlPrioritizeDedicatedEditor();
+        return;
+      }
       const tab = editorTabs.find(t => t.key === key);
       if (!tab) return;
       if (hasUnsavedChanges()) {
@@ -7870,6 +7878,12 @@
           // 避免页签切换被误判为「有未保存改动」
           captureEditSnapshot();
         }
+        // 📅 资料感知编辑器分派：calendar.md 必须始终停在行程视图。
+        //    上方 toggleMdPreview(savedMode) 会无条件收掉 calEventsView（见其内部
+        //    `if (calEventsView){ calEventsView=false; ... }`），当「记忆模式」与当前 previewMode 不同
+        //    时，会把刚由 openExternalFile 分派好的行程面板再次关掉，退化成文本编辑器（实测 bug）。
+        //    这里在恢复模式之后再断言一次：calendar.md 重新进入行程视图，其他文件则保持（已关闭）原状。
+        if (typeof tlPrioritizeDedicatedEditor === 'function') tlPrioritizeDedicatedEditor();
       }
       saveEditorTabs();
       renderSheetTabs();
@@ -10901,6 +10915,8 @@
         resetEditorHistory(textarea);
         resetEditorHistory(htmlTextarea);
         captureEditSnapshot();
+        // 📅 资料感知编辑器分派：打开/切换文件后，若专属编辑器（calendar.md → 行程视图）优先启用，否则回退默认编辑器
+        if (typeof tlPrioritizeDedicatedEditor === 'function') tlPrioritizeDedicatedEditor();
         // 🆕 刷新文件路径显示（MD 文件在 PLUGINS_DATA_DIR，无外部路径）
         updateFilePathDisplay();
       } catch (e) {
@@ -12791,6 +12807,8 @@
         // 🆕 刷新文件路径显示
         updateFilePathDisplay();
         updateFileTypeTabs();
+        // 📅 资料感知编辑器分派：打开/切换文件后，若专属编辑器（calendar.md → 行程视图）优先启用，否则回退默认编辑器
+        if (typeof tlPrioritizeDedicatedEditor === 'function') tlPrioritizeDedicatedEditor();
       } catch (e) {
         console.error('[TodoList] 打开外部文件失败:', e);
         alert('打开文件失败：' + (e && e.message ? e.message : e));

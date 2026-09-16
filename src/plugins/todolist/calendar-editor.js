@@ -41,6 +41,28 @@
       if (!show && calEventsView) setCalEventsView(false);
     }
 
+    // 资料感知编辑器分派：文件成为「当前」时，若有专属编辑器（calendar.md → 行程视图）优先启用；
+    // 否则回退默认编辑器（照旧）。
+    // ⚠️ 只在「打开/切换文件」入口（openEditMdModal / openExternalFile）调用；这些入口都由用户动作触发
+    //    （点文件列表项、点底部 Sheet 页签、edit: 链接），所以「用户每次打开 calendar.md 都应重新进入行程视图」。
+    //    绝不能用「上次已分派的文件 key」去跳过——否则用户手动退出行程视图后再次选中 calendar.md，
+    //    会因 key 相同被跳过而退化成文本编辑器（实测 bug）。而用户手动关闭行程视图不会再次触发这些入口，
+    //    因此无需任何守卫来「保留其关闭状态」。
+    function tlPrioritizeDedicatedEditor() {
+      if (isCalendarMdDoc()) {
+        // ⚠️ 必须「无条件」重新进入行程视图，不能写成 `if (!calEventsView) setCalEventsView(true)`：
+        //    openExternalFile 的 md 分支在派发前会把 #taskText 重新显示出来（textarea.style.display=''，见 L12707），
+        //    若此刻 calEventsView 已为 true 而跳过 → showCalEventsPaneOnly() 不执行 → 文字编辑器与行程面板
+        //    「同时」占据 flex 版面（textarea flex:1 抢走绝大部分高度，行程只剩底部一条）。
+        //    用户实测：进入系统后第二次打开 calendar.md 就会这样；切走再切回（会把 calEventsView 置 false）反而正常。
+        //    setCalEventsView(true) 幂等：重跑 showCalEventsPaneOnly()（重新隐藏文字编辑器）+ 重渲染行程内容；
+        //    内容来自 #taskText 实时缓冲，不会丢编辑。
+        setCalEventsView(true);
+      } else if (calEventsView) {
+        setCalEventsView(false);
+      }
+    }
+
     function toggleCalEventsView() {
       setCalEventsView(!calEventsView);
     }

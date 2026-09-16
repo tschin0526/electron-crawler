@@ -15,7 +15,9 @@
 // v15：更換 App 圖示（3D 紫葡萄），一併預緩存圖示檔
 // v16：Calendar 特性編輯器抽離為獨立 calendar-editor.js（預緩存新文件）
 // v17：備註 checkbox 可點擊勾選/取消（寫回 notes 原文），calendar-editor.js 內部變動
-const CACHE_NAME = 'md-editor-lite-v17';
+// v18：行程視圖 .events-list 去 720px 居中限寬（列表模式 + 月視圖日明細清單滿寬填充，橫屏充分用左右空間）
+// v19：日/週視圖時間網格下方新增「行程明細文字清單」（#ev-grid-list，對齊月視圖 #ev-day-list），保證日周也顯示事件詳情
+const CACHE_NAME = 'md-editor-lite-v20';
 const ASSETS = [
   './',
   './index.html',

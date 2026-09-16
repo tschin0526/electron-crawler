@@ -248,6 +248,15 @@ function setupEventListeners() {
   if (elements.eventsList) elements.eventsList.addEventListener('click', onEvListClick);
   if (elements.evDayList) elements.evDayList.addEventListener('click', onEvListClick);
   if (elements.evWeekWrap) elements.evWeekWrap.addEventListener('click', onEvListClick);
+  // 週視圖：點日期標題切換「下半部明細」所顯示的那一天（與月視圖點格選日一致）；日模式只有一天，不處理。
+  if (elements.evWeekWrap) elements.evWeekWrap.addEventListener('click', (e) => {
+    const hc = e.target.closest('.ev-tg-head-cell[data-date]');
+    if (hc && state.calMode === 'week') {
+      state.calSelectedDate = hc.getAttribute('data-date');
+      renderCalGridDayList();
+      elements.evWeekWrap.querySelectorAll('.ev-tg-head-cell').forEach((c) => c.classList.toggle('selected', c.getAttribute('data-date') === state.calSelectedDate));
+    }
+  });
   // 🖱 雙擊空白處快速新增：日/週網格＝日期+時間、全天條＝日期(全天)。
   //    月模式不走原生 dblclick——單擊重繪格點會讓 dblclick 不派發，已在 evMonthGrid 的 click 裡手動檢測連點。
   if (elements.evWeekWrap) elements.evWeekWrap.addEventListener('dblclick', calGridDblClickNew);
@@ -515,12 +524,7 @@ async function handleFileSelect(event) {
     // 預設是 edit 視圖（純文字），用戶可能誤以為「沒預覽」；切到 split 立即展示 Markdown 渲染結果。
     // todo 卡片模式（json 但 text 是 md）也走 split，這樣能看到渲染效果；其他 json/html/程式碼 保持 edit。
     // 📅 calendar.md（行程應用數據文件）→ 自動切到「行程」視圖，只讀查看行程列表
-    updateEventsTabVisibility();
-    if (isCalendarMd()) {
-      setView('events');
-    } else if (state.currentFile.type === 'md' || state.todoMode) {
-      setView('split');
-    }
+    dispatchDataAwareEditor();
 
   } catch (error) {
     console.error('讀取文件失敗:', error);
@@ -826,6 +830,17 @@ function downloadFile(content, filename) {
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
   }, 100);
+}
+
+// 📅 资料感知编辑器分派：文件成为「当前」时，若有专属编辑器（calendar.md → 行程视图）优先启用；
+// 否则回退默认编辑器（照旧）。集中此处，未来新增特性编辑器只需在此加一个分支。
+function dispatchDataAwareEditor() {
+  updateEventsTabVisibility();
+  if (isCalendarMd()) {
+    setView('events');
+  } else if (state.currentFile.type === 'md' || state.todoMode) {
+    setView('split');
+  }
 }
 
 // 切換視圖：edit / preview / split

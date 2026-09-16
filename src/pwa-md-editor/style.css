@@ -330,7 +330,9 @@ body {
    不必寫 calc(100vh - N) 這類魔術數字。 */
 .events-pane { display: none; overflow: hidden; background: var(--bg); }
 .editor-container[data-view="events"] .events-pane { display: flex; flex-direction: column; }
-.events-list { max-width: 720px; margin: 0 auto; padding-bottom: 24px; width: 100%; flex: 1 1 auto; min-height: 0; overflow-y: auto; }
+.events-list { padding-bottom: 24px; width: 100%; flex: 1 1 auto; min-height: 0; overflow-y: auto; }
+/* 日/週視圖「下半部」行程明細清單（時間網格下方）；與 .ev-timegrid-scroll 在 #ev-week-wrap 豎直堆疊，各自內部滾動 */
+#ev-grid-list { flex: 1 1 auto; min-height: 0; border-top: 1px solid var(--border); }
 .ev-empty { padding: 40px 16px; text-align: center; color: var(--text-secondary); font-size: 14px; line-height: 1.7; }
 .ev-date {
   position: sticky; top: 0; z-index: 1;
@@ -408,7 +410,10 @@ body {
 
 /* 日 / 週視圖：時間網格 */
 #ev-week-wrap { display: none; flex: 1 1 auto; min-height: 0; flex-direction: column; }
-.ev-timegrid-scroll { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; position: relative; width: 100%; }
+/* 時間網格整列（標題+全天條+網格）包一層；預設豎直堆疊在 #ev-week-wrap 內，
+   橫屏時改與 #ev-grid-list 左右並排（見下方 @media orientation:landscape），避免矮屏把明細擠沒 */
+.ev-timegrid-col { display: flex; flex-direction: column; flex: 1 1 56%; min-width: 0; min-height: 0; overflow: hidden; }
+.ev-timegrid-scroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-x: hidden; position: relative; width: 100%; }
 /* ⚠️ 對齊修復：若平台使用「傳統捲軸」（會佔掉 8~15px 寬），下方的時間網格會比上方的
    日期標題 / 全天條窄，欄位就對不齊（會出現「行程卡在兩天中間」）。
    讓捲軸不佔寬度即可讓三者同寬；iOS Safari 本來就是覆蓋式捲軸，此規則無副作用。 */
@@ -424,7 +429,23 @@ body {
 .ev-tg-head-cell .dnum { display: block; font-weight: 600; color: var(--text); }
 .ev-tg-head-cell.today .dow { color: var(--primary); }
 .ev-tg-head-cell.today .dnum { color: var(--primary); }
+/* 週視圖「選中日」高亮（點日期標題切換下半部明細；與月視圖選中日一致） */
+.ev-tg-head-cell.selected { box-shadow: inset 0 -3px 0 var(--primary); }
+.ev-tg-head-cell.selected .dnum { color: var(--primary); }
 .ev-timegrid { display: grid; grid-template-columns: 44px repeat(var(--cols, 1), 1fr); position: relative; min-height: calc(24 * var(--hour-h, 52px)); }
+/* 橫屏（寬>高、螢幕偏矮）：時間網格與「下半部明細清單」左右並排，
+   各自佔滿整個高度 → 明細清單不再被 min-height 擠成不可見（豎屏仍是上下堆疊） */
+@media (orientation: landscape) {
+  #ev-week-wrap { flex-direction: row; }
+  .ev-timegrid-col { flex: 1 1 50%; min-height: 0; }
+  #ev-grid-list { flex: 1 1 50%; min-height: 0; border-top: none; border-left: 1px solid var(--border); }
+  /* 橫屏高度吃緊：壓縮日期標題列 / 全天條，讓時間網格仍留得下可用的高度 */
+  .ev-tg-head-cell { padding: 1px 2px; font-size: 9px; }
+  .ev-tg-head-cell .dow { font-size: 8px; }
+  .ev-allday-strip { padding: 1px 0 2px; max-height: 44px; }
+  .ev-allday-strip .label { padding-top: 1px; }
+  .ev-block.all-day { padding: 1px 6px; line-height: 1.15; }
+}
 .ev-tg-gutter { border-right: 1px solid var(--border); position: relative; }
 .ev-tg-hour-label { position: absolute; right: 6px; transform: translateY(-50%); font-size: 11px; color: var(--text-secondary); }
 .ev-tg-col { border-right: 1px solid var(--border); position: relative; }

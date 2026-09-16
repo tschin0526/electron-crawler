@@ -279,17 +279,30 @@ function renderCalTagBar() {
   }).join('');
 }
 // 日 / 週視圖 時間網格（移植自桌面 renderTimeGrid；事件委派用 data-ev-edit）
+// 日/週視圖「下半部明細清單」所顯示的那一天：永遠只有「選中日」一條（與月視圖一致）。
+// 日模式＝游標那天；週模式＝calSelectedDate（須在當週內），否則今天（若在週內）否則週一。
+function calGridSelectedDay() {
+  if (state.calMode === 'day') return calendarFmtDate(state.calCursor);
+  const wk = calWeekDays(state.calCursor);
+  const wkSet = new Set(wk.map(calendarFmtDate));
+  const today = calendarFmtDate(new Date());
+  const ds = (state.calSelectedDate && wkSet.has(state.calSelectedDate)) ? state.calSelectedDate
+    : (wkSet.has(today) ? today : calendarFmtDate(wk[0]));
+  state.calSelectedDate = ds; // 跨週後把殘留的舊選日收斂回當週內
+  return ds;
+}
 function renderCalTimeGrid(dayDates) {
   const wrap = elements.evWeekWrap;
   if (!wrap) return;
   const hourH = dayDates.length > 1 ? 48 : 56;   // 週視圖列窄 → 小時格矮一點
   const n = dayDates.length;
   const todayStr = calendarFmtDate(new Date());
+  const selDay = calGridSelectedDay();   // 下半部明細清單只顯示這一天（與月視圖選中日一致）
   const now = new Date();
   const allDayByCol = dayDates.map((d) => calEventsOnDay(calendarFmtDate(d)).filter((o) => o.ev.allDay));
   const hasAllDay = allDayByCol.some((arr) => arr.length > 0);
   const WD = ['日', '一', '二', '三', '四', '五', '六'];
-  let html = '';
+  let html = '<div class="ev-timegrid-col">';  // 時間網格整列（標題+全天條+網格）包一層，便於橫屏與明細清單左右並排
   // 🗓 欄位日期標題：讓每一「直行」看得出是哪一天（與桌面端對齊）
   //    ⚠️ 與時間網格共用同一套 grid 模板，且 column-gap 必須為 0，否則會累積漂移導致對不齊
   html += '<div class="ev-tg-head" style="--cols:' + n + '"><div class="ev-tg-head-gutter"></div>';
@@ -297,7 +310,7 @@ function renderCalTimeGrid(dayDates) {
     const ds = calendarFmtDate(d);
     const dm = String(ds).match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
     const label = dm ? (+dm[2]) + '/' + (+dm[3]) : ds;
-    html += '<div class="ev-tg-head-cell' + (ds === todayStr ? ' today' : '') + '" data-date="' + ds + '">' +
+    html += '<div class="ev-tg-head-cell' + (ds === todayStr ? ' today' : '') + (ds === selDay ? ' selected' : '') + '" data-date="' + ds + '">' +
       '<span class="dow">週' + WD[d.getDay()] + '</span><span class="dnum">' + label + '</span></div>';
   });
   html += '</div>';
@@ -347,13 +360,41 @@ function renderCalTimeGrid(dayDates) {
       html += '<div class="ev-tg-now-line" style="top:' + (mins / 60 * hourH) + 'px"></div>';
     }
   });
-  html += '</div></div>';
+  html += '</div></div></div>';   // 關閉 .ev-timegrid / .ev-timegrid-scroll / .ev-timegrid-col
+  // 日/週視圖「下半部」行程內容明細：時間網格下方補一列文字清單（與月視圖 #ev-day-list 對齊），
+  // 保證事件標題/時間/地點/備註一定可見，不必依賴時間網格滾動。
+  html += '<div id="ev-grid-list" class="events-list"></div>';
   wrap.innerHTML = html;
+  renderCalGridDayList();
   // 初次進入自動捲到「現在時間前 2 小時」
   requestAnimationFrame(() => {
     const sc = wrap.querySelector('.ev-timegrid-scroll');
     if (sc) sc.scrollTop = Math.max(0, now.getHours() * hourH + now.getMinutes() - 120);
   });
+}
+
+// 日/週視圖「下半部」行程明細：僅顯示「選中日」(calGridSelectedDay) 那一日的行程，與月視圖一致。
+// 日模式選中日＝游標那天；週模式選中日＝所點的日期標題（預設今天/週一），點不同日期標題即切換。
+function renderCalGridDayList() {
+  const list = document.getElementById('ev-grid-list');
+  if (!list) return;
+  const ds = calGridSelectedDay();
+  const today = calendarFmtDate(new Date());
+  const m = String(ds).match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+  const WD = ['日', '一', '二', '三', '四', '五', '六'];
+  const d = m ? new Date(+m[1], +m[2] - 1, +m[3]) : new Date();
+  const evs = sortedCalEvents(state.calEvents.filter((e) => (e.date === ds || (e.endDate && ds > e.date && ds <= e.endDate)) && calEventMatchesTag(e)));
+  let html = '<div class="ev-date' + (ds === today ? ' today' : '') + '">' +
+    (m ? (+m[2]) + '月' + (+m[3]) + '日' : ds) +
+    '<span class="ev-week">週' + WD[d.getDay()] + '</span>' +
+    (ds === today ? '<span class="ev-today-badge">今天</span>' : '') +
+    '<span class="ev-week">· ' + evs.length + ' 條</span>' +
+    '<span class="ev-toolbar-flex"></span>' +
+    '<button type="button" class="ev-day-add" data-ev-add-on="' + escapeHtml(ds) + '">＋ 此日新增</button>' +
+    '</div>';
+  if (!evs.length) html += '<div class="ev-empty">這一天沒有行程</div>';
+  else for (const ev of evs) html += evItemHtml(ev, today);
+  list.innerHTML = html;
 }
 // 導航列標題：依模式顯示「月 / 週區間 / 單日」
 function calCursorTitle() {
@@ -371,7 +412,7 @@ function calCursorTitle() {
 // 上/下一期：按當前模式步進（月→月、週→週、日→日）
 function calStepCursor(dir) {
   if (state.calMode === 'week') state.calCursor = calAddDays(state.calCursor, dir * 7);
-  else if (state.calMode === 'day') state.calCursor = calAddDays(state.calCursor, dir);
+  else if (state.calMode === 'day') { state.calCursor = calAddDays(state.calCursor, dir); state.calSelectedDate = calendarFmtDate(state.calCursor); }
   else state.calCursor = new Date(state.calCursor.getFullYear(), state.calCursor.getMonth() + dir, 1);
   if (state.calMode === 'month' && !state.calSelectedDate) state.calSelectedDate = calendarFmtDate(state.calCursor);
   renderEventsContent();
@@ -579,6 +620,7 @@ function renderEventsContent() {
 function setCalMode(mode) {
   state.calMode = (mode === 'month') ? 'month' : (mode === 'week') ? 'week' : (mode === 'day') ? 'day' : 'list';
   if (state.calMode === 'month' && !state.calSelectedDate) state.calSelectedDate = calendarFmtDate(new Date());
+  if (state.calMode === 'day') state.calSelectedDate = calendarFmtDate(state.calCursor);
   renderEventsContent();
 }
 
