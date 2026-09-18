@@ -232,8 +232,8 @@
       <div class="ev-form-box">
         <div class="ev-form-title" id="ev-form-title">新增行程</div>
         <label class="ev-f-label">標題<input type="text" id="ev-f-title" maxlength="200" placeholder="行程標題"></label>
-        <label class="ev-f-label">日期<input type="date" id="ev-f-date"></label>
-        <label class="ev-f-label">結束日期（留空＝單日）<input type="date" id="ev-f-enddate"></label>
+        <label class="ev-f-label">日期<span class="ev-f-dow" id="ev-f-date-dow"></span><span class="ev-f-lunar" id="ev-f-date-lunar" title="農民曆 / 老黃曆" onclick="calShowAlmanac((document.getElementById('ev-f-date').value||calendarFmtDate(new Date())), this)"></span><input type="date" id="ev-f-date"></label>
+        <label class="ev-f-label">結束日期（留空＝單日）<span class="ev-f-dow" id="ev-f-enddate-dow"></span><span class="ev-f-lunar" id="ev-f-enddate-lunar" title="農民曆 / 老黃曆" onclick="calShowAlmanac((document.getElementById('ev-f-enddate').value||calendarFmtDate(new Date())), this)"></span><input type="date" id="ev-f-enddate"></label>
         <div class="ev-f-row">
           <label class="ev-f-check"><input type="checkbox" id="ev-f-allday"> 全天</label>
           <label class="ev-f-check"><input type="checkbox" id="ev-f-done"> 已完成</label>
@@ -268,6 +268,10 @@
     </div>
   </div>
 
+  <!-- 📅 農民曆 / 老黃曆：lunar-javascript（壽星天文曆，1900–2100+），以 <script> 方式載入，暴露 window.Solar / window.Lunar 全域 -->
+  <script src="lunar.js"></script>
+  <!-- 農民曆簡→繁術語對照表（暴露全域 almanacToTrad），供 calendar-editor.js 轉換簡體宜忌/彭祖等 -->
+  <script src="almanac-s2t.js"></script>
   <!-- Markdown 渲染管線（從 todo 編輯器移植的擴展語法支援），必須在 app.js 之前載入 -->
   <script src="md-renderer.js"></script>
   <script src="app.js"></script>

@@ -345,6 +345,8 @@ body {
 .ev-date .ev-week { color: var(--text-secondary); font-weight: 400; font-size: 12px; }
 .ev-date.today { color: var(--primary); }
 .ev-today-badge { background: var(--primary); color: #fff; font-size: 11px; padding: 1px 8px; border-radius: 99px; font-weight: 500; }
+/* ⏳ 倒計時徽章（非今天）：灰底弱化，今天仍走上面的高亮主色 */
+.ev-today-badge.dim { background: var(--border, #e5e7eb); color: var(--text-secondary); font-weight: 400; }
 .ev-day-add { margin-left: auto; border: 1px solid var(--primary); background: transparent; color: var(--primary); font-size: 11px; padding: 3px 10px; border-radius: 6px; cursor: pointer; font-weight: 400; flex-shrink: 0; }
 .ev-day-add:active { background: var(--primary); color: #fff; }
 .ev-item { display: flex; gap: 10px; padding: 10px 14px; border-bottom: 1px solid var(--border); background: var(--bg-secondary); }
@@ -478,12 +480,77 @@ body {
 .ev-actions { flex: 0 0 auto; display: flex; flex-direction: column; gap: 4px; }
 .ev-actions button { border: 1px solid var(--border); background: var(--bg); color: var(--text-secondary); font-size: 11px; padding: 2px 8px; border-radius: 6px; cursor: pointer; }
 .ev-actions button:active { background: var(--gold-wash); }
+/* 🖱 悬停行程事件 → 放大提示框（更大字体显示事件内容；pointer-events:none 不挡点击） */
+.ev-tip { position: fixed; z-index: 2900; max-width: 320px; padding: 10px 12px; border-radius: 10px;
+  background: var(--bg-secondary, #ffffff); color: var(--text, #1f2937); border: 1px solid var(--border, #e5e7eb);
+  box-shadow: 0 8px 24px rgba(0,0,0,0.18); pointer-events: none; font-size: 13px; line-height: 1.5; }
+.dark-mode .ev-tip { background: var(--bg-secondary, #1e293b); box-shadow: 0 8px 24px rgba(0,0,0,0.5); border-color: var(--ev-color, #334155); }
+.ev-tip .ev-tip-title { font-size: 16px; font-weight: 600; color: var(--text); word-break: break-word; margin-bottom: 4px; }
+.ev-tip .ev-tip-done { color: var(--gold, #b8860b); font-weight: 700; }
+.ev-tip .ev-tip-meta { font-size: 13px; color: var(--text-secondary); }
+.ev-tip .ev-tip-tags { margin-top: 4px; font-size: 12px; color: var(--gold, #b8860b); }
+.ev-tip .ev-tip-notes { margin-top: 6px; font-size: 13px; color: var(--text); white-space: pre-wrap; word-break: break-word; max-height: 200px; overflow: hidden; }
+/* 📱 触屏设备无真 hover：点事件会被伪造 mouseover 致提示框与编辑表单重叠；强制隐藏（与 app.js 的媒体查询守卫双保险） */
+@media (hover: none) { .ev-tip { display: none !important; } }
+
+/* 📱 触屏点事件 → 小选单（编辑 / 详情）：可点闭（pointer-events:auto），层级低于编辑表单(3000)高于 hover tip(2900) */
+.ev-act-menu { position: fixed; z-index: 2950; min-width: 130px; padding: 6px; border-radius: 10px;
+  background: var(--bg-secondary, #ffffff); color: var(--text, #1f2937); border: 1px solid var(--border, #e5e7eb);
+  box-shadow: 0 8px 24px rgba(0,0,0,0.22); pointer-events: auto; display: flex; flex-direction: column; gap: 4px; }
+.dark-mode .ev-act-menu { background: var(--bg-secondary, #1e293b); border-color: var(--ev-color, #334155); box-shadow: 0 8px 24px rgba(0,0,0,0.5); }
+.ev-act-menu button { display: block; width: 100%; text-align: left; padding: 10px 12px; border: none; border-radius: 8px;
+  background: transparent; color: var(--text, #1f2937); font-size: 15px; cursor: pointer; }
+.dark-mode .ev-act-menu button { color: var(--text, #e2e8f0); }
+.ev-act-menu button:active { background: var(--border, #e5e7eb); }
+/* 📱 触屏选单「详情」→ 可点闭的放大内容浮层（复用 .ev-tip 内容结构；pointer-events:auto 可交互） */
+.ev-detail-pop { position: fixed; z-index: 2950; max-width: 320px; padding: 12px 14px; border-radius: 10px;
+  background: var(--bg-secondary, #ffffff); color: var(--text, #1f2937); border: 1px solid var(--border, #e5e7eb);
+  box-shadow: 0 8px 24px rgba(0,0,0,0.22); pointer-events: auto; font-size: 16px; line-height: 1.6; }
+.dark-mode .ev-detail-pop { background: var(--bg-secondary, #1e293b); box-shadow: 0 8px 24px rgba(0,0,0,0.5); border-color: var(--ev-color, #334155); }
+.ev-detail-pop .ev-tip-title { font-size: 20px; font-weight: 600; color: var(--text); word-break: break-word; margin-bottom: 4px; padding-right: 22px; }
+.ev-detail-pop .ev-tip-done { color: var(--gold, #b8860b); font-weight: 700; }
+.ev-detail-pop .ev-tip-meta { font-size: 16px; color: var(--text-secondary); }
+.ev-detail-pop .ev-tip-tags { margin-top: 4px; font-size: 15px; color: var(--gold, #b8860b); }
+.ev-detail-pop .ev-tip-notes { margin-top: 6px; font-size: 16px; color: var(--text); white-space: pre-wrap; word-break: break-word; max-height: 240px; overflow: auto; }
+.ev-detail-pop .ev-detail-close { position: absolute; top: 8px; right: 8px; width: 22px; height: 22px; border: none; border-radius: 50%;
+  background: var(--border, #e5e7eb); color: var(--text, #1f2937); font-size: 13px; line-height: 1; cursor: pointer; display: flex; align-items: center; justify-content: center; }
+.dark-mode .ev-detail-pop .ev-detail-close { background: #334155; color: #e2e8f0; }
+
+/* 📅 老黃曆詳情浮層（點農曆文字 / 📜 開啟） */
+.ev-almanac-pop { position: fixed; z-index: 2960; width: 320px; max-width: calc(100vw - 16px); max-height: calc(100vh - 32px); overflow: auto;
+  padding: 14px 16px; border-radius: 12px; border: 1px solid var(--border, #e5e7eb); background: var(--bg-secondary, #fff);
+  color: var(--text, #1f2937); font-size: 14px; box-shadow: 0 12px 32px rgba(0,0,0,0.35); }
+.dark-mode .ev-almanac-pop { background: var(--bg-secondary, #1e293b); border-color: var(--ev-color, #334155); box-shadow: 0 12px 32px rgba(0,0,0,0.55); }
+.ev-almanac-pop .ev-almanac-close { position: absolute; top: 8px; right: 8px; width: 24px; height: 24px; border: none; border-radius: 50%;
+  background: var(--border, #e5e7eb); color: var(--text, #1f2937); font-size: 13px; line-height: 1; cursor: pointer; display: flex; align-items: center; justify-content: center; }
+.dark-mode .ev-almanac-pop .ev-almanac-close { background: #334155; color: #e2e8f0; }
+.ev-almanac-pop .ev-alm-head { padding-right: 28px; margin-bottom: 10px; border-bottom: 1px solid var(--border, #e5e7eb); padding-bottom: 8px; }
+.ev-almanac-pop .ev-alm-solar { font-size: 15px; font-weight: 600; }
+.ev-almanac-pop .ev-alm-lunar { font-size: 14px; color: var(--text-secondary); margin-top: 2px; }
+.dark-mode .ev-almanac-pop .ev-alm-lunar { color: #94a3b8; }
+.ev-almanac-pop .ev-alm-grid { display: flex; flex-direction: column; gap: 6px; }
+.ev-almanac-pop .ev-alm-row { display: flex; gap: 8px; font-size: 13px; line-height: 1.5; }
+.ev-almanac-pop .ev-alm-k { flex: 0 0 4.2em; color: var(--text-secondary); }
+.dark-mode .ev-almanac-pop .ev-alm-k { color: #94a3b8; }
+.ev-almanac-pop .ev-alm-v { flex: 1 1 auto; word-break: break-word; }
+.ev-almanac-pop .ev-alm-yi { color: #16a34a; }
+.ev-almanac-pop .ev-alm-ji { color: #dc2626; }
+.ev-almanac-pop .ev-alm-empty { color: var(--text-secondary); font-size: 13px; }
 
 /* 📅 行程新增/編輯表單 */
 .ev-form-overlay { position: fixed; inset: 0; z-index: 3000; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; padding: 16px; }
 .ev-form-box { width: 100%; max-width: 420px; max-height: 90vh; overflow: auto; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 12px; padding: 16px; }
 .ev-form-title { font-size: 16px; font-weight: 600; color: var(--text); margin-bottom: 12px; }
 .ev-f-label { display: block; font-size: 12px; color: var(--text-secondary); margin-bottom: 10px; }
+/* 🗓 表單日期輸入框旁的星期提示（依輸入日期即時更新；與正文同色同字號，便於閱讀） */
+.ev-f-dow { color: var(--text); font-weight: 400; margin-left: 6px; font-size: inherit; }
+/* 📅 農民曆 / 老黃曆：常顯農曆日（或節氣）的小字，點擊開老黃曆詳情 */
+.ev-f-lunar { color: var(--text-secondary); margin-left: 6px; font-size: 12px; cursor: pointer; text-decoration: underline dotted; text-underline-offset: 2px; }
+.ev-f-lunar:empty { display: none; }
+.ev-lunar { color: var(--text-secondary); font-size: 11px; line-height: 1.3; cursor: pointer; opacity: 0.92; }
+.ev-lunar.jieqi { color: var(--primary); font-weight: 600; opacity: 1; }
+.ev-lunar.hdr { font-size: 12px; margin-left: 8px; text-decoration: underline dotted; text-underline-offset: 2px; }
+.ev-lunar:empty { display: none; }
 .ev-f-label input[type="text"], .ev-f-label input[type="date"], .ev-f-label input[type="time"], .ev-f-label textarea {
   display: block; width: 100%; margin-top: 4px; padding: 8px 10px;
   border: 1px solid var(--border); border-radius: 8px;

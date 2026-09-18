@@ -81,7 +81,7 @@ const state = {
   todoMode: false,
   originalTodo: null,  // 開啟時的完整原始 todo 物件（保存時以此為基礎合併）
   // 📅 行程視圖（calendar.md 專用）
-  calMode: 'list',              // 'list' | 'day' | 'week' | 'month'
+  calMode: 'month',             // 'list' | 'day' | 'week' | 'month'
   calCursor: new Date(),        // 當前游標日期（月視圖＝該月；日視圖＝當天；週視圖＝該週內某天）
   calSelectedDate: null,        // 月視圖選中日期（YYYY-MM-DD）
   calEvents: [],                // 工作副本（含 uid；每次渲染/編輯前從編輯器緩衝重新解析）
@@ -194,6 +194,9 @@ function init() {
 
 // 設置事件監聽
 function setupEventListeners() {
+  // 是否有真鼠标（决定 hover 提示框 / 点开表单 行为；触屏改为弹小选单）
+  const mqCanHover = window.matchMedia('(hover: hover) and (pointer: fine)');
+
   // 開啟文件
   elements.btnOpen.addEventListener('click', () => {
     elements.fileInput.click();
@@ -218,9 +221,18 @@ function setupEventListeners() {
   if (elements.evNextMonth) elements.evNextMonth.addEventListener('click', () => calStepCursor(1));
   if (elements.evTodayBtn) elements.evTodayBtn.addEventListener('click', () => { state.calCursor = new Date(); state.calSelectedDate = calendarFmtDate(new Date()); renderEventsContent(); });
   if (elements.evMonthGrid) elements.evMonthGrid.addEventListener('click', (e) => {
+    // 📅 點農曆文字 → 開老黃曆詳情（不觸發選日 / 快速新增）
+    const alm = e.target.closest('[data-ev-almanac]');
+    if (alm) { calShowAlmanac(alm.getAttribute('data-ev-almanac'), alm); return; }
     // 先判斷是否點到行程 chip（帶 data-ev-edit）→ 直接開表單，不再觸發選日
     const chip = e.target.closest('.ev-chip[data-ev-edit]');
-    if (chip) { openEventForm(chip.getAttribute('data-ev-edit')); return; }
+    if (chip) {
+      const uid = chip.getAttribute('data-ev-edit');
+      // 触屏：点事件弹小选单（编辑 / 详情）；桌面保持点开表单
+      if (mqCanHover.matches) openEventForm(uid);
+      else calShowEventMenu(chip, uid);
+      return;
+    }
     const cell = e.target.closest('.ev-cell[data-date]');
     if (!cell) return;
     const ds = cell.getAttribute('data-date');
@@ -260,6 +272,30 @@ function setupEventListeners() {
   // 🖱 雙擊空白處快速新增：日/週網格＝日期+時間、全天條＝日期(全天)。
   //    月模式不走原生 dblclick——單擊重繪格點會讓 dblclick 不派發，已在 evMonthGrid 的 click 裡手動檢測連點。
   if (elements.evWeekWrap) elements.evWeekWrap.addEventListener('dblclick', calGridDblClickNew);
+  // 🖱 悬停行程事件 → 放大提示框（事件委托到 editorContainer；桌面浏览器看 PWA 时生效）
+  // ⚠️ 触屏手机无真正 hover：点事件的第一次 tap 会被浏览器伪造 mouseover → 提示框先弹、再派 click 开表单，两者重叠。
+  //    故用媒体查询「仅真鼠标设备（hover:hover + pointer:fine）」才启用；手机本就点一下弹小选单（编辑/详情），提示框冗余。
+  if (elements.editorContainer) {
+    const calEvSel = '.ev-chip, .ev-block, .ev-item';
+    elements.editorContainer.addEventListener('mouseover', (e) => {
+      if (!mqCanHover.matches) return;
+      const el = e.target.closest(calEvSel);
+      if (el && el.getAttribute('data-ev-edit')) calShowTip(el.getAttribute('data-ev-edit'), e.clientX, e.clientY);
+    });
+    elements.editorContainer.addEventListener('mousemove', (e) => {
+      if (!mqCanHover.matches) return;
+      if (!calTipEl || calTipEl.style.display === 'none') return;
+      const el = e.target.closest(calEvSel);
+      if (el && el.getAttribute('data-ev-edit')) calShowTip(el.getAttribute('data-ev-edit'), e.clientX, e.clientY);
+      else calHideTip();
+    });
+    elements.editorContainer.addEventListener('mouseout', (e) => {
+      const to = e.relatedTarget;
+      if (to && to.closest && to.closest(calEvSel)) return;
+      calHideTip();
+    });
+    elements.editorContainer.addEventListener('mouseleave', calHideTip);
+  }
   // 🔗 表單內關聯 Todo 卡片面板：chip 的 ✕ 移除 / 輸入框 ＋ 新增
   if (elements.evFTodoPanel) elements.evFTodoPanel.addEventListener('click', (e) => {
     const x = e.target.closest('.ev-todo-chip-x');
@@ -288,6 +324,9 @@ function setupEventListeners() {
     elements.evFStart.disabled = elements.evFAllday.checked;
     elements.evFEnd.disabled = elements.evFAllday.checked;
   });
+  // 🗓 表單日期輸入變更 → 即時更新輸入框旁的星期提示
+  if (elements.evFDate) { elements.evFDate.addEventListener('change', calUpdateFormDow); elements.evFDate.addEventListener('input', calUpdateFormDow); }
+  if (elements.evFEndDate) { elements.evFEndDate.addEventListener('change', calUpdateFormDow); elements.evFEndDate.addEventListener('input', calUpdateFormDow); }
   if (elements.evFormOverlay) elements.evFormOverlay.addEventListener('click', (e) => {
     if (e.target === elements.evFormOverlay) closeEventForm(); // 點遮罩 = 取消
   });

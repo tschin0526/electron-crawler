@@ -11,7 +11,7 @@
     // ========== 📅 行程视图（calendar.md 专用）：列表 / 月模式 + 新增·编辑·删除 ==========
     // 与 Lite（pwa-md-editor）同一套实现：解析 ## EVENT 块；编辑写回 taskText 缓冲，按「保存」落盘。
     let calEventsView = false;
-    let tlCalMode = 'list';
+    let tlCalMode = 'month';
     let tlCalCursor = new Date();
     let tlCalSelected = null;
     let tlCalEvents = [];
@@ -260,14 +260,14 @@
       // 单日 → 普通 chip（圆点+标题）；跨天 start/middle/end → 连续色条
       const links = tlEventTodoLinks(ev);
       if (pos === 'single') {
-        return '<div class="ev-chip' + (ev.done ? ' done' : '') + '" onclick="tlOpenEventFromChip(event,\'' + tlEscapeHtml(ev.uid) + '\')"><span class="dot" style="background:' + tlEscapeHtml(ev.color) + '"></span>' + (ev.done ? '\u2713 ' : '') + tlEscapeHtml(ev.title) + links + '</div>';
+        return '<div class="ev-chip' + (ev.done ? ' done' : '') + '" data-uid="' + tlEscapeHtml(ev.uid) + '" onclick="tlOpenEventFromChip(event,\'' + tlEscapeHtml(ev.uid) + '\')"><span class="dot" style="background:' + tlEscapeHtml(ev.color) + '"></span>' + (ev.done ? '\u2713 ' : '') + tlEscapeHtml(ev.title) + links + '</div>';
       }
       const cls = 'ev-chip span ' + pos + (ev.done ? ' done' : '');
       const dot = '<span class="dot" style="background:' + tlEscapeHtml(ev.color) + '"></span>';
       const titlePart = (ev.done ? '\u2713 ' : '') + tlEscapeHtml(ev.title) + tlSpanSuffix(idx, total) + links;
       // 每一段（start/middle/end）都顯示「標題 k/N」——空色條看不出是哪條行程的延續
       const inner = (pos === 'start' ? dot : '') + titlePart;
-      return '<div class="' + cls + '" style="--ev-color:' + tlEscapeHtml(ev.color) + '" onclick="tlOpenEventFromChip(event,\'' + tlEscapeHtml(ev.uid) + '\')">' + inner + '</div>';
+      return '<div class="' + cls + '" data-uid="' + tlEscapeHtml(ev.uid) + '" style="--ev-color:' + tlEscapeHtml(ev.color) + '" onclick="tlOpenEventFromChip(event,\'' + tlEscapeHtml(ev.uid) + '\')">' + inner + '</div>';
     }
 
     // ===== 标签过滤 / 跨天展开 / 时间网格 辅助 =====
@@ -539,6 +539,16 @@
       tlRenderEventsContent();
     }
 
+    // ⏳ 倒計時標籤：今天 / N天后 / N天前（日期字符串安全運算，不受時區/夏令時影響）
+    function tlCountdownLabel(date, today) {
+      const p = (s) => { const m = String(s || '').match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/); return m ? new Date(+m[1], +m[2] - 1, +m[3]) : null; };
+      const a = p(date), b = p(today);
+      if (!a || !b) return '';
+      const diff = Math.round((a - b) / 86400000);
+      if (diff === 0) return '今天';
+      return diff > 0 ? diff + '天后' : (-diff) + '天前';
+    }
+
     function tlDateHeader(date, today) {
       const m = String(date || '').match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
       const WD = ['日', '一', '二', '三', '四', '五', '六'];
@@ -549,9 +559,14 @@
         week = WD[d.getDay()];
       }
       const isToday = date === today;
+      const cd = tlCountdownLabel(date, today);
+      const cp = tlLunarCompact(date);
+      const lunarHdr = cp.lunarText ? '農曆 ' + cp.lunarText + (cp.jieqi ? ' · ' + cp.jieqi : '') : (cp.jieqi || '');
       return '<div class="ev-date' + (isToday ? ' today' : '') + '" data-ev-date="' + tlEscapeHtml(date) + '">' + label +
         (week ? '<span class="ev-week">週' + week + '</span>' : '') +
-        (isToday ? '<span class="ev-today-badge">今天</span>' : '') +
+        // ⏳ 倒計時徽章：每天必顯示（今天＝高亮，其餘＝灰底），取代原先「僅今天顯示」
+        (cd ? '<span class="ev-today-badge' + (isToday ? '' : ' dim') + '">' + cd + '</span>' : '') +
+        (lunarHdr ? '<span class="ev-lunar hdr" onclick="tlShowAlmanac(\'' + date + '\',this)" title="農民曆 / 老黃曆">' + tlEscapeHtml(lunarHdr) + '</span>' : '') +
         '<button type="button" class="ev-day-add" onclick="tlOpenEventForm(null, \'' + date + '\')">＋ 新增</button></div>';
     }
 
@@ -567,7 +582,7 @@
         time = ev.allDay ? '\u5168\u5929' : ((ev.startTime || '') + (ev.endTime ? '-' + ev.endTime : ''));
       }
       const spanBadge = multi ? '<span class="ev-span-badge" title="\u8de8\u5929\u884c\u7a0b">\u2922 \u8de8' + tlSpanDays(ev.date, ev.endDate) + '\u5929</span>' : '';
-      return '<div class="ev-item' + (past ? ' past' : '') + (ev.done ? ' done' : '') + (multi ? ' multi' : '') + '">' +
+      return '<div class="ev-item' + (past ? ' past' : '') + (ev.done ? ' done' : '') + (multi ? ' multi' : '') + '" data-uid="' + tlEscapeHtml(ev.uid) + '">' +
         '<input type="checkbox" class="ev-check" onchange="tlToggleDone(\'' + ev.uid + '\', this.checked)"' +
         (ev.done ? ' checked' : '') + ' title="\u52fe\u9009=\u5df2\u5b8c\u6210\uff0c\u53d6\u6d88\u52fe\u9009=\u672a\u5b8c\u6210">' +
         '<span class="ev-swatch" style="background:' + tlEscapeHtml(ev.color) + '"></span>' +
@@ -646,8 +661,13 @@
           chips += tlSpanChipHtml(occ[j].ev, occ[j].pos, occ[j].idx, occ[j].total);
         }
         if (occ.length > 3) chips += '<div class="ev-more">+' + (occ.length - 3) + '</div>';
+        const cp = tlLunarCompact(ds);
+        const lunarCls = 'ev-lunar' + (cp.jieqi ? ' jieqi' : '');
+        const lunarSpan = cp.text
+          ? '<span class="' + lunarCls + '" onclick="event.stopPropagation();tlShowAlmanac(\'' + ds + '\',this)" title="農民曆 / 老黃曆">' + tlEscapeHtml(cp.text) + '</span>'
+          : '';
         html += '<div class="ev-cell' + (out ? ' out' : '') + (ds === today ? ' today' : '') + (ds === tlCalSelected ? ' selected' : '') +
-          '" data-date="' + ds + '" onclick="tlSelectDate(\'' + ds + '\')"><span class="ev-daynum">' + d.getDate() + '</span>' + chips + '</div>';
+          '" data-date="' + ds + '" onclick="tlSelectDate(\'' + ds + '\')"><span class="ev-daynum">' + d.getDate() + '</span>' + lunarSpan + chips + '</div>';
       }
       const grid = document.getElementById('tlEvMonthGrid');
       if (grid) grid.innerHTML = html;
@@ -688,7 +708,30 @@
     }
 
     // ===== 新增 / 编辑 / 删除（写入 taskText 缓冲） =====
+    // 🗓 表單日期輸入框旁的星期提示：根據輸入的日期即時顯示「（星期五）」；結束日留空則清除
+    function tlUpdateFormDow() {
+      const WD = ['星期日', '星期一', '星期二', '星期三', '星期四', '星期五', '星期六'];
+      const set = (id, val) => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        const m = String(val || '').match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+        el.textContent = m ? '（' + WD[new Date(+m[1], +m[2] - 1, +m[3]).getDay()] + '）' : '';
+      };
+      set('tlEvFDateDow', document.getElementById('tlEvFDate') && document.getElementById('tlEvFDate').value);
+      set('tlEvFEndDateDow', document.getElementById('tlEvFEndDate') && document.getElementById('tlEvFEndDate').value);
+      // 📅 農民曆 / 老黃曆：日期輸入框旁即時顯示農曆日（或節氣），點擊開老黃曆詳情
+      const setLunar = (id, val) => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        const cp = tlLunarCompact(val);
+        el.textContent = cp.jieqi || cp.lunarText || '';
+      };
+      setLunar('tlEvFDateLunar', document.getElementById('tlEvFDate') && document.getElementById('tlEvFDate').value);
+      setLunar('tlEvFEndDateLunar', document.getElementById('tlEvFEndDate') && document.getElementById('tlEvFEndDate').value);
+    }
+
     function tlOpenEventForm(uid, defaultDate, pre) {
+      tlHideTip();
       if (!isCalendarMdDoc()) return;
       tlCalEvents = tlParseEvents(document.getElementById('taskText').value);
       tlEvFormUid = null;
@@ -704,6 +747,7 @@
       document.getElementById('tlEvFTitle').value = ev ? ev.title : '';
       document.getElementById('tlEvFDate').value = ev ? ev.date : (defaultDate || (tlCalMode === 'month' ? tlCalSelected : today) || today);
       document.getElementById('tlEvFEndDate').value = ev ? (ev.endDate || '') : '';
+      tlUpdateFormDow(); // 🗓 依輸入日期即時顯示星期
       document.getElementById('tlEvFAllday').checked = ev ? ev.allDay : (p.allDay === true);
       // 完成状态：新增默认未完成（旧文件没有 - done 栏位时解析也是未完成）
       document.getElementById('tlEvFDone').checked = ev ? !!ev.done : false;
@@ -838,6 +882,175 @@
       tlRenderEventsContent();
     }
 
+    // ===== 🖱 悬停行程事件 → 放大提示框（更大字体显示事件内容） =====
+    let tlTipEl = null, tlTipUid = null;
+    function tlGetTipEl() {
+      if (!tlTipEl) {
+        tlTipEl = document.createElement('div');
+        tlTipEl.className = 'ev-tip';
+        tlTipEl.setAttribute('role', 'tooltip');
+        tlTipEl.style.display = 'none';
+        document.body.appendChild(tlTipEl);
+      }
+      return tlTipEl;
+    }
+    function tlTipHtml(ev) {
+      const multi = tlIsMultiDay(ev);
+      let when;
+      if (multi) when = ev.allDay
+        ? (tlRangeLabel(ev.date, ev.endDate) + ' · 共' + tlSpanDays(ev.date, ev.endDate) + '天')
+        : tlRangeLabel(ev.date, ev.endDate, ev.startTime, ev.endTime);
+      else when = ev.allDay ? '全天' : ((ev.startTime || '') + (ev.endTime ? '-' + ev.endTime : ''));
+      const tags = (ev.tags && ev.tags.length) ? '<div class="ev-tip-tags">' + ev.tags.map((t) => '#' + tlEscapeHtml(t)).join(' ') + '</div>' : '';
+      const loc = ev.location ? '\ud83d\udccd ' + tlEscapeHtml(ev.location) : '';
+      const notes = ev.notes ? '<div class="ev-tip-notes">' + tlEscapeHtml(ev.notes) + '</div>' : '';
+      const links = tlEventTodoLinks(ev);
+      return '<div class="ev-tip-title">' + tlEscapeHtml(ev.title) + (ev.done ? ' <span class="ev-tip-done">\u2713</span>' : '') + '</div>' +
+        '<div class="ev-tip-meta">' + tlEscapeHtml(when) + (loc ? ' · ' + loc : '') + '</div>' + tags + links + notes;
+    }
+    function tlShowTip(uid, x, y) {
+      const ev = tlCalEvents.find((e) => e.uid === uid);
+      if (!ev) return;
+      const tip = tlGetTipEl();
+      if (tlTipUid !== uid) { tip.innerHTML = tlTipHtml(ev); tlTipUid = uid; }
+      tip.style.display = 'block';
+      // 定位：跟随光标，越界则翻转到另一侧（避免超出视口）
+      const r = tip.getBoundingClientRect();
+      let left = x + 16, top = y + 16;
+      if (left + r.width > window.innerWidth - 8) left = Math.max(8, x - r.width - 16);
+      if (top + r.height > window.innerHeight - 8) top = Math.max(8, y - r.height - 16);
+      tip.style.left = left + 'px';
+      tip.style.top = top + 'px';
+    }
+    function tlHideTip() { if (tlTipEl) { tlTipEl.style.display = 'none'; tlTipUid = null; } }
+
+    // ===== 📅 農民曆 / 老黃曆取數（lunar-javascript，繁體）=====
+    // 以 <script> 載入的 window.Solar / window.Lunar 為資料源；Map 快取避免重複計算。
+    const tlAlmanacCache = new Map();
+    function tlAlmanac(dateStr) {
+      if (tlAlmanacCache.has(dateStr)) return tlAlmanacCache.get(dateStr);
+      let data = { error: 'lunar lib 未載入或日期無效' };
+      try {
+        if (typeof Solar === 'undefined' || typeof Lunar === 'undefined') throw new Error('lunar lib 未載入');
+        const m = String(dateStr || '').match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+        if (!m) throw new Error('日期格式錯誤');
+        const lunar = Solar.fromYmd(+m[1], +m[2], +m[3]).getLunar();
+        data = {
+          lunarMonth: lunar.getMonthInChinese(),
+          lunarDay: lunar.getDayInChinese(),
+          lunarText: lunar.getMonthInChinese() + '月' + lunar.getDayInChinese(),
+          isLeap: lunar.getMonth() < 0,
+          yearGanZhi: lunar.getYearInGanZhi(),
+          monthGanZhi: lunar.getMonthInGanZhi(),
+          dayGanZhi: lunar.getDayInGanZhi(),
+          shengxiao: lunar.getYearShengXiao(),
+          yearChinese: lunar.getYearInChinese(),
+          jieqi: lunar.getJieQi() || '',
+          // 宜忌/彭祖/吉神/凶神/納音/宿/建除 均為簡體 → 逐詞轉繁體（almanacToTrad）
+          yi: (lunar.getDayYi() || []).map(almanacToTrad),
+          ji: (lunar.getDayJi() || []).map(almanacToTrad),
+          chong: lunar.getDayChong() || '',
+          chongShengXiao: almanacToTrad(lunar.getDayChongShengXiao() || ''),
+          sha: lunar.getDaySha() || '',
+          pengZuGan: almanacToTrad(lunar.getPengZuGan() || ''),
+          pengZuZhi: almanacToTrad(lunar.getPengZuZhi() || ''),
+          jiShen: (lunar.getDayJiShen() || []).map(almanacToTrad),
+          xiongSha: (lunar.getDayXiongSha() || []).map(almanacToTrad),
+          naYin: almanacToTrad(lunar.getDayNaYin() || ''),
+          xiu: almanacToTrad(lunar.getXiu() || ''),
+          xiuLuck: lunar.getXiuLuck() || '',
+          zhiXing: almanacToTrad(lunar.getZhiXing() || ''),
+          posXi: lunar.getDayPositionXiDesc() || '',
+          posCai: lunar.getDayPositionCaiDesc() || '',
+          posFu: lunar.getDayPositionFuDesc() || '',
+          posYangGui: lunar.getDayPositionYangGuiDesc() || '',
+          posYinGui: lunar.getDayPositionYinGuiDesc() || ''
+        };
+      } catch (e) {
+        data = { error: String((e && e.message) || e) };
+      }
+      tlAlmanacCache.set(dateStr, data);
+      return data;
+    }
+
+    function tlLunarCompact(dateStr) {
+      const a = tlAlmanac(dateStr);
+      if (a.error) return { text: '', jieqi: '', lunar: '', lunarText: '', yearGanZhi: '', shengxiao: '', monthGanZhi: '', dayGanZhi: '' };
+      return {
+        text: a.jieqi || a.lunarDay,
+        jieqi: a.jieqi || '',
+        lunar: a.lunarDay,
+        lunarText: a.lunarText,
+        yearGanZhi: a.yearGanZhi,
+        shengxiao: a.shengxiao,
+        monthGanZhi: a.monthGanZhi,
+        dayGanZhi: a.dayGanZhi
+      };
+    }
+
+    function tlAlmanacHtml(dateStr) {
+      const a = tlAlmanac(dateStr);
+      const E = tlEscapeHtml;
+      const join = (arr) => (arr && arr.length ? arr.map(E).join('、') : '—');
+      const row = (k, v) => '<div class="ev-alm-row"><span class="ev-alm-k">' + k + '</span><span class="ev-alm-v">' + v + '</span></div>';
+      if (a.error) return '<div class="ev-alm-empty">無法取得農民曆：' + E(a.error) + '</div>';
+      const WD = ['日', '一', '二', '三', '四', '五', '六'];
+      const m = String(dateStr || '').match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+      const d = m ? new Date(+m[1], +m[2] - 1, +m[3]) : new Date();
+      const solarLabel = m ? (+m[1]) + '年' + (+m[2]) + '月' + (+m[3]) + '日 週' + WD[d.getDay()] : dateStr;
+      let html = '<div class="ev-alm-head">';
+      html += '<div class="ev-alm-solar">' + E(solarLabel) + '</div>';
+      html += '<div class="ev-alm-lunar">農曆 ' + E(a.yearGanZhi) + '年（' + E(a.shengxiao) + '）' + E(a.lunarText) + (a.jieqi ? ' · ' + E(a.jieqi) : '') + '</div>';
+      html += '</div><div class="ev-alm-grid">';
+      html += row('干支', E(a.yearGanZhi) + '（年） / ' + E(a.monthGanZhi) + '（月） / ' + E(a.dayGanZhi) + '（日）');
+      html += row('五行納音', E(a.naYin));
+      if (a.jieqi) html += row('節氣', E(a.jieqi));
+      html += row('宜', '<span class="ev-alm-yi">' + join(a.yi) + '</span>');
+      html += row('忌', '<span class="ev-alm-ji">' + join(a.ji) + '</span>');
+      html += row('沖煞', '沖' + E(a.chongShengXiao) + '（' + E(a.chong) + '）· 煞' + E(a.sha) + '方');
+      html += row('彭祖百忌', E(a.pengZuGan) + '；' + E(a.pengZuZhi));
+      html += row('吉神宜趨', join(a.jiShen));
+      html += row('凶神宜忌', join(a.xiongSha));
+      html += row('二十八宿', E(a.xiu) + '（' + E(a.xiuLuck) + '）');
+      html += row('十二建除', E(a.zhiXing));
+      html += row('喜神', E(a.posXi));
+      html += row('財神', E(a.posCai));
+      html += row('福神', E(a.posFu));
+      html += row('陽貴', E(a.posYangGui));
+      html += row('陰貴', E(a.posYinGui));
+      html += '</div>';
+      return html;
+    }
+
+    let tlAlmanacEl = null;
+    function tlShowAlmanac(dateStr, anchorEl) {
+      tlRemoveAlmanac();
+      const pop = document.createElement('div');
+      pop.className = 'ev-almanac-pop';
+      pop.setAttribute('role', 'dialog');
+      pop.setAttribute('aria-label', '老黃曆');
+      pop.innerHTML = '<button type="button" class="ev-almanac-close" aria-label="關閉">✕</button>' + tlAlmanacHtml(dateStr);
+      document.body.appendChild(pop);
+      tlAlmanacEl = pop;
+      const pw = pop.offsetWidth || 320, ph = pop.offsetHeight || 320;
+      const r = anchorEl ? anchorEl.getBoundingClientRect() : null;
+      let left = r ? r.left : (window.innerWidth - pw) / 2;
+      let top = r ? r.bottom + 6 : (window.innerHeight - ph) / 2;
+      if (left + pw > window.innerWidth - 8) left = window.innerWidth - pw - 8;
+      if (top + ph > window.innerHeight - 8) top = window.innerHeight - ph - 8;
+      pop.style.left = Math.max(8, left) + 'px';
+      pop.style.top = Math.max(8, top) + 'px';
+      pop.querySelector('.ev-almanac-close').addEventListener('click', tlRemoveAlmanac);
+      setTimeout(() => document.addEventListener('click', tlAlmanacDocClick, true), 0);
+    }
+    function tlRemoveAlmanac() {
+      if (tlAlmanacEl) { tlAlmanacEl.remove(); tlAlmanacEl = null; }
+      document.removeEventListener('click', tlAlmanacDocClick, true);
+    }
+    function tlAlmanacDocClick(e) {
+      if (tlAlmanacEl && !tlAlmanacEl.contains(e.target)) tlRemoveAlmanac();
+    }
+
     // 事件绑定（DOM 就绪时执行一次）
     (function bindCalendarEventsUI() {
       const on = (id, ev, fn) => { const el = document.getElementById(id); if (el) el.addEventListener(ev, fn); };
@@ -849,6 +1062,11 @@
       on('tlEvPrevMonth', 'click', () => tlCalStepCursor(-1));
       on('tlEvNextMonth', 'click', () => tlCalStepCursor(1));
       on('tlEvTodayBtn', 'click', () => { tlCalCursor = new Date(); tlCalSelected = tlFmtDate(new Date()); tlRenderEventsContent(); });
+      // 🗓 表單日期輸入變更 → 即時更新輸入框旁的星期提示
+      on('tlEvFDate', 'change', tlUpdateFormDow);
+      on('tlEvFDate', 'input', tlUpdateFormDow);
+      on('tlEvFEndDate', 'change', tlUpdateFormDow);
+      on('tlEvFEndDate', 'input', tlUpdateFormDow);
       // 标签过滤 chips（事件委托）
       const tf = document.getElementById('tlEvTagFilter');
       if (tf) tf.addEventListener('click', (e) => {
@@ -899,4 +1117,25 @@
       }
       // 月模式不走原生 dblclick（單擊重繪導致 dblclick 不派發，見 tlSelectDate 內手動檢測）
       on('tlEvWeekWrap', 'dblclick', tlGridDblClickNew);
+      // 🖱 悬停行程事件 → 放大提示框（事件委托，覆盖三种事件元素；tooltip 用 pointer-events:none 不挡点击）
+      const tlTipPane = document.getElementById('calEventsPane');
+      if (tlTipPane) {
+        const evSel = '.ev-chip, .ev-block, .ev-item';
+        tlTipPane.addEventListener('mouseover', (e) => {
+          const el = e.target.closest(evSel);
+          if (el && el.getAttribute('data-uid')) tlShowTip(el.getAttribute('data-uid'), e.clientX, e.clientY);
+        });
+        tlTipPane.addEventListener('mousemove', (e) => {
+          if (!tlTipEl || tlTipEl.style.display === 'none') return;
+          const el = e.target.closest(evSel);
+          if (el && el.getAttribute('data-uid')) tlShowTip(el.getAttribute('data-uid'), e.clientX, e.clientY);
+          else tlHideTip();
+        });
+        tlTipPane.addEventListener('mouseout', (e) => {
+          const to = e.relatedTarget;
+          if (to && to.closest && to.closest(evSel)) return; // 仍在事件元素间移动，不隐藏
+          tlHideTip();
+        });
+        tlTipPane.addEventListener('mouseleave', tlHideTip);
+      }
     })();

@@ -17,11 +17,27 @@
 // v17：備註 checkbox 可點擊勾選/取消（寫回 notes 原文），calendar-editor.js 內部變動
 // v18：行程視圖 .events-list 去 720px 居中限寬（列表模式 + 月視圖日明細清單滿寬填充，橫屏充分用左右空間）
 // v19：日/週視圖時間網格下方新增「行程明細文字清單」（#ev-grid-list，對齊月視圖 #ev-day-list），保證日周也顯示事件詳情
-const CACHE_NAME = 'md-editor-lite-v20';
+// v20：行程視圖四模式對齊（時間網格＋重疊並列＋當前時間線）、標籤過濾(OR)、跨天色條
+// v21：行事历首开默认月模式（app.js calMode 默认 'month'），bump 让手机重拉 app.js
+// v22：悬停行程事件显示放大提示框（app.js/calendar-editor.js 加 data-ev-edit 委托 + style.css 加 .ev-tip），bump 让手机重拉
+// v23：.ev-tip 背景改为不透明（显式回退色 var(--bg-secondary, #fff)），避免透明看不清资料
+// v24：触屏设备禁用悬停提示框（app.js 加 (hover:hover)+(pointer:fine) 媒体查询守卫 + style.css 加 @media (hover:none) 强制隐藏），避免手机点事件时提示框与编辑表单重叠
+// v25：触屏点事件改为弹小选单（编辑 / 详情）：app.js 月历 chip + calendar-editor.js onEvListClick 触屏改调 calShowEventMenu；新增 .ev-act-menu / .ev-detail-pop 样式与 calShowEventMenu/calShowEventDetail
+// v26：手机「详情」浮层字号加大一码（.ev-detail-pop 13→14、标题 16→18、meta 13→14、tags 12→13、notes 13→14），style.css 又改
+// v27：列表项取消「編輯/刪除」按钮（被整行 data-ev-edit 遮蔽致删除失效），动作统一收进触屏选单：详情/编辑/删除/取消 四项
+// v28：手机「详情」浮层字号再加 2 码（.ev-detail-pop 14→16、标题 18→20、meta 14→16、tags 13→15、notes 14→16），style.css 又改
+// v29：列表模式日期标题旁显示倒计时徽章（今天/N天后/N天前；今天高亮、其余灰底）：calDateHeaderHtml + calCountdownLabel + .ev-today-badge.dim
+// v30：表单「日期/结束日期」输入框旁依输入日期即时显示星期（calUpdateFormDow + .ev-f-dow；change/input 监听 + openEventForm 刷新）
+// v31：星期改为「（星期五）」带括号全名，并与正文同色同字號（去掉难读的金色加粗）：calUpdateFormDow + .ev-f-dow 样式
+// v32：農民曆 / 老黃曆：新增 lunar.js（lunar-javascript 離線曆法庫，預緩存）+ calendar-editor.js 加 calAlmanac/常顯農曆·節氣/老黃曆彈層
+// v33：農民曆簡→繁術語對照（新增 almanac-s2t.js，暴露 almanacToTrad；宜忌/彭祖/吉神/凶神/納音/宿/建除轉繁體），bump 讓手機重拉
+const CACHE_NAME = 'md-editor-lite-v33';
 const ASSETS = [
   './',
   './index.html',
   './style.css',
+  './lunar.js',
+  './almanac-s2t.js',
   './app.js',
   './calendar-editor.js',
   './manifest.json',

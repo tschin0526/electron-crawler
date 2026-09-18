@@ -1868,11 +1868,13 @@
     }
 
     /* ===== 📅 行程视图（calendar.md 专用）：与 Lite 版同款视觉 ===== */
-    #calEventsPane, #tlEvFormOverlay {
+    /* ⚠️ .ev-tip / .ev-almanac-pop 掛載在 <body>（不在 #calEventsPane 內）→ 必須把它們一併納入 --ev-* 變數作用域，
+       否則 var(--ev-card) 解析失敗 → 提示框/老黃曆彈層背景透明（使用者截圖實測，老黃曆彈層 2026-09-17 同款踩坑）。 */
+    #calEventsPane, #tlEvFormOverlay, .ev-tip, .ev-almanac-pop {
       --ev-bg: #0f172a; --ev-card: #1e293b; --ev-text: #e2e8f0;
       --ev-muted: #94a3b8; --ev-border: #334155; --ev-primary: #7c3aed;
     }
-    body:not(.dark) #calEventsPane, body:not(.dark) #tlEvFormOverlay {
+    body:not(.dark) #calEventsPane, body:not(.dark) #tlEvFormOverlay, body:not(.dark) .ev-tip, body:not(.dark) .ev-almanac-pop {
       --ev-bg: #f8fafc; --ev-card: #ffffff; --ev-text: #1f2937;
       --ev-muted: #6b7280; --ev-border: #e5e7eb; --ev-primary: #2563eb;
     }
@@ -1913,6 +1915,28 @@
     .ev-date.today { color: var(--ev-primary); }
     .ev-day-add { margin-left: auto; border: 1px solid var(--ev-primary); background: transparent; color: var(--ev-primary); font-size: 11px; padding: 2px 8px; border-radius: 6px; cursor: pointer; font-weight: 400; }
     .ev-today-badge { background: var(--ev-primary); color: #fff; font-size: 11px; padding: 1px 8px; border-radius: 99px; font-weight: 500; }
+    /* ⏳ 倒計時徽章（非今天）：灰底弱化，今天仍走上面的高亮主色 */
+    .ev-today-badge.dim { background: var(--ev-border); color: var(--ev-muted); font-weight: 400; }
+    /* 📅 農民曆 / 老黃曆：常顯農曆日（或節氣）小字，點擊開老黃曆詳情 */
+    .ev-lunar { color: var(--ev-muted); font-size: 11px; line-height: 1.3; cursor: pointer; opacity: 0.92; }
+    .ev-lunar.jieqi { color: var(--ev-primary); font-weight: 600; opacity: 1; }
+    .ev-lunar.hdr { font-size: 12px; margin-left: 8px; text-decoration: underline dotted; text-underline-offset: 2px; }
+    .ev-lunar:empty { display: none; }
+    /* 📅 老黃曆詳情浮層（var 全部帶顯式回退：即使 --ev-* 作用域漏配也不會透明） */
+    .ev-almanac-pop { position: fixed; z-index: 9960; width: 320px; max-width: calc(100vw - 16px); max-height: calc(100vh - 32px); overflow: auto;
+      padding: 14px 16px; border-radius: 12px; border: 1px solid var(--ev-border, #e5e7eb); background: var(--ev-card, #ffffff); color: var(--ev-text, #1f2937); font-size: 14px; box-shadow: 0 12px 32px rgba(0,0,0,0.35); }
+    .ev-almanac-pop .ev-almanac-close { position: absolute; top: 8px; right: 8px; width: 24px; height: 24px; border: none; border-radius: 50%;
+      background: var(--ev-border, #e5e7eb); color: var(--ev-text, #1f2937); font-size: 13px; line-height: 1; cursor: pointer; display: flex; align-items: center; justify-content: center; }
+    .ev-almanac-pop .ev-alm-head { padding-right: 28px; margin-bottom: 10px; border-bottom: 1px solid var(--ev-border, #e5e7eb); padding-bottom: 8px; }
+    .ev-almanac-pop .ev-alm-solar { font-size: 15px; font-weight: 600; }
+    .ev-almanac-pop .ev-alm-lunar { font-size: 14px; color: var(--ev-muted, #6b7280); margin-top: 2px; }
+    .ev-almanac-pop .ev-alm-grid { display: flex; flex-direction: column; gap: 6px; }
+    .ev-almanac-pop .ev-alm-row { display: flex; gap: 8px; font-size: 13px; line-height: 1.5; }
+    .ev-almanac-pop .ev-alm-k { flex: 0 0 4.2em; color: var(--ev-muted, #6b7280); }
+    .ev-almanac-pop .ev-alm-v { flex: 1 1 auto; word-break: break-word; }
+    .ev-almanac-pop .ev-alm-yi { color: #16a34a; }
+    .ev-almanac-pop .ev-alm-ji { color: #dc2626; }
+    .ev-almanac-pop .ev-alm-empty { color: var(--ev-muted, #6b7280); font-size: 13px; }
     .ev-item { display: flex; gap: 10px; padding: 8px 12px; border-bottom: 1px solid var(--ev-border); background: var(--ev-card); }
     .ev-item.past { opacity: 0.55; }
     /* 完成状态勾选框（清单上直接切换完成 / 未完成） */
@@ -1929,6 +1953,17 @@
     .ev-actions { flex: 0 0 auto; display: flex; flex-direction: column; gap: 4px; }
     .ev-actions button { border: 1px solid var(--ev-border); background: var(--ev-bg); color: var(--ev-muted); font-size: 11px; padding: 2px 8px; border-radius: 6px; cursor: pointer; }
     .ev-actions button:hover { border-color: var(--ev-primary); color: var(--ev-primary); }
+    /* 🖱 悬停行程事件 → 放大提示框（更大字体显示事件内容；pointer-events:none 不挡点击）
+       ⚠️ 背景必须「不透明」（使用者反馈透明看不清资料）：用 var(--ev-card) 并给显式回退色，绝不透明。 */
+    .ev-tip { position: fixed; z-index: 9990; max-width: 320px; padding: 10px 12px; border-radius: 10px;
+      background: var(--ev-card, #ffffff); color: var(--ev-text, #1f2937); border: 1px solid var(--ev-border, #e5e7eb);
+      box-shadow: 0 8px 24px rgba(0,0,0,0.18); pointer-events: none; font-size: 13px; line-height: 1.5; }
+    body.dark .ev-tip { background: var(--ev-card, #1e293b); box-shadow: 0 8px 24px rgba(0,0,0,0.5); border-color: var(--ev-color, #7c3aed); }
+    .ev-tip .ev-tip-title { font-size: 16px; font-weight: 600; color: var(--ev-text); word-break: break-word; margin-bottom: 4px; }
+    .ev-tip .ev-tip-done { color: var(--ev-primary); font-weight: 700; }
+    .ev-tip .ev-tip-meta { font-size: 13px; color: var(--ev-muted); }
+    .ev-tip .ev-tip-tags { margin-top: 4px; font-size: 12px; color: var(--ev-primary); }
+    .ev-tip .ev-tip-notes { margin-top: 6px; font-size: 13px; color: var(--ev-text); white-space: pre-wrap; word-break: break-word; max-height: 200px; overflow: hidden; }
     .ev-month-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; padding-bottom: 8px; }
     .ev-mc-head { text-align: center; font-size: 11px; color: var(--ev-muted); padding: 4px 0; }
     .ev-cell { min-height: 74px; background: var(--ev-card); border-radius: 4px; padding: 3px 4px; overflow: hidden; cursor: pointer; border: 1px solid transparent; }
@@ -2020,6 +2055,11 @@
     .tl-ev-form-box { width: 100%; max-width: 440px; max-height: 88vh; overflow: auto; background: var(--ev-card); border: 1px solid var(--ev-border); border-radius: 12px; padding: 18px; }
     .tl-ev-form-title { font-size: 16px; font-weight: 600; color: var(--ev-text); margin-bottom: 12px; }
     .tl-ev-f-label { display: block; font-size: 12px; color: var(--ev-muted); margin-bottom: 10px; }
+    /* 🗓 表單日期輸入框旁的星期提示（依輸入日期即時更新；與正文同色同字號，便於閱讀） */
+    .tl-ev-f-dow { color: var(--ev-text); font-weight: 400; margin-left: 6px; font-size: inherit; }
+    /* 📅 表單日期輸入框旁的農曆 / 節氣（點擊開老黃曆詳情） */
+    .tl-ev-f-lunar { color: var(--ev-muted); margin-left: 6px; font-size: 12px; cursor: pointer; text-decoration: underline dotted; text-underline-offset: 2px; }
+    .tl-ev-f-lunar:empty { display: none; }
     .tl-ev-f-label input[type="text"], .tl-ev-f-label input[type="date"], .tl-ev-f-label input[type="time"], .tl-ev-f-label textarea {
       display: block; width: 100%; margin-top: 4px; padding: 7px 10px;
       border: 1px solid var(--ev-border); border-radius: 8px;
@@ -4626,8 +4666,8 @@
     <div class="tl-ev-form-box">
       <div class="tl-ev-form-title" id="tlEvFormTitle">新增行程</div>
       <label class="tl-ev-f-label">标题<input type="text" id="tlEvFTitle" maxlength="200" placeholder="行程标题"></label>
-      <label class="tl-ev-f-label">日期<input type="date" id="tlEvFDate"></label>
-      <label class="tl-ev-f-label">结束日期（留空＝单日）<input type="date" id="tlEvFEndDate"></label>
+      <label class="tl-ev-f-label">日期<span class="tl-ev-f-dow" id="tlEvFDateDow"></span><span class="tl-ev-f-lunar" id="tlEvFDateLunar" title="農民曆 / 老黃曆" onclick="tlShowAlmanac((document.getElementById('tlEvFDate').value||tlFmtDate(new Date())),this)"></span><input type="date" id="tlEvFDate"></label>
+      <label class="tl-ev-f-label">结束日期（留空＝单日）<span class="tl-ev-f-dow" id="tlEvFEndDateDow"></span><span class="tl-ev-f-lunar" id="tlEvFEndDateLunar" title="農民曆 / 老黃曆" onclick="tlShowAlmanac((document.getElementById('tlEvFEndDate').value||tlFmtDate(new Date())),this)"></span><input type="date" id="tlEvFEndDate"></label>
       <div class="tl-ev-f-row">
         <label class="tl-ev-f-check"><input type="checkbox" id="tlEvFAllday" onchange="tlToggleAllDay()"> 全天</label>
         <label class="tl-ev-f-check"><input type="checkbox" id="tlEvFDone"> 已完成</label>
@@ -10478,6 +10518,10 @@
     }
 
   </script>
+  <!-- 📅 農民曆 / 老黃曆：lunar-javascript（壽星天文曆，1900–2100+），暴露 window.Solar / window.Lunar 全域，必須在 calendar-editor.js 之前載入 -->
+  <script src="vendor/lunar.js"></script>
+  <!-- 農民曆簡→繁術語對照表（暴露全域 almanacToTrad），供 calendar-editor.js 轉換簡體宜忌/彭祖等 -->
+  <script src="vendor/almanac-s2t.js"></script>
   <script src="calendar-editor.js"></script>
   <script>
 
