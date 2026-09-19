@@ -14,7 +14,11 @@
     let tlCalMode = 'month';
     let tlCalCursor = new Date();
     let tlCalSelected = null;
+    // 下方明细显示范围：'day'=选定日单日（默认）/ 'full'=整月（月模式）或整周（周模式）。
+    // 仅内存态，不持久化——用户约定「默认以日显示」。
+    let tlCalScope = 'day';
     let tlCalEvents = [];
+    let tlCalHolidays = [];    // ## HOLIDAY 解析結果（与 ## EVENT 同结构，多 holidayType 字段）；仅列表/日志视图显示，不进时间网格/月格 chip
     let tlCalTagFilter = [];   // 标签过滤（空＝全部；OR 逻辑：事件 tags 命中任一即显示）
     let tlEvFormTodoIds = [];   // 表单内「关联 Todo 卡片」临时列表（仅编辑期，不污染存档对象）
     let tlEvFormUid = null;
@@ -133,6 +137,10 @@
         tags: tlParseArr(get('tags')),
         // 修复：此前缺读 todoIds，往返保存会把 calendar 插件写入的关联卡片清空
         todoIds: tlParseArr(get('todoIds')),
+        // ## HOLIDAY 比 ## EVENT 多一个 holidayType 字段（workday/holiday/festival），事件解析为空字符串即可
+        holidayType: get('holidayType') || '',
+        // 地区：cn 中国大陆 / hk 香港 / tw 台湾（可扩展）；缺省 '' 渲染时回退 cn（向后兼容旧数据）
+        region: get('region') || '',
         notes: remark
       };
     }
@@ -143,6 +151,19 @@
       for (let i = 0; i < blocks.length; i++) {
         const ev = tlParseBlock(blocks[i], i);
         if (ev) out.push(ev);
+      }
+      return out;
+    }
+    // ## HOLIDAY：与 ## EVENT 同一套字段（多 holidayType），仅分割符不同；复用 tlParseBlock 解析（无 title 的块会被跳过）
+    // ⚠️ 必须从 i=1 开始：split 后 blocks[0] 是「第一个 ## HOLIDAY 之前的所有内容」（通常含 ## EVENT 块），
+    //    那段里的 - title 会被误当成 holiday；holiday 必然跟在它自己的 ## HOLIDAY 标记之后，故跳过 blocks[0] 即正确。
+    function tlParseHolidays(md) {
+      if (!md) return [];
+      const out = [];
+      const blocks = String(md).split(/^##[ \t]*HOLIDAY[ \t]*$/m);
+      for (let i = 1; i < blocks.length; i++) {
+        const h = tlParseBlock(blocks[i], i);
+        if (h) out.push(h);
       }
       return out;
     }
@@ -169,10 +190,36 @@
       s += '- Remark:\n```\n' + String(ev.notes || '') + '\n```\n';
       return s;
     }
-    function tlEventsToMarkdown(events) {
+    // ## HOLIDAY 序列化：字段顺序与用户实际写法对齐（在 todoIds 后多 holidayType，再 Remark），保证保存后 diff 干净
+    function tlHolidayToMarkdown(h) {
+      const tagsJson = JSON.stringify(Array.isArray(h.tags) ? h.tags : []);
+      const todoJson = JSON.stringify(Array.isArray(h.todoIds) ? h.todoIds : []);
+      const color = '"' + String(h.color || '').replace(/^"|"$/g, '') + '"';
+      let s = '## HOLIDAY \n';
+      s += '- title: `' + tlMdEscape(h.title) + '`\n';
+      s += '- date: `' + tlMdEscape(h.date) + '`\n';
+      if (h.endDate && h.endDate !== h.date) s += '- endDate: `' + tlMdEscape(h.endDate) + '`\n';
+      s += '- allDay: `' + (h.allDay ? 'true' : 'false') + '`\n';
+      s += '- done: `' + (h.done ? 'true' : 'false') + '`\n';
+      s += '- startTime: `' + tlMdEscape(h.startTime) + '`\n';
+      s += '- endTime: `' + tlMdEscape(h.endTime) + '`\n';
+      s += '- location: `' + tlMdEscape(h.location) + '`\n';
+      s += '- color: `' + color + '`\n';
+      s += '- tags: `' + tagsJson + '`\n';
+      s += '- todoIds: `' + todoJson + '`\n';
+      s += '- holidayType: `' + tlMdEscape(h.holidayType || '') + '`\n';
+      s += '- region: `' + tlMdEscape(h.region || 'cn') + '`\n';
+      s += '- Remark:\n```\n' + String(h.notes || '') + '\n```\n';
+      return s;
+    }
+    // 整份 calendar.md 序列化：events + holidays 都保留（保存事件时若只写 events 会把用户手写的 ## HOLIDAY 整体覆盖掉）
+    function tlCalendarToMarkdown(events, holidays) {
       const head = '# 日历行程\n\n> 每条行程以 `## EVENT` 分隔，字段值写在反引号内，Remark 用代码块保存多行备注。\n\n';
-      if (!events || !events.length) return head;
-      return head + events.map(tlEventToMarkdown).join('\n');
+      let body = (events && events.length) ? events.map(tlEventToMarkdown).join('\n') : '';
+      if (holidays && holidays.length) {
+        body += (body ? '\n' : '') + holidays.map(tlHolidayToMarkdown).join('\n');
+      }
+      return head + (body || '');
     }
 
     function tlFmtDate(d) {
@@ -374,7 +421,7 @@
         const ds = tlFmtDate(d);
         const dm = String(ds).match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
         const label = dm ? (+dm[2]) + '/' + (+dm[3]) : ds;
-        html += '<div class="ev-tg-head-cell' + (ds === todayStr ? ' today' : '') + '" data-date="' + ds + '">' +
+        html += '<div class="ev-tg-head-cell' + (ds === todayStr ? ' today' : '') + (ds === tlCalSelected ? ' selected' : '') + '" data-date="' + ds + '" onclick="tlSelectWeekDay(\'' + ds + '\')">' +
           '<span class="dow">週' + WD[d.getDay()] + '</span><span class="dnum">' + label + '</span></div>';
       });
       html += '</div>';
@@ -386,6 +433,21 @@
             const ev = o.ev;
             html += '<div class="ev-block all-day' + (ev.done ? ' done' : '') + '" data-uid="' + tlEscapeHtml(ev.uid) + '" onclick="tlOpenEventForm(\'' + tlEscapeHtml(ev.uid) + '\')" style="--ev-color:' + tlEscapeHtml(ev.color || TL_CAL_COLORS[0]) + '">' +
               (ev.done ? '\u2713 ' : '') + tlEscapeHtml(ev.title) + tlSpanSuffix(o.idx, o.total) + tlEventTodoLinks(ev) + '</div>';
+          });
+          html += '</div>';
+        });
+        html += '</div>';
+      }
+      // ## HOLIDAY：日/週时间网格顶部「假期」条（与 EVENT 全天条视觉区隔：type 色块）
+      const holByCol = dayDates.map((d) => tlHolidaysOnDay(tlFmtDate(d)));
+      const hasHoliday = holByCol.some((arr) => arr.length > 0);
+      if (hasHoliday) {
+        html += '<div class="ev-holiday-strip" style="--cols:' + n + '"><div class="label">假期</div>';
+        holByCol.forEach((arr, ci) => {
+          html += '<div class="ev-holiday-col" data-date="' + tlFmtDate(dayDates[ci]) + '">';
+          arr.forEach((h) => {
+            const region = tlHolidayRegionMeta(h.region);
+            html += '<div class="ev-holiday-block" style="--holiday-color:' + tlEscapeHtml(region.color) + '" title="' + tlEscapeHtml(h.title) + '">' + region.icon + ' ' + tlEscapeHtml(h.title) + '</div>';
           });
           html += '</div>';
         });
@@ -427,11 +489,83 @@
         }
       });
       html += '</div></div>';
-      wrap.innerHTML = html;
+      wrap.innerHTML = '<div class="ev-timegrid-col">' + html + '</div><div id="tlEvDayGridList" class="events-list"></div>';
+      tlRenderDayGridList();
       requestAnimationFrame(() => {
         const sc = wrap.querySelector('.ev-timegrid-scroll');
         if (sc) sc.scrollTop = Math.max(0, now.getHours() * hourH + now.getMinutes() - 120);
       });
+    }
+    // 日/週时间网格下方明细：日模式显示游标那天、週模式显示当周每天（仅含内容者），
+    // 与列表模式一致——每天先假日（.ev-holiday）后行程（.ev-item），保证假日必定可见。
+    function tlRenderDayGridList() {
+      const list = document.getElementById('tlEvDayGridList');
+      if (!list) return;
+      const isDay = tlCalMode === 'day';
+      const today = tlFmtDate(new Date());
+      const toggle = tlScopeToggleHtml();
+      let html = '';
+      // 整週（週模式切到「週」）：遍历当周 7 天，跳过无内容日（与列表模式一致）
+      if (tlCalScope === 'full' && !isDay) {
+        let any = false;
+        for (const d of tlWeekDays(tlCalCursor)) {
+          const ds = tlFmtDate(d);
+          const evs = tlSorted(tlCalEvents.filter((e) => (e.date === ds || (e.endDate && ds > e.date && ds <= e.endDate)) && tlEventMatchesTag(e)));
+          const hols = tlHolidaysOnDay(ds);
+          if (!evs.length && !hols.length) continue;
+          // toggle 只内联进第一个内容日标题条（与「日」范围单行结构一致），不单独占一行
+          html += tlDateHeader(ds, today, any ? '' : toggle);
+          any = true;
+          for (const h of hols) html += tlHolidayHtml(h, today);
+          for (const ev of evs) html += tlItemHtml(ev, today);
+        }
+        if (!any) html += '<div class="ev-scope-row">' + toggle + '</div><div class="ev-empty">本周没有行程</div>';
+        list.innerHTML = html;
+        return;
+      }
+      // 单日（默认）：週模式=「选定日」、日模式=游标当天；空日也显示日期标题 + 空提示
+      let selDay;
+      if (isDay) {
+        selDay = tlFmtDate(tlCalCursor);
+      } else {
+        // 周模式：只显示「选定日」单日（与月模式选中日、日模式游标日一致），非整周 7 天
+        const week = tlWeekDays(tlCalCursor).map(tlFmtDate);
+        selDay = (tlCalSelected && week.indexOf(tlCalSelected) >= 0) ? tlCalSelected
+               : (week.indexOf(today) >= 0 ? today : week[0]);
+      }
+      const ds = selDay;
+      const evs = tlSorted(tlCalEvents.filter((e) => (e.date === ds || (e.endDate && ds > e.date && ds <= e.endDate)) && tlEventMatchesTag(e)));
+      const hols = tlHolidaysOnDay(ds);
+      html += tlDateHeader(ds, today, toggle);
+      if (!evs.length && !hols.length) {
+        html += '<div class="ev-empty">这一天没有行程</div>';
+      } else {
+        for (const h of hols) html += tlHolidayHtml(h, today);
+        for (const ev of evs) html += tlItemHtml(ev, today);
+      }
+      list.innerHTML = html;
+    }
+    // 日/週视图：点日期标题切换「下方明细」显示的那一天（与月模式「选中日」、日模式「游标日」一致，均只显示单日）
+    function tlSelectWeekDay(ds) {
+      tlCalSelected = ds;
+      if (tlCalMode === 'week') tlRenderTimeGrid(tlWeekDays(tlCalCursor));
+      else if (tlCalMode === 'day') tlRenderTimeGrid([tlCalCursor]);
+    }
+    // 明细范围切换（日 <-> 月/週）：月模式切「整月」、週模式切「整週」；日模式无意义不显示。默认「日」。
+    function tlScopeToggleHtml() {
+      if (tlCalMode !== 'month' && tlCalMode !== 'week') return '';
+      const isFull = tlCalScope === 'full';
+      const fullLabel = tlCalMode === 'month' ? '月' : '週';
+      return '<span class="ev-scope-seg" role="group" title="切换下方明细显示范围">' +
+        '<button type="button" class="' + (!isFull ? 'active' : '') + '" onclick="tlSetCalScope(\'day\')">日</button>' +
+        '<button type="button" class="' + (isFull ? 'active' : '') + '" onclick="tlSetCalScope(\'full\')">' + fullLabel + '</button>' +
+        '</span>';
+    }
+    function tlSetCalScope(s) {
+      tlCalScope = (s === 'full') ? 'full' : 'day';
+      if (tlCalMode === 'month') tlRenderMonth(document.getElementById('taskText').value);
+      else if (tlCalMode === 'week') tlRenderTimeGrid(tlWeekDays(tlCalCursor));
+      else if (tlCalMode === 'day') tlRenderTimeGrid([tlCalCursor]);
     }
     // 行程条 / 月格点击打开表单（阻止冒泡到单元格选择）
     function tlOpenEventFromChip(e, uid) { if (e) e.stopPropagation(); tlOpenEventForm(uid); }
@@ -495,13 +629,16 @@
       setDisp('tlEvMonthWrap', isMonth ? '' : 'none');
       setDisp('tlEvWeekWrap', isGrid ? '' : 'none');
       setDisp('tlEvList', mode === 'list' ? '' : 'none');
+      setDisp('tlEvDayGridList', isGrid ? '' : 'none');   // 日/週时间网格下方的「当日/当周明细」列表（含假日）
       const lb = document.getElementById('tlEvModeList'); if (lb) lb.classList.toggle('active', mode === 'list');
       const db = document.getElementById('tlEvModeDay'); if (db) db.classList.toggle('active', isDay);
       const wb = document.getElementById('tlEvModeWeek'); if (wb) wb.classList.toggle('active', isWeek);
       const mb = document.getElementById('tlEvModeMonth'); if (mb) mb.classList.toggle('active', isMonth);
       const content = document.getElementById('taskText').value;
       tlCalEvents = tlParseEvents(content);
+      tlCalHolidays = tlParseHolidays(content);
       tlRenderTagBar();
+      tlRenderHolidayLegend(); // 动态图例：列出 calendar.md 中出现过的地区，辅助「目视差别」
       tlCursorTitle(); // ⚠️ 導航列標題每種模式都要更新（周模式尤其會跨月，不能殘留上次的「X年X月」）
       if (isMonth) tlRenderMonth(content);
       else if (isGrid) tlRenderTimeGrid(isDay ? [tlCalCursor] : tlWeekDays(tlCalCursor));
@@ -522,6 +659,25 @@
       } else {
         t.textContent = tlCalCursor.getFullYear() + '年' + (tlCalCursor.getMonth() + 1) + '月';
       }
+    }
+
+    // 地区图例：列出当前 calendar.md 出现过的地区（去重），无假日则隐藏。颜色/图标与渲染一致，零学习成本。
+    function tlRenderHolidayLegend() {
+      const el = document.getElementById('tlEvHolidayLegend');
+      if (!el) return;
+      if (!tlCalHolidays || !tlCalHolidays.length) { el.style.display = 'none'; el.innerHTML = ''; return; }
+      const seen = {};
+      const items = [];
+      for (const h of tlCalHolidays) {
+        const r = (h.region || 'cn').toLowerCase();
+        if (seen[r]) continue;
+        seen[r] = true;
+        const m = tlHolidayRegionMeta(r);
+        items.push('<span class="ev-legend-item"><span class="ev-legend-dot" style="background:' + tlEscapeHtml(m.color) + '"></span>' + m.icon + tlEscapeHtml(m.label) + '</span>');
+      }
+      if (!items.length) { el.style.display = 'none'; el.innerHTML = ''; return; }
+      el.style.display = '';
+      el.innerHTML = '<span class="ev-legend-label">地区:</span>' + items.join('');
     }
 
     function tlSetMode(mode) {
@@ -549,7 +705,7 @@
       return diff > 0 ? diff + '天后' : (-diff) + '天前';
     }
 
-    function tlDateHeader(date, today) {
+    function tlDateHeader(date, today, extra) {
       const m = String(date || '').match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
       const WD = ['日', '一', '二', '三', '四', '五', '六'];
       let label = '日期未知', week = '';
@@ -567,6 +723,7 @@
         // ⏳ 倒計時徽章：每天必顯示（今天＝高亮，其餘＝灰底），取代原先「僅今天顯示」
         (cd ? '<span class="ev-today-badge' + (isToday ? '' : ' dim') + '">' + cd + '</span>' : '') +
         (lunarHdr ? '<span class="ev-lunar hdr" onclick="tlShowAlmanac(\'' + date + '\',this)" title="農民曆 / 老黃曆">' + tlEscapeHtml(lunarHdr) + '</span>' : '') +
+        (extra || '') +
         '<button type="button" class="ev-day-add" onclick="tlOpenEventForm(null, \'' + date + '\')">＋ 新增</button></div>';
     }
 
@@ -600,19 +757,83 @@
         '</div></div>';
     }
 
+    // ===== ## HOLIDAY 辅助（日志/列表视图显示，与 EVENT 视觉区隔：左侧 type 色条＋类型徽章，无勾选框/编辑删除）=====
+    // 地区调色板：决定假日「目视差别」的主色（与类型徽章正交）。可扩展：直接往此表加一项即可（如 kr 韩国 #003478 / jp 日本 #E60012）。
+    // 缺省 cn：旧数据无 region 字段时回退中国大陆；非空但未知的地区→中性灰＋原始代号（不静默当大陆，避免误判）。
+    const TL_HOLIDAY_REGIONS = {
+      cn: { label: '大陆', icon: '🇨🇳', color: '#E4002B' },
+      hk: { label: '港',   icon: '🇭🇰', color: '#7B2FBE' },
+      tw: { label: '台',   icon: '🇹🇼', color: '#00A3A3' },
+      us: { label: '美',   icon: '🇺🇸', color: '#1F4E79' },
+    };
+    function tlHolidayRegionMeta(region) {
+      const r = (region || '').toLowerCase();
+      if (!r) return TL_HOLIDAY_REGIONS.cn;
+      if (TL_HOLIDAY_REGIONS[r]) return TL_HOLIDAY_REGIONS[r];
+      return { label: r.toUpperCase(), icon: '🌐', color: '#6B7280' };
+    }
+    function tlHolidayMeta(type) {
+      switch ((type || '').toLowerCase()) {
+        case 'workday': return { label: '补班', icon: '💼', color: '#FF9500' };
+        case 'holiday': return { label: '假日', icon: '🎉', color: '#34C759' };
+        case 'festival': return { label: '节日', icon: '🏮', color: '#FF3B30' };
+        default: return { label: '假日', icon: '🎌', color: '#FF9500' };
+      }
+    }
+    // 取某天出现的假日（含跨天展开）：dateStr 落在 [date, endDate] 区间内即命中
+    function tlHolidaysOnDay(dateStr) {
+      if (!tlCalHolidays || !tlCalHolidays.length) return [];
+      return tlCalHolidays.filter((h) => {
+        const end = (h.endDate && h.endDate !== h.date) ? h.endDate : h.date;
+        return dateStr >= h.date && dateStr <= end;
+      });
+    }
+    function tlHolidayHtml(h, today) {
+      const meta = tlHolidayMeta(h.holidayType);
+      const region = tlHolidayRegionMeta(h.region);
+      const accent = region.color; // 假日主色＝地区色（地区为目视差别唯一来源；color 字段不参与假日着色）
+      const multi = h.endDate && h.endDate !== h.date;
+      const time = multi
+        ? (tlMdShort(h.date) + ' – ' + tlMdShort(h.endDate) + ' · 共' + tlSpanDays(h.date, h.endDate) + '天')
+        : '全天';
+      const tags = (h.tags && h.tags.length) ? '<span class="ev-tags">' + h.tags.map((t) => '#' + tlEscapeHtml(t)).join(' ') + '</span>' : '';
+      return '<div class="ev-holiday" data-ev-holiday="' + tlEscapeHtml(h.uid) + '" style="--holiday-color:' + tlEscapeHtml(accent) + '">' +
+        '<span class="ev-holiday-region" style="--region-color:' + tlEscapeHtml(region.color) + '" title="' + tlEscapeHtml(region.label + '地区假日') + '">' + region.icon + tlEscapeHtml(region.label) + '</span>' +
+        '<span class="ev-holiday-badge">' + meta.icon + ' ' + tlEscapeHtml(meta.label) + '</span>' +
+        '<div class="ev-body">' +
+        '<div class="ev-title">' + tlEscapeHtml(h.title) + tags + '</div>' +
+        '<div class="ev-meta">' + tlEscapeHtml(time) + (h.location ? ' · 📍' + tlEscapeHtml(h.location) : '') + '</div>' +
+        (h.notes ? '<div class="ev-notes">' + tlEscapeHtml(h.notes) + '</div>' : '') +
+        '</div></div>';
+    }
+
     function tlRenderList(content) {
       const list = document.getElementById('tlEvList');
       if (!list) return;
       tlCalEvents = tlParseEvents(content);
-      if (!tlCalEvents.length) {
+      tlCalHolidays = tlParseHolidays(content);
+      if (!tlCalEvents.length && !tlCalHolidays.length) {
         list.innerHTML = '<div class="ev-empty">尚未有行程<br><span style="font-size:12px">点右上「＋ 新增行程」，或切回文本编辑直接改 calendar.md</span></div>';
         return;
       }
       const today = tlFmtDate(new Date());
-      let html = '', last = null;
-      for (const ev of tlSorted(tlCalEvents.filter(tlEventMatchesTag))) {
-        if (ev.date !== last) { last = ev.date; html += tlDateHeader(ev.date, today); }
-        html += tlItemHtml(ev, today);
+      // 按日期分组：每天先显示该日假日（节日/补班），再显示行程
+      const byDate = new Map();
+      for (const ev of tlCalEvents.filter(tlEventMatchesTag)) {
+        if (!byDate.has(ev.date)) byDate.set(ev.date, { events: [], holidays: [] });
+        byDate.get(ev.date).events.push(ev);
+      }
+      for (const h of tlCalHolidays) {
+        if (!byDate.has(h.date)) byDate.set(h.date, { events: [], holidays: [] });
+        byDate.get(h.date).holidays.push(h);
+      }
+      const dates = Array.from(byDate.keys()).sort();
+      let html = '';
+      for (const ds of dates) {
+        html += tlDateHeader(ds, today);
+        const grp = byDate.get(ds);
+        for (const h of grp.holidays) html += tlHolidayHtml(h, today);
+        for (const ev of tlSorted(grp.events)) html += tlItemHtml(ev, today);
       }
       list.innerHTML = html;
       // 自动滚动到今天或最近未来日期的悬浮条
@@ -639,6 +860,7 @@
 
     function tlRenderMonth(content) {
       tlCalEvents = tlParseEvents(content);
+      tlCalHolidays = tlParseHolidays(content);
       const cur = tlCalCursor;
       const y = cur.getFullYear(), m = cur.getMonth();
       const occByDate = {};
@@ -656,11 +878,20 @@
         const ds = tlFmtDate(d);
         const out = d.getMonth() !== m;
         const occ = (occByDate[ds] || []).slice().sort(tlOccSort);
+        const hols = tlHolidaysOnDay(ds);
         let chips = '';
-        for (let j = 0; j < Math.min(3, occ.length); j++) {
+        // ## HOLIDAY：月格 chip（与 EVENT 视觉区隔：type 色块＋图标徽章）
+        for (let k = 0; k < Math.min(2, hols.length); k++) {
+          const region = tlHolidayRegionMeta(hols[k].region);
+          chips += '<span class="ev-holiday-chip" style="--holiday-color:' + tlEscapeHtml(region.color) + '" title="' + tlEscapeHtml(hols[k].title) + '">' + region.icon + tlEscapeHtml(region.label) + '</span>';
+        }
+        if (hols.length > 2) chips += '<div class="ev-more">+' + (hols.length - 2) + '</div>';
+        // 事件 chip（假日占用空间时收紧上限，避免月格溢出）
+        const evCap = hols.length ? 2 : 3;
+        for (let j = 0; j < Math.min(evCap, occ.length); j++) {
           chips += tlSpanChipHtml(occ[j].ev, occ[j].pos, occ[j].idx, occ[j].total);
         }
-        if (occ.length > 3) chips += '<div class="ev-more">+' + (occ.length - 3) + '</div>';
+        if (occ.length > evCap) chips += '<div class="ev-more">+' + (occ.length - evCap) + '</div>';
         const cp = tlLunarCompact(ds);
         const lunarCls = 'ev-lunar' + (cp.jieqi ? ' jieqi' : '');
         const lunarSpan = cp.text
@@ -690,20 +921,63 @@
     function tlRenderDayList() {
       const list = document.getElementById('tlEvDayList');
       if (!list) return;
-      const ds = tlCalSelected || tlFmtDate(new Date());
       const today = tlFmtDate(new Date());
+      const toggle = tlScopeToggleHtml();
+      // 「月」范围：渲染游标月整月（按日期分组，只含该月开始的事件/假日），头部显示汇总 + 切换
+      if (tlCalScope === 'full') {
+        const mo = tlCalCursor.getMonth();
+        const prefix = tlCalCursor.getFullYear() + '-' + String(mo + 1).padStart(2, '0');
+        const byDate = new Map();
+        for (const ev of tlCalEvents.filter(tlEventMatchesTag)) {
+          if (typeof ev.date === 'string' && ev.date.slice(0, 7) === prefix) {
+            if (!byDate.has(ev.date)) byDate.set(ev.date, { events: [], holidays: [] });
+            byDate.get(ev.date).events.push(ev);
+          }
+        }
+        for (const h of tlCalHolidays) {
+          if (typeof h.date === 'string' && h.date.slice(0, 7) === prefix) {
+            if (!byDate.has(h.date)) byDate.set(h.date, { events: [], holidays: [] });
+            byDate.get(h.date).holidays.push(h);
+          }
+        }
+        const dates = Array.from(byDate.keys()).sort();
+        let total = 0;
+        byDate.forEach((g) => { total += g.events.length + g.holidays.length; });
+        // 头部只保留一行：toggle 内联进第一个日期标题条（与「日」范围单行结构一致）；
+        // 整月无内容时才退回独立汇总条放 toggle，保证切换仍可达
+        let html = '';
+        if (!dates.length) html += '<div class="ev-date">' + (mo + 1) + '月 <span class="ev-week">全部 ' + total + ' 条</span>' +
+          '<span style="flex:1"></span>' + toggle + '</div><div class="ev-empty">本月没有行程</div>';
+        else {
+          for (let i = 0; i < dates.length; i++) {
+            const grp = byDate.get(dates[i]);
+            html += tlDateHeader(dates[i], today, i === 0 ? toggle : '');
+            for (const h of grp.holidays) html += tlHolidayHtml(h, today);
+            for (const ev of tlSorted(grp.events)) html += tlItemHtml(ev, today);
+          }
+        }
+        list.innerHTML = html;
+        return;
+      }
+      // 「日」范围（默认）：选定日单日
+      const ds = tlCalSelected || tlFmtDate(new Date());
       const m = String(ds).match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
       const WD = ['日', '一', '二', '三', '四', '五', '六'];
       const d = m ? new Date(+m[1], +m[2] - 1, +m[3]) : new Date();
       const evs = tlSorted(tlCalEvents.filter((e) => (e.date === ds || (e.endDate && ds > e.date && ds <= e.endDate)) && tlEventMatchesTag(e)));
-      let html = '<div class="ev-date' + (ds === today ? ' today' : '') + '">' +
+      const hols = tlHolidaysOnDay(ds);
+      let html = '<div class="ev-date' + (ds === today ? ' today' : '') + '" data-ev-date="' + tlEscapeHtml(ds) + '">' +
         (m ? (+m[2]) + '月' + (+m[3]) + '日' : '日期未知') +
         '<span class="ev-week">週' + WD[d.getDay()] + '</span>' +
         (ds === today ? '<span class="ev-today-badge">今天</span>' : '') +
-        '<span class="ev-week">· ' + evs.length + ' 条</span>' +
+        '<span class="ev-week">· ' + (evs.length + hols.length) + ' 条</span>' +
+        toggle +
         '<button type="button" class="ev-day-add" onclick="tlOpenEventForm(null, \'' + ds + '\')">＋ 此日新增</button></div>';
-      if (!evs.length) html += '<div class="ev-empty">这一天没有行程</div>';
-      else for (const ev of evs) html += tlItemHtml(ev, today);
+      if (!evs.length && !hols.length) html += '<div class="ev-empty">这一天没有行程</div>';
+      else {
+        for (const h of hols) html += tlHolidayHtml(h, today);
+        for (const ev of evs) html += tlItemHtml(ev, today);
+      }
       list.innerHTML = html;
     }
 
@@ -874,9 +1148,11 @@
 
     // 序列化整份 calendar.md 写回 taskText（不动 editSnapshot → 未保存检测自动判定为脏，「保存」亮起）
     function tlApplyEventsToBuffer() {
-      const md = tlEventsToMarkdown(tlCalEvents);
       const ta = document.getElementById('taskText');
-      ta.value = md;
+      // ⚠️ 从当前缓冲重新解析 holiday，避免保存事件时把用户手写的 ## HOLIDAY 整体覆盖掉（事件序列化器会重画整份文件）
+      const holidays = tlParseHolidays(ta.value);
+      tlCalHolidays = holidays;
+      ta.value = tlCalendarToMarkdown(tlCalEvents, holidays);
       if (typeof autoGrowTextarea === 'function') autoGrowTextarea(ta);
       if (typeof markCurrentTabDirty === 'function') markCurrentTabDirty();
       tlRenderEventsContent();

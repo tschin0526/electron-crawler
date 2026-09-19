@@ -348,6 +348,12 @@ body {
 /* ⏳ 倒計時徽章（非今天）：灰底弱化，今天仍走上面的高亮主色 */
 .ev-today-badge.dim { background: var(--border, #e5e7eb); color: var(--text-secondary); font-weight: 400; }
 .ev-day-add { margin-left: auto; border: 1px solid var(--primary); background: transparent; color: var(--primary); font-size: 11px; padding: 3px 10px; border-radius: 6px; cursor: pointer; font-weight: 400; flex-shrink: 0; }
+/* 明細範圍切換（日 <-> 月/週）：迷你分段控件，放在「＋ 此日新增」旁 / 明細頂部 */
+.ev-scope-seg { display: inline-flex; align-items: center; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; flex: 0 0 auto; }
+.ev-scope-seg button { border: none; background: var(--bg-secondary); color: var(--text-secondary); font-size: 11px; padding: 3px 10px; cursor: pointer; line-height: 1.4; }
+.ev-scope-seg button + button { border-left: 1px solid var(--border); }
+.ev-scope-seg button.active { background: var(--primary); color: #fff; font-weight: 600; }
+.ev-scope-row { display: flex; justify-content: flex-end; padding: 4px 4px 0; }
 .ev-day-add:active { background: var(--primary); color: #fff; }
 .ev-item { display: flex; gap: 10px; padding: 10px 14px; border-bottom: 1px solid var(--border); background: var(--bg-secondary); }
 .ev-item.past { opacity: 0.55; }
@@ -393,6 +399,28 @@ body {
 /* 跨天行程：列表項徽章 + 月視圖跨日色條 */
 .ev-span-badge { margin-left: 6px; font-size: 10px; font-weight: 400; color: var(--primary); border: 1px solid var(--primary); padding: 0 6px; border-radius: 99px; white-space: nowrap; }
 .ev-item.multi .ev-meta { color: var(--primary); font-weight: 500; }
+/* ## HOLIDAY：日志/列表视图专用，与 EVENT（.ev-item）明显区隔——左侧 type 色条＋类型徽章，无勾选框/编辑删除 */
+.ev-holiday { display: flex; align-items: flex-start; gap: 10px; padding: 10px 14px; margin: 4px 0; border-radius: 8px; background: var(--bg-secondary); border: 1px solid var(--border); border-left: 4px solid var(--holiday-color, #FF9500); }
+.ev-holiday .ev-holiday-badge { flex: 0 0 auto; align-self: center; display: inline-flex; align-items: center; gap: 2px; background: var(--holiday-color, #FF9500); color: #fff; font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 999px; white-space: nowrap; }
+.ev-holiday .ev-body { flex: 1 1 auto; min-width: 0; }
+.ev-holiday .ev-title { font-size: 14px; font-weight: 600; color: var(--text); }
+.ev-holiday .ev-meta { font-size: 12px; color: var(--text-secondary); margin-top: 2px; }
+.ev-holiday .ev-notes { font-size: 12px; color: var(--text-secondary); margin-top: 4px; }
+.ev-holiday .ev-tags { color: var(--primary); }
+/* 地區 pill：主色＝地區色（--region-color 由渲染內聯寫入，帶回退），與類型徽章並列顯示在假日行 */
+.ev-holiday .ev-holiday-region { flex: 0 0 auto; align-self: center; display: inline-flex; align-items: center; gap: 2px; background: var(--region-color, #E4002B); color: #fff; font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 999px; white-space: nowrap; }
+/* 地區圖例：列出當前出現過的地區，顏色/圖標與渲染一致 */
+.ev-holiday-legend { flex: 0 0 auto; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 4px 0 6px; font-size: 12px; color: var(--text-secondary); }
+.ev-holiday-legend .ev-legend-label { flex: 0 0 auto; }
+.ev-holiday-legend .ev-legend-item { display: inline-flex; align-items: center; gap: 4px; color: var(--text); }
+.ev-holiday-legend .ev-legend-dot { width: 10px; height: 10px; border-radius: 999px; display: inline-block; }
+/* 月格 chip：与 EVENT chip 视觉区隔（type 色块＋图标徽章） */
+.ev-holiday-chip { display: inline-flex; align-items: center; gap: 2px; font-size: 9px; font-weight: 600; line-height: 1.25; margin-top: 1px; padding: 0 5px; border-radius: 99px; color: #fff; background: var(--holiday-color, #FF9500); white-space: nowrap; }
+/* 日/週时间网格「假期」条：与 EVENT 全天条视觉区隔（同样 44px 轨道 + 同宽约束，保证栏位对齐） */
+.ev-holiday-strip { border-bottom: 1px solid var(--border); padding: 4px 0 6px; display: grid; grid-template-columns: 44px repeat(var(--cols, 1), 1fr); gap: 2px 0; background: var(--bg-secondary); flex-shrink: 0; width: 100%; }
+.ev-holiday-strip .label { font-size: 11px; color: var(--text-secondary); text-align: right; padding-right: 6px; padding-top: 4px; }
+.ev-holiday-col { display: flex; flex-direction: column; gap: 2px; min-width: 0; padding: 0 2px; }
+.ev-holiday-block { font-size: 11px; font-weight: 600; color: #fff; background: var(--holiday-color, #FF9500); border-radius: 4px; padding: 2px 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ev-chip.span { color: #fff; border-radius: 0; margin-top: 1px; height: 14px; padding: 0 3px; overflow: hidden; background: var(--ev-color); }
 .ev-chip.span .dot { flex: 0 0 auto; }
 .ev-chip.span.start { border-top-left-radius: 5px; border-bottom-left-radius: 5px; padding-left: 4px; }

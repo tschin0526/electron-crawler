@@ -1914,6 +1914,12 @@
     .ev-date .ev-week { color: var(--ev-muted); font-weight: 400; font-size: 12px; }
     .ev-date.today { color: var(--ev-primary); }
     .ev-day-add { margin-left: auto; border: 1px solid var(--ev-primary); background: transparent; color: var(--ev-primary); font-size: 11px; padding: 2px 8px; border-radius: 6px; cursor: pointer; font-weight: 400; }
+    /* 明细范围切换（日 <-> 月/週）：迷你分段控件，放在「＋ 此日新增」旁 / 明细顶部 */
+    .ev-scope-seg { display: inline-flex; align-items: center; border: 1px solid var(--ev-border, #e5e7eb); border-radius: 6px; overflow: hidden; flex: 0 0 auto; }
+    .ev-scope-seg button { border: none; background: var(--ev-card, #fff); color: var(--ev-muted, #6b7280); font-size: 11px; padding: 2px 8px; cursor: pointer; line-height: 1.4; }
+    .ev-scope-seg button + button { border-left: 1px solid var(--ev-border, #e5e7eb); }
+    .ev-scope-seg button.active { background: var(--ev-primary, #007AFF); color: #fff; font-weight: 600; }
+    .ev-scope-row { display: flex; justify-content: flex-end; padding: 4px 4px 0; }
     .ev-today-badge { background: var(--ev-primary); color: #fff; font-size: 11px; padding: 1px 8px; border-radius: 99px; font-weight: 500; }
     /* ⏳ 倒計時徽章（非今天）：灰底弱化，今天仍走上面的高亮主色 */
     .ev-today-badge.dim { background: var(--ev-border); color: var(--ev-muted); font-weight: 400; }
@@ -1977,6 +1983,28 @@
     /* 跨天行程：列表項徽章 + 月視圖跨日色條 */
     .ev-span-badge { margin-left: 6px; font-size: 10px; font-weight: 400; color: var(--ev-primary); border: 1px solid var(--ev-primary); padding: 0 6px; border-radius: 99px; white-space: nowrap; }
     .ev-item.multi .ev-meta { color: var(--ev-primary); font-weight: 500; }
+    /* ## HOLIDAY：日志/列表视图专用，与 EVENT（.ev-item）明显区隔——左侧 type 色条＋类型徽章，无勾选框/编辑删除 */
+    .ev-holiday { display: flex; align-items: flex-start; gap: 10px; padding: 8px 12px; margin: 4px 0; border-radius: 8px; background: var(--ev-card, #fff); border: 1px solid var(--ev-border, #e5e7eb); border-left: 4px solid var(--holiday-color, #FF9500); }
+    .ev-holiday .ev-holiday-badge { flex: 0 0 auto; align-self: center; display: inline-flex; align-items: center; gap: 2px; background: var(--holiday-color, #FF9500); color: #fff; font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 999px; white-space: nowrap; }
+    .ev-holiday .ev-body { flex: 1 1 auto; min-width: 0; }
+    .ev-holiday .ev-title { font-size: 14px; font-weight: 600; color: var(--ev-text, #1f2937); }
+    .ev-holiday .ev-meta { font-size: 12px; color: var(--ev-muted, #6b7280); margin-top: 2px; }
+    .ev-holiday .ev-notes { font-size: 12px; color: var(--ev-muted, #6b7280); margin-top: 4px; }
+    .ev-holiday .ev-tags { color: var(--ev-primary, #007AFF); }
+    /* 地区 pill：主色＝地区色（--region-color 由渲染内联写入，带回退），与类型徽章并列显示在假日行 */
+    .ev-holiday .ev-holiday-region { flex: 0 0 auto; align-self: center; display: inline-flex; align-items: center; gap: 2px; background: var(--region-color, #E4002B); color: #fff; font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 999px; white-space: nowrap; }
+    /* 地区图例：列出当前出现过的地区，颜色/图标与渲染一致 */
+    .ev-holiday-legend { flex: 0 0 auto; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 4px 0 6px; font-size: 12px; color: var(--ev-muted, #6b7280); }
+    .ev-holiday-legend .ev-legend-label { flex: 0 0 auto; }
+    .ev-holiday-legend .ev-legend-item { display: inline-flex; align-items: center; gap: 4px; color: var(--ev-text, #1f2937); }
+    .ev-holiday-legend .ev-legend-dot { width: 10px; height: 10px; border-radius: 999px; display: inline-block; }
+    /* 月格 chip：与 EVENT chip 视觉区隔（type 色块＋图标徽章），不变量⑤：面板 --ev-* 变量带显式回退 */
+    .ev-holiday-chip { display: inline-flex; align-items: center; gap: 2px; font-size: 10px; font-weight: 600; line-height: 1.3; margin-top: 2px; padding: 0 5px; border-radius: 99px; color: #fff; background: var(--holiday-color, #FF9500); white-space: nowrap; }
+    /* 日/週时间网格「假期」条：与 EVENT 全天条视觉区隔（同样 52px 轨道 + 同宽约束，保证栏位对齐） */
+    .ev-holiday-strip { border-bottom: 1px solid var(--ev-border, #e5e7eb); padding: 4px 0 6px; display: grid; grid-template-columns: 52px repeat(var(--cols, 1), 1fr); gap: 2px 0; background: var(--ev-card, #fff); flex-shrink: 0; width: 100%; }
+    .ev-holiday-strip .label { font-size: 11px; color: var(--ev-muted, #6b7280); text-align: right; padding-right: 6px; padding-top: 4px; }
+    .ev-holiday-col { display: flex; flex-direction: column; gap: 2px; min-width: 0; padding: 0 2px; }
+    .ev-holiday-block { font-size: 11px; font-weight: 600; color: #fff; background: var(--holiday-color, #FF9500); border-radius: 4px; padding: 2px 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .ev-chip.span { color: #fff; border-radius: 0; margin-top: 2px; height: 16px; padding: 0; overflow: hidden; display: flex; align-items: center; background: var(--ev-color); }
     .ev-chip.span .dot { flex: 0 0 auto; }
     .ev-chip.span.start { border-top-left-radius: 5px; border-bottom-left-radius: 5px; padding-left: 5px; }
@@ -1993,6 +2021,10 @@
     /* ===== 日 / 周视图 时间网格（移植自 calendar 插件） ===== */
     .ev-week-wrap { flex: 1 1 auto; display: flex; flex-direction: column; min-height: 0; }
     .ev-timegrid-scroll { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; position: relative; width: 100%; }
+    /* 日/週视图：时间网格整列（标题+全天条+网格）包一层，下方再挂「当日/当周明细」列表（含假日），两者各自滚动。
+       比例固定 3:1（网格 75% / 明细 25%）——flex-basis 必须为 0，用 auto 会被内容大小挤偏（实测明细占满画面） */
+    .ev-timegrid-col { display: flex; flex-direction: column; flex: 3 1 0; min-height: 0; overflow: hidden; }
+    #tlEvDayGridList { flex: 1 1 0; min-height: 0; overflow-y: auto; padding: 4px; border-top: 1px solid var(--ev-border, #e5e7eb); }
     /* 🗓 欄位日期標題：每一直行代表哪一天（週視圖必備）
        ⚠️ 對齊三要素：同一套 grid 模板 + 三者同一寬度約束（全部滿寬，皆不再有 max-width/margin）+ 沒有 column-gap */
     .ev-tg-head { display: grid; grid-template-columns: 52px repeat(var(--cols, 1), 1fr); background: var(--ev-card); border-bottom: 1px solid var(--ev-border); flex-shrink: 0; width: 100%; }
@@ -2003,6 +2035,8 @@
     .ev-tg-head-cell .dnum { display: block; font-weight: 600; color: var(--ev-text); }
     .ev-tg-head-cell.today .dow { color: var(--ev-primary); }
     .ev-tg-head-cell.today .dnum { color: var(--ev-primary); }
+    .ev-tg-head-cell.selected .dow, .ev-tg-head-cell.selected .dnum { color: var(--ev-primary, #007AFF); font-weight: 700; }
+    .ev-tg-head-cell.selected { box-shadow: inset 0 -2px 0 var(--ev-primary, #007AFF); }
     .ev-timegrid { display: grid; grid-template-columns: 52px repeat(var(--cols, 1), 1fr); position: relative; min-height: calc(24 * var(--hour-h, 52px)); }
     .ev-tg-gutter { border-right: 1px solid var(--ev-border); position: relative; }
     .ev-tg-hour-label { position: absolute; right: 6px; transform: translateY(-50%); font-size: 11px; color: var(--ev-muted); }
@@ -4484,6 +4518,7 @@
             <span class="ev-hint-text">编辑后按「保存」写回 calendar.md</span>
             <button type="button" class="ev-add-btn" id="tlEvAddBtn">＋ 新增行程</button>
           </div>
+          <div class="ev-holiday-legend" id="tlEvHolidayLegend" style="display:none"></div>
           <div class="ev-tagbar" id="tlEvTagBar" style="display:none">
             <span class="ev-tagbar-label">标签:</span>
             <div class="ev-tag-filter" id="tlEvTagFilter"></div>

@@ -69,6 +69,10 @@ function parseCalendarEventBlock(block, idx) {
     tags: parseCalendarArrField(get('tags')),
     // 修復：此前缺讀 todoIds，往返保存會把 calendar 插件寫入的關聯卡片清空
     todoIds: parseCalendarArrField(get('todoIds')),
+    // ## HOLIDAY 比 ## EVENT 多一個 holidayType 字段（workday/holiday/festival），事件解析為空字符串即可
+    holidayType: get('holidayType') || '',
+    // 地區：cn 中國大陸 / hk 香港 / tw 台灣 / us 美國（可擴展）；缺省 '' 渲染時回退 cn（向後兼容舊數據）
+    region: get('region') || '',
     notes: remark
   };
 }
@@ -82,6 +86,22 @@ function parseCalendarEvents(md) {
     if (ev) events.push(ev);
   }
   return events;
+}
+
+// ## HOLIDAY 解析結果（與 ## EVENT 同結構，多 holidayType 字段）；僅列表/日志視圖顯示，不進時間網格/月格 chip
+let calHolidays = [];
+// ## HOLIDAY：與 ## EVENT 同一套字段（多 holidayType），僅分割符不同；複用 parseCalendarEventBlock 解析（無 title 的塊會被跳過）
+// ⚠️ 從 i=1 開始：split 後 blocks[0] 是「第一個 ## HOLIDAY 之前的所有內容」（通常含 ## EVENT 塊），
+//    那段裡的 - title 會被誤當成 holiday；holiday 必然跟在它自己的 ## HOLIDAY 標記之後，故跳過 blocks[0] 即正確。
+function parseCalendarHolidays(md) {
+  if (!md) return [];
+  const out = [];
+  const blocks = String(md).split(/^##[ \t]*HOLIDAY[ \t]*$/m);
+  for (let i = 1; i < blocks.length; i++) {
+    const h = parseCalendarEventBlock(blocks[i], i);
+    if (h) out.push(h);
+  }
+  return out;
 }
 
 function calendarFmtDate(d) {
@@ -396,6 +416,25 @@ function renderCalTagBar() {
     return '<span class="ev-tag-chip' + (active ? ' active' : '') + '" data-tag="' + escapeHtml(t) + '">' + escapeHtml(t) + '</span>';
   }).join('');
 }
+
+// 地區圖例：列出當前 calendar.md 出現過的地區（去重），無假日則隱藏。顏色/圖標與渲染一致，零學習成本。
+function calRenderHolidayLegend() {
+  const el = document.getElementById('ev-holiday-legend');
+  if (!el) return;
+  if (!calHolidays || !calHolidays.length) { el.style.display = 'none'; el.innerHTML = ''; return; }
+  const seen = {};
+  const items = [];
+  for (const h of calHolidays) {
+    const r = (h.region || 'cn').toLowerCase();
+    if (seen[r]) continue;
+    seen[r] = true;
+    const m = calHolidayRegionMeta(r);
+    items.push('<span class="ev-legend-item"><span class="ev-legend-dot" style="background:' + escapeHtml(m.color) + '"></span>' + m.icon + escapeHtml(m.label) + '</span>');
+  }
+  if (!items.length) { el.style.display = 'none'; el.innerHTML = ''; return; }
+  el.style.display = '';
+  el.innerHTML = '<span class="ev-legend-label">地區:</span>' + items.join('');
+}
 // 日 / 週視圖 時間網格（移植自桌面 renderTimeGrid；事件委派用 data-ev-edit）
 // 日/週視圖「下半部明細清單」所顯示的那一天：永遠只有「選中日」一條（與月視圖一致）。
 // 日模式＝游標那天；週模式＝calSelectedDate（須在當週內），否則今天（若在週內）否則週一。
@@ -443,9 +482,24 @@ function renderCalTimeGrid(dayDates) {
       });
       html += '</div>';
     });
-    html += '</div>';
-  }
-  html += '<div class="ev-timegrid-scroll"><div class="ev-timegrid" style="--cols:' + n + ';--hour-h:' + hourH + 'px;">';
+        html += '</div>';
+      }
+      // ## HOLIDAY：日/週时间网格顶部「假期」条（与 EVENT 全天条视觉区隔：type 色块）
+      const holByCol = dayDates.map((d) => calHolidaysOnDay(calendarFmtDate(d)));
+      const hasHoliday = holByCol.some((arr) => arr.length > 0);
+      if (hasHoliday) {
+        html += '<div class="ev-holiday-strip" style="--cols:' + n + '"><div class="label">假期</div>';
+        holByCol.forEach((arr, ci) => {
+          html += '<div class="ev-holiday-col" data-date="' + calendarFmtDate(dayDates[ci]) + '">';
+          arr.forEach((h) => {
+            const region = calHolidayRegionMeta(h.region);
+            html += '<div class="ev-holiday-block" style="--holiday-color:' + escapeHtml(region.color) + '" title="' + escapeHtml(h.title) + '">' + region.icon + ' ' + escapeHtml(h.title) + '</div>';
+          });
+          html += '</div>';
+        });
+        html += '</div>';
+      }
+      html += '<div class="ev-timegrid-scroll"><div class="ev-timegrid" style="--cols:' + n + ';--hour-h:' + hourH + 'px;">';
   html += '<div class="ev-tg-gutter">';
   for (let h = 0; h <= 23; h++) html += '<div class="ev-tg-hour-label" style="top:' + (h * hourH) + 'px">' + String(h).padStart(2, '0') + ':00</div>';
   html += '</div>';
@@ -491,27 +545,71 @@ function renderCalTimeGrid(dayDates) {
   });
 }
 
-// 日/週視圖「下半部」行程明細：僅顯示「選中日」(calGridSelectedDay) 那一日的行程，與月視圖一致。
+// 日/週視圖「下半部」行程明細：默認僅顯示「選中日」(calGridSelectedDay) 那一日的行程，與月視圖一致。
 // 日模式選中日＝游標那天；週模式選中日＝所點的日期標題（預設今天/週一），點不同日期標題即切換。
+// 明細範圍切換（日 <-> 月/週）：月模式切「整月」、週模式切「整週」；日模式無意義不顯示。默認「日」。
+function calScopeToggleHtml() {
+  if (state.calMode !== 'month' && state.calMode !== 'week') return '';
+  const isFull = state.calScope === 'full';
+  const fullLabel = state.calMode === 'month' ? '月' : '週';
+  return '<span class="ev-scope-seg" role="group" title="切換下方明細顯示範圍">' +
+    '<button type="button" class="' + (!isFull ? 'active' : '') + '" data-cal-scope="day">日</button>' +
+    '<button type="button" class="' + (isFull ? 'active' : '') + '" data-cal-scope="full">' + fullLabel + '</button>' +
+    '</span>';
+}
+function calSetCalScope(s) {
+  state.calScope = (s === 'full') ? 'full' : 'day';
+  const content = elements.editor.value;
+  if (state.calMode === 'month') renderCalMonth(content);
+  else if (state.calMode === 'week') renderCalTimeGrid(calWeekDays(state.calCursor));
+  else if (state.calMode === 'day') renderCalTimeGrid([state.calCursor]);
+  else renderEventsList(content);
+}
 function renderCalGridDayList() {
   const list = document.getElementById('ev-grid-list');
   if (!list) return;
-  const ds = calGridSelectedDay();
   const today = calendarFmtDate(new Date());
+  const toggle = calScopeToggleHtml();
+  let html = '';
+  // 整週（週模式切到「週」）：遍歷當週 7 天，跳過無內容日（與列表模式一致）
+  if (state.calScope === 'full' && state.calMode === 'week') {
+    let any = false;
+    for (const d of calWeekDays(state.calCursor)) {
+      const ds = calendarFmtDate(d);
+      const evs = sortedCalEvents(state.calEvents.filter((e) => (e.date === ds || (e.endDate && ds > e.date && ds <= e.endDate)) && calEventMatchesTag(e)));
+      const hols = calHolidaysOnDay(ds);
+      if (!evs.length && !hols.length) continue;
+      // toggle 只內聯進第一個內容日標題條（與「日」範圍單行結構一致），不單獨佔一行
+      html += calDateHeaderHtml(ds, today, any ? '' : toggle);
+      any = true;
+      for (const h of hols) html += calHolidayHtml(h, today);
+      for (const ev of evs) html += evItemHtml(ev, today);
+    }
+    if (!any) html += '<div class="ev-scope-row">' + toggle + '</div><div class="ev-empty">本週沒有行程</div>';
+    list.innerHTML = html;
+    return;
+  }
+  // 單日（默認）：選中日明細
+  const ds = calGridSelectedDay();
   const m = String(ds).match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
   const WD = ['日', '一', '二', '三', '四', '五', '六'];
   const d = m ? new Date(+m[1], +m[2] - 1, +m[3]) : new Date();
   const evs = sortedCalEvents(state.calEvents.filter((e) => (e.date === ds || (e.endDate && ds > e.date && ds <= e.endDate)) && calEventMatchesTag(e)));
-  let html = '<div class="ev-date' + (ds === today ? ' today' : '') + '">' +
+  const hols = calHolidaysOnDay(ds);
+  html += '<div class="ev-date' + (ds === today ? ' today' : '') + '" data-ev-date="' + escapeHtml(ds) + '">' +
     (m ? (+m[2]) + '月' + (+m[3]) + '日' : ds) +
     '<span class="ev-week">週' + WD[d.getDay()] + '</span>' +
     (ds === today ? '<span class="ev-today-badge">今天</span>' : '') +
-    '<span class="ev-week">· ' + evs.length + ' 條</span>' +
+    '<span class="ev-week">· ' + (evs.length + hols.length) + ' 條</span>' +
     '<span class="ev-toolbar-flex"></span>' +
+    toggle +
     '<button type="button" class="ev-day-add" data-ev-add-on="' + escapeHtml(ds) + '">＋ 此日新增</button>' +
     '</div>';
-  if (!evs.length) html += '<div class="ev-empty">這一天沒有行程</div>';
-  else for (const ev of evs) html += evItemHtml(ev, today);
+  if (!evs.length && !hols.length) html += '<div class="ev-empty">這一天沒有行程</div>';
+  else {
+    for (const h of hols) html += calHolidayHtml(h, today);
+    for (const ev of evs) html += evItemHtml(ev, today);
+  }
   list.innerHTML = html;
 }
 // 導航列標題：依模式顯示「月 / 週區間 / 單日」
@@ -566,35 +664,93 @@ function calEvRemoveTodoLink(id) {
   calRenderEvTodoLinkPanel();
 }
 
+// ===== ## HOLIDAY 輔助（日志/列表視圖顯示，與 EVENT 視覺區隔：左側 type 色條＋類型徽章，無勾選框/編輯刪除）=====
+// 地區調色板：決定假日「目視差別」的主色（與類型徽章正交）。可擴展：直接往此表加一項即可。
+// 缺省 cn：舊數據無 region 字段時回退中國大陸；非空但未知的地區→中性灰＋原始代號（不靜默當大陸，避免誤判）。
+const CAL_HOLIDAY_REGIONS = {
+  cn: { label: '大陸', icon: '🇨🇳', color: '#E4002B' },
+  hk: { label: '港',   icon: '🇭🇰', color: '#7B2FBE' },
+  tw: { label: '台',   icon: '🇹🇼', color: '#00A3A3' },
+  us: { label: '美',   icon: '🇺🇸', color: '#1F4E79' },
+};
+function calHolidayRegionMeta(region) {
+  const r = (region || '').toLowerCase();
+  if (!r) return CAL_HOLIDAY_REGIONS.cn;
+  if (CAL_HOLIDAY_REGIONS[r]) return CAL_HOLIDAY_REGIONS[r];
+  return { label: r.toUpperCase(), icon: '🌐', color: '#6B7280' };
+}
+function calHolidayMeta(type) {
+  switch ((type || '').toLowerCase()) {
+    case 'workday': return { label: '補班', icon: '💼', color: '#FF9500' };
+    case 'holiday': return { label: '假日', icon: '🎉', color: '#34C759' };
+    case 'festival': return { label: '節日', icon: '🏮', color: '#FF3B30' };
+    default: return { label: '假日', icon: '🎌', color: '#FF9500' };
+  }
+}
+// 取某天出現的假日（含跨天展開）：dateStr 落在 [date, endDate] 區間內即命中
+function calHolidaysOnDay(dateStr) {
+  if (!calHolidays || !calHolidays.length) return [];
+  return calHolidays.filter((h) => {
+    const end = (h.endDate && h.endDate !== h.date) ? h.endDate : h.date;
+    return dateStr >= h.date && dateStr <= end;
+  });
+}
+function calHolidayHtml(h, today) {
+  const meta = calHolidayMeta(h.holidayType);
+  const region = calHolidayRegionMeta(h.region);
+  const accent = region.color; // 假日主色＝地區色（地區為目視差別唯一來源；color 字段不參與假日著色）
+  const multi = h.endDate && h.endDate !== h.date;
+  const time = multi
+    ? (calMdShort(h.date) + ' – ' + calMdShort(h.endDate) + ' · 共' + calSpanDays(h.date, h.endDate) + '天')
+    : '全天';
+  const tags = (h.tags && h.tags.length) ? '<span class="ev-tags">' + h.tags.map((t) => '#' + escapeHtml(t)).join(' ') + '</span>' : '';
+  return '<div class="ev-holiday" data-ev-holiday="' + escapeHtml(h.uid) + '" style="--holiday-color:' + escapeHtml(accent) + '">' +
+    '<span class="ev-holiday-region" style="--region-color:' + escapeHtml(region.color) + '" title="' + escapeHtml(region.label + '地區假日') + '">' + region.icon + escapeHtml(region.label) + '</span>' +
+    '<span class="ev-holiday-badge">' + meta.icon + ' ' + escapeHtml(meta.label) + '</span>' +
+    '<div class="ev-body">' +
+    '<div class="ev-title">' + escapeHtml(h.title) + tags + '</div>' +
+    '<div class="ev-meta">' + escapeHtml(time) + (h.location ? ' · 📍' + escapeHtml(h.location) : '') + '</div>' +
+    (h.notes ? '<div class="ev-notes">' + escapeHtml(h.notes) + '</div>' : '') +
+    '</div></div>';
+}
+
 // 渲染行程列表：日期升序分組，過去行程淡化，今天高亮；每條帶「編輯/刪除」
 function renderEventsList(content) {
   const list = elements.eventsList;
   if (!list) return;
   state.calEvents = parseCalendarEvents(content);
-  if (!state.calEvents.length) {
+  calHolidays = parseCalendarHolidays(content);
+  if (!state.calEvents.length && !calHolidays.length) {
     list.innerHTML = '<div class="ev-empty">尚未有行程<br><span style="font-size:12px">點右上「＋ 新增行程」，或編輯 calendar.md 原文（以 ## EVENT 分隔）</span></div>';
     return;
   }
   const today = calendarFmtDate(new Date());
-  // 🏷 套用標籤過濾（過濾後為空 → 提示「沒有符合的行程」，與無行程區分）
+  // 🏷 套用標籤過濾（過濾後為空 → 提示「沒有符合的行程」，與無行程區分）。假日不受標籤過濾影響（總是顯示）。
   const visible = state.calEvents.filter(calEventMatchesTag);
-  if (!visible.length) {
+  if (!visible.length && !calHolidays.length) {
     list.innerHTML = '<div class="ev-empty">' +
       (state.calEvents.length ? '沒有符合所選標籤的行程<br><span style="font-size:12px">點上方標籤可取消篩選</span>'
         : '尚未有行程<br><span style="font-size:12px">點右上「＋ 新增行程」，或編輯 calendar.md 原文（以 ## EVENT 分隔）</span>') +
       '</div>';
     return;
   }
-  const sorted = sortedCalEvents(visible);
-
+  // 按日期分組：每天先顯示該日假日（節日/補班），再顯示行程
+  const byDate = new Map();
+  for (const ev of visible) {
+    if (!byDate.has(ev.date)) byDate.set(ev.date, { events: [], holidays: [] });
+    byDate.get(ev.date).events.push(ev);
+  }
+  for (const h of calHolidays) {
+    if (!byDate.has(h.date)) byDate.set(h.date, { events: [], holidays: [] });
+    byDate.get(h.date).holidays.push(h);
+  }
+  const dates = Array.from(byDate.keys()).sort();
   let html = '';
-  let lastDate = null;
-  for (const ev of sorted) {
-    if (ev.date !== lastDate) {
-      lastDate = ev.date;
-      html += calDateHeaderHtml(ev.date, today);
-    }
-    html += evItemHtml(ev, today);
+  for (const ds of dates) {
+    html += calDateHeaderHtml(ds, today);
+    const grp = byDate.get(ds);
+    for (const h of grp.holidays) html += calHolidayHtml(h, today);
+    for (const ev of sortedCalEvents(grp.events)) html += evItemHtml(ev, today);
   }
   list.innerHTML = html;
   // 自動滾動到今天或最近未來日期的懸浮條
@@ -790,7 +946,7 @@ function calUpdateFormDow() {
   setLunar('ev-f-enddate-lunar', elements.evFEndDate && elements.evFEndDate.value);
 }
 
-function calDateHeaderHtml(date, today) {
+function calDateHeaderHtml(date, today, extra) {
   const m = String(date || '').match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
   const WD = ['日', '一', '二', '三', '四', '五', '六'];
   let label = '日期未知';
@@ -809,6 +965,7 @@ function calDateHeaderHtml(date, today) {
     // ⏳ 倒計時徽章：每天必顯示（今天＝高亮，其餘＝灰底），取代原先「僅今天顯示」
     (cd ? '<span class="ev-today-badge' + (isToday ? '' : ' dim') + '">' + cd + '</span>' : '') +
     (lunarHdr ? '<span class="ev-lunar hdr" data-ev-almanac="' + escapeHtml(date) + '" title="農民曆 / 老黃曆">' + escapeHtml(lunarHdr) + '</span>' : '') +
+    (extra || '') +
     '<button type="button" class="ev-day-add" data-ev-add-on="' + escapeHtml(date) + '">＋ 新增</button></div>';
 }
 
@@ -876,10 +1033,36 @@ function calEventToMarkdown(ev) {
   s += '- Remark:\n```\n' + String(ev.notes || '') + '\n```\n';
   return s;
 }
-function calEventsToMarkdown(events) {
+// ## HOLIDAY 序列化：字段順序與用戶實際寫法對齊（todoIds 後多 holidayType，再 Remark），保證保存後 diff 乾淨
+function calHolidayToMarkdown(h) {
+  const tagsJson = JSON.stringify(Array.isArray(h.tags) ? h.tags : []);
+  const todoJson = JSON.stringify(Array.isArray(h.todoIds) ? h.todoIds : []);
+  const color = '"' + String(h.color || '').replace(/^"|"$/g, '') + '"';
+  let s = '## HOLIDAY \n';
+  s += '- title: `' + calMdEscape(h.title) + '`\n';
+  s += '- date: `' + calMdEscape(h.date) + '`\n';
+  if (h.endDate && h.endDate !== h.date) s += '- endDate: `' + calMdEscape(h.endDate) + '`\n';
+  s += '- allDay: `' + (h.allDay ? 'true' : 'false') + '`\n';
+  s += '- done: `' + (h.done ? 'true' : 'false') + '`\n';
+  s += '- startTime: `' + calMdEscape(h.startTime) + '`\n';
+  s += '- endTime: `' + calMdEscape(h.endTime) + '`\n';
+  s += '- location: `' + calMdEscape(h.location) + '`\n';
+  s += '- color: `' + color + '`\n';
+  s += '- tags: `' + tagsJson + '`\n';
+      s += '- todoIds: `' + todoJson + '`\n';
+      s += '- holidayType: `' + calMdEscape(h.holidayType || '') + '`\n';
+      s += '- region: `' + calMdEscape(h.region || 'cn') + '`\n';
+      s += '- Remark:\n```\n' + String(h.notes || '') + '\n```\n';
+  return s;
+}
+// 整份 calendar.md 序列化：events + holidays 都保留（保存事件時若只寫 events 會把用戶手寫的 ## HOLIDAY 整體覆蓋掉）
+function calCalendarToMarkdown(events, holidays) {
   const head = '# 日历行程\n\n> 每条行程以 `## EVENT` 分隔，字段值写在反引号内，Remark 用代码块保存多行备注。\n\n';
-  if (!events || !events.length) return head;
-  return head + events.map(calEventToMarkdown).join('\n');
+  let body = (events && events.length) ? events.map(calEventToMarkdown).join('\n') : '';
+  if (holidays && holidays.length) {
+    body += (body ? '\n' : '') + holidays.map(calHolidayToMarkdown).join('\n');
+  }
+  return head + (body || '');
 }
 
 // 視圖總入口（updatePreview 的 events 分支調用）：按模式渲染列表或月曆
@@ -893,7 +1076,9 @@ function renderEventsContent() {
   const isGrid = isWeek || isDay;          // 日 / 週共用時間網格
   // 先解析一次供標籤條與日/週網格使用（月/列表的渲染函式內部會再解析一次，結果相同）
   state.calEvents = parseCalendarEvents(content);
+  calHolidays = parseCalendarHolidays(content);
   renderCalTagBar();
+  calRenderHolidayLegend(); // 動態圖例：列出 calendar.md 中出現過的地區，輔助「目視差別」
   if (isMonth) renderCalMonth(content);
   else if (isGrid) {
     renderCalTimeGrid(isDay ? [state.calCursor] : calWeekDays(state.calCursor));
@@ -930,6 +1115,7 @@ function syncEventsModeUI() {
 // 月曆：6x7 網格（週一開頭），單元格顯示日號 + 最多 2 條 chip + 溢出數；下方渲染選中日的行程列表
 function renderCalMonth(content) {
   state.calEvents = parseCalendarEvents(content);
+  calHolidays = parseCalendarHolidays(content);
   const cur = state.calCursor;
   const y = cur.getFullYear(), m = cur.getMonth();
   if (elements.evMonthTitle) elements.evMonthTitle.textContent = y + '年' + (m + 1) + '月';
@@ -948,11 +1134,20 @@ function renderCalMonth(content) {
     const ds = calendarFmtDate(d);
     const out = d.getMonth() !== m;
     const occ = (occByDate[ds] || []).slice().sort(calOccSort);
+    const hols = calHolidaysOnDay(ds);
     let chips = '';
-    for (let j = 0; j < Math.min(2, occ.length); j++) {
+    // ## HOLIDAY：月格 chip（与 EVENT 视觉区隔：type 色块＋图标徽章）
+    for (let k = 0; k < Math.min(2, hols.length); k++) {
+      const region = calHolidayRegionMeta(hols[k].region);
+      chips += '<span class="ev-holiday-chip" style="--holiday-color:' + escapeHtml(region.color) + '" title="' + escapeHtml(hols[k].title) + '">' + region.icon + escapeHtml(region.label) + '</span>';
+    }
+    if (hols.length > 2) chips += '<div class="ev-more">+' + (hols.length - 2) + '</div>';
+    // 事件 chip（假日占用空间时收紧上限，避免月格溢出）
+    const evCap = hols.length ? 1 : 2;
+    for (let j = 0; j < Math.min(evCap, occ.length); j++) {
       chips += calSpanChipHtml(occ[j].ev, occ[j].pos, occ[j].idx, occ[j].total);
     }
-    if (occ.length > 2) chips += '<div class="ev-more">+' + (occ.length - 2) + '</div>';
+    if (occ.length > evCap) chips += '<div class="ev-more">+' + (occ.length - evCap) + '</div>';
     const cp = calLunarCompact(ds);
     const lunarCls = 'ev-lunar' + (cp.jieqi ? ' jieqi' : '');
     html += '<div class="ev-cell' + (out ? ' out' : '') + (ds === todayStr ? ' today' : '') + (ds === state.calSelectedDate ? ' selected' : '') + '" data-date="' + ds + '">' +
@@ -968,23 +1163,64 @@ function renderCalMonth(content) {
 function renderCalDayList() {
   const list = elements.evDayList;
   if (!list) return;
-  const ds = state.calSelectedDate || calendarFmtDate(new Date());
   const today = calendarFmtDate(new Date());
+  const toggle = calScopeToggleHtml();
+  // 「月」範圍：渲染游標月整月（按日期分組，只含該月開始的事件/假日），頭部顯示彙總 + 切換
+  if (state.calScope === 'full') {
+    const mo = state.calCursor.getMonth();
+    const prefix = state.calCursor.getFullYear() + '-' + String(mo + 1).padStart(2, '0');
+    const byDate = new Map();
+    for (const ev of state.calEvents.filter(calEventMatchesTag)) {
+      if (typeof ev.date === 'string' && ev.date.slice(0, 7) === prefix) {
+        if (!byDate.has(ev.date)) byDate.set(ev.date, { events: [], holidays: [] });
+        byDate.get(ev.date).events.push(ev);
+      }
+    }
+    for (const h of calHolidays) {
+      if (typeof h.date === 'string' && h.date.slice(0, 7) === prefix) {
+        if (!byDate.has(h.date)) byDate.set(h.date, { events: [], holidays: [] });
+        byDate.get(h.date).holidays.push(h);
+      }
+    }
+    const dates = Array.from(byDate.keys()).sort();
+    let total = 0;
+    byDate.forEach((g) => { total += g.events.length + g.holidays.length; });
+    // 頭部只保留一行：toggle 內聯進第一個日期標題條（與「日」範圍單行結構一致）；
+    // 整月無內容時才退回獨立彙總條放 toggle，保證切換仍可達
+    let html = '';
+    if (!dates.length) html += '<div class="ev-date">' + (mo + 1) + '月 <span class="ev-week">全部 ' + total + ' 條</span>' +
+      '<span class="ev-toolbar-flex"></span>' + toggle + '</div><div class="ev-empty">本月沒有行程</div>';
+    else {
+      for (let i = 0; i < dates.length; i++) {
+        const grp = byDate.get(dates[i]);
+        html += calDateHeaderHtml(dates[i], today, i === 0 ? toggle : '');
+        for (const h of grp.holidays) html += calHolidayHtml(h, today);
+        for (const ev of sortedCalEvents(grp.events)) html += evItemHtml(ev, today);
+      }
+    }
+    list.innerHTML = html;
+    return;
+  }
+  // 「日」範圍（默認）：選定日單日
+  const ds = state.calSelectedDate || calendarFmtDate(new Date());
   const m = String(ds).match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
   const WD = ['日', '一', '二', '三', '四', '五', '六'];
   const d = m ? new Date(+m[1], +m[2] - 1, +m[3]) : new Date();
   const evs = sortedCalEvents(state.calEvents.filter(e => (e.date === ds || (e.endDate && ds > e.date && ds <= e.endDate)) && calEventMatchesTag(e)));
-  let html = '<div class="ev-date' + (ds === today ? ' today' : '') + '">' +
+  const hols = calHolidaysOnDay(ds);
+  let html = '<div class="ev-date' + (ds === today ? ' today' : '') + '" data-ev-date="' + escapeHtml(ds) + '">' +
     (m ? (+m[2]) + '月' + (+m[3]) + '日' : '日期未知') +
     '<span class="ev-week">週' + WD[d.getDay()] + '</span>' +
     (ds === today ? '<span class="ev-today-badge">今天</span>' : '') +
-    '<span class="ev-week">· ' + evs.length + ' 條</span>' +
+    '<span class="ev-week">· ' + (evs.length + hols.length) + ' 條</span>' +
     '<span class="ev-toolbar-flex"></span>' +
+    toggle +
     '<button type="button" class="ev-day-add" data-ev-add-on="' + escapeHtml(ds) + '">＋ 此日新增</button>' +
     '</div>';
-  if (!evs.length) {
+  if (!evs.length && !hols.length) {
     html += '<div class="ev-empty">這一天沒有行程</div>';
   } else {
+    for (const h of hols) html += calHolidayHtml(h, today);
     for (const ev of evs) html += evItemHtml(ev, today);
   }
   list.innerHTML = html;
@@ -1008,6 +1244,9 @@ function onEvListClick(e) {
   }
   const delBtn = e.target.closest('[data-ev-del]');
   if (delBtn) { deleteEventByUid(delBtn.getAttribute('data-ev-del')); return; }
+  // 明細範圍切換（日 <-> 月/週）
+  const scopeBtn = e.target.closest('[data-cal-scope]');
+  if (scopeBtn) { calSetCalScope(scopeBtn.getAttribute('data-cal-scope')); return; }
   const addBtn = e.target.closest('[data-ev-add-on]');
   if (addBtn) { openEventForm(null, addBtn.getAttribute('data-ev-add-on')); return; }
 }
@@ -1165,7 +1404,10 @@ function calCalCheckKey(e, uid, line) {
 // 把工作副本序列化為 calendar.md 全文寫回編輯器緩衝；
 // lastContent 不動 → isDirty = true → 頂欄「保存」亮起，由用戶決定何時落盤
 function applyEventsToEditor() {
-  elements.editor.value = calEventsToMarkdown(state.calEvents);
+  // ⚠️ 從當前緩衝重新解析 holiday，避免保存事件時把用戶手寫的 ## HOLIDAY 整體覆蓋掉（事件序列化器會重畫整份文件）
+  const holidays = parseCalendarHolidays(elements.editor.value);
+  calHolidays = holidays;
+  elements.editor.value = calCalendarToMarkdown(state.calEvents, holidays);
   state.isDirty = elements.editor.value !== state.lastContent;
   updateStatus();
   updateWordCount();

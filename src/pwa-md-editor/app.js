@@ -84,6 +84,7 @@ const state = {
   calMode: 'month',             // 'list' | 'day' | 'week' | 'month'
   calCursor: new Date(),        // 當前游標日期（月視圖＝該月；日視圖＝當天；週視圖＝該週內某天）
   calSelectedDate: null,        // 月視圖選中日期（YYYY-MM-DD）
+  calScope: 'day',              // 下方明細範圍：'day'=選定日（默認）/ 'full'=整月（月模式）或整週（週模式）；僅內存態
   calEvents: [],                // 工作副本（含 uid；每次渲染/編輯前從編輯器緩衝重新解析）
   calTagFilter: [],             // 🏷 標籤過濾（空＝全部；OR 邏輯，任一標籤命中即顯示）
   evFormUid: null,              // 編輯表單當前目標 uid（null = 新增）
