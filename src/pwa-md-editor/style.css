@@ -331,8 +331,11 @@ body {
 .events-pane { display: none; overflow: hidden; background: var(--bg); }
 .editor-container[data-view="events"] .events-pane { display: flex; flex-direction: column; }
 .events-list { padding-bottom: 24px; width: 100%; flex: 1 1 auto; min-height: 0; overflow-y: auto; }
-/* 日/週視圖「下半部」行程明細清單（時間網格下方）；與 .ev-timegrid-scroll 在 #ev-week-wrap 豎直堆疊，各自內部滾動 */
-#ev-grid-list { flex: 1 1 auto; min-height: 0; border-top: 1px solid var(--border); }
+/* 日/週視圖「下半部」行程明細清單（時間網格下方）；與 .ev-timegrid-scroll 在 #ev-week-wrap 豎直堆疊，各自內部滾動。
+   ⚠️ 只留盒子裝飾；高度分配**只由 .ev-split / .ev-split-top / .ev-detail 決定**——
+   本條曾寫 flex/min-height，ID 選擇器權重(1,0,0)會壓過 .ev-split .ev-detail(0,2,0)，
+   導致下區 flex-basis 歸 0、塌成 0 高（拖條沉到畫面最底且拖動無效）。 */
+#ev-grid-list { border-top: 1px solid var(--border); }
 .ev-empty { padding: 40px 16px; text-align: center; color: var(--text-secondary); font-size: 14px; line-height: 1.7; }
 .ev-date {
   position: sticky; top: 0; z-index: 1;
@@ -385,7 +388,21 @@ body {
 .ev-today-mini { font-size: 12px !important; padding: 4px 10px !important; }
 
 /* 月曆網格：週一開頭，單元格顯示日號 + 最多 2 條行程 chip */
-#ev-month-wrap { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
+/* 月視圖：月格自己一層滾動區（#ev-month-wrap 改為豎直 flex，明細才能固定在底部） */
+#ev-month-wrap { flex: 1 1 auto; min-height: 0; }
+.ev-month-scroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
+/* ===== 上下區域可拖動分割（月/週共用）=====
+   容器 .ev-split 為豎直 flex：上區（月格/時間網格）自動佔滿餘量並自身滾動，
+   下區（行程明細 .ev-detail）高度＝--ev-detail-h（百分比，由拖動寫入；純 UI 偏好，不寫回資料檔）。
+   ⚠️ 橫屏時 #ev-week-wrap 改為左右並排（見下方 @media orientation:landscape）→ .ev-hsplit 隱藏。 */
+.ev-split { --ev-detail-h: 30%; display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; }
+.ev-split .ev-split-top { flex: 1 1 auto; min-height: 120px; }
+.ev-split .ev-detail { flex: 0 0 var(--ev-detail-h); min-height: 56px; }
+.ev-hsplit { flex: 0 0 auto; height: 14px; position: relative; cursor: row-resize; touch-action: none;
+  background: var(--bg-secondary); border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); }
+.ev-hsplit::after { content: ''; position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+  width: 48px; height: 3px; border-radius: 2px; background: var(--border); }
+.ev-hsplit.dragging::after { background: var(--primary); }
 .ev-month-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; padding-bottom: 8px; }
 .ev-mc-head { text-align: center; font-size: 11px; color: var(--text-secondary); padding: 4px 0; }
 .ev-cell { min-height: 52px; background: var(--bg-secondary); border-radius: 4px; padding: 2px 3px; overflow: hidden; cursor: pointer; border: 1px solid transparent; }
@@ -469,7 +486,11 @@ body {
    各自佔滿整個高度 → 明細清單不再被 min-height 擠成不可見（豎屏仍是上下堆疊） */
 @media (orientation: landscape) {
   #ev-week-wrap { flex-direction: row; }
-  .ev-timegrid-col { flex: 1 1 50%; min-height: 0; }
+  /* 橫屏＝左右並排，沒有「上下分割」可言 → 隱藏分割條，上區與明細各佔 50%
+     （.ev-split .ev-split-top 的 min-height:120px 在矮橫屏會擠掉時間網格，這裡一併放寬）
+     ⚠️ 上區必須用 `.ev-split .ev-split-top` 覆寫：只寫 `.ev-timegrid-col`(0,1,0) 會被豎屏基礎規則(0,2,0)壓過 */
+  .ev-hsplit { display: none; }
+  .ev-split .ev-split-top { flex: 1 1 50%; min-height: 0; }
   #ev-grid-list { flex: 1 1 50%; min-height: 0; border-top: none; border-left: 1px solid var(--border); }
   /* 橫屏高度吃緊：壓縮日期標題列 / 全天條，讓時間網格仍留得下可用的高度 */
   .ev-tg-head-cell { padding: 1px 2px; font-size: 9px; }

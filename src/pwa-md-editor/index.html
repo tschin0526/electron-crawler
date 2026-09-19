@@ -209,12 +209,15 @@
           <div class="ev-tag-filter" id="ev-tag-filter"></div>
         </div>
         <div id="events-list" class="events-list"></div>
-        <div id="ev-month-wrap" style="display:none">
-          <div id="ev-month-grid" class="ev-month-grid"></div>
-          <div id="ev-day-list" class="events-list"></div>
+        <div id="ev-month-wrap" class="ev-split" style="display:none">
+          <div class="ev-month-scroll ev-split-top">
+            <div id="ev-month-grid" class="ev-month-grid"></div>
+          </div>
+          <div class="ev-hsplit" id="ev-month-split" title="拖動調整下方行程明細高度（雙擊復位）"></div>
+          <div id="ev-day-list" class="events-list ev-detail"></div>
         </div>
         <!-- 📅 日 / 週視圖時間網格容器（與月視圖互斥，由 syncEventsModeUI 切換） -->
-        <div id="ev-week-wrap"></div>
+        <div id="ev-week-wrap" class="ev-split"></div>
       </div>
     </main>
 

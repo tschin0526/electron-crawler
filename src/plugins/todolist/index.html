@@ -1900,10 +1900,22 @@
     #tlEvMonthTitle { flex: 1; text-align: center; font-size: 15px; font-weight: 600; }
     .ev-today-mini { font-size: 12px !important; padding: 3px 10px !important; }
     /* 列表容器＝內容滾動區（工具列/標籤條固定在其上方，不隨之捲動）。
-       ⚠️ .events-list 同時被 #tlEvList 與 #tlEvDayList 使用；後者在 #tlEvMonthWrap 內（block 父層），
-          flex 屬性在那裡無效，僅靠 #tlEvMonthWrap 自身滾動。 */
+       #tlEvList 單獨用；#tlEvDayList 在 .ev-split 內（見下方）改由 flex 分配高度、自身滾動。 */
     .events-list { padding-bottom: 20px; width: 100%; flex: 1 1 auto; min-height: 0; overflow-y: auto; }
-    #tlEvMonthWrap { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
+    /* ===== 上下區域可拖動分割（月/週共用）=====
+       容器 .ev-split 為豎直 flex：上區（月格/時間網格）自動佔滿餘量並自身滾動，
+       下區（行程明細 .ev-detail）高度＝--ev-detail-h（百分比，由拖動寫入；純 UI 偏好，不落盤到資料檔）。 */
+    .ev-split { --ev-detail-h: 30%; display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; }
+    .ev-split .ev-split-top { flex: 1 1 auto; min-height: 120px; }
+    .ev-split .ev-detail { flex: 0 0 var(--ev-detail-h); min-height: 56px; }
+    .ev-hsplit { flex: 0 0 auto; height: 12px; position: relative; cursor: row-resize; touch-action: none;
+      background: var(--ev-card); border-top: 1px solid var(--ev-border); border-bottom: 1px solid var(--ev-border); }
+    .ev-hsplit::after { content: ''; position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+      width: 48px; height: 3px; border-radius: 2px; background: var(--ev-border); }
+    .ev-hsplit:hover::after, .ev-hsplit.dragging::after { background: var(--ev-primary); }
+    /* 月視圖：月格自己一層滾動區（原本靠 #tlEvMonthWrap 整體滾動，明細無法固定在底部） */
+    #tlEvMonthWrap { flex: 1 1 auto; min-height: 0; }
+    .ev-month-scroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
     .ev-empty { padding: 40px 16px; text-align: center; color: var(--ev-muted); font-size: 13px; line-height: 1.7; }
     .ev-date {
       position: sticky; top: 0; z-index: 1; padding: 8px 12px; margin-top: 6px;
@@ -2024,9 +2036,12 @@
     .ev-week-wrap { flex: 1 1 auto; display: flex; flex-direction: column; min-height: 0; }
     .ev-timegrid-scroll { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; position: relative; width: 100%; }
     /* 日/週视图：时间网格整列（标题+全天条+网格）包一层，下方再挂「当日/当周明细」列表（含假日），两者各自滚动。
-       比例固定 3:1（网格 75% / 明细 25%）——flex-basis 必须为 0，用 auto 会被内容大小挤偏（实测明细占满画面） */
-    .ev-timegrid-col { display: flex; flex-direction: column; flex: 3 1 0; min-height: 0; overflow: hidden; }
-    #tlEvDayGridList { flex: 1 1 0; min-height: 0; overflow-y: auto; padding: 4px; border-top: 1px solid var(--ev-border, #e5e7eb); }
+       ⚠️ 高度分配**只由 .ev-split / .ev-split-top / .ev-detail 决定**（见上方「上下區域可拖動分割」）：
+       本区不要再写 flex / min-height —— ID 选择器权重(1,0,0)会压过 .ev-split .ev-detail(0,2,0)，
+       导致下区 flex-basis 归 0、塌成 0 高（拖条沉到画面最底且拖动无效）。 */
+    .ev-timegrid-col { display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
+    /* ⚠️ 只留盒子装饰（内距/边框/溢出）；flex / min-height 交给 .ev-split .ev-detail 统一管 */
+    #tlEvDayGridList { overflow-y: auto; padding: 4px; border-top: 1px solid var(--ev-border, #e5e7eb); }
     /* 🗓 欄位日期標題：每一直行代表哪一天（週視圖必備）
        ⚠️ 對齊三要素：同一套 grid 模板 + 三者同一寬度約束（全部滿寬，皆不再有 max-width/margin）+ 沒有 column-gap */
     .ev-tg-head { display: grid; grid-template-columns: 52px repeat(var(--cols, 1), 1fr); background: var(--ev-card); border-bottom: 1px solid var(--ev-border); flex-shrink: 0; width: 100%; }
@@ -4532,10 +4547,13 @@
             <button type="button" class="ev-today-mini" id="tlEvTodayBtn">今天</button>
           </div>
           <div id="tlEvList" class="events-list"></div>
-          <div id="tlEvWeekWrap" class="ev-week-wrap" style="display:none"></div>
-          <div id="tlEvMonthWrap" style="display:none">
-            <div id="tlEvMonthGrid" class="ev-month-grid"></div>
-            <div id="tlEvDayList" class="events-list"></div>
+          <div id="tlEvWeekWrap" class="ev-week-wrap ev-split" style="display:none"></div>
+          <div id="tlEvMonthWrap" class="ev-split" style="display:none">
+            <div class="ev-month-scroll ev-split-top">
+              <div id="tlEvMonthGrid" class="ev-month-grid"></div>
+            </div>
+            <div class="ev-hsplit" id="tlEvMonthSplit" title="拖动调整下方行程明细高度（双击复位）"></div>
+            <div id="tlEvDayList" class="events-list ev-detail"></div>
           </div>
         </div>
       </div>

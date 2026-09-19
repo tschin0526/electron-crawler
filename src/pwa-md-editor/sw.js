@@ -34,7 +34,23 @@
 // v34：HOLIDAY 多地區 region 欄位（cn/hk/tw/us 地區色＋pill＋圖例）＋ 明細範圍切換（日<->月/週，默認日；月/週列表頭部與日/週明細頂部加 .ev-scope-seg），calendar-editor.js/app.js/style.css 改，bump 讓手機重拉
 // v35：範圍切換頭部收成單行：去掉獨立 toggle 條（.ev-scope-row /「9月 全部N條」彙總條），toggle 內聯進第一個日期標題條（與「日」範圍同構）；修復 LITE 週「日」toggle 重複兩次；空月/空週回退獨立條保證可切換
 // v36：假日地區過濾（圖例改 checkbox 勾選，默認只勾大陸 cn）：只影響顯示不改數據；過濾收口在 calHolidaysOnDay/calVisibleHolidays（修復「列表/整月」直讀 calHolidays 繞過過濾）；calSetRegionChecked 直接分派重渲染＋同步圖例
-const CACHE_NAME = 'md-editor-lite-v36';
+// v37：日期標題補「· N 條」當日條數（calDateHeaderHtml 加 count 參數；列表/整月/整週分組標題都顯示，與「日」範圍單日標題一致）
+// v38：修復事件備注「貪婪」吞掉緊隨其後的 ## HOLIDAY 原文（Remark 正則改非貪婪；解析時事件塊在 ## HOLIDAY 處截斷、假日塊在 ## EVENT 處截斷，避免字段互相污染）
+// v39：跨天行程/假日「逐日展開」——分組收口到唯一入口 calEventsByDate()/calDayItems()（日/週/月/列表共用），
+//      修復 by月/列表只認起始日 → 同一天 by日 4 條、by月 3 條。只影響顯示（不改數據）
+// v40：月/週「整月/整週」明細自動滾動到選中日（calPickScrollTarget 精確命中→其後最近→其前最近；
+//      calScrollListToDate 用 offsetTop 換算避開 .ev-date sticky 干擾；月模式滾 #ev-month-wrap、週/日滾清單自身）
+// v41：月/週上下區域改「上區獨立滾動＋下區固定在底部」（與週模式同構）：.ev-split/.ev-split-top/.ev-detail/.ev-hsplit
+//      ＋ calBindSplit 拖動分割條即時改 --ev-detail-h（鬆手才落盤 localStorage calDetailH；雙擊復位 30%）。
+//      月模式下區不再被月格滾走；滾動目標改為明細自身（#ev-day-list / #ev-grid-list）
+// v42：修復日/週模式拖條沉底且拖不動——#ev-grid-list 這條 ID 規則(1,0,0)原寫了 flex/min-height，
+//      壓過 .ev-split .ev-detail(0,2,0) 使下區 flex-basis 歸 0 塌成 0 高（拖條被擠到畫面最底、改 CSS 變數無效）。
+//      現只保留盒子裝飾，高度一律由 .ev-split 系列決定；橫屏 50/50 改用 .ev-split .ev-split-top 覆寫
+// v43：修復月（by月）/週明細「點更早日期不會向前（向上）回滾」——`.ev-date` 是 position:sticky，
+//      被吸頂時它的 offsetTop / getBoundingClientRect() 返回的是「位移後」的渲染位置（≈ 當前
+//      scrollTop），故算出的目標 scrollTop 恰好＝當前值 → 原地不動（點更晚日期才有效）。
+//      現由 calScrollElToTop 讀佈局位置前先臨時摘掉 sticky；列表模式的 scrollIntoView 也改用同一入口。
+const CACHE_NAME = 'md-editor-lite-v43';
 const ASSETS = [
   './',
   './index.html',

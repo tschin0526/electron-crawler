@@ -39,7 +39,8 @@ function parseCalendarEventBlock(block, idx) {
   if (ri >= 0) {
     head = block.slice(0, ri);
     const after = block.slice(ri + '- Remark:'.length);
-    const m = after.match(/```([\s\S]*)```/);
+    // ⚠️ 必須非貪婪：曾用 /```([\s\S]*)```/ 貪婪匹配到塊尾最後一個 ``` → 備注會吞掉緊隨其後的 ## HOLIDAY 原文
+    const m = after.match(/```([\s\S]*?)```/);
     if (m) {
       remark = m[1].replace(/^\n/, '').replace(/\n$/, '');
       if (remark.trim() === '') remark = '';
@@ -82,7 +83,10 @@ function parseCalendarEvents(md) {
   const events = [];
   const blocks = String(md).split(/^##[ \t]*EVENT[ \t]*$/m);
   for (let i = 0; i < blocks.length; i++) {
-    const ev = parseCalendarEventBlock(blocks[i], i);
+    // ⚠️ 切塊只按 ## EVENT → 本塊尾巴會黏著緊隨其後的 ## HOLIDAY 塊。
+    //    必須先在該標記處截斷，否則 remark / holidayType / region 等會被後面的假日塊污染（2026-09-19 用戶反饋）
+    const cut = blocks[i].search(/^##[ \t]*HOLIDAY[ \t]*$/m);
+    const ev = parseCalendarEventBlock(cut >= 0 ? blocks[i].slice(0, cut) : blocks[i], i);
     if (ev) events.push(ev);
   }
   return events;
@@ -98,7 +102,9 @@ function parseCalendarHolidays(md) {
   const out = [];
   const blocks = String(md).split(/^##[ \t]*HOLIDAY[ \t]*$/m);
   for (let i = 1; i < blocks.length; i++) {
-    const h = parseCalendarEventBlock(blocks[i], i);
+    // 同理：假日塊尾巴可能黏著後面的 ## EVENT 塊 → 先在該標記處截斷
+    const cut = blocks[i].search(/^##[ \t]*EVENT[ \t]*$/m);
+    const h = parseCalendarEventBlock(cut >= 0 ? blocks[i].slice(0, cut) : blocks[i], i);
     if (h) out.push(h);
   }
   return out;
@@ -462,7 +468,7 @@ function renderCalTimeGrid(dayDates) {
   const allDayByCol = dayDates.map((d) => calEventsOnDay(calendarFmtDate(d)).filter((o) => o.ev.allDay));
   const hasAllDay = allDayByCol.some((arr) => arr.length > 0);
   const WD = ['日', '一', '二', '三', '四', '五', '六'];
-  let html = '<div class="ev-timegrid-col">';  // 時間網格整列（標題+全天條+網格）包一層，便於橫屏與明細清單左右並排
+  let html = '<div class="ev-timegrid-col ev-split-top">';  // 時間網格整列（標題+全天條+網格）包一層，便於橫屏與明細清單左右並排
   // 🗓 欄位日期標題：讓每一「直行」看得出是哪一天（與桌面端對齊）
   //    ⚠️ 與時間網格共用同一套 grid 模板，且 column-gap 必須為 0，否則會累積漂移導致對不齊
   html += '<div class="ev-tg-head" style="--cols:' + n + '"><div class="ev-tg-head-gutter"></div>';
@@ -538,8 +544,11 @@ function renderCalTimeGrid(dayDates) {
   html += '</div></div></div>';   // 關閉 .ev-timegrid / .ev-timegrid-scroll / .ev-timegrid-col
   // 日/週視圖「下半部」行程內容明細：時間網格下方補一列文字清單（與月視圖 #ev-day-list 對齊），
   // 保證事件標題/時間/地點/備註一定可見，不必依賴時間網格滾動。
-  html += '<div id="ev-grid-list" class="events-list"></div>';
+  // 上下可拖動分割：時間網格（.ev-split-top）自動佔餘量，明細（.ev-detail）高度由 --ev-detail-h 決定
+  html += '<div class="ev-hsplit" id="ev-week-split" title="拖動調整下方行程明細高度（雙擊復位）"></div>';
+  html += '<div id="ev-grid-list" class="events-list ev-detail"></div>';
   wrap.innerHTML = html;
+  calBindSplit(wrap, document.getElementById('ev-week-split'));
   renderCalGridDayList();
   // 初次進入自動捲到「現在時間前 2 小時」
   requestAnimationFrame(() => {
@@ -579,17 +588,20 @@ function renderCalGridDayList() {
     let any = false;
     for (const d of calWeekDays(state.calCursor)) {
       const ds = calendarFmtDate(d);
-      const evs = sortedCalEvents(state.calEvents.filter((e) => (e.date === ds || (e.endDate && ds > e.date && ds <= e.endDate)) && calEventMatchesTag(e)));
-      const hols = calHolidaysOnDay(ds);
+      const dayItems = calDayItems(ds);
+      const evs = sortedCalEvents(dayItems.events);
+      const hols = dayItems.holidays;
       if (!evs.length && !hols.length) continue;
       // toggle 只內聯進第一個內容日標題條（與「日」範圍單行結構一致），不單獨佔一行
-      html += calDateHeaderHtml(ds, today, any ? '' : toggle);
+      html += calDateHeaderHtml(ds, today, any ? '' : toggle, evs.length + hols.length);
       any = true;
       for (const h of hols) html += calHolidayHtml(h, today);
       for (const ev of evs) html += evItemHtml(ev, today);
     }
     if (!any) html += '<div class="ev-scope-row">' + toggle + '</div><div class="ev-empty">本週沒有行程</div>';
     list.innerHTML = html;
+    // 整週：滾動到「選中日」的日期條（該日無內容則回退到最近的一天）；清單自身即滾動容器
+    calScrollListToDate(list, list, calGridSelectedDay());
     return;
   }
   // 單日（默認）：選中日明細
@@ -597,8 +609,9 @@ function renderCalGridDayList() {
   const m = String(ds).match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
   const WD = ['日', '一', '二', '三', '四', '五', '六'];
   const d = m ? new Date(+m[1], +m[2] - 1, +m[3]) : new Date();
-  const evs = sortedCalEvents(state.calEvents.filter((e) => (e.date === ds || (e.endDate && ds > e.date && ds <= e.endDate)) && calEventMatchesTag(e)));
-  const hols = calHolidaysOnDay(ds);
+  const dayItems = calDayItems(ds);
+  const evs = sortedCalEvents(dayItems.events);
+  const hols = dayItems.holidays;
   html += '<div class="ev-date' + (ds === today ? ' today' : '') + '" data-ev-date="' + escapeHtml(ds) + '">' +
     (m ? (+m[2]) + '月' + (+m[3]) + '日' : ds) +
     '<span class="ev-week">週' + WD[d.getDay()] + '</span>' +
@@ -614,6 +627,7 @@ function renderCalGridDayList() {
     for (const ev of evs) html += evItemHtml(ev, today);
   }
   list.innerHTML = html;
+  calScrollListToDate(list, list, ds);   // 單日明細：滾到該日日期條（清單自身即滾動容器）
 }
 // 導航列標題：依模式顯示「月 / 週區間 / 單日」
 function calCursorTitle() {
@@ -720,6 +734,29 @@ function calHolidaysOnDay(dateStr) {
     return calRegionVisible(h) && dateStr >= h.date && dateStr <= end;
   });
 }
+// 🗓 依日期分組的「唯一入口」：跨天行程/假日一律「逐日展開」——在涵蓋的每一天都出現，
+//    與「日」範圍同口徑。（修復：by月/列表先前只認起始日 → 同一天 by日 4 條、by月 3 條）
+//    dateOk(ds) 可選：只收符合條件的日期（如「整月」只收游標月）。
+function calEventsByDate(events, dateOk) {
+  const byDate = new Map();
+  const add = (ds, key, item) => {
+    if (!ds || (dateOk && !dateOk(ds))) return;
+    if (!byDate.has(ds)) byDate.set(ds, { events: [], holidays: [] });
+    byDate.get(ds)[key].push(item);
+  };
+  (events || []).forEach((ev) => { calEventOccurrences(ev).forEach((o) => add(o.date, 'events', ev)); });
+  calVisibleHolidays().forEach((h) => {
+    const s = new Date(h.date + 'T00:00:00');
+    const en = new Date(((h.endDate && h.endDate !== h.date) ? h.endDate : h.date) + 'T00:00:00');
+    if (isNaN(s) || isNaN(en) || en < s) { add(h.date, 'holidays', h); return; }
+    for (const cur = new Date(s); cur <= en; cur.setDate(cur.getDate() + 1)) add(calendarFmtDate(cur), 'holidays', h);
+  });
+  return byDate;
+}
+// 某日明細的「唯一取數入口」（日/週/月三處明細都用它）→ 與列表/整月同口徑，不會再分叉
+function calDayItems(ds) {
+  return calEventsByDate(state.calEvents.filter(calEventMatchesTag), (d) => d === ds).get(ds) || { events: [], holidays: [] };
+}
 function calHolidayHtml(h, today) {
   const meta = calHolidayMeta(h.holidayType);
   const region = calHolidayRegionMeta(h.region);
@@ -759,21 +796,13 @@ function renderEventsList(content) {
       '</div>';
     return;
   }
-  // 按日期分組：每天先顯示該日假日（節日/補班），再顯示行程
-  const byDate = new Map();
-  for (const ev of visible) {
-    if (!byDate.has(ev.date)) byDate.set(ev.date, { events: [], holidays: [] });
-    byDate.get(ev.date).events.push(ev);
-  }
-  for (const h of calVisibleHolidays()) {
-    if (!byDate.has(h.date)) byDate.set(h.date, { events: [], holidays: [] });
-    byDate.get(h.date).holidays.push(h);
-  }
+  // 按日期分組（跨天行程/假日逐日展開，與「日」範圍同口徑）：每天先顯示該日假日，再顯示行程
+  const byDate = calEventsByDate(visible);
   const dates = Array.from(byDate.keys()).sort();
   let html = '';
   for (const ds of dates) {
-    html += calDateHeaderHtml(ds, today);
     const grp = byDate.get(ds);
+    html += calDateHeaderHtml(ds, today, '', grp.events.length + grp.holidays.length);
     for (const h of grp.holidays) html += calHolidayHtml(h, today);
     for (const ev of sortedCalEvents(grp.events)) html += evItemHtml(ev, today);
   }
@@ -783,21 +812,114 @@ function renderEventsList(content) {
 }
 
 // 自動滾動到離今天最近的日期懸浮條（優先今天，其次最近未來日期，最後最後一個）
+// ⚠️ 用 calScrollElToTop 而不是 scrollIntoView：`.ev-date` 吸頂後 rect 是「位移後」的位置，
+//    scrollIntoView 會誤判「已在視口內」而不滾（與 2026-09-19 那個單向滾動 bug 同源）。
 function scrollToNearestDate(list) {
   if (!list) return;
   const headers = list.querySelectorAll('.ev-date[data-ev-date]');
   if (!headers.length) return;
   const today = calendarFmtDate(new Date());
+  let pick = null;
   // 1. 精確匹配今天
-  for (let i = 0; i < headers.length; i++) {
-    if (headers[i].dataset.evDate === today) { headers[i].scrollIntoView({ block: 'start' }); return; }
-  }
+  for (let i = 0; i < headers.length; i++) if (headers[i].dataset.evDate === today) { pick = headers[i]; break; }
   // 2. 找最近未來日期
-  for (let i = 0; i < headers.length; i++) {
-    if (headers[i].dataset.evDate > today) { headers[i].scrollIntoView({ block: 'start' }); return; }
-  }
+  if (!pick) for (let i = 0; i < headers.length; i++) if (headers[i].dataset.evDate > today) { pick = headers[i]; break; }
   // 3. 全是過去日期 → 滾到最後一個
-  headers[headers.length - 1].scrollIntoView({ block: 'start' });
+  if (!pick) pick = headers[headers.length - 1];
+  calScrollElToTop(pick, list);
+}
+
+// 把元素滾到 scroller 頂部（sticky 安全版，月/週明細 + 清單模式共用）
+// ⚠️ 坑：`.ev-date` 是 position:sticky，**被「吸頂」時它的 offsetTop / getBoundingClientRect()
+//    返回的是「位移後」的渲染位置（≈ 當前 scrollTop），不是佈局位置**（Chrome 實測：吸頂後
+//    offsetTop === scroller.offsetTop + scrollTop）。於是「點更早的日期」時，目標標題正被吸在
+//    滾動口頂部 → 算出的目標 scrollTop 恰好等於當前 scrollTop → 永遠滾不上去；點更晚的日期時
+//    標題在下方、沒被吸頂，所以只有單向能滾（2026-09-19 用戶報告的 bug）。
+//    修法：讀真實佈局位置前先把該元素的 sticky 臨時摘掉（同步 reflow，同一幀內還原，不會閃）。
+//    只改 scroller.scrollTop，不觸碰祖先滾動容器。
+function calScrollElToTop(el, scroller) {
+  if (!el || !scroller) return;
+  const prevPos = el.style.position;
+  el.style.position = 'static';                 // 臨時摘 sticky → 讀到真實佈局位置
+  const next = (el.offsetParent && el.offsetParent === scroller.offsetParent)
+    ? el.offsetTop - scroller.offsetTop - (scroller.clientTop || 0)   // 同 offsetParent：直接相減（補邊框）
+    : scroller.scrollTop + (el.getBoundingClientRect().top - scroller.getBoundingClientRect().top);  // 否則退回 rect 差
+  el.style.position = prevPos;
+  scroller.scrollTop = next;
+}
+
+// 在明細裡挑「要滾動到的日期標題」：精確命中 → 其後最近 → 其前最近 → 首個（＝附近位置回退）
+function calPickScrollTarget(headers, ds) {
+  if (!headers || !headers.length) return null;
+  for (const h of headers) if (h.dataset.evDate === ds) return h;
+  for (const h of headers) if (h.dataset.evDate > ds) return h;
+  for (let i = headers.length - 1; i >= 0; i--) if (headers[i].dataset.evDate < ds) return headers[i];
+  return headers[0];
+}
+// 把月/週明細滾動到指定日期（真實佈局位置換算見 calScrollElToTop：`.ev-date` 的 sticky
+// 會讓 offsetTop / rect 變成「位移後」的渲染位置，必須先摘掉 sticky 再讀）
+function calScrollListToDate(list, scroller, ds) {
+  if (!list || !scroller || !ds) return;
+  calScrollElToTop(calPickScrollTarget(list.querySelectorAll('.ev-date[data-ev-date]'), ds), scroller);
+}
+
+// ===== 上下區域可拖動分割（月/週共用）=====
+// 拖動横条調整「下方行程明細」高度：寫成 CSS 變數 --ev-detail-h（百分比）
+// → 窗口尺寸變化時比例自然保持。純 UI 偏好：記憶體 + localStorage，絕不寫回資料檔。
+const CAL_SPLIT_MIN_PX = 56;        // 明細最小高度（至少看得見一條日期條）
+const CAL_SPLIT_TOP_MIN_PX = 120;   // 上區最小高度（仍看得見月格 / 時間網格）
+const CAL_SPLIT_DEFAULT = 30;       // 預設佔比（%）
+let calSplitPct = null;
+function calLoadSplitPct() {
+  if (calSplitPct != null) return calSplitPct;
+  let v = NaN;
+  try { v = parseFloat(localStorage.getItem('calDetailH')); } catch (e) {}
+  calSplitPct = (isFinite(v) && v >= 10 && v <= 80) ? v : CAL_SPLIT_DEFAULT;
+  return calSplitPct;
+}
+function calSaveSplitPct(v) {
+  calSplitPct = Math.min(80, Math.max(10, Math.round(v * 10) / 10));
+  try { localStorage.setItem('calDetailH', String(calSplitPct)); } catch (e) {}
+}
+// 指針 Y → 明細高度百分比（即時量 rect，不依賴快取尺寸）；只寫 CSS 變數，不落盤
+function calApplySplitFromPointer(wrap, clientY) {
+  const r = wrap.getBoundingClientRect();
+  if (!r.height) return null;
+  const maxPx = Math.max(CAL_SPLIT_MIN_PX, r.height - CAL_SPLIT_TOP_MIN_PX);
+  const px = Math.min(Math.max(CAL_SPLIT_MIN_PX, r.bottom - clientY), maxPx);
+  const pct = px / r.height * 100;
+  wrap.style.setProperty('--ev-detail-h', pct + '%');
+  return pct;
+}
+// 綁一次即可（重渲染換了新元素才會再綁）；每次調用都重新套用已存佔比
+function calBindSplit(wrap, split) {
+  if (!wrap || !split) return;
+  wrap.style.setProperty('--ev-detail-h', calLoadSplitPct() + '%');
+  if (split.dataset.splitBound === '1') return;
+  split.dataset.splitBound = '1';
+  let dragging = false;
+  split.addEventListener('pointerdown', (e) => {
+    dragging = true;
+    split.classList.add('dragging');
+    try { split.setPointerCapture(e.pointerId); } catch (err) {}
+    if (e.cancelable) e.preventDefault();   // 防止拖動時選中文字
+  });
+  // 有了 pointer capture，move/up 都會派發到 split 自身
+  split.addEventListener('pointermove', (e) => { if (dragging) calApplySplitFromPointer(wrap, e.clientY); });
+  const end = (e) => {
+    if (!dragging) return;
+    dragging = false;
+    split.classList.remove('dragging');
+    try { split.releasePointerCapture(e.pointerId); } catch (err) {}
+    const pct = calApplySplitFromPointer(wrap, e.clientY);
+    if (pct != null) calSaveSplitPct(pct);   // 放手才落盤
+  };
+  split.addEventListener('pointerup', end);
+  split.addEventListener('pointercancel', end);
+  split.addEventListener('dblclick', () => {
+    calSaveSplitPct(CAL_SPLIT_DEFAULT);
+    wrap.style.setProperty('--ev-detail-h', CAL_SPLIT_DEFAULT + '%');
+  });
 }
 
 // 條目排序：日期升序 → 同日全天在前 → 開始時間
@@ -971,7 +1093,7 @@ function calUpdateFormDow() {
   setLunar('ev-f-enddate-lunar', elements.evFEndDate && elements.evFEndDate.value);
 }
 
-function calDateHeaderHtml(date, today, extra) {
+function calDateHeaderHtml(date, today, extra, count) {
   const m = String(date || '').match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
   const WD = ['日', '一', '二', '三', '四', '五', '六'];
   let label = '日期未知';
@@ -989,6 +1111,8 @@ function calDateHeaderHtml(date, today, extra) {
     (week ? '<span class="ev-week">週' + week + '</span>' : '') +
     // ⏳ 倒計時徽章：每天必顯示（今天＝高亮，其餘＝灰底），取代原先「僅今天顯示」
     (cd ? '<span class="ev-today-badge' + (isToday ? '' : ' dim') + '">' + cd + '</span>' : '') +
+    // 當天條數（與「日」範圍單日標題的「· N 條」一致；列表/整月/整週分組標題都顯示）
+    (typeof count === 'number' ? '<span class="ev-week">· ' + count + ' 條</span>' : '') +
     (lunarHdr ? '<span class="ev-lunar hdr" data-ev-almanac="' + escapeHtml(date) + '" title="農民曆 / 老黃曆">' + escapeHtml(lunarHdr) + '</span>' : '') +
     (extra || '') +
     '<button type="button" class="ev-day-add" data-ev-add-on="' + escapeHtml(date) + '">＋ 新增</button></div>';
@@ -1181,6 +1305,7 @@ function renderCalMonth(content) {
       chips + '</div>';
   }
   if (elements.evMonthGrid) elements.evMonthGrid.innerHTML = html;
+  calBindSplit(elements.evMonthWrap, document.getElementById('ev-month-split'));
   renderCalDayList();
 }
 
@@ -1194,20 +1319,8 @@ function renderCalDayList() {
   if (state.calScope === 'full') {
     const mo = state.calCursor.getMonth();
     const prefix = state.calCursor.getFullYear() + '-' + String(mo + 1).padStart(2, '0');
-    const byDate = new Map();
-    for (const ev of state.calEvents.filter(calEventMatchesTag)) {
-      if (typeof ev.date === 'string' && ev.date.slice(0, 7) === prefix) {
-        if (!byDate.has(ev.date)) byDate.set(ev.date, { events: [], holidays: [] });
-        byDate.get(ev.date).events.push(ev);
-      }
-    }
-    for (const h of calHolidays) {
-      if (!calRegionVisible(h)) continue;   // 地區過濾（只顯示勾選地區）
-      if (typeof h.date === 'string' && h.date.slice(0, 7) === prefix) {
-        if (!byDate.has(h.date)) byDate.set(h.date, { events: [], holidays: [] });
-        byDate.get(h.date).holidays.push(h);
-      }
-    }
+    // 跨天行程/假日逐日展開（與「日」範圍同口徑），只收游標月內的日期
+    const byDate = calEventsByDate(state.calEvents.filter(calEventMatchesTag), (ds) => typeof ds === 'string' && ds.slice(0, 7) === prefix);
     const dates = Array.from(byDate.keys()).sort();
     let total = 0;
     byDate.forEach((g) => { total += g.events.length + g.holidays.length; });
@@ -1219,12 +1332,15 @@ function renderCalDayList() {
     else {
       for (let i = 0; i < dates.length; i++) {
         const grp = byDate.get(dates[i]);
-        html += calDateHeaderHtml(dates[i], today, i === 0 ? toggle : '');
+        html += calDateHeaderHtml(dates[i], today, i === 0 ? toggle : '', grp.events.length + grp.holidays.length);
         for (const h of grp.holidays) html += calHolidayHtml(h, today);
         for (const ev of sortedCalEvents(grp.events)) html += evItemHtml(ev, today);
       }
     }
     list.innerHTML = html;
+    // 整月：滾動到「選中日」的日期條（該日無內容則回退到最近的一天）。
+    // 明細自身即滾動容器（.ev-detail 有確定高度）→ 月格不再被滾走。
+    calScrollListToDate(list, list, state.calSelectedDate);
     return;
   }
   // 「日」範圍（默認）：選定日單日
@@ -1232,8 +1348,10 @@ function renderCalDayList() {
   const m = String(ds).match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
   const WD = ['日', '一', '二', '三', '四', '五', '六'];
   const d = m ? new Date(+m[1], +m[2] - 1, +m[3]) : new Date();
-  const evs = sortedCalEvents(state.calEvents.filter(e => (e.date === ds || (e.endDate && ds > e.date && ds <= e.endDate)) && calEventMatchesTag(e)));
-  const hols = calHolidaysOnDay(ds);
+  // 與「列表/整月」共用同一分組入口（逐日展開）→ 保證「日」與「整月」同一天條數一致
+  const dayItems = calDayItems(ds);
+  const evs = sortedCalEvents(dayItems.events);
+  const hols = dayItems.holidays;
   let html = '<div class="ev-date' + (ds === today ? ' today' : '') + '" data-ev-date="' + escapeHtml(ds) + '">' +
     (m ? (+m[2]) + '月' + (+m[3]) + '日' : '日期未知') +
     '<span class="ev-week">週' + WD[d.getDay()] + '</span>' +

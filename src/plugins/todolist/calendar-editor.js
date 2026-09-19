@@ -110,7 +110,8 @@
       const ri = block.indexOf('- Remark:');
       if (ri >= 0) {
         head = block.slice(0, ri);
-        const m = block.slice(ri + '- Remark:'.length).match(/```([\s\S]*)```/);
+        // ⚠️ 必须非贪婪：曾用 /```([\s\S]*)```/ 贪婪匹配到块尾最后一个 ``` → 备注会吞掉紧随其后的 ## HOLIDAY 原文
+        const m = block.slice(ri + '- Remark:'.length).match(/```([\s\S]*?)```/);
         if (m) {
           remark = m[1].replace(/^\n/, '').replace(/\n$/, '');
           if (remark.trim() === '') remark = '';
@@ -150,7 +151,10 @@
       const out = [];
       const blocks = String(md).split(/^##[ \t]*EVENT[ \t]*$/m);
       for (let i = 0; i < blocks.length; i++) {
-        const ev = tlParseBlock(blocks[i], i);
+        // ⚠️ 切块只按 ## EVENT → 本块尾巴会粘着紧随其后的 ## HOLIDAY 块。
+        //    必须先在该标记处截断，否则 remark / holidayType / region 等会被后面的假日块污染（2026-09-19 用户反馈）
+        const cut = blocks[i].search(/^##[ \t]*HOLIDAY[ \t]*$/m);
+        const ev = tlParseBlock(cut >= 0 ? blocks[i].slice(0, cut) : blocks[i], i);
         if (ev) out.push(ev);
       }
       return out;
@@ -163,7 +167,9 @@
       const out = [];
       const blocks = String(md).split(/^##[ \t]*HOLIDAY[ \t]*$/m);
       for (let i = 1; i < blocks.length; i++) {
-        const h = tlParseBlock(blocks[i], i);
+        // 同理：假日块尾巴可能粘着后面的 ## EVENT 块 → 先在该标记处截断
+        const cut = blocks[i].search(/^##[ \t]*EVENT[ \t]*$/m);
+        const h = tlParseBlock(cut >= 0 ? blocks[i].slice(0, cut) : blocks[i], i);
         if (h) out.push(h);
       }
       return out;
@@ -243,7 +249,8 @@
     }
     // ===== 跨天行程辅助 =====
     function tlIsMultiDay(ev) { return !!(ev && ev.endDate && ev.endDate !== ev.date); }
-    function tlMdShort(d) { const m = String(d || '').match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/); return m ? (+m[1]) + '/' + (+m[2]) : (d || ''); }
+    // ⚠️ 必须含「日」：曾漏掉 (+m[3]) → 跨天行程/假日区间显示成「2026/9 – 2026/9」（看不出是哪天）。与 LITE calMdShort 对齐。
+    function tlMdShort(d) { const m = String(d || '').match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/); return m ? (+m[1]) + '/' + (+m[2]) + '/' + (+m[3]) : (d || ''); }
     function tlSpanDays(a, b) {
       const d1 = new Date(a + 'T00:00:00'), d2 = new Date(b + 'T00:00:00');
       if (isNaN(d1) || isNaN(d2)) return 1;
@@ -490,7 +497,11 @@
         }
       });
       html += '</div></div>';
-      wrap.innerHTML = '<div class="ev-timegrid-col">' + html + '</div><div id="tlEvDayGridList" class="events-list"></div>';
+      // 上下可拖动分割：时间网格（.ev-split-top）自动占余量，行程明细（.ev-detail）高度由 --ev-detail-h 决定
+      wrap.innerHTML = '<div class="ev-timegrid-col ev-split-top">' + html + '</div>' +
+        '<div class="ev-hsplit" id="tlEvWeekSplit" title="拖动调整下方行程明细高度（双击复位）"></div>' +
+        '<div id="tlEvDayGridList" class="events-list ev-detail"></div>';
+      tlBindSplit(wrap, document.getElementById('tlEvWeekSplit'));
       tlRenderDayGridList();
       requestAnimationFrame(() => {
         const sc = wrap.querySelector('.ev-timegrid-scroll');
@@ -499,6 +510,14 @@
     }
     // 日/週时间网格下方明细：日模式显示游标那天、週模式显示当周每天（仅含内容者），
     // 与列表模式一致——每天先假日（.ev-holiday）后行程（.ev-item），保证假日必定可见。
+    // 日/週网格下方明细「所顯示的那一天」：日模式＝游标当天；週模式＝选定日（须在当週内），否则今天（若在当週）否则週一
+    function tlGridSelectedDay() {
+      if (tlCalMode === 'day') return tlFmtDate(tlCalCursor);
+      const week = tlWeekDays(tlCalCursor).map(tlFmtDate);
+      const today = tlFmtDate(new Date());
+      return (tlCalSelected && week.indexOf(tlCalSelected) >= 0) ? tlCalSelected
+           : (week.indexOf(today) >= 0 ? today : week[0]);
+    }
     function tlRenderDayGridList() {
       const list = document.getElementById('tlEvDayGridList');
       if (!list) return;
@@ -511,33 +530,28 @@
         let any = false;
         for (const d of tlWeekDays(tlCalCursor)) {
           const ds = tlFmtDate(d);
-          const evs = tlSorted(tlCalEvents.filter((e) => (e.date === ds || (e.endDate && ds > e.date && ds <= e.endDate)) && tlEventMatchesTag(e)));
-          const hols = tlHolidaysOnDay(ds);
+          const dayItems = tlDayItems(ds);
+          const evs = tlSorted(dayItems.events);
+          const hols = dayItems.holidays;
           if (!evs.length && !hols.length) continue;
           // toggle 只内联进第一个内容日标题条（与「日」范围单行结构一致），不单独占一行
-          html += tlDateHeader(ds, today, any ? '' : toggle);
+          html += tlDateHeader(ds, today, any ? '' : toggle, evs.length + hols.length);
           any = true;
           for (const h of hols) html += tlHolidayHtml(h, today);
           for (const ev of evs) html += tlItemHtml(ev, today);
         }
         if (!any) html += '<div class="ev-scope-row">' + toggle + '</div><div class="ev-empty">本周没有行程</div>';
         list.innerHTML = html;
+        // 整週：滚动到「选定日」的日期条（该日无内容则回退到最近的一天）；列表自身即滚动容器
+        tlScrollListToDate(list, list, tlGridSelectedDay());
         return;
       }
       // 单日（默认）：週模式=「选定日」、日模式=游标当天；空日也显示日期标题 + 空提示
-      let selDay;
-      if (isDay) {
-        selDay = tlFmtDate(tlCalCursor);
-      } else {
-        // 周模式：只显示「选定日」单日（与月模式选中日、日模式游标日一致），非整周 7 天
-        const week = tlWeekDays(tlCalCursor).map(tlFmtDate);
-        selDay = (tlCalSelected && week.indexOf(tlCalSelected) >= 0) ? tlCalSelected
-               : (week.indexOf(today) >= 0 ? today : week[0]);
-      }
-      const ds = selDay;
-      const evs = tlSorted(tlCalEvents.filter((e) => (e.date === ds || (e.endDate && ds > e.date && ds <= e.endDate)) && tlEventMatchesTag(e)));
-      const hols = tlHolidaysOnDay(ds);
-      html += tlDateHeader(ds, today, toggle);
+      const ds = tlGridSelectedDay();
+      const dayItems = tlDayItems(ds);
+      const evs = tlSorted(dayItems.events);
+      const hols = dayItems.holidays;
+      html += tlDateHeader(ds, today, toggle, evs.length + hols.length);
       if (!evs.length && !hols.length) {
         html += '<div class="ev-empty">这一天没有行程</div>';
       } else {
@@ -545,6 +559,7 @@
         for (const ev of evs) html += tlItemHtml(ev, today);
       }
       list.innerHTML = html;
+      tlScrollListToDate(list, list, ds);   // 日/週单日明细：滚到该日日期条（列表自身即滚动容器）
     }
     // 日/週视图：点日期标题切换「下方明细」显示的那一天（与月模式「选中日」、日模式「游标日」一致，均只显示单日）
     function tlSelectWeekDay(ds) {
@@ -709,7 +724,7 @@
       return diff > 0 ? diff + '天后' : (-diff) + '天前';
     }
 
-    function tlDateHeader(date, today, extra) {
+    function tlDateHeader(date, today, extra, count) {
       const m = String(date || '').match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
       const WD = ['日', '一', '二', '三', '四', '五', '六'];
       let label = '日期未知', week = '';
@@ -726,6 +741,8 @@
         (week ? '<span class="ev-week">週' + week + '</span>' : '') +
         // ⏳ 倒計時徽章：每天必顯示（今天＝高亮，其餘＝灰底），取代原先「僅今天顯示」
         (cd ? '<span class="ev-today-badge' + (isToday ? '' : ' dim') + '">' + cd + '</span>' : '') +
+        // 当天条数（与「日」范围单日标题的「· N 条」一致；列表/整月/整週分组标题都显示）
+        (typeof count === 'number' ? '<span class="ev-week">· ' + count + ' 条</span>' : '') +
         (lunarHdr ? '<span class="ev-lunar hdr" onclick="tlShowAlmanac(\'' + date + '\',this)" title="農民曆 / 老黃曆">' + tlEscapeHtml(lunarHdr) + '</span>' : '') +
         (extra || '') +
         '<button type="button" class="ev-day-add" onclick="tlOpenEventForm(null, \'' + date + '\')">＋ 新增</button></div>';
@@ -815,6 +832,29 @@
         return tlRegionVisible(h) && dateStr >= h.date && dateStr <= end;
       });
     }
+    // 🗓 依日期分組的「唯一入口」：跨天行程/假日一律「逐日展開」——在涵蓋的每一天都出現，
+    //    與「日」範圍同口徑。（修復：by月/列表先前只認起始日 → 同一天 by日 4 條、by月 3 條）
+    //    dateOk(ds) 可選：只收符合條件的日期（如「整月」只收游標月）。
+    function tlEventsByDate(events, dateOk) {
+      const byDate = new Map();
+      const add = (ds, key, item) => {
+        if (!ds || (dateOk && !dateOk(ds))) return;
+        if (!byDate.has(ds)) byDate.set(ds, { events: [], holidays: [] });
+        byDate.get(ds)[key].push(item);
+      };
+      (events || []).forEach((ev) => { tlEventOccurrences(ev).forEach((o) => add(o.date, 'events', ev)); });
+      tlVisibleHolidays().forEach((h) => {
+        const s = new Date(h.date + 'T00:00:00');
+        const en = new Date(((h.endDate && h.endDate !== h.date) ? h.endDate : h.date) + 'T00:00:00');
+        if (isNaN(s) || isNaN(en) || en < s) { add(h.date, 'holidays', h); return; }
+        for (const cur = new Date(s); cur <= en; cur.setDate(cur.getDate() + 1)) add(tlFmtDate(cur), 'holidays', h);
+      });
+      return byDate;
+    }
+    // 某日明细的「唯一取数入口」（日/週/月三处明细都用它）→ 与列表/整月同口径，不会再分叉
+    function tlDayItems(ds) {
+      return tlEventsByDate(tlCalEvents.filter(tlEventMatchesTag), (d) => d === ds).get(ds) || { events: [], holidays: [] };
+    }
     function tlHolidayHtml(h, today) {
       const meta = tlHolidayMeta(h.holidayType);
       const region = tlHolidayRegionMeta(h.region);
@@ -844,21 +884,13 @@
         return;
       }
       const today = tlFmtDate(new Date());
-      // 按日期分组：每天先显示该日假日（节日/补班），再显示行程
-      const byDate = new Map();
-      for (const ev of tlCalEvents.filter(tlEventMatchesTag)) {
-        if (!byDate.has(ev.date)) byDate.set(ev.date, { events: [], holidays: [] });
-        byDate.get(ev.date).events.push(ev);
-      }
-      for (const h of tlVisibleHolidays()) {
-        if (!byDate.has(h.date)) byDate.set(h.date, { events: [], holidays: [] });
-        byDate.get(h.date).holidays.push(h);
-      }
+      // 按日期分组（跨天行程/假日逐日展开，与「日」范围同口径）：每天先显示该日假日，再显示行程
+      const byDate = tlEventsByDate(tlCalEvents.filter(tlEventMatchesTag));
       const dates = Array.from(byDate.keys()).sort();
       let html = '';
       for (const ds of dates) {
-        html += tlDateHeader(ds, today);
         const grp = byDate.get(ds);
+        html += tlDateHeader(ds, today, '', grp.events.length + grp.holidays.length);
         for (const h of grp.holidays) html += tlHolidayHtml(h, today);
         for (const ev of tlSorted(grp.events)) html += tlItemHtml(ev, today);
       }
@@ -868,21 +900,111 @@
     }
 
     // 自动滚动到离今天最近的日期悬浮条（优先今天，其次最近未来日期，最后最后一个）
+    // ⚠️ 用 tlScrollElToTop 而不是 scrollIntoView：`.ev-date` 吸顶后 rect 是「位移后」的位置，
+    //    scrollIntoView 会误判「已在视口内」而不滚（与 2026-09-19 那个单向滚动 bug 同源）。
     function tlScrollToNearestDate(list) {
       if (!list) return;
       const headers = list.querySelectorAll('.ev-date[data-ev-date]');
       if (!headers.length) return;
       const today = tlFmtDate(new Date());
+      let pick = null;
       // 1. 精确匹配今天
-      for (let i = 0; i < headers.length; i++) {
-        if (headers[i].dataset.evDate === today) { headers[i].scrollIntoView({ block: 'start' }); return; }
-      }
+      for (let i = 0; i < headers.length; i++) if (headers[i].dataset.evDate === today) { pick = headers[i]; break; }
       // 2. 找最近未来日期
-      for (let i = 0; i < headers.length; i++) {
-        if (headers[i].dataset.evDate > today) { headers[i].scrollIntoView({ block: 'start' }); return; }
-      }
+      if (!pick) for (let i = 0; i < headers.length; i++) if (headers[i].dataset.evDate > today) { pick = headers[i]; break; }
       // 3. 全是过去日期 → 滚到最后一个
-      headers[headers.length - 1].scrollIntoView({ block: 'start' });
+      if (!pick) pick = headers[headers.length - 1];
+      tlScrollElToTop(pick, list);
+    }
+
+    // 在明细里挑「要滚动到的日期标题」：精确命中 → 其后最近 → 其前最近 → 首个（＝附近位置回退）
+    function tlPickScrollTarget(headers, ds) {
+      if (!headers || !headers.length) return null;
+      for (const h of headers) if (h.dataset.evDate === ds) return h;
+      for (const h of headers) if (h.dataset.evDate > ds) return h;
+      for (let i = headers.length - 1; i >= 0; i--) if (headers[i].dataset.evDate < ds) return headers[i];
+      return headers[0];
+    }
+    // 把元素滚到 scroller 顶部（sticky 安全版，月/週明细 + 列表模式共用）
+    // ⚠️ 坑：`.ev-date` 是 position:sticky，**被「吸顶」时它的 offsetTop / getBoundingClientRect()
+    //    返回的是「位移后」的渲染位置（≈ 当前 scrollTop），不是布局位置**（Chrome 实测：吸顶后
+    //    offsetTop === scroller.offsetTop + scrollTop）。于是「点更早的日期」时，目标标题正被吸在
+    //    滚动口顶部 → 算出的目标 scrollTop 恰好等于当前 scrollTop → 永远滚不上去；点更晚的日期时
+    //    标题在下方、没被吸顶，所以只有单向能滚（2026-09-19 用户报告的 bug）。
+    //    修法：读真实布局位置前先把该元素的 sticky 临时摘掉（同步 reflow，同一帧内还原，不会闪）。
+    //    只改 scroller.scrollTop，不触碰祖先滚动容器。
+    function tlScrollElToTop(el, scroller) {
+      if (!el || !scroller) return;
+      const prevPos = el.style.position;
+      el.style.position = 'static';                 // 临时摘 sticky → 读到真实布局位置
+      const next = (el.offsetParent && el.offsetParent === scroller.offsetParent)
+        ? el.offsetTop - scroller.offsetTop - (scroller.clientTop || 0)   // 同 offsetParent：直接相减（补边框）
+        : scroller.scrollTop + (el.getBoundingClientRect().top - scroller.getBoundingClientRect().top);  // 否则退回 rect 差
+      el.style.position = prevPos;
+      scroller.scrollTop = next;
+    }
+    function tlScrollListToDate(list, scroller, ds) {
+      if (!list || !scroller || !ds) return;
+      tlScrollElToTop(tlPickScrollTarget(list.querySelectorAll('.ev-date[data-ev-date]'), ds), scroller);
+    }
+
+    // ===== 上下区域可拖動分割（月/週共用）=====
+    // 拖動横条调整「下方行程明细」高度：写成 CSS 变量 --ev-detail-h（百分比）
+    // → 窗口尺寸变化时比例自然保持，无需重算。纯 UI 偏好：内存 + localStorage，绝不写回数据文件。
+    const TL_SPLIT_MIN_PX = 56;        // 明细最小高度（至少看得见一条日期条）
+    const TL_SPLIT_TOP_MIN_PX = 120;   // 上区最小高度（仍看得见月格 / 时间网格）
+    const TL_SPLIT_DEFAULT = 30;       // 默认占比（%）
+    let tlSplitPct = null;
+    function tlLoadSplitPct() {
+      if (tlSplitPct != null) return tlSplitPct;
+      let v = NaN;
+      try { v = parseFloat(localStorage.getItem('tlCalDetailH')); } catch (e) {}
+      tlSplitPct = (isFinite(v) && v >= 10 && v <= 80) ? v : TL_SPLIT_DEFAULT;
+      return tlSplitPct;
+    }
+    function tlSaveSplitPct(v) {
+      tlSplitPct = Math.min(80, Math.max(10, Math.round(v * 10) / 10));
+      try { localStorage.setItem('tlCalDetailH', String(tlSplitPct)); } catch (e) {}
+    }
+    // 指针 Y → 明细高度百分比（实时量 rect，不依赖缓存尺寸）；只写 CSS 变量，不落盘
+    function tlApplySplitFromPointer(wrap, clientY) {
+      const r = wrap.getBoundingClientRect();
+      if (!r.height) return null;
+      const maxPx = Math.max(TL_SPLIT_MIN_PX, r.height - TL_SPLIT_TOP_MIN_PX);
+      const px = Math.min(Math.max(TL_SPLIT_MIN_PX, r.bottom - clientY), maxPx);
+      const pct = px / r.height * 100;
+      wrap.style.setProperty('--ev-detail-h', pct + '%');
+      return pct;
+    }
+    // 绑一次即可（重渲染换了新元素才会再绑）；每次调用都重新套用已存占比
+    function tlBindSplit(wrap, split) {
+      if (!wrap || !split) return;
+      wrap.style.setProperty('--ev-detail-h', tlLoadSplitPct() + '%');
+      if (split.dataset.splitBound === '1') return;
+      split.dataset.splitBound = '1';
+      let dragging = false;
+      split.addEventListener('pointerdown', (e) => {
+        dragging = true;
+        split.classList.add('dragging');
+        try { split.setPointerCapture(e.pointerId); } catch (err) {}
+        e.preventDefault();   // 防止拖动时选中文本
+      });
+      // 有了 pointer capture，move/up 都会派发到 split 自身
+      split.addEventListener('pointermove', (e) => { if (dragging) tlApplySplitFromPointer(wrap, e.clientY); });
+      const end = (e) => {
+        if (!dragging) return;
+        dragging = false;
+        split.classList.remove('dragging');
+        try { split.releasePointerCapture(e.pointerId); } catch (err) {}
+        const pct = tlApplySplitFromPointer(wrap, e.clientY);
+        if (pct != null) tlSaveSplitPct(pct);   // 松手才落盘
+      };
+      split.addEventListener('pointerup', end);
+      split.addEventListener('pointercancel', end);
+      split.addEventListener('dblclick', () => {
+        tlSaveSplitPct(TL_SPLIT_DEFAULT);
+        wrap.style.setProperty('--ev-detail-h', TL_SPLIT_DEFAULT + '%');
+      });
     }
 
     function tlRenderMonth(content) {
@@ -929,6 +1051,7 @@
       }
       const grid = document.getElementById('tlEvMonthGrid');
       if (grid) grid.innerHTML = html;
+      tlBindSplit(document.getElementById('tlEvMonthWrap'), document.getElementById('tlEvMonthSplit'));
       tlRenderDayList();
     }
 
@@ -954,19 +1077,7 @@
       if (tlCalScope === 'full') {
         const mo = tlCalCursor.getMonth();
         const prefix = tlCalCursor.getFullYear() + '-' + String(mo + 1).padStart(2, '0');
-        const byDate = new Map();
-        for (const ev of tlCalEvents.filter(tlEventMatchesTag)) {
-          if (typeof ev.date === 'string' && ev.date.slice(0, 7) === prefix) {
-            if (!byDate.has(ev.date)) byDate.set(ev.date, { events: [], holidays: [] });
-            byDate.get(ev.date).events.push(ev);
-          }
-        }
-        for (const h of tlVisibleHolidays()) {
-          if (typeof h.date === 'string' && h.date.slice(0, 7) === prefix) {
-            if (!byDate.has(h.date)) byDate.set(h.date, { events: [], holidays: [] });
-            byDate.get(h.date).holidays.push(h);
-          }
-        }
+        const byDate = tlEventsByDate(tlCalEvents.filter(tlEventMatchesTag), (ds) => typeof ds === 'string' && ds.slice(0, 7) === prefix);
         const dates = Array.from(byDate.keys()).sort();
         let total = 0;
         byDate.forEach((g) => { total += g.events.length + g.holidays.length; });
@@ -978,12 +1089,15 @@
         else {
           for (let i = 0; i < dates.length; i++) {
             const grp = byDate.get(dates[i]);
-            html += tlDateHeader(dates[i], today, i === 0 ? toggle : '');
+            html += tlDateHeader(dates[i], today, i === 0 ? toggle : '', grp.events.length + grp.holidays.length);
             for (const h of grp.holidays) html += tlHolidayHtml(h, today);
             for (const ev of tlSorted(grp.events)) html += tlItemHtml(ev, today);
           }
         }
         list.innerHTML = html;
+        // 整月：滚动到「选中日」的日期条（该日无内容则回退到最近的一天）。
+        // 明细自身即滚动容器（.ev-detail 有确定高度）→ 月格不再被滚走。
+        tlScrollListToDate(list, list, tlCalSelected);
         return;
       }
       // 「日」范围（默认）：选定日单日
@@ -991,8 +1105,9 @@
       const m = String(ds).match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
       const WD = ['日', '一', '二', '三', '四', '五', '六'];
       const d = m ? new Date(+m[1], +m[2] - 1, +m[3]) : new Date();
-      const evs = tlSorted(tlCalEvents.filter((e) => (e.date === ds || (e.endDate && ds > e.date && ds <= e.endDate)) && tlEventMatchesTag(e)));
-      const hols = tlHolidaysOnDay(ds);
+      const dayItems = tlDayItems(ds);
+      const evs = tlSorted(dayItems.events);
+      const hols = dayItems.holidays;
       let html = '<div class="ev-date' + (ds === today ? ' today' : '') + '" data-ev-date="' + tlEscapeHtml(ds) + '">' +
         (m ? (+m[2]) + '月' + (+m[3]) + '日' : '日期未知') +
         '<span class="ev-week">週' + WD[d.getDay()] + '</span>' +
