@@ -20,6 +20,7 @@
     let tlCalEvents = [];
     let tlCalHolidays = [];    // ## HOLIDAY 解析結果（与 ## EVENT 同结构，多 holidayType 字段）；仅列表/日志视图显示，不进时间网格/月格 chip
     let tlCalTagFilter = [];   // 标签过滤（空＝全部；OR 逻辑：事件 tags 命中任一即显示）
+    let tlCalRegionFilter = ['cn'];   // ## HOLIDAY 地区过滤（图例 checkbox 勾选；默认只显示大陆 cn；只影响显示，不改数据）
     let tlEvFormTodoIds = [];   // 表单内「关联 Todo 卡片」临时列表（仅编辑期，不污染存档对象）
     let tlEvFormUid = null;
     let tlEvFormColor = null;
@@ -673,7 +674,10 @@
         if (seen[r]) continue;
         seen[r] = true;
         const m = tlHolidayRegionMeta(r);
-        items.push('<span class="ev-legend-item"><span class="ev-legend-dot" style="background:' + tlEscapeHtml(m.color) + '"></span>' + m.icon + tlEscapeHtml(m.label) + '</span>');
+        const on = tlCalRegionFilter.indexOf(r) >= 0;
+        items.push('<label class="ev-legend-item' + (on ? '' : ' off') + '" title="勾选显示 / 取消勾选隐藏该地区假日">' +
+          '<input type="checkbox" ' + (on ? 'checked' : '') + ' style="accent-color:' + tlEscapeHtml(m.color) + '" onchange="tlSetRegionChecked(\'' + r + '\', this.checked)">' +
+          '<span class="ev-legend-dot" style="background:' + tlEscapeHtml(m.color) + '"></span>' + m.icon + tlEscapeHtml(m.label) + '</label>');
       }
       if (!items.length) { el.style.display = 'none'; el.innerHTML = ''; return; }
       el.style.display = '';
@@ -781,11 +785,34 @@
       }
     }
     // 取某天出现的假日（含跨天展开）：dateStr 落在 [date, endDate] 区间内即命中
+    // ## HOLIDAY 地区过滤：图例 checkbox 勾选要显示的地区（默认只勾大陆 cn）
+    function tlRegionVisible(h) {
+      return tlCalRegionFilter.indexOf((h.region || 'cn').toLowerCase()) >= 0;
+    }
+    // 只保留「勾选地区」的假日（供按日期分组 / 空态判断使用，避免绕过地区过滤）
+    function tlVisibleHolidays() {
+      return (tlCalHolidays || []).filter(tlRegionVisible);
+    }
+    function tlSetRegionChecked(code, on) {
+      const r = (code || '').toLowerCase();
+      if (!r) return;
+      const i = tlCalRegionFilter.indexOf(r);
+      if (on && i < 0) tlCalRegionFilter.push(r);
+      else if (!on && i >= 0) tlCalRegionFilter.splice(i, 1);
+      // ⚠️ 与 tlSetCalScope 同款：按当前模式「直接」重渲染（勿走 tlRenderEventsContent —— 它开头有宿主守卫
+      //    if (!calEventsView) return，勾选图例时会被拦下导致画面不刷新），并同步刷新图例勾选态
+      const content = document.getElementById('taskText').value;
+      if (tlCalMode === 'month') tlRenderMonth(content);
+      else if (tlCalMode === 'week') tlRenderTimeGrid(tlWeekDays(tlCalCursor));
+      else if (tlCalMode === 'day') tlRenderTimeGrid([tlCalCursor]);
+      else tlRenderList(content);
+      tlRenderHolidayLegend();
+    }
     function tlHolidaysOnDay(dateStr) {
       if (!tlCalHolidays || !tlCalHolidays.length) return [];
       return tlCalHolidays.filter((h) => {
         const end = (h.endDate && h.endDate !== h.date) ? h.endDate : h.date;
-        return dateStr >= h.date && dateStr <= end;
+        return tlRegionVisible(h) && dateStr >= h.date && dateStr <= end;
       });
     }
     function tlHolidayHtml(h, today) {
@@ -812,7 +839,7 @@
       if (!list) return;
       tlCalEvents = tlParseEvents(content);
       tlCalHolidays = tlParseHolidays(content);
-      if (!tlCalEvents.length && !tlCalHolidays.length) {
+      if (!tlCalEvents.length && !tlVisibleHolidays().length) {
         list.innerHTML = '<div class="ev-empty">尚未有行程<br><span style="font-size:12px">点右上「＋ 新增行程」，或切回文本编辑直接改 calendar.md</span></div>';
         return;
       }
@@ -823,7 +850,7 @@
         if (!byDate.has(ev.date)) byDate.set(ev.date, { events: [], holidays: [] });
         byDate.get(ev.date).events.push(ev);
       }
-      for (const h of tlCalHolidays) {
+      for (const h of tlVisibleHolidays()) {
         if (!byDate.has(h.date)) byDate.set(h.date, { events: [], holidays: [] });
         byDate.get(h.date).holidays.push(h);
       }
@@ -934,7 +961,7 @@
             byDate.get(ev.date).events.push(ev);
           }
         }
-        for (const h of tlCalHolidays) {
+        for (const h of tlVisibleHolidays()) {
           if (typeof h.date === 'string' && h.date.slice(0, 7) === prefix) {
             if (!byDate.has(h.date)) byDate.set(h.date, { events: [], holidays: [] });
             byDate.get(h.date).holidays.push(h);

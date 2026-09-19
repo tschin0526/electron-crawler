@@ -1996,7 +1996,9 @@
     /* 地区图例：列出当前出现过的地区，颜色/图标与渲染一致 */
     .ev-holiday-legend { flex: 0 0 auto; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 4px 0 6px; font-size: 12px; color: var(--ev-muted, #6b7280); }
     .ev-holiday-legend .ev-legend-label { flex: 0 0 auto; }
-    .ev-holiday-legend .ev-legend-item { display: inline-flex; align-items: center; gap: 4px; color: var(--ev-text, #1f2937); }
+    .ev-holiday-legend .ev-legend-item { display: inline-flex; align-items: center; gap: 4px; color: var(--ev-text, #1f2937); cursor: pointer; user-select: none; }
+    .ev-holiday-legend .ev-legend-item input[type="checkbox"] { margin: 0; width: 13px; height: 13px; cursor: pointer; flex: 0 0 auto; }
+    .ev-holiday-legend .ev-legend-item.off { opacity: 0.45; }
     .ev-holiday-legend .ev-legend-dot { width: 10px; height: 10px; border-radius: 999px; display: inline-block; }
     /* 月格 chip：与 EVENT chip 视觉区隔（type 色块＋图标徽章），不变量⑤：面板 --ev-* 变量带显式回退 */
     .ev-holiday-chip { display: inline-flex; align-items: center; gap: 2px; font-size: 10px; font-weight: 600; line-height: 1.3; margin-top: 2px; padding: 0 5px; border-radius: 99px; color: #fff; background: var(--holiday-color, #FF9500); white-space: nowrap; }

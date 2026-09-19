@@ -412,7 +412,9 @@ body {
 /* 地區圖例：列出當前出現過的地區，顏色/圖標與渲染一致 */
 .ev-holiday-legend { flex: 0 0 auto; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 4px 0 6px; font-size: 12px; color: var(--text-secondary); }
 .ev-holiday-legend .ev-legend-label { flex: 0 0 auto; }
-.ev-holiday-legend .ev-legend-item { display: inline-flex; align-items: center; gap: 4px; color: var(--text); }
+.ev-holiday-legend .ev-legend-item { display: inline-flex; align-items: center; gap: 4px; color: var(--text); cursor: pointer; user-select: none; }
+.ev-holiday-legend .ev-legend-item input[type="checkbox"] { margin: 0; width: 13px; height: 13px; cursor: pointer; flex: 0 0 auto; accent-color: var(--primary); }
+.ev-holiday-legend .ev-legend-item.off { opacity: 0.45; }
 .ev-holiday-legend .ev-legend-dot { width: 10px; height: 10px; border-radius: 999px; display: inline-block; }
 /* 月格 chip：与 EVENT chip 视觉区隔（type 色块＋图标徽章） */
 .ev-holiday-chip { display: inline-flex; align-items: center; gap: 2px; font-size: 9px; font-weight: 600; line-height: 1.25; margin-top: 1px; padding: 0 5px; border-radius: 99px; color: #fff; background: var(--holiday-color, #FF9500); white-space: nowrap; }

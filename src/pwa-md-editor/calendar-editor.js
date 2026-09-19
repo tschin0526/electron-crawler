@@ -429,7 +429,10 @@ function calRenderHolidayLegend() {
     if (seen[r]) continue;
     seen[r] = true;
     const m = calHolidayRegionMeta(r);
-    items.push('<span class="ev-legend-item"><span class="ev-legend-dot" style="background:' + escapeHtml(m.color) + '"></span>' + m.icon + escapeHtml(m.label) + '</span>');
+    const on = (state.calRegionFilter || []).indexOf(r) >= 0;
+    items.push('<label class="ev-legend-item' + (on ? '' : ' off') + '" title="勾選顯示 / 取消勾選隱藏該地區假日">' +
+      '<input type="checkbox" ' + (on ? 'checked' : '') + ' style="accent-color:' + escapeHtml(m.color) + '" onchange="calSetRegionChecked(\'' + r + '\', this.checked)">' +
+      '<span class="ev-legend-dot" style="background:' + escapeHtml(m.color) + '"></span>' + m.icon + escapeHtml(m.label) + '</label>');
   }
   if (!items.length) { el.style.display = 'none'; el.innerHTML = ''; return; }
   el.style.display = '';
@@ -688,11 +691,33 @@ function calHolidayMeta(type) {
   }
 }
 // 取某天出現的假日（含跨天展開）：dateStr 落在 [date, endDate] 區間內即命中
+// ## HOLIDAY 地區過濾：圖例 checkbox 勾選要顯示的地區（默認只勾大陸 cn），只影響顯示不改數據
+function calRegionVisible(h) {
+  return (state.calRegionFilter || []).indexOf((h.region || 'cn').toLowerCase()) >= 0;
+}
+// 只保留「勾選地區」的假日（供按日期分組 / 空態判斷使用，避免繞過地區過濾）
+function calVisibleHolidays() {
+  return (calHolidays || []).filter(calRegionVisible);
+}
+function calSetRegionChecked(code, on) {
+  const r = (code || '').toLowerCase();
+  if (!r) return;
+  const arr = state.calRegionFilter = state.calRegionFilter || [];
+  const i = arr.indexOf(r);
+  if (on && i < 0) arr.push(r);
+  else if (!on && i >= 0) arr.splice(i, 1);
+  const content = elements.editor.value;
+  if (state.calMode === 'month') renderCalMonth(content);
+  else if (state.calMode === 'week') renderCalTimeGrid(calWeekDays(state.calCursor));
+  else if (state.calMode === 'day') renderCalTimeGrid([state.calCursor]);
+  else renderEventsList(content);
+  calRenderHolidayLegend();   // 同步圖例 checkbox 勾選態 / .off 類
+}
 function calHolidaysOnDay(dateStr) {
   if (!calHolidays || !calHolidays.length) return [];
   return calHolidays.filter((h) => {
     const end = (h.endDate && h.endDate !== h.date) ? h.endDate : h.date;
-    return dateStr >= h.date && dateStr <= end;
+    return calRegionVisible(h) && dateStr >= h.date && dateStr <= end;
   });
 }
 function calHolidayHtml(h, today) {
@@ -720,14 +745,14 @@ function renderEventsList(content) {
   if (!list) return;
   state.calEvents = parseCalendarEvents(content);
   calHolidays = parseCalendarHolidays(content);
-  if (!state.calEvents.length && !calHolidays.length) {
+  if (!state.calEvents.length && !calVisibleHolidays().length) {
     list.innerHTML = '<div class="ev-empty">尚未有行程<br><span style="font-size:12px">點右上「＋ 新增行程」，或編輯 calendar.md 原文（以 ## EVENT 分隔）</span></div>';
     return;
   }
   const today = calendarFmtDate(new Date());
   // 🏷 套用標籤過濾（過濾後為空 → 提示「沒有符合的行程」，與無行程區分）。假日不受標籤過濾影響（總是顯示）。
   const visible = state.calEvents.filter(calEventMatchesTag);
-  if (!visible.length && !calHolidays.length) {
+  if (!visible.length && !calVisibleHolidays().length) {
     list.innerHTML = '<div class="ev-empty">' +
       (state.calEvents.length ? '沒有符合所選標籤的行程<br><span style="font-size:12px">點上方標籤可取消篩選</span>'
         : '尚未有行程<br><span style="font-size:12px">點右上「＋ 新增行程」，或編輯 calendar.md 原文（以 ## EVENT 分隔）</span>') +
@@ -740,7 +765,7 @@ function renderEventsList(content) {
     if (!byDate.has(ev.date)) byDate.set(ev.date, { events: [], holidays: [] });
     byDate.get(ev.date).events.push(ev);
   }
-  for (const h of calHolidays) {
+  for (const h of calVisibleHolidays()) {
     if (!byDate.has(h.date)) byDate.set(h.date, { events: [], holidays: [] });
     byDate.get(h.date).holidays.push(h);
   }
@@ -1177,6 +1202,7 @@ function renderCalDayList() {
       }
     }
     for (const h of calHolidays) {
+      if (!calRegionVisible(h)) continue;   // 地區過濾（只顯示勾選地區）
       if (typeof h.date === 'string' && h.date.slice(0, 7) === prefix) {
         if (!byDate.has(h.date)) byDate.set(h.date, { events: [], holidays: [] });
         byDate.get(h.date).holidays.push(h);

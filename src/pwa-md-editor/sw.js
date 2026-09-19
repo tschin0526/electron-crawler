@@ -33,7 +33,8 @@
 // v33：農民曆簡→繁術語對照（新增 almanac-s2t.js，暴露 almanacToTrad；宜忌/彭祖/吉神/凶神/納音/宿/建除轉繁體），bump 讓手機重拉
 // v34：HOLIDAY 多地區 region 欄位（cn/hk/tw/us 地區色＋pill＋圖例）＋ 明細範圍切換（日<->月/週，默認日；月/週列表頭部與日/週明細頂部加 .ev-scope-seg），calendar-editor.js/app.js/style.css 改，bump 讓手機重拉
 // v35：範圍切換頭部收成單行：去掉獨立 toggle 條（.ev-scope-row /「9月 全部N條」彙總條），toggle 內聯進第一個日期標題條（與「日」範圍同構）；修復 LITE 週「日」toggle 重複兩次；空月/空週回退獨立條保證可切換
-const CACHE_NAME = 'md-editor-lite-v35';
+// v36：假日地區過濾（圖例改 checkbox 勾選，默認只勾大陸 cn）：只影響顯示不改數據；過濾收口在 calHolidaysOnDay/calVisibleHolidays（修復「列表/整月」直讀 calHolidays 繞過過濾）；calSetRegionChecked 直接分派重渲染＋同步圖例
+const CACHE_NAME = 'md-editor-lite-v36';
 const ASSETS = [
   './',
   './index.html',

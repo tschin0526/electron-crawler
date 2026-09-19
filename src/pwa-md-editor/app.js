@@ -87,6 +87,7 @@ const state = {
   calScope: 'day',              // 下方明細範圍：'day'=選定日（默認）/ 'full'=整月（月模式）或整週（週模式）；僅內存態
   calEvents: [],                // 工作副本（含 uid；每次渲染/編輯前從編輯器緩衝重新解析）
   calTagFilter: [],             // 🏷 標籤過濾（空＝全部；OR 邏輯，任一標籤命中即顯示）
+  calRegionFilter: ['cn'],      // 🌏 HOLIDAY 地區過濾（圖例 checkbox；默認只顯示大陸 cn；僅內存態）
   evFormUid: null,              // 編輯表單當前目標 uid（null = 新增）
   evFormColor: null,            // 編輯表單當前選中顏色
   evFormTodoIds: []             // 🔗 編輯表單當前關聯的 Todo 卡片 id（寫回 todoIds 字段）
