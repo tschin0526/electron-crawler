@@ -276,6 +276,27 @@
         <div class="ev-form-hint">寫入後按頂欄「保存」，在分享面板選「儲存到檔案」→ 覆蓋原 calendar.md</div>
       </div>
     </div>
+
+    <!-- 📓 日記新增/編輯表單（calendar.md 專用）：保存到編輯緩衝，再按頂欄「保存」寫回文件 -->
+    <div id="ev-diary-overlay" class="ev-form-overlay" style="display:none">
+      <div class="ev-form-box">
+        <div class="ev-form-title" id="ev-diary-title">寫日記</div>
+        <div class="ev-f-label">日期<span class="ev-f-date-val" id="ev-diary-date"></span></div>
+        <label class="ev-f-label">標題<input type="text" id="ev-diary-f-title" maxlength="200" placeholder="日記標題"></label>
+        <label class="ev-f-label">心情<input type="text" id="ev-diary-f-mood" maxlength="50" placeholder="如：平穩 / 焦慮 / 開心"></label>
+        <label class="ev-f-label">天氣<input type="text" id="ev-diary-f-weather" maxlength="50" placeholder="如：多雲 / 晴 / 雨"></label>
+        <label class="ev-f-label">標籤（逗號分隔）<input type="text" id="ev-diary-f-tags" maxlength="200" placeholder="如：投資, 自我總結"></label>
+        <label class="ev-f-label">正文<textarea id="ev-diary-f-content" rows="6" placeholder="今天發生了什麼…"></textarea></label>
+        <label class="ev-f-label">備註<textarea id="ev-diary-f-remark" rows="2" placeholder="可留空"></textarea></label>
+        <div class="ev-form-actions">
+          <button type="button" class="btn btn-secondary" id="ev-diary-delete" style="display:none">刪除</button>
+          <span class="ev-toolbar-flex"></span>
+          <button type="button" class="btn btn-secondary" id="ev-diary-cancel">取消</button>
+          <button type="button" class="btn btn-primary" id="ev-diary-save">寫入編輯內容</button>
+        </div>
+        <div class="ev-form-hint">寫入後按頂欄「保存」，在分享面板選「儲存到檔案」→ 覆蓋原 calendar.md</div>
+      </div>
+    </div>
   </div>
 
   <!-- 📅 農民曆 / 老黃曆：lunar-javascript（壽星天文曆，1900–2100+），以 <script> 方式載入，暴露 window.Solar / window.Lunar 全域 -->

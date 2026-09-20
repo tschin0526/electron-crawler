@@ -366,6 +366,12 @@ body {
 .scope-follow .ev-date.active .ev-scope-seg { display: inline-flex; }
 .ev-scope-row { display: flex; justify-content: flex-end; padding: 4px 4px 0; }
 .ev-day-add:active { background: var(--primary); color: #fff; }
+/* 📓 日記按鈕：日期旁，有日記時打勾。margin-left:auto 在 .ev-day-add 上，本按鈕貼在其左側 */
+.ev-day-diary { margin-left: 8px; border: 1px solid var(--border); background: transparent; color: var(--text-secondary); font-size: 13px; padding: 2px 8px; border-radius: 6px; cursor: pointer; line-height: 1.5; flex-shrink: 0; position: relative; }
+.ev-day-diary:active { background: var(--border); }
+.ev-day-diary.has { border-color: #16a34a; color: #16a34a; }
+.ev-day-diary.has::after { content: '\2713'; position: absolute; top: -7px; right: -6px; font-size: 9px; line-height: 1; background: #16a34a; color: #fff; border-radius: 50%; width: 13px; height: 13px; display: flex; align-items: center; justify-content: center; }
+.ev-f-date-val { color: var(--text); font-weight: 600; margin-left: 4px; }
 .ev-item { display: flex; gap: 10px; padding: 10px 14px; border-bottom: 1px solid var(--border); background: var(--bg-secondary); }
 .ev-item.past { opacity: 0.55; }
 /* 完成狀態勾選框（清單上直接切換完成 / 未完成） */

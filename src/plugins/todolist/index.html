@@ -1870,11 +1870,11 @@
     /* ===== 📅 行程视图（calendar.md 专用）：与 Lite 版同款视觉 ===== */
     /* ⚠️ .ev-tip / .ev-almanac-pop 掛載在 <body>（不在 #calEventsPane 內）→ 必須把它們一併納入 --ev-* 變數作用域，
        否則 var(--ev-card) 解析失敗 → 提示框/老黃曆彈層背景透明（使用者截圖實測，老黃曆彈層 2026-09-17 同款踩坑）。 */
-    #calEventsPane, #tlEvFormOverlay, .ev-tip, .ev-almanac-pop {
+    #calEventsPane, #tlEvFormOverlay, #tlDiaryFormOverlay, .ev-tip, .ev-almanac-pop {
       --ev-bg: #0f172a; --ev-card: #1e293b; --ev-text: #e2e8f0;
       --ev-muted: #94a3b8; --ev-border: #334155; --ev-primary: #7c3aed;
     }
-    body:not(.dark) #calEventsPane, body:not(.dark) #tlEvFormOverlay, body:not(.dark) .ev-tip, body:not(.dark) .ev-almanac-pop {
+    body:not(.dark) #calEventsPane, body:not(.dark) #tlEvFormOverlay, body:not(.dark) #tlDiaryFormOverlay, body:not(.dark) .ev-tip, body:not(.dark) .ev-almanac-pop {
       --ev-bg: #f8fafc; --ev-card: #ffffff; --ev-text: #1f2937;
       --ev-muted: #6b7280; --ev-border: #e5e7eb; --ev-primary: #2563eb;
     }
@@ -1931,6 +1931,13 @@
     .ev-date-group.sel-date .ev-item { border-bottom: none; }
     .ev-date-group.sel-date .ev-holiday { border: none; border-left: 4px solid var(--holiday-color, #FF9500); margin: 0; border-radius: 0; }
     .ev-day-add { margin-left: auto; border: 1px solid var(--ev-primary); background: transparent; color: var(--ev-primary); font-size: 11px; padding: 2px 8px; border-radius: 6px; cursor: pointer; font-weight: 400; }
+    /* 📓 日记按钮：日期旁，有日记时打勾。margin-left:auto 在 .ev-day-add 上，本按钮贴在其左侧 */
+    .ev-day-diary { margin-left: 8px; border: 1px solid var(--ev-border, #e5e7eb); background: transparent; color: var(--ev-muted, #6b7280); font-size: 13px; padding: 1px 7px; border-radius: 6px; cursor: pointer; line-height: 1.5; position: relative; }
+    .ev-day-diary:hover { border-color: var(--ev-primary, #2563eb); color: var(--ev-primary, #2563eb); }
+    .ev-day-diary.has { border-color: #16a34a; color: #16a34a; }
+    .ev-day-diary.has::after { content: '\2713'; position: absolute; top: -7px; right: -6px; font-size: 9px; line-height: 1; background: #16a34a; color: #fff; border-radius: 50%; width: 13px; height: 13px; display: flex; align-items: center; justify-content: center; }
+    .tl-ev-f-date-readonly { color: var(--ev-muted); }
+    .tl-ev-f-date-val { color: var(--ev-text); font-weight: 600; }
     /* 明细范围切换（日 <-> 月/週）：迷你分段控件，放在「＋ 此日新增」旁 / 明细顶部 */
     .ev-scope-seg { display: inline-flex; align-items: center; border: 1px solid var(--ev-border, #e5e7eb); border-radius: 6px; overflow: hidden; flex: 0 0 auto; }
     .ev-scope-seg button { border: none; background: var(--ev-card, #fff); color: var(--ev-muted, #6b7280); font-size: 11px; padding: 2px 8px; cursor: pointer; line-height: 1.4; }
@@ -4786,7 +4793,26 @@
     </div>
   </div>
 
-  <!-- 编辑结束前的「问询后存档」确认框：存在未保存更改时弹出 -->
+  <!-- 📓 日记新增/编辑表单（calendar.md 专用）：保存到编辑缓冲，再按编辑器「保存」写回文件 -->
+  <div id="tlDiaryFormOverlay" class="tl-ev-form-overlay" style="display:none">
+    <div class="tl-ev-form-box">
+      <div class="tl-ev-form-title" id="tlDiaryFormTitle">写日记</div>
+      <div class="tl-ev-f-label tl-ev-f-date-readonly">日期：<span id="tlDiaryFDate" class="tl-ev-f-date-val"></span></div>
+      <label class="tl-ev-f-label">标题<input type="text" id="tlDiaryFTitle" maxlength="200" placeholder="日记标题"></label>
+      <label class="tl-ev-f-label">心情<input type="text" id="tlDiaryFMood" maxlength="50" placeholder="如：平稳 / 焦虑 / 开心"></label>
+      <label class="tl-ev-f-label">天气<input type="text" id="tlDiaryFWeather" maxlength="50" placeholder="如：多云 / 晴 / 雨"></label>
+      <label class="tl-ev-f-label">标签（逗号分隔）<input type="text" id="tlDiaryFTags" maxlength="200" placeholder="如：投资, 自我总结"></label>
+      <label class="tl-ev-f-label">正文<textarea id="tlDiaryFContent" rows="6" placeholder="今天发生了什么…"></textarea></label>
+      <label class="tl-ev-f-label">备注<textarea id="tlDiaryFRemark" rows="2" placeholder="可留空"></textarea></label>
+      <div class="tl-ev-form-actions">
+        <button type="button" class="btn btn-secondary" id="tlDiaryFormDelete" style="display:none" onclick="tlDeleteDiary()">删除</button>
+        <span style="flex:1"></span>
+        <button type="button" class="btn btn-secondary" onclick="tlCloseDiaryForm()">取消</button>
+        <button type="button" class="btn btn-primary" onclick="tlSaveDiaryForm()">写入编辑内容</button>
+      </div>
+      <div class="tl-ev-form-hint">写入后按编辑器「保存」，把改动写回 calendar.md</div>
+    </div>
+  </div>
   <div class="modal-overlay" id="unsavedConfirmOverlay" style="display: none;" onclick="if(event.target===event.currentTarget) cancelUnsavedConfirm()" data-page-node-id="1tAftS7ani1lBw5cB7rDmx">
     <div class="rename-confirm-box" onclick="event.stopPropagation()" data-page-node-id="mukn6T7nMnbc0JEmreBNWH">
       <p class="rename-confirm-msg" id="unsavedConfirmMsg" data-page-node-id="B9EQeG06UfjL2pK4oDZbsz">你有未保存的更改，要存档吗？</p>

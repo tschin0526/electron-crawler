@@ -20,6 +20,7 @@
     let tlCalScope = 'day';
     let tlCalEvents = [];
     let tlCalHolidays = [];    // ## HOLIDAY 解析結果（与 ## EVENT 同结构，多 holidayType 字段）；仅列表/日志视图显示，不进时间网格/月格 chip
+    let tlCalDiaries = [];     // ## DIARY 解析結果（每天一条，keyed by date）；行事历日期旁显示日记按钮，有则打勾
     let tlCalTagFilter = [];   // 标签过滤（空＝全部；OR 逻辑：事件 tags 命中任一即显示）
     let tlCalRegionFilter = ['cn'];   // ## HOLIDAY 地区过滤（图例 checkbox 勾选；默认只显示大陆 cn；只影响显示，不改数据）
     let tlEvFormTodoIds = [];   // 表单内「关联 Todo 卡片」临时列表（仅编辑期，不污染存档对象）
@@ -177,6 +178,83 @@
       return out;
     }
 
+    // ===== ## DIARY 解析 / 序列化（每天一条，keyed by date；行事历日期旁按钮打勾）=====
+    // 块格式（桌面 + LITE 共用）：
+    // ## DIARY
+    // - date: `2026-09-20`
+    // - title: `今日交易复盘`
+    // - mood: `平稳`
+    // - tags: `["投资","自我总结"]`
+    // - weather: `多云`
+    // - content:        ← 多行正文走代码块（与 Remark 同约定：非贪婪截取，避免吞掉后续 ## 块）
+    // ```
+    // 今天大盘震荡，持仓观察。
+    // ```
+    // - remark: `晚间复盘再核对数据`
+    function tlParseDiaryBlock(block, idx) {
+      let content = '';
+      let head = block;
+      const ci = block.indexOf('- content:');
+      if (ci >= 0) {
+        const after = block.slice(ci + '- content:'.length);
+        // ⚠️ 必须非贪婪：与 Remark 同一坑（曾用贪婪版会吞掉紧随其后的 ## EVENT/## HOLIDAY 原文）
+        const m = after.match(/```([\s\S]*?)```/);
+        if (m) {
+          content = m[1].replace(/^\n/, '').replace(/\n$/, '');
+          if (content.trim() === '') content = '';
+          // ⚠️ 只摘掉整段 content 區（含 - content: 與首尾 ```），讓 remark 等「位於 content 之後」的欄位不被它隔斷而丟失
+          const regionEnd = ci + '- content:'.length + m.index + m[0].length;
+          head = block.slice(0, ci) + block.slice(regionEnd);
+        }
+      }
+      const get = (name) => {
+        const m = head.match(new RegExp('- ' + name + ': `([^`]*)`'));
+        return m ? m[1] : '';
+      };
+      const date = get('date');
+      if (!date) return null;       // 无日期的块无效（日记必须挂在某个日期上）
+      let tags = [];
+      try { const a = JSON.parse(get('tags') || '[]'); if (Array.isArray(a)) tags = a; } catch (e) {}
+      return {
+        idx,
+        date,
+        title: get('title'),
+        mood: get('mood'),
+        tags,
+        weather: get('weather'),
+        content,
+        remark: get('remark')
+      };
+    }
+    function tlParseDiaries(md) {
+      if (!md) return [];
+      const out = [];
+      const blocks = String(md).split(/^##[ \t]*DIARY[ \t]*$/m);
+      for (let i = 1; i < blocks.length; i++) {
+        // ⚠️ 块尾可能黏着紧随其后的 ## EVENT / ## HOLIDAY / ## DIARY → 在最靠前的标记处截断
+        const cut = blocks[i].search(/^##[ \t]*(EVENT|HOLIDAY|DIARY)[ \t]*$/m);
+        const d = tlParseDiaryBlock(cut >= 0 ? blocks[i].slice(0, cut) : blocks[i], i);
+        if (d) out.push(d);
+      }
+      return out;
+    }
+    function tlDiaryToMarkdown(d) {
+      const tagsJson = JSON.stringify(Array.isArray(d.tags) ? d.tags : []);
+      let s = '## DIARY \n';
+      s += '- date: `' + tlMdEscape(d.date) + '`\n';
+      s += '- title: `' + tlMdEscape(d.title || '') + '`\n';
+      s += '- mood: `' + tlMdEscape(d.mood || '') + '`\n';
+      s += '- tags: `' + tagsJson + '`\n';
+      s += '- weather: `' + tlMdEscape(d.weather || '') + '`\n';
+      s += '- content:\n```\n' + String(d.content || '') + '\n```\n';
+      s += '- remark: `' + tlMdEscape(d.remark || '') + '`\n';
+      return s;
+    }
+    function tlDiaryOnDate(dateStr) {
+      if (!tlCalDiaries || !tlCalDiaries.length) return null;
+      return tlCalDiaries.find((d) => d.date === dateStr) || null;
+    }
+
     // ===== 序列化（与桌面 calendar 插件 eventsToMarkdown 逐字节对齐） =====
     function tlMdEscape(s) { return String(s == null ? '' : s).replace(/`/g, "'"); }
     function tlEventToMarkdown(ev) {
@@ -221,12 +299,15 @@
       s += '- Remark:\n```\n' + String(h.notes || '') + '\n```\n';
       return s;
     }
-    // 整份 calendar.md 序列化：events + holidays 都保留（保存事件时若只写 events 会把用户手写的 ## HOLIDAY 整体覆盖掉）
-    function tlCalendarToMarkdown(events, holidays) {
+    // 整份 calendar.md 序列化：events + holidays + diaries 都保留（保存任一类时若只写该类会把用户手写的其它类整体覆盖掉）
+    function tlCalendarToMarkdown(events, holidays, diaries) {
       const head = '# 日历行程\n\n> 每条行程以 `## EVENT` 分隔，字段值写在反引号内，Remark 用代码块保存多行备注。\n\n';
       let body = (events && events.length) ? events.map(tlEventToMarkdown).join('\n') : '';
       if (holidays && holidays.length) {
         body += (body ? '\n' : '') + holidays.map(tlHolidayToMarkdown).join('\n');
+      }
+      if (diaries && diaries.length) {
+        body += (body ? '\n' : '') + diaries.map(tlDiaryToMarkdown).join('\n');
       }
       return head + (body || '');
     }
@@ -699,6 +780,7 @@
       const content = document.getElementById('taskText').value;
       tlCalEvents = tlParseEvents(content);
       tlCalHolidays = tlParseHolidays(content);
+      tlCalDiaries = tlParseDiaries(content);
       tlRenderTagBar();
       tlRenderHolidayLegend(); // 动态图例：列出 calendar.md 中出现过的地区，辅助「目视差别」
       tlCursorTitle(); // ⚠️ 導航列標題每種模式都要更新（周模式尤其會跨月，不能殘留上次的「X年X月」）
@@ -785,6 +867,8 @@
       const cd = tlCountdownLabel(date, today);
       const cp = tlLunarCompact(date);
       const lunarHdr = cp.lunarText ? '農曆 ' + cp.lunarText + (cp.jieqi ? ' · ' + cp.jieqi : '') : (cp.jieqi || '');
+      const dy = tlDiaryOnDate(date);
+      const diaryBtn = '<button type="button" class="ev-day-diary' + (dy ? ' has' : '') + '" title="' + (dy ? '已有日记 · 点击编辑' : '写日记') + '" data-ev-diary="' + tlEscapeHtml(date) + '" onclick="tlOpenDiaryForm(\'' + date + '\')">\ud83d\udcd5</button>';
       return '<div class="ev-date' + (isToday ? ' today' : '') + '" data-ev-date="' + tlEscapeHtml(date) + '">' + label +
         (week ? '<span class="ev-week">週' + week + '</span>' : '') +
         // ⏳ 倒計時徽章：每天必顯示（今天＝高亮，其餘＝灰底），取代原先「僅今天顯示」
@@ -793,6 +877,7 @@
         (typeof count === 'number' ? '<span class="ev-week">· ' + count + ' 条</span>' : '') +
         (lunarHdr ? '<span class="ev-lunar hdr" onclick="tlShowAlmanac(\'' + date + '\',this)" title="農民曆 / 老黃曆">' + tlEscapeHtml(lunarHdr) + '</span>' : '') +
         (extra || '') +
+        diaryBtn +
         '<button type="button" class="ev-day-add" onclick="tlOpenEventForm(null, \'' + date + '\')">＋ 新增</button></div>';
     }
 
@@ -927,6 +1012,7 @@
       if (!list) return;
       tlCalEvents = tlParseEvents(content);
       tlCalHolidays = tlParseHolidays(content);
+      tlCalDiaries = tlParseDiaries(content);
       if (!tlCalEvents.length && !tlVisibleHolidays().length) {
         list.innerHTML = '<div class="ev-empty">尚未有行程<br><span style="font-size:12px">点右上「＋ 新增行程」，或切回文本编辑直接改 calendar.md</span></div>';
         return;
@@ -1109,6 +1195,7 @@
     function tlRenderMonth(content) {
       tlCalEvents = tlParseEvents(content);
       tlCalHolidays = tlParseHolidays(content);
+      tlCalDiaries = tlParseDiaries(content);
       const cur = tlCalCursor;
       const y = cur.getFullYear(), m = cur.getMonth();
       const occByDate = {};
@@ -1362,6 +1449,78 @@
       tlDeleteEvent(uid);
     }
 
+    // ===== ## DIARY 新增/编辑/删除（写回 taskText 缓冲，按「保存」落盘）=====
+    let tlDiaryFormDate = null;
+    function tlOpenDiaryForm(date) {
+      tlHideTip();
+      if (!isCalendarMdDoc()) return;
+      tlCalDiaries = tlParseDiaries(document.getElementById('taskText').value);
+      const d = tlDiaryOnDate(date);
+      tlDiaryFormDate = date;
+      document.getElementById('tlDiaryFTitle').value = d ? d.title : '';
+      document.getElementById('tlDiaryFDate').textContent = date;
+      document.getElementById('tlDiaryFMood').value = d ? (d.mood || '') : '';
+      document.getElementById('tlDiaryFTags').value = d ? (d.tags || []).join(', ') : '';
+      document.getElementById('tlDiaryFWeather').value = d ? (d.weather || '') : '';
+      document.getElementById('tlDiaryFContent').value = d ? (d.content || '') : '';
+      document.getElementById('tlDiaryFRemark').value = d ? (d.remark || '') : '';
+      document.getElementById('tlDiaryFormDelete').style.display = d ? '' : 'none';
+      document.getElementById('tlDiaryFormOverlay').style.display = 'flex';
+      document.getElementById('tlDiaryFContent').focus();
+    }
+    function tlCloseDiaryForm() {
+      const ov = document.getElementById('tlDiaryFormOverlay');
+      if (ov) ov.style.display = 'none';
+      tlDiaryFormDate = null;
+    }
+    function tlSaveDiaryForm() {
+      const date = tlDiaryFormDate;
+      if (!date) return;
+      const title = document.getElementById('tlDiaryFTitle').value.trim();
+      if (!title) { alert('请输入日记标题'); return; }
+      const tags = document.getElementById('tlDiaryFTags').value.split(/[,，]/).map((t) => t.trim()).filter(Boolean);
+      const diary = {
+        date,
+        title,
+        mood: document.getElementById('tlDiaryFMood').value.trim(),
+        tags,
+        weather: document.getElementById('tlDiaryFWeather').value.trim(),
+        content: document.getElementById('tlDiaryFContent').value.replace(/\r\n/g, '\n'),
+        remark: document.getElementById('tlDiaryFRemark').value.trim()
+      };
+      tlCalDiaries = tlParseDiaries(document.getElementById('taskText').value);
+      const i = tlCalDiaries.findIndex((x) => x.date === date);
+      if (i >= 0) tlCalDiaries[i] = diary; else tlCalDiaries.push(diary);
+      tlApplyDiariesToBuffer();
+      tlCloseDiaryForm();
+      showToast('已写入日记，按「保存」写回 calendar.md', 'success');
+    }
+    function tlDeleteDiary() {
+      const date = tlDiaryFormDate;
+      if (!date) return;
+      const d = tlDiaryOnDate(date);
+      if (!d) { tlCloseDiaryForm(); return; }
+      if (!confirm('确定删除 ' + date + ' 的日记「' + d.title + '」吗？\n\n按「保存」才会真正写回文件。')) return;
+      tlCalDiaries = tlParseDiaries(document.getElementById('taskText').value);
+      tlCalDiaries = tlCalDiaries.filter((x) => x.date !== date);
+      tlApplyDiariesToBuffer();
+      tlCloseDiaryForm();
+      showToast('已删除日记，按「保存」写回文件', 'success');
+    }
+    // 序列化整份 calendar.md（events + holidays + diaries）写回 taskText：从当前缓冲重解析 events/holidays，
+    // 再以最新 tlCalDiaries 覆盖日记段，避免保存日记时把用户手写的事件/假日覆盖掉。
+    function tlApplyDiariesToBuffer() {
+      const ta = document.getElementById('taskText');
+      const events = tlParseEvents(ta.value);
+      const holidays = tlParseHolidays(ta.value);
+      tlCalEvents = events;
+      tlCalHolidays = holidays;
+      ta.value = tlCalendarToMarkdown(events, holidays, tlCalDiaries);
+      if (typeof autoGrowTextarea === 'function') autoGrowTextarea(ta);
+      if (typeof markCurrentTabDirty === 'function') markCurrentTabDirty();
+      tlRenderEventsContent();
+    }
+
     // 清单上的「完成」勾选框：切换 done → 序列化写回 taskText 缓冲（按「保存」才落盘）
     function tlToggleDone(uid, done) {
       tlCalEvents = tlParseEvents(document.getElementById('taskText').value);
@@ -1398,10 +1557,12 @@
     // 序列化整份 calendar.md 写回 taskText（不动 editSnapshot → 未保存检测自动判定为脏，「保存」亮起）
     function tlApplyEventsToBuffer() {
       const ta = document.getElementById('taskText');
-      // ⚠️ 从当前缓冲重新解析 holiday，避免保存事件时把用户手写的 ## HOLIDAY 整体覆盖掉（事件序列化器会重画整份文件）
+      // ⚠️ 从当前缓冲重新解析 holiday / diary，避免保存事件时把用户手写的 ## HOLIDAY / ## DIARY 整体覆盖掉（事件序列化器会重画整份文件）
       const holidays = tlParseHolidays(ta.value);
+      const diaries = tlParseDiaries(ta.value);
       tlCalHolidays = holidays;
-      ta.value = tlCalendarToMarkdown(tlCalEvents, holidays);
+      tlCalDiaries = diaries;
+      ta.value = tlCalendarToMarkdown(tlCalEvents, holidays, diaries);
       if (typeof autoGrowTextarea === 'function') autoGrowTextarea(ta);
       if (typeof markCurrentTabDirty === 'function') markCurrentTabDirty();
       tlRenderEventsContent();
@@ -1448,6 +1609,30 @@
       tip.style.top = top + 'px';
     }
     function tlHideTip() { if (tlTipEl) { tlTipEl.style.display = 'none'; tlTipUid = null; } }
+
+    // ===== 📓 悬停日记图标 → 放大提示框（复用 .ev-tip 结构，仅当天有日记时显示） =====
+    function tlDiaryTipHtml(d) {
+      const meta = [d.date, d.mood, d.weather].filter(Boolean).join(' · ');
+      const tags = (d.tags && d.tags.length) ? '<div class="ev-tip-tags">' + d.tags.map((t) => '#' + tlEscapeHtml(t)).join(' ') + '</div>' : '';
+      const body = d.content ? '<div class="ev-tip-notes">' + tlEscapeHtml(d.content) + '</div>' : '';
+      const remark = d.remark ? '<div class="ev-tip-meta" style="margin-top:6px;">备注：' + tlEscapeHtml(d.remark) + '</div>' : '';
+      return '<div class="ev-tip-title">\ud83d\udcd5 ' + tlEscapeHtml(d.title || '日记') + '</div>' +
+        (meta ? '<div class="ev-tip-meta">' + tlEscapeHtml(meta) + '</div>' : '') + tags + body + remark;
+    }
+    function tlShowDiaryTip(date, x, y) {
+      const d = tlDiaryOnDate(date);
+      if (!d) return;
+      const tip = tlGetTipEl();
+      const key = 'diary:' + date;
+      if (tlTipUid !== key) { tip.innerHTML = tlDiaryTipHtml(d); tlTipUid = key; }
+      tip.style.display = 'block';
+      const r = tip.getBoundingClientRect();
+      let left = x + 16, top = y + 16;
+      if (left + r.width > window.innerWidth - 8) left = Math.max(8, x - r.width - 16);
+      if (top + r.height > window.innerHeight - 8) top = Math.max(8, y - r.height - 16);
+      tip.style.left = left + 'px';
+      tip.style.top = top + 'px';
+    }
 
     // ===== 📅 農民曆 / 老黃曆取數（lunar-javascript，繁體）=====
     // 以 <script> 載入的 window.Solar / window.Lunar 為資料源；Map 快取避免重複計算。
@@ -1672,18 +1857,32 @@
       if (tlTipPane) {
         const evSel = '.ev-chip, .ev-block, .ev-item';
         tlTipPane.addEventListener('mouseover', (e) => {
+          // 日记图标 hover → 显示日记 tip（仅当天有日记时）
+          const dyBtn = e.target.closest('.ev-day-diary');
+          if (dyBtn && dyBtn.getAttribute('data-ev-diary')) {
+            const d = tlDiaryOnDate(dyBtn.getAttribute('data-ev-diary'));
+            if (d) { tlShowDiaryTip(d.date, e.clientX, e.clientY); return; }
+          }
           const el = e.target.closest(evSel);
           if (el && el.getAttribute('data-uid')) tlShowTip(el.getAttribute('data-uid'), e.clientX, e.clientY);
         });
         tlTipPane.addEventListener('mousemove', (e) => {
           if (!tlTipEl || tlTipEl.style.display === 'none') return;
+          const dyBtn = e.target.closest('.ev-day-diary');
+          if (dyBtn && dyBtn.getAttribute('data-ev-diary')) {
+            const d = tlDiaryOnDate(dyBtn.getAttribute('data-ev-diary'));
+            if (d) { tlShowDiaryTip(d.date, e.clientX, e.clientY); return; }
+          }
           const el = e.target.closest(evSel);
           if (el && el.getAttribute('data-uid')) tlShowTip(el.getAttribute('data-uid'), e.clientX, e.clientY);
           else tlHideTip();
         });
         tlTipPane.addEventListener('mouseout', (e) => {
           const to = e.relatedTarget;
-          if (to && to.closest && to.closest(evSel)) return; // 仍在事件元素间移动，不隐藏
+          if (to && to.closest) {
+            if (to.closest(evSel)) return;                 // 仍在事件元素间移动，不隐藏
+            if (to.closest('.ev-day-diary')) return;       // 仍在日记按钮上，不隐藏
+          }
           tlHideTip();
         });
         tlTipPane.addEventListener('mouseleave', tlHideTip);

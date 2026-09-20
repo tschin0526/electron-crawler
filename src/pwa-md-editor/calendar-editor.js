@@ -94,6 +94,8 @@ function parseCalendarEvents(md) {
 
 // ## HOLIDAY 解析結果（與 ## EVENT 同結構，多 holidayType 字段）；僅列表/日志視圖顯示，不進時間網格/月格 chip
 let calHolidays = [];
+// ## DIARY 解析結果（每天一條，keyed by date）；行事曆日期旁顯示日記按鈕，有則打勾
+let calDiaries = [];
 // ## HOLIDAY：與 ## EVENT 同一套字段（多 holidayType），僅分割符不同；複用 parseCalendarEventBlock 解析（無 title 的塊會被跳過）
 // ⚠️ 從 i=1 開始：split 後 blocks[0] 是「第一個 ## HOLIDAY 之前的所有內容」（通常含 ## EVENT 塊），
 //    那段裡的 - title 會被誤當成 holiday；holiday 必然跟在它自己的 ## HOLIDAY 標記之後，故跳過 blocks[0] 即正確。
@@ -108,6 +110,83 @@ function parseCalendarHolidays(md) {
     if (h) out.push(h);
   }
   return out;
+}
+
+// ===== ## DIARY 解析 / 序列化（每天一條，keyed by date；行事曆日期旁按鈕打勾）=====
+// 塊格式（桌面 + LITE 共用）：
+// ## DIARY
+// - date: `2026-09-20`
+// - title: `今日交易复盘`
+// - mood: `平穩`
+// - tags: `["投資","自我總結"]`
+// - weather: `多雲`
+// - content:        ← 多行正文走代碼塊（與 Remark 同約定：非貪婪截取，避免吞掉後續 ## 塊）
+// ```
+// 今天大盤震盪，持倉觀察。
+// ```
+// - remark: `晚間復盤再核對數據`
+function parseCalendarDiaryBlock(block, idx) {
+  let content = '';
+  let head = block;
+  const ci = block.indexOf('- content:');
+  if (ci >= 0) {
+    const after = block.slice(ci + '- content:'.length);
+    // ⚠️ 必須非貪婪：與 Remark 同一坑（曾用貪婪版會吞掉緊隨其後的 ## EVENT/## HOLIDAY 原文）
+    const m = after.match(/```([\s\S]*?)```/);
+    if (m) {
+      content = m[1].replace(/^\n/, '').replace(/\n$/, '');
+      if (content.trim() === '') content = '';
+      // ⚠️ 只摘掉整段 content 區（含 - content: 與首尾 ```），讓 remark 等「位於 content 之後」的欄位不被它隔斷而丟失
+      const regionEnd = ci + '- content:'.length + m.index + m[0].length;
+      head = block.slice(0, ci) + block.slice(regionEnd);
+    }
+  }
+  const get = (name) => {
+    const m = head.match(new RegExp('- ' + name + ': `([^`]*)`'));
+    return m ? m[1] : '';
+  };
+  const date = get('date');
+  if (!date) return null;       // 無日期的塊無效（日記必須掛在某個日期上）
+  let tags = [];
+  try { const a = JSON.parse(get('tags') || '[]'); if (Array.isArray(a)) tags = a; } catch (e) {}
+  return {
+    idx,
+    date,
+    title: get('title'),
+    mood: get('mood'),
+    tags,
+    weather: get('weather'),
+    content,
+    remark: get('remark')
+  };
+}
+function parseCalendarDiaries(md) {
+  if (!md) return [];
+  const out = [];
+  const blocks = String(md).split(/^##[ \t]*DIARY[ \t]*$/m);
+  for (let i = 1; i < blocks.length; i++) {
+    // ⚠️ 塊尾可能黏著緊隨其後的 ## EVENT / ## HOLIDAY / ## DIARY → 在最靠前的標記處截斷
+    const cut = blocks[i].search(/^##[ \t]*(EVENT|HOLIDAY|DIARY)[ \t]*$/m);
+    const d = parseCalendarDiaryBlock(cut >= 0 ? blocks[i].slice(0, cut) : blocks[i], i);
+    if (d) out.push(d);
+  }
+  return out;
+}
+function calDiaryToMarkdown(d) {
+  const tagsJson = JSON.stringify(Array.isArray(d.tags) ? d.tags : []);
+  let s = '## DIARY \n';
+  s += '- date: `' + calMdEscape(d.date) + '`\n';
+  s += '- title: `' + calMdEscape(d.title || '') + '`\n';
+  s += '- mood: `' + calMdEscape(d.mood || '') + '`\n';
+  s += '- tags: `' + tagsJson + '`\n';
+  s += '- weather: `' + calMdEscape(d.weather || '') + '`\n';
+  s += '- content:\n```\n' + String(d.content || '') + '\n```\n';
+  s += '- remark: `' + calMdEscape(d.remark || '') + '`\n';
+  return s;
+}
+function calDiaryOnDate(dateStr) {
+  if (!calDiaries || !calDiaries.length) return null;
+  return calDiaries.find((x) => x.date === dateStr) || null;
 }
 
 function calendarFmtDate(d) {
@@ -330,6 +409,30 @@ function calShowTip(uid, x, y) {
   tip.style.top = top + 'px';
 }
 function calHideTip() { if (calTipEl) { calTipEl.style.display = 'none'; calTipUid = null; } }
+
+// ===== 📓 悬停日记图标 → 放大提示框（复用 .ev-tip 结构，仅当天有日记时显示；触屏设备由 app.js 媒体查询守卫禁用） =====
+function calDiaryTipHtml(d) {
+  const meta = [d.date, d.mood, d.weather].filter(Boolean).join(' · ');
+  const tags = (d.tags && d.tags.length) ? '<div class="ev-tip-tags">' + d.tags.map((t) => '#' + escapeHtml(t)).join(' ') + '</div>' : '';
+  const body = d.content ? '<div class="ev-tip-notes">' + escapeHtml(d.content) + '</div>' : '';
+  const remark = d.remark ? '<div class="ev-tip-meta" style="margin-top:6px;">備註：' + escapeHtml(d.remark) + '</div>' : '';
+  return '<div class="ev-tip-title">\ud83d\udcd5 ' + escapeHtml(d.title || '日記') + '</div>' +
+    (meta ? '<div class="ev-tip-meta">' + escapeHtml(meta) + '</div>' : '') + tags + body + remark;
+}
+function calShowDiaryTip(date, x, y) {
+  const d = calDiaryOnDate(date);
+  if (!d) return;
+  const tip = calGetTipEl();
+  const key = 'diary:' + date;
+  if (calTipUid !== key) { tip.innerHTML = calDiaryTipHtml(d); calTipUid = key; }
+  tip.style.display = 'block';
+  const r = tip.getBoundingClientRect();
+  let left = x + 16, top = y + 16;
+  if (left + r.width > window.innerWidth - 8) left = Math.max(8, x - r.width - 16);
+  if (top + r.height > window.innerHeight - 8) top = Math.max(8, y - r.height - 16);
+  tip.style.left = left + 'px';
+  tip.style.top = top + 'px';
+}
 
 // ===== 📱 触屏：点事件 → 小选单（编辑 / 详情）替代「直接开表单」+「hover 提示框」 =====
 // 手机无真 hover：hover 提示框已禁用（app.js 媒体查询守卫 + @media (hover:none) 隐藏），
@@ -826,6 +929,7 @@ function renderEventsList(content) {
   if (!list) return;
   state.calEvents = parseCalendarEvents(content);
   calHolidays = parseCalendarHolidays(content);
+  calDiaries = parseCalendarDiaries(content);
   if (!state.calEvents.length && !calVisibleHolidays().length) {
     list.innerHTML = '<div class="ev-empty">尚未有行程<br><span style="font-size:12px">點右上「＋ 新增行程」，或編輯 calendar.md 原文（以 ## EVENT 分隔）</span></div>';
     return;
@@ -1202,6 +1306,8 @@ function calDateHeaderHtml(date, today, extra, count) {
   const cd = calCountdownLabel(date, today);
   const cp = calLunarCompact(date);
   const lunarHdr = cp.lunarText ? '農曆 ' + cp.lunarText + (cp.jieqi ? ' · ' + cp.jieqi : '') : (cp.jieqi || '');
+  const dy = calDiaryOnDate(date);
+  const diaryBtn = '<button type="button" class="ev-day-diary' + (dy ? ' has' : '') + '" title="' + (dy ? '已有日記 · 點擊編輯' : '寫日記') + '" data-ev-diary="' + escapeHtml(date) + '">\ud83d\udcd5</button>';
   return '<div class="ev-date' + (isToday ? ' today' : '') + '" data-ev-date="' + escapeHtml(date) + '">' + label +
     (week ? '<span class="ev-week">週' + week + '</span>' : '') +
     // ⏳ 倒計時徽章：每天必顯示（今天＝高亮，其餘＝灰底），取代原先「僅今天顯示」
@@ -1210,6 +1316,7 @@ function calDateHeaderHtml(date, today, extra, count) {
     (typeof count === 'number' ? '<span class="ev-week">· ' + count + ' 條</span>' : '') +
     (lunarHdr ? '<span class="ev-lunar hdr" data-ev-almanac="' + escapeHtml(date) + '" title="農民曆 / 老黃曆">' + escapeHtml(lunarHdr) + '</span>' : '') +
     (extra || '') +
+    diaryBtn +
     '<button type="button" class="ev-day-add" data-ev-add-on="' + escapeHtml(date) + '">＋ 新增</button></div>';
 }
 
@@ -1299,12 +1406,15 @@ function calHolidayToMarkdown(h) {
       s += '- Remark:\n```\n' + String(h.notes || '') + '\n```\n';
   return s;
 }
-// 整份 calendar.md 序列化：events + holidays 都保留（保存事件時若只寫 events 會把用戶手寫的 ## HOLIDAY 整體覆蓋掉）
-function calCalendarToMarkdown(events, holidays) {
+// 整份 calendar.md 序列化：events + holidays + diaries 都保留（保存任一類時若只寫該類會把用戶手寫的其它類整體覆蓋掉）
+function calCalendarToMarkdown(events, holidays, diaries) {
   const head = '# 日历行程\n\n> 每条行程以 `## EVENT` 分隔，字段值写在反引号内，Remark 用代码块保存多行备注。\n\n';
   let body = (events && events.length) ? events.map(calEventToMarkdown).join('\n') : '';
   if (holidays && holidays.length) {
     body += (body ? '\n' : '') + holidays.map(calHolidayToMarkdown).join('\n');
+  }
+  if (diaries && diaries.length) {
+    body += (body ? '\n' : '') + diaries.map(calDiaryToMarkdown).join('\n');
   }
   return head + (body || '');
 }
@@ -1321,6 +1431,7 @@ function renderEventsContent() {
   // 先解析一次供標籤條與日/週網格使用（月/列表的渲染函式內部會再解析一次，結果相同）
   state.calEvents = parseCalendarEvents(content);
   calHolidays = parseCalendarHolidays(content);
+  calDiaries = parseCalendarDiaries(content);
   renderCalTagBar();
   calRenderHolidayLegend(); // 動態圖例：列出 calendar.md 中出現過的地區，輔助「目視差別」
   if (isMonth) renderCalMonth(content);
@@ -1362,6 +1473,7 @@ function syncEventsModeUI() {
 function renderCalMonth(content) {
   state.calEvents = parseCalendarEvents(content);
   calHolidays = parseCalendarHolidays(content);
+  calDiaries = parseCalendarDiaries(content);
   const cur = state.calCursor;
   const y = cur.getFullYear(), m = cur.getMonth();
   if (elements.evMonthTitle) elements.evMonthTitle.textContent = y + '年' + (m + 1) + '月';
@@ -1495,6 +1607,9 @@ function onEvListClick(e) {
   if (scopeBtn) { calSetCalScope(scopeBtn.getAttribute('data-cal-scope')); return; }
   const addBtn = e.target.closest('[data-ev-add-on]');
   if (addBtn) { openEventForm(null, addBtn.getAttribute('data-ev-add-on')); return; }
+  // 📓 日記按鈕：開日記編輯視窗（有日記則載入編輯，無則新增）
+  const diaryBtn = e.target.closest('[data-ev-diary]');
+  if (diaryBtn) { openDiaryForm(diaryBtn.getAttribute('data-ev-diary')); return; }
 }
 
 // 打開表單：uid 為 null = 新增（預設日期 = 月視圖選中日或今天）；uid 有值 = 編輯該條
@@ -1617,6 +1732,77 @@ function deleteEventFromForm() {
   deleteEventByUid(uid);
 }
 
+// ===== ## DIARY 新增/編輯/刪除（寫回編輯緩衝，按頂欄「保存」落盤）=====
+let calDiaryFormDate = null;
+function openDiaryForm(date) {
+  calHideTip();
+  if (!isCalendarMd()) return;
+  calDiaries = parseCalendarDiaries(elements.editor.value);
+  const d = calDiaryOnDate(date);
+  calDiaryFormDate = date;
+  elements.diaryFTitle.value = d ? d.title : '';
+  elements.diaryFDate.textContent = date;
+  elements.diaryFMood.value = d ? (d.mood || '') : '';
+  elements.diaryFTags.value = d ? (d.tags || []).join(', ') : '';
+  elements.diaryFWeather.value = d ? (d.weather || '') : '';
+  elements.diaryFContent.value = d ? (d.content || '') : '';
+  elements.diaryFRemark.value = d ? (d.remark || '') : '';
+  elements.diaryFormDelete.style.display = d ? '' : 'none';
+  elements.diaryFormOverlay.style.display = 'flex';
+  elements.diaryFContent.focus();
+}
+function closeDiaryForm() {
+  if (elements.diaryFormOverlay) elements.diaryFormOverlay.style.display = 'none';
+  calDiaryFormDate = null;
+}
+function saveDiaryForm() {
+  const date = calDiaryFormDate;
+  if (!date) return;
+  const title = elements.diaryFTitle.value.trim();
+  if (!title) { alert('請輸入日記標題'); elements.diaryFTitle.focus(); return; }
+  const tags = elements.diaryFTags.value.split(/[,，]/).map(t => t.trim()).filter(Boolean);
+  const diary = {
+    date,
+    title,
+    mood: elements.diaryFMood.value.trim(),
+    tags,
+    weather: elements.diaryFWeather.value.trim(),
+    content: elements.diaryFContent.value.replace(/\r\n/g, '\n'),
+    remark: elements.diaryFRemark.value.trim()
+  };
+  calDiaries = parseCalendarDiaries(elements.editor.value);
+  const i = calDiaries.findIndex(x => x.date === date);
+  if (i >= 0) calDiaries[i] = diary; else calDiaries.push(diary);
+  applyDiariesToEditor();
+  closeDiaryForm();
+  showToast('已寫入日記，按「保存」存回文件', 'success');
+}
+function deleteDiary() {
+  const date = calDiaryFormDate;
+  if (!date) return;
+  const d = calDiaryOnDate(date);
+  if (!d) { closeDiaryForm(); return; }
+  if (!window.confirm('確定刪除 ' + date + ' 的日記「' + d.title + '」嗎？\n\n按「保存」才會真正存回文件。')) return;
+  calDiaries = parseCalendarDiaries(elements.editor.value);
+  calDiaries = calDiaries.filter(x => x.date !== date);
+  applyDiariesToEditor();
+  closeDiaryForm();
+  showToast('已刪除日記，按「保存」存回文件', 'success');
+}
+// 序列化整份 calendar.md（events + holidays + diaries）寫回編輯器緩衝：從當前緩衝重解析 events/holidays，
+// 再以最新 calDiaries 覆蓋日記段，避免保存日記時把用戶手寫的事件/假日覆蓋掉。
+function applyDiariesToEditor() {
+  const events = parseCalendarEvents(elements.editor.value);
+  const holidays = parseCalendarHolidays(elements.editor.value);
+  state.calEvents = events;
+  calHolidays = holidays;
+  elements.editor.value = calCalendarToMarkdown(events, holidays, calDiaries);
+  state.isDirty = elements.editor.value !== state.lastContent;
+  updateStatus();
+  updateWordCount();
+  updatePreview();
+}
+
 // 清單上的「完成」勾選框：切換 done → 寫回編輯緩衝（applyEventsToEditor 內會重繪行程視圖）
 function toggleEventDone(uid, done) {
   state.calEvents = parseCalendarEvents(elements.editor.value);
@@ -1653,10 +1839,12 @@ function calCalCheckKey(e, uid, line) {
 // 把工作副本序列化為 calendar.md 全文寫回編輯器緩衝；
 // lastContent 不動 → isDirty = true → 頂欄「保存」亮起，由用戶決定何時落盤
 function applyEventsToEditor() {
-  // ⚠️ 從當前緩衝重新解析 holiday，避免保存事件時把用戶手寫的 ## HOLIDAY 整體覆蓋掉（事件序列化器會重畫整份文件）
+  // ⚠️ 從當前緩衝重新解析 holiday / diary，避免保存事件時把用戶手寫的 ## HOLIDAY / ## DIARY 整體覆蓋掉（事件序列化器會重畫整份文件）
   const holidays = parseCalendarHolidays(elements.editor.value);
+  const diaries = parseCalendarDiaries(elements.editor.value);
   calHolidays = holidays;
-  elements.editor.value = calCalendarToMarkdown(state.calEvents, holidays);
+  calDiaries = diaries;
+  elements.editor.value = calCalendarToMarkdown(state.calEvents, holidays, diaries);
   state.isDirty = elements.editor.value !== state.lastContent;
   updateStatus();
   updateWordCount();

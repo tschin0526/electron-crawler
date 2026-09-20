@@ -141,6 +141,19 @@ const elements = {
   evFTodoAdd: document.getElementById('ev-f-todo-add'),
   evFNotes: document.getElementById('ev-f-notes'),
   evFResize: document.getElementById('ev-f-resize'),
+  // 📓 日記表單
+  diaryFormOverlay: document.getElementById('ev-diary-overlay'),
+  diaryFormTitle: document.getElementById('ev-diary-title'),
+  diaryFormDelete: document.getElementById('ev-diary-delete'),
+  diaryFormCancel: document.getElementById('ev-diary-cancel'),
+  diaryFormSave: document.getElementById('ev-diary-save'),
+  diaryFTitle: document.getElementById('ev-diary-f-title'),
+  diaryFDate: document.getElementById('ev-diary-date'),
+  diaryFMood: document.getElementById('ev-diary-f-mood'),
+  diaryFWeather: document.getElementById('ev-diary-f-weather'),
+  diaryFTags: document.getElementById('ev-diary-f-tags'),
+  diaryFContent: document.getElementById('ev-diary-f-content'),
+  diaryFRemark: document.getElementById('ev-diary-f-remark'),
   editor: document.getElementById('editor'),
   mdToolbar: document.getElementById('md-toolbar'),
   editorContainer: document.getElementById('editor-container'),
@@ -299,19 +312,33 @@ function setupEventListeners() {
     const calEvSel = '.ev-chip, .ev-block, .ev-item';
     elements.editorContainer.addEventListener('mouseover', (e) => {
       if (!mqCanHover.matches) return;
+      // 日记图标 hover → 显示日记 tip（仅当天有日记时）
+      const dyBtn = e.target.closest('.ev-day-diary');
+      if (dyBtn && dyBtn.getAttribute('data-ev-diary')) {
+        const d = calDiaryOnDate(dyBtn.getAttribute('data-ev-diary'));
+        if (d) { calShowDiaryTip(d.date, e.clientX, e.clientY); return; }
+      }
       const el = e.target.closest(calEvSel);
       if (el && el.getAttribute('data-ev-edit')) calShowTip(el.getAttribute('data-ev-edit'), e.clientX, e.clientY);
     });
     elements.editorContainer.addEventListener('mousemove', (e) => {
       if (!mqCanHover.matches) return;
       if (!calTipEl || calTipEl.style.display === 'none') return;
+      const dyBtn = e.target.closest('.ev-day-diary');
+      if (dyBtn && dyBtn.getAttribute('data-ev-diary')) {
+        const d = calDiaryOnDate(dyBtn.getAttribute('data-ev-diary'));
+        if (d) { calShowDiaryTip(d.date, e.clientX, e.clientY); return; }
+      }
       const el = e.target.closest(calEvSel);
       if (el && el.getAttribute('data-ev-edit')) calShowTip(el.getAttribute('data-ev-edit'), e.clientX, e.clientY);
       else calHideTip();
     });
     elements.editorContainer.addEventListener('mouseout', (e) => {
       const to = e.relatedTarget;
-      if (to && to.closest && to.closest(calEvSel)) return;
+      if (to && to.closest) {
+        if (to.closest(calEvSel)) return;            // 仍在事件元素间移动，不隐藏
+        if (to.closest('.ev-day-diary')) return;    // 仍在日记按钮上，不隐藏
+      }
       calHideTip();
     });
     elements.editorContainer.addEventListener('mouseleave', calHideTip);
@@ -349,6 +376,13 @@ function setupEventListeners() {
   if (elements.evFEndDate) { elements.evFEndDate.addEventListener('change', calUpdateFormDow); elements.evFEndDate.addEventListener('input', calUpdateFormDow); }
   if (elements.evFormOverlay) elements.evFormOverlay.addEventListener('click', (e) => {
     if (e.target === elements.evFormOverlay) closeEventForm(); // 點遮罩 = 取消
+  });
+  // 📓 日記表單
+  if (elements.diaryFormSave) elements.diaryFormSave.addEventListener('click', saveDiaryForm);
+  if (elements.diaryFormCancel) elements.diaryFormCancel.addEventListener('click', closeDiaryForm);
+  if (elements.diaryFormDelete) elements.diaryFormDelete.addEventListener('click', deleteDiary);
+  if (elements.diaryFormOverlay) elements.diaryFormOverlay.addEventListener('click', (e) => {
+    if (e.target === elements.diaryFormOverlay) closeDiaryForm(); // 點遮罩 = 取消
   });
   // ↕ 備註框高度拖拽手柄：iOS Safari 不支持 textarea 原生 resize，用 Pointer Events 自繪（觸屏/鼠標通用）
   if (elements.evFResize && elements.evFNotes) {

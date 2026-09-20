@@ -50,7 +50,10 @@
 //      被吸頂時它的 offsetTop / getBoundingClientRect() 返回的是「位移後」的渲染位置（≈ 當前
 //      scrollTop），故算出的目標 scrollTop 恰好＝當前值 → 原地不動（點更晚日期才有效）。
 //      現由 calScrollElToTop 讀佈局位置前先臨時摘掉 sticky；列表模式的 scrollIntoView 也改用同一入口。
-const CACHE_NAME = 'md-editor-lite-v50';
+// v52：日記圖標 hover 顯示內容 tips（複用行程事件 .ev-tip 機制，僅當天有日記時）；calendar-editor.js/app.js 改，bump 讓手機重拉
+// v51：新增 ## DIARY 日記（桌面 + LITE 共用結構）：日期標題旁日記按鈕（有日記打勾）、專用日記編輯視窗；
+//      calendar-editor.js/app.js/index.html/style.css 改，bump 讓手機重拉
+const CACHE_NAME = 'md-editor-lite-v52';
 const ASSETS = [
   './',
   './index.html',
