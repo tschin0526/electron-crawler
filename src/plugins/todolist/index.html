@@ -1912,7 +1912,7 @@
       background: var(--ev-card); border-top: 1px solid var(--ev-border); border-bottom: 1px solid var(--ev-border); }
     .ev-hsplit::after { content: ''; position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
       width: 48px; height: 3px; border-radius: 2px; background: var(--ev-border); }
-    .ev-hsplit:hover::after, .ev-hsplit.dragging::after { background: var(--ev-primary); }
+    .ev-hsplit.dragging::after { background: var(--ev-primary); }
     /* 月視圖：月格自己一層滾動區（原本靠 #tlEvMonthWrap 整體滾動，明細無法固定在底部） */
     #tlEvMonthWrap { flex: 1 1 auto; min-height: 0; }
     .ev-month-scroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
@@ -1925,12 +1925,20 @@
     }
     .ev-date .ev-week { color: var(--ev-muted); font-weight: 400; font-size: 12px; }
     .ev-date.today { color: var(--ev-primary); }
+    /* ✨ 选中日：下方清单该日资料金色外框描边（整组单一矩形框，无内部分割线） */
+    .ev-date-group.sel-date { border: 1px solid #F5C518; margin-top: 6px; }
+    .ev-date-group.sel-date .ev-date { margin-top: 0; border-bottom: none; }
+    .ev-date-group.sel-date .ev-item { border-bottom: none; }
+    .ev-date-group.sel-date .ev-holiday { border: none; border-left: 4px solid var(--holiday-color, #FF9500); margin: 0; border-radius: 0; }
     .ev-day-add { margin-left: auto; border: 1px solid var(--ev-primary); background: transparent; color: var(--ev-primary); font-size: 11px; padding: 2px 8px; border-radius: 6px; cursor: pointer; font-weight: 400; }
     /* 明细范围切换（日 <-> 月/週）：迷你分段控件，放在「＋ 此日新增」旁 / 明细顶部 */
     .ev-scope-seg { display: inline-flex; align-items: center; border: 1px solid var(--ev-border, #e5e7eb); border-radius: 6px; overflow: hidden; flex: 0 0 auto; }
     .ev-scope-seg button { border: none; background: var(--ev-card, #fff); color: var(--ev-muted, #6b7280); font-size: 11px; padding: 2px 8px; cursor: pointer; line-height: 1.4; }
     .ev-scope-seg button + button { border-left: 1px solid var(--ev-border, #e5e7eb); }
     .ev-scope-seg button.active { background: var(--ev-primary, #007AFF); color: #fff; font-weight: 600; }
+    /* 多日期清单（整月/整週）：日/月切换只显示在当前画面顶部（首个可见）日期条上；单日模式仍常显 */
+    .scope-follow .ev-date .ev-scope-seg { display: none; }
+    .scope-follow .ev-date.active .ev-scope-seg { display: inline-flex; }
     .ev-scope-row { display: flex; justify-content: flex-end; padding: 4px 4px 0; }
     .ev-today-badge { background: var(--ev-primary); color: #fff; font-size: 11px; padding: 1px 8px; border-radius: 99px; font-weight: 500; }
     /* ⏳ 倒計時徽章（非今天）：灰底弱化，今天仍走上面的高亮主色 */

@@ -624,22 +624,27 @@ function renderCalGridDayList() {
   // 整週（週模式切到「週」）：遍歷當週 7 天，跳過無內容日（與列表模式一致）
   if (state.calScope === 'full' && state.calMode === 'week') {
     let any = false;
+    const sel = calGridSelectedDay();
     for (const d of calWeekDays(state.calCursor)) {
       const ds = calendarFmtDate(d);
       const dayItems = calDayItems(ds);
       const evs = sortedCalEvents(dayItems.events);
       const hols = dayItems.holidays;
       if (!evs.length && !hols.length) continue;
-      // toggle 只內聯進第一個內容日標題條（與「日」範圍單行結構一致），不單獨佔一行
-      html += calDateHeaderHtml(ds, today, any ? '' : toggle, evs.length + hols.length);
+      // toggle 內聯進每個日期標題條，隨 sticky 一直可見（無需滾回週首）
+      let g = calDateHeaderHtml(ds, today, toggle, evs.length + hols.length);
       any = true;
-      for (const h of hols) html += calHolidayHtml(h, today);
-      for (const ev of evs) html += evItemHtml(ev, today);
+      for (const h of hols) g += calHolidayHtml(h, today);
+      for (const ev of evs) g += evItemHtml(ev, today);
+      html += (ds === sel) ? '<div class="ev-date-group sel-date">' + g + '</div>' : g;
     }
     if (!any) html += '<div class="ev-scope-row">' + toggle + '</div><div class="ev-empty">本週沒有行程</div>';
     list.innerHTML = html;
+    list.classList.add('scope-follow');
+    calBindActiveDateScroll(list);
     // 整週：滾動到「選中日」的日期條（該日無內容則回退到最近的一天）；清單自身即滾動容器
     calScrollListToDate(list, list, calGridSelectedDay());
+    calUpdateActiveDate(list);
     return;
   }
   // 單日（默認）：選中日明細
@@ -664,6 +669,7 @@ function renderCalGridDayList() {
     for (const h of hols) html += calHolidayHtml(h, today);
     for (const ev of evs) html += evItemHtml(ev, today);
   }
+  list.classList.remove('scope-follow');
   list.innerHTML = html;
   calScrollListToDate(list, list, ds);   // 單日明細：滾到該日日期條（清單自身即滾動容器）
 }
@@ -837,16 +843,21 @@ function renderEventsList(content) {
   // 按日期分組（跨天行程/假日逐日展開，與「日」範圍同口徑）：每天先顯示該日假日，再顯示行程
   const byDate = calEventsByDate(visible);
   const dates = Array.from(byDate.keys()).sort();
+  // 選中日：< > / 「今天」導航到的錨點日（默認今天；今天無行程則回退最近未來日期，最後回退末尾）
+  let sel = state.calListSel || today;
+  if (dates.indexOf(sel) < 0) sel = dates.find((d) => d > today) || dates[dates.length - 1] || today;
+  if (dates.length) state.calListSel = sel;
   let html = '';
   for (const ds of dates) {
     const grp = byDate.get(ds);
-    html += calDateHeaderHtml(ds, today, '', grp.events.length + grp.holidays.length);
-    for (const h of grp.holidays) html += calHolidayHtml(h, today);
-    for (const ev of sortedCalEvents(grp.events)) html += evItemHtml(ev, today);
+    let g = calDateHeaderHtml(ds, today, '', grp.events.length + grp.holidays.length);
+    for (const h of grp.holidays) g += calHolidayHtml(h, today);
+    for (const ev of sortedCalEvents(grp.events)) g += evItemHtml(ev, today);
+    html += (ds === sel) ? '<div class="ev-date-group sel-date">' + g + '</div>' : g;
   }
   list.innerHTML = html;
-  // 自動滾動到今天或最近未來日期的懸浮條
-  scrollToNearestDate(list);
+  // 滾動到選中的錨點日（今天，或 < > 導航到的日期）
+  calScrollListToDate(list, list, sel);
 }
 
 // 自動滾動到離今天最近的日期懸浮條（優先今天，其次最近未來日期，最後最後一個）
@@ -865,6 +876,20 @@ function scrollToNearestDate(list) {
   // 3. 全是過去日期 → 滾到最後一個
   if (!pick) pick = headers[headers.length - 1];
   calScrollElToTop(pick, list);
+}
+
+// 列表模式：< > 逐日移動「選中日」（金色描邊隨其移動）並滾動到該日
+function calListNavDay(dir) {
+  const list = elements.eventsList;
+  if (!list) return;
+  const dates = Array.from(list.querySelectorAll('.ev-date[data-ev-date]')).map((h) => h.dataset.evDate);
+  if (!dates.length) return;
+  let idx = dates.indexOf(state.calListSel);
+  if (idx < 0) idx = 0;
+  const target = idx + dir;
+  if (target < 0 || target >= dates.length) return;
+  state.calListSel = dates[target];
+  renderEventsContent();
 }
 
 // 把元素滾到 scroller 頂部（sticky 安全版，月/週明細 + 清單模式共用）
@@ -899,6 +924,33 @@ function calPickScrollTarget(headers, ds) {
 function calScrollListToDate(list, scroller, ds) {
   if (!list || !scroller || !ds) return;
   calScrollElToTop(calPickScrollTarget(list.querySelectorAll('.ev-date[data-ev-date]'), ds), scroller);
+}
+// 「日/月」切換只顯示在當前畫面頂部（第一個可見）的日期標題條上：
+// active = 已滾過頂部、當前貼著頂部的那條日期標題（sticky 頂條）。
+function calPickActiveDate(list) {
+  const heads = list.querySelectorAll('.ev-date[data-ev-date]');
+  if (!heads.length) return null;
+  const topLine = list.getBoundingClientRect().top + 16; // 16px：容納首條 margin-top 與容器內邊距
+  let active = null;
+  for (let i = 0; i < heads.length; i++) {
+    if (heads[i].getBoundingClientRect().top <= topLine) active = heads[i];
+  }
+  return active;
+}
+function calUpdateActiveDate(list) {
+  if (!list) return;
+  const active = calPickActiveDate(list);
+  list.querySelectorAll('.ev-date[data-ev-date].active').forEach((h) => h.classList.remove('active'));
+  if (active) active.classList.add('active');
+}
+function calBindActiveDateScroll(list) {
+  if (!list || list.dataset.activeBound === '1') return;
+  list.dataset.activeBound = '1';
+  let raf = 0;
+  list.addEventListener('scroll', () => {
+    if (raf) return;
+    raf = requestAnimationFrame(() => { raf = 0; calUpdateActiveDate(list); });
+  }, { passive: true });
 }
 
 // ===== 上下區域可拖動分割（月/週共用）=====
@@ -937,13 +989,18 @@ function calBindSplit(wrap, split) {
   split.dataset.splitBound = '1';
   let dragging = false;
   split.addEventListener('pointerdown', (e) => {
+    if (e.button !== 0) return;
     dragging = true;
     split.classList.add('dragging');
     try { split.setPointerCapture(e.pointerId); } catch (err) {}
     if (e.cancelable) e.preventDefault();   // 防止拖動時選中文字
   });
   // 有了 pointer capture，move/up 都會派發到 split 自身
-  split.addEventListener('pointermove', (e) => { if (dragging) calApplySplitFromPointer(wrap, e.clientY); });
+  split.addEventListener('pointermove', (e) => {
+    if (!dragging) return;
+    if ((e.buttons & 1) !== 1) { dragging = false; split.classList.remove('dragging'); return; }
+    calApplySplitFromPointer(wrap, e.clientY);
+  });
   const end = (e) => {
     if (!dragging) return;
     dragging = false;
@@ -1291,8 +1348,10 @@ function syncEventsModeUI() {
   if (elements.evModeDay) elements.evModeDay.classList.toggle('active', isDay);
   if (elements.evModeWeek) elements.evModeWeek.classList.toggle('active', isWeek);
   if (elements.evModeMonth) elements.evModeMonth.classList.toggle('active', month);
-  // 導航列：列表模式不需要（沒有游標概念）
-  if (elements.evMonthNav) elements.evMonthNav.style.display = (month || isGrid) ? '' : 'none';
+  // 導航列：四种模式都显示；列表模式标题留空（作为弹性占位，把「今天」推到右侧），‹ › 仍显示
+  const isList = mode === 'list';
+  if (elements.evMonthNav) elements.evMonthNav.style.display = (month || isGrid || isList) ? '' : 'none';
+  if (elements.evMonthTitle && isList) elements.evMonthTitle.textContent = '';
   if (elements.evMonthWrap) elements.evMonthWrap.style.display = month ? '' : 'none';
   // ⚠️ 同上：#ev-week-wrap 的 CSS 預設是 display:none，顯示時要顯式給 'flex'
   if (elements.evWeekWrap) elements.evWeekWrap.style.display = isGrid ? 'flex' : 'none';
@@ -1362,23 +1421,27 @@ function renderCalDayList() {
     const dates = Array.from(byDate.keys()).sort();
     let total = 0;
     byDate.forEach((g) => { total += g.events.length + g.holidays.length; });
-    // 頭部只保留一行：toggle 內聯進第一個日期標題條（與「日」範圍單行結構一致）；
+    // toggle 內聯進每個日期標題條，隨 sticky 讓「第一筆可見日期」始終帶切換控件；
     // 整月無內容時才退回獨立彙總條放 toggle，保證切換仍可達
     let html = '';
-    if (!dates.length) html += '<div class="ev-date">' + (mo + 1) + '月 <span class="ev-week">全部 ' + total + ' 條</span>' +
+    if (!dates.length) html += '<div class="ev-date active">' + (mo + 1) + '月 <span class="ev-week">全部 ' + total + ' 條</span>' +
       '<span class="ev-toolbar-flex"></span>' + toggle + '</div><div class="ev-empty">本月沒有行程</div>';
     else {
       for (let i = 0; i < dates.length; i++) {
         const grp = byDate.get(dates[i]);
-        html += calDateHeaderHtml(dates[i], today, i === 0 ? toggle : '', grp.events.length + grp.holidays.length);
-        for (const h of grp.holidays) html += calHolidayHtml(h, today);
-        for (const ev of sortedCalEvents(grp.events)) html += evItemHtml(ev, today);
+        let g = calDateHeaderHtml(dates[i], today, toggle, grp.events.length + grp.holidays.length);
+        for (const h of grp.holidays) g += calHolidayHtml(h, today);
+        for (const ev of sortedCalEvents(grp.events)) g += evItemHtml(ev, today);
+        html += (dates[i] === state.calSelectedDate) ? '<div class="ev-date-group sel-date">' + g + '</div>' : g;
       }
     }
     list.innerHTML = html;
+    list.classList.add('scope-follow');
+    calBindActiveDateScroll(list);
     // 整月：滾動到「選中日」的日期條（該日無內容則回退到最近的一天）。
     // 明細自身即滾動容器（.ev-detail 有確定高度）→ 月格不再被滾走。
     calScrollListToDate(list, list, state.calSelectedDate);
+    calUpdateActiveDate(list);
     return;
   }
   // 「日」範圍（默認）：選定日單日
@@ -1405,6 +1468,7 @@ function renderCalDayList() {
     for (const h of hols) html += calHolidayHtml(h, today);
     for (const ev of evs) html += evItemHtml(ev, today);
   }
+  list.classList.remove('scope-follow');
   list.innerHTML = html;
 }
 

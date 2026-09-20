@@ -8,7 +8,7 @@ const VIEWS = ['edit', 'preview', 'split', 'events'];
 
 // 📌 應用版本號（單一可信來源）。
 // 每次改動都要 +1，方便在手機上確認跑的是不是最新版（狀態列左下角會顯示）。
-const APP_VERSION = '0.7.23';
+const APP_VERSION = '0.7.24';
 
 // 可處理的文字檔副檔名白名單（對齊 todo 編輯器 TEXT_EXTS，取常用子集）
 const TEXT_EXTS = [
@@ -84,6 +84,7 @@ const state = {
   calMode: 'month',             // 'list' | 'day' | 'week' | 'month'
   calCursor: new Date(),        // 當前游標日期（月視圖＝該月；日視圖＝當天；週視圖＝該週內某天）
   calSelectedDate: null,        // 月視圖選中日期（YYYY-MM-DD）
+  calListSel: null,             // 列表模式：< > / 「今天」導航到的「選中日」（金色描邊）
   calScope: 'day',              // 下方明細範圍：'day'=選定日（默認）/ 'full'=整月（月模式）或整週（週模式）；僅內存態
   calEvents: [],                // 工作副本（含 uid；每次渲染/編輯前從編輯器緩衝重新解析）
   calTagFilter: [],             // 🏷 標籤過濾（空＝全部；OR 邏輯，任一標籤命中即顯示）
@@ -220,9 +221,9 @@ function setupEventListeners() {
   if (elements.evModeMonth) elements.evModeMonth.addEventListener('click', () => setCalMode('month'));
   if (elements.evAddBtn) elements.evAddBtn.addEventListener('click', () => openEventForm(null));
   // ‹ › 依當前模式步進：月→月、週→週、日→日
-  if (elements.evPrevMonth) elements.evPrevMonth.addEventListener('click', () => calStepCursor(-1));
-  if (elements.evNextMonth) elements.evNextMonth.addEventListener('click', () => calStepCursor(1));
-  if (elements.evTodayBtn) elements.evTodayBtn.addEventListener('click', () => { state.calCursor = new Date(); state.calSelectedDate = calendarFmtDate(new Date()); renderEventsContent(); });
+  if (elements.evPrevMonth) elements.evPrevMonth.addEventListener('click', () => { if (state.calMode === 'list') calListNavDay(-1); else calStepCursor(-1); });
+  if (elements.evNextMonth) elements.evNextMonth.addEventListener('click', () => { if (state.calMode === 'list') calListNavDay(1); else calStepCursor(1); });
+  if (elements.evTodayBtn) elements.evTodayBtn.addEventListener('click', () => { state.calCursor = new Date(); state.calSelectedDate = calendarFmtDate(new Date()); state.calListSel = calendarFmtDate(new Date()); renderEventsContent(); });
   if (elements.evMonthGrid) elements.evMonthGrid.addEventListener('click', (e) => {
     // 📅 點農曆文字 → 開老黃曆詳情（不觸發選日 / 快速新增）
     const alm = e.target.closest('[data-ev-almanac]');

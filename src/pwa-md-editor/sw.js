@@ -50,7 +50,7 @@
 //      被吸頂時它的 offsetTop / getBoundingClientRect() 返回的是「位移後」的渲染位置（≈ 當前
 //      scrollTop），故算出的目標 scrollTop 恰好＝當前值 → 原地不動（點更晚日期才有效）。
 //      現由 calScrollElToTop 讀佈局位置前先臨時摘掉 sticky；列表模式的 scrollIntoView 也改用同一入口。
-const CACHE_NAME = 'md-editor-lite-v49';
+const CACHE_NAME = 'md-editor-lite-v50';
 const ASSETS = [
   './',
   './index.html',
