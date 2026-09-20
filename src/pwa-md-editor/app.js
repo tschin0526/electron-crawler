@@ -8,7 +8,7 @@ const VIEWS = ['edit', 'preview', 'split', 'events'];
 
 // 📌 應用版本號（單一可信來源）。
 // 每次改動都要 +1，方便在手機上確認跑的是不是最新版（狀態列左下角會顯示）。
-const APP_VERSION = '0.7.17';
+const APP_VERSION = '0.7.23';
 
 // 可處理的文字檔副檔名白名單（對齊 todo 編輯器 TEXT_EXTS，取常用子集）
 const TEXT_EXTS = [
@@ -90,6 +90,7 @@ const state = {
   calRegionFilter: ['cn'],      // 🌏 HOLIDAY 地區過濾（圖例 checkbox；默認只顯示大陸 cn；僅內存態）
   evFormUid: null,              // 編輯表單當前目標 uid（null = 新增）
   evFormColor: null,            // 編輯表單當前選中顏色
+  evFormTags: [],               // 編輯表單當前已選標籤
   evFormTodoIds: []             // 🔗 編輯表單當前關聯的 Todo 卡片 id（寫回 todoIds 字段）
 };
 
@@ -258,6 +259,22 @@ function setupEventListeners() {
     else state.calTagFilter.push(t);
     renderEventsContent();
   });
+  const tagPicker = document.getElementById('ev-tag-picker');
+  if (tagPicker && elements.evFTags) {
+    tagPicker.addEventListener('click', (e) => {
+      const remove = e.target.closest('[data-ev-tag-remove]');
+      const option = e.target.closest('[data-ev-tag-option]');
+      if (remove) calRemoveFormTag(remove.getAttribute('data-ev-tag-remove'));
+      else if (option) calToggleFormTag(option.getAttribute('data-ev-tag-option'));
+      else { tagPicker.classList.add('open'); calRenderTagPicker(); }
+    });
+    elements.evFTags.addEventListener('input', () => { tagPicker.classList.add('open'); calRenderTagPicker(); });
+    elements.evFTags.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); calAddFormTag(elements.evFTags.value); }
+      else if (e.key === 'Backspace' && !elements.evFTags.value) calRemoveFormTag(state.evFormTags[state.evFormTags.length - 1]);
+    });
+    document.addEventListener('click', (e) => { if (!tagPicker.contains(e.target)) tagPicker.classList.remove('open'); });
+  }
   // 條目「編輯/刪除」按鈕：列表視圖、月視圖日列表、日/週時間網格共用一套委派
   if (elements.eventsList) elements.eventsList.addEventListener('click', onEvListClick);
   if (elements.evDayList) elements.evDayList.addEventListener('click', onEvListClick);

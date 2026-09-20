@@ -248,7 +248,13 @@
         </div>
         <label class="ev-f-label">地點<input type="text" id="ev-f-location" maxlength="200" placeholder="可留空"></label>
         <div class="ev-f-label">顏色<div id="ev-f-colors" class="ev-f-colors"></div></div>
-        <label class="ev-f-label">標籤（逗號分隔）<input type="text" id="ev-f-tags" maxlength="200" placeholder="例如：生活, 工作"></label>
+        <div class="ev-f-label">標籤
+          <div class="ev-tag-picker" id="ev-tag-picker">
+            <div class="ev-tag-selected" id="ev-tag-selected"></div>
+            <input type="text" id="ev-f-tags" maxlength="200" placeholder="選擇或輸入標籤後按 Enter">
+            <div class="ev-tag-menu" id="ev-tag-menu"></div>
+          </div>
+        </div>
         <!-- 🔗 關聯 Todo 卡片：與桌面端共用 todoIds 字段；LITE 端無卡片清單可解析標題，故直接以 id 顯示/輸入 -->
         <div class="ev-f-label">關聯 Todo 卡片（卡片 id）
           <div id="ev-f-todo-panel" class="ev-todo-link-panel"></div>

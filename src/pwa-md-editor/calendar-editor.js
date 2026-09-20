@@ -414,6 +414,8 @@ function renderCalTagBar() {
   if (!bar || !filter) return;
   const tags = new Set();
   state.calEvents.forEach((ev) => (ev.tags || []).forEach((t) => { if (t) tags.add(t); }));
+  const options = document.getElementById('ev-tag-options');
+  if (options) options.innerHTML = Array.from(tags).sort().map((t) => '<option value="' + escapeHtml(t) + '"></option>').join('');
   if (!tags.size) { bar.style.display = 'none'; filter.innerHTML = ''; return; }
   // ⚠️ 必須顯式給 'flex'：CSS 裡 .ev-tagbar 預設 display:none，清空 inline style 會被 CSS 覆蓋回隱藏
   bar.style.display = 'flex';
@@ -421,6 +423,42 @@ function renderCalTagBar() {
     const active = state.calTagFilter.indexOf(t) >= 0;
     return '<span class="ev-tag-chip' + (active ? ' active' : '') + '" data-tag="' + escapeHtml(t) + '">' + escapeHtml(t) + '</span>';
   }).join('');
+}
+
+function renderCalTagOptions() {
+  const options = document.getElementById('ev-tag-options');
+  if (!options) return;
+  const tags = new Set();
+  state.calEvents.forEach((ev) => (ev.tags || []).forEach((t) => { if (t) tags.add(t); }));
+  options.innerHTML = Array.from(tags).sort().map((t) => '<option value="' + escapeHtml(t) + '"></option>').join('');
+}
+
+function calFormTagNames() {
+  const tags = new Set();
+  state.calEvents.forEach((ev) => (ev.tags || []).forEach((t) => { if (t) tags.add(t); }));
+  return Array.from(tags).sort((a, b) => a.localeCompare(b, 'zh-Hans'));
+}
+function calRenderTagPicker() {
+  const picker = document.getElementById('ev-tag-picker');
+  const selected = document.getElementById('ev-tag-selected');
+  const menu = document.getElementById('ev-tag-menu');
+  if (!picker || !selected || !menu || !elements.evFTags) return;
+  selected.innerHTML = state.evFormTags.map((t) => '<span class="ev-tag-selected-chip">' + escapeHtml(t) + '<button type="button" data-ev-tag-remove="' + escapeHtml(t) + '" aria-label="删除标签">×</button></span>').join('');
+  const query = elements.evFTags.value.trim().toLowerCase();
+  const names = calFormTagNames().filter((t) => !query || t.toLowerCase().includes(query));
+  menu.innerHTML = names.length ? names.map((t) => '<button type="button" class="ev-tag-option' + (state.evFormTags.indexOf(t) >= 0 ? ' selected' : '') + '" data-ev-tag-option="' + escapeHtml(t) + '">' + (state.evFormTags.indexOf(t) >= 0 ? '✓ ' : '') + escapeHtml(t) + '</button>').join('') : '<div class="ev-tag-option">暂无可选标签</div>';
+}
+function calAddFormTag(value) {
+  String(value || '').split(/[,，]/).map((t) => t.trim()).filter(Boolean).forEach((t) => { if (state.evFormTags.indexOf(t) < 0) state.evFormTags.push(t); });
+  elements.evFTags.value = '';
+  calRenderTagPicker();
+}
+function calRemoveFormTag(tag) {
+  state.evFormTags = state.evFormTags.filter((t) => t !== tag);
+  calRenderTagPicker();
+}
+function calToggleFormTag(tag) {
+  if (state.evFormTags.indexOf(tag) >= 0) calRemoveFormTag(tag); else calAddFormTag(tag);
 }
 
 // 地區圖例：列出當前 calendar.md 出現過的地區（去重），無假日則隱藏。顏色/圖標與渲染一致，零學習成本。
@@ -685,10 +723,10 @@ function calEvRemoveTodoLink(id) {
 // 地區調色板：決定假日「目視差別」的主色（與類型徽章正交）。可擴展：直接往此表加一項即可。
 // 缺省 cn：舊數據無 region 字段時回退中國大陸；非空但未知的地區→中性灰＋原始代號（不靜默當大陸，避免誤判）。
 const CAL_HOLIDAY_REGIONS = {
-  cn: { label: '大陸', icon: '🇨🇳', color: '#E4002B' },
-  hk: { label: '港',   icon: '🇭🇰', color: '#7B2FBE' },
-  tw: { label: '台',   icon: '🇹🇼', color: '#00A3A3' },
-  us: { label: '美',   icon: '🇺🇸', color: '#1F4E79' },
+  cn: { label: '大陆', icon: '<span class="ev-region-icon ev-region-cn" aria-label="中国大陆旗帜"></span>', color: '#E4002B' },
+  hk: { label: '港',   icon: '<span class="ev-region-icon ev-region-hk" aria-label="香港旗帜"></span>', color: '#7B2FBE' },
+  tw: { label: '台',   icon: '<span class="ev-region-icon ev-region-tw" aria-label="台湾旗帜"></span>', color: '#00A3A3' },
+  us: { label: '美',   icon: '<span class="ev-region-icon ev-region-us" aria-label="美国旗帜"></span>', color: '#1F4E79' },
 };
 function calHolidayRegionMeta(region) {
   const r = (region || '').toLowerCase();
@@ -765,7 +803,7 @@ function calHolidayHtml(h, today) {
   const time = multi
     ? (calMdShort(h.date) + ' – ' + calMdShort(h.endDate) + ' · 共' + calSpanDays(h.date, h.endDate) + '天')
     : '全天';
-  const tags = (h.tags && h.tags.length) ? '<span class="ev-tags">' + h.tags.map((t) => '#' + escapeHtml(t)).join(' ') + '</span>' : '';
+  const tags = (h.tags && h.tags.length) ? '<span class="ev-tags">' + h.tags.map((t) => '<span class="ev-tag-view">#' + escapeHtml(t) + '</span>').join('') + '</span>' : '';
   return '<div class="ev-holiday" data-ev-holiday="' + escapeHtml(h.uid) + '" style="--holiday-color:' + escapeHtml(accent) + '">' +
     '<span class="ev-holiday-region" style="--region-color:' + escapeHtml(region.color) + '" title="' + escapeHtml(region.label + '地區假日') + '">' + region.icon + escapeHtml(region.label) + '</span>' +
     '<span class="ev-holiday-badge">' + meta.icon + ' ' + escapeHtml(meta.label) + '</span>' +
@@ -1138,7 +1176,7 @@ function evItemHtml(ev, today) {
     '<span class="ev-swatch" style="background:' + escapeHtml(ev.color) + '"></span>' +
     '<div class="ev-body">' +
     '<div class="ev-title">' + escapeHtml(ev.title) + spanBadge +
-    (ev.tags && ev.tags.length ? '<span class="ev-tags">' + ev.tags.map(t => '#' + escapeHtml(t)).join(' ') + '</span>' : '') +
+    (ev.tags && ev.tags.length ? '<span class="ev-tags">' + ev.tags.map(t => '<span class="ev-tag-view">#' + escapeHtml(t) + '</span>').join('') + '</span>' : '') +
     calEventTodoLinks(ev) +
     '</div>' +
     '<div class="ev-meta">' + escapeHtml(time) + (ev.location ? ' · 📍' + escapeHtml(ev.location) : '') + '</div>' +
@@ -1400,6 +1438,7 @@ function openEventForm(uid, defaultDate, pre) {
   calHideTip();
   if (!isCalendarMd()) return;
   state.calEvents = parseCalendarEvents(elements.editor.value);
+  renderCalTagOptions();
   state.evFormUid = null;
   let ev = null;
   if (uid) {
@@ -1423,7 +1462,9 @@ function openEventForm(uid, defaultDate, pre) {
   elements.evFEnd.disabled = elements.evFAllday.checked;
   elements.evFLocation.value = ev ? ev.location : '';
   state.evFormColor = ev ? ev.color : CAL_COLORS[0];
-  elements.evFTags.value = ev && ev.tags ? ev.tags.join(', ') : '';
+  state.evFormTags = ev && ev.tags ? ev.tags.slice() : [];
+  elements.evFTags.value = '';
+  calRenderTagPicker();
   // 🔗 關聯 Todo 卡片：帶入該行程原本的 todoIds（slice 複製，避免改到工作副本）
   state.evFormTodoIds = ev ? (ev.todoIds || []).slice() : [];
   calRenderEvTodoLinkPanel();
@@ -1479,7 +1520,7 @@ function saveEventForm() {
     endTime: allDay ? '' : elements.evFEnd.value,
     location: elements.evFLocation.value.trim(),
     color: state.evFormColor || CAL_COLORS[0],
-    tags: elements.evFTags.value.split(/[,，]/).map(s => s.trim()).filter(Boolean),
+    tags: state.evFormTags.slice(),
     // 🔗 修復：此前漏寫 todoIds → 每次編輯存檔都會把桌面端建立的關聯卡片清空
     todoIds: state.evFormTodoIds.slice(),
     notes: elements.evFNotes.value.replace(/\r\n/g, '\n')

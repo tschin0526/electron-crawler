@@ -1965,7 +1965,8 @@
     .ev-swatch { flex: 0 0 auto; width: 10px; height: 10px; border-radius: 50%; margin-top: 5px; }
     .ev-body { flex: 1; min-width: 0; }
     .ev-title { font-size: 14px; font-weight: 500; color: var(--ev-text); word-break: break-word; }
-    .ev-tags { margin-left: 8px; font-size: 12px; color: var(--ev-muted); font-weight: 400; }
+    .ev-tags { display: inline-flex; flex-wrap: wrap; gap: 4px; margin-left: 8px; vertical-align: middle; }
+    .ev-tags .ev-tag-view { display: inline-block; padding: 3px 12px; border-radius: 999px; background: #7C3AED; border: 1px solid #8B5CF6; color: #fff; font-size: 12px; line-height: 1.35; font-weight: 600; white-space: nowrap; }
     .ev-meta { margin-top: 2px; font-size: 12px; color: var(--ev-muted); }
     .ev-notes { margin-top: 4px; font-size: 12px; color: var(--ev-muted); white-space: pre-wrap; word-break: break-word; }
     .ev-actions { flex: 0 0 auto; display: flex; flex-direction: column; gap: 4px; }
@@ -2012,6 +2013,17 @@
     .ev-holiday-legend .ev-legend-item input[type="checkbox"] { margin: 0; width: 13px; height: 13px; cursor: pointer; flex: 0 0 auto; }
     .ev-holiday-legend .ev-legend-item.off { opacity: 0.45; }
     .ev-holiday-legend .ev-legend-dot { width: 10px; height: 10px; border-radius: 999px; display: inline-block; }
+    .ev-region-icon { display: inline-block; width: 16px; height: 11px; flex: 0 0 auto; vertical-align: -1px; border-radius: 1px; position: relative; overflow: hidden; }
+    .ev-region-cn { background: #DE2910; }
+    .ev-region-cn::before { content: ''; position: absolute; left: 2px; top: 2px; width: 4px; height: 4px; border-radius: 50%; background: #FFDE00; }
+    .ev-region-hk { background: #DE2910; }
+    .ev-region-hk::before { content: ''; position: absolute; left: 6px; top: 3px; width: 5px; height: 5px; border-radius: 50%; background: #fff; }
+    .ev-region-tw { background: #FE0000; }
+    .ev-region-tw::before { content: ''; position: absolute; inset: 0 auto auto 0; width: 8px; height: 6px; background: #000095; }
+    .ev-region-tw::after { content: ''; position: absolute; left: 2px; top: 1px; width: 3px; height: 3px; border-radius: 50%; background: #fff; }
+    .ev-region-us { background: repeating-linear-gradient(to bottom, #B22234 0 1.5px, #fff 1.5px 3px); }
+    .ev-region-us::before { content: ''; position: absolute; inset: 0 auto auto 0; width: 7px; height: 6px; background: #3C3B6E; }
+    .ev-region-us::after { content: ''; position: absolute; left: 2px; top: 2px; width: 2px; height: 2px; border-radius: 50%; background: #fff; }
     /* 月格 chip：与 EVENT chip 视觉区隔（type 色块＋图标徽章），不变量⑤：面板 --ev-* 变量带显式回退 */
     .ev-holiday-chip { display: inline-flex; align-items: center; gap: 2px; font-size: 10px; font-weight: 600; line-height: 1.3; margin-top: 2px; padding: 0 5px; border-radius: 99px; color: #fff; background: var(--holiday-color, #FF9500); white-space: nowrap; }
     /* 日/週时间网格「假期」条：与 EVENT 全天条视觉区隔（同样 52px 轨道 + 同宽约束，保证栏位对齐） */
@@ -2030,7 +2042,18 @@
     .ev-tagbar-label { font-size: 12px; color: var(--ev-muted); flex: 0 0 auto; }
     .ev-tag-filter { display: flex; flex-wrap: wrap; gap: 6px; }
     .ev-tag-chip { font-size: 12px; padding: 2px 10px; border-radius: 99px; border: 1px solid var(--ev-border); background: var(--ev-bg); color: var(--ev-muted); cursor: pointer; }
-    .ev-tag-chip.active { background: var(--ev-primary); color: #fff; border-color: var(--ev-primary); }
+    .ev-tag-chip.active { background: #2563EB; color: #fff; border-color: #60A5FA; box-shadow: 0 0 0 1px rgba(96,165,250,.25); }
+    .tl-ev-tag-picker { position: relative; border: 1px solid var(--ev-border); border-radius: 8px; background: var(--ev-bg); padding: 5px 7px; min-height: 42px; }
+    .tl-ev-tag-selected { display: flex; flex-wrap: wrap; gap: 5px; }
+    .tl-ev-tag-selected:empty { display: none; }
+    .tl-ev-tag-selected .tl-ev-tag-selected-chip { display: inline-flex; align-items: center; gap: 4px; padding: 3px 9px; border-radius: 999px; background: #7C3AED; border: 1px solid #8B5CF6; color: #fff; font-size: 12px; font-weight: 600; }
+    .tl-ev-tag-selected-chip button { border: 0; padding: 0; background: transparent; color: inherit; cursor: pointer; font-size: 15px; line-height: 1; }
+    .tl-ev-tag-picker > input { width: 100%; margin-top: 4px; border: 0; outline: 0; background: transparent; color: var(--ev-text); font-size: 13px; }
+    .tl-ev-tag-picker > input::placeholder { color: var(--ev-muted); }
+    .tl-ev-tag-menu { display: none; position: absolute; z-index: 20; left: 0; right: 0; top: calc(100% + 4px); max-height: 170px; overflow-y: auto; padding: 4px; border: 1px solid var(--ev-border); border-radius: 8px; background: var(--ev-card); box-shadow: 0 8px 20px rgba(0,0,0,.3); }
+    .tl-ev-tag-picker.open .tl-ev-tag-menu { display: block; }
+    .tl-ev-tag-option { display: flex; width: 100%; align-items: center; gap: 6px; border: 0; border-radius: 6px; padding: 7px 8px; background: transparent; color: var(--ev-text); text-align: left; cursor: pointer; }
+    .tl-ev-tag-option:hover, .tl-ev-tag-option.selected { background: color-mix(in srgb, var(--ev-primary) 20%, transparent); }
 
     /* ===== 日 / 周视图 时间网格（移植自 calendar 插件） ===== */
     .ev-week-wrap { flex: 1 1 auto; display: flex; flex-direction: column; min-height: 0; }
@@ -4733,7 +4756,13 @@
       </div>
       <label class="tl-ev-f-label">地点<input type="text" id="tlEvFLocation" maxlength="200" placeholder="可留空"></label>
       <div class="tl-ev-f-label">颜色<div id="tlEvFColors" class="ev-f-colors"></div></div>
-      <label class="tl-ev-f-label">标签（逗号分隔）<input type="text" id="tlEvFTags" maxlength="200" placeholder="例如：生活, 工作"></label>
+      <div class="tl-ev-f-label">标签
+        <div class="tl-ev-tag-picker" id="tl-ev-tag-picker">
+          <div class="tl-ev-tag-selected" id="tl-ev-tag-selected"></div>
+          <input type="text" id="tlEvFTags" maxlength="200" placeholder="选择或输入标签后按 Enter">
+          <div class="tl-ev-tag-menu" id="tl-ev-tag-menu"></div>
+        </div>
+      </div>
       <div class="tl-ev-f-label">关联 Todo 卡片
         <div id="tlEvTodoLinkPanel" class="ev-todo-link-panel" tabindex="0" title="点此或按 ? 选择要关联的卡片"></div>
         <div id="tlEvTodoDropdown" class="ev-todo-dropdown"></div>

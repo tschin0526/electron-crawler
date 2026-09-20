@@ -24,6 +24,7 @@
     let tlEvFormTodoIds = [];   // 表单内「关联 Todo 卡片」临时列表（仅编辑期，不污染存档对象）
     let tlEvFormUid = null;
     let tlEvFormColor = null;
+    let tlEvFormTags = [];
     const TL_CAL_COLORS = ['#FF3B30', '#FF9500', '#FFCC00', '#34C759', '#5AC8FA', '#007AFF', '#5856D6', '#AF52DE', '#FF2D55', '#A2845E', '#8E8E93'];
 
     // 当前编辑器打开的文件是不是 calendar.md（行程应用数据文件）
@@ -403,12 +404,49 @@
       if (!bar || !filter) return;
       const tags = new Set();
       tlCalEvents.forEach((ev) => (ev.tags || []).forEach((t) => { if (t) tags.add(t); }));
+      const options = document.getElementById('tl-ev-tag-options');
+      if (options) options.innerHTML = Array.from(tags).sort().map((t) => '<option value="' + tlEscapeHtml(t) + '"></option>').join('');
       if (!tags.size) { bar.style.display = 'none'; filter.innerHTML = ''; return; }
       bar.style.display = '';
       filter.innerHTML = Array.from(tags).map((t) => {
         const active = tlCalTagFilter.indexOf(t) >= 0;
         return '<span class="ev-tag-chip' + (active ? ' active' : '') + '" data-tag="' + tlEscapeHtml(t) + '">' + tlEscapeHtml(t) + '</span>';
       }).join('');
+    }
+    function tlFormTagNames() {
+      const tags = new Set();
+      tlCalEvents.forEach((ev) => (ev.tags || []).forEach((t) => { if (t) tags.add(t); }));
+      return Array.from(tags).sort((a, b) => a.localeCompare(b, 'zh-Hans'));
+    }
+    function tlRenderTagPicker() {
+      const picker = document.getElementById('tl-ev-tag-picker');
+      const selected = document.getElementById('tl-ev-tag-selected');
+      const menu = document.getElementById('tl-ev-tag-menu');
+      const input = document.getElementById('tlEvFTags');
+      if (!picker || !selected || !menu || !input) return;
+      selected.innerHTML = tlEvFormTags.map((t) => '<span class="tl-ev-tag-selected-chip">' + tlEscapeHtml(t) + '<button type="button" data-tl-ev-tag-remove="' + tlEscapeHtml(t) + '" aria-label="删除标签">×</button></span>').join('');
+      const query = input.value.trim().toLowerCase();
+      const names = tlFormTagNames().filter((t) => !query || t.toLowerCase().includes(query));
+      menu.innerHTML = names.length ? names.map((t) => '<button type="button" class="tl-ev-tag-option' + (tlEvFormTags.indexOf(t) >= 0 ? ' selected' : '') + '" data-tl-ev-tag-option="' + tlEscapeHtml(t) + '">' + (tlEvFormTags.indexOf(t) >= 0 ? '✓ ' : '') + tlEscapeHtml(t) + '</button>').join('') : '<div class="tl-ev-tag-option">暂无可选标签</div>';
+    }
+    function tlAddFormTag(value) {
+      String(value || '').split(/[,，]/).map((t) => t.trim()).filter(Boolean).forEach((t) => { if (tlEvFormTags.indexOf(t) < 0) tlEvFormTags.push(t); });
+      document.getElementById('tlEvFTags').value = '';
+      tlRenderTagPicker();
+    }
+    function tlRemoveFormTag(tag) {
+      tlEvFormTags = tlEvFormTags.filter((t) => t !== tag);
+      tlRenderTagPicker();
+    }
+    function tlToggleFormTag(tag) {
+      if (tlEvFormTags.indexOf(tag) >= 0) tlRemoveFormTag(tag); else tlAddFormTag(tag);
+    }
+    function tlRenderTagOptions() {
+      const options = document.getElementById('tl-ev-tag-options');
+      if (!options) return;
+      const tags = new Set();
+      tlCalEvents.forEach((ev) => (ev.tags || []).forEach((t) => { if (t) tags.add(t); }));
+      options.innerHTML = Array.from(tags).sort().map((t) => '<option value="' + tlEscapeHtml(t) + '"></option>').join('');
     }
     // 日 / 周视图 时间网格（移植自 calendar 插件的 buildTimeGrid，使用 ev- 前缀类名）
     function tlRenderTimeGrid(dayDates) {
@@ -766,7 +804,7 @@
         '<span class="ev-swatch" style="background:' + tlEscapeHtml(ev.color) + '"></span>' +
         '<div class="ev-body">' +
         '<div class="ev-title">' + tlEscapeHtml(ev.title) + spanBadge +
-        (ev.tags && ev.tags.length ? '<span class="ev-tags">' + ev.tags.map((t) => '#' + tlEscapeHtml(t)).join(' ') + '</span>' : '') +
+        (ev.tags && ev.tags.length ? '<span class="ev-tags">' + ev.tags.map((t) => '<span class="ev-tag-view">#' + tlEscapeHtml(t) + '</span>').join('') + '</span>' : '') +
         tlEventTodoLinks(ev) +
         '</div>' +
         '<div class="ev-meta">' + tlEscapeHtml(time) + (ev.location ? ' \u00b7 \ud83d\udccd' + tlEscapeHtml(ev.location) : '') + '</div>' +
@@ -782,10 +820,10 @@
     // 地区调色板：决定假日「目视差别」的主色（与类型徽章正交）。可扩展：直接往此表加一项即可（如 kr 韩国 #003478 / jp 日本 #E60012）。
     // 缺省 cn：旧数据无 region 字段时回退中国大陆；非空但未知的地区→中性灰＋原始代号（不静默当大陆，避免误判）。
     const TL_HOLIDAY_REGIONS = {
-      cn: { label: '大陆', icon: '🇨🇳', color: '#E4002B' },
-      hk: { label: '港',   icon: '🇭🇰', color: '#7B2FBE' },
-      tw: { label: '台',   icon: '🇹🇼', color: '#00A3A3' },
-      us: { label: '美',   icon: '🇺🇸', color: '#1F4E79' },
+      cn: { label: '大陆', icon: '<span class="ev-region-icon ev-region-cn" aria-label="中国大陆旗帜"></span>', color: '#E4002B' },
+      hk: { label: '港',   icon: '<span class="ev-region-icon ev-region-hk" aria-label="香港旗帜"></span>', color: '#7B2FBE' },
+      tw: { label: '台',   icon: '<span class="ev-region-icon ev-region-tw" aria-label="台湾旗帜"></span>', color: '#00A3A3' },
+      us: { label: '美',   icon: '<span class="ev-region-icon ev-region-us" aria-label="美国旗帜"></span>', color: '#1F4E79' },
     };
     function tlHolidayRegionMeta(region) {
       const r = (region || '').toLowerCase();
@@ -863,7 +901,7 @@
       const time = multi
         ? (tlMdShort(h.date) + ' – ' + tlMdShort(h.endDate) + ' · 共' + tlSpanDays(h.date, h.endDate) + '天')
         : '全天';
-      const tags = (h.tags && h.tags.length) ? '<span class="ev-tags">' + h.tags.map((t) => '#' + tlEscapeHtml(t)).join(' ') + '</span>' : '';
+      const tags = (h.tags && h.tags.length) ? '<span class="ev-tags">' + h.tags.map((t) => '<span class="ev-tag-view">#' + tlEscapeHtml(t) + '</span>').join('') + '</span>' : '';
       return '<div class="ev-holiday" data-ev-holiday="' + tlEscapeHtml(h.uid) + '" style="--holiday-color:' + tlEscapeHtml(accent) + '">' +
         '<span class="ev-holiday-region" style="--region-color:' + tlEscapeHtml(region.color) + '" title="' + tlEscapeHtml(region.label + '地区假日') + '">' + region.icon + tlEscapeHtml(region.label) + '</span>' +
         '<span class="ev-holiday-badge">' + meta.icon + ' ' + tlEscapeHtml(meta.label) + '</span>' +
@@ -1150,6 +1188,7 @@
       tlHideTip();
       if (!isCalendarMdDoc()) return;
       tlCalEvents = tlParseEvents(document.getElementById('taskText').value);
+      tlRenderTagOptions();
       tlEvFormUid = null;
       let ev = null;
       if (uid) {
@@ -1172,7 +1211,9 @@
       tlToggleAllDay();
       document.getElementById('tlEvFLocation').value = ev ? ev.location : '';
       tlEvFormColor = ev ? ev.color : TL_CAL_COLORS[0];
-      document.getElementById('tlEvFTags').value = ev && ev.tags ? ev.tags.join(', ') : '';
+      tlEvFormTags = ev && ev.tags ? ev.tags.slice() : [];
+      document.getElementById('tlEvFTags').value = '';
+      tlRenderTagPicker();
       document.getElementById('tlEvFNotes').value = ev ? ev.notes : '';
       document.getElementById('tlEvFormDelete').style.display = uid ? '' : 'none';
       tlEvFormTodoIds = ev ? (ev.todoIds || []).slice() : [];
@@ -1225,7 +1266,7 @@
         endTime: allDay ? '' : document.getElementById('tlEvFEnd').value,
         location: document.getElementById('tlEvFLocation').value.trim(),
         color: tlEvFormColor || TL_CAL_COLORS[0],
-        tags: document.getElementById('tlEvFTags').value.split(/[,，]/).map((s) => s.trim()).filter(Boolean),
+        tags: tlEvFormTags.slice(),
         notes: document.getElementById('tlEvFNotes').value.replace(/\r\n/g, '\n'),
         todoIds: tlEvFormTodoIds.slice()
       };
@@ -1485,6 +1526,23 @@
       on('tlEvFDate', 'input', tlUpdateFormDow);
       on('tlEvFEndDate', 'change', tlUpdateFormDow);
       on('tlEvFEndDate', 'input', tlUpdateFormDow);
+      const tagPicker = document.getElementById('tl-ev-tag-picker');
+      const tagInput = document.getElementById('tlEvFTags');
+      if (tagPicker && tagInput) {
+        tagPicker.addEventListener('click', (e) => {
+          const remove = e.target.closest('[data-tl-ev-tag-remove]');
+          const option = e.target.closest('[data-tl-ev-tag-option]');
+          if (remove) tlRemoveFormTag(remove.getAttribute('data-tl-ev-tag-remove'));
+          else if (option) tlToggleFormTag(option.getAttribute('data-tl-ev-tag-option'));
+          else { tagPicker.classList.add('open'); tlRenderTagPicker(); }
+        });
+        tagInput.addEventListener('input', () => { tagPicker.classList.add('open'); tlRenderTagPicker(); });
+        tagInput.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter') { e.preventDefault(); tlAddFormTag(tagInput.value); }
+          else if (e.key === 'Backspace' && !tagInput.value) tlRemoveFormTag(tlEvFormTags[tlEvFormTags.length - 1]);
+        });
+        document.addEventListener('click', (e) => { if (!tagPicker.contains(e.target)) tagPicker.classList.remove('open'); });
+      }
       // 标签过滤 chips（事件委托）
       const tf = document.getElementById('tlEvTagFilter');
       if (tf) tf.addEventListener('click', (e) => {
