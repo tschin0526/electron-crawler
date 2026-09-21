@@ -197,6 +197,14 @@ function calDiaryOnDate(dateStr) {
   if (!calDiaries || !calDiaries.length) return null;
   return calDiaries.find((x) => x.date === dateStr) || null;
 }
+// 📕「當天有日記」標記（月格日期數字旁、週/日檢視欄頭日期旁**共用**，一個入口一處樣式）。
+// ⚠️ 純顯示、故意不掛 onclick：這些格子單擊＝選日，在 ~12px 的小圖標上再開一個點擊熱區只會造成誤點；
+//    要看/改日記 → 點格子選日，下方明細的日期標題上有可點的日記按鈕 .ev-day-diary。
+function calDiaryMarkHtml(date) {
+  const dy = calDiaryOnDate(date);
+  if (!dy) return '';
+  return '<span class="ev-diary-mark" title="' + escapeHtml('日記：' + (dy.title || '（無標題）')) + '">\ud83d\udcd5</span>';
+}
 
 function calendarFmtDate(d) {
   return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
@@ -784,8 +792,10 @@ function renderCalTimeGrid(dayDates) {
     const ds = calendarFmtDate(d);
     const dm = String(ds).match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
     const label = dm ? (+dm[2]) + '/' + (+dm[3]) : ds;
+    // 📕 當天有日記 → 日期旁掛標記（與月格共用 calDiaryMarkHtml）。
+    // ⚠️ 必須放在 .dnum **內部**：.dnum 是 display:block，作為兄弟節點會另起一行 → 整行欄頭被頂高
     html += '<div class="ev-tg-head-cell' + (ds === todayStr ? ' today' : '') + (ds === selDay ? ' selected' : '') + '" data-date="' + ds + '">' +
-      '<span class="dow">週' + WD[d.getDay()] + '</span><span class="dnum">' + label + '</span></div>';
+      '<span class="dow">週' + WD[d.getDay()] + '</span><span class="dnum">' + label + calDiaryMarkHtml(ds) + '</span></div>';
   });
   html += '</div>';
   if (hasAllDay) {
@@ -1148,8 +1158,6 @@ function calCollapseMultiDayRows(byDate) {
 // 純 UI 偏好（記憶體 + localStorage，鍵 calDiaryOnly；絕不寫回 calendar.md）。只在列表模式生效。
 const CAL_DIARYONLY_KEY = 'calDiaryOnly';
 let calDiaryOnlyLoaded = false;
-const CAL_DIARY_PREVIEW_LINES = 3;     // 內容預覽最多行數
-const CAL_DIARY_PREVIEW_CHARS = 120;   // 內容預覽最多字數（超出補省略號）
 function calLoadDiaryOnly() {
   if (calDiaryOnlyLoaded) return state.calDiaryOnly;
   calDiaryOnlyLoaded = true;
@@ -1165,14 +1173,14 @@ function calSetDiaryOnly(on) {
   calRenderHolidayLegend();   // 同步頂欄勾選態（該勾選框只在列表模式渲染）
   calRerenderCalendarView();
 }
-// 日記內容預覽：壓掉行尾空白，最多 3 行 / 120 字；被截斷則補省略號（換行保留 → .ev-notes 是 pre-wrap）
-function calDiaryPreview(content) {
+// 日記正文：壓掉行尾空白並 trim 後**原樣輸出**（不截斷）。
+// ⚠️ 絕不在這裡截斷：被截掉的部分根本沒進 DOM，列表滾動條再怎麼滾也滾不出來。
+// 正文過長由「只顯示日記」列表自身滾動查看；換行保留 → .ev-notes 是 pre-wrap。
+function calDiaryBody(content) {
   const raw = String(content || '').replace(/\r\n/g, '\n').replace(/[ \t]+\n/g, '\n').trim();
-  if (!raw) return '';
-  const cut = raw.split('\n').slice(0, CAL_DIARY_PREVIEW_LINES).join('\n').slice(0, CAL_DIARY_PREVIEW_CHARS);
-  return escapeHtml(cut.length < raw.length ? cut + '…' : cut);
+  return raw ? escapeHtml(raw) : '';
 }
-// 日記條目：標題 + 心情/天氣 + 標籤 + 內容預覽；點條目或「編輯」開既有日記表單。
+// 日記條目：標題 + 心情/天氣 + 標籤 + 完整正文；點條目或「編輯」開既有日記表單。
 // ⚠️ 日記沒有 color 欄位 → 色點統一用日記綠 #16a34a（與日期標題上「已有日記」的 📕 勾同色）。
 function calDiaryRowHtml(d) {
   const meta = [];
@@ -1181,13 +1189,13 @@ function calDiaryRowHtml(d) {
   const tags = (d.tags && d.tags.length)
     ? '<span class="ev-tags">' + d.tags.map((t) => '<span class="ev-tag-view">#' + escapeHtml(t) + '</span>').join('') + '</span>'
     : '';
-  const preview = calDiaryPreview(d.content);
+  const body = calDiaryBody(d.content);
   return '<div class="ev-item ev-diary-item" data-ev-diary-row="' + escapeHtml(d.date) + '">' +
     '<span class="ev-swatch" style="background:#16a34a"></span>' +
     '<div class="ev-body">' +
     '<div class="ev-title">\ud83d\udcd5 ' + escapeHtml(d.title || '（無標題）') + tags + '</div>' +
     (meta.length ? '<div class="ev-meta">' + escapeHtml(meta.join(' · ')) + '</div>' : '') +
-    (preview ? '<div class="ev-notes">' + preview + '</div>' : '') +
+    (body ? '<div class="ev-notes">' + body + '</div>' : '') +
     '</div>' +
     '<div class="ev-actions">' +
     '<button type="button" data-ev-diary="' + escapeHtml(d.date) + '">\u7de8\u8f2f</button>' +
@@ -1835,8 +1843,10 @@ function renderCalMonth(content) {
     if (occ.length > evCap) chips += '<div class="ev-more">+' + (occ.length - evCap) + '</div>';
     const cp = calLunarCompact(ds);
     const lunarCls = 'ev-lunar' + (cp.jieqi ? ' jieqi' : '');
+    // 📕 當天有日記 → 日期數字旁掛一枚小圖標（與日期標題上的「日記按鈕」同圖標，日期一眼可辨）
+    const diaryMark = calDiaryMarkHtml(ds);
     html += '<div class="ev-cell' + (out ? ' out' : '') + (ds === todayStr ? ' today' : '') + (ds === state.calSelectedDate ? ' selected' : '') + '" data-date="' + ds + '">' +
-      '<span class="ev-daynum">' + d.getDate() + '</span>' +
+      '<span class="ev-daynum">' + d.getDate() + '</span>' + diaryMark +
       (cp.text ? '<span class="' + lunarCls + '" data-ev-almanac="' + escapeHtml(ds) + '" title="農民曆 / 老黃曆">' + escapeHtml(cp.text) + '</span>' : '') +
       chips + '</div>';
   }

@@ -93,6 +93,9 @@
       calEventsView = !!on;
       const btn = document.getElementById('calEventsBtn');
       if (btn) btn.classList.toggle('active', calEventsView);
+      // 🔎 搜索框占位符随视图切换：行程视图搜的是「画面上渲染出来的内容」，不是 calendar.md 源码
+      const si = document.getElementById('editSearchInput');
+      if (si) si.placeholder = calEventsView ? '搜索当前视图...' : '搜索内容...';
       if (calEventsView) {
         showCalEventsPaneOnly();
         tlRenderEventsContent();
@@ -275,6 +278,14 @@
     function tlDiaryOnDate(dateStr) {
       if (!tlCalDiaries || !tlCalDiaries.length) return null;
       return tlCalDiaries.find((d) => d.date === dateStr) || null;
+    }
+    // 📕「当天有日记」标记（月格日期数字旁、周/日视图列头日期旁**共用**，一个入口一处样式）。
+    // ⚠️ 纯显示、故意不挂 onclick：这些格子单击＝选日，在 ~12px 的小图标上再开一个点击热区只会造成误点；
+    //    要看/改日记 → 点格子选日，下方明细的日期标题上有可点的日记按钮 .ev-day-diary。
+    function tlDiaryMarkHtml(date) {
+      const dy = tlDiaryOnDate(date);
+      if (!dy) return '';
+      return '<span class="ev-diary-mark" title="' + tlEscapeHtml('日记：' + (dy.title || '（无标题）')) + '">\ud83d\udcd5</span>';
     }
 
     // ===== 序列化（与桌面 calendar 插件 eventsToMarkdown 逐字节对齐） =====
@@ -652,8 +663,10 @@
         const ds = tlFmtDate(d);
         const dm = String(ds).match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
         const label = dm ? (+dm[2]) + '/' + (+dm[3]) : ds;
+        // 📕 当天有日记 → 日期旁挂标记（与月格共用 tlDiaryMarkHtml）。
+        // ⚠️ 必须放在 .dnum **内部**：.dnum 是 display:block，作为兄弟节点会另起一行 → 整行表头被顶高
         html += '<div class="ev-tg-head-cell' + (ds === todayStr ? ' today' : '') + (ds === tlCalSelected ? ' selected' : '') + '" data-date="' + ds + '" onclick="tlSelectWeekDay(\'' + ds + '\')">' +
-          '<span class="dow">週' + WD[d.getDay()] + '</span><span class="dnum">' + label + '</span></div>';
+          '<span class="dow">週' + WD[d.getDay()] + '</span><span class="dnum">' + label + tlDiaryMarkHtml(ds) + '</span></div>';
       });
       html += '</div>';
       if (hasAllDay) {
@@ -783,6 +796,7 @@
         // 整週：滚动到「选定日」的日期条（该日无内容则回退到最近的一天）；列表自身即滚动容器
         tlScrollListToDate(list, list, tlGridSelectedDay());
         tlUpdateActiveDate(list);
+        tlAfterCalRender();
         return;
       }
       // 单日（默认）：週模式=「选定日」、日模式=游标当天；空日也显示日期标题 + 空提示
@@ -800,6 +814,7 @@
       list.innerHTML = html;
       list.classList.remove('scope-follow');
       tlScrollListToDate(list, list, ds);   // 日/週单日明细：滚到该日日期条（列表自身即滚动容器）
+      tlAfterCalRender();
     }
     // 日/週视图：点日期标题切换「下方明细」显示的那一天（与月模式「选中日」、日模式「游标日」一致，均只显示单日）
     function tlSelectWeekDay(ds) {
@@ -1160,6 +1175,16 @@
       else tlRenderList(content);
       tlRenderHolidayLegend();
     }
+
+    // 🔎 重繪收尾：行程視圖下的搜尋是「畫面上的內容」，任何一次 innerHTML 重建都會把 <mark> 抹掉。
+    //    由每個「渲染葉子」函数（tlRenderList / tlRenderDiaryOnlyList / tlRenderDayList /
+    //    tlRenderDayGridList）在收尾处调用，按搜索框里的关键词原样重建高亮 —— 否则高亮凭空消失、
+    //    右上角计数却还在显示旧数字（说谎）。
+    //    ⚠️ 只在「行程视图 + 关键词非空」时起作用，其余情况是空操作；定义在 index.html 的内联脚本里。
+    function tlAfterCalRender() {
+      if (typeof tlCalSearchReapply === 'function') tlCalSearchReapply();
+    }
+
     // 顶栏分类过滤：EVENT（普通行程）/ REPEAT（重复行程）
     function tlSetCategoryChecked(kind, on) {
       if (kind === 'event') tlCalShowEvents = !!on;
@@ -1277,8 +1302,6 @@
     // ===== 列表模式：「只显示日记」过滤（勾选后行程/假日全部隐藏，只列有日记的日期）=====
     // 纯 UI 偏好（内存 + localStorage，键 tlCalDiaryOnly；绝不写回 calendar.md）。只在列表模式生效。
     const TL_DIARYONLY_KEY = 'tlCalDiaryOnly';
-    const TL_DIARY_PREVIEW_LINES = 3;     // 内容预览最多行数
-    const TL_DIARY_PREVIEW_CHARS = 120;   // 内容预览最多字数（超出补省略号）
     function tlLoadDiaryOnly() {
       if (tlDiaryOnlyLoaded) return tlCalDiaryOnly;
       tlDiaryOnlyLoaded = true;
@@ -1294,14 +1317,14 @@
       tlRenderHolidayLegend();   // 同步顶栏勾选态（该勾选框只在列表模式渲染）
       tlRerenderCalendarView();
     }
-    // 日记内容预览：压掉行尾空白，最多 3 行 / 120 字；被截断则补省略号（换行保留 → .ev-notes 是 pre-wrap）
-    function tlDiaryPreview(content) {
+    // 日记正文：压掉行尾空白并 trim 后**原样输出**（不截断）。
+    // ⚠️ 绝不在这里截断：正文被截掉的部分根本没进 DOM，列表滚动条再怎么滚也滚不出来。
+    // 正文过长由「只显示日记」列表自身滚动查看；换行保留 → .ev-notes 是 pre-wrap。
+    function tlDiaryBody(content) {
       const raw = String(content || '').replace(/\r\n/g, '\n').replace(/[ \t]+\n/g, '\n').trim();
-      if (!raw) return '';
-      const cut = raw.split('\n').slice(0, TL_DIARY_PREVIEW_LINES).join('\n').slice(0, TL_DIARY_PREVIEW_CHARS);
-      return tlEscapeHtml(cut.length < raw.length ? cut + '…' : cut);
+      return raw ? tlEscapeHtml(raw) : '';
     }
-    // 日记条目：标题 + 心情/天气 + 标签 + 内容预览；「编辑」开既有日记表单。
+    // 日记条目：标题 + 心情/天气 + 标签 + 完整正文；「编辑」开既有日记表单。
     // ⚠️ 日记没有 color 字段 → 色点统一用日记绿 #16a34a（与日期标题上「已有日记」的 📕 勾同色）。
     function tlDiaryRowHtml(d) {
       const meta = [];
@@ -1310,13 +1333,13 @@
       const tags = (d.tags && d.tags.length)
         ? '<span class="ev-tags">' + d.tags.map((t) => '<span class="ev-tag-view">#' + tlEscapeHtml(t) + '</span>').join('') + '</span>'
         : '';
-      const preview = tlDiaryPreview(d.content);
+      const body = tlDiaryBody(d.content);
       return '<div class="ev-item ev-diary-item" data-ev-diary-row="' + tlEscapeHtml(d.date) + '">' +
         '<span class="ev-swatch" style="background:#16a34a"></span>' +
         '<div class="ev-body">' +
         '<div class="ev-title">\ud83d\udcd5 ' + tlEscapeHtml(d.title || '（无标题）') + tags + '</div>' +
         (meta.length ? '<div class="ev-meta">' + tlEscapeHtml(meta.join(' · ')) + '</div>' : '') +
-        (preview ? '<div class="ev-notes">' + preview + '</div>' : '') +
+        (body ? '<div class="ev-notes">' + body + '</div>' : '') +
         '</div>' +
         '<div class="ev-actions">' +
         '<button type="button" onclick="tlOpenDiaryForm(\'' + d.date + '\')">\u7f16\u8f91</button>' +
@@ -1331,6 +1354,7 @@
       const rows = (tlCalDiaries || []).filter((d) => d.date && !seen[d.date] && (seen[d.date] = true));
       if (!rows.length) {
         list.innerHTML = '<div class="ev-empty">尚未有日记<br><span style="font-size:12px">取消勾选「只显示日记」可回到行程清单；或在日期标题右侧点 \ud83d\udcd5 写一篇</span></div>';
+        tlAfterCalRender();
         return;
       }
       const byDate = {};
@@ -1348,6 +1372,7 @@
       }
       list.innerHTML = html;
       tlScrollListToDate(list, list, sel);
+      tlAfterCalRender();
     }
 
     function tlRenderList(content) {
@@ -1361,6 +1386,7 @@
       if (tlCalDiaryOnly) { tlRenderDiaryOnlyList(list); return; }
       if (!tlCalEvents.length && !tlVisibleHolidays().length) {
         list.innerHTML = '<div class="ev-empty">尚未有行程<br><span style="font-size:12px">点右上「＋ 新增行程」，或切回文本编辑直接改 calendar.md</span></div>';
+        tlAfterCalRender();
         return;
       }
       const today = tlFmtDate(new Date());
@@ -1386,6 +1412,7 @@
       list.innerHTML = html;
       // 滚动到选中的锚点日（今天，或 < > 导航到的日期）
       tlScrollListToDate(list, list, sel);
+      tlAfterCalRender();
     }
 
     // 自动滚动到离今天最近的日期悬浮条（优先今天，其次最近未来日期，最后最后一个）
@@ -1585,8 +1612,10 @@
         const lunarSpan = cp.text
           ? '<span class="' + lunarCls + '" onclick="event.stopPropagation();tlShowAlmanac(\'' + ds + '\',this)" title="農民曆 / 老黃曆">' + tlEscapeHtml(cp.text) + '</span>'
           : '';
+        // 📕 当天有日记 → 日期数字旁挂一枚小图标（与日期标题上的「日记按钮」同图标，日期一眼可辨）
+        const diaryMark = tlDiaryMarkHtml(ds);
         html += '<div class="ev-cell' + (out ? ' out' : '') + (ds === today ? ' today' : '') + (ds === tlCalSelected ? ' selected' : '') +
-          '" data-date="' + ds + '" onclick="tlSelectDate(\'' + ds + '\')"><span class="ev-daynum">' + d.getDate() + '</span>' + lunarSpan + chips + '</div>';
+          '" data-date="' + ds + '" onclick="tlSelectDate(\'' + ds + '\')"><span class="ev-daynum">' + d.getDate() + '</span>' + diaryMark + lunarSpan + chips + '</div>';
       }
       const grid = document.getElementById('tlEvMonthGrid');
       if (grid) grid.innerHTML = html;
@@ -1649,6 +1678,7 @@
         // 明细自身即滚动容器（.ev-detail 有确定高度）→ 月格不再被滚走。
         tlScrollListToDate(list, list, tlCalSelected);
         tlUpdateActiveDate(list);
+        tlAfterCalRender();
         return;
       }
       // 「日」范围（默认）：选定日单日
@@ -1665,6 +1695,7 @@
       }
       list.classList.remove('scope-follow');
       list.innerHTML = html;
+      tlAfterCalRender();
     }
 
     // ===== 新增 / 编辑 / 删除（写入 taskText 缓冲） =====

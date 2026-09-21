@@ -1964,6 +1964,8 @@
     .ev-lunar.jieqi { color: var(--ev-primary); font-weight: 600; opacity: 1; }
     .ev-lunar.hdr { font-size: 12px; margin-left: 8px; text-decoration: underline dotted; text-underline-offset: 2px; }
     .ev-lunar:empty { display: none; }
+    /* 📕「当天有日记」标记：月格日期数字旁、周/日视图列头日期旁共用（纯显示，不拦点击 → 点它仍是选日） */
+    .ev-diary-mark { margin-left: 3px; line-height: 1; user-select: none; }
     /* 📅 老黃曆詳情浮層（var 全部帶顯式回退：即使 --ev-* 作用域漏配也不會透明） */
     .ev-almanac-pop { position: fixed; z-index: 9960; width: 320px; max-width: calc(100vw - 16px); max-height: calc(100vh - 32px); overflow: auto;
       padding: 14px 16px; border-radius: 12px; border: 1px solid var(--ev-border, #e5e7eb); background: var(--ev-card, #ffffff); color: var(--ev-text, #1f2937); font-size: 14px; box-shadow: 0 12px 32px rgba(0,0,0,0.35); }
@@ -2117,6 +2119,8 @@
     .ev-tg-head-cell:last-child { border-right: none; }
     .ev-tg-head-cell .dow { display: block; font-size: 10px; }
     .ev-tg-head-cell .dnum { display: block; font-weight: 600; color: var(--ev-text); }
+    /* 列头是 7 等分窄列：标记收一档字号，免得把「9/21」挤宽（月格里跟随 .ev-daynum 的 11px 即可） */
+    .ev-tg-head-cell .ev-diary-mark { font-size: 10px; }
     .ev-tg-head-cell.today .dow { color: var(--ev-primary); }
     .ev-tg-head-cell.today .dnum { color: var(--ev-primary); }
     .ev-tg-head-cell.selected .dow, .ev-tg-head-cell.selected .dnum { color: var(--ev-primary, #007AFF); font-weight: 700; }
@@ -6661,6 +6665,22 @@
         return;
       }
 
+      // 📅 行程视图：搜「当前模式渲染出来的内容」（列表 / 月 / 周 / 日 画面上的数据），不是源码标记。
+      //    ⚠️ 这就是「所见即所搜」——在月视图里搜 event 会得到 0 笔（画面上只有中文标题），搜「出差」才有。
+      //    命中＝包裹真实 DOM 文本节点，导航＝scrollIntoView，全程留在当前模式不切走。
+      if (typeof setCalEventsView === 'function' && calEventsView) {
+        searchInCalendar(query, shouldNavigate);
+        countSpan.textContent = searchMatches.length > 0
+          ? `${currentMatchIndex + 1}/${searchMatches.length}`
+          : '无匹配';
+        updateSearchNavButtons();
+        return;
+      }
+
+      // 🖼 非行程视图：显式导航（Enter / ◀ ▶）前先保证「命中目标」可见
+      //    （保底 —— 正常已由 toggleMdPreview 按 previewMode 显示好对应容器）
+      if (shouldNavigate) makeSearchTargetVisible();
+
       // 根据当前模式搜索：0/文本 1/MD预览 2/HTML文本 3/HTML预览 4/JSON文本 5/JSON预览
       if (previewMode === 0) {
         highlightInTextarea(textarea, query, shouldNavigate);
@@ -6717,12 +6737,14 @@
       textarea.scrollTop = Math.max(0, (linesBefore - 2) * lineHeight);
     }
 
-    function highlightInElement(element, query, shouldNavigate) {
-      shouldNavigate = !!shouldNavigate;
+    // 把 root 内所有文本节点的命中片段包成 <mark class="search-highlight">，返回这些 mark（文档顺序）。
+    // ⚠️ 只碰文本节点，不破坏 HTML 标签结构；已是 search-highlight 的 mark 内部跳过，避免重复包裹。
+    // ⚠️ 与「元素」解耦：预览的 #mdPreview、行程视图的 #tlEvList/#tlEvMonthWrap/#tlEvWeekWrap 都走这一个实现。
+    function wrapMatchesInElement(root, query) {
+      if (!root || !query) return [];
       const lowerQuery = query.toLowerCase();
 
-      // 只处理文本节点，不破坏 HTML 标签结构
-      const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT, {
+      const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
         acceptNode: function (node) {
           // 跳过 style/script/noscript 等非内容节点，以及已经是 mark 内部的文本
           const parent = node.parentNode;
@@ -6779,94 +6801,153 @@
         parent.replaceChild(frag, textNode);
       }
 
-      const highlights = element.querySelectorAll('.search-highlight');
-      searchMatches = Array.from(highlights);
+      return Array.from(root.querySelectorAll('.search-highlight'));
+    }
+
+    function highlightInElement(element, query, shouldNavigate) {
+      shouldNavigate = !!shouldNavigate;
+      searchMatches = wrapMatchesInElement(element, query);
 
       if (searchMatches.length > 0) {
         currentMatchIndex = 0;
-        if (shouldNavigate) {
-          searchMatches[0].scrollIntoView({ behavior: 'smooth', block: 'center' });
-          searchMatches[0].style.outline = '2px solid #ef4444';
-          searchMatches[0].style.outlineOffset = '1px';
-        }
+        if (shouldNavigate) focusSearchMatch(0);
       } else {
         currentMatchIndex = -1;
       }
     }
 
-    function clearSearchHighlights() {
-      const preview = document.getElementById('mdPreview');
-      const highlights = preview.querySelectorAll('.search-highlight');
-      highlights.forEach(mark => {
+    // 摘掉 root 内的所有 <mark class="search-highlight">，把文本还原回去（幂等：没有 mark 时是空操作）
+    function unwrapHighlightsIn(root) {
+      if (!root) return;
+      root.querySelectorAll('.search-highlight').forEach((mark) => {
         const parent = mark.parentNode;
+        if (!parent) return;
         parent.replaceChild(document.createTextNode(mark.textContent), mark);
         parent.normalize();
       });
     }
 
-    function findNext() {
-      if (searchMatches.length === 0) return;
+    // <mark> 只会挂在两处：MD 预览、行程面板（列表/月/周/日的渲染结果）。
+    // ⚠️ 行程视图这处必须一并清掉，否则切模式/重搜时旧 mark 会残留在 DOM 里。
+    function clearSearchHighlights() {
+      unwrapHighlightsIn(document.getElementById('mdPreview'));
+      unwrapHighlightsIn(document.getElementById('calEventsPane'));
+    }
 
-      // 清除上一个的红色边框（1/3/5 为预览模式，0/2/4 为文本编辑模式无高亮元素）
-      if (previewMode >= 1 && previewMode <= 5) {
-        const preview = document.getElementById('mdPreview');
-        const highlights = preview.querySelectorAll('.search-highlight');
-        highlights.forEach(h => { h.style.outline = ''; h.style.outlineOffset = ''; });
+    // 行程视图下「此刻真正显示着」的渲染容器 —— 三种模式各自只有一个可见：
+    //   列表 → #tlEvList；月 → #tlEvMonthWrap（月格 + 下方明细）；周/日 → #tlEvWeekWrap（时间网格 + 下方明细）
+    //   明细列表（#tlEvDayList / #tlEvDayGridList）都嵌在上面两个 wrap 内，取 wrap 即可全覆盖。
+    function calSearchRoots() {
+      return ['tlEvList', 'tlEvMonthWrap', 'tlEvWeekWrap']
+        .map((id) => document.getElementById(id))
+        .filter((el) => el && el.style.display !== 'none');
+    }
+
+    // 行程视图的搜索：跨多个可见 root 累积命中。
+    // ⚠️ 同一条数据会重复命中（月格 chip 一笔 + 下方明细一笔；跨天/重复事件逐日展开），
+    //    所以计数是「画面上的位置数」而不是「数据条数」——这正是「在当前画面里找」的应有语义。
+    function searchInCalendar(query, shouldNavigate) {
+      searchMatches = [];
+      for (const root of calSearchRoots()) {
+        searchMatches = searchMatches.concat(wrapMatchesInElement(root, query));
       }
+      if (searchMatches.length === 0) { currentMatchIndex = -1; return; }
+      currentMatchIndex = 0;
+      if (shouldNavigate) focusSearchMatch(0);
+    }
 
-      currentMatchIndex = (currentMatchIndex + 1) % searchMatches.length;
-      const countSpan = document.getElementById('searchCount');
-      countSpan.textContent = `${currentMatchIndex + 1}/${searchMatches.length}`;
+    // 行程面板重绘（切模式 / 翻页 / 筛选 / 选中日 / 删改）都会重建 innerHTML → <mark> 全没了。
+    // 由 calendar-editor.js 的渲染叶子函数在收尾处回调本函数，按输入框里的关键词原样重建，
+    // 避免「高亮凭空消失、右上角计数还在说谎」。不在行程视图 / 关键词为空时是空操作。
+    // ⚠️ 重建后必须把「当前在第几处」补回去，且必须走 gotoMatch（同一个入口）——否则计数显示 1/11、
+    //    画面上红底却停在第 7 处，两处互相打脸。doScroll=false：不抢重绘刚落好的滚动位置。
+    function tlCalSearchReapply() {
+      if (typeof setCalEventsView !== 'function' || !calEventsView) return;
+      const input = document.getElementById('editSearchInput');
+      const query = input ? input.value.trim() : '';
+      if (!query) return;
+      const wasIndex = currentMatchIndex;
+      doSearch(false);
+      if (searchMatches.length === 0) return;
+      gotoMatch(wasIndex > 0 ? wasIndex : 0, false);
+    }
 
-      if (previewMode === 0 || previewMode === 2 || previewMode === 4) {
-        const textarea = previewMode === 0 ? document.getElementById('taskText')
-          : (previewMode === 2 ? document.getElementById('htmlText') : document.getElementById('jsonText'));
+    // 当前模式对应的「命中目标」元素 id：0/2/4 = 文本框，1/3/5 = 共用 #mdPreview
+    function searchTargetId() {
+      return previewMode === 0 ? 'taskText'
+        : (previewMode === 2 ? 'htmlText'
+        : (previewMode === 4 ? 'jsonText' : 'mdPreview'));
+    }
+
+    // 🖼 行程视图下「命中目标」就是日历面板本身，本来就可见 —— 绝不切视图（原地定位）。
+    //    非行程视图下三个容器由 toggleMdPreview 按 previewMode 显示好，这里只做保底。
+    //    ⚠️ toggleMdPreview 会重置搜索状态（清空输入框/计数/匹配数组），返回 true 时调用方必须自行重建匹配。
+    function makeSearchTargetVisible() {
+      if (typeof setCalEventsView === 'function' && calEventsView) return false;
+      const el = document.getElementById(searchTargetId());
+      if (el && getComputedStyle(el).display !== 'none') return false;
+      toggleMdPreview(previewMode);
+      return true;
+    }
+
+    // 「定位」的统一动作：把第 index 处命中变成看得见的选中态
+    //   行程视图 / 预览视图 → DOM 命中：加 .current 红框 + scrollIntoView
+    //   文本框（previewMode 0/2/4）→ focus + setSelectionRange + 滚到该行
+    // doScroll=false 用于「重绘后重建」：只恢复在哪一处，不抢重绘刚落好的滚动位置
+    function gotoMatch(index, doScroll) {
+      if (searchMatches.length === 0) return;
+      currentMatchIndex = ((index % searchMatches.length) + searchMatches.length) % searchMatches.length;
+      const countEl = document.getElementById('searchCount');
+      if (countEl) countEl.textContent = `${currentMatchIndex + 1}/${searchMatches.length}`;
+
+      const inCalendar = (typeof setCalEventsView === 'function' && calEventsView);
+      if (!inCalendar && (previewMode === 0 || previewMode === 2 || previewMode === 4)) {
+        const textarea = document.getElementById(searchTargetId());
         const match = searchMatches[currentMatchIndex];
+        if (!textarea || !match) return;
         textarea.focus();
         textarea.setSelectionRange(match.start, match.end);
         scrollToMatchInTextarea(textarea, match.start, textarea.value);
-      } else {
-        const preview = document.getElementById('mdPreview');
-        const highlights = preview.querySelectorAll('.search-highlight');
-        if (highlights[currentMatchIndex]) {
-          highlights[currentMatchIndex].style.outline = '2px solid #ef4444';
-          highlights[currentMatchIndex].style.outlineOffset = '1px';
-          highlights[currentMatchIndex].scrollIntoView({ behavior: 'smooth', block: 'center' });
-        }
+        return;
       }
+      focusSearchMatch(currentMatchIndex, doScroll);
     }
 
-    function findPrev() {
+    // 「DOM 命中」的统一落位：给第 i 处加 .search-highlight.current（红底 + 红描边，CSS 已存在），
+    // 再 scrollIntoView 到画面中央。
+    // ⚠️ 行程视图的滚动容器是嵌套的（.ev-split-top / #tlEvList / #tlEvDayList / #tlEvDayGridList …），
+    //    必须交给浏览器原生 scrollIntoView 逐层滚动，不要自己算 scrollTop。
+    // doScroll=false 用于「重绘后重建高亮」：只恢复在哪一处，不抢滚动（重绘本身往往刚滚到别处）
+    function focusSearchMatch(i, doScroll) {
+      for (const m of searchMatches) m.classList.remove('current');
+      const cur = searchMatches[i];
+      if (!cur) return;
+      cur.classList.add('current');
+      if (doScroll !== false) cur.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+
+    // ◀ / ▶（含 Enter 连按）的唯一入口
+    function searchMove(step) {
       if (searchMatches.length === 0) return;
-
-      // 清除上一个的红色边框
-      if (previewMode >= 1 && previewMode <= 5) {
-        const preview = document.getElementById('mdPreview');
-        const highlights = preview.querySelectorAll('.search-highlight');
-        highlights.forEach(h => { h.style.outline = ''; h.style.outlineOffset = ''; });
+      const want = currentMatchIndex + step;   // 先算：重建匹配会把 currentMatchIndex 归 0
+      if (makeSearchTargetVisible()) {
+        doSearch(false);                       // 用输入框里的 query 重建匹配，随后统一 gotoMatch 定位
+        if (searchMatches.length > 0) gotoMatch(want);
+        return;
       }
-
-      currentMatchIndex = (currentMatchIndex - 1 + searchMatches.length) % searchMatches.length;
-      const countSpan = document.getElementById('searchCount');
-      countSpan.textContent = `${currentMatchIndex + 1}/${searchMatches.length}`;
-
-      if (previewMode === 0 || previewMode === 2 || previewMode === 4) {
-        const textarea = previewMode === 0 ? document.getElementById('taskText')
-          : (previewMode === 2 ? document.getElementById('htmlText') : document.getElementById('jsonText'));
-        const match = searchMatches[currentMatchIndex];
-        textarea.focus();
-        textarea.setSelectionRange(match.start, match.end);
-        scrollToMatchInTextarea(textarea, match.start, textarea.value);
-      } else {
-        const preview = document.getElementById('mdPreview');
-        const highlights = preview.querySelectorAll('.search-highlight');
-        if (highlights[currentMatchIndex]) {
-          highlights[currentMatchIndex].style.outline = '2px solid #ef4444';
-          highlights[currentMatchIndex].style.outlineOffset = '1px';
-          highlights[currentMatchIndex].scrollIntoView({ behavior: 'smooth', block: 'center' });
-        }
+      // 行程视图：面板被重绘过（切模式/翻页/筛选/选中日）后 mark 已消失 → 先按当前关键词重建再移动。
+      // （正常情况下 tlCalSearchReapply 已在重绘收尾处重建；这里是双保险，保证 ◀ ▶ 永远有反应。）
+      if (typeof setCalEventsView === 'function' && calEventsView &&
+          !document.querySelector('#calEventsPane .search-highlight')) {
+        doSearch(false);
+        if (searchMatches.length === 0) return;
       }
+      gotoMatch(want);
     }
+
+    function findNext() { searchMove(1); }
+
+    function findPrev() { searchMove(-1); }
 
     function updateSearchNavButtons() {
       const prevBtn = document.getElementById('searchPrevBtn');

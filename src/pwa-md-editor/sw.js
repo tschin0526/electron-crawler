@@ -54,7 +54,13 @@
 // v52：日記圖標 hover 顯示內容 tips（複用行程事件 .ev-tip 機制，僅當天有日記時）；calendar-editor.js/app.js 改，bump 讓手機重拉
 // v51：新增 ## DIARY 日記（桌面 + LITE 共用結構）：日期標題旁日記按鈕（有日記打勾）、專用日記編輯視窗；
 //      calendar-editor.js/app.js/index.html/style.css 改，bump 讓手機重拉
-const CACHE_NAME = 'md-editor-lite-v62';
+// v65：週/日檢視「欄頭日期旁」也顯示 📕 日記標記；月格標記與欄頭標記收成同一入口/同一類
+//      （calDiaryMarkHtml + .ev-diary-mark，原 .ev-cell-diary 更名）；calendar-editor.js/style.css 改，bump 讓手機重拉
+// v64：月格「當天有日記」標記——有日記的日期在日期數字旁顯示 📕（純顯示，不掛 onclick）；
+//      calendar-editor.js/style.css 改，bump 讓手機重拉
+// v63：「只顯示日記」正文不再截斷——去掉舊的「3 行 / 120 字 + 省略號」上限，改為完整渲染、靠列錶整體滾動條查看
+//      （calDiaryPreview → calDiaryBody）；calendar-editor.js 改，bump 讓手機重拉
+const CACHE_NAME = 'md-editor-lite-v65';
 const ASSETS = [
   './',
   './index.html',

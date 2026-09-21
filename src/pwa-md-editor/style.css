@@ -548,6 +548,8 @@ body {
 .ev-tg-head-cell:last-child { border-right: none; }
 .ev-tg-head-cell .dow { display: block; font-size: 10px; }
 .ev-tg-head-cell .dnum { display: block; font-weight: 600; color: var(--text); }
+/* 欄頭是 7 等分窄列：標記收一檔字號，免得把「9/21」擠寬（月格裡跟隨 .ev-daynum 的 11px 即可） */
+.ev-tg-head-cell .ev-diary-mark { font-size: 10px; }
 .ev-tg-head-cell.today .dow { color: var(--primary); }
 .ev-tg-head-cell.today .dnum { color: var(--primary); }
 /* 週視圖「選中日」高亮（點日期標題切換下半部明細；與月視圖選中日一致） */
@@ -674,6 +676,8 @@ body {
 .ev-lunar.jieqi { color: var(--primary); font-weight: 600; opacity: 1; }
 .ev-lunar.hdr { font-size: 12px; margin-left: 8px; text-decoration: underline dotted; text-underline-offset: 2px; }
 .ev-lunar:empty { display: none; }
+/* 📕「當天有日記」標記：月格日期數字旁、週/日檢視欄頭日期旁共用（純顯示，不攔點擊 → 點它仍是選日） */
+.ev-diary-mark { margin-left: 3px; line-height: 1; user-select: none; }
 .ev-f-label input[type="text"], .ev-f-label input[type="date"], .ev-f-label input[type="time"], .ev-f-label textarea, .ev-f-label select, .ev-f-label input[type="number"] {
   display: block; width: 100%; margin-top: 4px; padding: 8px 10px;
   border: 1px solid var(--border); border-radius: 8px;
