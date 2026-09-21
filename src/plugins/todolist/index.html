@@ -1938,6 +1938,13 @@
     .ev-day-diary.has::after { content: '\2713'; position: absolute; top: -7px; right: -6px; font-size: 9px; line-height: 1; background: #16a34a; color: #fff; border-radius: 50%; width: 13px; height: 13px; display: flex; align-items: center; justify-content: center; }
     .tl-ev-f-date-readonly { color: var(--ev-muted); }
     .tl-ev-f-date-val { color: var(--ev-text); font-weight: 600; }
+    /* 📓 日记表单：加宽 + 正文主导（约占 3/4 高），标题/心情/天气三并排，日期并入标题行 */
+    #tlDiaryFormOverlay .tl-ev-form-box { max-width: 760px; height: 84vh; display: flex; flex-direction: column; }
+    #tlDiaryFormOverlay .tl-ev-f-3col .tl-ev-f-label { min-width: 0; }
+    #tlDiaryFormOverlay .tl-ev-f-title-date { margin-left: 10px; font-size: 13px; font-weight: 500; color: var(--ev-muted); }
+    #tlDiaryFormOverlay .tl-diary-f-content { flex: 3 1 auto; min-height: 0; display: flex; }
+    #tlDiaryFormOverlay .tl-diary-f-content .tl-ev-f-label { flex: 1; display: flex; flex-direction: column; margin-bottom: 0; }
+    #tlDiaryFormOverlay .tl-diary-f-content textarea { flex: 1; resize: none; min-height: 0; }
     /* 明细范围切换（日 <-> 月/週）：迷你分段控件，放在「＋ 此日新增」旁 / 明细顶部 */
     .ev-scope-seg { display: inline-flex; align-items: center; border: 1px solid var(--ev-border, #e5e7eb); border-radius: 6px; overflow: hidden; flex: 0 0 auto; }
     .ev-scope-seg button { border: none; background: var(--ev-card, #fff); color: var(--ev-muted, #6b7280); font-size: 11px; padding: 2px 8px; cursor: pointer; line-height: 1.4; }
@@ -1980,6 +1987,8 @@
     .ev-swatch { flex: 0 0 auto; width: 10px; height: 10px; border-radius: 50%; margin-top: 5px; }
     .ev-body { flex: 1; min-width: 0; }
     .ev-title { font-size: 14px; font-weight: 500; color: var(--ev-text); word-break: break-word; }
+    /* 🔁 重复事件小图标（## EVENT(REPEAT)）：随文色（灰），chip/时间网格/列表行/悬停提示通用 */
+    .ev-repeat-ic { color: var(--ev-muted); vertical-align: -1px; margin-right: 3px; flex: none; }
     .ev-tags { display: inline-flex; flex-wrap: wrap; gap: 4px; margin-left: 8px; vertical-align: middle; }
     .ev-tags .ev-tag-view { display: inline-block; padding: 3px 12px; border-radius: 999px; background: #7C3AED; border: 1px solid #8B5CF6; color: #fff; font-size: 12px; line-height: 1.35; font-weight: 600; white-space: nowrap; }
     .ev-meta { margin-top: 2px; font-size: 12px; color: var(--ev-muted); }
@@ -2021,12 +2030,14 @@
     .ev-holiday .ev-tags { color: var(--ev-primary, #007AFF); }
     /* 地区 pill：主色＝地区色（--region-color 由渲染内联写入，带回退），与类型徽章并列显示在假日行 */
     .ev-holiday .ev-holiday-region { flex: 0 0 auto; align-self: center; display: inline-flex; align-items: center; gap: 2px; background: var(--region-color, #E4002B); color: #fff; font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 999px; white-space: nowrap; }
-    /* 地区图例：列出当前出现过的地区，颜色/图标与渲染一致 */
-    .ev-holiday-legend { flex: 0 0 auto; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 4px 0 6px; font-size: 12px; color: var(--ev-muted, #6b7280); }
-    .ev-holiday-legend .ev-legend-label { flex: 0 0 auto; }
+    /* 顶栏过滤条：EVENT | HOLIDAY(地区细项) | REPEAT 三类顺序排列 */
+    .ev-holiday-legend { flex: 0 0 auto; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 4px 0 6px; font-size: 12px; color: var(--ev-muted, #6b7280); }
+    .ev-holiday-legend .ev-legend-label { flex: 0 0 auto; font-weight: 600; letter-spacing: .3px; color: var(--ev-muted, #6b7280); }
     .ev-holiday-legend .ev-legend-item { display: inline-flex; align-items: center; gap: 4px; color: var(--ev-text, #1f2937); cursor: pointer; user-select: none; }
     .ev-holiday-legend .ev-legend-item input[type="checkbox"] { margin: 0; width: 13px; height: 13px; cursor: pointer; flex: 0 0 auto; }
     .ev-holiday-legend .ev-legend-item.off { opacity: 0.45; }
+    .ev-holiday-legend .ev-legend-cat { font-weight: 600; letter-spacing: .4px; }
+    .ev-holiday-legend .ev-legend-sep { width: 1px; height: 13px; flex: 0 0 auto; background: var(--ev-border, rgba(128,128,128,.35)); }
     .ev-holiday-legend .ev-legend-dot { width: 10px; height: 10px; border-radius: 999px; display: inline-block; }
     .ev-region-icon { display: inline-block; width: 16px; height: 11px; flex: 0 0 auto; vertical-align: -1px; border-radius: 1px; position: relative; overflow: hidden; }
     .ev-region-cn { background: #DE2910; }
@@ -2149,12 +2160,19 @@
     /* 📅 表單日期輸入框旁的農曆 / 節氣（點擊開老黃曆詳情） */
     .tl-ev-f-lunar { color: var(--ev-muted); margin-left: 6px; font-size: 12px; cursor: pointer; text-decoration: underline dotted; text-underline-offset: 2px; }
     .tl-ev-f-lunar:empty { display: none; }
-    .tl-ev-f-label input[type="text"], .tl-ev-f-label input[type="date"], .tl-ev-f-label input[type="time"], .tl-ev-f-label textarea {
+    .tl-ev-f-label input[type="text"], .tl-ev-f-label input[type="date"], .tl-ev-f-label input[type="time"], .tl-ev-f-label textarea, .tl-ev-f-label select, .tl-ev-f-label input[type="number"] {
       display: block; width: 100%; margin-top: 4px; padding: 7px 10px;
       border: 1px solid var(--ev-border); border-radius: 8px;
       background: var(--ev-bg); color: var(--ev-text); font-size: 14px; font-family: inherit;
     }
+    .tl-ev-f-label select { cursor: pointer; }
     #tlEvFNotes { resize: vertical; min-height: 64px; }
+    /* 🔁 重複事件表單區塊 */
+    .tl-ev-f-repeat { border: 1px dashed var(--ev-border); border-radius: 8px; padding: 10px 12px; margin-bottom: 10px; }
+    .tl-ev-f-repeat > .tl-ev-f-check { margin-bottom: 8px; }
+    .tl-ev-f-unit { color: var(--ev-muted); font-size: 12px; margin-left: 6px; }
+    .tl-ev-f-weekdays { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 6px; }
+    .tl-ev-f-wd { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; color: var(--ev-text); cursor: pointer; }
     .tl-ev-f-check { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--ev-text); margin-bottom: 10px; cursor: pointer; }
     .tl-ev-f-row { display: flex; gap: 10px; }
     .tl-ev-f-row .tl-ev-f-label { flex: 1; }
@@ -4761,6 +4779,39 @@
       <label class="tl-ev-f-label">标题<input type="text" id="tlEvFTitle" maxlength="200" placeholder="行程标题"></label>
       <label class="tl-ev-f-label">日期<span class="tl-ev-f-dow" id="tlEvFDateDow"></span><span class="tl-ev-f-lunar" id="tlEvFDateLunar" title="農民曆 / 老黃曆" onclick="tlShowAlmanac((document.getElementById('tlEvFDate').value||tlFmtDate(new Date())),this)"></span><input type="date" id="tlEvFDate"></label>
       <label class="tl-ev-f-label">结束日期（留空＝单日）<span class="tl-ev-f-dow" id="tlEvFEndDateDow"></span><span class="tl-ev-f-lunar" id="tlEvFEndDateLunar" title="農民曆 / 老黃曆" onclick="tlShowAlmanac((document.getElementById('tlEvFEndDate').value||tlFmtDate(new Date())),this)"></span><input type="date" id="tlEvFEndDate"></label>
+      <div class="tl-ev-f-repeat" id="tlEvFRepeatBox">
+        <label class="tl-ev-f-check"><input type="checkbox" id="tlEvFRepeatOn" onchange="tlToggleRepeat()"> 重复</label>
+        <div id="tlEvFRepeatFields" style="display:none">
+          <label class="tl-ev-f-label">重复类型
+            <select id="tlEvFRepeatMode" onchange="tlOnRepeatModeChange()">
+              <option value="daily">每天</option>
+              <option value="weekly">每周</option>
+              <option value="monthly">每月</option>
+              <option value="yearly">每年</option>
+            </select>
+          </label>
+          <label class="tl-ev-f-label">间隔<span class="tl-ev-f-unit" id="tlEvFRepeatIntervalUnit"></span>
+            <input type="number" id="tlEvFRepeatInterval" min="1" value="1" style="max-width:90px"></label>
+          <div class="tl-ev-f-label" id="tlEvFWeekDayBox" style="display:none">每周的星期
+            <div class="tl-ev-f-weekdays" id="tlEvFWeekDays"></div>
+          </div>
+          <label class="tl-ev-f-label" id="tlEvFMonthDayBox" style="display:none">每月第几日
+            <input type="number" id="tlEvFMonthDay" min="1" max="31" style="max-width:90px"></label>
+          <label class="tl-ev-f-label" id="tlEvFYearMonthDayBox" style="display:none">每年的月-日
+            <input type="text" id="tlEvFYearMonthDay" placeholder="MM-DD" maxlength="5" style="max-width:120px"></label>
+          <label class="tl-ev-f-label">结束方式
+            <select id="tlEvFRepeatEndType" onchange="tlOnRepeatEndTypeChange()">
+              <option value="never">永不</option>
+              <option value="count">次数</option>
+              <option value="date">日期</option>
+            </select>
+          </label>
+          <label class="tl-ev-f-label" id="tlEvFEndValueBox" style="display:none">结束值<span class="tl-ev-f-unit" id="tlEvFEndValueUnit"></span>
+            <input type="text" id="tlEvFRepeatEndValue"></label>
+          <label class="tl-ev-f-label">排除日期（逗号分隔）
+            <input type="text" id="tlEvFRepeatExclude" placeholder="如 2026-10-01,2026-10-02"></label>
+        </div>
+      </div>
       <div class="tl-ev-f-row">
         <label class="tl-ev-f-check"><input type="checkbox" id="tlEvFAllday" onchange="tlToggleAllDay()"> 全天</label>
         <label class="tl-ev-f-check"><input type="checkbox" id="tlEvFDone"> 已完成</label>
@@ -4796,13 +4847,16 @@
   <!-- 📓 日记新增/编辑表单（calendar.md 专用）：保存到编辑缓冲，再按编辑器「保存」写回文件 -->
   <div id="tlDiaryFormOverlay" class="tl-ev-form-overlay" style="display:none">
     <div class="tl-ev-form-box">
-      <div class="tl-ev-form-title" id="tlDiaryFormTitle">写日记</div>
-      <div class="tl-ev-f-label tl-ev-f-date-readonly">日期：<span id="tlDiaryFDate" class="tl-ev-f-date-val"></span></div>
-      <label class="tl-ev-f-label">标题<input type="text" id="tlDiaryFTitle" maxlength="200" placeholder="日记标题"></label>
-      <label class="tl-ev-f-label">心情<input type="text" id="tlDiaryFMood" maxlength="50" placeholder="如：平稳 / 焦虑 / 开心"></label>
-      <label class="tl-ev-f-label">天气<input type="text" id="tlDiaryFWeather" maxlength="50" placeholder="如：多云 / 晴 / 雨"></label>
+      <div class="tl-ev-form-title" id="tlDiaryFormTitle">写日记<span id="tlDiaryFDate" class="tl-ev-f-date-val tl-ev-f-title-date"></span></div>
+      <div class="tl-ev-f-row tl-ev-f-3col">
+        <label class="tl-ev-f-label">标题<input type="text" id="tlDiaryFTitle" maxlength="200" placeholder="日记标题"></label>
+        <label class="tl-ev-f-label">心情<input type="text" id="tlDiaryFMood" maxlength="50" placeholder="如：平稳 / 焦虑 / 开心"></label>
+        <label class="tl-ev-f-label">天气<input type="text" id="tlDiaryFWeather" maxlength="50" placeholder="如：多云 / 晴 / 雨"></label>
+      </div>
       <label class="tl-ev-f-label">标签（逗号分隔）<input type="text" id="tlDiaryFTags" maxlength="200" placeholder="如：投资, 自我总结"></label>
-      <label class="tl-ev-f-label">正文<textarea id="tlDiaryFContent" rows="6" placeholder="今天发生了什么…"></textarea></label>
+      <div class="tl-diary-f-content">
+        <label class="tl-ev-f-label">正文<textarea id="tlDiaryFContent" rows="6" placeholder="今天发生了什么…"></textarea></label>
+      </div>
       <label class="tl-ev-f-label">备注<textarea id="tlDiaryFRemark" rows="2" placeholder="可留空"></textarea></label>
       <div class="tl-ev-form-actions">
         <button type="button" class="btn btn-secondary" id="tlDiaryFormDelete" style="display:none" onclick="tlDeleteDiary()">删除</button>

@@ -238,6 +238,39 @@
         <label class="ev-f-label">標題<input type="text" id="ev-f-title" maxlength="200" placeholder="行程標題"></label>
         <label class="ev-f-label">日期<span class="ev-f-dow" id="ev-f-date-dow"></span><span class="ev-f-lunar" id="ev-f-date-lunar" title="農民曆 / 老黃曆" onclick="calShowAlmanac((document.getElementById('ev-f-date').value||calendarFmtDate(new Date())), this)"></span><input type="date" id="ev-f-date"></label>
         <label class="ev-f-label">結束日期（留空＝單日）<span class="ev-f-dow" id="ev-f-enddate-dow"></span><span class="ev-f-lunar" id="ev-f-enddate-lunar" title="農民曆 / 老黃曆" onclick="calShowAlmanac((document.getElementById('ev-f-enddate').value||calendarFmtDate(new Date())), this)"></span><input type="date" id="ev-f-enddate"></label>
+        <div class="ev-f-repeat" id="ev-f-repeat-box">
+          <label class="ev-f-check"><input type="checkbox" id="ev-f-repeat-on" onchange="calToggleRepeat()"> 重複</label>
+          <div id="ev-f-repeat-fields" style="display:none">
+            <label class="ev-f-label">重複類型
+              <select id="ev-f-repeat-mode" onchange="calOnRepeatModeChange()">
+                <option value="daily">每天</option>
+                <option value="weekly">每週</option>
+                <option value="monthly">每月</option>
+                <option value="yearly">每年</option>
+              </select>
+            </label>
+            <label class="ev-f-label">間隔<span class="ev-f-unit" id="ev-f-repeat-interval-unit"></span>
+              <input type="number" id="ev-f-repeat-interval" min="1" value="1" style="max-width:90px"></label>
+            <div class="ev-f-label" id="ev-f-weekday-box" style="display:none">每週的星期
+              <div class="ev-f-weekdays" id="ev-f-weekdays"></div>
+            </div>
+            <label class="ev-f-label" id="ev-f-monthday-box" style="display:none">每月第幾日
+              <input type="number" id="ev-f-monthday" min="1" max="31" style="max-width:90px"></label>
+            <label class="ev-f-label" id="ev-f-yearmonthday-box" style="display:none">每年的月-日
+              <input type="text" id="ev-f-yearmonthday" placeholder="MM-DD" maxlength="5" style="max-width:120px"></label>
+            <label class="ev-f-label">結束方式
+              <select id="ev-f-repeat-endtype" onchange="calOnRepeatEndTypeChange()">
+                <option value="never">永不</option>
+                <option value="count">次數</option>
+                <option value="date">日期</option>
+              </select>
+            </label>
+            <label class="ev-f-label" id="ev-f-endvalue-box" style="display:none">結束值<span class="ev-f-unit" id="ev-f-endvalue-unit"></span>
+              <input type="text" id="ev-f-repeat-endvalue"></label>
+            <label class="ev-f-label">排除日期（逗號分隔）
+              <input type="text" id="ev-f-repeat-exclude" placeholder="如 2026-10-01,2026-10-02"></label>
+          </div>
+        </div>
         <div class="ev-f-row">
           <label class="ev-f-check"><input type="checkbox" id="ev-f-allday"> 全天</label>
           <label class="ev-f-check"><input type="checkbox" id="ev-f-done"> 已完成</label>
@@ -279,14 +312,17 @@
 
     <!-- 📓 日記新增/編輯表單（calendar.md 專用）：保存到編輯緩衝，再按頂欄「保存」寫回文件 -->
     <div id="ev-diary-overlay" class="ev-form-overlay" style="display:none">
-      <div class="ev-form-box">
-        <div class="ev-form-title" id="ev-diary-title">寫日記</div>
-        <div class="ev-f-label">日期<span class="ev-f-date-val" id="ev-diary-date"></span></div>
-        <label class="ev-f-label">標題<input type="text" id="ev-diary-f-title" maxlength="200" placeholder="日記標題"></label>
-        <label class="ev-f-label">心情<input type="text" id="ev-diary-f-mood" maxlength="50" placeholder="如：平穩 / 焦慮 / 開心"></label>
-        <label class="ev-f-label">天氣<input type="text" id="ev-diary-f-weather" maxlength="50" placeholder="如：多雲 / 晴 / 雨"></label>
+      <div class="ev-form-box ev-diary-box">
+        <div class="ev-form-title" id="ev-diary-title">寫日記<span class="ev-f-date-val ev-f-title-date" id="ev-diary-date"></span></div>
+        <div class="ev-f-row ev-f-3col">
+          <label class="ev-f-label">標題<input type="text" id="ev-diary-f-title" maxlength="200" placeholder="日記標題"></label>
+          <label class="ev-f-label">心情<input type="text" id="ev-diary-f-mood" maxlength="50" placeholder="如：平穩 / 焦慮 / 開心"></label>
+          <label class="ev-f-label">天氣<input type="text" id="ev-diary-f-weather" maxlength="50" placeholder="如：多雲 / 晴 / 雨"></label>
+        </div>
         <label class="ev-f-label">標籤（逗號分隔）<input type="text" id="ev-diary-f-tags" maxlength="200" placeholder="如：投資, 自我總結"></label>
-        <label class="ev-f-label">正文<textarea id="ev-diary-f-content" rows="6" placeholder="今天發生了什麼…"></textarea></label>
+        <div class="ev-diary-f-content">
+          <label class="ev-f-label">正文<textarea id="ev-diary-f-content" rows="6" placeholder="今天發生了什麼…"></textarea></label>
+        </div>
         <label class="ev-f-label">備註<textarea id="ev-diary-f-remark" rows="2" placeholder="可留空"></textarea></label>
         <div class="ev-form-actions">
           <button type="button" class="btn btn-secondary" id="ev-diary-delete" style="display:none">刪除</button>

@@ -89,6 +89,8 @@ const state = {
   calEvents: [],                // 工作副本（含 uid；每次渲染/編輯前從編輯器緩衝重新解析）
   calTagFilter: [],             // 🏷 標籤過濾（空＝全部；OR 邏輯，任一標籤命中即顯示）
   calRegionFilter: ['cn'],      // 🌏 HOLIDAY 地區過濾（圖例 checkbox；默認只顯示大陸 cn；僅內存態）
+  calShowEvents: true,          // 🗂 分類顯示：普通行程 EVENT（頂欄勾選，默認開；僅內存態）
+  calShowRepeat: true,          // 🗂 分類顯示：重複行程 REPEAT（頂欄勾選，默認開；僅內存態）
   evFormUid: null,              // 編輯表單當前目標 uid（null = 新增）
   evFormColor: null,            // 編輯表單當前選中顏色
   evFormTags: [],               // 編輯表單當前已選標籤
@@ -141,6 +143,23 @@ const elements = {
   evFTodoAdd: document.getElementById('ev-f-todo-add'),
   evFNotes: document.getElementById('ev-f-notes'),
   evFResize: document.getElementById('ev-f-resize'),
+  // 🔁 重複事件表單
+  evFRepeatOn: document.getElementById('ev-f-repeat-on'),
+  evFRepeatFields: document.getElementById('ev-f-repeat-fields'),
+  evFRepeatMode: document.getElementById('ev-f-repeat-mode'),
+  evFRepeatInterval: document.getElementById('ev-f-repeat-interval'),
+  evFRepeatIntervalUnit: document.getElementById('ev-f-repeat-interval-unit'),
+  evFWeekDayBox: document.getElementById('ev-f-weekday-box'),
+  evFWeekDays: document.getElementById('ev-f-weekdays'),
+  evFMonthDayBox: document.getElementById('ev-f-monthday-box'),
+  evFMonthDay: document.getElementById('ev-f-monthday'),
+  evFYearMonthDayBox: document.getElementById('ev-f-yearmonthday-box'),
+  evFYearMonthDay: document.getElementById('ev-f-yearmonthday'),
+  evFRepeatEndType: document.getElementById('ev-f-repeat-endtype'),
+  evFEndValueBox: document.getElementById('ev-f-endvalue-box'),
+  evFEndValueUnit: document.getElementById('ev-f-endvalue-unit'),
+  evFRepeatEndValue: document.getElementById('ev-f-repeat-endvalue'),
+  evFRepeatExclude: document.getElementById('ev-f-repeat-exclude'),
   // 📓 日記表單
   diaryFormOverlay: document.getElementById('ev-diary-overlay'),
   diaryFormTitle: document.getElementById('ev-diary-title'),

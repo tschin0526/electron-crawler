@@ -382,6 +382,8 @@ body {
 .ev-swatch { flex: 0 0 auto; width: 10px; height: 10px; border-radius: 50%; margin-top: 5px; }
 .ev-body { flex: 1; min-width: 0; }
 .ev-title { font-size: 15px; font-weight: 500; color: var(--text); word-break: break-word; }
+/* 🔁 重複事件小圖標（## EVENT(REPEAT)）：隨文色（灰），chip/時間網格/列表行/懸停提示通用 */
+.ev-repeat-ic { color: var(--text-secondary); vertical-align: -1px; margin-right: 3px; flex: none; }
 .ev-tags { display: inline-flex; flex-wrap: wrap; gap: 4px; margin-left: 8px; vertical-align: middle; }
 .ev-tags .ev-tag-view { display: inline-block; padding: 3px 12px; border-radius: 999px; background: #7C3AED; border: 1px solid #8B5CF6; color: #fff; font-size: 12px; line-height: 1.35; font-weight: 600; white-space: nowrap; }
 .ev-meta { margin-top: 2px; font-size: 12px; color: var(--text-secondary); }
@@ -443,10 +445,12 @@ body {
 .ev-holiday .ev-holiday-region { flex: 0 0 auto; align-self: center; display: inline-flex; align-items: center; gap: 2px; background: var(--region-color, #E4002B); color: #fff; font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 999px; white-space: nowrap; }
 /* 地區圖例：列出當前出現過的地區，顏色/圖標與渲染一致 */
 .ev-holiday-legend { flex: 0 0 auto; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 4px 0 6px; font-size: 12px; color: var(--text-secondary); }
-.ev-holiday-legend .ev-legend-label { flex: 0 0 auto; }
+.ev-holiday-legend .ev-legend-label { flex: 0 0 auto; font-weight: 600; letter-spacing: .3px; }
 .ev-holiday-legend .ev-legend-item { display: inline-flex; align-items: center; gap: 4px; color: var(--text); cursor: pointer; user-select: none; }
 .ev-holiday-legend .ev-legend-item input[type="checkbox"] { margin: 0; width: 13px; height: 13px; cursor: pointer; flex: 0 0 auto; accent-color: var(--primary); }
 .ev-holiday-legend .ev-legend-item.off { opacity: 0.45; }
+.ev-holiday-legend .ev-legend-cat { font-weight: 600; letter-spacing: .4px; }
+.ev-holiday-legend .ev-legend-sep { width: 1px; height: 13px; flex: 0 0 auto; background: var(--border); }
 .ev-holiday-legend .ev-legend-dot { width: 10px; height: 10px; border-radius: 999px; display: inline-block; }
 .ev-region-icon { display: inline-block; width: 16px; height: 11px; flex: 0 0 auto; vertical-align: -1px; border-radius: 1px; position: relative; overflow: hidden; }
 .ev-region-cn { background: #DE2910; }
@@ -639,12 +643,19 @@ body {
 .ev-lunar.jieqi { color: var(--primary); font-weight: 600; opacity: 1; }
 .ev-lunar.hdr { font-size: 12px; margin-left: 8px; text-decoration: underline dotted; text-underline-offset: 2px; }
 .ev-lunar:empty { display: none; }
-.ev-f-label input[type="text"], .ev-f-label input[type="date"], .ev-f-label input[type="time"], .ev-f-label textarea {
+.ev-f-label input[type="text"], .ev-f-label input[type="date"], .ev-f-label input[type="time"], .ev-f-label textarea, .ev-f-label select, .ev-f-label input[type="number"] {
   display: block; width: 100%; margin-top: 4px; padding: 8px 10px;
   border: 1px solid var(--border); border-radius: 8px;
   background: var(--bg); color: var(--text); font-size: 14px;
   font-family: inherit; -webkit-appearance: none;
 }
+.ev-f-label select { cursor: pointer; }
+/* 🔁 重複事件表單區塊 */
+.ev-f-repeat { border: 1px dashed var(--border); border-radius: 8px; padding: 10px 12px; margin-bottom: 10px; }
+.ev-f-repeat > .ev-f-check { margin-bottom: 8px; }
+.ev-f-unit { color: var(--text-secondary); font-size: 12px; margin-left: 6px; }
+.ev-f-weekdays { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 6px; }
+.ev-f-wd { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; color: var(--text); cursor: pointer; }
 /* ↕ 備註框：禁用原生 resize（iOS 不支持），高度由自繪手柄拖拽控制 */
 #ev-f-notes { resize: none; min-height: 60px; overflow: auto; }
 .ev-f-resize {
@@ -661,6 +672,15 @@ body {
 .ev-f-check { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--text); margin-bottom: 10px; cursor: pointer; }
 .ev-f-row { display: flex; gap: 10px; }
 .ev-f-row .ev-f-label { flex: 1; }
+/* 📓 日記表單：加寬 + 正文主導（約佔 3/4 高），標題/心情/天氣三並排，日期併入標題行 */
+.ev-diary-box { max-width: 640px; height: 84vh; display: flex; flex-direction: column; }
+.ev-f-3col .ev-f-label { min-width: 0; }
+.ev-diary-box .ev-f-title-date { margin-left: 8px; font-size: 13px; font-weight: 500; color: var(--text-secondary); }
+.ev-diary-f-content { flex: 3 1 auto; min-height: 0; display: flex; }
+.ev-diary-f-content .ev-f-label { flex: 1; display: flex; flex-direction: column; margin-bottom: 0; }
+.ev-diary-f-content textarea { flex: 1; resize: none; min-height: 0; }
+/* 窄屏（手机竖屏）：三并排退回单列，正文仍主导剩余高度 */
+@media (max-width: 480px) { .ev-f-3col { flex-direction: column; gap: 0; } }
 .ev-f-colors { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 6px; }
 .ev-f-colors .sw { width: 24px; height: 24px; border-radius: 50%; cursor: pointer; border: 2px solid transparent; }
 .ev-f-colors .sw.selected { border-color: var(--text); box-shadow: 0 0 0 2px var(--bg-secondary) inset; }

@@ -23,6 +23,8 @@
     let tlCalDiaries = [];     // ## DIARY 解析結果（每天一条，keyed by date）；行事历日期旁显示日记按钮，有则打勾
     let tlCalTagFilter = [];   // 标签过滤（空＝全部；OR 逻辑：事件 tags 命中任一即显示）
     let tlCalRegionFilter = ['cn'];   // ## HOLIDAY 地区过滤（图例 checkbox 勾选；默认只显示大陆 cn；只影响显示，不改数据）
+    let tlCalShowEvents = true;   // 分类显示：普通行程 EVENT（默认勾选；只影响显示，不改数据）
+    let tlCalShowRepeat = true;   // 分类显示：重复行程 REPEAT（默认勾选；只影响显示，不改数据）
     let tlEvFormTodoIds = [];   // 表单内「关联 Todo 卡片」临时列表（仅编辑期，不污染存档对象）
     let tlEvFormUid = null;
     let tlEvFormColor = null;
@@ -146,13 +148,22 @@
         holidayType: get('holidayType') || '',
         // 地区：cn 中国大陆 / hk 香港 / tw 台湾（可扩展）；缺省 '' 渲染时回退 cn（向后兼容旧数据）
         region: get('region') || '',
-        notes: remark
+        notes: remark,
+        // ===== ## EVENT(REPEAT) 重複事件字段（空＝不重複）=====
+        repeatMode: get('repeatMode') || '',
+        repeatInterval: get('repeatInterval') || '',
+        repeatWeekDay: tlParseArr(get('repeatWeekDay')),
+        repeatMonthDay: get('repeatMonthDay') || '',
+        repeatYearMonthDay: get('repeatYearMonthDay') || '',
+        repeatEndType: get('repeatEndType') || '',
+        repeatEndValue: get('repeatEndValue') || '',
+        repeatExcludeDates: tlParseArr(get('repeatExcludeDates'))
       };
     }
     function tlParseEvents(md) {
       if (!md) return [];
       const out = [];
-      const blocks = String(md).split(/^##[ \t]*EVENT[ \t]*$/m);
+      const blocks = String(md).split(/^##[ \t]*EVENT(?:\([^)]*\))?[ \t]*$/m);
       for (let i = 0; i < blocks.length; i++) {
         // ⚠️ 切块只按 ## EVENT → 本块尾巴会粘着紧随其后的 ## HOLIDAY 块。
         //    必须先在该标记处截断，否则 remark / holidayType / region 等会被后面的假日块污染（2026-09-19 用户反馈）
@@ -170,8 +181,8 @@
       const out = [];
       const blocks = String(md).split(/^##[ \t]*HOLIDAY[ \t]*$/m);
       for (let i = 1; i < blocks.length; i++) {
-        // 同理：假日块尾巴可能粘着后面的 ## EVENT 块 → 先在该标记处截断
-        const cut = blocks[i].search(/^##[ \t]*EVENT[ \t]*$/m);
+        // 同理：假日块尾巴可能粘着后面的 ## EVENT（含 (REPEAT)）块 → 先在该标记处截断
+        const cut = blocks[i].search(/^##[ \t]*EVENT(?:\([^)]*\))?[ \t]*$/m);
         const h = tlParseBlock(cut >= 0 ? blocks[i].slice(0, cut) : blocks[i], i);
         if (h) out.push(h);
       }
@@ -232,7 +243,7 @@
       const blocks = String(md).split(/^##[ \t]*DIARY[ \t]*$/m);
       for (let i = 1; i < blocks.length; i++) {
         // ⚠️ 块尾可能黏着紧随其后的 ## EVENT / ## HOLIDAY / ## DIARY → 在最靠前的标记处截断
-        const cut = blocks[i].search(/^##[ \t]*(EVENT|HOLIDAY|DIARY)[ \t]*$/m);
+        const cut = blocks[i].search(/^##[ \t]*(EVENT(?:\([^)]*\))?|HOLIDAY|DIARY)[ \t]*$/m);
         const d = tlParseDiaryBlock(cut >= 0 ? blocks[i].slice(0, cut) : blocks[i], i);
         if (d) out.push(d);
       }
@@ -261,7 +272,8 @@
       const tagsJson = JSON.stringify(Array.isArray(ev.tags) ? ev.tags : []);
       const todoJson = JSON.stringify(Array.isArray(ev.todoIds) ? ev.todoIds : []);
       const color = '"' + String(ev.color || '').replace(/^"|"$/g, '') + '"';
-      let s = '## EVENT \n';
+      const rep = !!(ev.repeatMode && ev.repeatMode !== '');
+      let s = (rep ? '## EVENT(REPEAT) ' : '## EVENT ') + '\n';
       s += '- title: `' + tlMdEscape(ev.title) + '`\n';
       s += '- date: `' + tlMdEscape(ev.date) + '`\n';
       if (ev.endDate && ev.endDate !== ev.date) s += '- endDate: `' + tlMdEscape(ev.endDate) + '`\n';
@@ -274,6 +286,16 @@
       s += '- color: `' + color + '`\n';
       s += '- tags: `' + tagsJson + '`\n';
       s += '- todoIds: `' + todoJson + '`\n';
+      if (rep) {
+        s += '- repeatMode: `' + String(ev.repeatMode || '') + '`\n';
+        s += '- repeatInterval: `' + String(ev.repeatInterval || '1') + '`\n';
+        s += '- repeatWeekDay: `' + JSON.stringify(Array.isArray(ev.repeatWeekDay) ? ev.repeatWeekDay : []) + '`\n';
+        s += '- repeatMonthDay: `' + String(ev.repeatMonthDay || '') + '`\n';
+        s += '- repeatYearMonthDay: `' + String(ev.repeatYearMonthDay || '') + '`\n';
+        s += '- repeatEndType: `' + String(ev.repeatEndType || 'never') + '`\n';
+        s += '- repeatEndValue: `' + String(ev.repeatEndValue || '') + '`\n';
+        s += '- repeatExcludeDates: `' + JSON.stringify(Array.isArray(ev.repeatExcludeDates) ? ev.repeatExcludeDates : []) + '`\n';
+      }
       s += '- Remark:\n```\n' + String(ev.notes || '') + '\n```\n';
       return s;
     }
@@ -361,7 +383,63 @@
           return out;
         }
       }
+      // ===== ## EVENT(REPEAT) 重複事件：展開為可見範圍內的發生日 =====
+      if (ev.repeatMode && ev.repeatMode !== '') return tlExpandRepeats(ev);
       out.push({ date: ev.date, ev, pos: 'single', idx: 1, total: 1 });
+      return out;
+    }
+    // 重複展開視窗：各視圖渲染前用 tlSetRepeatWindow 設定，避免 never 模式無限展開
+    let tlRepeatFrom = '2000-01-01', tlRepeatTo = '2100-01-01';
+    function tlSetRepeatWindow(from, to) { tlRepeatFrom = from || '2000-01-01'; tlRepeatTo = to || '2100-01-01'; }
+    const TL_WD = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
+    function tlWdKey(d) { return TL_WD[d.getDay()]; }
+    function tlAddDaysStr(ds, n) { const d = new Date(ds + 'T00:00:00'); d.setDate(d.getDate() + n); return tlFmtDate(d); }
+    // 把 ''/'1'/'01' 統一成 'DD'（日）
+    function tlPad2(n) { n = parseInt(n, 10); return isNaN(n) ? '' : (n < 10 ? '0' + n : '' + n); }
+    // 由重複定義生成發生日陣列（受 [tlRepeatFrom, tlRepeatTo] 約束）；idx＝實際收錄序號，total＝count 模式總次數
+    function tlExpandRepeats(ev) {
+      // 去掉用户手写时可能带的最外层双引号（如 repeatYearMonthDay: `"05-26"`），保证比较正确且不改写文件
+      const strip = (s) => { s = String(s == null ? '' : s); return (s.length >= 2 && s[0] === '"' && s[s.length - 1] === '"') ? s.slice(1, -1) : s; };
+      const mode = strip(ev.repeatMode);
+      if (!mode) return [];
+      const interval = Math.max(1, parseInt(strip(ev.repeatInterval), 10) || 1);
+      let exclude = ev.repeatExcludeDates;
+      if (typeof exclude === 'string') { try { exclude = JSON.parse(exclude); } catch (e) { exclude = []; } }
+      if (!Array.isArray(exclude)) exclude = [];
+      const endType = strip(ev.repeatEndType) || 'never';
+      const endVal = strip(ev.repeatEndValue);
+      const from = tlRepeatFrom, to = tlRepeatTo;
+      const out = [];
+      const cur = new Date(ev.date + 'T00:00:00');
+      if (isNaN(cur)) return out;
+      const bD = cur.getDate(), bM = cur.getMonth(), bY = cur.getFullYear();
+      const wds = (ev.repeatWeekDay && ev.repeatWeekDay.length) ? ev.repeatWeekDay : [tlWdKey(cur)];
+      const mDay = ev.repeatMonthDay ? parseInt(strip(ev.repeatMonthDay), 10) : bD;
+      const ymd = ev.repeatYearMonthDay ? strip(ev.repeatYearMonthDay) : (tlPad2(bM + 1) + '-' + tlPad2(bD));
+      let idx = 0, guard = 0;
+      while (guard++ < 8000) {
+        const ds = tlFmtDate(cur);
+        if (ds > to) break;
+        if (ds >= from) {
+          let hit = false;
+          if (mode === 'daily') hit = true;
+          else if (mode === 'weekly') hit = wds.indexOf(tlWdKey(cur)) >= 0;
+          else if (mode === 'monthly') {
+            const months = (cur.getFullYear() - bY) * 12 + (cur.getMonth() - bM);
+            hit = cur.getDate() === mDay && months % interval === 0;
+          } else if (mode === 'yearly') {
+            const curMd = tlPad2(cur.getMonth() + 1) + '-' + tlPad2(cur.getDate());
+            hit = curMd === ymd && (cur.getFullYear() - bY) % interval === 0;
+          }
+          if (hit && exclude.indexOf(ds) < 0) {
+            idx++;
+            if (endType === 'count' && idx > (parseInt(endVal, 10) || 0)) break;
+            if (endType === 'date' && ds > endVal) break;
+            out.push({ date: ds, ev, pos: 'single', idx, total: endType === 'count' ? (parseInt(endVal, 10) || 0) : 0 });
+          }
+        }
+        cur.setDate(cur.getDate() + 1);
+      }
       return out;
     }
     function tlOccSort(a, b) {
@@ -394,15 +472,20 @@
           '<span class="ev-cb">' + (done ? '\u2713' : '') + '</span>' + m[3] + '</span>';
       }).join('\n');
     }
+    // 🔁 重复事件小图标（## EVENT(REPEAT)）：双箭头环形，随文色（灰），用于月格 chip / 时间网格 / 列表行 / 悬停提示
+    function tlRepeatIcon(ev) {
+      if (!ev || !ev.repeatMode) return '';
+      return '<svg class="ev-repeat-ic" viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" role="img" aria-label="\u91cd\u590d"><title>\u91cd\u590d\u4e8b\u4ef6</title><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>';
+    }
     function tlSpanChipHtml(ev, pos, idx, total) {
       // 单日 → 普通 chip（圆点+标题）；跨天 start/middle/end → 连续色条
       const links = tlEventTodoLinks(ev);
       if (pos === 'single') {
-        return '<div class="ev-chip' + (ev.done ? ' done' : '') + '" data-uid="' + tlEscapeHtml(ev.uid) + '" onclick="tlOpenEventFromChip(event,\'' + tlEscapeHtml(ev.uid) + '\')"><span class="dot" style="background:' + tlEscapeHtml(ev.color) + '"></span>' + (ev.done ? '\u2713 ' : '') + tlEscapeHtml(ev.title) + links + '</div>';
+        return '<div class="ev-chip' + (ev.done ? ' done' : '') + '" data-uid="' + tlEscapeHtml(ev.uid) + '" onclick="tlOpenEventFromChip(event,\'' + tlEscapeHtml(ev.uid) + '\')"><span class="dot" style="background:' + tlEscapeHtml(ev.color) + '"></span>' + (ev.done ? '\u2713 ' : '') + tlRepeatIcon(ev) + tlEscapeHtml(ev.title) + links + '</div>';
       }
       const cls = 'ev-chip span ' + pos + (ev.done ? ' done' : '');
       const dot = '<span class="dot" style="background:' + tlEscapeHtml(ev.color) + '"></span>';
-      const titlePart = (ev.done ? '\u2713 ' : '') + tlEscapeHtml(ev.title) + tlSpanSuffix(idx, total) + links;
+      const titlePart = (ev.done ? '\u2713 ' : '') + tlRepeatIcon(ev) + tlEscapeHtml(ev.title) + tlSpanSuffix(idx, total) + links;
       // 每一段（start/middle/end）都顯示「標題 k/N」——空色條看不出是哪條行程的延續
       const inner = (pos === 'start' ? dot : '') + titlePart;
       return '<div class="' + cls + '" data-uid="' + tlEscapeHtml(ev.uid) + '" style="--ev-color:' + tlEscapeHtml(ev.color) + '" onclick="tlOpenEventFromChip(event,\'' + tlEscapeHtml(ev.uid) + '\')">' + inner + '</div>';
@@ -415,11 +498,17 @@
       const tags = ev.tags || [];
       return tlCalTagFilter.some((t) => tags.indexOf(t) >= 0);
     }
+    // 分类显示过滤（顶栏 EVENT / REPEAT 勾选）：普通行程 vs 重复行程（## EVENT(REPEAT)）
+    function tlEventVisible(ev) {
+      return (ev && ev.repeatMode) ? tlCalShowRepeat : tlCalShowEvents;
+    }
+    // 事件是否应显示＝标签过滤 ∩ 分类过滤（所有「按日期分组」入口统一走这里）
+    function tlEventShown(ev) { return tlEventMatchesTag(ev) && tlEventVisible(ev); }
     // 取某天出现的所有事件（含跨天展开），并套用标签过滤
     function tlEventsOnDay(dateStr) {
       const out = [];
       tlCalEvents.forEach((ev) => {
-        if (!tlEventMatchesTag(ev)) return;
+        if (!tlEventShown(ev)) return;
         tlEventOccurrences(ev).forEach((o) => { if (o.date === dateStr) out.push({ ev: o.ev, pos: o.pos, idx: o.idx, total: o.total }); });
       });
       return out;
@@ -534,6 +623,9 @@
     function tlRenderTimeGrid(dayDates) {
       const wrap = document.getElementById('tlEvWeekWrap');
       if (!wrap) return;
+      // 重複展開視窗：網格首末日 ±7 天，避免 never 無限展開
+      const first = dayDates[0], last = dayDates[dayDates.length - 1];
+      tlSetRepeatWindow(tlFmtDate(new Date(first.getFullYear(), first.getMonth(), first.getDate() - 7)), tlFmtDate(new Date(last.getFullYear(), last.getMonth(), last.getDate() + 7)));
       const hourH = dayDates.length > 1 ? 48 : 56;
       const n = dayDates.length;
       const todayStr = tlFmtDate(new Date());
@@ -560,7 +652,7 @@
           arr.forEach((o) => {
             const ev = o.ev;
             html += '<div class="ev-block all-day' + (ev.done ? ' done' : '') + '" data-uid="' + tlEscapeHtml(ev.uid) + '" onclick="tlOpenEventForm(\'' + tlEscapeHtml(ev.uid) + '\')" style="--ev-color:' + tlEscapeHtml(ev.color || TL_CAL_COLORS[0]) + '">' +
-              (ev.done ? '\u2713 ' : '') + tlEscapeHtml(ev.title) + tlSpanSuffix(o.idx, o.total) + tlEventTodoLinks(ev) + '</div>';
+              (ev.done ? '\u2713 ' : '') + tlRepeatIcon(ev) + tlEscapeHtml(ev.title) + tlSpanSuffix(o.idx, o.total) + tlEventTodoLinks(ev) + '</div>';
           });
           html += '</div>';
         });
@@ -601,7 +693,7 @@
           //       用 -webkit-line-clamp 限行數，超出仍由 .ev-block 的 overflow:hidden 裁掉
           const notes = (!e.allDay && height >= 64 && e.notes) ? String(e.notes).slice(0, 400) : '';
           html += '<div class="ev-block' + (e.done ? ' done' : '') + '" data-uid="' + tlEscapeHtml(e.uid) + '" onclick="tlOpenEventForm(\'' + tlEscapeHtml(e.uid) + '\')" style="top:' + top + 'px;height:' + height + 'px;left:calc(' + left + '% + 1px);width:calc(' + width + '% - 3px);--ev-color:' + tlEscapeHtml(cbg) + '">' +
-            '<div class="t">' + (e.done ? '\u2713 ' : '') + tlEscapeHtml(e.title) + tlEventTodoLinks(e) + '</div>' +
+            '<div class="t">' + (e.done ? '\u2713 ' : '') + tlRepeatIcon(e) + tlEscapeHtml(e.title) + tlEventTodoLinks(e) + '</div>' +
             (tm ? '<div class="tm">' + tlEscapeHtml(tm) + '</div>' : '') +
             (e.location ? '<div class="loc">' + tlEscapeHtml('\ud83d\udccd ' + e.location) + '</div>' : '') +
             (notes ? '<div class="notes">' + tlNotesWithChecks(tlEscapeHtml(notes), e.uid) + '</div>' : '') +
@@ -643,6 +735,17 @@
       if (!list) return;
       const isDay = tlCalMode === 'day';
       const today = tlFmtDate(new Date());
+      // 重複展開視窗：整週＝網格首末 ±7 天；單日＝選定日當天
+      let rwFrom, rwTo;
+      if (tlCalScope === 'full' && !isDay) {
+        const wk = tlWeekDays(tlCalCursor);
+        rwFrom = tlFmtDate(new Date(wk[0].getFullYear(), wk[0].getMonth(), wk[0].getDate() - 7));
+        rwTo = tlFmtDate(new Date(wk[6].getFullYear(), wk[6].getMonth(), wk[6].getDate() + 7));
+      } else {
+        const ds = tlGridSelectedDay();
+        rwFrom = rwTo = ds;
+      }
+      tlSetRepeatWindow(rwFrom, rwTo);
       const toggle = tlScopeToggleHtml();
       let html = '';
       // 整週（週模式切到「週」）：遍历当周 7 天，跳过无内容日（与列表模式一致）
@@ -659,7 +762,7 @@
           let g = tlDateHeader(ds, today, toggle, evs.length + hols.length);
           any = true;
           for (const h of hols) g += tlHolidayHtml(h, today);
-          for (const ev of evs) g += tlItemHtml(ev, today);
+          for (const ev of evs) g += tlItemHtml(ev, today, ds);
           html += (ds === sel) ? '<div class="ev-date-group sel-date">' + g + '</div>' : g;
         }
         if (!any) html += '<div class="ev-scope-row">' + toggle + '</div><div class="ev-empty">本周没有行程</div>';
@@ -681,7 +784,7 @@
         html += '<div class="ev-empty">这一天没有行程</div>';
       } else {
         for (const h of hols) html += tlHolidayHtml(h, today);
-        for (const ev of evs) html += tlItemHtml(ev, today);
+        for (const ev of evs) html += tlItemHtml(ev, today, ds);
       }
       list.innerHTML = html;
       list.classList.remove('scope-follow');
@@ -796,10 +899,12 @@
       const WD = ['日', '一', '二', '三', '四', '五', '六'];
       if (tlCalMode === 'day') {
         const d = tlCalCursor;
-        t.textContent = (d.getMonth() + 1) + '月' + d.getDate() + '日 週' + WD[d.getDay()];
+        t.textContent = d.getFullYear() + '年' + (d.getMonth() + 1) + '月' + d.getDate() + '日 週' + WD[d.getDay()];
       } else if (tlCalMode === 'week') {
         const ds = tlWeekDays(tlCalCursor);
-        t.textContent = (ds[0].getMonth() + 1) + '/' + ds[0].getDate() + ' – ' + (ds[6].getMonth() + 1) + '/' + ds[6].getDate();
+        const y0 = ds[0].getFullYear(), y1 = ds[6].getFullYear();
+        // 週區間：起始帶年；跨年時結尾也補年，避免「12/29 – 1/4」看不出年份
+        t.textContent = y0 + '/' + (ds[0].getMonth() + 1) + '/' + ds[0].getDate() + ' – ' + (y1 === y0 ? '' : y1 + '/') + (ds[6].getMonth() + 1) + '/' + ds[6].getDate();
       } else if (tlCalMode === 'list') {
         t.textContent = '';
       } else {
@@ -807,14 +912,18 @@
       }
     }
 
-    // 地区图例：列出当前 calendar.md 出现过的地区（去重），无假日则隐藏。颜色/图标与渲染一致，零学习成本。
+    // 顶栏过滤条：EVENT | HOLIDAY(地区细项) | REPEAT 三类顺序排列（EVENT/REPEAT 默认勾选）
+    // EVENT/REPEAT 过滤普通/重复行程；HOLIDAY 分组内为「出现过的地区」细项（颜色/图标与渲染一致，零学习成本）
     function tlRenderHolidayLegend() {
       const el = document.getElementById('tlEvHolidayLegend');
       if (!el) return;
-      if (!tlCalHolidays || !tlCalHolidays.length) { el.style.display = 'none'; el.innerHTML = ''; return; }
-      const seen = {};
+      const catEvent = '<label class="ev-legend-item ev-legend-cat' + (tlCalShowEvents ? '' : ' off') + '" title="勾选显示 / 取消勾选隐藏普通行程（EVENT）">' +
+        '<input type="checkbox" ' + (tlCalShowEvents ? 'checked' : '') + ' onchange="tlSetCategoryChecked(\'event\', this.checked)">EVENT</label>';
+      const catRepeat = '<label class="ev-legend-item ev-legend-cat' + (tlCalShowRepeat ? '' : ' off') + '" title="勾选显示 / 取消勾选隐藏重复行程（REPEAT）">' +
+        '<input type="checkbox" ' + (tlCalShowRepeat ? 'checked' : '') + ' onchange="tlSetCategoryChecked(\'repeat\', this.checked)">REPEAT</label>';
       const items = [];
-      for (const h of tlCalHolidays) {
+      const seen = {};
+      for (const h of (tlCalHolidays || [])) {
         const r = (h.region || 'cn').toLowerCase();
         if (seen[r]) continue;
         seen[r] = true;
@@ -824,9 +933,11 @@
           '<input type="checkbox" ' + (on ? 'checked' : '') + ' style="accent-color:' + tlEscapeHtml(m.color) + '" onchange="tlSetRegionChecked(\'' + r + '\', this.checked)">' +
           '<span class="ev-legend-dot" style="background:' + tlEscapeHtml(m.color) + '"></span>' + m.icon + tlEscapeHtml(m.label) + '</label>');
       }
-      if (!items.length) { el.style.display = 'none'; el.innerHTML = ''; return; }
+      let html = catEvent;
+      if (items.length) html += '<span class="ev-legend-sep"></span><span class="ev-legend-label">HOLIDAY:</span>' + items.join('');
+      html += '<span class="ev-legend-sep"></span>' + catRepeat;
       el.style.display = '';
-      el.innerHTML = '<span class="ev-legend-label">地区:</span>' + items.join('');
+      el.innerHTML = html;
     }
 
     function tlSetMode(mode) {
@@ -860,7 +971,7 @@
       let label = '日期未知', week = '';
       if (m) {
         const d = new Date(+m[1], +m[2] - 1, +m[3]);
-        label = (+m[2]) + '月' + (+m[3]) + '日';
+        label = (+m[1]) + '年' + (+m[2]) + '月' + (+m[3]) + '日';
         week = WD[d.getDay()];
       }
       const isToday = date === today;
@@ -881,9 +992,14 @@
         '<button type="button" class="ev-day-add" onclick="tlOpenEventForm(null, \'' + date + '\')">＋ 新增</button></div>';
     }
 
-    function tlItemHtml(ev, today) {
+    // occDate＝该行所属的「出现日」（重复事件为展开后的当天；非重复＝ev.date）。
+    // ⚠️ 重复事件的 ev.date 是「系列起始日」：若拿它算 past，则「过去开始的年度重复」在未来年份的实例会被误判为过去而淡化。
+    function tlItemHtml(ev, today, occDate) {
       const multi = tlIsMultiDay(ev);
-      const past = ev.date < today && !(multi && ev.endDate >= today);
+      const isRep = !!ev.repeatMode;
+      // 重复事件：该行代表「出现日当天」（单日）；非重复：用自身 date/endDate
+      const effEnd = isRep ? (occDate || ev.date) : ((ev.endDate && ev.endDate !== ev.date) ? ev.endDate : ev.date);
+      const past = effEnd < today;   // 等价于原「start<today 且 跨天未结束」——跨天 end<today 亦蕴含 start<today
       let time;
       if (multi) {
         time = ev.allDay
@@ -898,7 +1014,7 @@
         (ev.done ? ' checked' : '') + ' title="\u52fe\u9009=\u5df2\u5b8c\u6210\uff0c\u53d6\u6d88\u52fe\u9009=\u672a\u5b8c\u6210">' +
         '<span class="ev-swatch" style="background:' + tlEscapeHtml(ev.color) + '"></span>' +
         '<div class="ev-body">' +
-        '<div class="ev-title">' + tlEscapeHtml(ev.title) + spanBadge +
+        '<div class="ev-title">' + tlRepeatIcon(ev) + tlEscapeHtml(ev.title) + spanBadge +
         (ev.tags && ev.tags.length ? '<span class="ev-tags">' + ev.tags.map((t) => '<span class="ev-tag-view">#' + tlEscapeHtml(t) + '</span>').join('') + '</span>' : '') +
         tlEventTodoLinks(ev) +
         '</div>' +
@@ -943,20 +1059,30 @@
     function tlVisibleHolidays() {
       return (tlCalHolidays || []).filter(tlRegionVisible);
     }
-    function tlSetRegionChecked(code, on) {
-      const r = (code || '').toLowerCase();
-      if (!r) return;
-      const i = tlCalRegionFilter.indexOf(r);
-      if (on && i < 0) tlCalRegionFilter.push(r);
-      else if (!on && i >= 0) tlCalRegionFilter.splice(i, 1);
-      // ⚠️ 与 tlSetCalScope 同款：按当前模式「直接」重渲染（勿走 tlRenderEventsContent —— 它开头有宿主守卫
-      //    if (!calEventsView) return，勾选图例时会被拦下导致画面不刷新），并同步刷新图例勾选态
+    // 按当前模式「直接」重渲染（勿走 tlRenderEventsContent —— 它开头有宿主守卫 if (!calEventsView) return，
+    //    勾选过滤条时会被拦下导致画面不刷新），再同步顶栏过滤条勾选态。分类/地区过滤共用。
+    function tlRerenderCalendarView() {
       const content = document.getElementById('taskText').value;
       if (tlCalMode === 'month') tlRenderMonth(content);
       else if (tlCalMode === 'week') tlRenderTimeGrid(tlWeekDays(tlCalCursor));
       else if (tlCalMode === 'day') tlRenderTimeGrid([tlCalCursor]);
       else tlRenderList(content);
       tlRenderHolidayLegend();
+    }
+    // 顶栏分类过滤：EVENT（普通行程）/ REPEAT（重复行程）
+    function tlSetCategoryChecked(kind, on) {
+      if (kind === 'event') tlCalShowEvents = !!on;
+      else if (kind === 'repeat') tlCalShowRepeat = !!on;
+      else return;
+      tlRerenderCalendarView();
+    }
+    function tlSetRegionChecked(code, on) {
+      const r = (code || '').toLowerCase();
+      if (!r) return;
+      const i = tlCalRegionFilter.indexOf(r);
+      if (on && i < 0) tlCalRegionFilter.push(r);
+      else if (!on && i >= 0) tlCalRegionFilter.splice(i, 1);
+      tlRerenderCalendarView();
     }
     function tlHolidaysOnDay(dateStr) {
       if (!tlCalHolidays || !tlCalHolidays.length) return [];
@@ -986,7 +1112,7 @@
     }
     // 某日明细的「唯一取数入口」（日/週/月三处明细都用它）→ 与列表/整月同口径，不会再分叉
     function tlDayItems(ds) {
-      return tlEventsByDate(tlCalEvents.filter(tlEventMatchesTag), (d) => d === ds).get(ds) || { events: [], holidays: [] };
+      return tlEventsByDate(tlCalEvents.filter(tlEventShown), (d) => d === ds).get(ds) || { events: [], holidays: [] };
     }
     function tlHolidayHtml(h, today) {
       const meta = tlHolidayMeta(h.holidayType);
@@ -1018,8 +1144,10 @@
         return;
       }
       const today = tlFmtDate(new Date());
+      // 重複展開視窗（列表無固定範圍）：今天前 1 年 ~ 後 3 年，避免 never 無限展開
+      tlSetRepeatWindow(tlAddDaysStr(today, -365), tlAddDaysStr(today, 1095));
       // 按日期分组（跨天行程/假日逐日展开，与「日」范围同口径）：每天先显示该日假日，再显示行程
-      const byDate = tlEventsByDate(tlCalEvents.filter(tlEventMatchesTag));
+      const byDate = tlEventsByDate(tlCalEvents.filter(tlEventShown));
       const dates = Array.from(byDate.keys()).sort();
       // 选中日：< > / 「今天」导航到的锚点日（默认今天；今天无行程则回退最近未来日期，最后回退末尾）
       let sel = tlListSel || today;
@@ -1030,7 +1158,7 @@
         const grp = byDate.get(ds);
         let g = tlDateHeader(ds, today, '', grp.events.length + grp.holidays.length);
         for (const h of grp.holidays) g += tlHolidayHtml(h, today);
-        for (const ev of tlSorted(grp.events)) g += tlItemHtml(ev, today);
+        for (const ev of tlSorted(grp.events)) g += tlItemHtml(ev, today, ds);
         html += (ds === sel) ? '<div class="ev-date-group sel-date">' + g + '</div>' : g;
       }
       list.innerHTML = html;
@@ -1198,8 +1326,11 @@
       tlCalDiaries = tlParseDiaries(content);
       const cur = tlCalCursor;
       const y = cur.getFullYear(), m = cur.getMonth();
+      // 重複展開視窗：當月 + 前後 7 天（網格含跨月首尾週），避免 never 無限展開
+      const mFirst = new Date(y, m, 1), mLast = new Date(y, m + 1, 0);
+      tlSetRepeatWindow(tlFmtDate(new Date(y, m, 1 - 7)), tlFmtDate(mLast));
       const occByDate = {};
-      tlCalEvents.filter(tlEventMatchesTag).forEach((ev) => {
+      tlCalEvents.filter(tlEventShown).forEach((ev) => {
         tlEventOccurrences(ev).forEach((o) => { (occByDate[o.date] = occByDate[o.date] || []).push(o); });
       });
       if (!tlCalSelected) tlCalSelected = tlFmtDate(new Date());
@@ -1258,12 +1389,20 @@
       const list = document.getElementById('tlEvDayList');
       if (!list) return;
       const today = tlFmtDate(new Date());
+      // 重複展開視窗：整月＝當月 + 前 7 天（含跨月首尾週）；單日＝選定日當天
+      if (tlCalScope === 'full') {
+        const mo = tlCalCursor.getMonth(), my = tlCalCursor.getFullYear();
+        const mLast = new Date(my, mo + 1, 0);
+        tlSetRepeatWindow(tlFmtDate(new Date(my, mo, 1 - 7)), tlFmtDate(mLast));
+      } else {
+        tlSetRepeatWindow(tlCalSelected || today, tlCalSelected || today);
+      }
       const toggle = tlScopeToggleHtml();
       // 「月」范围：渲染游标月整月（按日期分组，只含该月开始的事件/假日），头部显示汇总 + 切换
       if (tlCalScope === 'full') {
         const mo = tlCalCursor.getMonth();
         const prefix = tlCalCursor.getFullYear() + '-' + String(mo + 1).padStart(2, '0');
-        const byDate = tlEventsByDate(tlCalEvents.filter(tlEventMatchesTag), (ds) => typeof ds === 'string' && ds.slice(0, 7) === prefix);
+        const byDate = tlEventsByDate(tlCalEvents.filter(tlEventShown), (ds) => typeof ds === 'string' && ds.slice(0, 7) === prefix);
         const dates = Array.from(byDate.keys()).sort();
         let total = 0;
         byDate.forEach((g) => { total += g.events.length + g.holidays.length; });
@@ -1277,7 +1416,7 @@
             const grp = byDate.get(dates[i]);
             let g = tlDateHeader(dates[i], today, toggle, grp.events.length + grp.holidays.length);
             for (const h of grp.holidays) g += tlHolidayHtml(h, today);
-            for (const ev of tlSorted(grp.events)) g += tlItemHtml(ev, today);
+            for (const ev of tlSorted(grp.events)) g += tlItemHtml(ev, today, dates[i]);
             html += (dates[i] === tlCalSelected) ? '<div class="ev-date-group sel-date">' + g + '</div>' : g;
           }
         }
@@ -1292,23 +1431,15 @@
       }
       // 「日」范围（默认）：选定日单日
       const ds = tlCalSelected || tlFmtDate(new Date());
-      const m = String(ds).match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
-      const WD = ['日', '一', '二', '三', '四', '五', '六'];
-      const d = m ? new Date(+m[1], +m[2] - 1, +m[3]) : new Date();
       const dayItems = tlDayItems(ds);
       const evs = tlSorted(dayItems.events);
       const hols = dayItems.holidays;
-      let html = '<div class="ev-date' + (ds === today ? ' today' : '') + '" data-ev-date="' + tlEscapeHtml(ds) + '">' +
-        (m ? (+m[2]) + '月' + (+m[3]) + '日' : '日期未知') +
-        '<span class="ev-week">週' + WD[d.getDay()] + '</span>' +
-        (ds === today ? '<span class="ev-today-badge">今天</span>' : '') +
-        '<span class="ev-week">· ' + (evs.length + hols.length) + ' 条</span>' +
-        toggle +
-        '<button type="button" class="ev-day-add" onclick="tlOpenEventForm(null, \'' + ds + '\')">＋ 此日新增</button></div>';
+      // 与「月」范围/列表模式共用 tlDateHeader（含倒计时/农历/日记按钮），避免两范围头部不一致
+      let html = tlDateHeader(ds, today, toggle, evs.length + hols.length);
       if (!evs.length && !hols.length) html += '<div class="ev-empty">这一天没有行程</div>';
       else {
         for (const h of hols) html += tlHolidayHtml(h, today);
-        for (const ev of evs) html += tlItemHtml(ev, today);
+        for (const ev of evs) html += tlItemHtml(ev, today, ds);
       }
       list.classList.remove('scope-follow');
       list.innerHTML = html;
@@ -1355,6 +1486,21 @@
       document.getElementById('tlEvFTitle').value = ev ? ev.title : '';
       document.getElementById('tlEvFDate').value = ev ? ev.date : (defaultDate || (tlCalMode === 'month' ? tlCalSelected : today) || today);
       document.getElementById('tlEvFEndDate').value = ev ? (ev.endDate || '') : '';
+      // ===== 重複事件 =====
+      const rMode = ev ? (ev.repeatMode || '') : '';
+      document.getElementById('tlEvFRepeatOn').checked = !!rMode;
+      document.getElementById('tlEvFRepeatFields').style.display = rMode ? '' : 'none';
+      document.getElementById('tlEvFRepeatMode').value = rMode || 'weekly';
+      document.getElementById('tlEvFRepeatInterval').value = ev && ev.repeatInterval ? (parseInt(ev.repeatInterval, 10) || 1) : 1;
+      tlRenderRepeatWeekDays(ev ? (ev.repeatWeekDay || []) : []);
+      document.getElementById('tlEvFMonthDay').value = ev && ev.repeatMonthDay ? (parseInt(ev.repeatMonthDay, 10) || '') : '';
+      document.getElementById('tlEvFYearMonthDay').value = ev && ev.repeatYearMonthDay ? String(ev.repeatYearMonthDay).replace(/^"|"$/g, '') : '';
+      const rEnd = ev ? (ev.repeatEndType || 'never') : 'never';
+      document.getElementById('tlEvFRepeatEndType').value = rEnd;
+      document.getElementById('tlEvFRepeatEndValue').value = ev && ev.repeatEndValue != null ? String(ev.repeatEndValue) : '';
+      document.getElementById('tlEvFRepeatExclude').value = (ev && ev.repeatExcludeDates && ev.repeatExcludeDates.length) ? ev.repeatExcludeDates.join(', ') : '';
+      tlOnRepeatModeChange();
+      tlOnRepeatEndTypeChange();
       tlUpdateFormDow(); // 🗓 依輸入日期即時顯示星期
       document.getElementById('tlEvFAllday').checked = ev ? ev.allDay : (p.allDay === true);
       // 完成状态：新增默认未完成（旧文件没有 - done 栏位时解析也是未完成）
@@ -1380,6 +1526,67 @@
       const allDay = document.getElementById('tlEvFAllday').checked;
       document.getElementById('tlEvFStart').disabled = allDay;
       document.getElementById('tlEvFEnd').disabled = allDay;
+    }
+
+    // ===== ## EVENT(REPEAT) 表單控件 =====
+    const TL_REPEAT_INTERVAL_UNIT = { daily: '天', weekly: '周', monthly: '月', yearly: '年' };
+    function tlToggleRepeat() {
+      const on = document.getElementById('tlEvFRepeatOn').checked;
+      document.getElementById('tlEvFRepeatFields').style.display = on ? '' : 'none';
+      if (on) {
+        if (!document.getElementById('tlEvFRepeatMode').value) document.getElementById('tlEvFRepeatMode').value = 'weekly';
+        if (!document.getElementById('tlEvFRepeatInterval').value) document.getElementById('tlEvFRepeatInterval').value = '1';
+        const d = document.getElementById('tlEvFDate').value;
+        if (d && !tlGetRepeatWeekDays().length) {
+          const wd = TL_WD[new Date(d + 'T00:00:00').getDay()];
+          tlSetWeekDay(wd, true);
+        }
+        tlOnRepeatModeChange();
+        tlOnRepeatEndTypeChange();
+      }
+    }
+    function tlRenderRepeatWeekDays(selected) {
+      selected = selected || [];
+      const labels = { sun: '日', mon: '一', tue: '二', wed: '三', thu: '四', fri: '五', sat: '六' };
+      const box = document.getElementById('tlEvFWeekDays');
+      if (!box) return;
+      box.innerHTML = TL_WD.map((w) =>
+        '<label class="tl-ev-f-wd"><input type="checkbox" data-wd="' + w + '"' + (selected.indexOf(w) >= 0 ? ' checked' : '') + ' onchange="tlOnWeekDayChange()">' + labels[w] + '</label>'
+      ).join('');
+    }
+    function tlSetWeekDay(w, checked) {
+      const el = document.querySelector('#tlEvFWeekDays input[data-wd="' + w + '"]');
+      if (el) el.checked = checked;
+    }
+    function tlOnWeekDayChange() { /* 仅作委派占位，取值走 tlGetRepeatWeekDays */ }
+    function tlGetRepeatWeekDays() {
+      const els = document.querySelectorAll('#tlEvFWeekDays input[data-wd]:checked');
+      return Array.prototype.map.call(els, (e) => e.getAttribute('data-wd'));
+    }
+    function tlOnRepeatModeChange() {
+      const mode = document.getElementById('tlEvFRepeatMode').value;
+      document.getElementById('tlEvFWeekDayBox').style.display = mode === 'weekly' ? '' : 'none';
+      document.getElementById('tlEvFMonthDayBox').style.display = mode === 'monthly' ? '' : 'none';
+      document.getElementById('tlEvFYearMonthDayBox').style.display = mode === 'yearly' ? '' : 'none';
+      const unit = document.getElementById('tlEvFRepeatIntervalUnit');
+      if (unit) unit.textContent = TL_REPEAT_INTERVAL_UNIT[mode] ? '（每 ' + TL_REPEAT_INTERVAL_UNIT[mode] + '）' : '';
+    }
+    function tlOnRepeatEndTypeChange() {
+      const t = document.getElementById('tlEvFRepeatEndType').value;
+      const box = document.getElementById('tlEvFEndValueBox');
+      box.style.display = t === 'never' ? 'none' : '';
+      const unit = document.getElementById('tlEvFEndValueUnit');
+      const inp = document.getElementById('tlEvFRepeatEndValue');
+      if (t === 'count') { unit.textContent = '（次）'; inp.type = 'number'; inp.placeholder = '如 20'; }
+      else if (t === 'date') { unit.textContent = ''; inp.type = 'date'; inp.placeholder = ''; }
+      else { unit.textContent = ''; inp.type = 'text'; inp.value = ''; }
+    }
+    // 规范化「每年月-日」：去掉可能存在的外层引号后统一加上，保证写回文件格式与用户一致（"MM-DD"）
+    function tlNormalizeYmd(v) {
+      v = (v || '').trim();
+      if (!v) return '';
+      if (v.length >= 2 && v[0] === '"' && v[v.length - 1] === '"') v = v.slice(1, -1);
+      return '"' + v + '"';
     }
 
     function tlRenderColors() {
@@ -1423,6 +1630,45 @@
         notes: document.getElementById('tlEvFNotes').value.replace(/\r\n/g, '\n'),
         todoIds: tlEvFormTodoIds.slice()
       };
+      // ===== 重複事件：依表單寫回欄位（未勾選則清空，序列化降回 ## EVENT）=====
+      if (document.getElementById('tlEvFRepeatOn').checked) {
+        const rMode = document.getElementById('tlEvFRepeatMode').value;
+        const interval = Math.max(1, parseInt(document.getElementById('tlEvFRepeatInterval').value, 10) || 1);
+        ev.repeatMode = rMode;
+        ev.repeatInterval = String(interval);
+        if (rMode === 'weekly') {
+          ev.repeatWeekDay = tlGetRepeatWeekDays();
+          ev.repeatMonthDay = '';
+          ev.repeatYearMonthDay = '';
+        } else if (rMode === 'monthly') {
+          ev.repeatWeekDay = [];
+          const md = parseInt(document.getElementById('tlEvFMonthDay').value, 10);
+          ev.repeatMonthDay = (md >= 1 && md <= 31) ? String(md) : '';
+          ev.repeatYearMonthDay = '';
+        } else if (rMode === 'yearly') {
+          ev.repeatWeekDay = [];
+          ev.repeatMonthDay = '';
+          ev.repeatYearMonthDay = tlNormalizeYmd(document.getElementById('tlEvFYearMonthDay').value);
+        } else {
+          ev.repeatWeekDay = [];
+          ev.repeatMonthDay = '';
+          ev.repeatYearMonthDay = '';
+        }
+        const endType = document.getElementById('tlEvFRepeatEndType').value;
+        ev.repeatEndType = endType;
+        ev.repeatEndValue = endType === 'never' ? '' : document.getElementById('tlEvFRepeatEndValue').value.trim();
+        const exRaw = document.getElementById('tlEvFRepeatExclude').value;
+        ev.repeatExcludeDates = exRaw.split(',').map((x) => x.trim()).filter((x) => /^\d{4}-\d{2}-\d{2}$/.test(x));
+      } else {
+        ev.repeatMode = '';
+        ev.repeatInterval = '';
+        ev.repeatWeekDay = [];
+        ev.repeatMonthDay = '';
+        ev.repeatYearMonthDay = '';
+        ev.repeatEndType = 'never';
+        ev.repeatEndValue = '';
+        ev.repeatExcludeDates = [];
+      }
       // 以当前编辑内容为准重新解析（保留用户手改过的其它条目），再 upsert
       tlCalEvents = tlParseEvents(document.getElementById('taskText').value);
       const i = tlCalEvents.findIndex((x) => x.uid === ev.uid);
@@ -1591,7 +1837,7 @@
       const loc = ev.location ? '\ud83d\udccd ' + tlEscapeHtml(ev.location) : '';
       const notes = ev.notes ? '<div class="ev-tip-notes">' + tlEscapeHtml(ev.notes) + '</div>' : '';
       const links = tlEventTodoLinks(ev);
-      return '<div class="ev-tip-title">' + tlEscapeHtml(ev.title) + (ev.done ? ' <span class="ev-tip-done">\u2713</span>' : '') + '</div>' +
+      return '<div class="ev-tip-title">' + tlRepeatIcon(ev) + tlEscapeHtml(ev.title) + (ev.done ? ' <span class="ev-tip-done">\u2713</span>' : '') + '</div>' +
         '<div class="ev-tip-meta">' + tlEscapeHtml(when) + (loc ? ' · ' + loc : '') + '</div>' + tags + links + notes;
     }
     function tlShowTip(uid, x, y) {
