@@ -151,6 +151,19 @@ body {
   background: var(--border);
 }
 
+/* ⚠️ .btn-primary 先前只有引用、沒有定義（行程/日記表單的「寫入編輯內容」＋ 一覽的「新增重複事件」都用它）
+   → 補上主色樣式，主要動作才有視覺輕重。 */
+.btn-primary {
+  background: var(--primary);
+  color: #fff;
+  border: 1px solid var(--primary);
+}
+
+.btn-primary:hover {
+  background: var(--primary-dark);
+  border-color: var(--primary-dark);
+}
+
 .icon {
   font-size: 16px;
 }
@@ -403,6 +416,8 @@ body {
 .ev-monthnav button { border: 1px solid var(--border); background: var(--bg-secondary); color: var(--text); font-size: 15px; padding: 3px 10px; border-radius: 8px; cursor: pointer; }
 .ev-monthnav #ev-month-title { flex: 1; text-align: center; font-size: 15px; font-weight: 600; color: var(--text); }
 .ev-today-mini { font-size: 12px !important; padding: 4px 10px !important; }
+/* 列表模式：「跨天一笔 / 跨天多笔」切换按钮（选中态＝高亮；默认「跨天多笔」不亮） */
+.ev-today-mini.active { background: var(--primary); color: #fff; border-color: var(--primary); }
 
 /* 月曆網格：週一開頭，單元格顯示日號 + 最多 2 條行程 chip */
 /* 月視圖：月格自己一層滾動區（#ev-month-wrap 改為豎直 flex，明細才能固定在底部） */
@@ -452,6 +467,22 @@ body {
 .ev-holiday-legend .ev-legend-cat { font-weight: 600; letter-spacing: .4px; }
 .ev-holiday-legend .ev-legend-sep { width: 1px; height: 13px; flex: 0 0 auto; background: var(--border); }
 .ev-holiday-legend .ev-legend-dot { width: 10px; height: 10px; border-radius: 999px; display: inline-block; }
+/* 🔁 REPEAT 後的「條列」按鈕：點開重複事件一覽視窗 */
+.ev-holiday-legend .ev-legend-more { display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; padding: 0; border: 1px solid var(--border); border-radius: 6px; background: transparent; color: var(--text-secondary); cursor: pointer; flex: 0 0 auto; }
+.ev-holiday-legend .ev-legend-more:hover { color: var(--primary); border-color: var(--primary); }
+/* 🔁 重複事件一覽視窗 */
+#ev-repeat-overlay .ev-form-box { max-width: 520px; }
+.ev-repeat-ov-count { margin-left: 8px; font-size: 12px; font-weight: 400; color: var(--text-secondary); }
+.ev-repeat-ov-list { display: flex; flex-direction: column; gap: 8px; }
+.ev-repeat-ov-item { display: flex; align-items: flex-start; gap: 10px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg); cursor: pointer; }
+.ev-repeat-ov-item:hover { border-color: var(--primary); }
+.ev-repeat-ov-swatch { width: 10px; height: 10px; border-radius: 999px; margin-top: 5px; flex: 0 0 auto; }
+.ev-repeat-ov-main { flex: 1; min-width: 0; }
+.ev-repeat-ov-title { display: flex; align-items: center; gap: 4px; font-size: 14px; color: var(--text); }
+.ev-repeat-ov-rule { margin-top: 4px; font-size: 12px; color: var(--text); }
+.ev-repeat-ov-meta { margin-top: 3px; font-size: 12px; color: var(--text-secondary); }
+.ev-repeat-ov-empty { padding: 26px 8px; text-align: center; font-size: 13px; color: var(--text-secondary); }
+.ev-repeat-ov-empty-hint { display: inline-block; margin-top: 6px; font-size: 12px; opacity: .8; }
 .ev-region-icon { display: inline-block; width: 16px; height: 11px; flex: 0 0 auto; vertical-align: -1px; border-radius: 1px; position: relative; overflow: hidden; }
 .ev-region-cn { background: #DE2910; }
 .ev-region-cn::before { content: ''; position: absolute; left: 2px; top: 2px; width: 4px; height: 4px; border-radius: 50%; background: #FFDE00; }

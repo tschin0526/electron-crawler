@@ -202,6 +202,7 @@
           <span id="ev-month-title"></span>
           <button type="button" id="ev-next-month">›</button>
           <button type="button" class="ev-today-mini" id="ev-today-btn">今天</button>
+          <button type="button" class="ev-today-mini" id="ev-multiday-btn" style="display:none" title="跨天行程显示方式">跨天多笔</button>
         </div>
         <!-- 🏷 標籤過濾條：列出 calendar.md 裡出現過的所有標籤，點選篩選（OR 邏輯，可多選） -->
         <div class="ev-tagbar" id="ev-tagbar">
@@ -307,6 +308,20 @@
           <button type="button" class="btn btn-primary" id="ev-form-save">寫入編輯內容</button>
         </div>
         <div class="ev-form-hint">寫入後按頂欄「保存」，在分享面板選「儲存到檔案」→ 覆蓋原 calendar.md</div>
+      </div>
+    </div>
+
+    <!-- 🔁 重複事件一覽（calendar.md 專用）：列出所有 ## EVENT(REPEAT)；點條目 → 套用上面的行程編輯表單 -->
+    <div id="ev-repeat-overlay" class="ev-form-overlay" style="display:none">
+      <div class="ev-form-box">
+        <div class="ev-form-title">🔁 重複事件一覽<span class="ev-repeat-ov-count" id="ev-repeat-ov-count"></span></div>
+        <div class="ev-repeat-ov-list" id="ev-repeat-ov-list"></div>
+        <div class="ev-form-actions">
+          <button type="button" class="btn btn-primary" onclick="calNewRepeatEvent()">＋ 新增重複事件</button>
+          <span class="ev-toolbar-flex"></span>
+          <button type="button" class="btn btn-secondary" onclick="calCloseRepeatOverview()">關閉</button>
+        </div>
+        <div class="ev-form-hint">點擊任一項目即可編輯；改完按頂欄「保存」寫回檔案</div>
       </div>
     </div>
 

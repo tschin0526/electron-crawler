@@ -136,6 +136,59 @@ function migrateScriptsFromBookmarks() {
   }
 }
 
+// ============================================================
+// 🗑️ 删除前的「明确交互确认」工具
+// ------------------------------------------------------------
+// 用户约定（2026-09-21）：**任何删除数据的动作，执行前都必须有与使用者明确的交互讯息，
+// 经使用者确认后才可以执行删除。**
+// 「孤儿 todo 文件」＝磁盘上存在、但当前待办列表里已经没有的 todo-*.json；
+// 它们之前是被 save-todos **静默 unlinkSync** 掉的，现在改为逐一列名 + 弹框确认。
+// 判定与文案分离：`buildOrphanTodoConfirmOptions` 是纯函数（可单测），
+// `confirmDeleteOrphanTodos` 只负责弹框与解释结果。
+// ============================================================
+
+// 确认框里最多逐一列出的文件名个数（超出的只报总数，避免详情过长）
+const ORPHAN_CONFIRM_LIST_MAX = 20;
+
+// 纯函数：拼出「删除孤儿 todo 文件」确认框的参数（不依赖 Electron，便于单测）
+function buildOrphanTodoConfirmOptions(orphans, dir) {
+  const list = (orphans || []).slice(0, ORPHAN_CONFIRM_LIST_MAX)
+    .map((f) => `  ·  ${f}`)
+    .join('\n');
+  const rest = (orphans || []).length - ORPHAN_CONFIRM_LIST_MAX;
+  const moreLine = rest > 0 ? `\n  …另有 ${rest} 个（未逐一列出）` : '';
+  return {
+    type: 'warning',
+    buttons: ['保留这些文件', '永久删除'],
+    // ⚠️ 安全默认：回车 = 保留；Esc / 直接关掉窗口 = 保留（cancelId 与 defaultId 都指向「保留」）
+    defaultId: 0,
+    cancelId: 0,
+    noLink: true,
+    title: '确认删除孤儿待办文件',
+    message: `发现 ${(orphans || []).length} 个「孤儿」待办文件，是否删除？`,
+    detail:
+      '这些文件在磁盘上存在，但当前待办列表里已经没有它们了：\n\n' +
+      list + moreLine + '\n\n' +
+      `位置：${dir}\n\n` +
+      '⚠️ 选择「永久删除」会直接从磁盘删掉，不进回收站、不可恢复。\n' +
+      '如果把它们放回待办列表（而不是删除），请选「保留这些文件」。'
+  };
+}
+
+// 由使用者确认后才返回 true；任何异常一律返回 false（fail-safe：宁可留下垃圾文件，也不误删数据）
+function confirmDeleteOrphanTodos(orphans, dir, parentWindow) {
+  const opts = buildOrphanTodoConfirmOptions(orphans, dir);
+  try {
+    const r = parentWindow
+      ? dialog.showMessageBoxSync(parentWindow, opts)
+      : dialog.showMessageBoxSync(opts);
+    return r === 1;
+  } catch (e) {
+    console.warn('[Main] 孤儿 todo 文件确认框弹出失败，按「保留」处理:', e && e.message);
+    return false;
+  }
+}
+
 function init(shared) {
   // shared.BOOKMARKS_FILE 等数据文件路径由本模组依据 userData 自行计算
   BOOKMARKS_FILE = path.join(app.getPath('userData'), 'bookmarks.json');
@@ -438,18 +491,30 @@ function init(shared) {
         fs.writeFileSync(filePath, newContent, 'utf8');
         writeCount++;
       }
-      // 清理孤儿文件（磁盘上有但数据中已不存在的 todo-*.json）
+      // 🗑️ 清理孤儿文件（磁盘上有但数据中已不存在的 todo-*.json）
+      // ⚠️ 绝不静默删除：先逐一列出文件名，由使用者确认后才执行（用户约定 2026-09-21）。
+      //    「保留」＝一个都不删，只记日志；确认框弹不出来也按「保留」处理（fail-safe）。
       const files = fs.readdirSync(TODO_DATA_DIR)
         .filter(f => f.startsWith('todo-') && f.endsWith('.json'));
-      for (const file of files) {
-        const fileId = file.replace('todo-', '').replace('.json', '');
-        if (!currentIds.has(fileId)) {
-          fs.unlinkSync(path.join(TODO_DATA_DIR, file));
-          console.log(`[Main] 清理孤儿 todo 文件: ${file}`);
+      const orphans = files.filter(f => !currentIds.has(f.replace('todo-', '').replace('.json', '')));
+      let removedCount = 0;
+      if (orphans.length) {
+        const parentWindow = (() => {
+          try { return BrowserWindow.fromWebContents(event.sender) || getMainWindow() || null; }
+          catch (e) { return null; }
+        })();
+        if (confirmDeleteOrphanTodos(orphans, TODO_DATA_DIR, parentWindow)) {
+          for (const file of orphans) {
+            fs.unlinkSync(path.join(TODO_DATA_DIR, file));
+            removedCount++;
+          }
+          console.log(`[Main] 用户已确认，删除孤儿 todo 文件 ${removedCount} 个: ${orphans.join(', ')}`);
+        } else {
+          console.log(`[Main] 用户选择保留，未删除 ${orphans.length} 个孤儿 todo 文件: ${orphans.join(', ')}`);
         }
       }
       console.log(`[Main] ToDo 已保存: ${todos.length} 条（实际写入 ${writeCount} 个文件）`);
-      return { success: true };
+      return { success: true, orphansRemoved: removedCount, orphansKept: orphans.length - removedCount };
     } catch (error) {
       console.error('[Main] 保存 ToDo 数据失败:', error);
       return { success: false, error: error.message };
@@ -492,9 +557,19 @@ function init(shared) {
       if (!fs.existsSync(srcPath)) {
         return { success: false, error: '源文件不存在（可能已归档或删除）' };
       }
-      // 若目标已存在，先删掉避免覆盖失败
+      // ⚠️ 不静默删除已存在的同名归档文件（用户约定 2026-09-21：删除数据前必须经使用者确认）。
+      //    改为把它改名保留一份带时间戳的副本，再放入新归档 —— 两份都留下，谁都不会被覆盖丢掉。
       if (fs.existsSync(dstPath)) {
-        fs.unlinkSync(dstPath);
+        const now = new Date();
+        const pad2 = (n) => String(n).padStart(2, '0');
+        const stamp = `${now.getFullYear()}${pad2(now.getMonth() + 1)}${pad2(now.getDate())}-${pad2(now.getHours())}${pad2(now.getMinutes())}${pad2(now.getSeconds())}`;
+        let backupPath = path.join(archivedDir, `todo-${todoId}.${stamp}.json`);
+        let n = 1;
+        while (fs.existsSync(backupPath)) {
+          backupPath = path.join(archivedDir, `todo-${todoId}.${stamp}-${n++}.json`);
+        }
+        fs.renameSync(dstPath, backupPath);
+        console.log(`[Main] 归档目标已存在 → 原名保留为备份: ${backupPath}`);
       }
       fs.renameSync(srcPath, dstPath);
       console.log(`[Main] 已归档 todo: ${srcPath} -> ${dstPath}`);
@@ -1875,4 +1950,11 @@ function init(shared) {
   });
 }
 
-module.exports = { init, loadBookmarksForAPI, getBookmarkByIndex, formatFileSize };
+module.exports = {
+  init,
+  loadBookmarksForAPI,
+  getBookmarkByIndex,
+  formatFileSize,
+  // 纯函数，导出以便单测（确认框文案：逐一列出待删文件名、安全默认等）
+  buildOrphanTodoConfirmOptions
+};

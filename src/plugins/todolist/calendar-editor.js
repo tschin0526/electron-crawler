@@ -25,6 +25,17 @@
     let tlCalRegionFilter = ['cn'];   // ## HOLIDAY 地区过滤（图例 checkbox 勾选；默认只显示大陆 cn；只影响显示，不改数据）
     let tlCalShowEvents = true;   // 分类显示：普通行程 EVENT（默认勾选；只影响显示，不改数据）
     let tlCalShowRepeat = true;   // 分类显示：重复行程 REPEAT（默认勾选；只影响显示，不改数据）
+    // 📋 「跨天行程」在列表模式里显示几笔（纯 UI 偏好：内存 + localStorage，绝不写回 calendar.md）
+    //    'multi'（默认）＝跨几天就显示几笔（每天一笔，与「日」范围同口径）；
+    //    'one'＝整段跨天只在「起始日」显示一笔。
+    //    ⚠️ 只作用于列表模式（tlRenderList）；月/週/日三种模式一律不受影响。
+    let tlCalMultiDayMode = 'multi';
+    let tlMultiDayLoaded = false;
+    // 📓 「只显示日记」：列表模式专属的显示过滤（纯 UI 偏好：内存 + localStorage，绝不写回 calendar.md）
+    //    勾选后列表只列「有日记」的日期（每篇日记渲染成一条，含内容预览）；行程 EVENT/REPEAT 与假日 HOLIDAY 一律不参与。
+    //    ⚠️ 只作用于列表模式（tlRenderList）；月/週/日三种模式一律不受影响。
+    let tlCalDiaryOnly = false;
+    let tlDiaryOnlyLoaded = false;
     let tlEvFormTodoIds = [];   // 表单内「关联 Todo 卡片」临时列表（仅编辑期，不污染存档对象）
     let tlEvFormUid = null;
     let tlEvFormColor = null;
@@ -876,6 +887,9 @@
       setDisp('tlEvWeekWrap', isGrid ? '' : 'none');
       setDisp('tlEvList', mode === 'list' ? '' : 'none');
       setDisp('tlEvDayGridList', isGrid ? '' : 'none');   // 日/週时间网格下方的「当日/当周明细」列表（含假日）
+      // 「跨天一笔 / 跨天多笔」切换：只在列表模式出现（月/週/日不显示，也不受其影响）
+      setDisp('tlEvMultiDayBtn', isList ? '' : 'none');
+      if (isList) tlUpdateMultiDayBtn();
       const lb = document.getElementById('tlEvModeList'); if (lb) lb.classList.toggle('active', mode === 'list');
       const db = document.getElementById('tlEvModeDay'); if (db) db.classList.toggle('active', isDay);
       const wb = document.getElementById('tlEvModeWeek'); if (wb) wb.classList.toggle('active', isWeek);
@@ -912,6 +926,36 @@
       }
     }
 
+    // 🔁 重复规则「说人话」：把 ## EVENT(REPEAT) 的字段翻成一句可读文字（顶栏「重复事件一览」面板用）
+    const TL_REPEAT_MODE_LABEL = { daily: '每天', weekly: '每周', monthly: '每月', yearly: '每年' };
+    const TL_WD_LABEL = { sun: '日', mon: '一', tue: '二', wed: '三', thu: '四', fri: '五', sat: '六' };
+    function tlRepeatRuleText(ev) {
+      const mode = ev.repeatMode || '';
+      if (!mode) return '';
+      const interval = Math.max(1, parseInt(ev.repeatInterval, 10) || 1);
+      const unit = { daily: '天', weekly: '周', monthly: '月', yearly: '年' }[mode] || '';
+      let s = interval > 1 ? ('每 ' + interval + ' ' + unit) : (TL_REPEAT_MODE_LABEL[mode] || mode);
+      if (mode === 'weekly') {
+        // 未显式指定星期时按「起始日的星期」回退，与展开引擎 tlExpandRepeats 口径一致
+        let wds = ev.repeatWeekDay || [];
+        if (!wds.length && ev.date) { const d = new Date(ev.date + 'T00:00:00'); if (!isNaN(d)) wds = [TL_WD[d.getDay()]]; }
+        if (wds.length) s += '（' + wds.map((w) => TL_WD_LABEL[w] || w).join('、') + '）';
+      } else if (mode === 'monthly' && ev.repeatMonthDay) {
+        s += ' 第 ' + (parseInt(ev.repeatMonthDay, 10) || ev.repeatMonthDay) + ' 日';
+      } else if (mode === 'yearly' && ev.repeatYearMonthDay) {
+        s += ' ' + String(ev.repeatYearMonthDay).replace(/^"|"$/g, '');
+      }
+      return s;
+    }
+    function tlRepeatEndText(ev) {
+      const t = ev.repeatEndType || 'never';
+      if (t === 'count') return '共 ' + (ev.repeatEndValue || '?') + ' 次';
+      if (t === 'date') return '至 ' + (ev.repeatEndValue || '?');
+      return '永不结束';
+    }
+    // 一览按钮图标（截图内的小「条列」字形）：三行 + 圆点
+    const TL_REPEAT_OV_ICON = '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>';
+
     // 顶栏过滤条：EVENT | HOLIDAY(地区细项) | REPEAT 三类顺序排列（EVENT/REPEAT 默认勾选）
     // EVENT/REPEAT 过滤普通/重复行程；HOLIDAY 分组内为「出现过的地区」细项（颜色/图标与渲染一致，零学习成本）
     function tlRenderHolidayLegend() {
@@ -935,9 +979,54 @@
       }
       let html = catEvent;
       if (items.length) html += '<span class="ev-legend-sep"></span><span class="ev-legend-label">HOLIDAY:</span>' + items.join('');
-      html += '<span class="ev-legend-sep"></span>' + catRepeat;
+      // REPEAT 后接「条列」图标：点击开一览视窗（列出当前所有重复事件设定，点条目可直接编辑）
+      const repeatMore = '<button type="button" class="ev-legend-more" title="查看全部重复事件设定" aria-label="查看全部重复事件设定" onclick="tlOpenRepeatOverview()">' + TL_REPEAT_OV_ICON + '</button>';
+      html += '<span class="ev-legend-sep"></span>' + catRepeat + repeatMore;
+      // 📓 「只显示日记」勾选：只在列表模式出现（月/週/日不显示，也不受其影响）
+      if (tlCalMode === 'list') {
+        tlLoadDiaryOnly();
+        html += '<span class="ev-legend-sep"></span>' +
+          '<label class="ev-legend-item ev-legend-cat' + (tlCalDiaryOnly ? '' : ' off') + '" title="只在列表模式生效：勾选后列表只列出有写日记的日期（行程与假日暂时隐藏）">' +
+          '<input type="checkbox" ' + (tlCalDiaryOnly ? 'checked' : '') + ' onchange="tlSetDiaryOnly(this.checked)">只显示日记</label>';
+      }
       el.style.display = '';
       el.innerHTML = html;
+    }
+
+    // 🔁 重复事件一览：条列当前 calendar.md 中所有 ## EVENT(REPEAT)；点条目 → 套用既有行程编辑表单
+    function tlRepeatOvItemHtml(ev) {
+      const rule = tlRepeatRuleText(ev) + ' · ' + tlRepeatEndText(ev);
+      const ex = (ev.repeatExcludeDates && ev.repeatExcludeDates.length) ? ' · 排除 ' + ev.repeatExcludeDates.length + ' 天' : '';
+      const when = ev.allDay ? '全天' : (ev.startTime ? ev.startTime + (ev.endTime ? '-' + ev.endTime : '') : '');
+      return '<div class="tl-repeat-ov-item" data-uid="' + tlEscapeHtml(ev.uid) + '" onclick="tlOpenRepeatEvent(\'' + tlEscapeHtml(ev.uid) + '\')">' +
+        '<span class="tl-repeat-ov-swatch" style="background:' + tlEscapeHtml(ev.color) + '"></span>' +
+        '<div class="tl-repeat-ov-main">' +
+        '<div class="tl-repeat-ov-title">' + tlRepeatIcon(ev) + tlEscapeHtml(ev.title) + '</div>' +
+        '<div class="tl-repeat-ov-rule">' + tlEscapeHtml(rule) + '</div>' +
+        '<div class="tl-repeat-ov-meta">' + tlEscapeHtml('起始 ' + ev.date + (when ? ' · ' + when : '') + ex) + '</div>' +
+        '</div></div>';
+    }
+    function tlOpenRepeatOverview() {
+      if (!isCalendarMdDoc()) return;
+      tlCalEvents = tlParseEvents(document.getElementById('taskText').value);
+      const reps = tlCalEvents.filter((e) => e.repeatMode).sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+      const cnt = document.getElementById('tlRepeatOvCount');
+      if (cnt) cnt.textContent = reps.length ? '（共 ' + reps.length + ' 条）' : '';
+      const list = document.getElementById('tlRepeatOvList');
+      if (list) {
+        list.innerHTML = reps.length ? reps.map(tlRepeatOvItemHtml).join('')
+          : '<div class="tl-repeat-ov-empty">目前没有任何重复事件<br><span class="tl-repeat-ov-empty-hint">点下方「＋ 新增重复事件」开始</span></div>';
+      }
+      const ov = document.getElementById('tlRepeatOverviewOverlay');
+      if (ov) ov.style.display = 'flex';
+    }
+    // 点条目：先关一览，再开既有编辑表单（uid 相同，编辑后写回缓冲，按编辑器「保存」落盘）
+    function tlOpenRepeatEvent(uid) { tlCloseRepeatOverview(); tlOpenEventForm(uid); }
+    // 一览面板的「新增重复事件」：关一览 → 开「新增行程」表单并预置为重复模式（不另写一套表单）
+    function tlNewRepeatEvent() { tlCloseRepeatOverview(); tlOpenEventForm(null, null, { repeat: true }); }
+    function tlCloseRepeatOverview() {
+      const ov = document.getElementById('tlRepeatOverviewOverlay');
+      if (ov) ov.style.display = 'none';
     }
 
     function tlSetMode(mode) {
@@ -965,7 +1054,8 @@
       return diff > 0 ? diff + '天后' : (-diff) + '天前';
     }
 
-    function tlDateHeader(date, today, extra, count) {
+    // opts.noAdd：抑制日期标题右侧的「＋ 新增」（「只显示日记」过滤下新增的行程不会出现在列表里，避免误导）
+    function tlDateHeader(date, today, extra, count, opts) {
       const m = String(date || '').match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
       const WD = ['日', '一', '二', '三', '四', '五', '六'];
       let label = '日期未知', week = '';
@@ -989,7 +1079,8 @@
         (lunarHdr ? '<span class="ev-lunar hdr" onclick="tlShowAlmanac(\'' + date + '\',this)" title="農民曆 / 老黃曆">' + tlEscapeHtml(lunarHdr) + '</span>' : '') +
         (extra || '') +
         diaryBtn +
-        '<button type="button" class="ev-day-add" onclick="tlOpenEventForm(null, \'' + date + '\')">＋ 新增</button></div>';
+        ((opts && opts.noAdd) ? '' : '<button type="button" class="ev-day-add" onclick="tlOpenEventForm(null, \'' + date + '\')">＋ 新增</button>') +
+        '</div>';
     }
 
     // occDate＝该行所属的「出现日」（重复事件为展开后的当天；非重复＝ev.date）。
@@ -1133,12 +1224,141 @@
         '</div></div>';
     }
 
+    // ===== 列表模式：「跨天行程」显示方式（跨天一笔 / 跨天多笔）=====
+    // 纯 UI 偏好（内存 + localStorage，键 tlCalMultiDay；绝不写回 calendar.md）。
+    // 只在列表模式生效：跨天行程要不要「跨几天就显示几笔」——默认多笔（与「日」范围同口径）。
+    const TL_MULTIDAY_KEY = 'tlCalMultiDay';
+    function tlLoadMultiDayMode() {
+      if (tlMultiDayLoaded) return tlCalMultiDayMode;
+      tlMultiDayLoaded = true;
+      let v = '';
+      try { v = localStorage.getItem(TL_MULTIDAY_KEY) || ''; } catch (e) {}
+      tlCalMultiDayMode = (v === 'one') ? 'one' : 'multi';
+      return tlCalMultiDayMode;
+    }
+    // 同步「跨天一笔 / 跨天多笔」按钮的文案与高亮（按钮只在列表模式显示）
+    function tlUpdateMultiDayBtn() {
+      const b = document.getElementById('tlEvMultiDayBtn');
+      if (!b) return;
+      tlLoadMultiDayMode();
+      const one = tlCalMultiDayMode === 'one';
+      b.textContent = one ? '跨天一笔' : '跨天多笔';
+      b.classList.toggle('active', one);
+      b.title = one
+        ? '当前「跨天一笔」：跨天行程只在起始日显示一笔 · 点击改为「跨天多笔」'
+        : '当前「跨天多笔」：跨天行程跨几天就显示几笔 · 点击改为「跨天一笔」';
+    }
+    function tlSetMultiDayMode(mode) {
+      tlCalMultiDayMode = (mode === 'one') ? 'one' : 'multi';
+      tlMultiDayLoaded = true;
+      try { localStorage.setItem(TL_MULTIDAY_KEY, tlCalMultiDayMode); } catch (e) {}
+      tlUpdateMultiDayBtn();
+      tlRerenderCalendarView();
+    }
+    function tlToggleMultiDayMode() { tlSetMultiDayMode(tlCalMultiDayMode === 'one' ? 'multi' : 'one'); }
+    // 「跨天一笔」：同一个跨天行程在整份列表里只保留「最早出现日」那一笔，其余各天移除；
+    // 被清空的日期（原本只挂着这一个跨天行程）整条删掉，避免留下「· 0 条」的空标题。
+    // ⚠️ 就地改的是 tlRenderList 自己那份 byDate 副本——tlEventsByDate 的「逐日展开」口径不动，
+    //    所以月格 chip / 时间网格 / 日明细一律不受影响（用户约定：只调列表模式）。
+    function tlCollapseMultiDayRows(byDate) {
+      const seen = new Set();
+      for (const ds of Array.from(byDate.keys()).sort()) {
+        const grp = byDate.get(ds);
+        grp.events = grp.events.filter((ev) => {
+          if (!tlIsMultiDay(ev)) return true;   // 单日行程（含重复事件的每个出现日）逐日照显
+          if (seen.has(ev.uid)) return false;   // 跨天行程：后续天不再重复出现
+          seen.add(ev.uid);
+          return true;
+        });
+        if (!grp.events.length && !grp.holidays.length) byDate.delete(ds);
+      }
+    }
+
+    // ===== 列表模式：「只显示日记」过滤（勾选后行程/假日全部隐藏，只列有日记的日期）=====
+    // 纯 UI 偏好（内存 + localStorage，键 tlCalDiaryOnly；绝不写回 calendar.md）。只在列表模式生效。
+    const TL_DIARYONLY_KEY = 'tlCalDiaryOnly';
+    const TL_DIARY_PREVIEW_LINES = 3;     // 内容预览最多行数
+    const TL_DIARY_PREVIEW_CHARS = 120;   // 内容预览最多字数（超出补省略号）
+    function tlLoadDiaryOnly() {
+      if (tlDiaryOnlyLoaded) return tlCalDiaryOnly;
+      tlDiaryOnlyLoaded = true;
+      let v = '';
+      try { v = localStorage.getItem(TL_DIARYONLY_KEY) || ''; } catch (e) {}
+      tlCalDiaryOnly = (v === '1');
+      return tlCalDiaryOnly;
+    }
+    function tlSetDiaryOnly(on) {
+      tlCalDiaryOnly = !!on;
+      tlDiaryOnlyLoaded = true;
+      try { localStorage.setItem(TL_DIARYONLY_KEY, tlCalDiaryOnly ? '1' : '0'); } catch (e) {}
+      tlRenderHolidayLegend();   // 同步顶栏勾选态（该勾选框只在列表模式渲染）
+      tlRerenderCalendarView();
+    }
+    // 日记内容预览：压掉行尾空白，最多 3 行 / 120 字；被截断则补省略号（换行保留 → .ev-notes 是 pre-wrap）
+    function tlDiaryPreview(content) {
+      const raw = String(content || '').replace(/\r\n/g, '\n').replace(/[ \t]+\n/g, '\n').trim();
+      if (!raw) return '';
+      const cut = raw.split('\n').slice(0, TL_DIARY_PREVIEW_LINES).join('\n').slice(0, TL_DIARY_PREVIEW_CHARS);
+      return tlEscapeHtml(cut.length < raw.length ? cut + '…' : cut);
+    }
+    // 日记条目：标题 + 心情/天气 + 标签 + 内容预览；「编辑」开既有日记表单。
+    // ⚠️ 日记没有 color 字段 → 色点统一用日记绿 #16a34a（与日期标题上「已有日记」的 📕 勾同色）。
+    function tlDiaryRowHtml(d) {
+      const meta = [];
+      if (d.mood) meta.push('心情 ' + d.mood);
+      if (d.weather) meta.push(d.weather);
+      const tags = (d.tags && d.tags.length)
+        ? '<span class="ev-tags">' + d.tags.map((t) => '<span class="ev-tag-view">#' + tlEscapeHtml(t) + '</span>').join('') + '</span>'
+        : '';
+      const preview = tlDiaryPreview(d.content);
+      return '<div class="ev-item ev-diary-item" data-ev-diary-row="' + tlEscapeHtml(d.date) + '">' +
+        '<span class="ev-swatch" style="background:#16a34a"></span>' +
+        '<div class="ev-body">' +
+        '<div class="ev-title">\ud83d\udcd5 ' + tlEscapeHtml(d.title || '（无标题）') + tags + '</div>' +
+        (meta.length ? '<div class="ev-meta">' + tlEscapeHtml(meta.join(' · ')) + '</div>' : '') +
+        (preview ? '<div class="ev-notes">' + preview + '</div>' : '') +
+        '</div>' +
+        '<div class="ev-actions">' +
+        '<button type="button" onclick="tlOpenDiaryForm(\'' + d.date + '\')">\u7f16\u8f91</button>' +
+        '<button type="button" onclick="tlDeleteDiaryByDate(\'' + d.date + '\')">\u5220\u9664</button>' +
+        '</div></div>';
+    }
+    // 「只显示日记」的列表本体：日期组只来自 ## DIARY（行程/假日不参与），一天一条
+    function tlRenderDiaryOnlyList(list) {
+      const today = tlFmtDate(new Date());
+      // 同一天只应有一条日记，但解析层不做唯一性保证 → 这里按日期去重（保留首条）
+      const seen = {};
+      const rows = (tlCalDiaries || []).filter((d) => d.date && !seen[d.date] && (seen[d.date] = true));
+      if (!rows.length) {
+        list.innerHTML = '<div class="ev-empty">尚未有日记<br><span style="font-size:12px">取消勾选「只显示日记」可回到行程清单；或在日期标题右侧点 \ud83d\udcd5 写一篇</span></div>';
+        return;
+      }
+      const byDate = {};
+      rows.forEach((d) => { byDate[d.date] = d; });
+      const dates = rows.map((d) => d.date).sort();
+      let sel = tlListSel || today;
+      if (dates.indexOf(sel) < 0) sel = dates.find((d) => d > today) || dates[dates.length - 1] || today;
+      if (dates.length) tlListSel = sel;
+      let html = '';
+      for (const ds of dates) {
+        // 标题条不显示「· N 条」（一天一条，计数无信息量），并抑制「＋ 新增」（新增的是行程，此处不显示）
+        let g = tlDateHeader(ds, today, '', undefined, { noAdd: true });
+        g += tlDiaryRowHtml(byDate[ds]);
+        html += (ds === sel) ? '<div class="ev-date-group sel-date">' + g + '</div>' : g;
+      }
+      list.innerHTML = html;
+      tlScrollListToDate(list, list, sel);
+    }
+
     function tlRenderList(content) {
       const list = document.getElementById('tlEvList');
       if (!list) return;
       tlCalEvents = tlParseEvents(content);
       tlCalHolidays = tlParseHolidays(content);
       tlCalDiaries = tlParseDiaries(content);
+      // 📓 「只显示日记」：勾选后走专用分支（行程/假日不参与），连「尚未有行程」的空态也不适用
+      tlLoadDiaryOnly();
+      if (tlCalDiaryOnly) { tlRenderDiaryOnlyList(list); return; }
       if (!tlCalEvents.length && !tlVisibleHolidays().length) {
         list.innerHTML = '<div class="ev-empty">尚未有行程<br><span style="font-size:12px">点右上「＋ 新增行程」，或切回文本编辑直接改 calendar.md</span></div>';
         return;
@@ -1147,7 +1367,9 @@
       // 重複展開視窗（列表無固定範圍）：今天前 1 年 ~ 後 3 年，避免 never 無限展開
       tlSetRepeatWindow(tlAddDaysStr(today, -365), tlAddDaysStr(today, 1095));
       // 按日期分组（跨天行程/假日逐日展开，与「日」范围同口径）：每天先显示该日假日，再显示行程
+      tlLoadMultiDayMode();
       const byDate = tlEventsByDate(tlCalEvents.filter(tlEventShown));
+      if (tlCalMultiDayMode === 'one') tlCollapseMultiDayRows(byDate);   // 跨天一笔：跨天行程只在起始日显示一笔
       const dates = Array.from(byDate.keys()).sort();
       // 选中日：< > / 「今天」导航到的锚点日（默认今天；今天无行程则回退最近未来日期，最后回退末尾）
       let sel = tlListSel || today;
@@ -1487,7 +1709,8 @@
       document.getElementById('tlEvFDate').value = ev ? ev.date : (defaultDate || (tlCalMode === 'month' ? tlCalSelected : today) || today);
       document.getElementById('tlEvFEndDate').value = ev ? (ev.endDate || '') : '';
       // ===== 重複事件 =====
-      const rMode = ev ? (ev.repeatMode || '') : '';
+      // p.repeat：由「重复事件一览」的新增按钮传入 → 新增时直接进「重复」模式并带出起始日的星期
+      const rMode = ev ? (ev.repeatMode || '') : (p.repeat ? 'weekly' : '');
       document.getElementById('tlEvFRepeatOn').checked = !!rMode;
       document.getElementById('tlEvFRepeatFields').style.display = rMode ? '' : 'none';
       document.getElementById('tlEvFRepeatMode').value = rMode || 'weekly';
@@ -1501,6 +1724,7 @@
       document.getElementById('tlEvFRepeatExclude').value = (ev && ev.repeatExcludeDates && ev.repeatExcludeDates.length) ? ev.repeatExcludeDates.join(', ') : '';
       tlOnRepeatModeChange();
       tlOnRepeatEndTypeChange();
+      if (!uid && p.repeat) tlToggleRepeat(); // 走既有入口：展开重复字段 + 自动勾上起始日所属星期
       tlUpdateFormDow(); // 🗓 依輸入日期即時顯示星期
       document.getElementById('tlEvFAllday').checked = ev ? ev.allDay : (p.allDay === true);
       // 完成状态：新增默认未完成（旧文件没有 - done 栏位时解析也是未完成）
@@ -1741,17 +1965,28 @@
       tlCloseDiaryForm();
       showToast('已写入日记，按「保存」写回 calendar.md', 'success');
     }
-    function tlDeleteDiary() {
-      const date = tlDiaryFormDate;
-      if (!date) return;
+    // 删除日记的「唯一收口」：确认 → 从缓冲重解析 → 剔除该日 → 序列化写回（按「保存」才落盘）。
+    // 表单内删除与列表条目删除共用；返回是否真的删了（日记表单据此决定要不要关窗）。
+    function tlRemoveDiary(date) {
       const d = tlDiaryOnDate(date);
-      if (!d) { tlCloseDiaryForm(); return; }
-      if (!confirm('确定删除 ' + date + ' 的日记「' + d.title + '」吗？\n\n按「保存」才会真正写回文件。')) return;
+      if (!d) return false;
+      if (!confirm('确定删除 ' + date + ' 的日记「' + d.title + '」吗？\n\n按「保存」才会真正写回文件。')) return false;
       tlCalDiaries = tlParseDiaries(document.getElementById('taskText').value);
       tlCalDiaries = tlCalDiaries.filter((x) => x.date !== date);
       tlApplyDiariesToBuffer();
-      tlCloseDiaryForm();
       showToast('已删除日记，按「保存」写回文件', 'success');
+      return true;
+    }
+    function tlDeleteDiary() {
+      const date = tlDiaryFormDate;
+      if (!date) return;
+      if (!tlDiaryOnDate(date)) { tlCloseDiaryForm(); return; }
+      if (tlRemoveDiary(date)) tlCloseDiaryForm();
+    }
+    // 「只显示日记」列表条目上的删除按钮（不经日记表单，直接按日期删）
+    function tlDeleteDiaryByDate(date) {
+      if (!date || !tlDiaryOnDate(date)) return;
+      tlRemoveDiary(date);
     }
     // 序列化整份 calendar.md（events + holidays + diaries）写回 taskText：从当前缓冲重解析 events/holidays，
     // 再以最新 tlCalDiaries 覆盖日记段，避免保存日记时把用户手写的事件/假日覆盖掉。
@@ -2018,6 +2253,7 @@
       on('tlEvPrevMonth', 'click', () => { if (tlCalMode === 'list') tlListNavDay(-1); else tlCalStepCursor(-1); });
       on('tlEvNextMonth', 'click', () => { if (tlCalMode === 'list') tlListNavDay(1); else tlCalStepCursor(1); });
       on('tlEvTodayBtn', 'click', () => { tlCalCursor = new Date(); tlCalSelected = tlFmtDate(new Date()); tlListSel = tlFmtDate(new Date()); tlRenderEventsContent(); });
+      on('tlEvMultiDayBtn', 'click', () => tlToggleMultiDayMode());   // 列表模式：跨天一笔 / 跨天多笔
       // 🗓 表單日期輸入變更 → 即時更新輸入框旁的星期提示
       on('tlEvFDate', 'change', tlUpdateFormDow);
       on('tlEvFDate', 'input', tlUpdateFormDow);
@@ -2068,6 +2304,14 @@
       });
       const ov = document.getElementById('tlEvFormOverlay');
       if (ov) ov.addEventListener('click', (e) => { if (e.target === ov) tlCloseEventForm(); });
+      // 🔁 重复事件一览：点遮罩关闭 + Esc 关闭
+      const rov = document.getElementById('tlRepeatOverviewOverlay');
+      if (rov) {
+        rov.addEventListener('click', (e) => { if (e.target === rov) tlCloseRepeatOverview(); });
+        document.addEventListener('keydown', (e) => {
+          if (e.key === 'Escape' && rov.style.display !== 'none') tlCloseRepeatOverview();
+        });
+      }
       // 🖱 雙擊空白處快速新增：時間網格＝日期+時間（15 分鐘取整，默認 1 小時）、全天條＝日期(全天)、月格＝僅日期
       function tlGridDblClickNew(e) {
         if (e.target.closest('.ev-block') || e.target.closest('button')) return; // 點在已有行程上不新增
@@ -2090,8 +2334,16 @@
       }
       // 月模式不走原生 dblclick（單擊重繪導致 dblclick 不派發，見 tlSelectDate 內手動檢測）
       on('tlEvWeekWrap', 'dblclick', tlGridDblClickNew);
-      // 🖱 列表模式：双击事件项直接进入编辑状态（事件项本身无单击打开，故用 dblclick 快捷编辑）
+      // 🖱 列表模式：双击条目直接进入编辑状态（条目本身无单击打开，故用 dblclick 快捷编辑）
       document.addEventListener('dblclick', (e) => {
+        // 📓「只显示日记」列表条目：双击进日记编辑（同样无单击打开；按钮区除外）
+        const diaryRow = e.target.closest('.ev-item.ev-diary-item[data-ev-diary-row]');
+        if (diaryRow) {
+          // 「编辑 / 删除」按钮不触发双击编辑，避免与单击操作冲突（尤其删除按钮二次确认）
+          if (e.target.closest('.ev-actions')) return;
+          tlOpenDiaryForm(diaryRow.getAttribute('data-ev-diary-row'));
+          return;
+        }
         const item = e.target.closest('.ev-item[data-uid]');
         if (!item) return;
         // 勾选框 / 备注清单勾选框 / 编辑删除按钮不触发双击编辑，避免与单击操作冲突（尤其删除按钮二次删除）

@@ -91,6 +91,13 @@ const state = {
   calRegionFilter: ['cn'],      // 🌏 HOLIDAY 地區過濾（圖例 checkbox；默認只顯示大陸 cn；僅內存態）
   calShowEvents: true,          // 🗂 分類顯示：普通行程 EVENT（頂欄勾選，默認開；僅內存態）
   calShowRepeat: true,          // 🗂 分類顯示：重複行程 REPEAT（頂欄勾選，默認開；僅內存態）
+  // 📋 列表模式：「跨天行程」顯示幾筆（純 UI 偏好：記憶體 + localStorage，絕不寫回 calendar.md）
+  //    'multi'（預設）＝跨幾天就顯示幾筆（每天一筆，與「日」範圍同口徑）；'one'＝整段只在起始日顯示一筆。
+  //    ⚠️ 只作用於列表模式（renderEventsList）；月/週/日三種模式一律不受影響。
+  calMultiDayMode: 'multi',
+  // 📓 列表模式：「只顯示日記」過濾（純 UI 偏好：記憶體 + localStorage，鍵 calDiaryOnly；絕不寫回 calendar.md）
+  //    勾選後列表只列有日記的日期（行程 EVENT/REPEAT 與假日 HOLIDAY 不參與）。⚠️ 只作用於列表模式。
+  calDiaryOnly: false,
   evFormUid: null,              // 編輯表單當前目標 uid（null = 新增）
   evFormColor: null,            // 編輯表單當前選中顏色
   evFormTags: [],               // 編輯表單當前已選標籤
@@ -119,6 +126,7 @@ const elements = {
   evPrevMonth: document.getElementById('ev-prev-month'),
   evNextMonth: document.getElementById('ev-next-month'),
   evTodayBtn: document.getElementById('ev-today-btn'),
+  evMultiDayBtn: document.getElementById('ev-multiday-btn'),
   evMonthWrap: document.getElementById('ev-month-wrap'),
   evMonthGrid: document.getElementById('ev-month-grid'),
   evDayList: document.getElementById('ev-day-list'),
@@ -256,6 +264,8 @@ function setupEventListeners() {
   if (elements.evPrevMonth) elements.evPrevMonth.addEventListener('click', () => { if (state.calMode === 'list') calListNavDay(-1); else calStepCursor(-1); });
   if (elements.evNextMonth) elements.evNextMonth.addEventListener('click', () => { if (state.calMode === 'list') calListNavDay(1); else calStepCursor(1); });
   if (elements.evTodayBtn) elements.evTodayBtn.addEventListener('click', () => { state.calCursor = new Date(); state.calSelectedDate = calendarFmtDate(new Date()); state.calListSel = calendarFmtDate(new Date()); renderEventsContent(); });
+  // 📋 列表模式：跨天一筆 / 跨天多筆（僅列表模式顯示；其餘模式不受影響）
+  if (elements.evMultiDayBtn) elements.evMultiDayBtn.addEventListener('click', () => calToggleMultiDayMode());
   if (elements.evMonthGrid) elements.evMonthGrid.addEventListener('click', (e) => {
     // 📅 點農曆文字 → 開老黃曆詳情（不觸發選日 / 快速新增）
     const alm = e.target.closest('[data-ev-almanac]');
@@ -312,6 +322,8 @@ function setupEventListeners() {
   if (elements.eventsList) elements.eventsList.addEventListener('click', onEvListClick);
   if (elements.evDayList) elements.evDayList.addEventListener('click', onEvListClick);
   if (elements.evWeekWrap) elements.evWeekWrap.addEventListener('click', onEvListClick);
+  // 🖱 雙擊列表條目＝進入編輯狀態（📓「只顯示日記」條目；行程條目單擊即開表單，不在此重複）
+  if (elements.eventsList) elements.eventsList.addEventListener('dblclick', onEvListDblClick);
   // 週視圖：點日期標題切換「下半部明細」所顯示的那一天（與月視圖點格選日一致）；日模式只有一天，不處理。
   if (elements.evWeekWrap) elements.evWeekWrap.addEventListener('click', (e) => {
     const hc = e.target.closest('.ev-tg-head-cell[data-date]');

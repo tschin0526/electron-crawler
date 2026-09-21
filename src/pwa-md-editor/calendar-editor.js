@@ -640,6 +640,36 @@ function calToggleFormTag(tag) {
 }
 
 // 地區圖例：列出當前 calendar.md 出現過的地區（去重），無假日則隱藏。顏色/圖標與渲染一致，零學習成本。
+// 🔁 重複規則「說人話」：把 ## EVENT(REPEAT) 的字段翻成一句可讀文字（頂欄「重複事件一覽」面板用）
+const CAL_REPEAT_MODE_LABEL = { daily: '每天', weekly: '每週', monthly: '每月', yearly: '每年' };
+const CAL_WD_LABEL = { sun: '日', mon: '一', tue: '二', wed: '三', thu: '四', fri: '五', sat: '六' };
+function calRepeatRuleText(ev) {
+  const mode = ev.repeatMode || '';
+  if (!mode) return '';
+  const interval = Math.max(1, parseInt(ev.repeatInterval, 10) || 1);
+  const unit = { daily: '天', weekly: '週', monthly: '月', yearly: '年' }[mode] || '';
+  let s = interval > 1 ? ('每 ' + interval + ' ' + unit) : (CAL_REPEAT_MODE_LABEL[mode] || mode);
+  if (mode === 'weekly') {
+    // 未顯式指定星期時按「起始日的星期」回退，與展開引擎 calExpandRepeats 口徑一致
+    let wds = ev.repeatWeekDay || [];
+    if (!wds.length && ev.date) { const d = new Date(ev.date + 'T00:00:00'); if (!isNaN(d)) wds = [calWdKey(d)]; }
+    if (wds.length) s += '（' + wds.map((w) => CAL_WD_LABEL[w] || w).join('、') + '）';
+  } else if (mode === 'monthly' && ev.repeatMonthDay) {
+    s += ' 第 ' + (parseInt(ev.repeatMonthDay, 10) || ev.repeatMonthDay) + ' 日';
+  } else if (mode === 'yearly' && ev.repeatYearMonthDay) {
+    s += ' ' + String(ev.repeatYearMonthDay).replace(/^"|"$/g, '');
+  }
+  return s;
+}
+function calRepeatEndText(ev) {
+  const t = ev.repeatEndType || 'never';
+  if (t === 'count') return '共 ' + (ev.repeatEndValue || '?') + ' 次';
+  if (t === 'date') return '至 ' + (ev.repeatEndValue || '?');
+  return '永不結束';
+}
+// 一覽按鈕圖標（截圖內的小「條列」字形）：三行 + 圓點
+const CAL_REPEAT_OV_ICON = '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>';
+
 // 頂欄過濾條：EVENT | HOLIDAY(地區細項) | REPEAT 三類順序排列（EVENT/REPEAT 默認勾選）
 // EVENT/REPEAT 過濾普通/重複行程；HOLIDAY 分組內為「出現過的地區」細項（顏色/圖標與渲染一致）
 function calRenderHolidayLegend() {
@@ -663,10 +693,62 @@ function calRenderHolidayLegend() {
   }
   let html = catEvent;
   if (items.length) html += '<span class="ev-legend-sep"></span><span class="ev-legend-label">HOLIDAY:</span>' + items.join('');
-  html += '<span class="ev-legend-sep"></span>' + catRepeat;
+  // REPEAT 後接「條列」圖標：點擊開一覽視窗（列出當前所有重複事件設定，點條目可直接編輯）
+  const repeatMore = '<button type="button" class="ev-legend-more" title="查看全部重複事件設定" aria-label="查看全部重複事件設定" onclick="calOpenRepeatOverview()">' + CAL_REPEAT_OV_ICON + '</button>';
+  html += '<span class="ev-legend-sep"></span>' + catRepeat + repeatMore;
+  // 📓 「只顯示日記」勾選：只在列表模式出現（月/週/日不顯示，也不受其影響）
+  if (state.calMode === 'list') {
+    calLoadDiaryOnly();
+    html += '<span class="ev-legend-sep"></span>' +
+      '<label class="ev-legend-item ev-legend-cat' + (state.calDiaryOnly ? '' : ' off') + '" title="只在列表模式生效：勾選後只列出有寫日記的日期（行程與假日暫時隱藏）">' +
+      '<input type="checkbox" ' + (state.calDiaryOnly ? 'checked' : '') + ' onchange="calSetDiaryOnly(this.checked)">只顯示日記</label>';
+  }
   el.style.display = '';
   el.innerHTML = html;
 }
+
+// 🔁 重複事件一覽：條列當前 calendar.md 中所有 ## EVENT(REPEAT)；點條目 → 套用既有行程編輯表單
+function calRepeatOvItemHtml(ev) {
+  const rule = calRepeatRuleText(ev) + ' · ' + calRepeatEndText(ev);
+  const ex = (ev.repeatExcludeDates && ev.repeatExcludeDates.length) ? ' · 排除 ' + ev.repeatExcludeDates.length + ' 天' : '';
+  const when = ev.allDay ? '全天' : (ev.startTime ? ev.startTime + (ev.endTime ? '-' + ev.endTime : '') : '');
+  return '<div class="ev-repeat-ov-item" data-uid="' + escapeHtml(ev.uid) + '" onclick="calOpenRepeatEvent(\'' + escapeHtml(ev.uid) + '\')">' +
+    '<span class="ev-repeat-ov-swatch" style="background:' + escapeHtml(ev.color) + '"></span>' +
+    '<div class="ev-repeat-ov-main">' +
+    '<div class="ev-repeat-ov-title">' + calRepeatIcon(ev) + escapeHtml(ev.title) + '</div>' +
+    '<div class="ev-repeat-ov-rule">' + escapeHtml(rule) + '</div>' +
+    '<div class="ev-repeat-ov-meta">' + escapeHtml('起始 ' + ev.date + (when ? ' · ' + when : '') + ex) + '</div>' +
+    '</div></div>';
+}
+function calOpenRepeatOverview() {
+  if (!isCalendarMd()) return;
+  const reps = parseCalendarEvents(elements.editor.value).filter(e => e.repeatMode)
+    .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+  const cnt = document.getElementById('ev-repeat-ov-count');
+  if (cnt) cnt.textContent = reps.length ? '（共 ' + reps.length + ' 條）' : '';
+  const list = document.getElementById('ev-repeat-ov-list');
+  if (list) {
+    list.innerHTML = reps.length ? reps.map(calRepeatOvItemHtml).join('')
+      : '<div class="ev-repeat-ov-empty">目前沒有任何重複事件<br><span class="ev-repeat-ov-empty-hint">點下方「＋ 新增重複事件」開始</span></div>';
+  }
+  const ov = document.getElementById('ev-repeat-overlay');
+  if (ov) ov.style.display = 'flex';
+}
+// 點條目：先關一覽，再開既有編輯表單（uid 相同，編輯後寫回緩衝，按頂欄「保存」落盤）
+function calOpenRepeatEvent(uid) { calCloseRepeatOverview(); openEventForm(uid); }
+// 一覽面板的「新增重複事件」：關一覽 → 開「新增行程」表單並預置為重複模式（不另寫一套表單）
+function calNewRepeatEvent() { calCloseRepeatOverview(); openEventForm(null, null, { repeat: true }); }
+function calCloseRepeatOverview() {
+  const ov = document.getElementById('ev-repeat-overlay');
+  if (ov) ov.style.display = 'none';
+}
+// 點遮罩 / Esc 關閉（腳本載入時一次性綁定；LITE 變數定義在 :root，無桌面端的作用域坑）
+(function calBindRepeatOverviewClicks() {
+  const ov = document.getElementById('ev-repeat-overlay');
+  if (!ov) return;
+  ov.addEventListener('click', (e) => { if (e.target === ov) calCloseRepeatOverview(); });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && ov.style.display !== 'none') calCloseRepeatOverview(); });
+})();
 // 日 / 週視圖 時間網格（移植自桌面 renderTimeGrid；事件委派用 data-ev-edit）
 // 日/週視圖「下半部明細清單」所顯示的那一天：永遠只有「選中日」一條（與月視圖一致）。
 // 日模式＝游標那天；週模式＝calSelectedDate（須在當週內），否則今天（若在週內）否則週一。
@@ -1011,6 +1093,134 @@ function calHolidayHtml(h, today) {
     '</div></div>';
 }
 
+// ===== 列表模式：「跨天行程」顯示方式（跨天一筆 / 跨天多筆）=====
+// 純 UI 偏好（記憶體 + localStorage，鍵 calMultiDay；絕不寫回 calendar.md）。
+// 只在列表模式生效：跨天行程要不要「跨幾天就顯示幾筆」——預設多筆（與「日」範圍同口徑）。
+const CAL_MULTIDAY_KEY = 'calMultiDay';
+let calMultiDayLoaded = false;
+function calLoadMultiDayMode() {
+  if (calMultiDayLoaded) return state.calMultiDayMode;
+  calMultiDayLoaded = true;
+  let v = '';
+  try { v = localStorage.getItem(CAL_MULTIDAY_KEY) || ''; } catch (e) {}
+  state.calMultiDayMode = (v === 'one') ? 'one' : 'multi';
+  return state.calMultiDayMode;
+}
+// 同步「跨天一筆 / 跨天多筆」按鈕的文案與高亮（按鈕只在列表模式顯示）
+function calUpdateMultiDayBtn() {
+  const b = elements.evMultiDayBtn;
+  if (!b) return;
+  calLoadMultiDayMode();
+  const one = state.calMultiDayMode === 'one';
+  b.textContent = one ? '跨天一笔' : '跨天多笔';
+  b.classList.toggle('active', one);
+  b.title = one
+    ? '当前「跨天一笔」：跨天行程只在起始日显示一笔 · 点击改为「跨天多笔」'
+    : '当前「跨天多笔」：跨天行程跨几天就显示几笔 · 点击改为「跨天一笔」';
+}
+function calSetMultiDayMode(mode) {
+  state.calMultiDayMode = (mode === 'one') ? 'one' : 'multi';
+  calMultiDayLoaded = true;
+  try { localStorage.setItem(CAL_MULTIDAY_KEY, state.calMultiDayMode); } catch (e) {}
+  calUpdateMultiDayBtn();
+  calRerenderCalendarView();
+}
+function calToggleMultiDayMode() { calSetMultiDayMode(state.calMultiDayMode === 'one' ? 'multi' : 'one'); }
+// 「跨天一筆」：同一個跨天行程在整份列表裡只保留「最早出現日」那一筆，其餘各天移除；
+// 被清空的日期（原本只掛著這一個跨天行程）整條刪掉，避免留下「· 0 條」的空標題。
+// ⚠️ 就地改的是 renderEventsList 自己那份 byDate 副本——calEventsByDate 的「逐日展開」口徑不動，
+//    所以月格 chip / 時間網格 / 日明細一律不受影響（只調列表模式）。
+function calCollapseMultiDayRows(byDate) {
+  const seen = new Set();
+  for (const ds of Array.from(byDate.keys()).sort()) {
+    const grp = byDate.get(ds);
+    grp.events = grp.events.filter((ev) => {
+      if (!calIsMultiDay(ev)) return true;   // 單日行程（含重複事件的每個出現日）逐日照顯
+      if (seen.has(ev.uid)) return false;    // 跨天行程：後續天不再重複出現
+      seen.add(ev.uid);
+      return true;
+    });
+    if (!grp.events.length && !grp.holidays.length) byDate.delete(ds);
+  }
+}
+
+// ===== 列表模式：「只顯示日記」過濾（勾選後行程/假日全部隱藏，只列有日記的日期）=====
+// 純 UI 偏好（記憶體 + localStorage，鍵 calDiaryOnly；絕不寫回 calendar.md）。只在列表模式生效。
+const CAL_DIARYONLY_KEY = 'calDiaryOnly';
+let calDiaryOnlyLoaded = false;
+const CAL_DIARY_PREVIEW_LINES = 3;     // 內容預覽最多行數
+const CAL_DIARY_PREVIEW_CHARS = 120;   // 內容預覽最多字數（超出補省略號）
+function calLoadDiaryOnly() {
+  if (calDiaryOnlyLoaded) return state.calDiaryOnly;
+  calDiaryOnlyLoaded = true;
+  let v = '';
+  try { v = localStorage.getItem(CAL_DIARYONLY_KEY) || ''; } catch (e) {}
+  state.calDiaryOnly = (v === '1');
+  return state.calDiaryOnly;
+}
+function calSetDiaryOnly(on) {
+  state.calDiaryOnly = !!on;
+  calDiaryOnlyLoaded = true;
+  try { localStorage.setItem(CAL_DIARYONLY_KEY, state.calDiaryOnly ? '1' : '0'); } catch (e) {}
+  calRenderHolidayLegend();   // 同步頂欄勾選態（該勾選框只在列表模式渲染）
+  calRerenderCalendarView();
+}
+// 日記內容預覽：壓掉行尾空白，最多 3 行 / 120 字；被截斷則補省略號（換行保留 → .ev-notes 是 pre-wrap）
+function calDiaryPreview(content) {
+  const raw = String(content || '').replace(/\r\n/g, '\n').replace(/[ \t]+\n/g, '\n').trim();
+  if (!raw) return '';
+  const cut = raw.split('\n').slice(0, CAL_DIARY_PREVIEW_LINES).join('\n').slice(0, CAL_DIARY_PREVIEW_CHARS);
+  return escapeHtml(cut.length < raw.length ? cut + '…' : cut);
+}
+// 日記條目：標題 + 心情/天氣 + 標籤 + 內容預覽；點條目或「編輯」開既有日記表單。
+// ⚠️ 日記沒有 color 欄位 → 色點統一用日記綠 #16a34a（與日期標題上「已有日記」的 📕 勾同色）。
+function calDiaryRowHtml(d) {
+  const meta = [];
+  if (d.mood) meta.push('心情 ' + d.mood);
+  if (d.weather) meta.push(d.weather);
+  const tags = (d.tags && d.tags.length)
+    ? '<span class="ev-tags">' + d.tags.map((t) => '<span class="ev-tag-view">#' + escapeHtml(t) + '</span>').join('') + '</span>'
+    : '';
+  const preview = calDiaryPreview(d.content);
+  return '<div class="ev-item ev-diary-item" data-ev-diary-row="' + escapeHtml(d.date) + '">' +
+    '<span class="ev-swatch" style="background:#16a34a"></span>' +
+    '<div class="ev-body">' +
+    '<div class="ev-title">\ud83d\udcd5 ' + escapeHtml(d.title || '（無標題）') + tags + '</div>' +
+    (meta.length ? '<div class="ev-meta">' + escapeHtml(meta.join(' · ')) + '</div>' : '') +
+    (preview ? '<div class="ev-notes">' + preview + '</div>' : '') +
+    '</div>' +
+    '<div class="ev-actions">' +
+    '<button type="button" data-ev-diary="' + escapeHtml(d.date) + '">\u7de8\u8f2f</button>' +
+    '<button type="button" data-ev-diary-del="' + escapeHtml(d.date) + '">\u522a\u9664</button>' +
+    '</div></div>';
+}
+// 「只顯示日記」的列表本體：日期組只來自 ## DIARY（行程/假日不參與），一天一條
+function calRenderDiaryOnlyList(list) {
+  const today = calendarFmtDate(new Date());
+  // 同一天只應有一條日記，但解析層不做唯一性保證 → 這裡按日期去重（保留首條）
+  const seen = {};
+  const rows = (calDiaries || []).filter((d) => d.date && !seen[d.date] && (seen[d.date] = true));
+  if (!rows.length) {
+    list.innerHTML = '<div class="ev-empty">尚未有日記<br><span style="font-size:12px">取消勾選「只顯示日記」可回到行程清單；或在日期標題右側點 \ud83d\udcd5 寫一篇</span></div>';
+    return;
+  }
+  const byDate = {};
+  rows.forEach((d) => { byDate[d.date] = d; });
+  const dates = rows.map((d) => d.date).sort();
+  let sel = state.calListSel || today;
+  if (dates.indexOf(sel) < 0) sel = dates.find((d) => d > today) || dates[dates.length - 1] || today;
+  if (dates.length) state.calListSel = sel;
+  let html = '';
+  for (const ds of dates) {
+    // 標題條不顯示「· N 條」（一天一條，計數無資訊量），並抑制「＋ 新增」（新增的是行程，此處不顯示）
+    let g = calDateHeaderHtml(ds, today, '', undefined, { noAdd: true });
+    g += calDiaryRowHtml(byDate[ds]);
+    html += (ds === sel) ? '<div class="ev-date-group sel-date">' + g + '</div>' : g;
+  }
+  list.innerHTML = html;
+  calScrollListToDate(list, list, sel);
+}
+
 // 渲染行程列表：日期升序分組，過去行程淡化，今天高亮；每條帶「編輯/刪除」
 function renderEventsList(content) {
   const list = elements.eventsList;
@@ -1018,6 +1228,9 @@ function renderEventsList(content) {
   state.calEvents = parseCalendarEvents(content);
   calHolidays = parseCalendarHolidays(content);
   calDiaries = parseCalendarDiaries(content);
+  // 📓 「只顯示日記」：勾選後走專用分支（行程/假日不參與），連「尚未有行程 / 沒有符合標籤」兩個空態也不適用
+  calLoadDiaryOnly();
+  if (state.calDiaryOnly) { calRenderDiaryOnlyList(list); return; }
   if (!state.calEvents.length && !calVisibleHolidays().length) {
     list.innerHTML = '<div class="ev-empty">尚未有行程<br><span style="font-size:12px">點右上「＋ 新增行程」，或編輯 calendar.md 原文（以 ## EVENT 分隔）</span></div>';
     return;
@@ -1035,7 +1248,9 @@ function renderEventsList(content) {
     return;
   }
   // 按日期分組（跨天行程/假日逐日展開，與「日」範圍同口徑）：每天先顯示該日假日，再顯示行程
+  calLoadMultiDayMode();
   const byDate = calEventsByDate(visible);
+  if (state.calMultiDayMode === 'one') calCollapseMultiDayRows(byDate);   // 跨天一筆：跨天行程只在起始日顯示一筆
   const dates = Array.from(byDate.keys()).sort();
   // 選中日：< > / 「今天」導航到的錨點日（默認今天；今天無行程則回退最近未來日期，最後回退末尾）
   let sel = state.calListSel || today;
@@ -1382,7 +1597,8 @@ function calUpdateFormDow() {
   setLunar('ev-f-enddate-lunar', elements.evFEndDate && elements.evFEndDate.value);
 }
 
-function calDateHeaderHtml(date, today, extra, count) {
+// opts.noAdd：抑制日期標題右側的「＋ 新增」（「只顯示日記」過濾下新增的是行程，此處不顯示，避免誤導）
+function calDateHeaderHtml(date, today, extra, count, opts) {
   const m = String(date || '').match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
   const WD = ['日', '一', '二', '三', '四', '五', '六'];
   let label = '日期未知';
@@ -1407,7 +1623,8 @@ function calDateHeaderHtml(date, today, extra, count) {
     (lunarHdr ? '<span class="ev-lunar hdr" data-ev-almanac="' + escapeHtml(date) + '" title="農民曆 / 老黃曆">' + escapeHtml(lunarHdr) + '</span>' : '') +
     (extra || '') +
     diaryBtn +
-    '<button type="button" class="ev-day-add" data-ev-add-on="' + escapeHtml(date) + '">＋ 新增</button></div>';
+    ((opts && opts.noAdd) ? '' : '<button type="button" class="ev-day-add" data-ev-add-on="' + escapeHtml(date) + '">＋ 新增</button>') +
+    '</div>';
 }
 
 // 單條行程 HTML（列表視圖與月視圖日列表共用；含編輯/刪除按鈕，走事件委派）
@@ -1572,6 +1789,9 @@ function syncEventsModeUI() {
   // ⚠️ 同上：#ev-week-wrap 的 CSS 預設是 display:none，顯示時要顯式給 'flex'
   if (elements.evWeekWrap) elements.evWeekWrap.style.display = isGrid ? 'flex' : 'none';
   if (elements.eventsList) elements.eventsList.style.display = mode === 'list' ? '' : 'none';
+  // 「跨天一筆 / 跨天多筆」切換：只在列表模式出現（月/週/日不顯示，也不受其影響）
+  if (elements.evMultiDayBtn) elements.evMultiDayBtn.style.display = isList ? '' : 'none';
+  if (isList) calUpdateMultiDayBtn();
 }
 
 // 月曆：6x7 網格（週一開頭），單元格顯示日號 + 最多 2 條 chip + 溢出數；下方渲染選中日的行程列表
@@ -1714,6 +1934,19 @@ function onEvListClick(e) {
   // 📓 日記按鈕：開日記編輯視窗（有日記則載入編輯，無則新增）
   const diaryBtn = e.target.closest('[data-ev-diary]');
   if (diaryBtn) { openDiaryForm(diaryBtn.getAttribute('data-ev-diary')); return; }
+  // 📓「只顯示日記」清單條目的刪除按鈕（屬性名與 data-ev-diary 不同，不會被上面那行誤命中）
+  const diaryDel = e.target.closest('[data-ev-diary-del]');
+  if (diaryDel) { calDeleteDiaryByDate(diaryDel.getAttribute('data-ev-diary-del')); return; }
+}
+
+// 🖱 雙擊條目＝進入編輯狀態（條目本身無單擊開啟，故用 dblclick 快捷編輯；與桌面版一致）
+// 目前只有「只顯示日記」清單條目帶 data-ev-diary-row；行程條目的單擊已直接開表單，不重複處理。
+function onEvListDblClick(e) {
+  const row = e.target.closest('.ev-item[data-ev-diary-row]');
+  if (!row) return;
+  // 「編輯 / 刪除」按鈕不觸發雙擊編輯，避免與單擊衝突（尤其刪除按鈕二次確認）
+  if (e.target.closest('.ev-actions')) return;
+  openDiaryForm(row.getAttribute('data-ev-diary-row'));
 }
 
 // 打開表單：uid 為 null = 新增（預設日期 = 月視圖選中日或今天）；uid 有值 = 編輯該條
@@ -1736,7 +1969,8 @@ function openEventForm(uid, defaultDate, pre) {
   elements.evFDate.value = ev ? ev.date : (defaultDate || (state.calMode === 'month' ? state.calSelectedDate : today) || today);
   elements.evFEndDate.value = ev ? (ev.endDate || '') : '';
   // ===== 重複事件 =====
-  const rMode = ev ? (ev.repeatMode || '') : '';
+  // p.repeat：由「重複事件一覽」的新增按鈕傳入 → 新增時直接進「重複」模式並帶出起始日的星期
+  const rMode = ev ? (ev.repeatMode || '') : (p.repeat ? 'weekly' : '');
   elements.evFRepeatOn.checked = !!rMode;
   elements.evFRepeatFields.style.display = rMode ? '' : 'none';
   elements.evFRepeatMode.value = rMode || 'weekly';
@@ -1750,6 +1984,7 @@ function openEventForm(uid, defaultDate, pre) {
   elements.evFRepeatExclude.value = (ev && ev.repeatExcludeDates && ev.repeatExcludeDates.length) ? ev.repeatExcludeDates.join(', ') : '';
   calOnRepeatModeChange();
   calOnRepeatEndTypeChange();
+  if (!uid && p.repeat) calToggleRepeat(); // 走既有入口：展開重複欄位 + 自動勾上起始日所屬星期
   calUpdateFormDow(); // 🗓 依輸入日期即時顯示星期
   elements.evFAllday.checked = ev ? ev.allDay : (p.allDay === true);
   // 完成狀態：新增預設未完成（舊檔案沒有 - done 欄位時解析也是未完成）
@@ -1994,17 +2229,28 @@ function saveDiaryForm() {
   closeDiaryForm();
   showToast('已寫入日記，按「保存」存回文件', 'success');
 }
-function deleteDiary() {
-  const date = calDiaryFormDate;
-  if (!date) return;
+// 刪除日記的「唯一收口」：確認 → 從緩衝重解析 → 剔除該日 → 序列化寫回（按頂欄「保存」才落盤）。
+// 表單內刪除與列表條目刪除共用；返回是否真的刪了（日記表單據此決定要不要關窗）。
+function calRemoveDiary(date) {
   const d = calDiaryOnDate(date);
-  if (!d) { closeDiaryForm(); return; }
-  if (!window.confirm('確定刪除 ' + date + ' 的日記「' + d.title + '」嗎？\n\n按「保存」才會真正存回文件。')) return;
+  if (!d) return false;
+  if (!window.confirm('確定刪除 ' + date + ' 的日記「' + d.title + '」嗎？\n\n按「保存」才會真正存回文件。')) return false;
   calDiaries = parseCalendarDiaries(elements.editor.value);
   calDiaries = calDiaries.filter(x => x.date !== date);
   applyDiariesToEditor();
-  closeDiaryForm();
   showToast('已刪除日記，按「保存」存回文件', 'success');
+  return true;
+}
+function deleteDiary() {
+  const date = calDiaryFormDate;
+  if (!date) return;
+  if (!calDiaryOnDate(date)) { closeDiaryForm(); return; }
+  if (calRemoveDiary(date)) closeDiaryForm();
+}
+// 「只顯示日記」列表條目上的刪除按鈕（不經日記表單，直接按日期刪）
+function calDeleteDiaryByDate(date) {
+  if (!date || !calDiaryOnDate(date)) return;
+  calRemoveDiary(date);
 }
 // 序列化整份 calendar.md（events + holidays + diaries）寫回編輯器緩衝：從當前緩衝重解析 events/holidays，
 // 再以最新 calDiaries 覆蓋日記段，避免保存日記時把用戶手寫的事件/假日覆蓋掉。
