@@ -192,6 +192,7 @@
             <button type="button" id="ev-mode-day">日</button>
             <button type="button" id="ev-mode-week">週</button>
             <button type="button" id="ev-mode-month">月</button>
+            <button type="button" id="ev-mode-year">年</button>
           </div>
           <span class="ev-toolbar-flex"></span>
           <button type="button" class="ev-add-btn" id="ev-add-btn">＋ 新增行程</button>
@@ -219,6 +220,14 @@
         </div>
         <!-- 📅 日 / 週視圖時間網格容器（與月視圖互斥，由 syncEventsModeUI 切換） -->
         <div id="ev-week-wrap" class="ev-split"></div>
+        <!-- 📅 年視圖：12 個月迷你月曆 + 下部行程明細 -->
+        <div id="ev-year-wrap" class="ev-split" style="display:none">
+          <div class="ev-month-scroll ev-split-top">
+            <div id="ev-year-grid" class="ev-year-months"></div>
+          </div>
+          <div class="ev-hsplit" id="ev-year-split" title="拖動調整下方行程明細高度（雙擊復位）"></div>
+          <div id="ev-year-day-list" class="events-list ev-detail"></div>
+        </div>
       </div>
     </main>
 

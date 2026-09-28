@@ -81,16 +81,16 @@ const state = {
   todoMode: false,
   originalTodo: null,  // 開啟時的完整原始 todo 物件（保存時以此為基礎合併）
   // 📅 行程視圖（calendar.md 專用）
-  calMode: 'month',             // 'list' | 'day' | 'week' | 'month'
+  calMode: 'year',              // 'list' | 'day' | 'week' | 'month' | 'year'（第十一批依用户截图设定默认 'year'，此前 'month'）
   calCursor: new Date(),        // 當前游標日期（月視圖＝該月；日視圖＝當天；週視圖＝該週內某天）
   calSelectedDate: null,        // 月視圖選中日期（YYYY-MM-DD）
   calListSel: null,             // 列表模式：< > / 「今天」導航到的「選中日」（金色描邊）
-  calScope: 'day',              // 下方明細範圍：'day'=選定日（默認）/ 'full'=整月（月模式）或整週（週模式）；僅內存態
+  calScope: 'full',             // 下方明細範圍：'day'=選定日 / 'full'=整月·整週·整年。第十一批：年視圖默認 'full'（整年＝「表身 默認 by 年」）；月/週/日仍 'day'（見 setCalMode）。因 calMode 現默認 'year'
   calEvents: [],                // 工作副本（含 uid；每次渲染/編輯前從編輯器緩衝重新解析）
   calTagFilter: [],             // 🏷 標籤過濾（空＝全部；OR 邏輯，任一標籤命中即顯示）
-  calRegionFilter: ['cn'],      // 🌏 HOLIDAY 地區過濾（圖例 checkbox；默認只顯示大陸 cn；僅內存態）
+  calRegionFilter: [],          // 🌏 HOLIDAY 地區過濾（圖例 checkbox；第十一批依用户截图设定默认空＝不顯示任何地區假日；僅內存態）
   calShowEvents: true,          // 🗂 分類顯示：普通行程 EVENT（頂欄勾選，默認開；僅內存態）
-  calShowRepeat: true,          // 🗂 分類顯示：重複行程 REPEAT（頂欄勾選，默認開；僅內存態）
+  calShowRepeat: 'next',        // 🗂 分類顯示：重複行程 REPEAT 三態（none=隱藏 / next=只顯示未來最近一次 / some=最近前一次+未來4次≤5；第十一批依用户截图设定默认 'next'；僅內存態）
   // 📋 列表模式：「跨天行程」顯示幾筆（純 UI 偏好：記憶體 + localStorage，絕不寫回 calendar.md）
   //    'multi'（預設）＝跨幾天就顯示幾筆（每天一筆，與「日」範圍同口徑）；'one'＝整段只在起始日顯示一筆。
   //    ⚠️ 只作用於列表模式（renderEventsList）；月/週/日三種模式一律不受影響。
@@ -98,6 +98,10 @@ const state = {
   // 📓 列表模式：「只顯示日記」過濾（純 UI 偏好：記憶體 + localStorage，鍵 calDiaryOnly；絕不寫回 calendar.md）
   //    勾選後列表只列有日記的日期（行程 EVENT/REPEAT 與假日 HOLIDAY 不參與）。⚠️ 只作用於列表模式。
   calDiaryOnly: false,
+  // ☐ 「只顯示未完成」過濾（純 UI 偏好：記憶體 + localStorage，鍵 calUndoneOnly；絕不寫回 calendar.md）
+  //    勾選後隱藏已完成（done ✓）的行程；假日無完成態不受影響。⚠️ 全模式生效（年/月/週/日/列表），收口在 calEventShown。
+  //    第十一批依用户截图设定：默認「開」（新環境未設 localStorage 時即勾選）。
+  calUndoneOnly: true,
   evFormUid: null,              // 編輯表單當前目標 uid（null = 新增）
   evFormColor: null,            // 編輯表單當前選中顏色
   evFormTags: [],               // 編輯表單當前已選標籤
@@ -118,6 +122,7 @@ const elements = {
   evModeDay: document.getElementById('ev-mode-day'),
   evModeWeek: document.getElementById('ev-mode-week'),
   evModeMonth: document.getElementById('ev-mode-month'),
+  evModeYear: document.getElementById('ev-mode-year'),
   evAddBtn: document.getElementById('ev-add-btn'),
   evTagBar: document.getElementById('ev-tagbar'),
   evTagFilter: document.getElementById('ev-tag-filter'),
@@ -131,6 +136,9 @@ const elements = {
   evMonthGrid: document.getElementById('ev-month-grid'),
   evDayList: document.getElementById('ev-day-list'),
   evWeekWrap: document.getElementById('ev-week-wrap'),
+  evYearWrap: document.getElementById('ev-year-wrap'),
+  evYearGrid: document.getElementById('ev-year-grid'),
+  evYearDayList: document.getElementById('ev-year-day-list'),
   evFormOverlay: document.getElementById('ev-form-overlay'),
   evFormTitle: document.getElementById('ev-form-title'),
   evFormDelete: document.getElementById('ev-form-delete'),
@@ -259,6 +267,7 @@ function setupEventListeners() {
   if (elements.evModeDay) elements.evModeDay.addEventListener('click', () => setCalMode('day'));
   if (elements.evModeWeek) elements.evModeWeek.addEventListener('click', () => setCalMode('week'));
   if (elements.evModeMonth) elements.evModeMonth.addEventListener('click', () => setCalMode('month'));
+  if (elements.evModeYear) elements.evModeYear.addEventListener('click', () => setCalMode('year'));
   if (elements.evAddBtn) elements.evAddBtn.addEventListener('click', () => openEventForm(null));
   // ‹ › 依當前模式步進：月→月、週→週、日→日
   if (elements.evPrevMonth) elements.evPrevMonth.addEventListener('click', () => { if (state.calMode === 'list') calListNavDay(-1); else calStepCursor(-1); });
@@ -292,6 +301,18 @@ function setupEventListeners() {
     if (isDbl) { openEventForm(null, ds); return; }
     renderCalMonth(elements.editor.value);
   });
+  // 📅 年視圖：點日期選日（下部明細）；400ms 內連點同一天＝快速新增（與月視圖一致）
+  if (elements.evYearGrid) elements.evYearGrid.addEventListener('click', (e) => {
+    const cell = e.target.closest('.ev-year-day[data-date]');
+    if (!cell) return;
+    const ds = cell.getAttribute('data-date');
+    const now = Date.now();
+    const isDbl = calYearLastCellClick.date === ds && (now - calYearLastCellClick.t) < 400;
+    calYearLastCellClick = isDbl ? { date: null, t: 0 } : { date: ds, t: now };
+    state.calSelectedDate = ds;
+    if (isDbl) { openEventForm(null, ds); return; }
+    renderCalYear(elements.editor.value);
+  });
   // 🏷 標籤過濾條：點選切換（OR 邏輯，可多選）
   if (elements.evTagFilter) elements.evTagFilter.addEventListener('click', (e) => {
     const chip = e.target.closest('.ev-tag-chip');
@@ -305,6 +326,8 @@ function setupEventListeners() {
   const tagPicker = document.getElementById('ev-tag-picker');
   if (tagPicker && elements.evFTags) {
     tagPicker.addEventListener('click', (e) => {
+      const edit = e.target.closest('[data-ev-tag-edit]');
+      if (edit) { calEvTagEditIndex = parseInt(edit.getAttribute('data-ev-tag-edit'), 10); calRenderTagPicker(); return; }
       const remove = e.target.closest('[data-ev-tag-remove]');
       const option = e.target.closest('[data-ev-tag-option]');
       if (remove) calRemoveFormTag(remove.getAttribute('data-ev-tag-remove'));
@@ -321,6 +344,7 @@ function setupEventListeners() {
   // 條目「編輯/刪除」按鈕：列表視圖、月視圖日列表、日/週時間網格共用一套委派
   if (elements.eventsList) elements.eventsList.addEventListener('click', onEvListClick);
   if (elements.evDayList) elements.evDayList.addEventListener('click', onEvListClick);
+  if (elements.evYearDayList) elements.evYearDayList.addEventListener('click', onEvListClick);
   if (elements.evWeekWrap) elements.evWeekWrap.addEventListener('click', onEvListClick);
   // 🖱 雙擊列表條目＝進入編輯狀態（📓「只顯示日記」條目；行程條目單擊即開表單，不在此重複）
   if (elements.eventsList) elements.eventsList.addEventListener('dblclick', onEvListDblClick);
@@ -350,7 +374,7 @@ function setupEventListeners() {
         if (d) { calShowDiaryTip(d.date, e.clientX, e.clientY); return; }
       }
       const el = e.target.closest(calEvSel);
-      if (el && el.getAttribute('data-ev-edit')) calShowTip(el.getAttribute('data-ev-edit'), e.clientX, e.clientY);
+      if (el && el.getAttribute('data-ev-edit')) calShowTip(el.getAttribute('data-ev-edit'), el.getAttribute('data-occ-date'), e.clientX, e.clientY);
     });
     elements.editorContainer.addEventListener('mousemove', (e) => {
       if (!mqCanHover.matches) return;
@@ -361,7 +385,7 @@ function setupEventListeners() {
         if (d) { calShowDiaryTip(d.date, e.clientX, e.clientY); return; }
       }
       const el = e.target.closest(calEvSel);
-      if (el && el.getAttribute('data-ev-edit')) calShowTip(el.getAttribute('data-ev-edit'), e.clientX, e.clientY);
+      if (el && el.getAttribute('data-ev-edit')) calShowTip(el.getAttribute('data-ev-edit'), el.getAttribute('data-occ-date'), e.clientX, e.clientY);
       else calHideTip();
     });
     elements.editorContainer.addEventListener('mouseout', (e) => {

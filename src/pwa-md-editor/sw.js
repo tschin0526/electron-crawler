@@ -54,13 +54,68 @@
 // v52：日記圖標 hover 顯示內容 tips（複用行程事件 .ev-tip 機制，僅當天有日記時）；calendar-editor.js/app.js 改，bump 讓手機重拉
 // v51：新增 ## DIARY 日記（桌面 + LITE 共用結構）：日期標題旁日記按鈕（有日記打勾）、專用日記編輯視窗；
 //      calendar-editor.js/app.js/index.html/style.css 改，bump 讓手機重拉
+// v85：標籤支援「分類」——標籤資料結構由純字串升級為 {name, cat}（舊資料自動相容）；表單選中標籤可點擊內聯輸入分類，有分類時顯示為「標籤·分類」；列表/假日/日記/tooltip 同步顯示
+// v84：修正標籤樣式作用域——.ev-tag-view 提升為全域可用，tooltip/列表/假日/日記一致；並去掉所有 # 前綴
+// v83：懸停 tooltip 內的標籤改為與列表一致的膠囊樣式（.ev-tag-view），並去掉 # 前綴；兩端同步
+// v82：懸停 tooltip 最大寬度加大 1/3（320px → 426px），兩端同步
+// v81：懸停 tooltip 的備註區最大高度加大（200px → 320px），讓長備註顯示更完整；兩端同步
+// v80：假日地區/類型標籤從膠囊形改為圓角矩形（border-radius 999px → 6px），兩端同步
+// v79：行程/假日/日記的標題與備註支持基礎 Markdown 渲染（renderMarkdown），兩端視覺一致；
+//      calendar-editor.js / style.css 改，bump 讓手機重拉（桌面同步改 calendar-editor.js / index.html）
+// v78：年視圖「今天所在月份」卡片加金色外框描邊——renderCalYear 給含今天的月份卡片加 .cur-month
+//      類別；style.css 加 .ev-year-month.cur-month 金色 box-shadow 外框。calendar-editor.js/style.css
+//      改，bump 讓手機重拉（桌面同樣改 tlRenderYear + index.html）
+// v77：年視圖下方明細（表身）預設「整年」（calScope 預設 'full' 僅年視圖；月/週/日仍 'day'）：
+//      桌面 tlCalScope 初始 'full' ＋ tlSetMode 年→full 其餘→day；LITE app.js calScope 'full' ＋ setCalMode 同款。
+//      calendar-editor.js / app.js 改，bump 讓手機重拉
+// v76：預設設定調整（依使用者截圖，桌面＋LITE 兩端同步）：①預設視圖 'month'→'year'；
+//      ②HOLIDAY 地區過濾 ['cn']→[]（預設不顯示任何地區假日）；③REPEAT 三態 'some'→'next'
+//      （只顯示未來最近一次）；④「只顯示未完成」預設關→開（calUndoneOnly 缺省回退 true）。
+//      app.js / calendar-editor.js 改，bump 讓手機重拉
+// v75：列表模式「框選日（金色描邊）」修正——原邏輯把「今天無行程 → 回退最近未來日」的結果同時用於
+//      滾動與框選、且寫回 calListSel，導致今天沒有行程時卻把未來某天框金邊。改為：框選僅在錨點日
+//      （今天 / < > 導航日）真有分組時才生效，回退值只作滾動定位、不寫回；< > 導航在錨點日缺失時以
+//      「最近未來日」為基準。calendar-editor.js 改，bump 讓手機重拉
+// v74：把「只顯示未完成」從「只列表模式」提升為「全模式生效」（年/月/週/日/列表）——收口於共享過濾鏈
+//      calEventShown（所有「按日期分組」入口統一走這裡），圖例勾選框移出 calMode==='list' 守衛；
+//      renderEventsList 的冗餘再過濾移除，單一可信來源。calendar-editor.js/app.js 改，bump 讓手機重拉
+// v73：修正年視圖「年」範圍明細只顯示某一個月——renderCalYearDayList 的 full 分支一律沿用選中日
+//      所在月份（prefix=YYYY-MM），年模式下應取整年（prefix=YYYY、重複展開窗口＝整年）；空態文案也
+//      由「本月沒有行程」改為年模式「本年沒有行程」。calendar-editor.js 改，bump 讓手機重拉
+// v72：列表模式新增「只顯示未完成」勾選（在「只顯示日記」旁）——勾選後隱藏已完成（done ✓）的行程，
+//      只看未完成；假日無完成態不受影響。純 UI 偏好（內存 + localStorage 鍵 calUndoneOnly，絕不寫回
+//      calendar.md），只在列表模式生效；renderEventsList 過濾後為空顯示「沒有未完成的行程」空態；
+//      calendar-editor.js/app.js(state.calUndoneOnly) 改，bump 讓手機重拉
+// v71：修正 REPEAT 三態的 some「未來4次」被當前視圖窗口裁剪——calEventOccurrences 的 repeat 分支在
+//      展開前臨時切換到寬窗口（2000-01-01..2100-01-01）再截取「最近前一次+未來4次」，用完恢復原窗口；
+//      calendar-editor.js 改，bump 讓手機重拉
+// v70：REPEAT 勾選框改為「三態」——未勾選(none)＝完全隱藏全部；半勾選(next)＝只顯示「今天及之後最近
+//      一次」（未來最近待生效）；全勾選(some)＝最近的前一次(date<今天)＋未來4次(date>=今天)（最多5次）。
+//      calEventVisible 僅判 none 才隱藏；收斂邏輯在 calEventOccurrences 的 repeat 分支（none 回[]、
+//      next 回最小>=今天的1次、some 回 past[past.length-1]+future.slice(0,4)）；圖例 checkbox 改
+//      onclick="calCycleRepeat()" 循環 none→next→some→none，indeterminate 表半勾選/checked 表全勾選；
+//      calSetCategoryChecked 移除 repeat 分支、新增 calCycleRepeat；calendar-editor.js/app.js(state.calShowRepeat) 改，bump 讓手機重拉
+// v69：REPEAT 勾選框語意改為「顯示幾次」——勾選＝顯示全部發生日（多次）；取消勾選＝只顯示「今天及之後
+//      最近的一次」（未來最近待生效），不再整體隱藏。calEventVisible 對重複行程永遠 return true，
+//      收斂邏輯移入 calEventOccurrences（勾選回全部、未勾選回最近一次）；圖例 tooltip 同步改；
+//      calendar-editor.js 改，bump 讓手機重拉
+// v68：跨天行程的懸停提示框（tips）與「詳情」浮層也顯示「(第幾天/共幾天)」——calTipHtml/calShowTip 加
+//      occDate 參數＋緩存 key 改 uid@occDate（跨天同 uid 多天不串檔）；calSpanChipHtml 加 occDate 並在兩個
+//      div 加 data-occ-date；月格 chip、時間網格全天條/定時塊、列表行、詳情浮層觸發點全補 data-occ-date；
+//      app.js 兩處監聽改傳 data-occ-date；calendar-editor.js/app.js 改，bump 讓手機重拉
+// v67：跨天行程/跨天節日標題後顯示「(第幾天/共幾天)」（如 回上海 (3/7)）——列表行、假日列、時間網格
+//      （全天條／定時塊／假期條）全覆蓋；新增 calSpanDaySuffix（由「出現日」直接算序號，呼叫方不必
+//      握有 occurrence 的 idx/total）；calSpanSuffix 統一改帶括號；calendar-editor.js 改，bump 讓手機重拉
+// v66：年視圖修復「週日整列消失」——.ev-year-grid 由 repeat(7,1fr) 改 repeat(7,minmax(0,1fr))，
+//      並放開 .ev-year-day/.n 的 min-width（1fr=minmax(auto,1fr)，被 min-width:18px 頂住使 7 列最小需 146px
+//      > 手機卡片內寬 ~110px，第 7 列溢出被裁，表頭少了「日」）；style.css 改，bump 讓手機重拉
 // v65：週/日檢視「欄頭日期旁」也顯示 📕 日記標記；月格標記與欄頭標記收成同一入口/同一類
 //      （calDiaryMarkHtml + .ev-diary-mark，原 .ev-cell-diary 更名）；calendar-editor.js/style.css 改，bump 讓手機重拉
 // v64：月格「當天有日記」標記——有日記的日期在日期數字旁顯示 📕（純顯示，不掛 onclick）；
 //      calendar-editor.js/style.css 改，bump 讓手機重拉
 // v63：「只顯示日記」正文不再截斷——去掉舊的「3 行 / 120 字 + 省略號」上限，改為完整渲染、靠列錶整體滾動條查看
 //      （calDiaryPreview → calDiaryBody）；calendar-editor.js 改，bump 讓手機重拉
-const CACHE_NAME = 'md-editor-lite-v65';
+const CACHE_NAME = 'md-editor-lite-v85';
 const ASSETS = [
   './',
   './index.html',

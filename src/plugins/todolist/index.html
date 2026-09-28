@@ -1991,26 +1991,42 @@
     .ev-swatch { flex: 0 0 auto; width: 10px; height: 10px; border-radius: 50%; margin-top: 5px; }
     .ev-body { flex: 1; min-width: 0; }
     .ev-title { font-size: 14px; font-weight: 500; color: var(--ev-text); word-break: break-word; }
+    .ev-title p { margin: 0; }
     /* 🔁 重复事件小图标（## EVENT(REPEAT)）：随文色（灰），chip/时间网格/列表行/悬停提示通用 */
     .ev-repeat-ic { color: var(--ev-muted); vertical-align: -1px; margin-right: 3px; flex: none; }
     .ev-tags { display: inline-flex; flex-wrap: wrap; gap: 4px; margin-left: 8px; vertical-align: middle; }
-    .ev-tags .ev-tag-view { display: inline-block; padding: 3px 12px; border-radius: 999px; background: #7C3AED; border: 1px solid #8B5CF6; color: #fff; font-size: 12px; line-height: 1.35; font-weight: 600; white-space: nowrap; }
+    .ev-tag-view { display: inline-block; padding: 3px 12px; border-radius: 999px; background: #7C3AED; border: 1px solid #8B5CF6; color: #fff; font-size: 12px; line-height: 1.35; font-weight: 600; white-space: nowrap; }
     .ev-meta { margin-top: 2px; font-size: 12px; color: var(--ev-muted); }
-    .ev-notes { margin-top: 4px; font-size: 12px; color: var(--ev-muted); white-space: pre-wrap; word-break: break-word; }
+    .ev-notes { margin-top: 4px; font-size: 12px; color: var(--ev-muted); white-space: normal; word-break: break-word; }
+    .ev-notes p { margin: 0 0 0.35em 0; }
+    .ev-notes p:last-child { margin-bottom: 0; }
+    .ev-notes ul, .ev-notes ol { margin: 0.25em 0; padding-left: 1.5em; }
+    .ev-notes li { margin: 0.15em 0; }
+    .ev-notes pre { margin: 0.35em 0; overflow-x: auto; }
+    .ev-notes code { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; background: rgba(127,127,127,0.12); padding: 0.05em 0.3em; border-radius: 4px; font-size: 0.92em; }
+    .ev-notes blockquote { margin: 0.35em 0; padding-left: 0.75em; border-left: 3px solid var(--ev-border); color: var(--ev-muted); }
     .ev-actions { flex: 0 0 auto; display: flex; flex-direction: column; gap: 4px; }
     .ev-actions button { border: 1px solid var(--ev-border); background: var(--ev-bg); color: var(--ev-muted); font-size: 11px; padding: 2px 8px; border-radius: 6px; cursor: pointer; }
     .ev-actions button:hover { border-color: var(--ev-primary); color: var(--ev-primary); }
     /* 🖱 悬停行程事件 → 放大提示框（更大字体显示事件内容；pointer-events:none 不挡点击）
        ⚠️ 背景必须「不透明」（使用者反馈透明看不清资料）：用 var(--ev-card) 并给显式回退色，绝不透明。 */
-    .ev-tip { position: fixed; z-index: 9990; max-width: 320px; padding: 10px 12px; border-radius: 10px;
+    .ev-tip { position: fixed; z-index: 9990; max-width: 426px; padding: 10px 12px; border-radius: 10px;
       background: var(--ev-card, #ffffff); color: var(--ev-text, #1f2937); border: 1px solid var(--ev-border, #e5e7eb);
       box-shadow: 0 8px 24px rgba(0,0,0,0.18); pointer-events: none; font-size: 13px; line-height: 1.5; }
     body.dark .ev-tip { background: var(--ev-card, #1e293b); box-shadow: 0 8px 24px rgba(0,0,0,0.5); border-color: var(--ev-color, #7c3aed); }
     .ev-tip .ev-tip-title { font-size: 16px; font-weight: 600; color: var(--ev-text); word-break: break-word; margin-bottom: 4px; }
+    .ev-tip .ev-tip-title p { margin: 0; }
     .ev-tip .ev-tip-done { color: var(--ev-primary); font-weight: 700; }
     .ev-tip .ev-tip-meta { font-size: 13px; color: var(--ev-muted); }
-    .ev-tip .ev-tip-tags { margin-top: 4px; font-size: 12px; color: var(--ev-primary); }
-    .ev-tip .ev-tip-notes { margin-top: 6px; font-size: 13px; color: var(--ev-text); white-space: pre-wrap; word-break: break-word; max-height: 200px; overflow: hidden; }
+    .ev-tip .ev-tip-tags { margin-top: 4px; display: flex; flex-wrap: wrap; gap: 4px; }
+    .ev-tip .ev-tip-notes { margin-top: 6px; font-size: 13px; color: var(--ev-text); white-space: normal; word-break: break-word; max-height: 320px; overflow: hidden; }
+    .ev-tip .ev-tip-notes p { margin: 0 0 0.35em 0; }
+    .ev-tip .ev-tip-notes p:last-child { margin-bottom: 0; }
+    .ev-tip .ev-tip-notes ul, .ev-tip .ev-tip-notes ol { margin: 0.25em 0; padding-left: 1.5em; }
+    .ev-tip .ev-tip-notes li { margin: 0.15em 0; }
+    .ev-tip .ev-tip-notes pre { margin: 0.35em 0; overflow-x: auto; }
+    .ev-tip .ev-tip-notes code { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; background: rgba(127,127,127,0.12); padding: 0.05em 0.3em; border-radius: 4px; font-size: 0.92em; }
+    .ev-tip .ev-tip-notes blockquote { margin: 0.35em 0; padding-left: 0.75em; border-left: 3px solid var(--ev-border); color: var(--ev-muted); }
     .ev-month-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; padding-bottom: 8px; }
     .ev-mc-head { text-align: center; font-size: 11px; color: var(--ev-muted); padding: 4px 0; }
     .ev-cell { min-height: 74px; background: var(--ev-card); border-radius: 4px; padding: 3px 4px; overflow: hidden; cursor: pointer; border: 1px solid transparent; }
@@ -2019,21 +2035,41 @@
     .ev-daynum { display: inline-block; font-size: 11px; min-width: 18px; text-align: center; padding: 1px 0; border-radius: 99px; color: var(--ev-text); }
     .ev-cell.today .ev-daynum { background: var(--ev-primary); color: #fff; }
     .ev-chip { display: flex; align-items: center; gap: 3px; font-size: 11px; line-height: 1.3; margin-top: 2px; color: var(--ev-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .ev-chip p { margin: 0; }
     .ev-chip .dot { width: 6px; height: 6px; border-radius: 50%; flex: 0 0 auto; }
     .ev-more { font-size: 10px; color: var(--ev-muted); margin-top: 2px; }
+    /* ===== 年视图：12 个月迷你月历网格 ===== */
+    .ev-year-months { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; padding: 4px 4px 20px; align-content: start; }
+    .ev-year-month { background: var(--ev-card); border-radius: 8px; padding: 6px 6px 8px; }
+    /* 第十一批续：今天所在月份卡片加金色外框描边（box-shadow 不占位、随圆角走） */
+    .ev-year-month.cur-month { box-shadow: 0 0 0 2px #f5c518, 0 0 8px rgba(245, 197, 24, .35); }
+    .ev-year-mh { text-align: center; font-weight: 600; font-size: 13px; padding: 2px 0 6px; cursor: pointer; border-radius: 6px; }
+    .ev-year-mh:hover { background: var(--ev-border); }
+    /* ⚠️ 必須 minmax(0,1fr)：1fr = minmax(auto,1fr)，min-content 會被 .n 的 min-width 頂住
+       → 7 列最小需 146px，卡片內寬僅 ~138px，第 7 列（週日）溢出被裁 → 表頭少了「日」 */
+    .ev-year-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 1px; }
+    .ev-year-wd { text-align: center; font-size: 9px; color: var(--ev-muted); padding: 1px 0 3px; min-width: 0; }
+    .ev-year-day { display: flex; flex-direction: column; align-items: center; min-width: 0; min-height: 24px; padding: 1px 0; cursor: pointer; border-radius: 4px; border: 1px solid transparent; }
+    .ev-year-day:hover { background: var(--ev-border); }
+    .ev-year-day .n { display: inline-flex; align-items: center; justify-content: center; width: 100%; max-width: 18px; min-width: 0; font-size: 10px; padding: 1px 0; border-radius: 99px; color: var(--ev-text); }
+    .ev-year-day.today .n { background: var(--ev-primary); color: #fff; }
+    .ev-year-day.selected { border-color: var(--ev-primary); }
+    .ev-year-dots { display: flex; gap: 1px; flex-wrap: wrap; justify-content: center; margin-top: 1px; min-height: 5px; }
+    .ev-year-dot { width: 5px; height: 5px; border-radius: 50%; }
+    .ev-year-more { font-size: 8px; color: var(--ev-muted); line-height: 5px; }
     /* 跨天行程：列表項徽章 + 月視圖跨日色條 */
     .ev-span-badge { margin-left: 6px; font-size: 10px; font-weight: 400; color: var(--ev-primary); border: 1px solid var(--ev-primary); padding: 0 6px; border-radius: 99px; white-space: nowrap; }
     .ev-item.multi .ev-meta { color: var(--ev-primary); font-weight: 500; }
     /* ## HOLIDAY：日志/列表视图专用，与 EVENT（.ev-item）明显区隔——左侧 type 色条＋类型徽章，无勾选框/编辑删除 */
     .ev-holiday { display: flex; align-items: flex-start; gap: 10px; padding: 8px 12px; margin: 4px 0; border-radius: 8px; background: var(--ev-card, #fff); border: 1px solid var(--ev-border, #e5e7eb); border-left: 4px solid var(--holiday-color, #FF9500); }
-    .ev-holiday .ev-holiday-badge { flex: 0 0 auto; align-self: center; display: inline-flex; align-items: center; gap: 2px; background: var(--holiday-color, #FF9500); color: #fff; font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 999px; white-space: nowrap; }
+    .ev-holiday .ev-holiday-badge { flex: 0 0 auto; align-self: center; display: inline-flex; align-items: center; gap: 2px; background: var(--holiday-color, #FF9500); color: #fff; font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 6px; white-space: nowrap; }
     .ev-holiday .ev-body { flex: 1 1 auto; min-width: 0; }
     .ev-holiday .ev-title { font-size: 14px; font-weight: 600; color: var(--ev-text, #1f2937); }
     .ev-holiday .ev-meta { font-size: 12px; color: var(--ev-muted, #6b7280); margin-top: 2px; }
     .ev-holiday .ev-notes { font-size: 12px; color: var(--ev-muted, #6b7280); margin-top: 4px; }
     .ev-holiday .ev-tags { color: var(--ev-primary, #007AFF); }
     /* 地区 pill：主色＝地区色（--region-color 由渲染内联写入，带回退），与类型徽章并列显示在假日行 */
-    .ev-holiday .ev-holiday-region { flex: 0 0 auto; align-self: center; display: inline-flex; align-items: center; gap: 2px; background: var(--region-color, #E4002B); color: #fff; font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 999px; white-space: nowrap; }
+    .ev-holiday .ev-holiday-region { flex: 0 0 auto; align-self: center; display: inline-flex; align-items: center; gap: 2px; background: var(--region-color, #E4002B); color: #fff; font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 6px; white-space: nowrap; }
     /* 顶栏过滤条：EVENT | HOLIDAY(地区细项) | REPEAT 三类顺序排列 */
     .ev-holiday-legend { flex: 0 0 auto; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 4px 0 6px; font-size: 12px; color: var(--ev-muted, #6b7280); }
     .ev-holiday-legend .ev-legend-label { flex: 0 0 auto; font-weight: 600; letter-spacing: .3px; color: var(--ev-muted, #6b7280); }
@@ -2055,6 +2091,7 @@
     .tl-repeat-ov-swatch { width: 10px; height: 10px; border-radius: 999px; margin-top: 5px; flex: 0 0 auto; }
     .tl-repeat-ov-main { flex: 1; min-width: 0; }
     .tl-repeat-ov-title { display: flex; align-items: center; gap: 4px; font-size: 14px; color: var(--ev-text); }
+    .tl-repeat-ov-title p { margin: 0; }
     .tl-repeat-ov-rule { margin-top: 4px; font-size: 12px; color: var(--ev-text); }
     .tl-repeat-ov-meta { margin-top: 3px; font-size: 12px; color: var(--ev-muted); }
     .tl-repeat-ov-empty { padding: 26px 8px; text-align: center; font-size: 13px; color: var(--ev-muted); }
@@ -2077,6 +2114,7 @@
     .ev-holiday-strip .label { font-size: 11px; color: var(--ev-muted, #6b7280); text-align: right; padding-right: 6px; padding-top: 4px; }
     .ev-holiday-col { display: flex; flex-direction: column; gap: 2px; min-width: 0; padding: 0 2px; }
     .ev-holiday-block { font-size: 11px; font-weight: 600; color: #fff; background: var(--holiday-color, #FF9500); border-radius: 4px; padding: 2px 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .ev-holiday-block p { margin: 0; }
     .ev-chip.span { color: #fff; border-radius: 0; margin-top: 2px; height: 16px; padding: 0; overflow: hidden; display: flex; align-items: center; background: var(--ev-color); }
     .ev-chip.span .dot { flex: 0 0 auto; }
     .ev-chip.span.start { border-top-left-radius: 5px; border-bottom-left-radius: 5px; padding-left: 5px; }
@@ -2094,6 +2132,11 @@
     .tl-ev-tag-selected:empty { display: none; }
     .tl-ev-tag-selected .tl-ev-tag-selected-chip { display: inline-flex; align-items: center; gap: 4px; padding: 3px 9px; border-radius: 999px; background: #7C3AED; border: 1px solid #8B5CF6; color: #fff; font-size: 12px; font-weight: 600; }
     .tl-ev-tag-selected-chip button { border: 0; padding: 0; background: transparent; color: inherit; cursor: pointer; font-size: 15px; line-height: 1; }
+    .tl-ev-tag-name { cursor: pointer; border-bottom: 1px dotted rgba(255,255,255,.55); }
+    .tl-ev-tag-name:hover { border-bottom-color: #fff; }
+    .ev-tag-cat { opacity: .85; font-weight: 500; }
+    .tl-ev-tag-cat-input { width: 60px; border: 0; outline: 0; background: rgba(255,255,255,.2); color: #fff; font-size: 12px; border-radius: 6px; padding: 1px 5px; }
+    .tl-ev-tag-cat-input::placeholder { color: rgba(255,255,255,.7); }
     .tl-ev-tag-picker > input { width: 100%; margin-top: 4px; border: 0; outline: 0; background: transparent; color: var(--ev-text); font-size: 13px; }
     .tl-ev-tag-picker > input::placeholder { color: var(--ev-muted); }
     .tl-ev-tag-menu { display: none; position: absolute; z-index: 20; left: 0; right: 0; top: calc(100% + 4px); max-height: 170px; overflow-y: auto; padding: 4px; border: 1px solid var(--ev-border); border-radius: 8px; background: var(--ev-card); box-shadow: 0 8px 20px rgba(0,0,0,.3); }
@@ -2135,9 +2178,14 @@
     .ev-tg-now-dot { position: absolute; left: -52px; width: 7px; height: 7px; border-radius: 50%; background: var(--ev-primary); transform: translate(49px, -2.5px); }
     .ev-block { position: absolute; border-radius: 6px; padding: 3px 6px; color: #fff; font-size: 12px; line-height: 1.3; overflow: hidden; cursor: pointer; background: var(--ev-color); border: 1px solid var(--ev-color); border-left: 3px solid rgba(0,0,0,0.2); z-index: 2; }
     .ev-block .t { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .ev-block .t p { margin: 0; }
     .ev-block .tm { font-size: 10px; opacity: 0.85; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     /* 備註：只在夠高的方塊裡由 JS 輸出；line-clamp 限 6 行，超過由 .ev-block 的 overflow:hidden 裁掉 */
-    .ev-block .notes { margin-top: 2px; font-size: 11px; line-height: 1.35; opacity: 0.95; white-space: pre-wrap; word-break: break-word; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 6; -webkit-box-orient: vertical; }
+    .ev-block .notes { margin-top: 2px; font-size: 11px; line-height: 1.35; opacity: 0.95; white-space: normal; word-break: break-word; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 6; -webkit-box-orient: vertical; }
+    .ev-block .notes p { margin: 0 0 0.25em 0; }
+    .ev-block .notes p:last-child { margin-bottom: 0; }
+    .ev-block .notes ul, .ev-block .notes ol { margin: 0.2em 0; padding-left: 1.4em; }
+    .ev-block .notes li { margin: 0.1em 0; }
     .ev-block .loc { font-size: 10px; opacity: 0.9; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     /* 📝 備註 Markdown checkbox：- [ ] / - [x] → ☐/☑（只讀樣式，勾選項加刪除線） */
     .ev-cb { display: inline-block; min-width: 11px; height: 11px; border: 1px solid var(--ev-muted); border-radius: 3px; margin-right: 4px; vertical-align: -1px; text-align: center; font-size: 9px; line-height: 11px; color: #fff; }
@@ -2157,13 +2205,15 @@
     .ev-block.all-day { position: static; width: auto; padding: 3px 8px; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .ev-link-tag { display: inline-block; margin-left: 4px; font-size: 9px; opacity: 0.85; background: rgba(255,255,255,0.22); border-radius: 6px; padding: 0 4px; }
     /* 行程条 / 月格上的 🔗 关联标记 */
-    .ev-link { margin-left: 3px; font-size: 10px; opacity: 0.9; }
+    .ev-link { margin-left: 3px; font-size: 10px; opacity: 0.9; cursor: pointer; }
     /* 表单内「关联 Todo 卡片」面板 */
     .ev-todo-link-panel { min-height: 30px; border: 1px dashed var(--ev-border); border-radius: 8px; padding: 5px 8px; background: var(--ev-bg); cursor: pointer; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
     .ev-todo-link-panel:focus { outline: 2px solid var(--ev-primary); outline-offset: 1px; }
     .ev-todo-placeholder { font-size: 12px; color: var(--ev-muted); }
     .ev-todo-chip { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; padding: 2px 4px 2px 10px; border-radius: 99px; background: var(--ev-primary); color: #fff; max-width: 100%; }
-    .ev-todo-chip-text { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 200px; }
+    .ev-todo-chip-text { display: inline-block; vertical-align: middle; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 200px; }
+    .ev-todo-chip-text * { font-size: inherit; white-space: nowrap; margin: 0; padding: 0; line-height: inherit; }
+    .ev-todo-dropdown-item * { font-size: inherit; white-space: nowrap; margin: 0; padding: 0; }
     .ev-todo-chip-x { cursor: pointer; opacity: 0.85; font-size: 11px; padding: 0 2px; }
     .ev-todo-chip-x:hover { opacity: 1; }
     .ev-todo-dropdown { margin-top: 6px; border: 1px solid var(--ev-border); border-radius: 8px; background: var(--ev-card); max-height: 180px; overflow-y: auto; display: none; }
@@ -2174,7 +2224,7 @@
     .ev-todo-dropdown-empty { font-size: 12px; color: var(--ev-muted); padding: 10px; }
     /* 行程表单 */
     .tl-ev-form-overlay { position: fixed; inset: 0; z-index: 12000; background: rgba(0,0,0,0.55); display: flex; align-items: center; justify-content: center; padding: 20px; }
-    .tl-ev-form-box { width: 100%; max-width: 440px; max-height: 88vh; overflow: auto; background: var(--ev-card); border: 1px solid var(--ev-border); border-radius: 12px; padding: 18px; }
+    .tl-ev-form-box { width: 100%; max-width: 586px; max-height: 88vh; overflow: auto; background: var(--ev-card); border: 1px solid var(--ev-border); border-radius: 12px; padding: 18px; }
     .tl-ev-form-title { font-size: 16px; font-weight: 600; color: var(--ev-text); margin-bottom: 12px; }
     .tl-ev-f-label { display: block; font-size: 12px; color: var(--ev-muted); margin-bottom: 10px; }
     /* 🗓 表單日期輸入框旁的星期提示（依輸入日期即時更新；與正文同色同字號，便於閱讀） */
@@ -2188,7 +2238,7 @@
       background: var(--ev-bg); color: var(--ev-text); font-size: 14px; font-family: inherit;
     }
     .tl-ev-f-label select { cursor: pointer; }
-    #tlEvFNotes { resize: vertical; min-height: 64px; }
+    #tlEvFNotes { resize: vertical; min-height: 84px; }
     /* 🔁 重複事件表單區塊 */
     .tl-ev-f-repeat { border: 1px dashed var(--ev-border); border-radius: 8px; padding: 10px 12px; margin-bottom: 10px; }
     .tl-ev-f-repeat > .tl-ev-f-check { margin-bottom: 8px; }
@@ -4616,6 +4666,7 @@
               <button type="button" id="tlEvModeDay">日</button>
               <button type="button" id="tlEvModeWeek">周</button>
               <button type="button" id="tlEvModeMonth">月</button>
+              <button type="button" id="tlEvModeYear">年</button>
             </div>
             <span class="ev-toolbar-flex"></span>
             <span class="ev-hint-text">编辑后按「保存」写回 calendar.md</span>
@@ -4641,6 +4692,13 @@
             </div>
             <div class="ev-hsplit" id="tlEvMonthSplit" title="拖动调整下方行程明细高度（双击复位）"></div>
             <div id="tlEvDayList" class="events-list ev-detail"></div>
+          </div>
+          <div id="tlEvYearWrap" class="ev-split" style="display:none">
+            <div class="ev-month-scroll ev-split-top">
+              <div id="tlEvYearGrid" class="ev-year-months"></div>
+            </div>
+            <div class="ev-hsplit" id="tlEvYearSplit" title="拖动调整下方行程明细高度（双击复位）"></div>
+            <div id="tlEvYearDayList" class="events-list ev-detail"></div>
           </div>
         </div>
       </div>
@@ -4808,8 +4866,10 @@
     <div class="tl-ev-form-box">
       <div class="tl-ev-form-title" id="tlEvFormTitle">新增行程</div>
       <label class="tl-ev-f-label">标题<input type="text" id="tlEvFTitle" maxlength="200" placeholder="行程标题"></label>
-      <label class="tl-ev-f-label">日期<span class="tl-ev-f-dow" id="tlEvFDateDow"></span><span class="tl-ev-f-lunar" id="tlEvFDateLunar" title="農民曆 / 老黃曆" onclick="tlShowAlmanac((document.getElementById('tlEvFDate').value||tlFmtDate(new Date())),this)"></span><input type="date" id="tlEvFDate"></label>
-      <label class="tl-ev-f-label">结束日期（留空＝单日）<span class="tl-ev-f-dow" id="tlEvFEndDateDow"></span><span class="tl-ev-f-lunar" id="tlEvFEndDateLunar" title="農民曆 / 老黃曆" onclick="tlShowAlmanac((document.getElementById('tlEvFEndDate').value||tlFmtDate(new Date())),this)"></span><input type="date" id="tlEvFEndDate"></label>
+      <div class="tl-ev-f-row">
+        <label class="tl-ev-f-label">日期<span class="tl-ev-f-dow" id="tlEvFDateDow"></span><span class="tl-ev-f-lunar" id="tlEvFDateLunar" title="農民曆 / 老黃曆" onclick="tlShowAlmanac((document.getElementById('tlEvFDate').value||tlFmtDate(new Date())),this)"></span><input type="date" id="tlEvFDate"></label>
+        <label class="tl-ev-f-label">结束日期（留空＝单日）<span class="tl-ev-f-dow" id="tlEvFEndDateDow"></span><span class="tl-ev-f-lunar" id="tlEvFEndDateLunar" title="農民曆 / 老黃曆" onclick="tlShowAlmanac((document.getElementById('tlEvFEndDate').value||tlFmtDate(new Date())),this)"></span><input type="date" id="tlEvFEndDate"></label>
+      </div>
       <div class="tl-ev-f-repeat" id="tlEvFRepeatBox">
         <label class="tl-ev-f-check"><input type="checkbox" id="tlEvFRepeatOn" onchange="tlToggleRepeat()"> 重复</label>
         <div id="tlEvFRepeatFields" style="display:none">
@@ -4847,11 +4907,11 @@
         <label class="tl-ev-f-check"><input type="checkbox" id="tlEvFAllday" onchange="tlToggleAllDay()"> 全天</label>
         <label class="tl-ev-f-check"><input type="checkbox" id="tlEvFDone"> 已完成</label>
       </div>
-      <div class="tl-ev-f-row">
+      <div class="tl-ev-f-row tl-ev-f-3col">
         <label class="tl-ev-f-label">开始<input type="time" id="tlEvFStart"></label>
         <label class="tl-ev-f-label">结束<input type="time" id="tlEvFEnd"></label>
+        <label class="tl-ev-f-label">地点<input type="text" id="tlEvFLocation" maxlength="200" placeholder="可留空"></label>
       </div>
-      <label class="tl-ev-f-label">地点<input type="text" id="tlEvFLocation" maxlength="200" placeholder="可留空"></label>
       <div class="tl-ev-f-label">颜色<div id="tlEvFColors" class="ev-f-colors"></div></div>
       <div class="tl-ev-f-label">标签
         <div class="tl-ev-tag-picker" id="tl-ev-tag-picker">
@@ -6393,7 +6453,12 @@
 
     function selectModeFromDropdown(mode) {
       closeModeDropdown();
-      if (typeof mode === 'number' && mode !== previewMode) {
+      // 已在该模式「且不在行程视图」→ 无需切换（避免无谓重绘）。
+      // ⚠️ 行程视图下即使 previewMode 与所选模式相同也必须切回：行程面板只是叠加在常规容器之上，
+      //    previewMode 仍停留在「进入行程视图前」的值；若此处按 `mode !== previewMode` 直接 return，
+      //    用户在行程视图里点选单中的当前模式（如「编辑文本」）就会「点了没反应」（用户实测 bug）。
+      const inCalView = (typeof calEventsView !== 'undefined') && calEventsView;
+      if (typeof mode === 'number' && (mode !== previewMode || inCalView)) {
         toggleMdPreview(mode);
       }
     }
@@ -6510,6 +6575,11 @@
       const calEventsPaneEl = document.getElementById('calEventsPane');
       if (calEventsPaneEl) calEventsPaneEl.style.display = 'none';
       preview.style.display = '';
+      // 退出行程视图：恢复撤销/重做钮（与 #mdTools 同口径；行程视图下由 showCalEventsPaneOnly 收起）
+      const undoBtn = document.getElementById('undoBtn');
+      const redoBtn = document.getElementById('redoBtn');
+      if (undoBtn) undoBtn.style.display = '';
+      if (redoBtn) redoBtn.style.display = '';
 
       // 应用模式
       const genMdBtn = document.getElementById('genMdBtn');
@@ -6834,11 +6904,12 @@
       unwrapHighlightsIn(document.getElementById('calEventsPane'));
     }
 
-    // 行程视图下「此刻真正显示着」的渲染容器 —— 三种模式各自只有一个可见：
-    //   列表 → #tlEvList；月 → #tlEvMonthWrap（月格 + 下方明细）；周/日 → #tlEvWeekWrap（时间网格 + 下方明细）
-    //   明细列表（#tlEvDayList / #tlEvDayGridList）都嵌在上面两个 wrap 内，取 wrap 即可全覆盖。
+    // 行程视图下「此刻真正显示着」的渲染容器 —— 各模式各自只有一个可见：
+    //   列表 → #tlEvList；月 → #tlEvMonthWrap（月格 + 下方明细）；周/日 → #tlEvWeekWrap（时间网格 + 下方明细）；
+    //   年 → #tlEvYearWrap（12 个月格 + 下方明细）。
+    //   明细列表都嵌在对应 wrap 内，取 wrap 即可全覆盖。
     function calSearchRoots() {
-      return ['tlEvList', 'tlEvMonthWrap', 'tlEvWeekWrap']
+      return ['tlEvList', 'tlEvMonthWrap', 'tlEvWeekWrap', 'tlEvYearWrap']
         .map((id) => document.getElementById(id))
         .filter((el) => el && el.style.display !== 'none');
     }
