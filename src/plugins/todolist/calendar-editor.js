@@ -38,6 +38,9 @@
     //    ⚠️ 只作用于列表模式（tlRenderList）；月/週/日三种模式一律不受影响。
     let tlCalDiaryOnly = false;
     let tlDiaryOnlyLoaded = false;
+    // 📆 年视图自动滚动：切到年视图 / 点「今天」 / 首次打开行程视图时，若当前月份未完整显示，则滚动使其可见。
+    //    由触发点设 tlYearAutoScrollPending=true，tlRenderYear 渲染后消费一次，避免选择日期等重绘时重复滚动。
+    let tlYearAutoScrollPending = false;
     // ☐ 「只显示未完成」：全模式生效（年/月/周/日/列表）的显示过滤（纯 UI 偏好：内存 + localStorage，绝不写回 calendar.md）
     //    勾选后隐藏已完成（done ✓）的行程，只看未完成；假日无完成态、不受影响。⚠️ 收口于 tlEventShown（所有视图自动生效，无需每处重复过滤）。
     //    第十一批依用户截图设定：默认「开」（新环境未设 localStorage 时即勾选）。
@@ -106,6 +109,8 @@
       if (si) si.placeholder = calEventsView ? '搜索当前视图...' : '搜索内容...';
       if (calEventsView) {
         showCalEventsPaneOnly();
+        // 首次/重新进入行程视图且为年视图时，渲染后自动滚动到当前月份
+        if (tlCalMode === 'year') tlYearAutoScrollPending = true;
         tlRenderEventsContent();
       } else {
         // 交还给原模式：这里先收掉面板，再由 toggleMdPreview 按 previewMode 重新显示
@@ -1160,6 +1165,7 @@
       // 第十一批：年视图下方明细默认「整年」（full）；月/週/日恢复「默认以日显示」（day）
       tlCalScope = (tlCalMode === 'year') ? 'full' : 'day';
       if ((tlCalMode === 'month' || tlCalMode === 'year') && !tlCalSelected) tlCalSelected = tlFmtDate(new Date());
+      if (tlCalMode === 'year') tlYearAutoScrollPending = true; // 切到年视图时自动滚动到当前月份
       tlRenderEventsContent();
     }
 
@@ -1216,8 +1222,8 @@
             dots += '<span class="ev-year-dot" style="background:' + tlEscapeHtml(marks[i].color) + '"></span>';
           }
           if (marks.length > 3) dots += '<span class="ev-year-more">+' + (marks.length - 3) + '</span>';
-          const tip = marks.length ? tlEscapeHtml(marks.map((x) => x.title).join(' / ')) : '';
-          html += '<div class="ev-year-day' + (ds === today ? ' today' : '') + (ds === tlCalSelected ? ' selected' : '') + '" data-date="' + ds + '" onclick="tlSelectDateFromYear(\'' + ds + '\')"' + (tip ? ' title="' + tip + '"' : '') + '>' +
+          const evUids = occ.map((o) => o.ev.uid).join(',');
+          html += '<div class="ev-year-day' + (ds === today ? ' today' : '') + (ds === tlCalSelected ? ' selected' : '') + '" data-date="' + ds + '" data-ev-uids="' + tlEscapeHtml(evUids) + '" onclick="tlSelectDateFromYear(\'' + ds + '\')">' +
             '<span class="n">' + d + '</span>' +
             (dots ? '<span class="ev-year-dots">' + dots + '</span>' : '') +
             '</div>';
@@ -1227,6 +1233,21 @@
       grid.innerHTML = html;
       tlBindSplit(document.getElementById('tlEvYearWrap'), document.getElementById('tlEvYearSplit'));
       tlRenderYearDayList();
+      if (tlYearAutoScrollPending) {
+        tlYearAutoScrollPending = false;
+        tlScrollYearToCurrentMonth();
+      }
+    }
+    // 年视图：若当前月份卡片未完整显示在滚动区内，则平滑滚动到可视区中央
+    function tlScrollYearToCurrentMonth() {
+      const cur = document.querySelector('#tlEvYearGrid .ev-year-month.cur-month');
+      const scroller = document.querySelector('#tlEvYearWrap .ev-month-scroll');
+      if (!cur || !scroller) return;
+      const sr = scroller.getBoundingClientRect();
+      const cr = cur.getBoundingClientRect();
+      // 已完整显示：无需滚动
+      if (cr.top >= sr.top && cr.bottom <= sr.bottom) return;
+      cur.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'center' });
     }
     // 年视图：点日期选日 → 重绘选中态 + 下部明细；400ms 内连点同一天＝快速新增（与月视图一致）
     let tlYearLastCellClick = { date: null, t: 0 };
@@ -2418,6 +2439,45 @@
     }
     function tlHideTip() { if (tlTipEl) { tlTipEl.style.display = 'none'; tlTipUid = null; } }
 
+    // 🆕 年视图日期格悬停：显示当天所有日程的富文本 tips（同表身列表 hover 的 tlTipHtml 样式）
+    function tlShowDayTip(ds, uids, x, y) {
+      const tip = tlGetTipEl();
+      let html = '';
+      if (uids && uids.length) {
+        for (const uid of uids) {
+          const ev = tlCalEvents.find((e) => e.uid === uid);
+          if (!ev) continue;
+          html += '<div class="ev-tip-day-item">' + tlTipHtml(ev, ds) + '</div>';
+        }
+      }
+      const hols = tlHolidaysOnDay(ds);
+      if (hols.length) {
+        html += '<div class="ev-tip-day-hols">';
+        for (const h of hols) {
+          const region = tlHolidayRegionMeta(h.region);
+          html += '<div class="ev-tip-day-hol"><span class="dot" style="background:' + tlEscapeHtml(region.color) + '"></span>' + tlEscapeHtml(h.title) + '</div>';
+        }
+        html += '</div>';
+      }
+      if (!html) { tip.style.display = 'none'; tlTipUid = null; return; }
+      // 按日期缓存：同一天重复 mousemove 不重建 innerHTML（避免闪烁），仅重新定位
+      const key = 'day:' + ds;
+      if (tlTipUid !== key) { tip.innerHTML = html; tlTipUid = key; }
+      tip.style.display = 'block';
+      const r = tip.getBoundingClientRect();
+      let left = x + 16, top = y + 16;
+      if (left + r.width > window.innerWidth - 8) left = Math.max(8, x - r.width - 16);
+      if (top + r.height > window.innerHeight - 8) top = Math.max(8, y - r.height - 16);
+      tip.style.left = left + 'px';
+      tip.style.top = top + 'px';
+    }
+    function tlShowYearDayTip(el, e) {
+      const ds = el.getAttribute('data-date');
+      const uids = (el.getAttribute('data-ev-uids') || '').split(',').filter(Boolean);
+      if (!ds) return;
+      tlShowDayTip(ds, uids, e.clientX, e.clientY);
+    }
+
     // ===== 📓 悬停日记图标 → 放大提示框（复用 .ev-tip 结构，仅当天有日记时显示） =====
     function tlDiaryTipHtml(d) {
       const meta = [d.date, d.mood, d.weather].filter(Boolean).join(' · ');
@@ -2580,7 +2640,14 @@
       on('tlEvAddBtn', 'click', () => tlOpenEventForm(null));
       on('tlEvPrevMonth', 'click', () => { if (tlCalMode === 'list') tlListNavDay(-1); else tlCalStepCursor(-1); });
       on('tlEvNextMonth', 'click', () => { if (tlCalMode === 'list') tlListNavDay(1); else tlCalStepCursor(1); });
-      on('tlEvTodayBtn', 'click', () => { tlCalCursor = new Date(); tlCalSelected = tlFmtDate(new Date()); tlListSel = tlFmtDate(new Date()); tlRenderEventsContent(); });
+      on('tlEvTodayBtn', 'click', () => {
+        tlCalCursor = new Date();
+        tlCalSelected = tlFmtDate(new Date());
+        tlListSel = tlFmtDate(new Date());
+        // 年视图点「今天」时，确保当前月份卡片完整显示
+        if (tlCalMode === 'year') tlYearAutoScrollPending = true;
+        tlRenderEventsContent();
+      });
       on('tlEvMultiDayBtn', 'click', () => tlToggleMultiDayMode());   // 列表模式：跨天一笔 / 跨天多笔
       // 🗓 表單日期輸入變更 → 即時更新輸入框旁的星期提示
       on('tlEvFDate', 'change', tlUpdateFormDow);
@@ -2692,10 +2759,12 @@
         if (e.target.closest('.ev-check') || e.target.closest('.ev-actions') || e.target.closest('.ev-md-check')) return;
         tlOpenEventForm(item.getAttribute('data-uid'));
       });
-      // 🖱 悬停行程事件 → 放大提示框（事件委托，覆盖三种事件元素；tooltip 用 pointer-events:none 不挡点击）
+      // 🖱 悬停行程事件 → 放大提示框（事件委托；tooltip 用 pointer-events:none 不挡点击）
+      //    ⚠️ 只覆盖「内容被截断」的网格元素：月格 .ev-chip、周/日网格 .ev-block。
+      //    列表行 .ev-item（列表模式 + 月/週/日下方明细）已完整显示内容，不再弹 tooltip（用户 2026-09-29 要求取消）。
       const tlTipPane = document.getElementById('calEventsPane');
       if (tlTipPane) {
-        const evSel = '.ev-chip, .ev-block, .ev-item';
+        const evSel = '.ev-chip, .ev-block';
         tlTipPane.addEventListener('mouseover', (e) => {
           // 日记图标 hover → 显示日记 tip（仅当天有日记时）
           const dyBtn = e.target.closest('.ev-day-diary');
@@ -2703,6 +2772,9 @@
             const d = tlDiaryOnDate(dyBtn.getAttribute('data-ev-diary'));
             if (d) { tlShowDiaryTip(d.date, e.clientX, e.clientY); return; }
           }
+          // 年视图日期格 hover → 显示当天所有日程/假日的富文本 tips（与表身列表 hover 同款）
+          const yd = e.target.closest('.ev-year-day[data-ev-uids]');
+          if (yd) { tlShowYearDayTip(yd, e); return; }
           const el = e.target.closest(evSel);
           if (el && el.getAttribute('data-uid')) tlShowTip(el.getAttribute('data-uid'), el.getAttribute('data-occ-date'), e.clientX, e.clientY);
         });
@@ -2713,6 +2785,9 @@
             const d = tlDiaryOnDate(dyBtn.getAttribute('data-ev-diary'));
             if (d) { tlShowDiaryTip(d.date, e.clientX, e.clientY); return; }
           }
+          // 年视图日期格：移动也保持/重定位 tips（不调用 tlHideTip 以免刚显示就被隐藏）
+          const yd = e.target.closest('.ev-year-day[data-ev-uids]');
+          if (yd) { tlShowYearDayTip(yd, e); return; }
           const el = e.target.closest(evSel);
           if (el && el.getAttribute('data-uid')) tlShowTip(el.getAttribute('data-uid'), el.getAttribute('data-occ-date'), e.clientX, e.clientY);
           else tlHideTip();
@@ -2722,6 +2797,7 @@
           if (to && to.closest) {
             if (to.closest(evSel)) return;                 // 仍在事件元素间移动，不隐藏
             if (to.closest('.ev-day-diary')) return;       // 仍在日记按钮上，不隐藏
+            if (to.closest('.ev-year-day[data-ev-uids]')) return; // 仍在年视图日期格上（含子元素/相邻格），不隐藏
           }
           tlHideTip();
         });

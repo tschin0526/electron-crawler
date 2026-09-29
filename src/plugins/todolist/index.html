@@ -2019,7 +2019,7 @@
     .ev-tip .ev-tip-done { color: var(--ev-primary); font-weight: 700; }
     .ev-tip .ev-tip-meta { font-size: 13px; color: var(--ev-muted); }
     .ev-tip .ev-tip-tags { margin-top: 4px; display: flex; flex-wrap: wrap; gap: 4px; }
-    .ev-tip .ev-tip-notes { margin-top: 6px; font-size: 13px; color: var(--ev-text); white-space: normal; word-break: break-word; max-height: 320px; overflow: hidden; }
+    .ev-tip .ev-tip-notes { margin-top: 6px; font-size: 13px; color: var(--ev-text); white-space: normal; word-break: break-word; max-height: 420px; overflow: hidden; }
     .ev-tip .ev-tip-notes p { margin: 0 0 0.35em 0; }
     .ev-tip .ev-tip-notes p:last-child { margin-bottom: 0; }
     .ev-tip .ev-tip-notes ul, .ev-tip .ev-tip-notes ol { margin: 0.25em 0; padding-left: 1.5em; }
@@ -2027,6 +2027,11 @@
     .ev-tip .ev-tip-notes pre { margin: 0.35em 0; overflow-x: auto; }
     .ev-tip .ev-tip-notes code { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; background: rgba(127,127,127,0.12); padding: 0.05em 0.3em; border-radius: 4px; font-size: 0.92em; }
     .ev-tip .ev-tip-notes blockquote { margin: 0.35em 0; padding-left: 0.75em; border-left: 3px solid var(--ev-border); color: var(--ev-muted); }
+    /* 🆕 年视图日期格悬停：多天日程分隔线与假日区 */
+    .ev-tip .ev-tip-day-item + .ev-tip-day-item { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--ev-border, rgba(127,127,127,0.25)); }
+    .ev-tip .ev-tip-day-hols { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--ev-border, rgba(127,127,127,0.25)); }
+    .ev-tip .ev-tip-day-hol { display: flex; align-items: center; gap: 6px; color: var(--ev-muted); font-size: 13px; }
+    .ev-tip .ev-tip-day-hol .dot { width: 6px; height: 6px; border-radius: 50%; flex: 0 0 auto; }
     .ev-month-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; padding-bottom: 8px; }
     .ev-mc-head { text-align: center; font-size: 11px; color: var(--ev-muted); padding: 4px 0; }
     .ev-cell { min-height: 74px; background: var(--ev-card); border-radius: 4px; padding: 3px 4px; overflow: hidden; cursor: pointer; border: 1px solid transparent; }
