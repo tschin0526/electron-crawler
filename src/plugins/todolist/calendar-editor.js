@@ -951,7 +951,7 @@
       panel.innerHTML = tlEvFormTodoIds.map((id) => {
         const t = (typeof todos !== 'undefined') ? todos.find((x) => x.id === id) : null;
         const name = t ? tlTodoTitle(t) : id;
-        return '<span class="ev-todo-chip" data-id="' + tlEscapeHtml(id) + '" title="' + tlEscapeHtml(name) + '"><span class="ev-todo-chip-text">' + tlRenderInlineMarkdown(name) + '</span><span class="ev-todo-chip-x" data-id="' + tlEscapeHtml(id) + '" title="移除">✕</span></span>';
+        return '<span class="ev-todo-chip" data-id="' + tlEscapeHtml(id) + '" title="' + tlEscapeHtml(name) + '"><span class="ev-todo-chip-name" data-id="' + tlEscapeHtml(id) + '">' + tlRenderInlineMarkdown(name) + '</span><span class="ev-todo-chip-x" data-id="' + tlEscapeHtml(id) + '" title="移除">✕</span></span>';
       }).join('');
     }
     function tlRenderEvTodoDropdown() {
@@ -2624,6 +2624,12 @@
         tlp.addEventListener('click', (e) => {
           const x = e.target.closest('.ev-todo-chip-x');
           if (x) { tlEvRemoveTodoLink(x.getAttribute('data-id')); return; }
+          const name = e.target.closest('.ev-todo-chip-name');
+          if (name) {
+            const id = name.getAttribute('data-id');
+            if (id && typeof openEditModal === 'function') openEditModal(id);
+            return;
+          }
           tlEvToggleTodoDropdown();
         });
       }

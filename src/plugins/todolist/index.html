@@ -415,7 +415,7 @@
     }
 
     /* 📋 文件列表下拉（搜索框右侧的「文件浏览」按钮 + 弹出面板）
-       - 排序方式：按名称 / 按最后异动时间 / 按大小
+       - 排序方式：按名称 / 按最后异动时间 / 按大小 / 按最近开启的时间
        - 选择后 → 自动滚动到对应卡片 + 金边闪烁 3 秒（复用 .resize-focus 动画） */
     .file-list-wrapper {
       position: relative;
@@ -2213,6 +2213,7 @@
     .ev-todo-chip { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; padding: 2px 4px 2px 10px; border-radius: 99px; background: var(--ev-primary); color: #fff; max-width: 100%; }
     .ev-todo-chip-text { display: inline-block; vertical-align: middle; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 200px; }
     .ev-todo-chip-text * { font-size: inherit; white-space: nowrap; margin: 0; padding: 0; line-height: inherit; }
+    .ev-todo-chip-name { cursor: pointer; }
     .ev-todo-dropdown-item * { font-size: inherit; white-space: nowrap; margin: 0; padding: 0; }
     .ev-todo-chip-x { cursor: pointer; opacity: 0.85; font-size: 11px; padding: 0 2px; }
     .ev-todo-chip-x:hover { opacity: 1; }
@@ -3933,6 +3934,7 @@
               <button type="button" class="file-list-sort-btn" data-sort="name" data-dir="asc" data-page-node-id="1jbXrGfE3HZE4USHRlv1VU">按名称</button>
               <button type="button" class="file-list-sort-btn active" data-sort="mtime" data-dir="desc" data-page-node-id="OPORgcoV6iB37GtBbZsgJd">按时间</button>
               <button type="button" class="file-list-sort-btn" data-sort="size" data-dir="desc" data-page-node-id="BfdLbGAaM6glp1av3n6pxL">按大小</button>
+              <button type="button" class="file-list-sort-btn" data-sort="recent" data-dir="desc" data-page-node-id="recentOpenSortBtn">按最近开启</button>
             </div>
             <!-- 🆕 只看：文件类型筛选（默认全看） -->
             <div class="file-list-type-filter" id="fileListTypeFilter">
@@ -4746,6 +4748,7 @@
               <button type="button" class="file-list-sort-btn" data-sort="name" data-dir="asc">按名称</button>
               <button type="button" class="file-list-sort-btn active" data-sort="mtime" data-dir="desc">按时间</button>
               <button type="button" class="file-list-sort-btn" data-sort="size" data-dir="desc">按大小</button>
+              <button type="button" class="file-list-sort-btn" data-sort="recent" data-dir="desc">按最近开启</button>
             </div>
             <div class="file-list-type-filter" id="editorFileListTypeFilter">
               <span class="file-list-type-label">只看:</span>
@@ -11207,6 +11210,10 @@
       const todo = todos.find(t => t.id === id);
       if (!todo) return;
 
+      // 🆕 记录最近开启：直接在 Gallery 点卡片开启（双击 / 编辑钮）或重开分頁也计入历史。
+      //    todo 以 todo::id 为键与清单开启去重；名称还原成 todo-<id>.json，与清单条目显示一致。
+      tlMarkFileOpened({ id: id, type: 'todo', name: 'todo-' + id + '.json', path: '' });
+
       editingId = id;
       currentMdId = null;
       currentJsonId = null;
@@ -12649,7 +12656,7 @@
 
     // 📋 文件列表下拉（搜索框右侧 📋 按钮触发）
     //   状态：
-    //     fileListState = { open, sortKey: 'name'|'mtime'|'size', sortDir: 'asc'|'desc',
+    //     fileListState = { open, sortKey: 'name'|'mtime'|'size'|'recent', sortDir: 'asc'|'desc',
     //                       items: [{id,name,size,mtime}], loaded, pendingId }
     //   流程：
     //     1. 点击触发按钮 → 切换 open 状态；首次打开时从主进程拉取文件元数据
@@ -12657,6 +12664,73 @@
     //     3. 点击列表项 → 关闭面板 + focusResizedCard(id)（滚动 + 金边闪 3 秒）
     //     4. 点击面板外 → 关闭面板
     let fileListState = { open: false, sortKey: 'mtime', sortDir: 'desc', items: [], loaded: false, browseDir: null, isConfiguredDefaultDir: false, typeFilter: 'all', nameFilter: '' };
+
+    // 🆕 最近开启记录（历史开启清单）：跨目录、只列开过的、每个文件只出现一次、按最新开启时间降序。
+    //    存为对象 map：key = 绝对路径（无路径时退化为 type::id）；value = { ts, id, name, type, path, size, mtime }。
+    //    这样「按最近开启」视图可脱离当前目录独立渲染，并以绝对路径去重重（不同目录同名文件互不覆盖）。
+    const TL_RECENT_OPEN_KEY = 'tlRecentOpenMap';
+    let tlRecentOpenMap = (() => {
+      try {
+        const raw = JSON.parse(localStorage.getItem(TL_RECENT_OPEN_KEY) || '{}');
+        const clean = {};
+        if (raw && typeof raw === 'object') {
+          for (const k of Object.keys(raw)) {
+            const v = raw[k];
+            // 只保留新版的物件条目（{ts,...}），丢弃旧版裸数字时间戳，避免脏数据残留
+            if (v && typeof v === 'object' && v.ts) clean[k] = v;
+          }
+        }
+        return clean;
+      } catch (_) { return {}; }
+    })();
+    function tlSaveRecentOpen() { try { localStorage.setItem(TL_RECENT_OPEN_KEY, JSON.stringify(tlRecentOpenMap)); } catch (_) { /* 存储不可用时忽略 */ } }
+    // 记录一次开启：传入文件项（{ id, name, type, path, size, mtime }）；key 用绝对路径保证跨目录唯一。
+    function tlMarkFileOpened(item) {
+      if (!item || !item.id) return;
+      // todo 卡片统一以 todo::id 为键（不依赖路径），保证从清单开启与从 Gallery 直接点开同一张卡片时去重为一条；
+      // 外部文件则优先用绝对路径为键（不同目录同名文件各算一条）。
+      const t = item.type || 'todo';
+      const k = (t === 'todo') ? ('todo::' + item.id) : (item.path || (t + '::' + item.id));
+      tlRecentOpenMap[k] = {
+        ts: Date.now(),
+        id: item.id,
+        name: (item.name != null && item.name !== '') ? item.name : item.id,
+        type: item.type || 'todo',
+        path: item.path || '',
+        size: (typeof item.size === 'number') ? item.size : 0,
+        mtime: (typeof item.mtime === 'number') ? item.mtime : Date.now(),
+      };
+      tlSaveRecentOpen();
+    }
+    // 🆕 历史开启清单的渲染数据源：跨目录、只列开过的、按最新开启时间降序；仍受名称搜索 / 类型筛选约束。
+    function getRecentOpenItems() {
+      let arr = Object.values(tlRecentOpenMap).filter(e => e && typeof e === 'object' && e.ts);
+      if (fileListState.nameFilter) {
+        const kw = fileListState.nameFilter.toLowerCase();
+        arr = arr.filter(it => (it.name || '').toLowerCase().includes(kw));
+      }
+      if (fileListState.typeFilter && fileListState.typeFilter !== 'all') {
+        arr = arr.filter(it => it.type === fileListState.typeFilter);
+      }
+      arr.sort((a, b) => {
+        const d = (b.ts - a.ts);
+        if (d !== 0) return d; // 降序：较晚开启的在前
+        return (a.name || '').localeCompare(b.name || '', undefined, { numeric: true, sensitivity: 'base' });
+      });
+      return arr;
+    }
+    // 🆕 历史清单点某项 → 重新打开（外部文件按绝对路径开；卡片尽力在当前画廊 / 目录内开）
+    function tlOpenHistoryItem(id, type) {
+      const e = Object.values(tlRecentOpenMap).find(x => x && x.id === id && x.type === (type || 'todo'));
+      if (!e) return;
+      // 🆕 再次从历史清单点开也要刷新最新开启时间（否则点过的项目不会移到最上面）
+      tlMarkFileOpened(e);
+      if (e.type !== 'todo' && e.path) {
+        openExternalFile(e.path, e.name, e.type);
+      } else {
+        selectFileListItem(id, 'todo');
+      }
+    }
     // 📂 外部文件模式：非 null 时表示当前正在编辑一个「临时浏览目录」下的文件，值为绝对路径
     // 保存时走 saveFileByPath 而非默认的 PLUGINS_DATA_DIR 下的 IPC
     let externalFilePath = null;
@@ -12951,32 +13025,36 @@
 
     // 渲染主画面文件列表面板
     function renderFileList() {
-      const items = getSortedFilteredFileItems();
+      const isRecent = fileListState.sortKey === 'recent';
+      const items = isRecent ? getRecentOpenItems() : getSortedFilteredFileItems();
       const body = document.getElementById('fileListBody');
       const footer = document.getElementById('fileListFooter');
       if (!body || !footer) return;
       if (items.length === 0) {
         body.innerHTML = '';
-        const c = document.getElementById('fileListCount'); if (c) c.textContent = fileListState.nameFilter ? '无匹配文件' : '共 0 个文件';
+        const c = document.getElementById('fileListCount');
+        if (c) c.textContent = isRecent ? '无最近开启的文件' : (fileListState.nameFilter ? '无匹配文件' : '共 0 个文件');
         return;
       }
       // 状态徽标：todo 从内存 todos 查 completed；md 文件显示「📄 MD」徽标
-      body.innerHTML = items.map(it => fileListItemHtml(it, 'selectFileListItem')).join('');
+      body.innerHTML = items.map(it => fileListItemHtml(it, isRecent ? 'tlOpenHistoryItem' : 'selectFileListItem')).join('');
       const c = document.getElementById('fileListCount'); if (c) c.textContent = `共 ${items.length} 个文件`;
     }
 
     // 🆕 渲染编辑器内「打开已有文件」面板（复用同一份 fileListState 与排序/筛选）
     function renderEditorFileList() {
-      const items = getSortedFilteredFileItems();
+      const isRecent = fileListState.sortKey === 'recent';
+      const items = isRecent ? getRecentOpenItems() : getSortedFilteredFileItems();
       const body = document.getElementById('editorFileListBody');
       const footer = document.getElementById('editorFileListFooter');
       if (!body || !footer) return;
       if (items.length === 0) {
         body.innerHTML = '';
-        const c = document.getElementById('editorFileListCount'); if (c) c.textContent = fileListState.nameFilter ? '无匹配文件' : '共 0 个文件';
+        const c = document.getElementById('editorFileListCount');
+        if (c) c.textContent = isRecent ? '无最近开启的文件' : (fileListState.nameFilter ? '无匹配文件' : '共 0 个文件');
         return;
       }
-      body.innerHTML = items.map(it => fileListItemHtml(it, 'selectEditorFileListItem')).join('');
+      body.innerHTML = items.map(it => fileListItemHtml(it, isRecent ? 'tlOpenHistoryItem' : 'selectEditorFileListItem')).join('');
       const c = document.getElementById('editorFileListCount'); if (c) c.textContent = `共 ${items.length} 个文件`;
     }
 
@@ -12988,7 +13066,7 @@
       return (bytes / (1024 * 1024)).toFixed(2) + 'MB';
     }
 
-    // 切换排序：同名按钮二次点击反向排序；切到不同键时使用该键默认方向（名称 asc / 时间 desc / 大小 desc）
+    // 切换排序：同名按钮二次点击反向排序；切到不同键时使用该键默认方向（名称 asc / 时间 desc / 大小 desc / 最近开启 desc）
     function changeFileListSort(sortKey, defaultDir) {
       const btns = document.querySelectorAll('.file-list-sort-btn');
       btns.forEach(b => b.classList.remove('active'));
@@ -13257,6 +13335,9 @@
 
     // 选中某个文件 → 跳到对应卡片 + 金边闪烁 3 秒（复用保存/拖拽尺寸后的同款动画）
     function selectFileListItem(id, type) {
+      // 🆕 记录最近开启（无论 todo 卡片滚动定位或外部文件打开，只要从清单里点开就记录）
+      const _item = fileListState.items.find(it => it.id === id && it.type === type);
+      if (_item) tlMarkFileOpened(_item);
       closeFileList();
       // todo 卡片使用应用内定格式；其它文件都按真实路径打开，抽屉显示完整路径。
       if (type !== 'todo') {
@@ -13279,6 +13360,9 @@
     // 🆕 编辑器内「打开已有文件」：点击文件项 → 直接在编辑器内打开（不滚动 Gallery）
     // 复用主画面同一套 fileListState / 打开函数；todo 卡片走 openEditModal（而非滚动主画面）
     async function selectEditorFileListItem(id, type) {
+      // 🆕 记录最近开启（编辑器内清单点开同样计入历史，与主画面清单共用同一份记录）
+      const _item = fileListState.items.find(it => it.id === id && it.type === type);
+      if (_item) tlMarkFileOpened(_item);
       closeEditorFileList();
       // todo 卡片使用应用内定格式；其它文件都按真实路径打开，抽屉显示完整路径。
       if (type !== 'todo') {
@@ -13384,6 +13468,7 @@
       const id = normalizeCardId(cardId);
       if (!id) return;
       const todo = todos.find(t => normalizeCardId(t.id) === id);
+      // 最近开启记录统一收口在 selectFileListItem / selectEditorFileListItem（始终带完整元数据）
       if (!todo) {
         // 🆕 卡片没找到，但目标形似文件路径（含路径分隔符/~开头/盘符/末尾扩展名）→
         //    按「新窗体打开文件」处理（与点 file:// 链接同管线，见 openDocWindow）；
@@ -13624,7 +13709,7 @@
       const trigger = document.getElementById('fileListTrigger');
       if (trigger) trigger.addEventListener('click', (e) => { e.stopPropagation(); toggleFileList(); });
       // 排序按钮（三个）：第二次点同键反向排序；切换不同键时使用对应默认方向
-      const sortMap = { name: 'asc', mtime: 'desc', size: 'desc' };
+      const sortMap = { name: 'asc', mtime: 'desc', size: 'desc', recent: 'desc' };
       document.querySelectorAll('.file-list-sort-btn').forEach(btn => {
         btn.addEventListener('click', (e) => {
           e.stopPropagation();
