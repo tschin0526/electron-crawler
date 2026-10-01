@@ -11,6 +11,8 @@
   <script src="vendor/marked-emoji.min.js"></script>
   <script src="vendor/gemoji-data.js"></script>
   <script>
+    // ⚠️ 加载标记（一次性）：确认本 index.html 已生效。若 DevTools Console 看不到这行 → 跑的是旧缓存页面
+    console.log('[todolist index.html] 已加载 — 样式版本(2026-09-30-2111)：备注(ev-notes)表格金色网格线 #fbbf24');
     // 全局注册一次即可（marked.use 注册的扩展在后续 setOptions 调用间持续生效）
     // 注：marked-emoji 的 UMD 把 global 设为 { markedEmoji: fn } 对象，故按情况取出函数
     // renderer 覆盖默认行为：默认会输出 <img src="😄">（浏览器显示为破图），
@@ -1293,6 +1295,10 @@
     body.dark .todo-text blockquote, body.dark .md-preview blockquote { background: #172554 !important; border-left-color: #60a5fa !important; }
     body.dark .todo-text th, body.dark .md-preview th { background: #334155 !important; }
     body.dark .todo-text tr:nth-child(even), body.dark .md-preview tr:nth-child(even) { background: #1e293b !important; }
+    /* 深色主题表格网格线：默认 --border-color(#334155) 与表头背景(#334155)同色 → 线条不可见；
+       用与「未勾选 checkbox 框」同款金黄色 #fbbf24（见下方 body.dark checkbox 规则），确保清晰可见 */
+    body.dark .todo-text th, body.dark .todo-text td,
+    body.dark .md-preview th, body.dark .md-preview td { border: 1px solid #fbbf24 !important; }
 
     /* GFM 补全：h5/h6 标题样式 */
     .todo-text h5, .md-preview h5 { font-size: .9em; font-weight: 600; margin: .4em 0 .2em; }
@@ -2005,6 +2011,16 @@
     .ev-notes pre { margin: 0.35em 0; overflow-x: auto; }
     .ev-notes code { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; background: rgba(127,127,127,0.12); padding: 0.05em 0.3em; border-radius: 4px; font-size: 0.92em; }
     .ev-notes blockquote { margin: 0.35em 0; padding-left: 0.75em; border-left: 3px solid var(--ev-border); color: var(--ev-muted); }
+    /* 📝 備註表格网格线：備註经 renderMarkdown 可产出 Markdown 表格（如「所有者/工具/账号/用量」），
+       但 .ev-notes 此前没有任何表格边框规则 → 线条全无。浅色用 --ev-border；深色与「未勾选 checkbox 框」同款金黄 #fbbf24 */
+    .ev-notes table, .ev-block .notes table, .ev-tip-notes table { border-collapse: collapse; margin: .35em 0; }
+    .ev-notes th, .ev-notes td,
+    .ev-block .notes th, .ev-block .notes td,
+    .ev-tip-notes th, .ev-tip-notes td { border: 1px solid var(--ev-border, var(--border-color)); padding: .25em .55em; }
+    .ev-notes th, .ev-block .notes th, .ev-tip-notes th { font-weight: 600; }
+    body.dark .ev-notes th, body.dark .ev-notes td,
+    body.dark .ev-block .notes th, body.dark .ev-block .notes td,
+    body.dark .ev-tip-notes th, body.dark .ev-tip-notes td { border: 1px solid #fbbf24 !important; }
     .ev-actions { flex: 0 0 auto; display: flex; flex-direction: column; gap: 4px; }
     .ev-actions button { border: 1px solid var(--ev-border); background: var(--ev-bg); color: var(--ev-muted); font-size: 11px; padding: 2px 8px; border-radius: 6px; cursor: pointer; }
     .ev-actions button:hover { border-color: var(--ev-primary); color: var(--ev-primary); }

@@ -272,7 +272,7 @@ function setupEventListeners() {
   // ‹ › 依當前模式步進：月→月、週→週、日→日
   if (elements.evPrevMonth) elements.evPrevMonth.addEventListener('click', () => { if (state.calMode === 'list') calListNavDay(-1); else calStepCursor(-1); });
   if (elements.evNextMonth) elements.evNextMonth.addEventListener('click', () => { if (state.calMode === 'list') calListNavDay(1); else calStepCursor(1); });
-  if (elements.evTodayBtn) elements.evTodayBtn.addEventListener('click', () => { state.calCursor = new Date(); state.calSelectedDate = calendarFmtDate(new Date()); state.calListSel = calendarFmtDate(new Date()); renderEventsContent(); });
+  if (elements.evTodayBtn) elements.evTodayBtn.addEventListener('click', () => { state.calCursor = new Date(); state.calSelectedDate = calendarFmtDate(new Date()); state.calListSel = calendarFmtDate(new Date()); if (state.calMode === 'month') calMonthAutoScrollPending = true; if (state.calMode === 'year') calYearAutoScrollPending = true; renderEventsContent(); });
   // 📋 列表模式：跨天一筆 / 跨天多筆（僅列表模式顯示；其餘模式不受影響）
   if (elements.evMultiDayBtn) elements.evMultiDayBtn.addEventListener('click', () => calToggleMultiDayMode());
   if (elements.evMonthGrid) elements.evMonthGrid.addEventListener('click', (e) => {

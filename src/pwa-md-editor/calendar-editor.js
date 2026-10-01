@@ -1121,6 +1121,7 @@ function renderCalYear(content) {
   }
   grid.innerHTML = html;
   calBindSplit(elements.evYearWrap, document.getElementById('ev-year-split'));
+  if (calYearAutoScrollPending) { calYearAutoScrollPending = false; calScrollYearToCurrentMonth(); }
   renderCalYearDayList();
 }
 // 年視圖下部：選定日行程明細（「日」=當天；年模式「年」=整年；月模式「月」=選中日所在整月，與月視圖同口徑）
@@ -2045,6 +2046,8 @@ function setCalMode(mode) {
   state.calScope = (state.calMode === 'year') ? 'full' : 'day';
   if ((state.calMode === 'month' || state.calMode === 'year') && !state.calSelectedDate) state.calSelectedDate = calendarFmtDate(new Date());
   if (state.calMode === 'day') state.calSelectedDate = calendarFmtDate(state.calCursor);
+  if (state.calMode === 'month') calMonthAutoScrollPending = true; // 月視圖：切到月模式時上半月曆滾到今天
+  if (state.calMode === 'year') calYearAutoScrollPending = true;   // 年視圖：切到年模式時滾到今天所在月份
   renderEventsContent();
 }
 
@@ -2075,6 +2078,34 @@ function syncEventsModeUI() {
 }
 
 // 月曆：6x7 網格（週一開頭），單元格顯示日號 + 最多 2 條 chip + 溢出數；下方渲染選中日的行程列表
+// 📅 月視圖自動滾動：切到月視圖 / 點「今天」時，將上半月曆網格滾動到「今天」日期格（與桌面版對齊）
+let calMonthAutoScrollPending = false;
+
+// 月視圖：若「今天」日期格未完整顯示在滾動區內，則平滑滾動到可視區中央
+function calScrollMonthToToday() {
+  const scroller = document.querySelector('#ev-month-wrap .ev-month-scroll');
+  const todayCell = elements.evMonthGrid && elements.evMonthGrid.querySelector('.ev-cell.today');
+  if (!todayCell || !scroller) return;
+  const sr = scroller.getBoundingClientRect();
+  const cr = todayCell.getBoundingClientRect();
+  if (cr.top >= sr.top && cr.bottom <= sr.bottom) return; // 已完整可見，無需滾動
+  todayCell.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'center' });
+}
+
+// 📆 年視圖自動滾動：切到年視圖 / 點「今天」時，將 12 個月迷你月曆滾動到今天所在月份卡片（與桌面版對齊）
+let calYearAutoScrollPending = false;
+
+// 年視圖：若「今天」所在月份卡片未完整顯示在滾動區內，則平滑滾動到可視區中央
+function calScrollYearToCurrentMonth() {
+  const scroller = document.querySelector('#ev-year-wrap .ev-month-scroll');
+  const cur = elements.evYearGrid && elements.evYearGrid.querySelector('.ev-year-month.cur-month');
+  if (!cur || !scroller) return;
+  const sr = scroller.getBoundingClientRect();
+  const cr = cur.getBoundingClientRect();
+  if (cr.top >= sr.top && cr.bottom <= sr.bottom) return; // 已完整可見，無需滾動
+  cur.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'center' });
+}
+
 function renderCalMonth(content) {
   state.calEvents = parseCalendarEvents(content);
   calHolidays = parseCalendarHolidays(content);
@@ -2124,6 +2155,7 @@ function renderCalMonth(content) {
   }
   if (elements.evMonthGrid) elements.evMonthGrid.innerHTML = html;
   calBindSplit(elements.evMonthWrap, document.getElementById('ev-month-split'));
+  if (calMonthAutoScrollPending) { calMonthAutoScrollPending = false; calScrollMonthToToday(); }
   renderCalDayList();
 }
 

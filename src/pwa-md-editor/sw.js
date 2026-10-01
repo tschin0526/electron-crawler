@@ -11,6 +11,11 @@
 
 // 快取名帶版本：每次改資源內容或 SW 邏輯都要 bump 版本號，
 // 讓舊快取名自動失效、activate 階段清掉，確保用戶一定拿到最新資源。
+// v88：年視圖「今天」按鈕 / 切到年模式 → 12 個月迷你月曆自動滾動到今天所在月份卡片（calScrollYearToCurrentMonth，與桌面對齊）；calendar-editor.js/app.js 改，bump 讓手機重拉
+// v87：月視圖「今天」按鈕 / 切到月模式 → 上半月曆網格自動滾動到今天日期格（calScrollMonthToToday，與桌面對齊）；calendar-editor.js/app.js 改，bump 讓手機重拉
+// v86：備註 Markdown 表格補網格線——style.css 為 .ev-notes / .ev-block .notes / .ev-tip-notes 三容器
+//      加 border-collapse + th/td 邊框（淺色 var(--border)、深色 .dark-mode 金色 #fbbf24 !important，與桌面對齊）；
+//      style.css 改，bump 讓手機重拉
 // v12：備註框自繪拖拽手柄（iOS 無原生 resize）
 // v15：更換 App 圖示（3D 紫葡萄），一併預緩存圖示檔
 // v16：Calendar 特性編輯器抽離為獨立 calendar-editor.js（預緩存新文件）
@@ -115,7 +120,7 @@
 //      calendar-editor.js/style.css 改，bump 讓手機重拉
 // v63：「只顯示日記」正文不再截斷——去掉舊的「3 行 / 120 字 + 省略號」上限，改為完整渲染、靠列錶整體滾動條查看
 //      （calDiaryPreview → calDiaryBody）；calendar-editor.js 改，bump 讓手機重拉
-const CACHE_NAME = 'md-editor-lite-v85';
+const CACHE_NAME = 'md-editor-lite-v88';
 const ASSETS = [
   './',
   './index.html',

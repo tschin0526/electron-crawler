@@ -16,6 +16,14 @@
     let tlCalCursor = new Date();
     let tlCalSelected = null;
     let tlListSel = null;    // 列表模式：< > / 「今天」导航到的「选中日」（金色描边）
+    // 列表模式滚动锚点标志：仅当用户显式导航（今天 / < >）时才为 true，渲染时据此把列表滚到锚点日；
+    // 否则一律恢复到「渲染前的滚动位置」(prevScrollTop)，绝不任意自动滚动（2026-09-30 用户反馈）
+    let tlListScrollAnchorPending = false;
+    // 年/月「下方明细」(tlRenderYearDayList / tlRenderDayList) 滚动锚点标志：语义同上，仅覆盖 年/月 明细表身。
+    // 仅当 今天按钮 / 点选日期格 时才为 true；编辑存档 / 过滤 / 搜索 / 切范围 / < > 一律恢复 prevScrollTop（2026-09-30 用户反馈）
+    let tlDetailListScrollPending = false;
+    // ⚠️ 加载标记（一次性）：确认本文件已生效。若硬刷新后 DevTools Console 看不到这行 → 跑的是旧缓存脚本
+    if (!window.__calEditorLoaded) { window.__calEditorLoaded = true; console.log('[calendar-editor] 已加载 — 滚动策略(2026-09-30-v3)：进入程式 / 切换 列表·日·月·周·年 模式 / 按「今天」/ 点选日期格 → 表身滚到今天；编辑存档 / 过滤 / 搜索 / 切范围 / < > 不自动滚动'); }
     // 下方明细显示范围：'day'=选定日单日 / 'full'=整月（月模式）·整周（周模式）·整年（年模式）。仅内存态，不持久化。
     // 第十一批：年视图默认 'full'（整年＝「表身 默认 by 年」）；月/週/日仍默认 'day'（见 tlSetMode，尊重「默认以日显示」）。
     // 初始值取年视图默认（'full'）——因 tlCalMode 现已默认 'year'（第十一批）。
@@ -41,6 +49,8 @@
     // 📆 年视图自动滚动：切到年视图 / 点「今天」 / 首次打开行程视图时，若当前月份未完整显示，则滚动使其可见。
     //    由触发点设 tlYearAutoScrollPending=true，tlRenderYear 渲染后消费一次，避免选择日期等重绘时重复滚动。
     let tlYearAutoScrollPending = false;
+    // 📅 月视图自动滚动：切到月视图 / 点「今天」 / 首次打开行程视图时，若「今天」日期格未完整显示，则滚动使其可见。
+    let tlMonthAutoScrollPending = false;
     // ☐ 「只显示未完成」：全模式生效（年/月/周/日/列表）的显示过滤（纯 UI 偏好：内存 + localStorage，绝不写回 calendar.md）
     //    勾选后隐藏已完成（done ✓）的行程，只看未完成；假日无完成态、不受影响。⚠️ 收口于 tlEventShown（所有视图自动生效，无需每处重复过滤）。
     //    第十一批依用户截图设定：默认「开」（新环境未设 localStorage 时即勾选）。
@@ -109,8 +119,11 @@
       if (si) si.placeholder = calEventsView ? '搜索当前视图...' : '搜索内容...';
       if (calEventsView) {
         showCalEventsPaneOnly();
-        // 首次/重新进入行程视图且为年视图时，渲染后自动滚动到当前月份
+        // 首次/重新进入行程视图：网格滚动到当前月份/今天；表身明细（年/月/周/日）或列表滚到今天
         if (tlCalMode === 'year') tlYearAutoScrollPending = true;
+        if (tlCalMode === 'month') tlMonthAutoScrollPending = true;
+        if (tlCalMode === 'list') tlListScrollAnchorPending = true;
+        else tlDetailListScrollPending = true;
         tlRenderEventsContent();
       } else {
         // 交还给原模式：这里先收掉面板，再由 toggleMdPreview 按 previewMode 重新显示
@@ -147,18 +160,39 @@
         ? { name: t.name || '', cat: t.cat || '' }
         : { name: String(t || ''), cat: '' });
     }
+    // ===== Remark 围栏：备注正文可能本身含 ``` 代码围栏 → 按 CommonMark 规则处理 =====
+    // 写入：围栏长度取 max(3, 备注内最长反引号串+1)，保证正文的 ``` 不可能闭合外层围栏
+    function tlRemarkFence(notes) {
+      const runs = String(notes || '').match(/`+/g) || [];
+      const longest = runs.reduce((m, r) => Math.max(m, r.length), 0);
+      return '`'.repeat(Math.max(3, longest + 1));
+    }
+    // 读取：开启围栏＝首个仅由 3+ 反引号组成的行；闭合围栏＝其后首个长度 ≥ 开启长度的反引号行（CommonMark：闭合围栏须 ≥ 开启长度）
+    function tlExtractRemark(rest) {
+      const lines = String(rest || '').split('\n');
+      let start = -1, n = 0;
+      for (let i = 0; i < lines.length; i++) {
+        const m = lines[i].match(/^(`{3,})[ \t]*$/);
+        if (m) { start = i; n = m[1].length; break; }
+      }
+      if (start < 0) return '';
+      let end = -1;
+      for (let i = start + 1; i < lines.length; i++) {
+        const m = lines[i].match(/^(`{3,})[ \t]*$/);
+        if (m && m[1].length >= n) { end = i; break; }
+      }
+      const body = (end >= 0 ? lines.slice(start + 1, end) : lines.slice(start + 1)).join('\n');
+      const trimmed = body.replace(/^\n/, '').replace(/\n$/, '');
+      return trimmed.trim() === '' ? '' : trimmed;
+    }
     function tlParseBlock(block, idx) {
       let remark = '';
       let head = block;
       const ri = block.indexOf('- Remark:');
       if (ri >= 0) {
         head = block.slice(0, ri);
-        // ⚠️ 必须非贪婪：曾用 /```([\s\S]*)```/ 贪婪匹配到块尾最后一个 ``` → 备注会吞掉紧随其后的 ## HOLIDAY 原文
-        const m = block.slice(ri + '- Remark:'.length).match(/```([\s\S]*?)```/);
-        if (m) {
-          remark = m[1].replace(/^\n/, '').replace(/\n$/, '');
-          if (remark.trim() === '') remark = '';
-        }
+        // ⚠️ 不能用非贪婪 /```([\s\S]*?)```/：备注正文含 ``` 时会在正文首个 ``` 处提前闭合，吞掉其后内容（2026-09-30 用户反馈）
+        remark = tlExtractRemark(block.slice(ri + '- Remark:'.length));
       }
       const get = (name) => {
         const m = head.match(new RegExp('- ' + name + ': `([^`]*)`'));
@@ -342,7 +376,8 @@
         s += '- repeatEndValue: `' + String(ev.repeatEndValue || '') + '`\n';
         s += '- repeatExcludeDates: `' + JSON.stringify(Array.isArray(ev.repeatExcludeDates) ? ev.repeatExcludeDates : []) + '`\n';
       }
-      s += '- Remark:\n```\n' + String(ev.notes || '') + '\n```\n';
+      // Remark 围栏长度按备注内容动态加长（CommonMark：闭合围栏 ≥ 开启围栏），备注正文里的 ``` 不会再提前闭合
+      s += '- Remark:\n' + tlRemarkFence(ev.notes) + '\n' + String(ev.notes || '') + '\n' + tlRemarkFence(ev.notes) + '\n';
       return s;
     }
     // ## HOLIDAY 序列化：字段顺序与用户实际写法对齐（在 todoIds 后多 holidayType，再 Remark），保证保存后 diff 干净
@@ -364,7 +399,7 @@
       s += '- todoIds: `' + todoJson + '`\n';
       s += '- holidayType: `' + tlMdEscape(h.holidayType || '') + '`\n';
       s += '- region: `' + tlMdEscape(h.region || 'cn') + '`\n';
-      s += '- Remark:\n```\n' + String(h.notes || '') + '\n```\n';
+      s += '- Remark:\n' + tlRemarkFence(h.notes) + '\n' + String(h.notes || '') + '\n' + tlRemarkFence(h.notes) + '\n';
       return s;
     }
     // 整份 calendar.md 序列化：events + holidays + diaries 都保留（保存任一类时若只写该类会把用户手写的其它类整体覆盖掉）
@@ -687,6 +722,12 @@
       tlCalEvents.forEach((ev) => (ev.tags || []).forEach((t) => { if (tlTagName(t)) tags.add(tlTagName(t)); }));
       return Array.from(tags).sort((a, b) => a.localeCompare(b, 'zh-Hans'));
     }
+    // 子标签（分类）历史：从所有事件标签的 cat 收集，供内联输入的 datalist 下拉选择
+    function tlFormCatNames() {
+      const cats = new Set();
+      tlCalEvents.forEach((ev) => (ev.tags || []).forEach((t) => { const c = tlTagCat(t); if (c) cats.add(c); }));
+      return Array.from(cats).sort((a, b) => a.localeCompare(b, 'zh-Hans'));
+    }
     function tlRenderTagPicker() {
       const picker = document.getElementById('tl-ev-tag-picker');
       const selected = document.getElementById('tl-ev-tag-selected');
@@ -695,13 +736,18 @@
       if (!picker || !selected || !menu || !input) return;
       selected.innerHTML = tlEvFormTags.map((t, i) => {
         if (i === tlEvTagEditIndex) {
-          return '<span class="tl-ev-tag-selected-chip"><input type="text" class="tl-ev-tag-cat-input" data-tl-ev-tag-cat="' + i + '" maxlength="40" value="' + tlEscapeHtml(tlTagCat(t)) + '" placeholder="分类"></span>';
+          return '<span class="tl-ev-tag-selected-chip"><input type="text" class="tl-ev-tag-cat-input" data-tl-ev-tag-cat="' + i + '" maxlength="40" value="' + tlEscapeHtml(tlTagCat(t)) + '" placeholder="分类" list="tl-ev-cat-options"></span>';
         }
         const name = tlEscapeHtml(tlTagName(t));
         const cat = tlTagCat(t);
         const catHtml = cat ? '<span class="ev-tag-cat">·' + tlEscapeHtml(cat) + '</span>' : '';
         return '<span class="tl-ev-tag-selected-chip">' + '<span class="tl-ev-tag-name" data-tl-ev-tag-edit="' + i + '" title="点击输入分类">' + name + '</span>' + catHtml + '<button type="button" data-tl-ev-tag-remove="' + tlEscapeHtml(tlTagName(t)) + '" aria-label="删除标签">×</button></span>';
       }).join('');
+      // 子标签（分类）历史下拉：原生 datalist，与标签菜单同源（calendar.md 已有事件）
+      let catList = picker.querySelector('#tl-ev-cat-options');
+      if (!catList) { catList = document.createElement('datalist'); catList.id = 'tl-ev-cat-options'; picker.appendChild(catList); }
+      const catNames = tlFormCatNames();
+      catList.innerHTML = catNames.map((c) => '<option value="' + tlEscapeHtml(c) + '"></option>').join('');
       const query = input.value.trim().toLowerCase();
       const names = tlFormTagNames().filter((t) => !query || t.toLowerCase().includes(query));
       menu.innerHTML = names.length ? names.map((t) => '<button type="button" class="tl-ev-tag-option' + (tlEvFormTags.some((x) => tlTagName(x) === t) ? ' selected' : '') + '" data-tl-ev-tag-option="' + tlEscapeHtml(t) + '">' + (tlEvFormTags.some((x) => tlTagName(x) === t) ? '✓ ' : '') + tlEscapeHtml(t) + '</button>').join('') : '<div class="tl-ev-tag-option">暂无可选标签</div>';
@@ -709,10 +755,14 @@
         const ci = selected.querySelector('.tl-ev-tag-cat-input[data-tl-ev-tag-cat="' + tlEvTagEditIndex + '"]');
         if (ci) {
           ci.focus(); ci.select();
+          // 有历史分类时自动弹下拉（showPicker 需用户手势；此处由点击标签名触发，正处手势链路内）
+          try { if (catNames.length && typeof ci.showPicker === 'function') ci.showPicker(); } catch (err) { /* 无手势等场景忽略，仍可手动点箭头 */ }
           ci.addEventListener('keydown', (e) => {
             if (e.key === 'Enter') { e.preventDefault(); tlCommitTagCat(tlEvTagEditIndex, ci.value); }
             else if (e.key === 'Escape') { e.preventDefault(); tlEvTagEditIndex = -1; tlRenderTagPicker(); }
           });
+          // datalist 选中历史分类后立即提交（change 在 blur 前触发；重复提交无副作用）
+          ci.addEventListener('change', () => tlCommitTagCat(tlEvTagEditIndex, ci.value));
           ci.addEventListener('blur', () => tlCommitTagCat(tlEvTagEditIndex, ci.value));
         }
       }
@@ -859,6 +909,7 @@
     function tlRenderDayGridList() {
       const list = document.getElementById('tlEvDayGridList');
       if (!list) return;
+      const prevScrollTop = list.scrollTop; // 渲染前记录（确定性还原依据，不依赖缓存）
       const isDay = tlCalMode === 'day';
       const today = tlFmtDate(new Date());
       // 重複展開視窗：整週＝網格首末 ±7 天；單日＝選定日當天
@@ -895,8 +946,9 @@
         list.innerHTML = html;
         list.classList.add('scope-follow');
         tlBindActiveDateScroll(list);
-        // 整週：滚动到「选定日」的日期条（该日无内容则回退到最近的一天）；列表自身即滚动容器
-        tlScrollListToDate(list, list, tlGridSelectedDay());
+        // 明细滚动策略（2026-09-30-v2）：仅显式导航才滚；编辑存档/过滤/搜索/切范围均不自动滚动
+        if (tlDetailListScrollPending) { tlDetailListScrollPending = false; tlScrollListToDate(list, list, tlGridSelectedDay()); }
+        else { list.scrollTop = prevScrollTop; }
         tlUpdateActiveDate(list);
         tlAfterCalRender();
         return;
@@ -915,12 +967,15 @@
       }
       list.innerHTML = html;
       list.classList.remove('scope-follow');
-      tlScrollListToDate(list, list, ds);   // 日/週单日明细：滚到该日日期条（列表自身即滚动容器）
+      // 日/週单日明细：仅显式导航才滚到该日日期条；否则恢复渲染前位置
+      if (tlDetailListScrollPending) { tlDetailListScrollPending = false; tlScrollListToDate(list, list, ds); }
+      else { list.scrollTop = prevScrollTop; }
       tlAfterCalRender();
     }
     // 日/週视图：点日期标题切换「下方明细」显示的那一天（与月模式「选中日」、日模式「游标日」一致，均只显示单日）
     function tlSelectWeekDay(ds) {
       tlCalSelected = ds;
+      tlDetailListScrollPending = true; // 显式点选日期：明细滚到该日
       if (tlCalMode === 'week') tlRenderTimeGrid(tlWeekDays(tlCalCursor));
       else if (tlCalMode === 'day') tlRenderTimeGrid([tlCalCursor]);
     }
@@ -1165,7 +1220,11 @@
       // 第十一批：年视图下方明细默认「整年」（full）；月/週/日恢复「默认以日显示」（day）
       tlCalScope = (tlCalMode === 'year') ? 'full' : 'day';
       if ((tlCalMode === 'month' || tlCalMode === 'year') && !tlCalSelected) tlCalSelected = tlFmtDate(new Date());
-      if (tlCalMode === 'year') tlYearAutoScrollPending = true; // 切到年视图时自动滚动到当前月份
+      if (tlCalMode === 'year') tlYearAutoScrollPending = true; // 网格：切到年视图滚动到当前月份
+      if (tlCalMode === 'month') tlMonthAutoScrollPending = true; // 网格：切到月视图滚动到今天日期
+      // 模式切换 / 进入：表身明细（年/月/周/日）或列表滚到今天（满足"切换模式后定位今天"）；编辑存档不在此路径 → 不滚
+      if (tlCalMode === 'list') tlListScrollAnchorPending = true;
+      else tlDetailListScrollPending = true;
       tlRenderEventsContent();
     }
 
@@ -1257,12 +1316,14 @@
       tlYearLastCellClick = isDbl ? { date: null, t: 0 } : { date: ds, t: now };
       tlCalSelected = ds;
       if (isDbl) { tlOpenEventForm(null, ds); return; }
+      tlDetailListScrollPending = true; // 显式点选日期：明细滚到该日
       tlRenderYear(document.getElementById('taskText').value);
     }
     // 年视图下部：选定日行程明细（「日」=当天；年模式「年」=整年；月模式「月」=选中日所在整月，与月视图同口径）
     function tlRenderYearDayList() {
       const list = document.getElementById('tlEvYearDayList');
       if (!list) return;
+      const prevScrollTop = list.scrollTop; // 渲染前记录（确定性还原依据，不依赖缓存）
       const today = tlFmtDate(new Date());
       const sel = tlCalSelected || today;
       const toggle = tlScopeToggleHtml();
@@ -1295,7 +1356,9 @@
         list.innerHTML = html;
         list.classList.add('scope-follow');
         tlBindActiveDateScroll(list);
-        tlScrollListToDate(list, list, sel);
+        // 明细滚动策略（2026-09-30-v2）：仅显式导航（今天/点选日期）才滚到选定日；编辑存档/过滤/搜索/切范围均不自动滚动
+        if (tlDetailListScrollPending) { tlDetailListScrollPending = false; tlScrollListToDate(list, list, sel); }
+        else { list.scrollTop = prevScrollTop; }
         tlUpdateActiveDate(list);
         tlAfterCalRender();
         return;
@@ -1640,6 +1703,7 @@
     // 「只显示日记」的列表本体：日期组只来自 ## DIARY（行程/假日不参与），一天一条
     function tlRenderDiaryOnlyList(list) {
       const today = tlFmtDate(new Date());
+      const prevScrollTop = list.scrollTop; // 渲染前先记下列表当前滚动位置（确定性还原依据）
       // 同一天只应有一条日记，但解析层不做唯一性保证 → 这里按日期去重（保留首条）
       const seen = {};
       const rows = (tlCalDiaries || []).filter((d) => d.date && !seen[d.date] && (seen[d.date] = true));
@@ -1666,13 +1730,20 @@
         html += (ds === highlight) ? '<div class="ev-date-group sel-date">' + g + '</div>' : g;
       }
       list.innerHTML = html;
-      tlScrollListToDate(list, list, scrollTo);
+      // 列表滚动策略（2026-09-30，确定性）：除「今天 / < >」显式导航外，渲染后精确还原到渲染前的 scrollTop，绝不跳今天
+      if (tlListScrollAnchorPending) {
+        tlListScrollAnchorPending = false;
+        tlScrollListToDate(list, list, scrollTo); // 仅显式导航：滚到锚点日（今天或所选日）
+      } else {
+        list.scrollTop = prevScrollTop; // 非显式导航：原地恢复，不自动滚动
+      }
       tlAfterCalRender();
     }
 
     function tlRenderList(content) {
       const list = document.getElementById('tlEvList');
       if (!list) return;
+      const prevScrollTop = list.scrollTop; // 渲染前先记下列表当前滚动位置（确定性还原依据，不依赖内存/缓存）
       tlCalEvents = tlParseEvents(content);
       tlCalHolidays = tlParseHolidays(content);
       tlCalDiaries = tlParseDiaries(content);
@@ -1717,8 +1788,13 @@
         html += (ds === highlight) ? '<div class="ev-date-group sel-date">' + g + '</div>' : g;
       }
       list.innerHTML = html;
-      // 滚动到锚点日（今天，或 < > 导航到的日期）；锚点日不在列表 → 滚到最近未来日
-      tlScrollListToDate(list, list, scrollTo);
+      // 列表滚动策略（2026-09-30，确定性）：除「今天 / < >」显式导航外，渲染后精确还原到渲染前的 scrollTop，绝不跳今天
+      if (tlListScrollAnchorPending) {
+        tlListScrollAnchorPending = false;
+        tlScrollListToDate(list, list, scrollTo); // 仅显式导航：滚到锚点日（今天 / 所选日；不在列表则最近未来日）
+      } else {
+        list.scrollTop = prevScrollTop; // 非显式导航（编辑/过滤/勾选/存档重载…）：原地恢复，不自动滚动
+      }
       tlAfterCalRender();
     }
 
@@ -1758,6 +1834,7 @@
       const target = idx + dir;
       if (target < 0 || target >= dates.length) return;
       tlListSel = dates[target];
+      // ⚠️ 用户要求：< > 只移动「选中日」高亮，不再滚动表身（与「今天」按钮区分）
       tlRenderEventsContent();
     }
 
@@ -1935,6 +2012,22 @@
       if (grid) grid.innerHTML = html;
       tlBindSplit(document.getElementById('tlEvMonthWrap'), document.getElementById('tlEvMonthSplit'));
       tlRenderDayList();
+      if (tlMonthAutoScrollPending) {
+        tlMonthAutoScrollPending = false;
+        tlScrollMonthToToday();
+      }
+    }
+
+    // 月视图：若「今天」日期格未完整显示在滚动区内，则平滑滚动到可视区中央
+    function tlScrollMonthToToday() {
+      const todayCell = document.querySelector('#tlEvMonthGrid .ev-cell.today');
+      const scroller = document.querySelector('#tlEvMonthWrap .ev-month-scroll');
+      if (!todayCell || !scroller) return;
+      const sr = scroller.getBoundingClientRect();
+      const cr = todayCell.getBoundingClientRect();
+      // 已完整显示：无需滚动
+      if (cr.top >= sr.top && cr.bottom <= sr.bottom) return;
+      todayCell.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'center' });
     }
 
     // 月格單擊＝選日；400ms 內連點同一天＝快速新增。
@@ -1947,12 +2040,14 @@
       tlLastCellClick = isDbl ? { date: null, t: 0 } : { date: ds, t: now };
       tlCalSelected = ds;
       if (isDbl) { tlOpenEventForm(null, ds); return; }
+      tlDetailListScrollPending = true; // 显式点选日期：明细滚到该日
       tlRenderMonth(document.getElementById('taskText').value);
     }
 
     function tlRenderDayList() {
       const list = document.getElementById('tlEvDayList');
       if (!list) return;
+      const prevScrollTop = list.scrollTop; // 渲染前记录（确定性还原依据，不依赖缓存）
       const today = tlFmtDate(new Date());
       // 重複展開視窗：整月＝當月 + 前 7 天（含跨月首尾週）；單日＝選定日當天
       if (tlCalScope === 'full') {
@@ -1988,9 +2083,9 @@
         list.innerHTML = html;
         list.classList.add('scope-follow');
         tlBindActiveDateScroll(list);
-        // 整月：滚动到「选中日」的日期条（该日无内容则回退到最近的一天）。
-        // 明细自身即滚动容器（.ev-detail 有确定高度）→ 月格不再被滚走。
-        tlScrollListToDate(list, list, tlCalSelected);
+        // 整月：仅显式导航才滚到「选中日」日期条；编辑存档/过滤/搜索/切范围均不自动滚动
+        if (tlDetailListScrollPending) { tlDetailListScrollPending = false; tlScrollListToDate(list, list, tlCalSelected); }
+        else { list.scrollTop = prevScrollTop; }
         tlUpdateActiveDate(list);
         tlAfterCalRender();
         return;
@@ -2242,6 +2337,7 @@
       tlCalEvents = tlParseEvents(document.getElementById('taskText').value);
       const i = tlCalEvents.findIndex((x) => x.uid === ev.uid);
       if (i >= 0) tlCalEvents[i] = ev; else tlCalEvents.push(ev);
+      // 写入后返回列表：不设滚动锚点（pending 保持 false）→ tlRenderList 走「保留原 scrollTop」分支，原地不动
       tlApplyEventsToBuffer();
       tlCloseEventForm();
       showToast('已写入编辑内容，按「保存」写回 calendar.md', 'success');
@@ -2644,8 +2740,11 @@
         tlCalCursor = new Date();
         tlCalSelected = tlFmtDate(new Date());
         tlListSel = tlFmtDate(new Date());
-        // 年视图点「今天」时，确保当前月份卡片完整显示
+        // 年/月视图点「今天」时，确保当前月份/今天日期完整显示
         if (tlCalMode === 'year') tlYearAutoScrollPending = true;
+        if (tlCalMode === 'month') tlMonthAutoScrollPending = true;
+        if (tlCalMode === 'list') tlListScrollAnchorPending = true; // 列表：显式导航→滚到今天
+        else tlDetailListScrollPending = true; // 年/月/周/日 明细：显式导航→滚到今天
         tlRenderEventsContent();
       });
       on('tlEvMultiDayBtn', 'click', () => tlToggleMultiDayMode());   // 列表模式：跨天一笔 / 跨天多笔
