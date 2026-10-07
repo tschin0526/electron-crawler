@@ -11,6 +11,15 @@
 
 // 快取名帶版本：每次改資源內容或 SW 邏輯都要 bump 版本號，
 // 讓舊快取名自動失效、activate 階段清掉，確保用戶一定拿到最新資源。
+// v97：勾選「只顯示未完成」後畫面儘量不自動滾動——切換前捕獲視口頂部日期組＋偏移，切換後重錨（錨點存活→保持偏移＝不滾；被過濾掉→滾到最近未過濾組）；calendar-editor.js 改，bump 讓手機重拉
+// v96：備註 checkbox 勾選時無論有無 [[dl:...]] 都一律補 [[cp:今天]]（原為「有 dl 才補 cp」）；取消勾選仍刪 cp 保留 dl（calNoteCheckTransform）；calendar-editor.js 改，bump 讓手機重拉
+// v95：統計彈層檔案大小顯示再調整——固定 byte ＋千分位逗號＋單位「Bytes」（如 38099 → 38,099 Bytes）；calendar-editor.js 改，bump 讓手機重拉
+// v94：統計彈層表頭檔案大小改為固定以 byte 顯示（不再走 formatFileSizeShort 的 KB 縮寫，如 37.2KB → 38099 B）；calendar-editor.js 改，bump 讓手機重拉
+// v93：備註 checkbox 子事件支援 deadline(dl)/completed(cp) 標記——裸日期 [[YYYY-MM-DD]] 歸一為 [[dl:...]]；勾選 [x] 且含 dl 自動追加 [[cp:今天]]、取消勾選移除 cp（保留 dl）；渲染 dl→📅、cp→✅（calRenderNoteMarkers + calToggleNoteCheck）；calendar-editor.js 改，bump 讓手機重拉
+// v92：統計彈層表頭顯示 calendar.md 內容大小（calFileSizeLabel 取編輯器緩衝 UTF-8 字節）；統計按鈕改為與平台 .btn 一致的圖標按鈕（桌面圓形📊／LITE 藥丸📊統計）；calendar-editor.js/index.html/style.css 改，bump 讓手機重拉
+// v91：事件統計按鈕（📊 統計，放在 日/週/月/年 旁）——calBuildStats/calOpenStats 主事件×備註子事件(-[ ])按標籤·完成狀態分類＋詳情可展開；calendar-editor.js/index.html/style.css/app.js 改，bump 讓手機重拉
+// v90：行程編輯「標籤」補齊子標籤（分類）datalist 下拉（與桌面對齊）——calFormCatNames(tagName) 按標籤從屬過濾＋cat 輸入 list/showPicker/change；calendar-editor.js 改，bump 讓手機重拉
+// v89：進入程式自動「按今天」→ 年視圖滾到當月（setView 首次進入 events 視圖設 calYearAutoScrollPending；calStartupAutoScrollDone 守衛只觸發一次）；app.js/calendar-editor.js 改，bump 讓手機重拉
 // v88：年視圖「今天」按鈕 / 切到年模式 → 12 個月迷你月曆自動滾動到今天所在月份卡片（calScrollYearToCurrentMonth，與桌面對齊）；calendar-editor.js/app.js 改，bump 讓手機重拉
 // v87：月視圖「今天」按鈕 / 切到月模式 → 上半月曆網格自動滾動到今天日期格（calScrollMonthToToday，與桌面對齊）；calendar-editor.js/app.js 改，bump 讓手機重拉
 // v86：備註 Markdown 表格補網格線——style.css 為 .ev-notes / .ev-block .notes / .ev-tip-notes 三容器
@@ -120,7 +129,7 @@
 //      calendar-editor.js/style.css 改，bump 讓手機重拉
 // v63：「只顯示日記」正文不再截斷——去掉舊的「3 行 / 120 字 + 省略號」上限，改為完整渲染、靠列錶整體滾動條查看
 //      （calDiaryPreview → calDiaryBody）；calendar-editor.js 改，bump 讓手機重拉
-const CACHE_NAME = 'md-editor-lite-v88';
+const CACHE_NAME = 'md-editor-lite-v97';
 const ASSETS = [
   './',
   './index.html',

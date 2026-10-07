@@ -1876,11 +1876,11 @@
     /* ===== 📅 行程视图（calendar.md 专用）：与 Lite 版同款视觉 ===== */
     /* ⚠️ .ev-tip / .ev-almanac-pop 掛載在 <body>（不在 #calEventsPane 內）→ 必須把它們一併納入 --ev-* 變數作用域，
        否則 var(--ev-card) 解析失敗 → 提示框/老黃曆彈層背景透明（使用者截圖實測，老黃曆彈層 2026-09-17 同款踩坑）。 */
-    #calEventsPane, #tlEvFormOverlay, #tlDiaryFormOverlay, #tlRepeatOverviewOverlay, .ev-tip, .ev-almanac-pop {
+    #calEventsPane, #tlEvFormOverlay, #tlDiaryFormOverlay, #tlRepeatOverviewOverlay, #tlEvStatsOverlay, .ev-tip, .ev-almanac-pop {
       --ev-bg: #0f172a; --ev-card: #1e293b; --ev-text: #e2e8f0;
       --ev-muted: #94a3b8; --ev-border: #334155; --ev-primary: #7c3aed;
     }
-    body:not(.dark) #calEventsPane, body:not(.dark) #tlEvFormOverlay, body:not(.dark) #tlDiaryFormOverlay, body:not(.dark) #tlRepeatOverviewOverlay, body:not(.dark) .ev-tip, body:not(.dark) .ev-almanac-pop {
+    body:not(.dark) #calEventsPane, body:not(.dark) #tlEvFormOverlay, body:not(.dark) #tlDiaryFormOverlay, body:not(.dark) #tlRepeatOverviewOverlay, body:not(.dark) #tlEvStatsOverlay, body:not(.dark) .ev-tip, body:not(.dark) .ev-almanac-pop {
       --ev-bg: #f8fafc; --ev-card: #ffffff; --ev-text: #1f2937;
       --ev-muted: #6b7280; --ev-border: #e5e7eb; --ev-primary: #2563eb;
     }
@@ -2246,8 +2246,42 @@
     .ev-todo-dropdown-empty { font-size: 12px; color: var(--ev-muted); padding: 10px; }
     /* 行程表单 */
     .tl-ev-form-overlay { position: fixed; inset: 0; z-index: 12000; background: rgba(0,0,0,0.55); display: flex; align-items: center; justify-content: center; padding: 20px; }
-    .tl-ev-form-box { width: 100%; max-width: 586px; max-height: 88vh; overflow: auto; background: var(--ev-card); border: 1px solid var(--ev-border); border-radius: 12px; padding: 18px; }
+    .tl-ev-form-box { width: 100%; max-width: 586px; max-height: 88vh; overflow: auto; background: var(--ev-card, #1e293b); border: 1px solid var(--ev-border, #334155); border-radius: 12px; padding: 18px; }
     .tl-ev-form-title { font-size: 16px; font-weight: 600; color: var(--ev-text); margin-bottom: 12px; }
+    /* ===== 📊 事件统计弹层 ===== */
+    .tl-ev-stats-box { max-width: 720px; }
+    .tl-ev-stats-sub { font-size: 11px; font-weight: 400; color: var(--ev-muted); margin-left: 8px; }
+    .tl-ev-stats-sub code { background: var(--ev-chip-bg, rgba(124,58,237,.12)); padding: 1px 5px; border-radius: 4px; }
+    /* 统计按钮：与 App 图标按钮（.btn 36×36 圆形）一致，用 ev 主题变量保持与行程面板协调 */
+    .ev-stats-btn.btn { width: 34px; height: 34px; font-size: 15px; background: var(--ev-card); color: var(--ev-text); border: 1px solid var(--ev-border); }
+    .ev-stats-btn.btn:hover { background: var(--ev-primary); color: #fff; }
+    .tl-ev-stats-file { display: block; font-size: 11px; font-weight: 400; color: var(--ev-muted); margin-top: 2px; }
+    .tl-ev-stats-body { font-size: 13px; color: var(--ev-text); }
+    .tl-stats-summary { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 14px; }
+    .tl-stats-card { flex: 1 1 220px; min-width: 200px; border: 1px solid var(--ev-border); border-radius: 10px; padding: 10px 12px; background: var(--ev-chip-bg, rgba(124,58,237,.06)); }
+    .tl-stats-card h4 { margin: 0 0 6px; font-size: 13px; font-weight: 600; color: var(--ev-text); }
+    .tl-stats-card .row { display: flex; justify-content: space-between; line-height: 1.7; color: var(--ev-muted); }
+    .tl-stats-card .row b { color: var(--ev-text); font-weight: 600; }
+    .tl-stats-card .rate { margin-top: 6px; font-size: 12px; }
+    .tl-stats-card .rate .bar { height: 6px; border-radius: 3px; background: var(--ev-border); overflow: hidden; margin-top: 3px; }
+    .tl-stats-card .rate .bar > i { display: block; height: 100%; background: #34C759; }
+    .tl-stats-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+    .tl-stats-table th, .tl-stats-table td { border: 1px solid var(--ev-border); padding: 6px 8px; text-align: center; }
+    .tl-stats-table th { background: var(--ev-chip-bg, rgba(124,58,237,.1)); color: var(--ev-text); font-weight: 600; }
+    .tl-stats-table td.tl-stats-tag { text-align: left; font-weight: 600; color: var(--ev-text); }
+    .tl-stats-table tr.tl-stats-total td { font-weight: 700; background: var(--ev-chip-bg, rgba(124,58,237,.06)); }
+    .tl-stats-table .muted { color: var(--ev-muted); }
+    .tl-stats-detail { text-align: left; padding: 0 !important; }
+    .tl-stats-detail > details { padding: 6px 8px; }
+    .tl-stats-detail summary { cursor: pointer; color: var(--ev-muted); font-size: 12px; margin-bottom: 4px; }
+    .tl-stats-detail ul { margin: 4px 0 0; padding-left: 18px; }
+    .tl-stats-detail li { line-height: 1.7; }
+    .tl-stats-detail li .cb { display: inline-block; width: 14px; text-align: center; }
+    .tl-stats-detail li.done .cb { color: #34C759; }
+    .tl-stats-detail li .sub { color: var(--ev-muted); margin-left: 4px; }
+    .tl-stats-detail .grp-title { font-weight: 600; color: var(--ev-text); margin-top: 6px; }
+    .tl-stats-empty { color: var(--ev-muted); padding: 16px; text-align: center; }
+
     .tl-ev-f-label { display: block; font-size: 12px; color: var(--ev-muted); margin-bottom: 10px; }
     /* 🗓 表單日期輸入框旁的星期提示（依輸入日期即時更新；與正文同色同字號，便於閱讀） */
     .tl-ev-f-dow { color: var(--ev-text); font-weight: 400; margin-left: 6px; font-size: inherit; }
@@ -4691,6 +4725,7 @@
               <button type="button" id="tlEvModeMonth">月</button>
               <button type="button" id="tlEvModeYear">年</button>
             </div>
+            <button type="button" id="tlEvStatsBtn" class="btn ev-stats-btn" title="事件统计：主事件与备注中的子事件，按标签·完成状态统计">📊</button>
             <span class="ev-toolbar-flex"></span>
             <span class="ev-hint-text">编辑后按「保存」写回 calendar.md</span>
             <button type="button" class="ev-add-btn" id="tlEvAddBtn">＋ 新增行程</button>
@@ -4996,6 +5031,19 @@
       <div class="tl-ev-form-hint">写入后按编辑器「保存」，把改动写回 calendar.md</div>
     </div>
   </div>
+
+  <!-- 📊 事件统计弹层（calendar.md 专用）：主事件 × 备注子事件，按标签·完成状态统计 -->
+  <div id="tlEvStatsOverlay" class="tl-ev-form-overlay" style="display:none" onclick="if(event.target===event.currentTarget) tlCloseStats()">
+    <div class="tl-ev-form-box tl-ev-stats-box">
+      <div class="tl-ev-form-title">📊 事件统计<span class="tl-ev-stats-file" id="tlEvStatsFile"></span><span class="tl-ev-stats-sub">主事件 + 备注中的子事件（<code>- [ ]</code>），按标签与完成状态分类</span></div>
+      <div id="tlEvStatsBody" class="tl-ev-stats-body"></div>
+      <div class="tl-ev-form-actions">
+        <span style="flex:1"></span>
+        <button type="button" class="btn btn-secondary" onclick="tlCloseStats()">关闭</button>
+      </div>
+    </div>
+  </div>
+
   <div class="modal-overlay" id="unsavedConfirmOverlay" style="display: none;" onclick="if(event.target===event.currentTarget) cancelUnsavedConfirm()" data-page-node-id="1tAftS7ani1lBw5cB7rDmx">
     <div class="rename-confirm-box" onclick="event.stopPropagation()" data-page-node-id="mukn6T7nMnbc0JEmreBNWH">
       <p class="rename-confirm-msg" id="unsavedConfirmMsg" data-page-node-id="B9EQeG06UfjL2pK4oDZbsz">你有未保存的更改，要存档吗？</p>

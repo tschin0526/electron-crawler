@@ -56,6 +56,7 @@
     //    第十一批依用户截图设定：默认「开」（新环境未设 localStorage 时即勾选）。
     let tlCalUndoneOnly = true;
     let tlUndoneOnlyLoaded = false;
+    let tlUndoneScrollResult = null;   // 测试 seam：undone 勾选切换后实际滚动到的日期组（null＝无列表/无锚点）
     let tlEvFormTodoIds = [];   // 表单内「关联 Todo 卡片」临时列表（仅编辑期，不污染存档对象）
     let tlEvFormUid = null;
     let tlEvFormColor = null;
@@ -583,6 +584,12 @@
       const withChecks = tlNotesWithChecks(String(notes), uid);
       return renderMarkdown(withChecks);
     }
+    // 備註 checkbox 行內的 deadline / completed 標記（顯示層轉換，不改寫源）：裸日期與 [[dl:...]] → 📅、[[cp:...]] → ✅
+    function tlRenderNoteMarkers(text) {
+      return String(text)
+        .replace(/\[\[(?:dl:)?(\d{4}-\d{2}-\d{2})\]\]/g, '📅 $1')
+        .replace(/\[\[cp:(\d{4}-\d{2}-\d{2})\]\]/g, '✅ $1');
+    }
     function tlNotesWithChecks(text, uid) {
       let inFence = false;
       return text.split('\n').map((line, i) => {
@@ -598,7 +605,7 @@
           : '';
         return m[1] + '<span class="ev-md-check' + (done ? ' done' : '') + '"' + cbAttr +
           ' role="checkbox" aria-checked="' + (done ? 'true' : 'false') + '" tabindex="0">' +
-          '<span class="ev-cb">' + (done ? '\u2713' : '') + '</span>' + tlRenderInlineMarkdown(m[3]) + '</span>';
+          '<span class="ev-cb">' + (done ? '\u2713' : '') + '</span>' + tlRenderInlineMarkdown(tlRenderNoteMarkers(m[3])) + '</span>';
       }).join('\n');
     }
     // 🔁 重复事件小图标（## EVENT(REPEAT)）：双箭头环形，随文色（灰），用于月格 chip / 时间网格 / 列表行 / 悬停提示
@@ -722,10 +729,12 @@
       tlCalEvents.forEach((ev) => (ev.tags || []).forEach((t) => { if (tlTagName(t)) tags.add(tlTagName(t)); }));
       return Array.from(tags).sort((a, b) => a.localeCompare(b, 'zh-Hans'));
     }
-    // 子标签（分类）历史：从所有事件标签的 cat 收集，供内联输入的 datalist 下拉选择
-    function tlFormCatNames() {
+    // 子标签（分类）历史：只从「该标签」所属事件的 cat 收集，供内联输入的 datalist 下拉选择
+    // （标签与子标签有从属关系：某标签的子分类候选只来自挂了同名标签的事件；tagName 为空 → 空列表）
+    function tlFormCatNames(tagName) {
       const cats = new Set();
-      tlCalEvents.forEach((ev) => (ev.tags || []).forEach((t) => { const c = tlTagCat(t); if (c) cats.add(c); }));
+      if (!tagName) return [];
+      tlCalEvents.forEach((ev) => (ev.tags || []).forEach((t) => { if (tlTagName(t) === tagName) { const c = tlTagCat(t); if (c) cats.add(c); } }));
       return Array.from(cats).sort((a, b) => a.localeCompare(b, 'zh-Hans'));
     }
     function tlRenderTagPicker() {
@@ -744,9 +753,10 @@
         return '<span class="tl-ev-tag-selected-chip">' + '<span class="tl-ev-tag-name" data-tl-ev-tag-edit="' + i + '" title="点击输入分类">' + name + '</span>' + catHtml + '<button type="button" data-tl-ev-tag-remove="' + tlEscapeHtml(tlTagName(t)) + '" aria-label="删除标签">×</button></span>';
       }).join('');
       // 子标签（分类）历史下拉：原生 datalist，与标签菜单同源（calendar.md 已有事件）
+      // ⚠️ 只列当前编辑标签所属的子分类，不混入其他标签的子分类（从属关系）
       let catList = picker.querySelector('#tl-ev-cat-options');
       if (!catList) { catList = document.createElement('datalist'); catList.id = 'tl-ev-cat-options'; picker.appendChild(catList); }
-      const catNames = tlFormCatNames();
+      const catNames = tlFormCatNames(tlEvTagEditIndex >= 0 ? tlTagName(tlEvFormTags[tlEvTagEditIndex]) : null);
       catList.innerHTML = catNames.map((c) => '<option value="' + tlEscapeHtml(c) + '"></option>').join('');
       const query = input.value.trim().toLowerCase();
       const names = tlFormTagNames().filter((t) => !query || t.toLowerCase().includes(query));
@@ -791,6 +801,131 @@
       tlCalEvents.forEach((ev) => (ev.tags || []).forEach((t) => { if (tlTagName(t)) tags.add(tlTagName(t)); }));
       options.innerHTML = Array.from(tags).sort().map((t) => '<option value="' + tlEscapeHtml(t) + '"></option>').join('');
     }
+    // ========== 📊 事件统计：主事件 × 备注子事件（- [ ]），按标签·完成状态分类 ==========
+    // 解析备注中的 Markdown checkbox 行 → 子事件数组 [{text, done}]
+    function tlParseNoteChecks(text) {
+      const out = [];
+      if (!text) return out;
+      let inFence = false;
+      text.split('\n').forEach((line) => {
+        if (/^\s*```/.test(line)) { inFence = !inFence; return; }
+        if (inFence) return;
+        const m = line.match(/^(\s*)-\s+\[([ xX])\]\s?(.*)$/);
+        if (!m) return;
+        const txt = (m[3] || '')
+          .replace(/\[\[(?:dl:)?(\d{4}-\d{2}-\d{2})\]\]/g, '$1')
+          .replace(/\[\[cp:(\d{4}-\d{2}-\d{2})\]\]/g, '$1')
+          .replace(/\s{2,}/g, ' ').trim();
+        out.push({ text: txt, done: m[2] !== ' ' });
+      });
+      return out;
+    }
+    // 收集统计数据：仅统计 EVENT（tlCalEvents），REPEAT 系列按 1 条主事件计；子事件继承主事件标签
+    function tlBuildStats() {
+      const tagMap = new Map();   // tagName -> { mainTotal, mainDone, mainUndone, subTotal, subDone, subUndone, mains:[], subs:[] }
+      const ensure = (k) => { if (!tagMap.has(k)) tagMap.set(k, { mainTotal: 0, mainDone: 0, mainUndone: 0, subTotal: 0, subDone: 0, subUndone: 0, mains: [], subs: [] }); return tagMap.get(k); };
+      let mainT = 0, mainD = 0, mainU = 0, subT = 0, subD = 0, subU = 0;
+      tlCalEvents.forEach((ev) => {
+        const tagNames = (ev.tags || []).map((t) => tlTagName(t)).filter(Boolean);
+        // 主事件：每条 EVENT 计一次（done 看 ev.done）
+        mainT++; if (ev.done) mainD++; else mainU++;
+        const subs = tlParseNoteChecks(ev.notes);
+        const subDoneCount = subs.filter((s) => s.done).length;
+        subT += subs.length; subD += subDoneCount; subU += (subs.length - subDoneCount);
+        // 标签分组（含「无标签」）
+        const groups = tagNames.length ? tagNames : ['(无标签)'];
+        groups.forEach((g) => {
+          const r = ensure(g);
+          r.mainTotal++; if (ev.done) r.mainDone++; else r.mainUndone++;
+          r.subTotal += subs.length; r.subDone += subDoneCount; r.subUndone += (subs.length - subDoneCount);
+          r.mains.push({ title: ev.title, done: !!ev.done, uid: ev.uid });
+          subs.forEach((s) => r.subs.push({ text: s.text, done: s.done }));
+        });
+      });
+      // 合计行：主/子 全局合计已在 mainT/subT；标签行在 tlStatsTableHtml 内排序
+      const pct = (d, t) => (t ? Math.round((d / t) * 100) : 0);
+      return {
+        mainT, mainD, mainU, subT, subD, subU,
+        mainRate: pct(mainD, mainT), subRate: pct(subD, subT),
+        rows: tagMap, pct,
+      };
+    }
+    function tlStatsSummaryHtml(s) {
+      const card = (title, t, d, u, rate) =>
+        '<div class="tl-stats-card"><h4>' + title + '</h4>' +
+        '<div class="row"><span>总计</span><b>' + t + '</b></div>' +
+        '<div class="row"><span>已完成 ✓</span><b>' + d + '</b></div>' +
+        '<div class="row"><span>未完成 ☐</span><b>' + u + '</b></div>' +
+        '<div class="rate">完成率 ' + rate + '%<div class="bar"><i style="width:' + rate + '%"></i></div></div>' +
+        '</div>';
+      return '<div class="tl-stats-summary">' +
+        card('主事件', s.mainT, s.mainD, s.mainU, s.mainRate) +
+        card('子事件（备注 - [ ]）', s.subT, s.subD, s.subU, s.subRate) +
+        '</div>';
+    }
+    function tlStatsDetailHtml(group) {
+      const mainItems = group.mains.map((m) =>
+        '<li class="' + (m.done ? 'done' : '') + '"' + (m.uid ? ' onclick="tlOpenEventForm(\'' + tlEscapeHtml(m.uid) + '\')" style="cursor:pointer"' : '') + '>' +
+        '<span class="cb">' + (m.done ? '✓' : '☐') + '</span>' + tlRenderInlineMarkdown(m.title) + '</li>').join('');
+      const subItems = group.subs.map((x) =>
+        '<li class="' + (x.done ? 'done' : '') + '"><span class="cb">' + (x.done ? '✓' : '☐') + '</span>' + tlEscapeHtml(x.text) + '</li>').join('');
+      return '<ul>' +
+        '<div class="grp-title">主事件（' + group.mains.length + '）</div>' + (mainItems || '<li class="muted">—</li>') +
+        '<div class="grp-title">子事件（' + group.subs.length + '）</div>' + (subItems || '<li class="muted">—</li>') +
+        '</ul>';
+    }
+    function tlStatsTableHtml(s) {
+      const head = '<thead><tr><th>标签</th><th>主事件<br>总计</th><th>主·完成</th><th>主·未完成</th><th>子事件<br>总计</th><th>子·完成</th><th>子·未完成</th></tr></thead>';
+      const body = Array.from(s.rows.entries()).sort((a, b) => a[0].localeCompare(b[0], 'zh-Hans')).map(([name, r]) => {
+        const detail = '<tr class="tl-stats-detail"><td class="tl-stats-detail" colspan="7"><details><summary>展开明细</summary>' + tlStatsDetailHtml(r) + '</details></td></tr>';
+        return '<tr><td class="tl-stats-tag">' + (name === '(无标签)' ? '<span class="muted">(无标签)</span>' : tlEscapeHtml(name)) + '</td>' +
+          '<td>' + r.mainTotal + '</td><td>' + r.mainDone + '</td><td>' + r.mainUndone + '</td>' +
+          '<td>' + r.subTotal + '</td><td>' + r.subDone + '</td><td>' + r.subUndone + '</td></tr>' + detail;
+      }).join('');
+      const total = '<tr class="tl-stats-total"><td class="tl-stats-tag">总计</td>' +
+        '<td>' + s.mainT + '</td><td>' + s.mainD + '</td><td>' + s.mainU + '</td>' +
+        '<td>' + s.subT + '</td><td>' + s.subD + '</td><td>' + s.subU + '</td></tr>';
+      return '<table class="tl-stats-table">' + head + '<tbody>' + body + total + '</tbody></table>';
+    }
+    function tlOpenStats() {
+      const overlay = document.getElementById('tlEvStatsOverlay');
+      const body = document.getElementById('tlEvStatsBody');
+      if (!overlay || !body) return;
+      const s = tlBuildStats();
+      const fileEl = document.getElementById('tlEvStatsFile');
+      if (fileEl) fileEl.textContent = tlFileSizeLabel();
+      body.innerHTML = (s.mainT || s.subT)
+        ? tlStatsSummaryHtml(s) + tlStatsTableHtml(s)
+        : '<div class="tl-stats-empty">calendar.md 中还没有任何行程事件</div>';
+      overlay.style.display = 'flex';
+    }
+    function tlCloseStats() {
+      const overlay = document.getElementById('tlEvStatsOverlay');
+      if (overlay) overlay.style.display = 'none';
+    }
+    // UTF-8 字节长度（纯 JS，无依赖）：用于估算当前加载的 calendar.md 内容大小
+    function tlUtf8Len(s) {
+      if (!s) return 0;
+      let n = 0;
+      for (let i = 0; i < s.length; i++) {
+        const c = s.charCodeAt(i);
+        if (c < 0x80) n += 1;
+        else if (c < 0x800) n += 2;
+        else if (c >= 0xD800 && c <= 0xDBFF) { n += 4; i++; } // 代理对
+        else n += 3;
+      }
+      return n;
+    }
+    // 统计弹层表头：展示「calendar.md 文件名 · 内容大小」（大小取当前编辑器缓冲，即正在统计的数据）
+    function tlFileSizeLabel() {
+      const t = currentFileTarget();
+      const fname = (t && t.name) ? t.name : 'calendar.md';
+      const ta = document.getElementById('taskText');
+      const bytes = tlUtf8Len(ta ? (ta.value || '') : '');
+      const sizeStr = bytes.toLocaleString('en-US') + ' Bytes'; // 固定 byte 顯示＋千分位逗號（不走 formatFileSizeShort 的 KB 縮寫）
+      return fname + ' · ' + sizeStr;
+    }
+
     // 日 / 周视图 时间网格（移植自 calendar 插件的 buildTimeGrid，使用 ev- 前缀类名）
     function tlRenderTimeGrid(dayDates) {
       const wrap = document.getElementById('tlEvWeekWrap');
@@ -1670,7 +1805,16 @@
       tlUndoneOnlyLoaded = true;
       try { localStorage.setItem(TL_UNDONEONLY_KEY, tlCalUndoneOnly ? '1' : '0'); } catch (e) {}
       tlRenderHolidayLegend();   // 同步顶栏勾选态（该勾选框只在列表模式渲染）
+      // 切换前：捕获当前画面顶部日期组＋偏移，用于切换后尽量不滚动（Feature #8）
+      const list = tlActiveDetailList();
+      let anchorDate = null, anchorOffset = 0;
+      if (list) {
+        const info = tlViewportTopDateInfo(list);
+        if (info) { anchorDate = info.date; anchorOffset = info.offset; }
+      }
       tlRerenderCalendarView();
+      // 切换后：把锚点日期组对齐回原偏移（锚点被过滤掉 → 回落到最近的未过滤组）；覆盖重绘自带的 prevScrollTop 还原
+      if (list && anchorDate) tlReanchorList(list, anchorDate, anchorOffset);
     }
     // 日记正文：压掉行尾空白并 trim 后以基础 Markdown 渲染（不截断）。
     // ⚠️ 绝不在这里截断：正文被截掉的部分根本没进 DOM，列表滚动条再怎么滚也滚不出来。
@@ -1856,17 +2000,58 @@
     //    只改 scroller.scrollTop，不触碰祖先滚动容器。
     function tlScrollElToTop(el, scroller) {
       if (!el || !scroller) return;
-      const prevPos = el.style.position;
-      el.style.position = 'static';                 // 临时摘 sticky → 读到真实布局位置
-      const next = (el.offsetParent && el.offsetParent === scroller.offsetParent)
-        ? el.offsetTop - scroller.offsetTop - (scroller.clientTop || 0)   // 同 offsetParent：直接相减（补边框）
-        : scroller.scrollTop + (el.getBoundingClientRect().top - scroller.getBoundingClientRect().top);  // 否则退回 rect 差
-      el.style.position = prevPos;
-      scroller.scrollTop = next;
+      scroller.scrollTop = tlElAbsTop(el, scroller);
     }
     function tlScrollListToDate(list, scroller, ds) {
       if (!list || !scroller || !ds) return;
       tlScrollElToTop(tlPickScrollTarget(list.querySelectorAll('.ev-date[data-ev-date]'), ds), scroller);
+    }
+    // 元素在 scroller 内的「绝对布局 scrollTop」（sticky 安全：先临时摘 .ev-date 再读，见 tlScrollElToTop）
+    function tlElAbsTop(el, scroller) {
+      const prevPos = el.style.position;
+      el.style.position = 'static';
+      const next = (el.offsetParent && el.offsetParent === scroller.offsetParent)
+        ? el.offsetTop - scroller.offsetTop - (scroller.clientTop || 0)
+        : scroller.scrollTop + (el.getBoundingClientRect().top - scroller.getBoundingClientRect().top);
+      el.style.position = prevPos;
+      return next;
+    }
+    // 当前模式下真正可见/可滚动的「明细列表」元素（undone 勾选切换只重锚这一条）
+    function tlActiveDetailList() {
+      if (tlCalMode === 'list') return document.getElementById('tlEvList');
+      if (tlCalMode === 'year') return document.getElementById('tlEvYearDayList');
+      return document.getElementById('tlEvDayList'); // month / week / day
+    }
+    // 切换前：捕获「视口顶部日期组」及其在滚动容器内的相对偏移（用于切换后尽量不滚动）
+    function tlViewportTopDateInfo(list) {
+      if (!list) return null;
+      const active = tlPickActiveDate(list); // 复用顶部 sticky 日期条判定（已是 sticky 安全版）
+      if (!active) return null;
+      const offset = active.getBoundingClientRect().top - list.getBoundingClientRect().top;
+      return { date: active.dataset.evDate, offset: offset };
+    }
+    // 给定一组日期标题，挑与 ds 日期距离最小者（tie → 较晚日期）；ds 已被过滤掉时用来回落到「最近的未过滤组」
+    function tlNearestDateHeader(headers, ds) {
+      if (!headers || !headers.length) return null;
+      const base = parseInt(ds.replace(/-/g, ''), 10);
+      let best = null, bestD = Infinity;
+      for (const h of headers) {
+        const d = Math.abs(parseInt(h.dataset.evDate.replace(/-/g, ''), 10) - base);
+        if (d < bestD || (d === bestD && best && h.dataset.evDate > best.dataset.evDate)) { bestD = d; best = h; }
+      }
+      return best;
+    }
+    // 切换后把列表重锚：锚点存活→保持原偏移（＝不滚动）；锚点被过滤掉→滚到最近未过滤组（置顶）
+    function tlReanchorList(list, anchorDate, anchorOffset) {
+      const headers = list.querySelectorAll('.ev-date[data-ev-date]');
+      if (!headers.length) { tlUndoneScrollResult = null; return; }
+      let target = null, survived = false;
+      for (const h of headers) if (h.dataset.evDate === anchorDate) { target = h; survived = true; break; }
+      if (!target) target = tlNearestDateHeader(headers, anchorDate);
+      if (!target) { tlUndoneScrollResult = null; return; }
+      const absTop = tlElAbsTop(target, list);
+      list.scrollTop = survived ? (absTop - anchorOffset) : absTop;
+      tlUndoneScrollResult = target.dataset.evDate;
     }
     // 「日/月」切换只显示在当前画面顶部（第一个可见）的日期标题条上：
     // active = 已滚过顶部、当前贴着顶部的那条日期标题（sticky 顶条）。
@@ -2272,7 +2457,7 @@
       tlEvFormColor = null;
     }
 
-    function tlSaveEventForm() {
+    function tlSaveEventForm(closeAfterSave = true) {
       const title = document.getElementById('tlEvFTitle').value.trim();
       let date = document.getElementById('tlEvFDate').value;
       let endDate = document.getElementById('tlEvFEndDate').value;
@@ -2339,8 +2524,10 @@
       if (i >= 0) tlCalEvents[i] = ev; else tlCalEvents.push(ev);
       // 写入后返回列表：不设滚动锚点（pending 保持 false）→ tlRenderList 走「保留原 scrollTop」分支，原地不动
       tlApplyEventsToBuffer();
-      tlCloseEventForm();
-      showToast('已写入编辑内容，按「保存」写回 calendar.md', 'success');
+      if (closeAfterSave) tlCloseEventForm();
+      showToast(closeAfterSave
+        ? '已写入编辑内容，按「保存」写回 calendar.md'
+        : '已写入编辑内容，可继续编辑（按「保存」写回 calendar.md）', 'success');
     }
 
     function tlDeleteEvent(uid) {
@@ -2453,6 +2640,24 @@
       showToast(ev.done ? '已标记完成，按「保存」写回 calendar.md' : '已取消完成，按「保存」写回 calendar.md', 'success');
     }
 
+    // 備註 checkbox 行勾選互換 + dl/cp 標記維護（純函數，不改入參；便於單測）：newDone=true 勾選、false 取消；todayStr 為 YYYY-MM-DD
+    function tlNoteCheckTransform(line, newDone, todayStr) {
+      const m = line.match(/^(\s*)-\s+\[([ xX])\]\s?(.*)$/);
+      if (!m) return line;
+      let body = m[3] || '';
+      if (newDone) {
+        // 勾選：先把裸日期 [[YYYY-MM-DD]] 歸一為 [[dl:YYYY-MM-DD]]
+        body = body.replace(/\[\[(\d{4}-\d{2}-\d{2})\]\]/g, '[[dl:$1]]');
+        // 勾選一律補 [[cp:今天]]（無論有無 dl；已有 cp 則不重複）
+        if (!/\[\[cp:\d{4}-\d{2}-\d{2}\]\]/.test(body)) {
+          body = body.replace(/\s+$/, '') + ' [[cp:' + todayStr + ']]';
+        }
+      } else {
+        // 取消勾選：移除 cp 塊（保留 dl）
+        body = body.replace(/\s*\[\[cp:\d{4}-\d{2}-\d{2}\]\]/g, '');
+      }
+      return m[1] + '- [' + (newDone ? 'x' : ' ') + ']' + (body ? ' ' + body : '');
+    }
     // 備註裡的 Markdown checkbox 勾選/取消：定位 ev.notes 的對應行，互換 - [ ] ↔ - [x]，序列化寫回 taskText（按「保存」才落盤）
     function tlToggleNoteCheck(e, uid, line) {
       if (e) { e.stopPropagation(); e.preventDefault(); } // 阻止冒泡到 .ev-block 的 onclick 打開編輯表單
@@ -2463,8 +2668,8 @@
       if (line < 0 || line >= lines.length) return;
       const m = lines[line].match(/^(\s*)-\s+\[([ xX])\]\s?(.*)$/);
       if (!m) return; // 該行已被用戶改得不再是 checkbox，跳過以免破壞原文
-      const done = m[2] !== ' ';
-      lines[line] = m[1] + '- [' + (done ? ' ' : 'x') + ']' + (m[3] ? ' ' + m[3] : '');
+      const wasDone = m[2] !== ' ';
+      lines[line] = tlNoteCheckTransform(lines[line], !wasDone, tlFmtDate(new Date()));
       ev.notes = lines.join('\n');
       tlApplyEventsToBuffer(); // 序列化 + 標髒 + 重繪（多天事件多列自動同步）
       showToast(done ? '已取消勾选，按「保存」写回 calendar.md' : '已勾选，按「保存」写回 calendar.md', 'success');
@@ -2734,6 +2939,7 @@
       on('tlEvModeMonth', 'click', () => tlSetMode('month'));
       on('tlEvModeYear', 'click', () => tlSetMode('year'));
       on('tlEvAddBtn', 'click', () => tlOpenEventForm(null));
+      on('tlEvStatsBtn', 'click', () => tlOpenStats());
       on('tlEvPrevMonth', 'click', () => { if (tlCalMode === 'list') tlListNavDay(-1); else tlCalStepCursor(-1); });
       on('tlEvNextMonth', 'click', () => { if (tlCalMode === 'list') tlListNavDay(1); else tlCalStepCursor(1); });
       on('tlEvTodayBtn', 'click', () => {
@@ -2810,7 +3016,7 @@
       document.addEventListener('keydown', (e) => {
         if (!ov || ov.style.display === 'none') return;
         if (e.key === 'Escape') { e.preventDefault(); tlCloseEventForm(); }
-        if ((e.metaKey || e.ctrlKey) && (e.key === 's' || e.key === 'S')) { e.preventDefault(); tlSaveEventForm(); }
+        if ((e.metaKey || e.ctrlKey) && (e.key === 's' || e.key === 'S')) { e.preventDefault(); e.stopPropagation(); tlSaveEventForm(false); if (typeof saveTask === 'function') saveTask(false); }
       });
       // 🔁 重复事件一览：点遮罩关闭 + Esc 关闭
       const rov = document.getElementById('tlRepeatOverviewOverlay');

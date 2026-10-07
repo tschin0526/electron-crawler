@@ -124,6 +124,7 @@ const elements = {
   evModeMonth: document.getElementById('ev-mode-month'),
   evModeYear: document.getElementById('ev-mode-year'),
   evAddBtn: document.getElementById('ev-add-btn'),
+  evStatsBtn: document.getElementById('ev-stats-btn'),
   evTagBar: document.getElementById('ev-tagbar'),
   evTagFilter: document.getElementById('ev-tag-filter'),
   evMonthNav: document.getElementById('ev-month-nav'),
@@ -269,6 +270,7 @@ function setupEventListeners() {
   if (elements.evModeMonth) elements.evModeMonth.addEventListener('click', () => setCalMode('month'));
   if (elements.evModeYear) elements.evModeYear.addEventListener('click', () => setCalMode('year'));
   if (elements.evAddBtn) elements.evAddBtn.addEventListener('click', () => openEventForm(null));
+  if (elements.evStatsBtn) elements.evStatsBtn.addEventListener('click', () => calOpenStats());
   // ‹ › 依當前模式步進：月→月、週→週、日→日
   if (elements.evPrevMonth) elements.evPrevMonth.addEventListener('click', () => { if (state.calMode === 'list') calListNavDay(-1); else calStepCursor(-1); });
   if (elements.evNextMonth) elements.evNextMonth.addEventListener('click', () => { if (state.calMode === 'list') calListNavDay(1); else calStepCursor(1); });
@@ -1020,6 +1022,16 @@ function updatePreview() {
 
   // 📅 行程視圖（calendar.md 專用）：渲染行程列表 / 月曆而非 markdown
   if (state.view === 'events') {
+    // 📆 進入程式首次進入行程視圖：自動「按今天」→ 年視圖滾到當月 / 月視圖滾到今天
+    //    （對齊使用者習慣：進入畫面即見當月曆；其餘切換回行程視圖不再重複滾動）
+    if (!calStartupAutoScrollDone) {
+      state.calCursor = new Date();
+      state.calSelectedDate = calendarFmtDate(new Date());
+      state.calListSel = calendarFmtDate(new Date());
+      if (state.calMode === 'month') calMonthAutoScrollPending = true;
+      if (state.calMode === 'year') calYearAutoScrollPending = true;
+      calStartupAutoScrollDone = true;
+    }
     renderEventsContent();
     return;
   }
@@ -1099,6 +1111,10 @@ function handleKeyboard(e) {
   // Ctrl/Cmd + S 保存
   if ((e.ctrlKey || e.metaKey) && e.key === 's') {
     e.preventDefault();
+    // 行程編輯表單打開時：先寫入緩衝（不關窗，繼續編輯），再落盤保存
+    if (elements.evFormOverlay && elements.evFormOverlay.style.display === 'flex' && typeof saveEventForm === 'function') {
+      saveEventForm(false);
+    }
     handleSave();
   }
   

@@ -374,6 +374,12 @@ function calRenderNotes(notes, uid) {
   const withChecks = calNotesWithChecks(String(notes), uid);
   return renderMarkdown(withChecks);
 }
+// 備註 checkbox 行內的 deadline / completed 標記（顯示層轉換，不改寫源）：裸日期與 [[dl:...]] → 📅、[[cp:...]] → ✅
+function calRenderNoteMarkers(text) {
+  return String(text)
+    .replace(/\[\[(?:dl:)?(\d{4}-\d{2}-\d{2})\]\]/g, '📅 $1')
+    .replace(/\[\[cp:(\d{4}-\d{2}-\d{2})\]\]/g, '✅ $1');
+}
 function calNotesWithChecks(text, uid) {
   let inFence = false;
   return text.split('\n').map((line, i) => {
@@ -389,7 +395,7 @@ function calNotesWithChecks(text, uid) {
       : '';
     return m[1] + '<span class="ev-md-check' + (done ? ' done' : '') + '"' + cbAttr +
       ' role="checkbox" aria-checked="' + (done ? 'true' : 'false') + '" tabindex="0">' +
-      '<span class="ev-cb">' + (done ? '✓' : '') + '</span>' + calRenderInlineMarkdown(m[3]) + '</span>';
+      '<span class="ev-cb">' + (done ? '✓' : '') + '</span>' + calRenderInlineMarkdown(calRenderNoteMarkers(m[3])) + '</span>';
   }).join('\n');
 }
 // 🖱 日/週時間網格雙擊空白處快速新增：15 分鐘取整，默認時長 1 小時；全天條＝日期(全天)
@@ -690,6 +696,14 @@ function calFormTagNames() {
   state.calEvents.forEach((ev) => (ev.tags || []).forEach((t) => { if (calTagName(t)) tags.add(calTagName(t)); }));
   return Array.from(tags).sort((a, b) => a.localeCompare(b, 'zh-Hans'));
 }
+// 子標籤（分類）歷史：只從「該標籤」所屬事件的 cat 收集（標籤與子標籤有從屬關係）
+// tagName 為空 → 空列表（非編輯態時不需要下拉選項）
+function calFormCatNames(tagName) {
+  const cats = new Set();
+  if (!tagName) return [];
+  state.calEvents.forEach((ev) => (ev.tags || []).forEach((t) => { if (calTagName(t) === tagName) { const c = calTagCat(t); if (c) cats.add(c); } }));
+  return Array.from(cats).sort((a, b) => a.localeCompare(b, 'zh-Hans'));
+}
 function calRenderTagPicker() {
   const picker = document.getElementById('ev-tag-picker');
   const selected = document.getElementById('ev-tag-selected');
@@ -697,7 +711,7 @@ function calRenderTagPicker() {
   if (!picker || !selected || !menu || !elements.evFTags) return;
   selected.innerHTML = state.evFormTags.map((t, i) => {
     if (i === calEvTagEditIndex) {
-      return '<span class="ev-tag-selected-chip"><input type="text" class="ev-tag-cat-input" data-ev-tag-cat="' + i + '" maxlength="40" value="' + escapeHtml(calTagCat(t)) + '" placeholder="分類"></span>';
+      return '<span class="ev-tag-selected-chip"><input type="text" class="ev-tag-cat-input" data-ev-tag-cat="' + i + '" maxlength="40" value="' + escapeHtml(calTagCat(t)) + '" placeholder="分類" list="ev-cat-options"></span>';
     }
     const name = escapeHtml(calTagName(t));
     const cat = calTagCat(t);
@@ -707,14 +721,23 @@ function calRenderTagPicker() {
   const query = elements.evFTags.value.trim().toLowerCase();
   const names = calFormTagNames().filter((t) => !query || t.toLowerCase().includes(query));
   menu.innerHTML = names.length ? names.map((t) => '<button type="button" class="ev-tag-option' + (state.evFormTags.some((x) => calTagName(x) === t) ? ' selected' : '') + '" data-ev-tag-option="' + escapeHtml(t) + '">' + (state.evFormTags.some((x) => calTagName(x) === t) ? '✓ ' : '') + escapeHtml(t) + '</button>').join('') : '<div class="ev-tag-option">暂无可选标签</div>';
+  // 子標籤（分類）歷史下拉：原生 datalist，按當前編輯標籤從屬過濾（與桌面對齊）
+  let catList = picker.querySelector('#ev-cat-options');
+  if (!catList) { catList = document.createElement('datalist'); catList.id = 'ev-cat-options'; picker.appendChild(catList); }
+  const catNames = calFormCatNames(calEvTagEditIndex >= 0 ? calTagName(state.evFormTags[calEvTagEditIndex]) : null);
+  catList.innerHTML = catNames.map((c) => '<option value="' + escapeHtml(c) + '"></option>').join('');
   if (calEvTagEditIndex >= 0) {
     const ci = selected.querySelector('.ev-tag-cat-input[data-ev-tag-cat="' + calEvTagEditIndex + '"]');
     if (ci) {
       ci.focus(); ci.select();
+      // 有歷史分類時自動彈下拉（showPicker 需使用者手勢；此處由點擊標籤名觸發，正處手勢鏈路內）
+      try { if (catNames.length && typeof ci.showPicker === 'function') ci.showPicker(); } catch (err) { /* 無手勢等場景忽略，仍可手動點箭頭 */ }
       ci.addEventListener('keydown', (e) => {
         if (e.key === 'Enter') { e.preventDefault(); calCommitTagCat(calEvTagEditIndex, ci.value); }
         else if (e.key === 'Escape') { e.preventDefault(); calEvTagEditIndex = -1; calRenderTagPicker(); }
       });
+      // datalist 選中歷史分類後立即提交（change 在 blur 前觸發；重複提交無副作用）
+      ci.addEventListener('change', () => calCommitTagCat(calEvTagEditIndex, ci.value));
       ci.addEventListener('blur', () => calCommitTagCat(calEvTagEditIndex, ci.value));
     }
   }
@@ -735,6 +758,123 @@ function calRemoveFormTag(tag) {
 }
 function calToggleFormTag(tag) {
   if (state.evFormTags.some((t) => calTagName(t) === tag)) calRemoveFormTag(tag); else calAddFormTag(tag);
+}
+
+// ========== 📊 事件統計：主事件 × 備註子事件（- [ ]），按標籤·完成狀態分類 ==========
+// 解析備註中的 Markdown checkbox 行 → 子事件數組 [{text, done}]
+function calParseNoteChecks(text) {
+  const out = [];
+  if (!text) return out;
+  let inFence = false;
+  text.split('\n').forEach((line) => {
+    if (/^\s*```/.test(line)) { inFence = !inFence; return; }
+    if (inFence) return;
+    const m = line.match(/^(\s*)-\s+\[([ xX])\]\s?(.*)$/);
+    if (!m) return;
+    const txt = (m[3] || '')
+      .replace(/\[\[(?:dl:)?(\d{4}-\d{2}-\d{2})\]\]/g, '$1')
+      .replace(/\[\[cp:(\d{4}-\d{2}-\d{2})\]\]/g, '$1')
+      .replace(/\s{2,}/g, ' ').trim();
+    out.push({ text: txt, done: m[2] !== ' ' });
+  });
+  return out;
+}
+// 收集統計數據：僅統計 EVENT（state.calEvents），REPEAT 系列按 1 條主事件計；子事件繼承主事件標籤
+function calBuildStats() {
+  const tagMap = new Map();
+  const ensure = (k) => { if (!tagMap.has(k)) tagMap.set(k, { mainTotal: 0, mainDone: 0, mainUndone: 0, subTotal: 0, subDone: 0, subUndone: 0, mains: [], subs: [] }); return tagMap.get(k); };
+  let mainT = 0, mainD = 0, mainU = 0, subT = 0, subD = 0, subU = 0;
+  state.calEvents.forEach((ev) => {
+    const tagNames = (ev.tags || []).map((t) => calTagName(t)).filter(Boolean);
+    mainT++; if (ev.done) mainD++; else mainU++;
+    const subs = calParseNoteChecks(ev.notes);
+    const subDoneCount = subs.filter((s) => s.done).length;
+    subT += subs.length; subD += subDoneCount; subU += (subs.length - subDoneCount);
+    const groups = tagNames.length ? tagNames : ['(無標籤)'];
+    groups.forEach((g) => {
+      const r = ensure(g);
+      r.mainTotal++; if (ev.done) r.mainDone++; else r.mainUndone++;
+      r.subTotal += subs.length; r.subDone += subDoneCount; r.subUndone += (subs.length - subDoneCount);
+      r.mains.push({ title: ev.title, done: !!ev.done, uid: ev.uid });
+      subs.forEach((s) => r.subs.push({ text: s.text, done: s.done }));
+    });
+  });
+  const pct = (d, t) => (t ? Math.round((d / t) * 100) : 0);
+  return { mainT, mainD, mainU, subT, subD, subU, mainRate: pct(mainD, mainT), subRate: pct(subD, subT), rows: tagMap, pct };
+}
+function calStatsSummaryHtml(s) {
+  const card = (title, t, d, u, rate) =>
+    '<div class="ev-stats-card"><h4>' + title + '</h4>' +
+    '<div class="row"><span>總計</span><b>' + t + '</b></div>' +
+    '<div class="row"><span>已完成 ✓</span><b>' + d + '</b></div>' +
+    '<div class="row"><span>未完成 ☐</span><b>' + u + '</b></div>' +
+    '<div class="rate">完成率 ' + rate + '%<div class="bar"><i style="width:' + rate + '%"></i></div></div>' +
+    '</div>';
+  return '<div class="ev-stats-summary">' +
+    card('主事件', s.mainT, s.mainD, s.mainU, s.mainRate) +
+    card('子事件（備註 - [ ]）', s.subT, s.subD, s.subU, s.subRate) +
+    '</div>';
+}
+function calStatsDetailHtml(group) {
+  const mainItems = group.mains.map((m) =>
+    '<li class="' + (m.done ? 'done' : '') + '"' + (m.uid ? ' onclick="openEventForm(\'' + escapeHtml(m.uid) + '\')" style="cursor:pointer"' : '') + '>' +
+    '<span class="cb">' + (m.done ? '✓' : '☐') + '</span>' + calRenderInlineMarkdown(m.title) + '</li>').join('');
+  const subItems = group.subs.map((x) =>
+    '<li class="' + (x.done ? 'done' : '') + '"><span class="cb">' + (x.done ? '✓' : '☐') + '</span>' + escapeHtml(x.text) + '</li>').join('');
+  return '<ul>' +
+    '<div class="grp-title">主事件（' + group.mains.length + '）</div>' + (mainItems || '<li class="muted">—</li>') +
+    '<div class="grp-title">子事件（' + group.subs.length + '）</div>' + (subItems || '<li class="muted">—</li>') +
+    '</ul>';
+}
+function calStatsTableHtml(s) {
+  const head = '<thead><tr><th>標籤</th><th>主事件<br>總計</th><th>主·完成</th><th>主·未完成</th><th>子事件<br>總計</th><th>子·完成</th><th>子·未完成</th></tr></thead>';
+  const body = Array.from(s.rows.entries()).sort((a, b) => a[0].localeCompare(b[0], 'zh-Hans')).map(([name, r]) => {
+    const detail = '<tr class="ev-stats-detail"><td class="ev-stats-detail" colspan="7"><details><summary>展開明細</summary>' + calStatsDetailHtml(r) + '</details></td></tr>';
+    return '<tr><td class="ev-stats-tag">' + (name === '(無標籤)' ? '<span class="muted">(無標籤)</span>' : escapeHtml(name)) + '</td>' +
+      '<td>' + r.mainTotal + '</td><td>' + r.mainDone + '</td><td>' + r.mainUndone + '</td>' +
+      '<td>' + r.subTotal + '</td><td>' + r.subDone + '</td><td>' + r.subUndone + '</td></tr>' + detail;
+  }).join('');
+  const total = '<tr class="ev-stats-total"><td class="ev-stats-tag">總計</td>' +
+    '<td>' + s.mainT + '</td><td>' + s.mainD + '</td><td>' + s.mainU + '</td>' +
+    '<td>' + s.subT + '</td><td>' + s.subD + '</td><td>' + s.subU + '</td></tr>';
+  return '<table class="ev-stats-table">' + head + '<tbody>' + body + total + '</tbody></table>';
+}
+function calOpenStats() {
+  const overlay = document.getElementById('ev-stats-overlay');
+  const bodyEl = document.getElementById('ev-stats-body');
+  if (!overlay || !bodyEl) return;
+  const s = calBuildStats();
+  const fileEl = document.getElementById('ev-stats-file');
+  if (fileEl) fileEl.textContent = calFileSizeLabel();
+  bodyEl.innerHTML = (s.mainT || s.subT)
+    ? calStatsSummaryHtml(s) + calStatsTableHtml(s)
+    : '<div class="ev-stats-empty">calendar.md 中還沒有任何行程事件</div>';
+  overlay.style.display = 'flex';
+}
+function calCloseStats() {
+  const overlay = document.getElementById('ev-stats-overlay');
+  if (overlay) overlay.style.display = 'none';
+}
+// UTF-8 字節長度（純 JS，無依賴）：用於估算當前加載的 calendar.md 內容大小
+function calUtf8Len(s) {
+  if (!s) return 0;
+  let n = 0;
+  for (let i = 0; i < s.length; i++) {
+    const c = s.charCodeAt(i);
+    if (c < 0x80) n += 1;
+    else if (c < 0x800) n += 2;
+    else if (c >= 0xD800 && c <= 0xDBFF) { n += 4; i++; } // 代理對
+    else n += 3;
+  }
+  return n;
+}
+// 統計彈層表頭：展示「calendar.md · 內容大小」（大小取當前編輯器緩衝，即正在統計的數據）
+function calFileSizeLabel() {
+  const ta = (typeof elements !== 'undefined' && elements.editor) ? elements.editor : null;
+  const text = ta && ta.value ? ta.value : '';
+  const bytes = calUtf8Len(text);
+  const sizeStr = bytes.toLocaleString('en-US') + ' Bytes'; // 固定 byte 顯示＋千分位逗號（不走 formatFileSizeShort 的 KB 縮寫）
+  return 'calendar.md · ' + sizeStr;
 }
 
 // 地區圖例：列出當前 calendar.md 出現過的地區（去重），無假日則隱藏。顏色/圖標與渲染一致，零學習成本。
@@ -1405,6 +1545,7 @@ function calSetDiaryOnly(on) {
 // 純 UI 偏好（記憶體 + localStorage，鍵 calUndoneOnly；絕不寫回 calendar.md）。全模式生效（收口於 calEventShown）。
 const CAL_UNDONEONLY_KEY = 'calUndoneOnly';
 let calUndoneOnlyLoaded = false;
+let calUndoneScrollResult = null;   // 测试 seam：undone 勾选切换后实际滚动到的日期组（null＝无列表/无锚点）
 function calLoadUndoneOnly() {
   if (calUndoneOnlyLoaded) return state.calUndoneOnly;
   calUndoneOnlyLoaded = true;
@@ -1419,7 +1560,16 @@ function calSetUndoneOnly(on) {
   calUndoneOnlyLoaded = true;
   try { localStorage.setItem(CAL_UNDONEONLY_KEY, state.calUndoneOnly ? '1' : '0'); } catch (e) {}
   calRenderHolidayLegend();   // 同步頂欄勾選態（該勾選框只在列表模式渲染）
+  // 切換前：捕獲當前畫面頂部日期組＋偏移，用於切換後儘量不滾動（Feature #8）
+  const list = calActiveDetailList();
+  let anchorDate = null, anchorOffset = 0;
+  if (list) {
+    const info = calViewportTopDateInfo(list);
+    if (info) { anchorDate = info.date; anchorOffset = info.offset; }
+  }
   calRerenderCalendarView();
+  // 切換後：把錨點日期組對齊回原偏移（錨點被過濾掉 → 回落到最近的未過濾組）；覆蓋重繪自帶的滾動
+  if (list && anchorDate) calReanchorList(list, anchorDate, anchorOffset);
 }
 // 日記正文：壓掉行尾空白並 trim 後**原樣輸出**（不截斷）。
 // ⚠️ 絕不在這裡截斷：被截掉的部分根本沒進 DOM，列表滾動條再怎麼滾也滾不出來。
@@ -1585,13 +1735,7 @@ function calListNavDay(dir) {
 //    只改 scroller.scrollTop，不觸碰祖先滾動容器。
 function calScrollElToTop(el, scroller) {
   if (!el || !scroller) return;
-  const prevPos = el.style.position;
-  el.style.position = 'static';                 // 臨時摘 sticky → 讀到真實佈局位置
-  const next = (el.offsetParent && el.offsetParent === scroller.offsetParent)
-    ? el.offsetTop - scroller.offsetTop - (scroller.clientTop || 0)   // 同 offsetParent：直接相減（補邊框）
-    : scroller.scrollTop + (el.getBoundingClientRect().top - scroller.getBoundingClientRect().top);  // 否則退回 rect 差
-  el.style.position = prevPos;
-  scroller.scrollTop = next;
+  scroller.scrollTop = calElAbsTop(el, scroller);
 }
 
 // 在明細裡挑「要滾動到的日期標題」：精確命中 → 其後最近 → 其前最近 → 首個（＝附近位置回退）
@@ -1607,6 +1751,53 @@ function calPickScrollTarget(headers, ds) {
 function calScrollListToDate(list, scroller, ds) {
   if (!list || !scroller || !ds) return;
   calScrollElToTop(calPickScrollTarget(list.querySelectorAll('.ev-date[data-ev-date]'), ds), scroller);
+}
+// 元素在 scroller 內的「絕對佈局 scrollTop」（sticky 安全：先臨時摘 .ev-date 再讀，見 calScrollElToTop）
+function calElAbsTop(el, scroller) {
+  const prevPos = el.style.position;
+  el.style.position = 'static';
+  const next = (el.offsetParent && el.offsetParent === scroller.offsetParent)
+    ? el.offsetTop - scroller.offsetTop - (scroller.clientTop || 0)
+    : scroller.scrollTop + (el.getBoundingClientRect().top - scroller.getBoundingClientRect().top);
+  el.style.position = prevPos;
+  return next;
+}
+// 當前模式下真正可見/可滾動的「明細列表」元素（undone 勾選切換只重錨這一條）
+function calActiveDetailList() {
+  if (state.calMode === 'list') return elements.eventsList;
+  if (state.calMode === 'year') return elements.evYearDayList;
+  return elements.evDayList; // month / week / day
+}
+// 切換前：捕獲「視口頂部日期組」及其在滾動容器內的相對偏移（用於切換後儘量不滾動）
+function calViewportTopDateInfo(list) {
+  if (!list) return null;
+  const active = calPickActiveDate(list); // 複用頂部 sticky 日期條判定（已是 sticky 安全版）
+  if (!active) return null;
+  const offset = active.getBoundingClientRect().top - list.getBoundingClientRect().top;
+  return { date: active.dataset.evDate, offset: offset };
+}
+// 給定一組日期標題，挑與 ds 日期距離最小者（tie → 較晚日期）；ds 已被過濾掉時用來回落到「最近的未過濾組」
+function calNearestDateHeader(headers, ds) {
+  if (!headers || !headers.length) return null;
+  const base = parseInt(ds.replace(/-/g, ''), 10);
+  let best = null, bestD = Infinity;
+  for (const h of headers) {
+    const d = Math.abs(parseInt(h.dataset.evDate.replace(/-/g, ''), 10) - base);
+    if (d < bestD || (d === bestD && best && h.dataset.evDate > best.dataset.evDate)) { bestD = d; best = h; }
+  }
+  return best;
+}
+// 切換後把列表重錨：錨點存活→保持原偏移（＝不滾動）；錨點被過濾掉→滾到最近未過濾組（置頂）
+function calReanchorList(list, anchorDate, anchorOffset) {
+  const headers = list.querySelectorAll('.ev-date[data-ev-date]');
+  if (!headers.length) { calUndoneScrollResult = null; return; }
+  let target = null, survived = false;
+  for (const h of headers) if (h.dataset.evDate === anchorDate) { target = h; survived = true; break; }
+  if (!target) target = calNearestDateHeader(headers, anchorDate);
+  if (!target) { calUndoneScrollResult = null; return; }
+  const absTop = calElAbsTop(target, list);
+  list.scrollTop = survived ? (absTop - anchorOffset) : absTop;
+  calUndoneScrollResult = target.dataset.evDate;
 }
 // 「日/月」切換只顯示在當前畫面頂部（第一個可見）的日期標題條上：
 // active = 已滾過頂部、當前貼著頂部的那條日期標題（sticky 頂條）。
@@ -2095,6 +2286,10 @@ function calScrollMonthToToday() {
 // 📆 年視圖自動滾動：切到年視圖 / 點「今天」時，將 12 個月迷你月曆滾動到今天所在月份卡片（與桌面版對齊）
 let calYearAutoScrollPending = false;
 
+// 進入程式時（首次渲染 events 視圖）自動「按今天」：年視圖下把今天所在月份卡片滾入可視區
+// （對齊使用者習慣：進入畫面即見當月曆；其餘切換回行程視圖不再重複滾動）
+let calStartupAutoScrollDone = false;
+
 // 年視圖：若「今天」所在月份卡片未完整顯示在滾動區內，則平滑滾動到可視區中央
 function calScrollYearToCurrentMonth() {
   const scroller = document.querySelector('#ev-year-wrap .ev-month-scroll');
@@ -2405,7 +2600,7 @@ function calNormalizeYmd(v) {
 
 // 表單「寫入編輯內容」：校驗 → upsert 工作副本 → 重新序列化整份 calendar.md → 寫回編輯器緩衝（isDirty = true）
 // ⚠️ 不直接落盤：iOS 無法直接寫原文件，走現有「保存」流程（分享面板 → 儲存到檔案 → 覆蓋）
-function saveEventForm() {
+function saveEventForm(closeAfterSave = true) {
   const title = elements.evFTitle.value.trim();
   let date = elements.evFDate.value;
   let endDate = elements.evFEndDate.value;
@@ -2476,8 +2671,10 @@ function saveEventForm() {
   if (i >= 0) state.calEvents[i] = ev;
   else state.calEvents.push(ev);
   applyEventsToEditor();
-  closeEventForm();
-  showToast('已寫入編輯內容，按頂欄「保存」存回文件', 'success');
+  if (closeAfterSave) closeEventForm();
+  showToast(closeAfterSave
+    ? '已寫入編輯內容，按頂欄「保存」存回文件'
+    : '已寫入編輯內容，可繼續編輯（按頂欄「保存」存回文件）', 'success');
 }
 
 // 刪除：confirm → 從工作副本移除 → 寫回編輯器緩衝
@@ -2590,6 +2787,22 @@ function toggleEventDone(uid, done) {
   showToast(ev.done ? '已標記完成，按「保存」存回文件' : '已取消完成，按「保存」存回文件', 'success');
 }
 
+// 備註 checkbox 行勾選互換 + dl/cp 標記維護（純函數，不改入參；便於單測）：newDone=true 勾選、false 取消；todayStr 為 YYYY-MM-DD
+function calNoteCheckTransform(line, newDone, todayStr) {
+  const m = line.match(/^(\s*)-\s+\[([ xX])\]\s?(.*)$/);
+  if (!m) return line;
+  let body = m[3] || '';
+  if (newDone) {
+    body = body.replace(/\[\[(\d{4}-\d{2}-\d{2})\]\]/g, '[[dl:$1]]');
+    // 勾選一律補 [[cp:今天]]（無論有無 dl；已有 cp 則不重複）
+    if (!/\[\[cp:\d{4}-\d{2}-\d{2}\]\]/.test(body)) {
+      body = body.replace(/\s+$/, '') + ' [[cp:' + todayStr + ']]';
+    }
+  } else {
+    body = body.replace(/\s*\[\[cp:\d{4}-\d{2}-\d{2}\]\]/g, '');
+  }
+  return m[1] + '- [' + (newDone ? 'x' : ' ') + ']' + (body ? ' ' + body : '');
+}
 // 備註裡的 Markdown checkbox 勾選/取消：定位 ev.notes 的對應行，互換 - [ ] ↔ - [x]，序列化寫回編輯緩衝（按「保存」才落盤）
 function calToggleNoteCheck(e, uid, line) {
   if (e) { e.stopPropagation(); e.preventDefault(); } // 阻止冒泡到 .ev-block 開啟編輯表單
@@ -2600,8 +2813,8 @@ function calToggleNoteCheck(e, uid, line) {
   if (line < 0 || line >= lines.length) return;
   const m = lines[line].match(/^(\s*)-\s+\[([ xX])\]\s?(.*)$/);
   if (!m) return; // 該行已被用戶改得不再是 checkbox，跳過以免破壞原文
-  const done = m[2] !== ' ';
-  lines[line] = m[1] + '- [' + (done ? ' ' : 'x') + ']' + (m[3] ? ' ' + m[3] : '');
+  const wasDone = m[2] !== ' ';
+  lines[line] = calNoteCheckTransform(lines[line], !wasDone, calendarFmtDate(new Date()));
   ev.notes = lines.join('\n');
   applyEventsToEditor(); // 序列化 + 標髒 + 重繪（多天事件多列自動同步）
   showToast(done ? '已取消勾選，按「保存」存回文件' : '已勾選，按「保存」存回文件', 'success');
