@@ -2247,16 +2247,48 @@
     /* 行程表单 */
     .tl-ev-form-overlay { position: fixed; inset: 0; z-index: 12000; background: rgba(0,0,0,0.55); display: flex; align-items: center; justify-content: center; padding: 20px; }
     .tl-ev-form-box { width: 100%; max-width: 586px; max-height: 88vh; overflow: auto; background: var(--ev-card, #1e293b); border: 1px solid var(--ev-border, #334155); border-radius: 12px; padding: 18px; }
+    /* 统计弹层：标题栏 + 筛选区固定不滚动，仅 #tlEvStatsBody 滚动 */
+    #tlEvStatsOverlay .tl-ev-stats-box { display: flex; flex-direction: column; overflow: hidden; max-height: 92vh; }
+    .tl-ev-stats-header { flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-bottom: 8px; border-bottom: 1px solid var(--ev-border, #334155); }
+    .tl-ev-stats-title { font-size: 16px; font-weight: 600; color: var(--ev-text); }
+    .tl-ev-stats-close { flex-shrink: 0; width: 32px; height: 32px; border-radius: 8px; border: 1px solid var(--ev-border, #334155); background: var(--ev-hover, #334155); color: var(--ev-text, #e2e8f0); font-size: 16px; line-height: 1; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; }
+    .tl-ev-stats-close:hover { background: var(--ev-border, #334155); }
+    .tl-ev-stats-filters { flex-shrink: 0; margin: 10px 0; padding: 10px 12px; background: var(--ev-hover, #334155); border-radius: 8px; }
+    .tl-stats-filter-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-bottom: 6px; }
+    .tl-stats-filter-row:last-child { margin-bottom: 0; }
+    .tl-stats-filter-row .lbl { font-size: 12px; color: var(--ev-muted); margin-right: 2px; }
+    .tl-stats-tag-filters { display: flex; flex-wrap: wrap; gap: 4px 10px; }
+    .tl-stats-tag-filter, .tl-stats-status { font-size: 12px; color: var(--ev-text); display: inline-flex; align-items: center; gap: 3px; cursor: pointer; }
+    .tl-stats-detail-table { width: 100%; border-collapse: collapse; font-size: 12px; text-align: left; margin-top: 2px; }
+    /* 明细表嵌在主表 td 内：用 .tl-stats-table 前缀提高特异性，确保左对齐压过通用居中规则 */
+    .tl-stats-detail-table th, .tl-stats-detail-table td,
+    .tl-stats-table .tl-stats-detail-table th, .tl-stats-table .tl-stats-detail-table td { border: 1px solid var(--ev-border, #334155); padding: 5px 8px; text-align: left; vertical-align: top; }
+    .tl-stats-detail-table th { background: var(--ev-chip-bg, rgba(124,58,237,.1)); font-weight: 600; color: var(--ev-text); }
+    .tl-stats-detail-table tr.done .d-status { color: #34C759; }
+    /* 主事件链接与子事件纯文字同色（满足「相同颜色显示」） */
+    .tl-stats-detail-table a { color: inherit; text-decoration: none; }
+    .tl-stats-detail-table a:hover { text-decoration: underline; }
+    .tl-stats-detail-table td.d-content .cb { display: inline-block; width: 14px; text-align: center; }
+    /* 明细表：项次栏（窄、居中灰字）与跳转按钮栏 */
+    .tl-stats-detail-table td.d-no { text-align: center; color: var(--ev-muted); white-space: nowrap; }
+    .tl-stats-detail-table td.d-jump { text-align: center; white-space: nowrap; }
+    /* 子事件内容悬停显示所属主事件 tooltip（原生 title） */
+    .tl-stats-detail-table td.d-content[title] { cursor: help; text-decoration: underline dotted rgba(148,163,184,.6); text-underline-offset: 3px; }
+    .tl-stats-jump { padding: 2px 10px; border: none; border-radius: 6px; background: var(--ev-primary, #7c3aed); color: #fff; font-size: 11px; cursor: pointer; }
+    .tl-stats-jump:hover { filter: brightness(1.15); }
+    /* 跳转定位高亮（滚动到事件后短暂闪烁描边） */
+    .tl-jump-flash { animation: tlJumpFlash 2s ease; }
+    @keyframes tlJumpFlash { 0%, 60% { box-shadow: 0 0 0 3px rgba(245,197,24,.85); border-radius: 6px; } 100% { box-shadow: none; } }
     .tl-ev-form-title { font-size: 16px; font-weight: 600; color: var(--ev-text); margin-bottom: 12px; }
     /* ===== 📊 事件统计弹层 ===== */
-    .tl-ev-stats-box { max-width: 720px; }
+    .tl-ev-stats-box { max-width: min(1080px, 94vw); }
     .tl-ev-stats-sub { font-size: 11px; font-weight: 400; color: var(--ev-muted); margin-left: 8px; }
     .tl-ev-stats-sub code { background: var(--ev-chip-bg, rgba(124,58,237,.12)); padding: 1px 5px; border-radius: 4px; }
     /* 统计按钮：与 App 图标按钮（.btn 36×36 圆形）一致，用 ev 主题变量保持与行程面板协调 */
     .ev-stats-btn.btn { width: 34px; height: 34px; font-size: 15px; background: var(--ev-card); color: var(--ev-text); border: 1px solid var(--ev-border); }
     .ev-stats-btn.btn:hover { background: var(--ev-primary); color: #fff; }
     .tl-ev-stats-file { display: block; font-size: 11px; font-weight: 400; color: var(--ev-muted); margin-top: 2px; }
-    .tl-ev-stats-body { font-size: 13px; color: var(--ev-text); }
+    .tl-ev-stats-body { font-size: 13px; color: var(--ev-text); flex: 1; overflow: auto; min-height: 0; }
     .tl-stats-summary { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 14px; }
     .tl-stats-card { flex: 1 1 220px; min-width: 200px; border: 1px solid var(--ev-border); border-radius: 10px; padding: 10px 12px; background: var(--ev-chip-bg, rgba(124,58,237,.06)); }
     .tl-stats-card h4 { margin: 0 0 6px; font-size: 13px; font-weight: 600; color: var(--ev-text); }
@@ -5035,12 +5067,13 @@
   <!-- 📊 事件统计弹层（calendar.md 专用）：主事件 × 备注子事件，按标签·完成状态统计 -->
   <div id="tlEvStatsOverlay" class="tl-ev-form-overlay" style="display:none" onclick="if(event.target===event.currentTarget) tlCloseStats()">
     <div class="tl-ev-form-box tl-ev-stats-box">
-      <div class="tl-ev-form-title">📊 事件统计<span class="tl-ev-stats-file" id="tlEvStatsFile"></span><span class="tl-ev-stats-sub">主事件 + 备注中的子事件（<code>- [ ]</code>），按标签与完成状态分类</span></div>
-      <div id="tlEvStatsBody" class="tl-ev-stats-body"></div>
-      <div class="tl-ev-form-actions">
-        <span style="flex:1"></span>
-        <button type="button" class="btn btn-secondary" onclick="tlCloseStats()">关闭</button>
+      <div class="tl-ev-stats-header">
+        <div class="tl-ev-stats-title">📊 事件统计<span class="tl-ev-stats-file" id="tlEvStatsFile"></span></div>
+        <button type="button" class="tl-ev-stats-close" onclick="tlCloseStats()" aria-label="关闭">✕</button>
       </div>
+      <div class="tl-ev-stats-sub">主事件 + 备注中的子事件（<code>- [ ]</code>），按标签与完成状态分类</div>
+      <div id="tlEvStatsFilters" class="tl-ev-stats-filters"></div>
+      <div id="tlEvStatsBody" class="tl-ev-stats-body"></div>
     </div>
   </div>
 

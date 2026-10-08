@@ -161,6 +161,69 @@
         ? { name: t.name || '', cat: t.cat || '' }
         : { name: String(t || ''), cat: '' });
     }
+    // ===== 標籤父階（樹形結構）：標籤名 → 父標籤名，集中存於 calendar.md 的 ## TAGS 區塊 =====
+    // ⚠️ 與事件/日記不同：標籤父階是全文件級元數據（一棵標籤名組成的樹），不依附於單一事件，
+    //    故單獨收口在 ## TAGS（JSON map：標籤名 → 父標籤名；缺省或空字串＝根）。
+    //    右键标签 → 编辑 → 画面显示「子标签列表」（child tag names）＋ 可设定「父阶标签」。
+    function tlParseTagsMeta(md) {
+      const map = {};
+      const blocks = String(md || '').split(/^##[ \t]*TAGS[ \t]*$/m);
+      if (blocks.length < 2) return map;
+      let chunk = blocks[1];
+      const cut = chunk.search(/^##[ \t]/m);
+      if (cut >= 0) chunk = chunk.slice(0, cut);
+      const m = chunk.match(/\{[\s\S]*\}/);
+      if (m) { try { const o = JSON.parse(m[0]); if (o && typeof o === 'object') { for (const k in o) if (typeof o[k] === 'string') map[k] = o[k]; } } catch (e) {} }
+      return map;
+    }
+    function tlSerializeTagsMeta(map) {
+      const clean = {};
+      for (const k in map) if (k) clean[k] = (map[k] || '');
+      return '## TAGS\n' + JSON.stringify(clean);
+    }
+    // 把最新父階表寫回 calendar.md 緩衝（taskText）；已存在 ## TAGS 區塊則替換其內容，否則追加
+    function tlWriteTagsMeta(map) {
+      let md = document.getElementById('taskText').value;
+      const body = tlSerializeTagsMeta(map);
+      const idx = md.search(/^##[ \t]*TAGS[ \t]*$/m);
+      if (idx >= 0) {
+        const after = md.slice(idx);
+        const next = after.search(/\n##[ \t]/m);
+        const end = next >= 0 ? idx + next : md.length;
+        md = md.slice(0, idx) + body + md.slice(end);
+      } else {
+        md = md.replace(/\s*$/, '') + '\n\n' + body + '\n';
+      }
+      document.getElementById('taskText').value = md;
+    }
+    function tlTagMeta() { return tlParseTagsMeta(document.getElementById('taskText').value); }
+    function tlTagParent(name) { return (tlTagMeta()[name] || ''); }
+    function tlTagChildren(name) { const m = tlTagMeta(); return Object.keys(m).filter((k) => m[k] === name); }
+    function tlAllTagNames() {
+      const set = new Set();
+      tlCalEvents.forEach((ev) => (ev.tags || []).forEach((t) => { const n = tlTagName(t); if (n) set.add(n); }));
+      const m = tlTagMeta();
+      Object.keys(m).forEach((k) => { if (k) set.add(k); });
+      Object.keys(m).forEach((k) => { if (m[k]) set.add(m[k]); });
+      return Array.from(set).sort((a, b) => a.localeCompare(b, 'zh-Hans'));
+    }
+    // 防止成環：start 是否為 root 的（間接）後代（沿父階向上走，若撞到 root 即為後代）
+    function tlIsDescendant(start, root, m) {
+      m = m || tlTagMeta();
+      let cur = start, guard = 0;
+      while (cur && guard++ < 1000) { if (cur === root) return true; cur = m[cur]; }
+      return false;
+    }
+    // 設定/解除父階（parent==='' 或不存在 → 根）。返回 false 表示會成環被拒絕
+    function tlSetTagParent(name, parent) {
+      parent = (parent || '').trim();
+      if (!name || parent === name) return false;
+      const m = tlTagMeta();
+      if (parent && tlIsDescendant(parent, name, m)) return false;
+      if (parent) m[name] = parent; else delete m[name];
+      tlWriteTagsMeta(m);
+      return true;
+    }
     // ===== Remark 围栏：备注正文可能本身含 ``` 代码围栏 → 按 CommonMark 规则处理 =====
     // 写入：围栏长度取 max(3, 备注内最长反引号串+1)，保证正文的 ``` 不可能闭合外层围栏
     function tlRemarkFence(notes) {
@@ -801,6 +864,115 @@
       tlCalEvents.forEach((ev) => (ev.tags || []).forEach((t) => { if (tlTagName(t)) tags.add(tlTagName(t)); }));
       options.innerHTML = Array.from(tags).sort().map((t) => '<option value="' + tlEscapeHtml(t) + '"></option>').join('');
     }
+    // ===== 标签右键菜单 + 编辑标签画面（树形父阶）=====
+    function tlInjectTagTreeStyle() {
+      if (document.getElementById('tl-tag-tree-style')) return;
+      const s = document.createElement('style');
+      s.id = 'tl-tag-tree-style';
+      s.textContent = [
+        '.tl-tag-ctx-menu{position:fixed;z-index:9999;min-width:150px;background:var(--ev-card,#1e293b);color:var(--ev-text,#e2e8f0);border:1px solid var(--ev-border,#334155);border-radius:10px;box-shadow:0 6px 24px rgba(0,0,0,.35);padding:6px;font-size:13px}',
+        '.tl-tag-ctx-menu button{display:block;width:100%;text-align:left;background:none;border:0;color:inherit;padding:8px 10px;border-radius:6px;cursor:pointer;font-size:13px}',
+        '.tl-tag-ctx-menu button:hover{background:var(--ev-hover,#334155)}',
+        '#tlTagEditOverlay{position:fixed;inset:0;z-index:9000;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,.45)}',
+        '#tlTagEditOverlay .tl-tag-edit-box{background:var(--ev-card,#1e293b);color:var(--ev-text,#e2e8f0);border:1px solid var(--ev-border,#334155);border-radius:14px;box-shadow:0 10px 40px rgba(0,0,0,.45);width:min(440px,92vw);max-height:86vh;overflow:auto;padding:18px 20px}',
+        '#tlTagEditOverlay h3{margin:0 0 4px;font-size:16px}',
+        '.tl-tag-edit-sec{margin-top:16px}',
+        '.tl-tag-edit-sec .lbl{font-size:12px;opacity:.7;margin-bottom:8px}',
+        '.tl-tag-children{display:flex;flex-wrap:wrap;gap:8px}',
+        '.tl-tag-child{display:inline-flex;align-items:center;gap:6px;background:var(--ev-hover,#334155);border-radius:999px;padding:5px 12px;cursor:pointer;font-size:13px}',
+        '.tl-tag-child:hover{outline:1px solid var(--primary,#3b82f6)}',
+        '.tl-tag-cat-item{display:inline-flex;align-items:center;background:var(--ev-hover,#334155);border-radius:999px;padding:5px 12px;font-size:13px}',
+        '.tl-tag-edit-actions{margin-top:20px;display:flex;justify-content:flex-end;gap:10px}',
+        '.tl-tag-edit-actions button{padding:8px 16px;border-radius:8px;border:1px solid var(--ev-border,#334155);background:var(--ev-hover,#334155);color:inherit;cursor:pointer;font-size:13px}',
+        '.tl-tag-edit-actions button.primary{background:var(--primary,#3b82f6);color:#fff;border-color:transparent}',
+      ].join('');
+      document.head.appendChild(s);
+    }
+    function tlEnsureTagCtxMenu() {
+      let menu = document.getElementById('tlTagCtxMenu');
+      if (menu) return menu;
+      tlInjectTagTreeStyle();
+      menu = document.createElement('div');
+      menu.id = 'tlTagCtxMenu';
+      menu.className = 'tl-tag-ctx-menu';
+      menu.style.display = 'none';
+      menu.innerHTML = '<button type="button" data-tl-tag-edit="1">✎ 编辑标签属性</button>';
+      document.body.appendChild(menu);
+      menu.addEventListener('click', (ev) => {
+        if (ev.target.getAttribute && ev.target.getAttribute('data-tl-tag-edit')) { menu.style.display = 'none'; tlOpenTagEdit(menu.__tag); }
+      });
+      document.addEventListener('click', () => { menu.style.display = 'none'; }, true);
+      return menu;
+    }
+    function tlShowTagCtxMenu(name, x, y) {
+      const menu = tlEnsureTagCtxMenu();
+      menu.__tag = name;
+      menu.style.display = 'block';
+      const pw = menu.offsetWidth || 160, ph = menu.offsetHeight || 40;
+      let left = x, top = y;
+      if (left + pw > window.innerWidth - 8) left = window.innerWidth - pw - 8;
+      if (top + ph > window.innerHeight - 8) top = window.innerHeight - ph - 8;
+      menu.style.left = Math.max(4, left) + 'px';
+      menu.style.top = Math.max(4, top) + 'px';
+    }
+    function tlEnsureTagEditOverlay() {
+      let ov = document.getElementById('tlTagEditOverlay');
+      if (ov) return ov;
+      tlInjectTagTreeStyle();
+      ov = document.createElement('div');
+      ov.id = 'tlTagEditOverlay';
+      document.body.appendChild(ov);
+      ov.addEventListener('click', (e) => { if (e.target === ov) ov.style.display = 'none'; });
+      document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && ov.style.display !== 'none') ov.style.display = 'none'; });
+      return ov;
+    }
+    // 编辑标签画面：显示「子标签列表」（以其为父的标签名）＋「分类」（该标签事件的 cat，与表单下拉同源）＋ 可设定「父阶标签」（select，排除自身与后代防成环）
+    function tlOpenTagEdit(name) {
+      if (!name) return;
+      const ov = tlEnsureTagEditOverlay();
+      const parent = tlTagParent(name);
+      const children = tlTagChildren(name);
+      const cats = tlFormCatNames(name);
+      const m = tlTagMeta();
+      const candidates = tlAllTagNames().filter((t) => t !== name && !tlIsDescendant(t, name, m));
+      const opts = ['<option value="">（无／根标签）</option>'].concat(
+        candidates.map((t) => '<option value="' + tlEscapeHtml(t) + '"' + (t === parent ? ' selected' : '') + '>' + tlEscapeHtml(t) + '</option>')
+      ).join('');
+      const childHtml = children.length
+        ? '<div class="tl-tag-children">' + children.map((c) => '<span class="tl-tag-child" data-tl-tag-child="' + tlEscapeHtml(c) + '">' + tlEscapeHtml(c) + '</span>').join('') + '</div>'
+        : '<div class="lbl">（暂无子标签）</div>';
+      // 分类 chip：只读展示（勿用 .tl-tag-child，避免命中「点子标签递归打开」的委托）
+      const catHtml = cats.length
+        ? '<div class="tl-tag-children">' + cats.map((c) => '<span class="tl-tag-cat-item">' + tlEscapeHtml(c) + '</span>').join('') + '</div>'
+        : '<div class="lbl">（暂无分类）</div>';
+      ov.innerHTML =
+        '<div class="tl-tag-edit-box">' +
+          '<h3>编辑标签「' + tlEscapeHtml(name) + '」</h3>' +
+          '<div class="tl-tag-edit-sec"><div class="lbl">子标签列表（以其为父的标签）</div>' + childHtml + '</div>' +
+          '<div class="tl-tag-edit-sec"><div class="lbl">分类（该标签的子分类）</div>' + catHtml + '</div>' +
+          '<div class="tl-tag-edit-sec"><div class="lbl">父阶标签（上级）</div>' +
+            '<select id="tlTagParentSel" style="width:100%;padding:8px;border-radius:8px;background:var(--ev-hover,#334155);color:inherit;border:1px solid var(--ev-border,#334155);font-size:13px">' + opts + '</select>' +
+          '</div>' +
+          '<div class="tl-tag-edit-actions"><button type="button" id="tlTagEditClose">关闭</button></div>' +
+        '</div>';
+      ov.style.display = 'flex';
+      ov.querySelector('#tlTagEditClose').addEventListener('click', () => { ov.style.display = 'none'; });
+      ov.querySelector('#tlTagParentSel').addEventListener('change', (e) => {
+        const ok = tlSetTagParent(name, e.target.value);
+        if (!ok) { showToast('不能将上级设为自身的下级（会造成循环）', 'danger'); e.target.value = parent; return; }
+        if (typeof saveTask === 'function') saveTask(false); // 落盤到 calendar.md
+        tlRenderTagBar();
+        showToast('已更新「' + name + '」的父阶标签', 'success');
+      });
+      ov.querySelectorAll('.tl-tag-child').forEach((c) => c.addEventListener('click', () => tlOpenTagEdit(c.getAttribute('data-tl-tag-child'))));
+    }
+    // 标签（过滤条 chip 或 事件/日志卡片上的内联标签 .ev-tag-view）右键 → 弹出菜单（委托监听，覆盖重绘后的新节点）
+    document.addEventListener('contextmenu', (e) => {
+      const tagEl = e.target.closest('[data-tag]');
+      if (!tagEl) return;
+      e.preventDefault();
+      tlShowTagCtxMenu(tagEl.getAttribute('data-tag'), e.clientX, e.clientY);
+    });
     // ========== 📊 事件统计：主事件 × 备注子事件（- [ ]），按标签·完成状态分类 ==========
     // 解析备注中的 Markdown checkbox 行 → 子事件数组 [{text, done}]
     function tlParseNoteChecks(text) {
@@ -812,34 +984,52 @@
         if (inFence) return;
         const m = line.match(/^(\s*)-\s+\[([ xX])\]\s?(.*)$/);
         if (!m) return;
-        const txt = (m[3] || '')
+        // 捕获 dl/cp 日期（裸日期视同 dl，与渲染约定一致），供统计明细显示 📅/✅
+        const raw = m[3] || '';
+        const dlM = raw.match(/\[\[(?:dl:)?(\d{4}-\d{2}-\d{2})\]\]/);
+        const cpM = raw.match(/\[\[cp:(\d{4}-\d{2}-\d{2})\]\]/);
+        const txt = raw
           .replace(/\[\[(?:dl:)?(\d{4}-\d{2}-\d{2})\]\]/g, '$1')
           .replace(/\[\[cp:(\d{4}-\d{2}-\d{2})\]\]/g, '$1')
           .replace(/\s{2,}/g, ' ').trim();
-        out.push({ text: txt, done: m[2] !== ' ' });
+        out.push({ text: txt, done: m[2] !== ' ', dl: dlM ? dlM[1] : '', cp: cpM ? cpM[1] : '' });
       });
       return out;
     }
     // 收集统计数据：仅统计 EVENT（tlCalEvents），REPEAT 系列按 1 条主事件计；子事件继承主事件标签
-    function tlBuildStats() {
+    // filter: { tags: Set<string>|null, status: 'all'|'done'|'undone' }；tags 非空集合才生效（空=不过滤）；status 缺省 'all'
+    function tlBuildStats(filter) {
+      const fTags = (filter && filter.tags && filter.tags.size) ? filter.tags : null;
+      const fStatus = (filter && filter.status) || 'all';
       const tagMap = new Map();   // tagName -> { mainTotal, mainDone, mainUndone, subTotal, subDone, subUndone, mains:[], subs:[] }
       const ensure = (k) => { if (!tagMap.has(k)) tagMap.set(k, { mainTotal: 0, mainDone: 0, mainUndone: 0, subTotal: 0, subDone: 0, subUndone: 0, mains: [], subs: [] }); return tagMap.get(k); };
       let mainT = 0, mainD = 0, mainU = 0, subT = 0, subD = 0, subU = 0;
       tlCalEvents.forEach((ev) => {
+        // 完成状态过滤（作用于主事件 done）
+        if (fStatus === 'done' && !ev.done) return;
+        if (fStatus === 'undone' && ev.done) return;
         const tagNames = (ev.tags || []).map((t) => tlTagName(t)).filter(Boolean);
-        // 主事件：每条 EVENT 计一次（done 看 ev.done）
+        // 标签过滤：事件须命中至少一个所选标签（OR）；无标签事件仅在选中「(无标签)」时计入
+        if (fTags) {
+          const hit = tagNames.some((t) => fTags.has(t));
+          const noTagHit = (tagNames.length === 0 && fTags.has('(无标签)'));
+          if (!hit && !noTagHit) return;
+        }
         mainT++; if (ev.done) mainD++; else mainU++;
-        const subs = tlParseNoteChecks(ev.notes);
+        const allSubs = tlParseNoteChecks(ev.notes);
+        // 完成状态过滤同样作用于子事件（按每条子事件自身 done 过滤，与主事件一致）
+        const subs = fStatus === 'all' ? allSubs : allSubs.filter((s) => (fStatus === 'done' ? s.done : !s.done));
         const subDoneCount = subs.filter((s) => s.done).length;
         subT += subs.length; subD += subDoneCount; subU += (subs.length - subDoneCount);
-        // 标签分组（含「无标签」）
+        // 标签分组（含「无标签」），仅保留所选标签分组
         const groups = tagNames.length ? tagNames : ['(无标签)'];
         groups.forEach((g) => {
+          if (fTags && !fTags.has(g)) return;
           const r = ensure(g);
           r.mainTotal++; if (ev.done) r.mainDone++; else r.mainUndone++;
           r.subTotal += subs.length; r.subDone += subDoneCount; r.subUndone += (subs.length - subDoneCount);
-          r.mains.push({ title: ev.title, done: !!ev.done, uid: ev.uid });
-          subs.forEach((s) => r.subs.push({ text: s.text, done: s.done }));
+          r.mains.push({ title: ev.title, done: !!ev.done, uid: ev.uid, date: ev.date });
+          subs.forEach((s) => r.subs.push({ text: s.text, done: s.done, date: ev.date, dl: s.dl, cp: s.cp, uid: ev.uid, ptitle: ev.title }));
         });
       });
       // 合计行：主/子 全局合计已在 mainT/subT；标签行在 tlStatsTableHtml 内排序
@@ -864,15 +1054,44 @@
         '</div>';
     }
     function tlStatsDetailHtml(group) {
-      const mainItems = group.mains.map((m) =>
-        '<li class="' + (m.done ? 'done' : '') + '"' + (m.uid ? ' onclick="tlOpenEventForm(\'' + tlEscapeHtml(m.uid) + '\')" style="cursor:pointer"' : '') + '>' +
-        '<span class="cb">' + (m.done ? '✓' : '☐') + '</span>' + tlRenderInlineMarkdown(m.title) + '</li>').join('');
-      const subItems = group.subs.map((x) =>
-        '<li class="' + (x.done ? 'done' : '') + '"><span class="cb">' + (x.done ? '✓' : '☐') + '</span>' + tlEscapeHtml(x.text) + '</li>').join('');
-      return '<ul>' +
-        '<div class="grp-title">主事件（' + group.mains.length + '）</div>' + (mainItems || '<li class="muted">—</li>') +
-        '<div class="grp-title">子事件（' + group.subs.length + '）</div>' + (subItems || '<li class="muted">—</li>') +
-        '</ul>';
+      // 主/子事件同色显示（链接 color:inherit），用「主/子事件」栏位值区分；状态直接显示文字；
+      // 首栏「项次」序号；末栏「跳转」＝关闭弹层并滚动到主画面该事件位置（子事件跳到其所属主事件）；
+      // 子事件内容悬停 → tooltip 显示所属主事件标题（原生 title）
+      let no = 0;
+      const row = (kind, date, contentHtml, done, uid, tip) => {
+        no++;
+        return '<tr class="' + (done ? 'done' : '') + '">' +
+          '<td class="d-no">' + no + '</td>' +
+          '<td class="d-date">' + tlEscapeHtml(date || '') + '</td>' +
+          '<td class="d-kind">' + kind + '</td>' +
+          '<td class="d-content"' + (tip ? ' title="' + tip + '"' : '') + '>' + contentHtml + '</td>' +
+          '<td class="d-status">' + (done ? '完成' : '未完成') + '</td>' +
+          '<td class="d-jump"><button class="tl-stats-jump" onclick="tlJumpToEvent(\'' + tlEscapeHtml(uid) + '\')">跳转</button></td>' +
+        '</tr>';
+      };
+      const mainRows = group.mains.map((m) => row('主事件', m.date,
+        '<a href="javascript:void(0)" onclick="tlOpenEventForm(\'' + tlEscapeHtml(m.uid) + '\')">' + tlRenderInlineMarkdown(m.title) + '</a>',
+        m.done, m.uid)).join('');
+      const subRows = group.subs.map((x) => row('子事件', x.date,
+        tlEscapeHtml(x.text) +
+        (x.dl ? ' <span class="d-dl">📅 ' + tlEscapeHtml(x.dl) + '</span>' : '') +
+        (x.cp ? ' <span class="d-cp">✅ ' + tlEscapeHtml(x.cp) + '</span>' : ''),
+        x.done, x.uid, '主事件：' + tlEscapeHtml(x.ptitle || ''))).join('');
+      return '<table class="tl-stats-detail-table">' +
+        '<thead><tr><th>项次</th><th>日期</th><th>主/子事件</th><th>事件 / 子事件</th><th>状态</th><th>跳转</th></tr></thead><tbody>' +
+        (mainRows + subRows || '<tr><td colspan="6" class="muted">—</td></tr>') +
+        '</tbody></table>';
+    }
+    // 关闭统计弹层并滚动定位到事件在主画面的渲染位置（子事件＝跳到其所属主事件）
+    function tlJumpToEvent(uid) {
+      tlCloseStats();
+      const el = document.querySelector('[data-uid="' + uid + '"]');
+      if (!el || !el.offsetParent) { showToast('当前视图未显示该事件，请切换到包含它的视图后再试', 'danger'); return; }
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      el.classList.remove('tl-jump-flash');
+      void el.offsetWidth;  // 强制 reflow 重启动画
+      el.classList.add('tl-jump-flash');
+      setTimeout(() => el.classList.remove('tl-jump-flash'), 2000);
     }
     function tlStatsTableHtml(s) {
       const head = '<thead><tr><th>标签</th><th>主事件<br>总计</th><th>主·完成</th><th>主·未完成</th><th>子事件<br>总计</th><th>子·完成</th><th>子·未完成</th></tr></thead>';
@@ -887,16 +1106,53 @@
         '<td>' + s.subT + '</td><td>' + s.subD + '</td><td>' + s.subU + '</td></tr>';
       return '<table class="tl-stats-table">' + head + '<tbody>' + body + total + '</tbody></table>';
     }
-    function tlOpenStats() {
-      const overlay = document.getElementById('tlEvStatsOverlay');
+    let tlStatsFilter = { tags: new Set(), status: 'all' };  // 默认：全部
+    function tlStatsTagOptions() {
+      const set = new Set();
+      tlCalEvents.forEach((ev) => (ev.tags || []).forEach((t) => { const n = tlTagName(t); if (n) set.add(n); }));
+      const arr = Array.from(set).sort((a, b) => a.localeCompare(b, 'zh-Hans'));
+      arr.push('(无标签)');
+      return arr;
+    }
+    function tlRenderStatsFilters() {
+      const box = document.getElementById('tlEvStatsFilters');
+      if (!box) return;
+      const tags = tlStatsTagOptions();
+      const tagChips = tags.map((t) =>
+        '<label class="tl-stats-tag-filter"><input type="checkbox" data-tl-stats-tag="' + tlEscapeHtml(t) + '"' + (tlStatsFilter.tags.has(t) ? ' checked' : '') + '> ' + tlEscapeHtml(t) + '</label>'
+      ).join('');
+      const st = tlStatsFilter.status;
+      const radio = (v, label) => '<label class="tl-stats-status"><input type="radio" name="tlStatsStatus" value="' + v + '"' + (st === v ? ' checked' : '') + '> ' + label + '</label>';
+      box.innerHTML =
+        '<div class="tl-stats-filter-row"><span class="lbl">标签：</span><div class="tl-stats-tag-filters">' + (tagChips || '<span class="muted">（无标签可选）</span>') + '</div></div>' +
+        '<div class="tl-stats-filter-row"><span class="lbl">完成状态：</span>' + radio('all', '全部') + radio('done', '已完成') + radio('undone', '未完成') + '</div>';
+      box.querySelectorAll('input[data-tl-stats-tag]').forEach((cb) => {
+        cb.addEventListener('change', () => {
+          const v = cb.getAttribute('data-tl-stats-tag');
+          if (cb.checked) tlStatsFilter.tags.add(v); else tlStatsFilter.tags.delete(v);
+          tlRenderStatsBody();
+        });
+      });
+      box.querySelectorAll('input[name="tlStatsStatus"]').forEach((rb) => {
+        rb.addEventListener('change', () => { if (rb.checked) { tlStatsFilter.status = rb.value; tlRenderStatsBody(); } });
+      });
+    }
+    function tlRenderStatsBody() {
       const body = document.getElementById('tlEvStatsBody');
-      if (!overlay || !body) return;
-      const s = tlBuildStats();
-      const fileEl = document.getElementById('tlEvStatsFile');
-      if (fileEl) fileEl.textContent = tlFileSizeLabel();
+      if (!body) return;
+      const s = tlBuildStats(tlStatsFilter);
+      const emptyMsg = (tlCalEvents.length === 0) ? 'calendar.md 中还没有任何行程事件' : '没有符合筛选条件的事件';
       body.innerHTML = (s.mainT || s.subT)
         ? tlStatsSummaryHtml(s) + tlStatsTableHtml(s)
-        : '<div class="tl-stats-empty">calendar.md 中还没有任何行程事件</div>';
+        : '<div class="tl-stats-empty">' + emptyMsg + '</div>';
+    }
+    function tlOpenStats() {
+      const overlay = document.getElementById('tlEvStatsOverlay');
+      if (!overlay) return;
+      const fileEl = document.getElementById('tlEvStatsFile');
+      if (fileEl) fileEl.textContent = tlFileSizeLabel();
+      tlRenderStatsFilters();
+      tlRenderStatsBody();
       overlay.style.display = 'flex';
     }
     function tlCloseStats() {
@@ -1583,7 +1839,7 @@
         '<div class="ev-body">' +
         // 跨天行程（含跨天重复）标题后紧跟「(第几天/共几天)」——让「回上海 (3/7)」一眼看出是第三天
         '<div class="ev-title">' + tlRepeatIcon(ev) + tlRenderInlineMarkdown(ev.title) + tlSpanDaySuffix(ev, occDate) + spanBadge +
-        (ev.tags && ev.tags.length ? '<span class="ev-tags">' + ev.tags.map((t) => '<span class="ev-tag-view">' + tlEscapeHtml(tlTagLabel(t)) + '</span>').join('') + '</span>' : '') +
+        (ev.tags && ev.tags.length ? '<span class="ev-tags">' + ev.tags.map((t) => '<span class="ev-tag-view" data-tag="' + tlEscapeHtml(tlTagName(t)) + '">' + tlEscapeHtml(tlTagLabel(t)) + '</span>').join('') + '</span>' : '') +
         tlEventTodoLinks(ev) +
         '</div>' +
         '<div class="ev-meta">' + tlEscapeHtml(time) + (ev.location ? ' \u00b7 \ud83d\udccd' + tlEscapeHtml(ev.location) : '') + '</div>' +
@@ -1710,7 +1966,7 @@
       const time = multi
         ? (tlMdShort(h.date) + ' – ' + tlMdShort(h.endDate) + ' · 共' + tlSpanDays(h.date, h.endDate) + '天')
         : '全天';
-      const tags = (h.tags && h.tags.length) ? '<span class="ev-tags">' + h.tags.map((t) => '<span class="ev-tag-view">' + tlEscapeHtml(tlTagLabel(t)) + '</span>').join('') + '</span>' : '';
+      const tags = (h.tags && h.tags.length) ? '<span class="ev-tags">' + h.tags.map((t) => '<span class="ev-tag-view" data-tag="' + tlEscapeHtml(tlTagName(t)) + '">' + tlEscapeHtml(tlTagLabel(t)) + '</span>').join('') + '</span>' : '';
       return '<div class="ev-holiday" data-ev-holiday="' + tlEscapeHtml(h.uid) + '" style="--holiday-color:' + tlEscapeHtml(accent) + '">' +
         '<span class="ev-holiday-region" style="--region-color:' + tlEscapeHtml(region.color) + '" title="' + tlEscapeHtml(region.label + '地区假日') + '">' + region.icon + tlEscapeHtml(region.label) + '</span>' +
         '<span class="ev-holiday-badge">' + meta.icon + ' ' + tlEscapeHtml(meta.label) + '</span>' +
@@ -1829,7 +2085,7 @@
       if (d.mood) meta.push('心情 ' + d.mood);
       if (d.weather) meta.push(d.weather);
       const tags = (d.tags && d.tags.length)
-        ? '<span class="ev-tags">' + d.tags.map((t) => '<span class="ev-tag-view">' + tlEscapeHtml(tlTagLabel(t)) + '</span>').join('') + '</span>'
+        ? '<span class="ev-tags">' + d.tags.map((t) => '<span class="ev-tag-view" data-tag="' + tlEscapeHtml(tlTagName(t)) + '">' + tlEscapeHtml(tlTagLabel(t)) + '</span>').join('') + '</span>'
         : '';
       const body = tlDiaryBody(d.content);
       return '<div class="ev-item ev-diary-item" data-ev-diary-row="' + tlEscapeHtml(d.date) + '">' +
@@ -2715,7 +2971,7 @@
         ? (tlRangeLabel(ev.date, ev.endDate) + ' · 共' + tlSpanDays(ev.date, ev.endDate) + '天')
         : tlRangeLabel(ev.date, ev.endDate, ev.startTime, ev.endTime);
       else when = ev.allDay ? '全天' : ((ev.startTime || '') + (ev.endTime ? '-' + ev.endTime : ''));
-      const tags = (ev.tags && ev.tags.length) ? '<div class="ev-tip-tags">' + ev.tags.map((t) => '<span class="ev-tag-view">' + tlEscapeHtml(tlTagLabel(t)) + '</span>').join('') + '</div>' : '';
+      const tags = (ev.tags && ev.tags.length) ? '<div class="ev-tip-tags">' + ev.tags.map((t) => '<span class="ev-tag-view" data-tag="' + tlEscapeHtml(tlTagName(t)) + '">' + tlEscapeHtml(tlTagLabel(t)) + '</span>').join('') + '</div>' : '';
       const loc = ev.location ? '\ud83d\udccd ' + tlEscapeHtml(ev.location) : '';
       const notes = ev.notes ? '<div class="ev-tip-notes">' + tlRenderNotes(ev.notes, null) + '</div>' : '';
       const links = tlEventTodoLinks(ev);
@@ -2782,7 +3038,7 @@
     // ===== 📓 悬停日记图标 → 放大提示框（复用 .ev-tip 结构，仅当天有日记时显示） =====
     function tlDiaryTipHtml(d) {
       const meta = [d.date, d.mood, d.weather].filter(Boolean).join(' · ');
-      const tags = (d.tags && d.tags.length) ? '<div class="ev-tip-tags">' + d.tags.map((t) => '<span class="ev-tag-view">' + tlEscapeHtml(tlTagLabel(t)) + '</span>').join('') + '</div>' : '';
+      const tags = (d.tags && d.tags.length) ? '<div class="ev-tip-tags">' + d.tags.map((t) => '<span class="ev-tag-view" data-tag="' + tlEscapeHtml(tlTagName(t)) + '">' + tlEscapeHtml(tlTagLabel(t)) + '</span>').join('') + '</div>' : '';
       const body = d.content ? '<div class="ev-tip-notes">' + tlDiaryBody(d.content) + '</div>' : '';
       const remark = d.remark ? '<div class="ev-tip-meta" style="margin-top:6px;">备注：' + tlRenderInlineMarkdown(d.remark) + '</div>' : '';
       return '<div class="ev-tip-title">\ud83d\udcd5 ' + tlRenderInlineMarkdown(d.title || '日记') + '</div>' +

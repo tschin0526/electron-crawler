@@ -362,12 +362,13 @@
     <!-- 📊 事件統計彈層（calendar.md 專用）：主事件 × 備註子事件（- [ ]），按標籤·完成狀態統計 -->
     <div id="ev-stats-overlay" class="ev-form-overlay" style="display:none" onclick="if(event.target===event.currentTarget) calCloseStats()">
       <div class="ev-form-box ev-stats-box">
-        <div class="ev-form-title">📊 事件統計<span class="ev-stats-file" id="ev-stats-file"></span><span class="ev-stats-sub">主事件 + 備註中的子事件（<code>- [ ]</code>），按標籤與完成狀態分類</span></div>
-        <div id="ev-stats-body" class="ev-stats-body"></div>
-        <div class="ev-form-actions">
-          <span class="ev-toolbar-flex"></span>
-          <button type="button" class="btn btn-secondary" onclick="calCloseStats()">關閉</button>
+        <div class="ev-stats-header">
+          <div class="ev-stats-title">📊 事件統計<span class="ev-stats-file" id="ev-stats-file"></span></div>
+          <button type="button" class="ev-stats-close" onclick="calCloseStats()" aria-label="關閉">✕</button>
         </div>
+        <div class="ev-stats-sub">主事件 + 備註中的子事件（<code>- [ ]</code>），按標籤與完成狀態分類</div>
+        <div id="ev-stats-filters" class="ev-stats-filters"></div>
+        <div id="ev-stats-body" class="ev-stats-body"></div>
       </div>
     </div>
   </div>

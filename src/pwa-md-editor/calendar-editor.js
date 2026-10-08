@@ -39,6 +39,63 @@ function calNormalizeTags(arr) {
     ? { name: t.name || '', cat: t.cat || '' }
     : { name: String(t || ''), cat: '' });
 }
+// ===== 標籤父階（樹形結構）：標籤名 → 父標籤名，集中存於 calendar.md 的 ## TAGS 區塊 =====
+function calParseTagsMeta(md) {
+  const map = {};
+  const blocks = String(md || '').split(/^##[ \t]*TAGS[ \t]*$/m);
+  if (blocks.length < 2) return map;
+  let chunk = blocks[1];
+  const cut = chunk.search(/^##[ \t]/m);
+  if (cut >= 0) chunk = chunk.slice(0, cut);
+  const m = chunk.match(/\{[\s\S]*\}/);
+  if (m) { try { const o = JSON.parse(m[0]); if (o && typeof o === 'object') { for (const k in o) if (typeof o[k] === 'string') map[k] = o[k]; } } catch (e) {} }
+  return map;
+}
+function calSerializeTagsMeta(map) {
+  const clean = {};
+  for (const k in map) if (k) clean[k] = (map[k] || '');
+  return '## TAGS\n' + JSON.stringify(clean);
+}
+function calWriteTagsMeta(map) {
+  let md = (elements.editor && elements.editor.value) || '';
+  const body = calSerializeTagsMeta(map);
+  const idx = md.search(/^##[ \t]*TAGS[ \t]*$/m);
+  if (idx >= 0) {
+    const after = md.slice(idx);
+    const next = after.search(/\n##[ \t]/m);
+    const end = next >= 0 ? idx + next : md.length;
+    md = md.slice(0, idx) + body + md.slice(end);
+  } else {
+    md = md.replace(/\s*$/, '') + '\n\n' + body + '\n';
+  }
+  if (elements.editor) elements.editor.value = md;
+}
+function calTagMeta() { return calParseTagsMeta((elements.editor && elements.editor.value) || ''); }
+function calTagParent(name) { return (calTagMeta()[name] || ''); }
+function calTagChildren(name) { const m = calTagMeta(); return Object.keys(m).filter((k) => m[k] === name); }
+function calAllTagNames() {
+  const set = new Set();
+  (state.calEvents || []).forEach((ev) => (ev.tags || []).forEach((t) => { const n = calTagName(t); if (n) set.add(n); }));
+  const m = calTagMeta();
+  Object.keys(m).forEach((k) => { if (k) set.add(k); });
+  Object.keys(m).forEach((k) => { if (m[k]) set.add(m[k]); });
+  return Array.from(set).sort((a, b) => a.localeCompare(b, 'zh-Hans'));
+}
+function calIsDescendant(start, root, m) {
+  m = m || calTagMeta();
+  let cur = start, guard = 0;
+  while (cur && guard++ < 1000) { if (cur === root) return true; cur = m[cur]; }
+  return false;
+}
+function calSetTagParent(name, parent) {
+  parent = (parent || '').trim();
+  if (!name || parent === name) return false;
+  const m = calTagMeta();
+  if (parent && calIsDescendant(parent, name, m)) return false;
+  if (parent) m[name] = parent; else delete m[name];
+  calWriteTagsMeta(m);
+  return true;
+}
 let calEvTagEditIndex = -1;   // 正在内联编辑分類的选中標籤下标（-1＝无）
 
 function parseCalendarEventBlock(block, idx) {
@@ -541,7 +598,7 @@ function calTipHtml(ev, occDate) {
     ? (calRangeLabel(ev.date, ev.endDate) + ' · 共' + calSpanDays(ev.date, ev.endDate) + '天')
     : calRangeLabel(ev.date, ev.endDate, ev.startTime, ev.endTime);
   else when = ev.allDay ? '全天' : ((ev.startTime || '') + (ev.endTime ? '-' + ev.endTime : ''));
-  const tags = (ev.tags && ev.tags.length) ? '<div class="ev-tip-tags">' + ev.tags.map((t) => '<span class="ev-tag-view">' + escapeHtml(calTagLabel(t)) + '</span>').join('') + '</div>' : '';
+  const tags = (ev.tags && ev.tags.length) ? '<div class="ev-tip-tags">' + ev.tags.map((t) => '<span class="ev-tag-view" data-tag="' + escapeHtml(calTagName(t)) + '">' + escapeHtml(calTagLabel(t)) + '</span>').join('') + '</div>' : '';
   const loc = ev.location ? '\ud83d\udccd ' + escapeHtml(ev.location) : '';
   const notes = ev.notes ? '<div class="ev-tip-notes">' + calRenderNotes(ev.notes, null) + '</div>' : '';
   const links = calEventTodoLinks(ev);
@@ -568,7 +625,7 @@ function calHideTip() { if (calTipEl) { calTipEl.style.display = 'none'; calTipU
 // ===== 📓 悬停日记图标 → 放大提示框（复用 .ev-tip 结构，仅当天有日记时显示；触屏设备由 app.js 媒体查询守卫禁用） =====
 function calDiaryTipHtml(d) {
   const meta = [d.date, d.mood, d.weather].filter(Boolean).join(' · ');
-  const tags = (d.tags && d.tags.length) ? '<div class="ev-tip-tags">' + d.tags.map((t) => '<span class="ev-tag-view">' + escapeHtml(calTagLabel(t)) + '</span>').join('') + '</div>' : '';
+  const tags = (d.tags && d.tags.length) ? '<div class="ev-tip-tags">' + d.tags.map((t) => '<span class="ev-tag-view" data-tag="' + escapeHtml(calTagName(t)) + '">' + escapeHtml(calTagLabel(t)) + '</span>').join('') + '</div>' : '';
   const body = d.content ? '<div class="ev-tip-notes">' + calDiaryBody(d.content) + '</div>' : '';
   const remark = d.remark ? '<div class="ev-tip-meta" style="margin-top:6px;">備註：' + calRenderInlineMarkdown(d.remark) + '</div>' : '';
   return '<div class="ev-tip-title">\ud83d\udcd5 ' + calRenderInlineMarkdown(d.title || '日記') + '</div>' +
@@ -690,6 +747,114 @@ function renderCalTagOptions() {
   state.calEvents.forEach((ev) => (ev.tags || []).forEach((t) => { if (calTagName(t)) tags.add(calTagName(t)); }));
   options.innerHTML = Array.from(tags).sort().map((t) => '<option value="' + escapeHtml(t) + '"></option>').join('');
 }
+// ===== 标签右键菜单 + 编辑标签画面（树形父阶）=====
+function calInjectTagTreeStyle() {
+  if (document.getElementById('cal-tag-tree-style')) return;
+  const s = document.createElement('style');
+  s.id = 'cal-tag-tree-style';
+  s.textContent = [
+    '.cal-tag-ctx-menu{position:fixed;z-index:9999;min-width:150px;background:var(--ev-card,#1e293b);color:var(--ev-text,#e2e8f0);border:1px solid var(--ev-border,#334155);border-radius:10px;box-shadow:0 6px 24px rgba(0,0,0,.35);padding:6px;font-size:13px}',
+    '.cal-tag-ctx-menu button{display:block;width:100%;text-align:left;background:none;border:0;color:inherit;padding:8px 10px;border-radius:6px;cursor:pointer;font-size:13px}',
+    '.cal-tag-ctx-menu button:hover{background:var(--ev-hover,#334155)}',
+    '#calTagEditOverlay{position:fixed;inset:0;z-index:9000;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,.45)}',
+    '#calTagEditOverlay .cal-tag-edit-box{background:var(--ev-card,#1e293b);color:var(--ev-text,#e2e8f0);border:1px solid var(--ev-border,#334155);border-radius:14px;box-shadow:0 10px 40px rgba(0,0,0,.45);width:min(440px,92vw);max-height:86vh;overflow:auto;padding:18px 20px}',
+    '#calTagEditOverlay h3{margin:0 0 4px;font-size:16px}',
+    '.cal-tag-edit-sec{margin-top:16px}',
+    '.cal-tag-edit-sec .lbl{font-size:12px;opacity:.7;margin-bottom:8px}',
+    '.cal-tag-children{display:flex;flex-wrap:wrap;gap:8px}',
+    '.cal-tag-child{display:inline-flex;align-items:center;gap:6px;background:var(--ev-hover,#334155);border-radius:999px;padding:5px 12px;cursor:pointer;font-size:13px}',
+    '.cal-tag-child:hover{outline:1px solid var(--primary,#3b82f6)}',
+    '.cal-tag-cat-item{display:inline-flex;align-items:center;background:var(--ev-hover,#334155);border-radius:999px;padding:5px 12px;font-size:13px}',
+    '.cal-tag-edit-actions{margin-top:20px;display:flex;justify-content:flex-end;gap:10px}',
+    '.cal-tag-edit-actions button{padding:8px 16px;border-radius:8px;border:1px solid var(--ev-border,#334155);background:var(--ev-hover,#334155);color:inherit;cursor:pointer;font-size:13px}',
+    '.cal-tag-edit-actions button.primary{background:var(--primary,#3b82f6);color:#fff;border-color:transparent}',
+  ].join('');
+  document.head.appendChild(s);
+}
+function calEnsureTagCtxMenu() {
+  let menu = document.getElementById('calTagCtxMenu');
+  if (menu) return menu;
+  calInjectTagTreeStyle();
+  menu = document.createElement('div');
+  menu.id = 'calTagCtxMenu';
+  menu.className = 'cal-tag-ctx-menu';
+  menu.style.display = 'none';
+  menu.innerHTML = '<button type="button" data-cal-tag-edit="1">✎ 编辑标签属性</button>';
+  document.body.appendChild(menu);
+  menu.addEventListener('click', (ev) => {
+    if (ev.target.getAttribute && ev.target.getAttribute('data-cal-tag-edit')) { menu.style.display = 'none'; calOpenTagEdit(menu.__tag); }
+  });
+  document.addEventListener('click', () => { menu.style.display = 'none'; }, true);
+  return menu;
+}
+function calShowTagCtxMenu(name, x, y) {
+  const menu = calEnsureTagCtxMenu();
+  menu.__tag = name;
+  menu.style.display = 'block';
+  const pw = menu.offsetWidth || 160, ph = menu.offsetHeight || 40;
+  let left = x, top = y;
+  if (left + pw > window.innerWidth - 8) left = window.innerWidth - pw - 8;
+  if (top + ph > window.innerHeight - 8) top = window.innerHeight - ph - 8;
+  menu.style.left = Math.max(4, left) + 'px';
+  menu.style.top = Math.max(4, top) + 'px';
+}
+function calEnsureTagEditOverlay() {
+  let ov = document.getElementById('calTagEditOverlay');
+  if (ov) return ov;
+  calInjectTagTreeStyle();
+  ov = document.createElement('div');
+  ov.id = 'calTagEditOverlay';
+  document.body.appendChild(ov);
+  ov.addEventListener('click', (e) => { if (e.target === ov) ov.style.display = 'none'; });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && ov.style.display !== 'none') ov.style.display = 'none'; });
+  return ov;
+}
+function calOpenTagEdit(name) {
+  if (!name) return;
+  const ov = calEnsureTagEditOverlay();
+  const parent = calTagParent(name);
+  const children = calTagChildren(name);
+  const m = calTagMeta();
+  const candidates = calAllTagNames().filter((t) => t !== name && !calIsDescendant(t, name, m));
+  const cats = calFormCatNames(name);
+  const opts = ['<option value="">（无／根标签）</option>'].concat(
+    candidates.map((t) => '<option value="' + escapeHtml(t) + '"' + (t === parent ? ' selected' : '') + '>' + escapeHtml(t) + '</option>')
+  ).join('');
+  const childHtml = children.length
+    ? '<div class="cal-tag-children">' + children.map((c) => '<span class="cal-tag-child" data-cal-tag-child="' + escapeHtml(c) + '">' + escapeHtml(c) + '</span>').join('') + '</div>'
+    : '<div class="lbl">（暂无子标签）</div>';
+  // 分类 chip：只读展示（勿用 .cal-tag-child，避免命中「点子标签递归打开」的委托）
+  const catHtml = cats.length
+    ? '<div class="cal-tag-children">' + cats.map((c) => '<span class="cal-tag-cat-item">' + escapeHtml(c) + '</span>').join('') + '</div>'
+    : '<div class="lbl">（暂无分类）</div>';
+  ov.innerHTML =
+    '<div class="cal-tag-edit-box">' +
+      '<h3>编辑标签「' + escapeHtml(name) + '」</h3>' +
+      '<div class="cal-tag-edit-sec"><div class="lbl">子标签列表（以其为父的标签）</div>' + childHtml + '</div>' +
+      '<div class="cal-tag-edit-sec"><div class="lbl">分类（该标签的子分类）</div>' + catHtml + '</div>' +
+      '<div class="cal-tag-edit-sec"><div class="lbl">父阶标签（上级）</div>' +
+        '<select id="calTagParentSel" style="width:100%;padding:8px;border-radius:8px;background:var(--ev-hover,#334155);color:inherit;border:1px solid var(--ev-border,#334155);font-size:13px">' + opts + '</select>' +
+      '</div>' +
+      '<div class="cal-tag-edit-actions"><button type="button" id="calTagEditClose">关闭</button></div>' +
+    '</div>';
+  ov.style.display = 'flex';
+  ov.querySelector('#calTagEditClose').addEventListener('click', () => { ov.style.display = 'none'; });
+  ov.querySelector('#calTagParentSel').addEventListener('change', (e) => {
+    const ok = calSetTagParent(name, e.target.value);
+    if (!ok) { if (typeof showToast === 'function') showToast('不能将上级设为自身的下级（会造成循环）', 'danger'); e.target.value = parent; return; }
+    if (typeof handleSave === 'function') handleSave();
+    renderCalTagBar();
+    if (typeof showToast === 'function') showToast('已更新「' + name + '」的父阶标签', 'success');
+  });
+  ov.querySelectorAll('.cal-tag-child').forEach((c) => c.addEventListener('click', () => calOpenTagEdit(c.getAttribute('data-cal-tag-child'))));
+}
+// 标签（过滤条 chip 或 事件/日志卡片上的内联标签 .ev-tag-view）右键 → 弹出菜单（委托监听，覆盖重绘后的新节点）
+document.addEventListener('contextmenu', (e) => {
+  const tagEl = e.target.closest('[data-tag]');
+  if (!tagEl) return;
+  e.preventDefault();
+  calShowTagCtxMenu(tagEl.getAttribute('data-tag'), e.clientX, e.clientY);
+});
 
 function calFormTagNames() {
   const tags = new Set();
@@ -761,7 +926,7 @@ function calToggleFormTag(tag) {
 }
 
 // ========== 📊 事件統計：主事件 × 備註子事件（- [ ]），按標籤·完成狀態分類 ==========
-// 解析備註中的 Markdown checkbox 行 → 子事件數組 [{text, done}]
+// 解析備註中的 Markdown checkbox 行 → 子事件數組 [{text, done, dl, cp}]
 function calParseNoteChecks(text) {
   const out = [];
   if (!text) return out;
@@ -771,32 +936,49 @@ function calParseNoteChecks(text) {
     if (inFence) return;
     const m = line.match(/^(\s*)-\s+\[([ xX])\]\s?(.*)$/);
     if (!m) return;
-    const txt = (m[3] || '')
+    // 捕获 dl/cp 日期（裸日期视同 dl，與渲染約定一致），供統計明細顯示 📅/✅
+    const raw = m[3] || '';
+    const dlM = raw.match(/\[\[(?:dl:)?(\d{4}-\d{2}-\d{2})\]\]/);
+    const cpM = raw.match(/\[\[cp:(\d{4}-\d{2}-\d{2})\]\]/);
+    const txt = raw
       .replace(/\[\[(?:dl:)?(\d{4}-\d{2}-\d{2})\]\]/g, '$1')
       .replace(/\[\[cp:(\d{4}-\d{2}-\d{2})\]\]/g, '$1')
       .replace(/\s{2,}/g, ' ').trim();
-    out.push({ text: txt, done: m[2] !== ' ' });
+    out.push({ text: txt, done: m[2] !== ' ', dl: dlM ? dlM[1] : '', cp: cpM ? cpM[1] : '' });
   });
   return out;
 }
 // 收集統計數據：僅統計 EVENT（state.calEvents），REPEAT 系列按 1 條主事件計；子事件繼承主事件標籤
-function calBuildStats() {
+// filter: { tags: Set<string>|null, status: 'all'|'done'|'undone' }；tags 非空集合才生效；status 缺省 'all'
+function calBuildStats(filter) {
+  const fTags = (filter && filter.tags && filter.tags.size) ? filter.tags : null;
+  const fStatus = (filter && filter.status) || 'all';
   const tagMap = new Map();
   const ensure = (k) => { if (!tagMap.has(k)) tagMap.set(k, { mainTotal: 0, mainDone: 0, mainUndone: 0, subTotal: 0, subDone: 0, subUndone: 0, mains: [], subs: [] }); return tagMap.get(k); };
   let mainT = 0, mainD = 0, mainU = 0, subT = 0, subD = 0, subU = 0;
   state.calEvents.forEach((ev) => {
+    if (fStatus === 'done' && !ev.done) return;
+    if (fStatus === 'undone' && ev.done) return;
     const tagNames = (ev.tags || []).map((t) => calTagName(t)).filter(Boolean);
+    if (fTags) {
+      const hit = tagNames.some((t) => fTags.has(t));
+      const noTagHit = (tagNames.length === 0 && fTags.has('(無標籤)'));
+      if (!hit && !noTagHit) return;
+    }
     mainT++; if (ev.done) mainD++; else mainU++;
-    const subs = calParseNoteChecks(ev.notes);
+    const allSubs = calParseNoteChecks(ev.notes);
+    // 完成狀態過濾同樣作用於子事件（按每條子事件自身 done 過濾，與主事件一致）
+    const subs = fStatus === 'all' ? allSubs : allSubs.filter((s) => (fStatus === 'done' ? s.done : !s.done));
     const subDoneCount = subs.filter((s) => s.done).length;
     subT += subs.length; subD += subDoneCount; subU += (subs.length - subDoneCount);
     const groups = tagNames.length ? tagNames : ['(無標籤)'];
     groups.forEach((g) => {
+      if (fTags && !fTags.has(g)) return;
       const r = ensure(g);
       r.mainTotal++; if (ev.done) r.mainDone++; else r.mainUndone++;
       r.subTotal += subs.length; r.subDone += subDoneCount; r.subUndone += (subs.length - subDoneCount);
-      r.mains.push({ title: ev.title, done: !!ev.done, uid: ev.uid });
-      subs.forEach((s) => r.subs.push({ text: s.text, done: s.done }));
+      r.mains.push({ title: ev.title, done: !!ev.done, uid: ev.uid, date: ev.date });
+      subs.forEach((s) => r.subs.push({ text: s.text, done: s.done, date: ev.date, dl: s.dl, cp: s.cp, uid: ev.uid, ptitle: ev.title }));
     });
   });
   const pct = (d, t) => (t ? Math.round((d / t) * 100) : 0);
@@ -816,15 +998,44 @@ function calStatsSummaryHtml(s) {
     '</div>';
 }
 function calStatsDetailHtml(group) {
-  const mainItems = group.mains.map((m) =>
-    '<li class="' + (m.done ? 'done' : '') + '"' + (m.uid ? ' onclick="openEventForm(\'' + escapeHtml(m.uid) + '\')" style="cursor:pointer"' : '') + '>' +
-    '<span class="cb">' + (m.done ? '✓' : '☐') + '</span>' + calRenderInlineMarkdown(m.title) + '</li>').join('');
-  const subItems = group.subs.map((x) =>
-    '<li class="' + (x.done ? 'done' : '') + '"><span class="cb">' + (x.done ? '✓' : '☐') + '</span>' + escapeHtml(x.text) + '</li>').join('');
-  return '<ul>' +
-    '<div class="grp-title">主事件（' + group.mains.length + '）</div>' + (mainItems || '<li class="muted">—</li>') +
-    '<div class="grp-title">子事件（' + group.subs.length + '）</div>' + (subItems || '<li class="muted">—</li>') +
-    '</ul>';
+  // 主/子事件同色顯示（連結 color:inherit），用「主/子事件」欄位值區分；狀態直接顯示文字；
+  // 首欄「項次」序號；末欄「跳轉」＝關閉彈層並滾動到主畫面該事件位置（子事件跳到其所屬主事件）；
+  // 子事件內容懸停 → tooltip 顯示所屬主事件標題（原生 title）
+  let no = 0;
+  const row = (kind, date, contentHtml, done, uid, tip) => {
+    no++;
+    return '<tr class="' + (done ? 'done' : '') + '">' +
+      '<td class="d-no">' + no + '</td>' +
+      '<td class="d-date">' + escapeHtml(date || '') + '</td>' +
+      '<td class="d-kind">' + kind + '</td>' +
+      '<td class="d-content"' + (tip ? ' title="' + tip + '"' : '') + '>' + contentHtml + '</td>' +
+      '<td class="d-status">' + (done ? '完成' : '未完成') + '</td>' +
+      '<td class="d-jump"><button class="cal-stats-jump" onclick="calJumpToEvent(\'' + escapeHtml(uid) + '\')">跳转</button></td>' +
+    '</tr>';
+  };
+  const mainRows = group.mains.map((m) => row('主事件', m.date,
+    '<a href="javascript:void(0)" onclick="openEventForm(\'' + escapeHtml(m.uid) + '\')">' + calRenderInlineMarkdown(m.title) + '</a>',
+    m.done, m.uid)).join('');
+  const subRows = group.subs.map((x) => row('子事件', x.date,
+    escapeHtml(x.text) +
+    (x.dl ? ' <span class="d-dl">📅 ' + escapeHtml(x.dl) + '</span>' : '') +
+    (x.cp ? ' <span class="d-cp">✅ ' + escapeHtml(x.cp) + '</span>' : ''),
+    x.done, x.uid, '主事件：' + escapeHtml(x.ptitle || ''))).join('');
+  return '<table class="ev-stats-detail-table">' +
+    '<thead><tr><th>项次</th><th>日期</th><th>主/子事件</th><th>事件 / 子事件</th><th>状态</th><th>跳转</th></tr></thead><tbody>' +
+    (mainRows + subRows || '<tr><td colspan="6" class="muted">—</td></tr>') +
+    '</tbody></table>';
+}
+// 關閉統計彈層並滾動定位到事件在主畫面的渲染位置（子事件＝跳到其所屬主事件）
+function calJumpToEvent(uid) {
+  calCloseStats();
+  const el = document.querySelector('[data-ev-edit="' + uid + '"]');
+  if (!el || !el.offsetParent) { showToast('当前视图未显示该事件，请切换到包含它的视图后再试', 'danger'); return; }
+  el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  el.classList.remove('cal-jump-flash');
+  void el.offsetWidth;  // 強制 reflow 重啟動畫
+  el.classList.add('cal-jump-flash');
+  setTimeout(() => el.classList.remove('cal-jump-flash'), 2000);
 }
 function calStatsTableHtml(s) {
   const head = '<thead><tr><th>標籤</th><th>主事件<br>總計</th><th>主·完成</th><th>主·未完成</th><th>子事件<br>總計</th><th>子·完成</th><th>子·未完成</th></tr></thead>';
@@ -839,16 +1050,53 @@ function calStatsTableHtml(s) {
     '<td>' + s.subT + '</td><td>' + s.subD + '</td><td>' + s.subU + '</td></tr>';
   return '<table class="ev-stats-table">' + head + '<tbody>' + body + total + '</tbody></table>';
 }
+let calStatsFilter = { tags: new Set(), status: 'all' };  // 默认：全部
+function calStatsTagOptions() {
+  const set = new Set();
+  state.calEvents.forEach((ev) => (ev.tags || []).forEach((t) => { const n = calTagName(t); if (n) set.add(n); }));
+  const arr = Array.from(set).sort((a, b) => a.localeCompare(b, 'zh-Hans'));
+  arr.push('(無標籤)');
+  return arr;
+}
+function calRenderStatsFilters() {
+  const box = document.getElementById('ev-stats-filters');
+  if (!box) return;
+  const tags = calStatsTagOptions();
+  const tagChips = tags.map((t) =>
+    '<label class="ev-stats-tag-filter"><input type="checkbox" data-cal-stats-tag="' + escapeHtml(t) + '"' + (calStatsFilter.tags.has(t) ? ' checked' : '') + '> ' + escapeHtml(t) + '</label>'
+  ).join('');
+  const st = calStatsFilter.status;
+  const radio = (v, label) => '<label class="ev-stats-status"><input type="radio" name="calStatsStatus" value="' + v + '"' + (st === v ? ' checked' : '') + '> ' + label + '</label>';
+  box.innerHTML =
+    '<div class="ev-stats-filter-row"><span class="lbl">標籤：</span><div class="ev-stats-tag-filters">' + (tagChips || '<span class="muted">（無標籤可選）</span>') + '</div></div>' +
+    '<div class="ev-stats-filter-row"><span class="lbl">完成狀態：</span>' + radio('all', '全部') + radio('done', '已完成') + radio('undone', '未完成') + '</div>';
+  box.querySelectorAll('input[data-cal-stats-tag]').forEach((cb) => {
+    cb.addEventListener('change', () => {
+      const v = cb.getAttribute('data-cal-stats-tag');
+      if (cb.checked) calStatsFilter.tags.add(v); else calStatsFilter.tags.delete(v);
+      calRenderStatsBody();
+    });
+  });
+  box.querySelectorAll('input[name="calStatsStatus"]').forEach((rb) => {
+    rb.addEventListener('change', () => { if (rb.checked) { calStatsFilter.status = rb.value; calRenderStatsBody(); } });
+  });
+}
+function calRenderStatsBody() {
+  const body = document.getElementById('ev-stats-body');
+  if (!body) return;
+  const s = calBuildStats(calStatsFilter);
+  const emptyMsg = (state.calEvents.length === 0) ? 'calendar.md 中還沒有任何行程事件' : '沒有符合篩選條件的事件';
+  body.innerHTML = (s.mainT || s.subT)
+    ? calStatsSummaryHtml(s) + calStatsTableHtml(s)
+    : '<div class="ev-stats-empty">' + emptyMsg + '</div>';
+}
 function calOpenStats() {
   const overlay = document.getElementById('ev-stats-overlay');
-  const bodyEl = document.getElementById('ev-stats-body');
-  if (!overlay || !bodyEl) return;
-  const s = calBuildStats();
+  if (!overlay) return;
   const fileEl = document.getElementById('ev-stats-file');
   if (fileEl) fileEl.textContent = calFileSizeLabel();
-  bodyEl.innerHTML = (s.mainT || s.subT)
-    ? calStatsSummaryHtml(s) + calStatsTableHtml(s)
-    : '<div class="ev-stats-empty">calendar.md 中還沒有任何行程事件</div>';
+  calRenderStatsFilters();
+  calRenderStatsBody();
   overlay.style.display = 'flex';
 }
 function calCloseStats() {
@@ -1460,7 +1708,7 @@ function calHolidayHtml(h, today, occDate) {
   const time = multi
     ? (calMdShort(h.date) + ' – ' + calMdShort(h.endDate) + ' · 共' + calSpanDays(h.date, h.endDate) + '天')
     : '全天';
-  const tags = (h.tags && h.tags.length) ? '<span class="ev-tags">' + h.tags.map((t) => '<span class="ev-tag-view">' + escapeHtml(calTagLabel(t)) + '</span>').join('') + '</span>' : '';
+  const tags = (h.tags && h.tags.length) ? '<span class="ev-tags">' + h.tags.map((t) => '<span class="ev-tag-view" data-tag="' + escapeHtml(calTagName(t)) + '">' + escapeHtml(calTagLabel(t)) + '</span>').join('') + '</span>' : '';
   return '<div class="ev-holiday" data-ev-holiday="' + escapeHtml(h.uid) + '" style="--holiday-color:' + escapeHtml(accent) + '">' +
     '<span class="ev-holiday-region" style="--region-color:' + escapeHtml(region.color) + '" title="' + escapeHtml(region.label + '地區假日') + '">' + region.icon + escapeHtml(region.label) + '</span>' +
     '<span class="ev-holiday-badge">' + meta.icon + ' ' + escapeHtml(meta.label) + '</span>' +
@@ -1585,7 +1833,7 @@ function calDiaryRowHtml(d) {
   if (d.mood) meta.push('心情 ' + d.mood);
   if (d.weather) meta.push(d.weather);
   const tags = (d.tags && d.tags.length)
-    ? '<span class="ev-tags">' + d.tags.map((t) => '<span class="ev-tag-view">' + escapeHtml(calTagLabel(t)) + '</span>').join('') + '</span>'
+    ? '<span class="ev-tags">' + d.tags.map((t) => '<span class="ev-tag-view" data-tag="' + escapeHtml(calTagName(t)) + '">' + escapeHtml(calTagLabel(t)) + '</span>').join('') + '</span>'
     : '';
   const body = calDiaryBody(d.content);
   return '<div class="ev-item ev-diary-item" data-ev-diary-row="' + escapeHtml(d.date) + '">' +
@@ -2117,7 +2365,7 @@ function evItemHtml(ev, today, occDate) {
     '<div class="ev-body">' +
     // 跨天行程（含跨天重複）標題後緊跟「(第幾天/共幾天)」——「回上海 (3/7)」一眼看出是第三天
     '<div class="ev-title">' + calRepeatIcon(ev) + calRenderInlineMarkdown(ev.title) + calSpanDaySuffix(ev, occDate) + spanBadge +
-    (ev.tags && ev.tags.length ? '<span class="ev-tags">' + ev.tags.map(t => '<span class="ev-tag-view">' + escapeHtml(calTagLabel(t)) + '</span>').join('') + '</span>' : '') +
+    (ev.tags && ev.tags.length ? '<span class="ev-tags">' + ev.tags.map(t => '<span class="ev-tag-view" data-tag="' + escapeHtml(calTagName(t)) + '">' + escapeHtml(calTagLabel(t)) + '</span>').join('') + '</span>' : '') +
     calEventTodoLinks(ev) +
     '</div>' +
     '<div class="ev-meta">' + escapeHtml(time) + (ev.location ? ' · 📍' + escapeHtml(ev.location) : '') + '</div>' +

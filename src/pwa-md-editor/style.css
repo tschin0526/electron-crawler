@@ -732,6 +732,37 @@ body {
 /* 📅 行程新增/編輯表單 */
 .ev-form-overlay { position: fixed; inset: 0; z-index: 3000; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; padding: 16px; }
 .ev-form-box { width: 100%; max-width: 420px; max-height: 90vh; overflow: auto; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 12px; padding: 16px; }
+/* 統計彈層：標題欄 + 篩選區固定不滾動，僅 .ev-stats-body 滾動 */
+#ev-stats-overlay .ev-stats-box { display: flex; flex-direction: column; overflow: hidden; max-height: 92vh; }
+.ev-stats-header { flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-bottom: 8px; border-bottom: 1px solid var(--border); }
+.ev-stats-title { font-size: 16px; font-weight: 600; color: var(--text); }
+.ev-stats-close { flex-shrink: 0; width: 32px; height: 32px; border-radius: 8px; border: 1px solid var(--border); background: var(--bg-hover, rgba(255,255,255,.06)); color: var(--text); font-size: 16px; line-height: 1; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; }
+.ev-stats-close:hover { background: var(--border); }
+.ev-stats-filters { flex-shrink: 0; margin: 10px 0; padding: 10px 12px; background: var(--bg-hover, rgba(255,255,255,.06)); border-radius: 8px; }
+.ev-stats-filter-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-bottom: 6px; }
+.ev-stats-filter-row:last-child { margin-bottom: 0; }
+.ev-stats-filter-row .lbl { font-size: 12px; color: var(--text-secondary); }
+.ev-stats-tag-filters { display: flex; flex-wrap: wrap; gap: 4px 10px; }
+.ev-stats-tag-filter, .ev-stats-status { font-size: 12px; color: var(--text); display: inline-flex; align-items: center; gap: 3px; cursor: pointer; }
+.ev-stats-detail-table { width: 100%; border-collapse: collapse; font-size: 12px; text-align: left; margin-top: 2px; }
+/* 明细表嵌在主表 td 内：用 .ev-stats-table 前缀提高特异性，确保左对齐压过通用居中规则 */
+.ev-stats-detail-table th, .ev-stats-detail-table td,
+.ev-stats-table .ev-stats-detail-table th, .ev-stats-table .ev-stats-detail-table td { border: 1px solid var(--border); padding: 5px 8px; text-align: left; vertical-align: top; }
+.ev-stats-detail-table th { background: rgba(124,58,237,.12); font-weight: 600; color: var(--text); }
+.ev-stats-detail-table tr.done .d-status { color: #34C759; }
+/* 主事件链接与子事件纯文字同色（满足「相同颜色显示」） */
+.ev-stats-detail-table a { color: inherit; text-decoration: none; }
+.ev-stats-detail-table a:hover { text-decoration: underline; }
+.ev-stats-detail-table td.d-content .cb { display: inline-block; width: 14px; text-align: center; }
+/* 明细表：项次栏（窄、居中灰字）与跳转按钮栏 */
+.ev-stats-detail-table td.d-no { text-align: center; color: var(--text-secondary); white-space: nowrap; }
+.ev-stats-detail-table td.d-jump { text-align: center; white-space: nowrap; }
+/* 子事件内容悬停显示所属主事件 tooltip（原生 title） */
+.ev-stats-detail-table td.d-content[title] { cursor: help; text-decoration: underline dotted rgba(148,163,184,.6); text-underline-offset: 3px; }
+.cal-stats-jump { padding: 3px 10px; border: none; border-radius: 6px; background: var(--primary, #7c3aed); color: #fff; font-size: 11px; cursor: pointer; }
+/* 跳转定位高亮（滚动到事件后短暂闪烁描边） */
+.cal-jump-flash { animation: calJumpFlash 2s ease; }
+@keyframes calJumpFlash { 0%, 60% { box-shadow: 0 0 0 3px rgba(245,197,24,.85); border-radius: 6px; } 100% { box-shadow: none; } }
 .ev-form-title { font-size: 16px; font-weight: 600; color: var(--text); margin-bottom: 12px; }
 .ev-f-label { display: block; font-size: 12px; color: var(--text-secondary); margin-bottom: 10px; }
 /* 🗓 表單日期輸入框旁的星期提示（依輸入日期即時更新；與正文同色同字號，便於閱讀） */
@@ -801,14 +832,14 @@ body {
 .ev-form-hint { margin-top: 10px; font-size: 11px; line-height: 1.5; color: var(--text-secondary); }
 
 /* ===== 📊 事件統計彈層 ===== */
-.ev-stats-box { max-width: 720px; }
+.ev-stats-box { max-width: min(1080px, 96vw); }
 .ev-stats-sub { font-size: 11px; font-weight: 400; color: var(--text-secondary); margin-left: 8px; }
 .ev-stats-sub code { background: rgba(124,58,237,.14); padding: 1px 5px; border-radius: 4px; }
 /* 統計按鈕：與 App 圖標按鈕（.btn）一致；LITE 的 .btn 為藥丸形，這裡補背景/邊框（.btn 預設無背景） */
 .ev-stats-btn.btn { background: var(--bg-secondary); color: var(--text); border: 1px solid var(--border); }
 .ev-stats-btn.btn:hover { background: var(--primary); color: #fff; }
 .ev-stats-file { display: block; font-size: 11px; font-weight: 400; color: var(--text-secondary); margin-top: 2px; }
-.ev-stats-body { font-size: 13px; color: var(--text); }
+.ev-stats-body { font-size: 13px; color: var(--text); flex: 1; overflow: auto; min-height: 0; }
 .ev-stats-summary { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 14px; }
 .ev-stats-card { flex: 1 1 220px; min-width: 200px; border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; background: rgba(124,58,237,.08); }
 .ev-stats-card h4 { margin: 0 0 6px; font-size: 13px; font-weight: 600; color: var(--text); }
