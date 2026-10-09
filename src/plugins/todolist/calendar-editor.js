@@ -29,8 +29,11 @@
     // 初始值取年视图默认（'full'）——因 tlCalMode 现已默认 'year'（第十一批）。
     let tlCalScope = 'full';
     let tlCalEvents = [];
+    let tlIncludedEvents = [];    // 📎 include 进来的 calendar-*.md 事件（只读，ro=true）
     let tlCalHolidays = [];    // ## HOLIDAY 解析結果（与 ## EVENT 同结构，多 holidayType 字段）；仅列表/日志视图显示，不进时间网格/月格 chip
     let tlCalDiaries = [];     // ## DIARY 解析結果（每天一条，keyed by date）；行事历日期旁显示日记按钮，有则打勾
+    let tlIncludedHolidays = [];  // 📎 include 进来的只读假日
+    let tlIncludedDiaries = [];   // 📎 include 进来的只读日记
     let tlCalTagFilter = [];   // 标签过滤（空＝全部；OR 逻辑：事件 tags 命中任一即显示）
     let tlCalRegionFilter = [];   // ## HOLIDAY 地区过滤（图例 checkbox 勾选；第十一批依用户截图设定：默认为空＝不显示任何地区假日；只影响显示，不改数据）
     let tlCalShowEvents = true;   // 分类显示：普通行程 EVENT（默认勾选；只影响显示，不改数据）
@@ -101,9 +104,66 @@
         //    setCalEventsView(true) 幂等：重跑 showCalEventsPaneOnly()（重新隐藏文字编辑器）+ 重渲染行程内容；
         //    内容来自 #taskText 实时缓冲，不会丢编辑。
         setCalEventsView(true);
+        tlRefreshIncludedEvents(); // 📎 打开/切入 calendar.md 时，加载同目录 calendar-*.md（只读合并；加载完自动重绘）
       } else if (calEventsView) {
         setCalEventsView(false);
       }
+    }
+
+    // 📎 合并 include 进来的只读事件（渲染统一走 tlCalEvents，只读约束靠 ro 标记 + 写回过滤）
+    function tlAllEvents(md) { return (tlParseEvents(md) || []).concat(tlIncludedEvents || []); }
+    function tlAllHolidays(md) { return (tlParseHolidays(md) || []).concat(tlIncludedHolidays || []); }
+    function tlAllDiaries(md) { return (tlParseDiaries(md) || []).concat(tlIncludedDiaries || []); }
+    // 📎 加载同目录 calendar-*.md（结构与 calendar.md 相同：EVENT / HOLIDAY / DIARY）并解析为只读数据：
+    //   - 外部文件模式：目录 = externalFilePath 所在目录，读取走 readFileByPath
+    //   - 内部 md 模式：目录 = TODO_DATA_DIR（getTodoDataDir），读取走 readMdFile
+    async function tlRefreshIncludedEvents() {
+      if (!isCalendarMdDoc()) { tlIncludedEvents = []; tlIncludedHolidays = []; tlIncludedDiaries = []; return; }
+      const api = window.electronAPI || {};
+      try {
+        let dir = null, isExt = false;
+        const t = currentFileTarget();
+        if (t && t.kind === 'ext' && t.path) {
+          dir = String(t.path).replace(/[\\/][^\\/]*$/, '');
+          isExt = true;
+        } else if (api.getTodoDataDir) {
+          const r = await api.getTodoDataDir();
+          dir = (r && r.data) ? String(r.data) : null;
+        }
+        if (!dir || !api.listAllFilesInDir) return;
+        const ls = await api.listAllFilesInDir(dir);
+        const names = (((ls && ls.data) || []).map((it) => it && it.name).filter(Boolean))
+          .filter((n) => /^calendar-.+\.md$/i.test(n) && n.toLowerCase() !== 'calendar.md')
+          .sort();
+        const merged = [], mergedHolidays = [], mergedDiaries = [];
+        for (let i = 0; i < names.length; i++) {
+          const name = names[i];
+          let content = '';
+          if (isExt) {
+            if (api.readFileByPath) {
+              const rr = await api.readFileByPath(dir + '/' + name);
+              content = (rr && rr.success) ? (rr.content || '') : '';
+            }
+          } else if (api.readMdFile) {
+            const rr = await api.readMdFile(name.replace(/\.md$/i, ''));
+            content = (rr && rr.success) ? (rr.content || '') : '';
+          }
+          tlParseEvents(content).forEach((ev, j) => {
+            ev.ro = true;
+            ev.src = name;
+            ev.uid = 'ro-' + i + '-' + j + '-' + ev.uid;   // 全局唯一，避免与 calendar.md 的 evpN 冲突
+            merged.push(ev);
+          });
+          tlParseHolidays(content).forEach((h, j) => { h.ro = true; h.src = name; h.uid = 'ro-' + i + '-' + j + '-h-' + h.uid; mergedHolidays.push(h); });
+          tlParseDiaries(content).forEach((d) => { d.ro = true; d.src = name; mergedDiaries.push(d); });
+        }
+        tlIncludedEvents = merged;
+        tlIncludedHolidays = mergedHolidays;
+        tlIncludedDiaries = mergedDiaries;
+      } catch (e) {
+        tlIncludedEvents = []; tlIncludedHolidays = []; tlIncludedDiaries = [];
+      }
+      if (calEventsView) tlRenderEventsContent();
     }
 
     function toggleCalEventsView() {
@@ -407,7 +467,7 @@
     function tlDiaryMarkHtml(date) {
       const dy = tlDiaryOnDate(date);
       if (!dy) return '';
-      return '<span class="ev-diary-mark" title="' + tlEscapeHtml('日记：' + (dy.title || '（无标题）')) + '">\ud83d\udcd5</span>';
+      return '<span class="ev-diary-mark' + (dy.ro ? ' ro' : '') + '" title="' + tlEscapeHtml('日记：' + (dy.title || '（无标题）')) + '">\ud83d\udcd5</span>';
     }
 
     // ===== 序列化（与桌面 calendar 插件 eventsToMarkdown 逐字节对齐） =====
@@ -1487,9 +1547,9 @@
       const mb = document.getElementById('tlEvModeMonth'); if (mb) mb.classList.toggle('active', isMonth);
       const yb = document.getElementById('tlEvModeYear'); if (yb) yb.classList.toggle('active', isYear);
       const content = document.getElementById('taskText').value;
-      tlCalEvents = tlParseEvents(content);
-      tlCalHolidays = tlParseHolidays(content);
-      tlCalDiaries = tlParseDiaries(content);
+      tlCalEvents = tlAllEvents(content);
+      tlCalHolidays = tlAllHolidays(content);
+      tlCalDiaries = tlAllDiaries(content);
       tlRenderTagBar();
       tlRenderHolidayLegend(); // 动态图例：列出 calendar.md 中出现过的地区，辅助「目视差别」
       tlCursorTitle(); // ⚠️ 導航列標題每種模式都要更新（周模式尤其會跨月，不能殘留上次的「X年X月」）
@@ -1610,7 +1670,7 @@
     }
     function tlOpenRepeatOverview() {
       if (!isCalendarMdDoc()) return;
-      tlCalEvents = tlParseEvents(document.getElementById('taskText').value);
+      tlCalEvents = tlAllEvents(document.getElementById('taskText').value);
       const reps = tlCalEvents.filter((e) => e.repeatMode).sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
       const cnt = document.getElementById('tlRepeatOvCount');
       if (cnt) cnt.textContent = reps.length ? '（共 ' + reps.length + ' 条）' : '';
@@ -1658,9 +1718,9 @@
     function tlRenderYear(content) {
       const grid = document.getElementById('tlEvYearGrid');
       if (!grid) return;
-      tlCalEvents = tlParseEvents(content);
-      tlCalHolidays = tlParseHolidays(content);
-      tlCalDiaries = tlParseDiaries(content);
+      tlCalEvents = tlAllEvents(content);
+      tlCalHolidays = tlAllHolidays(content);
+      tlCalDiaries = tlAllDiaries(content);
       const y = tlCalCursor.getFullYear();
       // 重複展開視窗：整年，重复事件/跨天行程首尾由展开引擎自行处理
       tlSetRepeatWindow(y + '-01-01', y + '-12-31');
@@ -1826,7 +1886,7 @@
       const cp = tlLunarCompact(date);
       const lunarHdr = cp.lunarText ? '農曆 ' + cp.lunarText + (cp.jieqi ? ' · ' + cp.jieqi : '') : (cp.jieqi || '');
       const dy = tlDiaryOnDate(date);
-      const diaryBtn = '<button type="button" class="ev-day-diary' + (dy ? ' has' : '') + '" title="' + (dy ? '已有日记 · 点击编辑' : '写日记') + '" data-ev-diary="' + tlEscapeHtml(date) + '" onclick="tlOpenDiaryForm(\'' + date + '\')">\ud83d\udcd5</button>';
+      const diaryBtn = '<button type="button" class="ev-day-diary' + (dy ? (dy.ro ? ' ro' : ' has') : '') + '" title="' + (dy ? '已有日记 · 点击编辑' : '写日记') + '" data-ev-diary="' + tlEscapeHtml(date) + '" onclick="tlOpenDiaryForm(\'' + date + '\')">\ud83d\udcd5</button>';
       return '<div class="ev-date' + (isToday ? ' today' : '') + '" data-ev-date="' + tlEscapeHtml(date) + '">' + label +
         (week ? '<span class="ev-week">週' + week + '</span>' : '') +
         // ⏳ 倒計時徽章：每天必顯示（今天＝高亮，其餘＝灰底），取代原先「僅今天顯示」
@@ -1860,6 +1920,7 @@
       return '<div class="ev-item' + (past ? ' past' : '') + (ev.done ? ' done' : '') + (multi ? ' multi' : '') + '" data-uid="' + tlEscapeHtml(ev.uid) + '" data-occ-date="' + tlEscapeHtml(occDate || ev.date) + '">' +
         '<input type="checkbox" class="ev-check" onchange="tlToggleDone(\'' + ev.uid + '\', this.checked)"' +
         (ev.done ? ' checked' : '') + ' title="\u52fe\u9009=\u5df2\u5b8c\u6210\uff0c\u53d6\u6d88\u52fe\u9009=\u672a\u5b8c\u6210">' +
+        (ev.ro ? '<span class="ev-ro-icon" title="来自被包含的只读文件，不可编辑">\u26d4</span>' : '') +
         '<span class="ev-swatch" style="background:' + tlEscapeHtml(ev.color) + '"></span>' +
         '<div class="ev-body">' +
         // 跨天行程（含跨天重复）标题后紧跟「(第几天/共几天)」——让「回上海 (3/7)」一眼看出是第三天
@@ -1993,6 +2054,7 @@
         : '全天';
       const tags = (h.tags && h.tags.length) ? '<span class="ev-tags">' + h.tags.map((t) => '<span class="ev-tag-view" data-tag="' + tlEscapeHtml(tlTagName(t)) + '">' + tlEscapeHtml(tlTagLabel(t)) + '</span>').join('') + '</span>' : '';
       return '<div class="ev-holiday" data-ev-holiday="' + tlEscapeHtml(h.uid) + '" style="--holiday-color:' + tlEscapeHtml(accent) + '">' +
+        (h.ro ? '<span class="ev-ro-icon" title="来自被包含的只读文件，不可编辑">\u26d4</span>' : '') +
         '<span class="ev-holiday-region" style="--region-color:' + tlEscapeHtml(region.color) + '" title="' + tlEscapeHtml(region.label + '地区假日') + '">' + region.icon + tlEscapeHtml(region.label) + '</span>' +
         '<span class="ev-holiday-badge">' + meta.icon + ' ' + tlEscapeHtml(meta.label) + '</span>' +
         '<div class="ev-body">' +
@@ -2169,9 +2231,9 @@
       const list = document.getElementById('tlEvList');
       if (!list) return;
       const prevScrollTop = list.scrollTop; // 渲染前先记下列表当前滚动位置（确定性还原依据，不依赖内存/缓存）
-      tlCalEvents = tlParseEvents(content);
-      tlCalHolidays = tlParseHolidays(content);
-      tlCalDiaries = tlParseDiaries(content);
+      tlCalEvents = tlAllEvents(content);
+      tlCalHolidays = tlAllHolidays(content);
+      tlCalDiaries = tlAllDiaries(content);
       // 📓 「只显示日记」：勾选后走专用分支（行程/假日不参与），连「尚未有行程」的空态也不适用
       tlLoadDiaryOnly();
       if (tlCalDiaryOnly) { tlRenderDiaryOnlyList(list); return; }
@@ -2427,9 +2489,9 @@
     }
 
     function tlRenderMonth(content) {
-      tlCalEvents = tlParseEvents(content);
-      tlCalHolidays = tlParseHolidays(content);
-      tlCalDiaries = tlParseDiaries(content);
+      tlCalEvents = tlAllEvents(content);
+      tlCalHolidays = tlAllHolidays(content);
+      tlCalDiaries = tlAllDiaries(content);
       const cur = tlCalCursor;
       const y = cur.getFullYear(), m = cur.getMonth();
       // 重複展開視窗：當月 + 前後 7 天（網格含跨月首尾週），避免 never 無限展開
@@ -2599,13 +2661,14 @@
     function tlOpenEventForm(uid, defaultDate, pre) {
       tlHideTip();
       if (!isCalendarMdDoc()) return;
-      tlCalEvents = tlParseEvents(document.getElementById('taskText').value);
+      tlCalEvents = tlAllEvents(document.getElementById('taskText').value);
       tlRenderTagOptions();
       tlEvFormUid = null;
       let ev = null;
       if (uid) {
         ev = tlCalEvents.find((x) => x.uid === uid);
         if (!ev) { showToast('找不到该条行程（内容可能已被修改）', 'danger'); return; }
+        if (ev.ro) { showToast('此行程来自被包含的只读文件，不可编辑', 'danger'); return; }
         tlEvFormUid = uid;
       }
       const p = pre || {}; // 🖱 雙擊空白快速新增時的預填：{ allDay, startTime, endTime }
@@ -2816,7 +2879,7 @@
         ev.repeatExcludeDates = [];
       }
       // 以当前编辑内容为准重新解析（保留用户手改过的其它条目），再 upsert
-      tlCalEvents = tlParseEvents(document.getElementById('taskText').value);
+      tlCalEvents = tlAllEvents(document.getElementById('taskText').value);
       const i = tlCalEvents.findIndex((x) => x.uid === ev.uid);
       if (i >= 0) tlCalEvents[i] = ev; else tlCalEvents.push(ev);
       // 写入后返回列表：不设滚动锚点（pending 保持 false）→ tlRenderList 走「保留原 scrollTop」分支，原地不动
@@ -2828,9 +2891,10 @@
     }
 
     function tlDeleteEvent(uid) {
-      tlCalEvents = tlParseEvents(document.getElementById('taskText').value);
+      tlCalEvents = tlAllEvents(document.getElementById('taskText').value);
       const ev = tlCalEvents.find((x) => x.uid === uid);
       if (!ev) { showToast('找不到该条行程（内容可能已被修改）', 'danger'); return; }
+      if (ev.ro) { showToast('此行程来自被包含的只读文件，不可删除', 'danger'); return; }
       if (!confirm('确定删除行程「' + ev.title + '」（' + ev.date + '）吗？\n\n写入后按「保存」才会真正写回文件。')) return;
       tlCalEvents = tlCalEvents.filter((x) => x.uid !== uid);
       tlApplyEventsToBuffer();
@@ -2846,11 +2910,16 @@
 
     // ===== ## DIARY 新增/编辑/删除（写回 taskText 缓冲，按「保存」落盘）=====
     let tlDiaryFormDate = null;
+    let tlDiaryFormReadonly = false;
     function tlOpenDiaryForm(date) {
       tlHideTip();
       if (!isCalendarMdDoc()) return;
       tlCalDiaries = tlParseDiaries(document.getElementById('taskText').value);
-      const d = tlDiaryOnDate(date);
+      // 📎 只读日记：主文件无此日期、但 include 里有 → 只读查看（字段只读，隐藏保存/删除，可看不可改）
+      const own = tlCalDiaries.find((x) => x.date === date);
+      const roD = own ? null : (tlIncludedDiaries || []).find((d) => d.date === date);
+      const isRo = !!roD;
+      const d = isRo ? roD : own;
       tlDiaryFormDate = date;
       document.getElementById('tlDiaryFTitle').value = d ? d.title : '';
       document.getElementById('tlDiaryFDate').textContent = date;
@@ -2859,16 +2928,38 @@
       document.getElementById('tlDiaryFWeather').value = d ? (d.weather || '') : '';
       document.getElementById('tlDiaryFContent').value = d ? (d.content || '') : '';
       document.getElementById('tlDiaryFRemark').value = d ? (d.remark || '') : '';
-      document.getElementById('tlDiaryFormDelete').style.display = d ? '' : 'none';
+      tlSetDiaryFormReadonly(isRo);
+      tlDiaryFormReadonly = isRo;
+      document.getElementById('tlDiaryFormDelete').style.display = (d && !isRo) ? '' : 'none';
       document.getElementById('tlDiaryFormOverlay').style.display = 'flex';
-      document.getElementById('tlDiaryFContent').focus();
+      if (!isRo) document.getElementById('tlDiaryFContent').focus();
+    }
+    function tlSetDiaryFormReadonly(ro) {
+      ['tlDiaryFTitle', 'tlDiaryFMood', 'tlDiaryFWeather', 'tlDiaryFTags', 'tlDiaryFContent', 'tlDiaryFRemark'].forEach((id) => {
+        const el = document.getElementById(id);
+        if (el) el.readOnly = !!ro;
+      });
+      const t = document.getElementById('tlDiaryFormTitleText');
+      if (t) t.textContent = ro ? '查看日记（只读）' : '写日记';
+      const save = document.getElementById('tlDiaryFormSave');
+      if (save) save.style.display = ro ? 'none' : '';
+      const hint = document.getElementById('tlDiaryFormHint');
+      if (hint) hint.textContent = ro ? '此日记来自被包含的只读文件，仅供查看' : '写入后按编辑器「保存」，把改动写回 calendar.md';
     }
     function tlCloseDiaryForm() {
       const ov = document.getElementById('tlDiaryFormOverlay');
       if (ov) ov.style.display = 'none';
       tlDiaryFormDate = null;
+      tlDiaryFormReadonly = false;
+      // 恢复「合并」状态（含 include 的只读日记）：tlOpenDiaryForm 曾把 tlCalDiaries 重置为仅主文件，
+      // 若不恢复，关闭表单后日记图标 tooltip / 日期标记会因找不到 include 日记而失效（用户实测）。
+      if (isCalendarMdDoc()) {
+        const ta = document.getElementById('taskText');
+        if (ta) tlCalDiaries = tlAllDiaries(ta.value);
+      }
     }
     function tlSaveDiaryForm() {
+      if (tlDiaryFormReadonly) return;
       const date = tlDiaryFormDate;
       if (!date) return;
       const title = document.getElementById('tlDiaryFTitle').value.trim();
@@ -2895,6 +2986,7 @@
     function tlRemoveDiary(date) {
       const d = tlDiaryOnDate(date);
       if (!d) return false;
+      if (d.ro) { showToast('此日记来自被包含的只读文件，不可删除', 'danger'); return false; }
       if (!confirm('确定删除 ' + date + ' 的日记「' + d.title + '」吗？\n\n按「保存」才会真正写回文件。')) return false;
       tlCalDiaries = tlParseDiaries(document.getElementById('taskText').value);
       tlCalDiaries = tlCalDiaries.filter((x) => x.date !== date);
@@ -2903,6 +2995,7 @@
       return true;
     }
     function tlDeleteDiary() {
+      if (tlDiaryFormReadonly) return;
       const date = tlDiaryFormDate;
       if (!date) return;
       if (!tlDiaryOnDate(date)) { tlCloseDiaryForm(); return; }
@@ -2921,7 +3014,7 @@
       const holidays = tlParseHolidays(ta.value);
       tlCalEvents = events;
       tlCalHolidays = holidays;
-      ta.value = tlCalendarToMarkdown(events, holidays, tlCalDiaries);
+      ta.value = tlCalendarToMarkdown(events, holidays, tlCalDiaries.filter((d) => !d.ro));
       if (typeof autoGrowTextarea === 'function') autoGrowTextarea(ta);
       if (typeof markCurrentTabDirty === 'function') markCurrentTabDirty();
       tlRenderEventsContent();
@@ -2929,9 +3022,10 @@
 
     // 清单上的「完成」勾选框：切换 done → 序列化写回 taskText 缓冲（按「保存」才落盘）
     function tlToggleDone(uid, done) {
-      tlCalEvents = tlParseEvents(document.getElementById('taskText').value);
+      tlCalEvents = tlAllEvents(document.getElementById('taskText').value);
       const ev = tlCalEvents.find((x) => x.uid === uid);
       if (!ev) { showToast('找不到该条行程（内容可能已被修改）', 'danger'); return; }
+      if (ev.ro) { showToast('此行程来自被包含的只读文件，不可修改完成状态', 'danger'); return; }
       ev.done = !!done;
       tlApplyEventsToBuffer(); // 内部会重绘行程视图
       showToast(ev.done ? '已标记完成，按「保存」写回 calendar.md' : '已取消完成，按「保存」写回 calendar.md', 'success');
@@ -2958,9 +3052,10 @@
     // 備註裡的 Markdown checkbox 勾選/取消：定位 ev.notes 的對應行，互換 - [ ] ↔ - [x]，序列化寫回 taskText（按「保存」才落盤）
     function tlToggleNoteCheck(e, uid, line) {
       if (e) { e.stopPropagation(); e.preventDefault(); } // 阻止冒泡到 .ev-block 的 onclick 打開編輯表單
-      tlCalEvents = tlParseEvents(document.getElementById('taskText').value);
+      tlCalEvents = tlAllEvents(document.getElementById('taskText').value);
       const ev = tlCalEvents.find((x) => x.uid === uid);
       if (!ev) { showToast('找不到该条行程（内容可能已被修改）', 'danger'); return; }
+      if (ev.ro) { showToast('此行程来自被包含的只读文件，不可勾选', 'danger'); return; }
       const lines = String(ev.notes || '').split('\n');
       if (line < 0 || line >= lines.length) return;
       const m = lines[line].match(/^(\s*)-\s+\[([ xX])\]\s?(.*)$/);
@@ -2986,7 +3081,7 @@
       const diaries = tlParseDiaries(ta.value);
       tlCalHolidays = holidays;
       tlCalDiaries = diaries;
-      ta.value = tlCalendarToMarkdown(tlCalEvents, holidays, diaries);
+      ta.value = tlCalendarToMarkdown(tlCalEvents.filter((e) => !e.ro), holidays, diaries);
       if (typeof autoGrowTextarea === 'function') autoGrowTextarea(ta);
       if (typeof markCurrentTabDirty === 'function') markCurrentTabDirty();
       tlRenderEventsContent();
@@ -3353,6 +3448,14 @@
           // 「编辑 / 删除」按钮不触发双击编辑，避免与单击操作冲突（尤其删除按钮二次确认）
           if (e.target.closest('.ev-actions')) return;
           tlOpenDiaryForm(diaryRow.getAttribute('data-ev-diary-row'));
+          return;
+        }
+        // 📎 双击假日（.ev-holiday）：被 include 进来的只读假日提示不可编辑（假日本无编辑入口，无 uid 的 ev-item 不会命中）
+        const holidayEl = e.target.closest('.ev-holiday[data-ev-holiday]');
+        if (holidayEl) {
+          const hid = holidayEl.getAttribute('data-ev-holiday');
+          const h = (tlCalHolidays || []).find((x) => x.uid === hid);
+          if (h && h.ro) showToast('此假日来自被包含的只读文件，不可编辑', 'danger');
           return;
         }
         const item = e.target.closest('.ev-item[data-uid]');

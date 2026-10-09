@@ -1944,6 +1944,8 @@
     .ev-day-diary:hover { border-color: var(--ev-primary, #2563eb); color: var(--ev-primary, #2563eb); }
     .ev-day-diary.has { border-color: #16a34a; color: #16a34a; }
     .ev-day-diary.has::after { content: '\2713'; position: absolute; top: -7px; right: -6px; font-size: 9px; line-height: 1; background: #16a34a; color: #fff; border-radius: 50%; width: 13px; height: 13px; display: flex; align-items: center; justify-content: center; }
+    .ev-day-diary.ro { border-color: #ef4444; color: #ef4444; }
+    .ev-day-diary.ro::after { content: '\26D4'; position: absolute; top: -7px; right: -6px; font-size: 10px; line-height: 1; color: #ef4444; filter: drop-shadow(0 0 1px rgba(255,255,255,0.85)); }
     .tl-ev-f-date-readonly { color: var(--ev-muted); }
     .tl-ev-f-date-val { color: var(--ev-text); font-weight: 600; }
     /* 📓 日记表单：加宽 + 正文主导（约占 3/4 高），标题/心情/天气三并排，日期并入标题行 */
@@ -1971,7 +1973,8 @@
     .ev-lunar.hdr { font-size: 12px; margin-left: 8px; text-decoration: underline dotted; text-underline-offset: 2px; }
     .ev-lunar:empty { display: none; }
     /* 📕「当天有日记」标记：月格日期数字旁、周/日视图列头日期旁共用（纯显示，不拦点击 → 点它仍是选日） */
-    .ev-diary-mark { margin-left: 3px; line-height: 1; user-select: none; }
+    .ev-diary-mark { margin-left: 3px; line-height: 1; user-select: none; position: relative; display: inline-block; }
+    .ev-diary-mark.ro::after { content: '\26D4'; position: absolute; top: -7px; right: -8px; font-size: 8px; line-height: 1; color: #ef4444; filter: drop-shadow(0 0 1px rgba(255,255,255,0.85)); }
     /* 📅 老黃曆詳情浮層（var 全部帶顯式回退：即使 --ev-* 作用域漏配也不會透明） */
     .ev-almanac-pop { position: fixed; z-index: 9960; width: 320px; max-width: calc(100vw - 16px); max-height: calc(100vh - 32px); overflow: auto;
       padding: 14px 16px; border-radius: 12px; border: 1px solid var(--ev-border, #e5e7eb); background: var(--ev-card, #ffffff); color: var(--ev-text, #1f2937); font-size: 14px; box-shadow: 0 12px 32px rgba(0,0,0,0.35); }
@@ -1995,6 +1998,10 @@
     .ev-item.done .ev-meta, .ev-item.done .ev-notes { opacity: 0.7; }
     .ev-chip.done { text-decoration: line-through; opacity: 0.6; }
     .ev-swatch { flex: 0 0 auto; width: 10px; height: 10px; border-radius: 50%; margin-top: 5px; }
+    /* 📎 只读条目（被 include 的 calendar-*.md）checkbox 后的小禁止图标 */
+    .ev-ro-icon { flex: 0 0 auto; font-size: 12px; line-height: 16px; margin: 3px 0 0 -5px; color: #ef4444; opacity: 0.9; }
+    /* 假日行：图标与地区/类型徽章一起垂直居中 */
+    .ev-holiday .ev-ro-icon { align-self: center; line-height: 1; margin: 0 0 0 -5px; }
     .ev-body { flex: 1; min-width: 0; }
     .ev-title { font-size: 14px; font-weight: 500; color: var(--ev-text); word-break: break-word; }
     .ev-title p { margin: 0; }
@@ -5048,7 +5055,7 @@
   <!-- 📓 日记新增/编辑表单（calendar.md 专用）：保存到编辑缓冲，再按编辑器「保存」写回文件 -->
   <div id="tlDiaryFormOverlay" class="tl-ev-form-overlay" style="display:none">
     <div class="tl-ev-form-box">
-      <div class="tl-ev-form-title" id="tlDiaryFormTitle">写日记<span id="tlDiaryFDate" class="tl-ev-f-date-val tl-ev-f-title-date"></span></div>
+      <div class="tl-ev-form-title" id="tlDiaryFormTitle"><span id="tlDiaryFormTitleText">写日记</span><span id="tlDiaryFDate" class="tl-ev-f-date-val tl-ev-f-title-date"></span></div>
       <div class="tl-ev-f-row tl-ev-f-3col">
         <label class="tl-ev-f-label">标题<input type="text" id="tlDiaryFTitle" maxlength="200" placeholder="日记标题"></label>
         <label class="tl-ev-f-label">心情<input type="text" id="tlDiaryFMood" maxlength="50" placeholder="如：平稳 / 焦虑 / 开心"></label>
@@ -5063,9 +5070,9 @@
         <button type="button" class="btn btn-secondary" id="tlDiaryFormDelete" style="display:none" onclick="tlDeleteDiary()">删除</button>
         <span style="flex:1"></span>
         <button type="button" class="btn btn-secondary" onclick="tlCloseDiaryForm()">取消</button>
-        <button type="button" class="btn btn-primary" onclick="tlSaveDiaryForm()">写入编辑内容</button>
+        <button type="button" class="btn btn-primary" id="tlDiaryFormSave" onclick="tlSaveDiaryForm()">写入编辑内容</button>
       </div>
-      <div class="tl-ev-form-hint">写入后按编辑器「保存」，把改动写回 calendar.md</div>
+      <div class="tl-ev-form-hint" id="tlDiaryFormHint">写入后按编辑器「保存」，把改动写回 calendar.md</div>
     </div>
   </div>
 
