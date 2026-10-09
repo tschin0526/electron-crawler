@@ -1064,7 +1064,7 @@
           '<td class="d-no">' + no + '</td>' +
           '<td class="d-date">' + tlEscapeHtml(date || '') + '</td>' +
           '<td class="d-kind">' + kind + '</td>' +
-          '<td class="d-content"' + (tip ? ' title="' + tip + '"' : '') + '>' + contentHtml + '</td>' +
+          '<td class="d-content"' + (tip ? ' data-tip="' + tip + '"' : '') + '>' + contentHtml + '</td>' +
           '<td class="d-status">' + (done ? '完成' : '未完成') + '</td>' +
           '<td class="d-jump"><button class="tl-stats-jump" onclick="tlJumpToEvent(\'' + tlEscapeHtml(uid) + '\')">跳转</button></td>' +
         '</tr>';
@@ -1158,7 +1158,32 @@
     function tlCloseStats() {
       const overlay = document.getElementById('tlEvStatsOverlay');
       if (overlay) overlay.style.display = 'none';
+      tlStatsTipHide();
     }
+    // 🖱 事件统计：子事件内容悬停 → 浅蓝背景 tooltip（替代深色原生 title）
+    let tlStatsTipEl = null;
+    function tlStatsTipGet() {
+      if (!tlStatsTipEl) {
+        tlStatsTipEl = document.createElement('div');
+        tlStatsTipEl.className = 'tl-stats-tip';
+        tlStatsTipEl.setAttribute('role', 'tooltip');
+        tlStatsTipEl.style.display = 'none';
+        document.body.appendChild(tlStatsTipEl);
+      }
+      return tlStatsTipEl;
+    }
+    function tlStatsTipShow(text, x, y) {
+      const tip = tlStatsTipGet();
+      tip.textContent = text;
+      tip.style.display = 'block';
+      const r = tip.getBoundingClientRect();
+      let left = x + 14, top = y + 14;
+      if (left + r.width > window.innerWidth - 8) left = Math.max(8, x - r.width - 14);
+      if (top + r.height > window.innerHeight - 8) top = Math.max(8, y - r.height - 14);
+      tip.style.left = left + 'px';
+      tip.style.top = top + 'px';
+    }
+    function tlStatsTipHide() { if (tlStatsTipEl) tlStatsTipEl.style.display = 'none'; }
     // UTF-8 字节长度（纯 JS，无依赖）：用于估算当前加载的 calendar.md 内容大小
     function tlUtf8Len(s) {
       if (!s) return 0;
@@ -2624,7 +2649,23 @@
       tlRenderEvTodoLinkPanel();
       tlRenderColors();
       document.getElementById('tlEvFormOverlay').style.display = 'flex';
+      tlAutoSizeNotes();
       document.getElementById('tlEvFTitle').focus();
+    }
+
+    // 📝 開啟編輯/新增行程時，依備註內容自動加高 textarea（最多 15 行，不足 15 行按實際行數）
+    function tlAutoSizeNotes() {
+      const ta = document.getElementById('tlEvFNotes');
+      if (!ta) return;
+      ta.style.height = 'auto';
+      const cs = getComputedStyle(ta);
+      let lh = parseFloat(cs.lineHeight);
+      if (!lh) lh = parseFloat(cs.fontSize) * 1.3;
+      const pad = (parseFloat(cs.paddingTop) || 0) + (parseFloat(cs.paddingBottom) || 0);
+      const maxH = lh * 15 + pad;
+      const h = Math.min(ta.scrollHeight, maxH);
+      ta.style.height = h + 'px';
+      ta.style.overflowY = ta.scrollHeight > maxH ? 'auto' : 'hidden';
     }
 
     function tlToggleAllDay() {
@@ -3363,5 +3404,24 @@
           tlHideTip();
         });
         tlTipPane.addEventListener('mouseleave', tlHideTip);
+      }
+      // 🖱 事件统计：子事件内容悬停 → 浅蓝背景 tooltip（事件委托；替代原生深色 title）
+      const tlStatsOverlayEl = document.getElementById('tlEvStatsOverlay');
+      if (tlStatsOverlayEl) {
+        const statsSel = '.tl-stats-detail-table .d-content[data-tip]';
+        tlStatsOverlayEl.addEventListener('mouseover', (e) => {
+          const cell = e.target.closest ? e.target.closest(statsSel) : null;
+          if (cell) tlStatsTipShow(cell.getAttribute('data-tip'), e.clientX, e.clientY);
+        });
+        tlStatsOverlayEl.addEventListener('mousemove', (e) => {
+          const cell = e.target.closest ? e.target.closest(statsSel) : null;
+          if (cell) tlStatsTipShow(cell.getAttribute('data-tip'), e.clientX, e.clientY);
+          else tlStatsTipHide();
+        });
+        tlStatsOverlayEl.addEventListener('mouseout', (e) => {
+          const to = e.relatedTarget;
+          if (to && to.closest && to.closest(statsSel)) return;
+          tlStatsTipHide();
+        });
       }
     })();
