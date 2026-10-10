@@ -11,6 +11,7 @@
 
 // 快取名帶版本：每次改資源內容或 SW 邏輯都要 bump 版本號，
 // 讓舊快取名自動失效、activate 階段清掉，確保用戶一定拿到最新資源。
+// v104：統計彈層與桌面對齊——①「只顯示事件主體」過濾（calBuildStats 加 mainOnly：有子事件的事件本身不算主體，其子事件照常計入子事件欄；無子事件的事件才是主體；calStatsFilter.mainOnly＋篩選區 checkbox＋匯總卡標題改「主事件（無子事件＝主體）」）；②同一主事件的子事件行交替色帶分組（紫↔藍 band-a/band-b）；③明細表狀態列前移到內容列前、狀態改 ○＝完成/✕＝未完成 圖標；calendar-editor.js/style.css 改，bump 讓手機重拉
 // v103：展開明細子事件內容懸停 → tooltip 顯示所屬主事件標題（原生 title 屬性，*BuildStats 子事件推送補 ptitle: ev.title；主事件行不加；d-content[title] cursor:help＋點狀底線提示可懸停）；calendar-editor.js/style.css 改，bump 讓手機重拉
 // v102：統計彈層加寬（max-width 720px → min(1080px, 96vw)）＋展開明細表加「項次」序號欄（首欄 d-no）與「跳轉」按鈕欄（末欄，calJumpToEvent＝關閉彈層＋scrollIntoView 滾動到主畫面該事件位置＋金色描邊閃爍 2 秒；子事件跳到其所屬主事件——*BuildStats 子事件推送補 uid；找不到/不可見→toast 提示）；calendar-editor.js/style.css 改，bump 讓手機重拉
 // v101：統計完成狀態過濾修正為同時作用於子事件——原只過濾主事件（ev.done），子事件全量計入/推送，導致「未完成」篩選下明細仍顯示已完成子事件；現於 *BuildStats 內子事件按自身 done 再過濾（all=不過濾/done=只留完成子/undone=只留未完成子），子事件隨主事件為過濾單位（主事件被過濾掉→其子事件一併排除）；calendar-editor.js 改，bump 讓手機重拉
@@ -135,7 +136,7 @@
 //      calendar-editor.js/style.css 改，bump 讓手機重拉
 // v63：「只顯示日記」正文不再截斷——去掉舊的「3 行 / 120 字 + 省略號」上限，改為完整渲染、靠列錶整體滾動條查看
 //      （calDiaryPreview → calDiaryBody）；calendar-editor.js 改，bump 讓手機重拉
-const CACHE_NAME = 'md-editor-lite-v103';
+const CACHE_NAME = 'md-editor-lite-v104';
 const ASSETS = [
   './',
   './index.html',
