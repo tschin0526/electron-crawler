@@ -1195,6 +1195,8 @@
     function tlBuildStats(filter) {
       const fTags = (filter && filter.tags && filter.tags.size) ? filter.tags : null;
       const fStatus = (filter && filter.status) || 'all';
+      // 「只显示事件主体」（2026-10-10）：无子事件的事件本身＝主体；有子事件的事件不算主体（由其子事件代表）
+      const fMainOnly = !!(filter && filter.mainOnly);
       const tagMap = new Map();   // tagName -> { mainTotal, mainDone, mainUndone, subTotal, subDone, subUndone, mains:[], subs:[] }
       const ensure = (k) => { if (!tagMap.has(k)) tagMap.set(k, { mainTotal: 0, mainDone: 0, mainUndone: 0, subTotal: 0, subDone: 0, subUndone: 0, mains: [], subs: [] }); return tagMap.get(k); };
       let mainT = 0, mainD = 0, mainU = 0, subT = 0, subD = 0, subU = 0;
@@ -1209,8 +1211,10 @@
           const noTagHit = (tagNames.length === 0 && fTags.has('(无标签)'));
           if (!hit && !noTagHit) return;
         }
-        mainT++; if (ev.done) mainD++; else mainU++;
         const allSubs = tlParseNoteChecks(ev.notes);
+        // mainOnly：有子事件的事件本身不算主体 → 主事件栏（计数＋明细）不计，其子事件照常计入子事件栏
+        const countMain = !(fMainOnly && allSubs.length > 0);
+        if (countMain) { mainT++; if (ev.done) mainD++; else mainU++; }
         // 完成状态过滤同样作用于子事件（按每条子事件自身 done 过滤，与主事件一致）
         const subs = fStatus === 'all' ? allSubs : allSubs.filter((s) => (fStatus === 'done' ? s.done : !s.done));
         const subDoneCount = subs.filter((s) => s.done).length;
@@ -1220,9 +1224,9 @@
         groups.forEach((g) => {
           if (fTags && !fTags.has(g)) return;
           const r = ensure(g);
-          r.mainTotal++; if (ev.done) r.mainDone++; else r.mainUndone++;
+          if (countMain) { r.mainTotal++; if (ev.done) r.mainDone++; else r.mainUndone++; }
           r.subTotal += subs.length; r.subDone += subDoneCount; r.subUndone += (subs.length - subDoneCount);
-          r.mains.push({ title: ev.title, done: !!ev.done, uid: ev.uid, date: ev.date });
+          if (countMain) r.mains.push({ title: ev.title, done: !!ev.done, uid: ev.uid, date: ev.date });
           subs.forEach((s) => r.subs.push({ text: s.text, done: s.done, date: ev.date, dl: s.dl, cp: s.cp, uid: ev.uid, ptitle: ev.title }));
         });
       });
@@ -1231,6 +1235,7 @@
       return {
         mainT, mainD, mainU, subT, subD, subU,
         mainRate: pct(mainD, mainT), subRate: pct(subD, subT),
+        mainOnly: fMainOnly,
         rows: tagMap, pct,
       };
     }
@@ -1243,7 +1248,7 @@
         '<div class="rate">完成率 ' + rate + '%<div class="bar"><i style="width:' + rate + '%"></i></div></div>' +
         '</div>';
       return '<div class="tl-stats-summary">' +
-        card('主事件', s.mainT, s.mainD, s.mainU, s.mainRate) +
+        card(s.mainOnly ? '主事件（无子事件＝主体）' : '主事件', s.mainT, s.mainD, s.mainU, s.mainRate) +
         card('子事件（备注 - [ ]）', s.subT, s.subD, s.subU, s.subRate) +
         '</div>';
     }
@@ -1252,27 +1257,33 @@
       // 首栏「项次」序号；末栏「跳转」＝关闭弹层并滚动到主画面该事件位置（子事件跳到其所属主事件）；
       // 子事件内容悬停 → tooltip 显示所属主事件标题（原生 title）
       let no = 0;
-      const row = (kind, date, contentHtml, done, uid, tip) => {
+      const row = (kind, date, contentHtml, done, uid, tip, extraCls) => {
         no++;
-        return '<tr class="' + (done ? 'done' : '') + '">' +
+        // 状态列在内容列之前（2026-10-10 用户要求）；○＝完成、✕＝未完成，悬停 title 保留文字说明
+        return '<tr class="' + (done ? 'done ' : '') + (extraCls || '') + '">' +
           '<td class="d-no">' + no + '</td>' +
           '<td class="d-date">' + tlEscapeHtml(date || '') + '</td>' +
           '<td class="d-kind">' + kind + '</td>' +
+          '<td class="d-status" title="' + (done ? '完成' : '未完成') + '"><span class="st-ic ' + (done ? 'st-done' : 'st-undone') + '">' + (done ? '\u25CB' : '\u2715') + '</span></td>' +
           '<td class="d-content"' + (tip ? ' data-tip="' + tip + '"' : '') + '>' + contentHtml + '</td>' +
-          '<td class="d-status">' + (done ? '完成' : '未完成') + '</td>' +
           '<td class="d-jump"><button class="tl-stats-jump" onclick="tlJumpToEvent(\'' + tlEscapeHtml(uid) + '\')">跳转</button></td>' +
         '</tr>';
       };
       const mainRows = group.mains.map((m) => row('主事件', m.date,
         '<a href="javascript:void(0)" onclick="tlOpenEventForm(\'' + tlEscapeHtml(m.uid) + '\')">' + tlRenderInlineMarkdown(m.title) + '</a>',
         m.done, m.uid)).join('');
-      const subRows = group.subs.map((x) => row('子事件', x.date,
+      // 同一主事件的子事件行打同一「色带」class，切换主事件即交替换色（build 层按事件顺序 push，同 uid 必连续）
+      let prevUid = null, band = false;
+      const subRows = group.subs.map((x) => {
+        if (x.uid !== prevUid) { prevUid = x.uid; band = !band; }
+        return row('子事件', x.date,
         tlEscapeHtml(x.text) +
         (x.dl ? ' <span class="d-dl">📅 ' + tlEscapeHtml(x.dl) + '</span>' : '') +
         (x.cp ? ' <span class="d-cp">✅ ' + tlEscapeHtml(x.cp) + '</span>' : ''),
-        x.done, x.uid, '主事件：' + tlEscapeHtml(x.ptitle || ''))).join('');
+        x.done, x.uid, '主事件：' + tlEscapeHtml(x.ptitle || ''), band ? 'band-a' : 'band-b');
+      }).join('');
       return '<table class="tl-stats-detail-table">' +
-        '<thead><tr><th>项次</th><th>日期</th><th>主/子事件</th><th>事件 / 子事件</th><th>状态</th><th>跳转</th></tr></thead><tbody>' +
+        '<thead><tr><th>项次</th><th>日期</th><th>主/子事件</th><th>状态</th><th>事件 / 子事件</th><th>跳转</th></tr></thead><tbody>' +
         (mainRows + subRows || '<tr><td colspan="6" class="muted">—</td></tr>') +
         '</tbody></table>';
     }
@@ -1300,7 +1311,7 @@
         '<td>' + s.subT + '</td><td>' + s.subD + '</td><td>' + s.subU + '</td></tr>';
       return '<table class="tl-stats-table">' + head + '<tbody>' + body + total + '</tbody></table>';
     }
-    let tlStatsFilter = { tags: new Set(), status: 'all' };  // 默认：全部
+    let tlStatsFilter = { tags: new Set(), status: 'all', mainOnly: false };  // 默认：全部（mainOnly＝只显示事件主体）
     function tlStatsTagOptions() {
       const set = new Set();
       tlCalEvents.forEach((ev) => (ev.tags || []).forEach((t) => { const n = tlTagName(t); if (n) set.add(n); }));
@@ -1319,7 +1330,8 @@
       const radio = (v, label) => '<label class="tl-stats-status"><input type="radio" name="tlStatsStatus" value="' + v + '"' + (st === v ? ' checked' : '') + '> ' + label + '</label>';
       box.innerHTML =
         '<div class="tl-stats-filter-row"><span class="lbl">标签：</span><div class="tl-stats-tag-filters">' + (tagChips || '<span class="muted">（无标签可选）</span>') + '</div></div>' +
-        '<div class="tl-stats-filter-row"><span class="lbl">完成状态：</span>' + radio('all', '全部') + radio('done', '已完成') + radio('undone', '未完成') + '</div>';
+        '<div class="tl-stats-filter-row"><span class="lbl">完成状态：</span>' + radio('all', '全部') + radio('done', '已完成') + radio('undone', '未完成') +
+        '<label class="tl-stats-status tl-stats-mainonly" title="事件主体：无子事件的事件本身＝主体；有子事件的事件由其子事件代表（主事件本身不计入主事件栏）"><input type="checkbox" data-tl-stats-mainonly="1"' + (tlStatsFilter.mainOnly ? ' checked' : '') + '> 只显示事件主体</label></div>';
       box.querySelectorAll('input[data-tl-stats-tag]').forEach((cb) => {
         cb.addEventListener('change', () => {
           const v = cb.getAttribute('data-tl-stats-tag');
@@ -1329,6 +1341,9 @@
       });
       box.querySelectorAll('input[name="tlStatsStatus"]').forEach((rb) => {
         rb.addEventListener('change', () => { if (rb.checked) { tlStatsFilter.status = rb.value; tlRenderStatsBody(); } });
+      });
+      box.querySelectorAll('input[data-tl-stats-mainonly]').forEach((cb) => {
+        cb.addEventListener('change', () => { tlStatsFilter.mainOnly = cb.checked; tlRenderStatsBody(); });
       });
     }
     function tlRenderStatsBody() {

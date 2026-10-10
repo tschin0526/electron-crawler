@@ -2272,12 +2272,22 @@
     .tl-stats-filter-row .lbl { font-size: 12px; color: var(--ev-muted); margin-right: 2px; }
     .tl-stats-tag-filters { display: flex; flex-wrap: wrap; gap: 4px 10px; }
     .tl-stats-tag-filter, .tl-stats-status { font-size: 12px; color: var(--ev-text); display: inline-flex; align-items: center; gap: 3px; cursor: pointer; }
+    /* 「只显示事件主体」checkbox：与完成状态单选组留距区隔 */
+    .tl-stats-mainonly { margin-left: 16px; }
     .tl-stats-detail-table { width: 100%; border-collapse: collapse; font-size: 12px; text-align: left; margin-top: 2px; }
     /* 明细表嵌在主表 td 内：用 .tl-stats-table 前缀提高特异性，确保左对齐压过通用居中规则 */
     .tl-stats-detail-table th, .tl-stats-detail-table td,
     .tl-stats-table .tl-stats-detail-table th, .tl-stats-table .tl-stats-detail-table td { border: 1px solid var(--ev-border, #334155); padding: 5px 8px; text-align: left; vertical-align: top; }
     .tl-stats-detail-table th { background: var(--ev-chip-bg, rgba(124,58,237,.1)); font-weight: 600; color: var(--ev-text); }
-    .tl-stats-detail-table tr.done .d-status { color: #34C759; }
+    /* 状态列＝图标（○＝完成 / ✕＝未完成），列已移到内容列之前 */
+    .tl-stats-detail-table td.d-status { text-align: center; white-space: nowrap; }
+    .tl-stats-detail-table .st-ic.st-done { color: #34C759; }
+    .tl-stats-detail-table .st-ic.st-undone { color: #f87171; }
+    /* 🎨 同一主事件的子事件分组色带：相邻两组交替两种色（紫↔蓝），色差明显、一眼区分不同主事件 */
+    .tl-stats-detail-table tr.band-a > td { background: rgba(124,58,237,.18); }
+    .tl-stats-detail-table tr.band-b > td { background: rgba(14,165,233,.14); }
+    body:not(.dark) .tl-stats-detail-table tr.band-a > td { background: rgba(124,58,237,.10); }
+    body:not(.dark) .tl-stats-detail-table tr.band-b > td { background: rgba(14,165,233,.07); }
     /* 主事件链接与子事件纯文字同色（满足「相同颜色显示」） */
     .tl-stats-detail-table a { color: inherit; text-decoration: none; }
     .tl-stats-detail-table a:hover { text-decoration: underline; }
