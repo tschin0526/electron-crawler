@@ -1876,11 +1876,11 @@
     /* ===== 📅 行程视图（calendar.md 专用）：与 Lite 版同款视觉 ===== */
     /* ⚠️ .ev-tip / .ev-almanac-pop 掛載在 <body>（不在 #calEventsPane 內）→ 必須把它們一併納入 --ev-* 變數作用域，
        否則 var(--ev-card) 解析失敗 → 提示框/老黃曆彈層背景透明（使用者截圖實測，老黃曆彈層 2026-09-17 同款踩坑）。 */
-    #calEventsPane, #tlEvFormOverlay, #tlDiaryFormOverlay, #tlRepeatOverviewOverlay, #tlEvStatsOverlay, .ev-tip, .ev-almanac-pop {
+    #calEventsPane, #tlEvFormOverlay, #tlDiaryFormOverlay, #tlRepeatOverviewOverlay, #tlEvStatsOverlay, #tlIncludeListOverlay, #tlAddCheckOverlay, .ev-tip, .ev-almanac-pop {
       --ev-bg: #0f172a; --ev-card: #1e293b; --ev-text: #e2e8f0;
       --ev-muted: #94a3b8; --ev-border: #334155; --ev-primary: #7c3aed;
     }
-    body:not(.dark) #calEventsPane, body:not(.dark) #tlEvFormOverlay, body:not(.dark) #tlDiaryFormOverlay, body:not(.dark) #tlRepeatOverviewOverlay, body:not(.dark) #tlEvStatsOverlay, body:not(.dark) .ev-tip, body:not(.dark) .ev-almanac-pop {
+    body:not(.dark) #calEventsPane, body:not(.dark) #tlEvFormOverlay, body:not(.dark) #tlDiaryFormOverlay, body:not(.dark) #tlRepeatOverviewOverlay, body:not(.dark) #tlEvStatsOverlay, body:not(.dark) #tlIncludeListOverlay, body:not(.dark) #tlAddCheckOverlay, body:not(.dark) .ev-tip, body:not(.dark) .ev-almanac-pop {
       --ev-bg: #f8fafc; --ev-card: #ffffff; --ev-text: #1f2937;
       --ev-muted: #6b7280; --ev-border: #e5e7eb; --ev-primary: #2563eb;
     }
@@ -2008,6 +2008,12 @@
     /* 🔁 重复事件小图标（## EVENT(REPEAT)）：随文色（灰），chip/时间网格/列表行/悬停提示通用 */
     .ev-repeat-ic { color: var(--ev-muted); vertical-align: -1px; margin-right: 3px; flex: none; }
     .ev-tags { display: inline-flex; flex-wrap: wrap; gap: 4px; margin-left: 8px; vertical-align: middle; }
+    /* 📊 备注子事件完成进度徽章（标签旁「3/6」；全部完成转绿） */
+    .ev-sub-progress { display: inline-block; margin-left: 8px; padding: 2px 9px; border-radius: 999px; background: var(--ev-chip-bg, rgba(124,58,237,.12)); border: 1px solid var(--ev-border, #334155); color: var(--ev-text, #e2e8f0); font-size: 11px; line-height: 1.4; font-weight: 600; white-space: nowrap; vertical-align: middle; }
+    .ev-sub-progress.all-done { background: rgba(52,199,89,.15); border-color: rgba(52,199,89,.55); color: #34C759; }
+    /* 📋 列表行「＋☐」：紧挨备注子事件徽章，点击开 CheckBox 小窗（加入后直接存档）；与 .tl-ev-f-mini-btn 同一套 --ev-* 变量 */
+    .ev-addcheck-btn { margin-left: 8px; padding: 1px 7px; font-size: 11px; line-height: 1.6; border: 1px solid var(--ev-border, #334155); border-radius: 6px; background: var(--ev-chip-bg, rgba(124,58,237,.1)); color: var(--ev-text, #e2e8f0); cursor: pointer; vertical-align: middle; white-space: nowrap; }
+    .ev-addcheck-btn:hover { background: var(--ev-accent, #7c3aed); color: #fff; border-color: var(--ev-accent, #7c3aed); }
     .ev-tag-view { display: inline-block; padding: 3px 12px; border-radius: 999px; background: #7C3AED; border: 1px solid #8B5CF6; color: #fff; font-size: 12px; line-height: 1.35; font-weight: 600; white-space: nowrap; }
     .ev-meta { margin-top: 2px; font-size: 12px; color: var(--ev-muted); }
     .ev-notes { margin-top: 4px; font-size: 12px; color: var(--ev-muted); white-space: normal; word-break: break-word; }
@@ -2301,6 +2307,14 @@
     .ev-stats-btn.btn:hover { background: var(--ev-primary); color: #fff; }
     .tl-ev-stats-file { display: block; font-size: 11px; font-weight: 400; color: var(--ev-muted); margin-top: 2px; }
     .tl-ev-stats-body { font-size: 13px; color: var(--ev-text); flex: 1; overflow: auto; min-height: 0; }
+    /* 📂 include 加载清单：文件行（勾选框 + 文件名 + 大小） */
+    .tl-include-list { padding: 2px 0; }
+    .tl-include-item { display: flex; align-items: center; gap: 10px; padding: 9px 10px; border-bottom: 1px solid var(--ev-border, #334155); cursor: pointer; }
+    .tl-include-item:last-child { border-bottom: none; }
+    .tl-include-item .tl-include-check { width: 16px; height: 16px; accent-color: var(--ev-accent, #7c3aed); flex: 0 0 auto; cursor: pointer; }
+    .tl-include-item .fname { color: var(--ev-text); font-family: 'SF Mono', 'Monaco', 'Consolas', monospace; word-break: break-all; flex: 1 1 auto; }
+    .tl-include-item .fsize { color: var(--ev-muted); font-size: 12px; white-space: nowrap; }
+    .tl-include-empty { padding: 24px; color: var(--ev-muted); font-size: 13px; text-align: center; }
     .tl-stats-summary { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 14px; }
     .tl-stats-card { flex: 1 1 220px; min-width: 200px; border: 1px solid var(--ev-border); border-radius: 10px; padding: 10px 12px; background: var(--ev-chip-bg, rgba(124,58,237,.06)); }
     .tl-stats-card h4 { margin: 0 0 6px; font-size: 13px; font-weight: 600; color: var(--ev-text); }
@@ -2339,6 +2353,12 @@
     }
     .tl-ev-f-label select { cursor: pointer; }
     #tlEvFNotes { resize: vertical; min-height: 84px; }
+    /* 📋 备注旁的「＋ CheckBox」小按钮 */
+    .tl-ev-f-mini-btn { margin-left: 8px; padding: 2px 8px; font-size: 11px; line-height: 1.6; border: 1px solid var(--ev-border, #334155); border-radius: 6px; background: var(--ev-chip-bg, rgba(124,58,237,.1)); color: var(--ev-text); cursor: pointer; }
+    .tl-ev-f-mini-btn:hover { background: var(--ev-accent, #7c3aed); color: #fff; border-color: var(--ev-accent, #7c3aed); }
+    /* 与备注输入框同一套 --ev-* 变量（黑夜模式自动切暗底白字）＋浅色回退 */
+    #tlAddCheckInput { width: 100%; box-sizing: border-box; padding: 8px 10px; border: 1px solid var(--ev-border, #334155); border-radius: 8px; background: var(--ev-bg, #fff); color: var(--ev-text, #1e293b); font-size: 13px; font-family: inherit; resize: vertical; }
+    #tlAddCheckInput::placeholder { color: var(--ev-muted, #64748b); }
     /* 🔁 重複事件表單區塊 */
     .tl-ev-f-repeat { border: 1px dashed var(--ev-border); border-radius: 8px; padding: 10px 12px; margin-bottom: 10px; }
     .tl-ev-f-repeat > .tl-ev-f-check { margin-bottom: 8px; }
@@ -2357,7 +2377,8 @@
        → 在这三个浮层的操作区统一覆盖为文字按钮样式（#id .class 特异性高于 .btn）。 */
     #tlEvFormOverlay .tl-ev-form-actions .btn,
     #tlDiaryFormOverlay .tl-ev-form-actions .btn,
-    #tlRepeatOverviewOverlay .tl-ev-form-actions .btn {
+    #tlRepeatOverviewOverlay .tl-ev-form-actions .btn,
+    #tlAddCheckOverlay .tl-ev-form-actions .btn {
       width: auto; height: 34px; padding: 0 16px; border-radius: 8px; font-size: 13px; font-weight: 500; white-space: nowrap;
     }
     .tl-ev-form-hint { margin-top: 10px; font-size: 11px; line-height: 1.5; color: var(--ev-muted); }
@@ -4770,6 +4791,7 @@
               <button type="button" id="tlEvModeYear">年</button>
             </div>
             <button type="button" id="tlEvStatsBtn" class="btn ev-stats-btn" title="事件统计：主事件与备注中的子事件，按标签·完成状态统计">📊</button>
+            <button type="button" id="tlIncludeListBtn" class="btn ev-stats-btn" title="Include 加载清单：列出同目录被引入的 calendar-*.md 文件及大小" onclick="tlOpenIncludeList()">📄</button>
             <span class="ev-toolbar-flex"></span>
             <span class="ev-hint-text">编辑后按「保存」写回 calendar.md</span>
             <button type="button" class="ev-add-btn" id="tlEvAddBtn">＋ 新增行程</button>
@@ -5027,7 +5049,10 @@
         <div id="tlEvTodoLinkPanel" class="ev-todo-link-panel" tabindex="0" title="点此或按 ? 选择要关联的卡片"></div>
         <div id="tlEvTodoDropdown" class="ev-todo-dropdown"></div>
       </div>
-      <label class="tl-ev-f-label">备注<textarea id="tlEvFNotes" rows="3" placeholder="可留空，支持多行"></textarea></label>
+      <div class="tl-ev-f-label">备注
+        <button type="button" class="tl-ev-f-mini-btn" id="tlEvAddCheckBtn" onclick="tlOpenAddCheckDialog()" title="建立 CheckBox 项目：输入内容将以 - [ ] 形式加到备注末尾">＋ CheckBox</button>
+        <textarea id="tlEvFNotes" rows="3" placeholder="可留空，支持多行"></textarea>
+      </div>
       <div class="tl-ev-form-actions">
         <button type="button" class="btn btn-secondary" id="tlEvFormDelete" style="display:none" onclick="tlDeleteFromForm()">删除</button>
         <span style="flex:1"></span>
@@ -5035,6 +5060,19 @@
         <button type="button" class="btn btn-primary" onclick="tlSaveEventForm()">写入编辑内容</button>
       </div>
       <div class="tl-ev-form-hint">写入后按编辑器「保存」，把改动写回 calendar.md</div>
+    </div>
+  </div>
+
+  <!-- 📋 建立 CheckBox 弹窗：输入内容以 - [ ] 形式加到备注末尾 -->
+  <div id="tlAddCheckOverlay" class="tl-ev-form-overlay" style="display:none" onclick="if(event.target===event.currentTarget) tlCloseAddCheckDialog()">
+    <div class="tl-ev-form-box" style="max-width:440px">
+      <div class="tl-ev-form-title">建立 CheckBox 项目</div>
+      <div class="tl-ev-form-hint">每行一个项目，保存后以 <code>- [ ] …</code> 形式追加到「备注」末尾</div>
+      <textarea id="tlAddCheckInput" rows="4" placeholder="例如：&#10;准备会议资料&#10;发送邀请函"></textarea>
+      <div class="tl-ev-form-actions">
+        <button type="button" class="btn btn-secondary" onclick="tlCloseAddCheckDialog()">取消</button>
+        <button type="button" class="btn btn-primary" onclick="tlSaveAddCheckDialog()">加入备注</button>
+      </div>
     </div>
   </div>
 
@@ -5086,6 +5124,17 @@
       <div class="tl-ev-stats-sub">主事件 + 备注中的子事件（<code>- [ ]</code>），按标签与完成状态分类</div>
       <div id="tlEvStatsFilters" class="tl-ev-stats-filters"></div>
       <div id="tlEvStatsBody" class="tl-ev-stats-body"></div>
+    </div>
+  </div>
+
+  <div id="tlIncludeListOverlay" class="tl-ev-form-overlay" style="display:none" onclick="if(event.target===event.currentTarget) tlCloseIncludeList()">
+    <div class="tl-ev-form-box tl-ev-stats-box">
+      <div class="tl-ev-stats-header">
+        <div class="tl-ev-stats-title">📄 Include 加载清单<span class="tl-ev-stats-file" id="tlIncludeListFile"></span></div>
+        <button type="button" class="tl-ev-stats-close" onclick="tlCloseIncludeList()" aria-label="关闭">✕</button>
+      </div>
+      <div class="tl-ev-stats-sub">勾选即加载、取消即释放（立即生效并保存到 calendar.md，下次启动按此加载）</div>
+      <div id="tlIncludeListBody" class="tl-ev-stats-body tl-include-list"></div>
     </div>
   </div>
 

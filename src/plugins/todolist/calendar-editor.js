@@ -34,6 +34,8 @@
     let tlCalDiaries = [];     // ## DIARY 解析結果（每天一条，keyed by date）；行事历日期旁显示日记按钮，有则打勾
     let tlIncludedHolidays = [];  // 📎 include 进来的只读假日
     let tlIncludedDiaries = [];   // 📎 include 进来的只读日记
+    let tlIncludedFiles = [];    // 📎 include 加载的文件清单 [{ name, size }]（供「加载清单」按钮展示，含全部同目录 calendar-*.md，不只勾选的）
+    let tlIncludeListBound = false; // 📎 Include 弹窗的 change 委托监听器是否已绑定（只绑一次）
     let tlCalTagFilter = [];   // 标签过滤（空＝全部；OR 逻辑：事件 tags 命中任一即显示）
     let tlCalRegionFilter = [];   // ## HOLIDAY 地区过滤（图例 checkbox 勾选；第十一批依用户截图设定：默认为空＝不显示任何地区假日；只影响显示，不改数据）
     let tlCalShowEvents = true;   // 分类显示：普通行程 EVENT（默认勾选；只影响显示，不改数据）
@@ -54,6 +56,9 @@
     let tlYearAutoScrollPending = false;
     // 📅 月视图自动滚动：切到月视图 / 点「今天」 / 首次打开行程视图时，若「今天」日期格未完整显示，则滚动使其可见。
     let tlMonthAutoScrollPending = false;
+    // 📎 程式启动首渲：面板尚未布局，滚动函数会因 rect 全 0 误判「已完整显示」而跳过；
+    //    故进入行程视图后延迟到布局就绪再自动按一次「今天」按钮（只触发一次，避免与用户操作打架）。
+    let tlStartupScrollDone = false;
     // ☐ 「只显示未完成」：全模式生效（年/月/周/日/列表）的显示过滤（纯 UI 偏好：内存 + localStorage，绝不写回 calendar.md）
     //    勾选后隐藏已完成（done ✓）的行程，只看未完成；假日无完成态、不受影响。⚠️ 收口于 tlEventShown（所有视图自动生效，无需每处重复过滤）。
     //    第十一批依用户截图设定：默认「开」（新环境未设 localStorage 时即勾选）。
@@ -118,7 +123,7 @@
     //   - 外部文件模式：目录 = externalFilePath 所在目录，读取走 readFileByPath
     //   - 内部 md 模式：目录 = TODO_DATA_DIR（getTodoDataDir），读取走 readMdFile
     async function tlRefreshIncludedEvents() {
-      if (!isCalendarMdDoc()) { tlIncludedEvents = []; tlIncludedHolidays = []; tlIncludedDiaries = []; return; }
+      if (!isCalendarMdDoc()) { tlIncludedEvents = []; tlIncludedHolidays = []; tlIncludedDiaries = []; tlIncludedFiles = []; return; }
       const api = window.electronAPI || {};
       try {
         let dir = null, isExt = false;
@@ -132,12 +137,17 @@
         }
         if (!dir || !api.listAllFilesInDir) return;
         const ls = await api.listAllFilesInDir(dir);
-        const names = (((ls && ls.data) || []).map((it) => it && it.name).filter(Boolean))
-          .filter((n) => /^calendar-.+\.md$/i.test(n) && n.toLowerCase() !== 'calendar.md')
-          .sort();
+        const items = (((ls && ls.data) || []).map((it) => ({ name: it && it.name, size: (it && it.size) || 0 })))
+          .filter((it) => it.name && /^calendar-.+\.md$/i.test(it.name) && it.name.toLowerCase() !== 'calendar.md')
+          .sort((a, b) => String(a.name).localeCompare(String(b.name)));
+        const names = items.map((it) => it.name);
+        // 📎 勾选过滤：只加载 INCLUDE 区块里标记为 '+' 的文件；区块缺失则默认全部加载
+        const sel = tlParseIncludeSel(document.getElementById('taskText').value, names);
+        tlIncludedFiles = items.slice(); // 📎 弹窗展示用「全部」文件（含未勾选），不只是已加载的
         const merged = [], mergedHolidays = [], mergedDiaries = [];
         for (let i = 0; i < names.length; i++) {
           const name = names[i];
+          if (!sel.has(name)) continue; // 📎 未勾选 → 跳过（动态释放）
           let content = '';
           if (isExt) {
             if (api.readFileByPath) {
@@ -161,9 +171,72 @@
         tlIncludedHolidays = mergedHolidays;
         tlIncludedDiaries = mergedDiaries;
       } catch (e) {
-        tlIncludedEvents = []; tlIncludedHolidays = []; tlIncludedDiaries = [];
+        tlIncludedEvents = []; tlIncludedHolidays = []; tlIncludedDiaries = []; tlIncludedFiles = [];
       }
-      if (calEventsView) tlRenderEventsContent();
+      if (calEventsView) {
+        tlRenderEventsContent();
+        // 📎 include 加载是启动最后一步：其重渲（无「今天」pending）会把提前滚好的位置还原；
+        //    故在此「最后一次启动渲染」之后再自动按一次「今天」按钮，确保滚动真正生效并留下。
+        tlTriggerStartupToday();
+      }
+    }
+
+    // 📂 Include 加载清单：列出同目录被 include 的 calendar-*.md 及其大小
+    function tlFormatSize(bytes) {
+      const n = Number(bytes) || 0;
+      if (n < 1024) return n + ' B';
+      if (n < 1024 * 1024) return (n / 1024).toFixed(1) + ' KB';
+      return (n / (1024 * 1024)).toFixed(1) + ' MB';
+    }
+    function tlOpenIncludeList() {
+      const body = document.getElementById('tlIncludeListBody');
+      const fileEl = document.getElementById('tlIncludeListFile');
+      const list = tlIncludedFiles || [];
+      const sel = tlParseIncludeSel(document.getElementById('taskText').value, list.map((f) => f.name));
+      if (fileEl) fileEl.textContent = '已加载 ' + list.filter((f) => sel.has(f.name)).length + ' / 共 ' + list.length + ' 个文件';
+      if (!body) return;
+      if (!list.length) {
+        body.innerHTML = '<div class="tl-include-empty">同目录下没有其他 calendar-*.md 文件</div>';
+      } else {
+        body.innerHTML = list.map((f) => {
+          const on = sel.has(f.name);
+          return '<label class="tl-include-item">' +
+            '<input type="checkbox" class="tl-include-check" data-name="' + tlEscapeHtml(f.name) + '"' + (on ? ' checked' : '') + '>' +
+            '<span class="fname">' + tlEscapeHtml(f.name) + '</span>' +
+            '<span class="fsize">' + tlFormatSize(f.size) + '</span></label>';
+        }).join('');
+      }
+      // 📎 绑定一次：行内 checkbox 勾选变化 → 立即写入 calendar.md 并动态重新加载
+      if (!tlIncludeListBound && body) {
+        body.addEventListener('change', (e) => {
+          const cb = e.target.closest('.tl-include-check');
+          if (!cb) return;
+          tlSetInclude(cb.getAttribute('data-name'), cb.checked);
+        });
+        tlIncludeListBound = true;
+      }
+      const ov = document.getElementById('tlIncludeListOverlay');
+      if (ov) ov.style.display = 'flex';
+    }
+    // 📎 勾选/取消勾选某个 include 文件：写回 ## INCLUDE 区块 → 立即持久化 → 立即动态重载（加载/释放）
+    function tlSetInclude(name, on) {
+      const names = (tlIncludedFiles || []).map((f) => f.name);
+      if (!names.includes(name)) return;
+      const sel = tlParseIncludeSel(document.getElementById('taskText').value, names);
+      if (on) sel.add(name); else sel.delete(name);
+      const list = names.map((n) => ({ name: n, on: sel.has(n) }));
+      tlWriteIncludeBlock(list);
+      // 立即落盘（含外部文件模式）：写回 calendar.md，供下次启动按勾选加载 + 跨设备同步
+      if (typeof saveTask === 'function') { try { saveTask(false, true); } catch (e) {} }
+      // 立即动态重载：勾选→出现，取消→释放，无需重开文件
+      tlRefreshIncludedEvents();
+      // 刷新弹窗计数（列表本身状态已由 checkbox 反映）
+      const fileEl = document.getElementById('tlIncludeListFile');
+      if (fileEl) fileEl.textContent = '已加载 ' + list.filter((it) => it.on).length + ' / 共 ' + list.length + ' 个文件';
+    }
+    function tlCloseIncludeList() {
+      const ov = document.getElementById('tlIncludeListOverlay');
+      if (ov) ov.style.display = 'none';
     }
 
     function toggleCalEventsView() {
@@ -196,7 +269,25 @@
     }
 
     // 行程视图下：隐藏三个输入框 + 预览 + 三套工具栏，只显示行程面板
-    function showCalEventsPaneOnly() {
+
+    // 📎 程式启动自动滚到今天：在「include 加载完成后的最后一次渲染」之后调用（见 tlRefreshIncludedEvents）。
+    //    仅触发一次：等行程面板真正可见（有高度）后按一次「今天」按钮；按钮逻辑里的滚动函数
+    //    若遇容器未布局会自延后重试（见 tlScrollYearToCurrentMonth / tlScrollMonthToToday / tlScrollElToTop），直到真正滚到今天。
+    function tlTriggerStartupToday() {
+      if (tlStartupScrollDone) return;
+      tlStartupScrollDone = true;
+      let tries = 0;
+      const waitPane = () => {
+        const pane = document.getElementById('calEventsPane');
+        if (!pane || !pane.offsetHeight) { // 面板还没开/动画中 → 下帧再试（上限 120 帧 ≈ 2s）
+          if (tries++ < 120) requestAnimationFrame(waitPane);
+          return;
+        }
+        const tb = document.getElementById('tlEvTodayBtn');
+        if (tb) tb.click(); // 面板可见后按一次「今天」：重设游标/选中日 + 设 pending + 重渲并滚动
+      };
+      requestAnimationFrame(waitPane);
+    }    function showCalEventsPaneOnly() {
       const ids = ['taskText', 'htmlText', 'jsonText', 'mdPreview'];
       ids.forEach((id) => { const el = document.getElementById(id); if (el) el.style.display = 'none'; });
       // 撤销/重做钮是 #editorToolbar 的直接子元素（位于 #mdTools 分组之外），隐藏行程视图时一并收起，
@@ -257,6 +348,46 @@
       document.getElementById('taskText').value = md;
     }
     function tlTagMeta() { return tlParseTagsMeta(document.getElementById('taskText').value); }
+    // ===== Include 加载清单：勾选状态存于 calendar.md 的 ## INCLUDE 区块 =====
+    // 每行一个同目录 calendar-*.md 文件，前缀 '+' = 加载 / '-' = 不加载（与 LITE 共用此格式）。
+    // 区块不存在（老文件）或区块无有效行时，默认「全部加载」（与改前行为一致；默认 A）。
+    // allNames：当前目录枚举到的全部 calendar-*.md 文件名（不含 calendar.md），用于「缺省全选」回退。
+    function tlParseIncludeSel(md, allNames) {
+      const set = new Set();
+      const blocks = String(md || '').split(/^##[ \t]*INCLUDE[ \t]*$/m);
+      if (blocks.length < 2) { (allNames || []).forEach((n) => set.add(n)); return set; }
+      let chunk = blocks[1];
+      const cut = chunk.search(/^##[ \t]/m);
+      if (cut >= 0) chunk = chunk.slice(0, cut);
+      let hasLine = false;
+      chunk.split(/\r?\n/).forEach((ln) => {
+        const m = ln.match(/^\s*([+\-])\s+(.+?)\s*$/);
+        if (m) { hasLine = true; if (m[1] === '+') set.add(m[2]); }
+      });
+      if (!hasLine) (allNames || []).forEach((n) => set.add(n));
+      return set;
+    }
+    // 把勾选列表序列化：list = [{ name, on }]；on=true → '+ name'，否则 '- name'
+    function tlSerializeInclude(list) {
+      let body = '## INCLUDE\n';
+      (list || []).forEach((it) => { body += (it.on ? '+ ' : '- ') + it.name + '\n'; });
+      return body.replace(/\n$/, '');
+    }
+    // 把最新勾选列表写回 calendar.md 缓冲（taskText）；已存在 ## INCLUDE 区块则替换其内容，否则追加
+    function tlWriteIncludeBlock(list) {
+      let md = document.getElementById('taskText').value;
+      const body = tlSerializeInclude(list);
+      const idx = md.search(/^##[ \t]*INCLUDE[ \t]*$/m);
+      if (idx >= 0) {
+        const after = md.slice(idx);
+        const next = after.search(/\n##[ \t]/m);
+        const end = next >= 0 ? idx + next : md.length;
+        md = md.slice(0, idx) + body + md.slice(end);
+      } else {
+        md = md.replace(/\s*$/, '') + '\n\n' + body + '\n';
+      }
+      document.getElementById('taskText').value = md;
+    }
     function tlTagParent(name) { return (tlTagMeta()[name] || ''); }
     function tlTagChildren(name) { const m = tlTagMeta(); return Object.keys(m).filter((k) => m[k] === name); }
     function tlAllTagNames() {
@@ -529,12 +660,15 @@
     // 整份 calendar.md 序列化：events + holidays + diaries 都保留（保存任一类时若只写该类会把用户手写的其它类整体覆盖掉）
     function tlCalendarToMarkdown(events, holidays, diaries) {
       const head = '# 日历行程\n\n> 每条行程以 `## EVENT` 分隔，字段值写在反引号内，Remark 用代码块保存多行备注。\n\n';
-      let body = (events && events.length) ? events.map(tlEventToMarkdown).join('\n') : '';
+      // 📎 保存时按 date 排序：EVENT（用现有 tlSorted：日期→全天→时间）与 DIARY（按日期）都排序，HOLIDAY 保持原序
+      const evSorted = (events && events.length) ? tlSorted(events.slice()) : [];
+      const diSorted = (diaries && diaries.length) ? diaries.slice().sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0)) : [];
+      let body = evSorted.length ? evSorted.map(tlEventToMarkdown).join('\n') : '';
       if (holidays && holidays.length) {
         body += (body ? '\n' : '') + holidays.map(tlHolidayToMarkdown).join('\n');
       }
-      if (diaries && diaries.length) {
-        body += (body ? '\n' : '') + diaries.map(tlDiaryToMarkdown).join('\n');
+      if (diSorted.length) {
+        body += (body ? '\n' : '') + diSorted.map(tlDiaryToMarkdown).join('\n');
       }
       return head + (body || '');
     }
@@ -1774,10 +1908,12 @@
       }
     }
     // 年视图：若当前月份卡片未完整显示在滚动区内，则平滑滚动到可视区中央
-    function tlScrollYearToCurrentMonth() {
+    function tlScrollYearToCurrentMonth(_n) {
       const cur = document.querySelector('#tlEvYearGrid .ev-year-month.cur-month');
       const scroller = document.querySelector('#tlEvYearWrap .ev-month-scroll');
       if (!cur || !scroller) return;
+      // 📎 容器尚未布局（rect 全 0）时，误判为「已完整显示」会跳过滚动；未布局则延后一帧重试（上限 60）
+      if (!scroller.offsetHeight) { if ((_n || 0) < 60) requestAnimationFrame(() => tlScrollYearToCurrentMonth((_n || 0) + 1)); return; }
       const sr = scroller.getBoundingClientRect();
       const cr = cur.getBoundingClientRect();
       // 已完整显示：无需滚动
@@ -1902,6 +2038,14 @@
 
     // occDate＝该行所属的「出现日」（重复事件为展开后的当天；非重复＝ev.date）。
     // ⚠️ 重复事件的 ev.date 是「系列起始日」：若拿它算 past，则「过去开始的年度重复」在未来年份的实例会被误判为过去而淡化。
+    // 📊 备注子事件完成进度徽章（标签旁「3/6」）：解析备注 checkbox 行，全部完成时徽章转绿
+    function tlSubProgressBadge(ev) {
+      const subs = tlParseNoteChecks(ev && ev.notes);
+      if (!subs.length) return '';
+      const done = subs.filter((s) => s.done).length;
+      const all = done === subs.length;
+      return '<span class="ev-sub-progress' + (all ? ' all-done' : '') + '" title="备注子事件：' + done + ' / ' + subs.length + ' 已完成">' + done + '/' + subs.length + '</span>';
+    }
     function tlItemHtml(ev, today, occDate) {
       const multi = tlIsMultiDay(ev);
       const isRep = !!ev.repeatMode;
@@ -1926,6 +2070,9 @@
         // 跨天行程（含跨天重复）标题后紧跟「(第几天/共几天)」——让「回上海 (3/7)」一眼看出是第三天
         '<div class="ev-title">' + tlRepeatIcon(ev) + tlRenderInlineMarkdown(ev.title) + tlSpanDaySuffix(ev, occDate) + spanBadge +
         (ev.tags && ev.tags.length ? '<span class="ev-tags">' + ev.tags.map((t) => '<span class="ev-tag-view" data-tag="' + tlEscapeHtml(tlTagName(t)) + '">' + tlEscapeHtml(tlTagLabel(t)) + '</span>').join('') + '</span>' : '') +
+        tlSubProgressBadge(ev) +
+        // 📋 列表行「＋☐」：与编辑表单备注旁同一入口（开 CheckBox 小窗）；列表模式按「加入备注」直接存档
+        (ev.ro ? '' : '<button type="button" class="ev-addcheck-btn" title="在备注末尾加入 CheckBox（加入后直接存档）" onclick="tlOpenAddCheckDialog(\'' + tlEscapeHtml(ev.uid) + '\')">＋☐</button>') +
         tlEventTodoLinks(ev) +
         '</div>' +
         '<div class="ev-meta">' + tlEscapeHtml(time) + (ev.location ? ' \u00b7 \ud83d\udccd' + tlEscapeHtml(ev.location) : '') + '</div>' +
@@ -2341,8 +2488,10 @@
     //    标题在下方、没被吸顶，所以只有单向能滚（2026-09-19 用户报告的 bug）。
     //    修法：读真实布局位置前先把该元素的 sticky 临时摘掉（同步 reflow，同一帧内还原，不会闪）。
     //    只改 scroller.scrollTop，不触碰祖先滚动容器。
-    function tlScrollElToTop(el, scroller) {
+    function tlScrollElToTop(el, scroller, _n) {
       if (!el || !scroller) return;
+      // 📎 滚动容器尚未布局（高度为 0）时，offsetTop/scrollTop 计算会失效；未布局则延后一帧重试（上限 60）
+      if (!scroller.offsetHeight) { if ((_n || 0) < 60) requestAnimationFrame(() => tlScrollElToTop(el, scroller, (_n || 0) + 1)); return; }
       scroller.scrollTop = tlElAbsTop(el, scroller);
     }
     function tlScrollListToDate(list, scroller, ds) {
@@ -2547,10 +2696,12 @@
     }
 
     // 月视图：若「今天」日期格未完整显示在滚动区内，则平滑滚动到可视区中央
-    function tlScrollMonthToToday() {
+    function tlScrollMonthToToday(_n) {
       const todayCell = document.querySelector('#tlEvMonthGrid .ev-cell.today');
       const scroller = document.querySelector('#tlEvMonthWrap .ev-month-scroll');
       if (!todayCell || !scroller) return;
+      // 📎 容器尚未布局（rect 全 0）时误判已显示而跳过；未布局则延后一帧重试（上限 60）
+      if (!scroller.offsetHeight) { if ((_n || 0) < 60) requestAnimationFrame(() => tlScrollMonthToToday((_n || 0) + 1)); return; }
       const sr = scroller.getBoundingClientRect();
       const cr = todayCell.getBoundingClientRect();
       // 已完整显示：无需滚动
@@ -2817,6 +2968,51 @@
       tlEvFormColor = null;
     }
 
+    // 📋 备注「＋ CheckBox」：开小窗输入，保存后以 `- [ ] 内容` 追加到备注末尾（多行＝每行一个 checkbox）
+    // 两种模式：tlAddCheckTargetUid=null＝编辑表单模式（追加到 #tlEvFNotes，等表单保存）；
+    //          非空＝列表模式（追加到该事件备注后**直接存档**：写缓冲＋落盘 calendar.md，2026-10-10 用户需求）
+    let tlAddCheckTargetUid = null;
+    function tlOpenAddCheckDialog(uid) {
+      tlAddCheckTargetUid = uid || null;
+      const ov = document.getElementById('tlAddCheckOverlay');
+      const inp = document.getElementById('tlAddCheckInput');
+      if (inp) inp.value = '';
+      if (ov) ov.style.display = 'flex';
+      if (inp) setTimeout(() => inp.focus(), 0);
+    }
+    function tlCloseAddCheckDialog() {
+      const ov = document.getElementById('tlAddCheckOverlay');
+      if (ov) ov.style.display = 'none';
+      tlAddCheckTargetUid = null;
+    }
+    function tlSaveAddCheckDialog() {
+      const inp = document.getElementById('tlAddCheckInput');
+      if (!inp) return;
+      const lines = inp.value.replace(/\r\n/g, '\n').split('\n').map((l) => l.trim()).filter((l) => l.length);
+      if (!lines.length) { tlCloseAddCheckDialog(); return; }
+      const md = lines.map((l) => '- [ ] ' + l).join('\n');
+      // 列表模式：追加到目标事件备注，并直接存档（写缓冲 + saveTask 落盘），无需打开编辑表单
+      if (tlAddCheckTargetUid) {
+        const uid = tlAddCheckTargetUid;
+        tlCloseAddCheckDialog(); // 先清 target 再走异步/重绘，避免残留
+        tlCalEvents = tlAllEvents(document.getElementById('taskText').value);
+        const ev = tlCalEvents.find((x) => x.uid === uid);
+        if (!ev) { showToast('找不到该条行程（内容可能已被修改）', 'danger'); return; }
+        if (ev.ro) { showToast('此行程来自被包含的只读文件，不可修改', 'danger'); return; }
+        ev.notes = (ev.notes ? String(ev.notes).replace(/\s*$/, '') + '\n' : '') + md + '\n';
+        tlApplyEventsToBuffer();
+        if (typeof saveTask === 'function') saveTask(false); // 直接存档：写回 calendar.md
+        showToast('已在备注末尾加入 CheckBox 并存档', 'success');
+        return;
+      }
+      // 编辑表单模式：追加到表单备注 textarea（原行为，随表单保存一起写入）
+      const notes = document.getElementById('tlEvFNotes');
+      if (!notes) return;
+      const cur = notes.value || '';
+      notes.value = (cur ? cur.replace(/\s*$/, '') + '\n' : '') + md + '\n';
+      tlCloseAddCheckDialog();
+    }
+
     function tlSaveEventForm(closeAfterSave = true) {
       const title = document.getElementById('tlEvFTitle').value.trim();
       let date = document.getElementById('tlEvFDate').value;
@@ -2884,6 +3080,25 @@
       if (i >= 0) tlCalEvents[i] = ev; else tlCalEvents.push(ev);
       // 写入后返回列表：不设滚动锚点（pending 保持 false）→ tlRenderList 走「保留原 scrollTop」分支，原地不动
       tlApplyEventsToBuffer();
+      // 关键修复（新增行程重复建档）：uid 不落盘——解析时按文件位置临时生成 'evp'+idx，
+      // 首次保存生成的新 uid 在下一次重新解析后必然失配 → 又 push 一条。
+      // 因此写缓冲后必须重新解析，把表单「重新指向上一条已落盘事件」（＝模拟你点「编辑」按钮），
+      // 使后续 Cmd+S / 写入编辑内容 走「更新同一条」而非再建档。
+      // 匹配用「内容指纹 + 排序位置」双重定位，不依赖脆弱的长度相等（真实文件含 HOLIDAY/DIARY/TAGS/INCLUDE 时计数易错位）。
+      try {
+        const reparsed = tlParseEvents(document.getElementById('taskText').value);
+        const sortedMain = tlSorted(tlCalEvents.filter((e) => !e.ro).slice());
+        // 与序列化一致的内容指纹（忽略 uid，专盯会写进文件的字段）
+        const sig = (e) => [e.title, e.date, e.allDay, e.startTime, e.endTime, e.location, e.color, (e.notes || ''), JSON.stringify(e.tags || [])].join('');
+        const want = sig(ev);
+        const k = sortedMain.indexOf(ev); // 本事件在「序列化顺序」中的位置（＝文件顺序，与 reparsed 对齐）
+        // 优先：同位置且同签名（最精确，可避开同名/同内容重复事件）；否则回退到任一同签名事件（至少不再新增）
+        if (k >= 0 && reparsed[k] && sig(reparsed[k]) === want) tlEvFormUid = reparsed[k].uid;
+        else {
+          const m = reparsed.find((r) => sig(r) === want);
+          if (m) tlEvFormUid = m.uid;
+        }
+      } catch (e) { /* 记回失败不影响本次保存 */ }
       if (closeAfterSave) tlCloseEventForm();
       showToast(closeAfterSave
         ? '已写入编辑内容，按「保存」写回 calendar.md'
@@ -3014,7 +3229,8 @@
       const holidays = tlParseHolidays(ta.value);
       tlCalEvents = events;
       tlCalHolidays = holidays;
-      ta.value = tlCalendarToMarkdown(events, holidays, tlCalDiaries.filter((d) => !d.ro));
+      // 📎 重画后保留 ## TAGS / ## INCLUDE（避免父阶标签、Include 勾选被清掉）
+      ta.value = tlPreserveMetaBlocks(ta.value, tlCalendarToMarkdown(events, holidays, tlCalDiaries.filter((d) => !d.ro)));
       if (typeof autoGrowTextarea === 'function') autoGrowTextarea(ta);
       if (typeof markCurrentTabDirty === 'function') markCurrentTabDirty();
       tlRenderEventsContent();
@@ -3074,6 +3290,22 @@
     }
 
     // 序列化整份 calendar.md 写回 taskText（不动 editSnapshot → 未保存检测自动判定为脏，「保存」亮起）
+    // 📎 事件/日记保存会把整份 calendar.md 重画（tlCalendarToMarkdown 只产 EVENT/HOLIDAY/DIARY），
+    // 必须把原本的 ## TAGS / ## INCLUDE 元數據块保留下来，否则按「保存」落盘会把这两个块清掉。
+    // 从 original 抽出这两个块（含内容，直到下一个 ## 标题或文末），重新贴回 newMd 末尾。
+    function tlPreserveMetaBlocks(original, newMd) {
+      const kept = [];
+      ['TAGS', 'INCLUDE'].forEach((name) => {
+        const idx = String(original || '').search(new RegExp('^##[ \\t]*' + name + '[ \\t]*$', 'm'));
+        if (idx < 0) return;
+        const after = String(original).slice(idx);
+        const next = after.search(/\n##[ \t]/m);
+        const end = next >= 0 ? idx + next : String(original).length;
+        kept.push(String(original).slice(idx, end).replace(/\s+$/, ''));
+      });
+      if (!kept.length) return newMd;
+      return String(newMd).replace(/\s*$/, '') + '\n\n' + kept.join('\n\n') + '\n';
+    }
     function tlApplyEventsToBuffer() {
       const ta = document.getElementById('taskText');
       // ⚠️ 从当前缓冲重新解析 holiday / diary，避免保存事件时把用户手写的 ## HOLIDAY / ## DIARY 整体覆盖掉（事件序列化器会重画整份文件）
@@ -3081,7 +3313,8 @@
       const diaries = tlParseDiaries(ta.value);
       tlCalHolidays = holidays;
       tlCalDiaries = diaries;
-      ta.value = tlCalendarToMarkdown(tlCalEvents.filter((e) => !e.ro), holidays, diaries);
+      // 📎 重画后保留 ## TAGS / ## INCLUDE（避免父阶标签、Include 勾选被清掉）
+      ta.value = tlPreserveMetaBlocks(ta.value, tlCalendarToMarkdown(tlCalEvents.filter((e) => !e.ro), holidays, diaries));
       if (typeof autoGrowTextarea === 'function') autoGrowTextarea(ta);
       if (typeof markCurrentTabDirty === 'function') markCurrentTabDirty();
       tlRenderEventsContent();
