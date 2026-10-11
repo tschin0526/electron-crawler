@@ -504,10 +504,26 @@ function calSpanChipHtml(ev, pos, idx, total, occDate) {
 
 // ===== 🏷 標籤過濾 / 跨天展開 / 時間網格 輔助（移植自桌面 TodoList 日曆模式）=====
 // 事件是否滿足當前標籤過濾（空＝全部；OR 邏輯：任一標籤命中即顯示）
+// 🆕 父階標籤 BOM 展開：選中某標籤＝匹配「自身＋全部子階＋孫階…」的事件（沿 ## TAGS 樹向下收集）
+function calTagDescendants(name) {
+  const m = calTagMeta();
+  const out = [name];
+  const queue = [name];
+  const seen = new Set(queue);
+  let guard = 0;
+  while (queue.length && guard++ < 1000) {
+    const cur = queue.shift();
+    Object.keys(m).forEach((k) => { if (m[k] === cur && !seen.has(k)) { seen.add(k); out.push(k); queue.push(k); } });
+  }
+  return out;
+}
 function calEventMatchesTag(ev) {
   if (!state.calTagFilter.length) return true;
   const tags = ev.tags || [];
-  return state.calTagFilter.some((f) => tags.some((tg) => calTagName(tg) === f));
+  return state.calTagFilter.some((f) => {
+    const fam = calTagDescendants(f);
+    return tags.some((tg) => fam.indexOf(calTagName(tg)) >= 0);
+  });
 }
 // 分類顯示過濾（頂欄 EVENT / REPEAT 三態勾選）：
 //   EVENT 勾選＝顯示普通行程；REPEAT 三態＝none 隱藏全部 / next 只顯示未來最近一次 / some 最近前一次+未來4次（最多5次）。
@@ -729,14 +745,22 @@ function renderCalTagBar() {
   if (!bar || !filter) return;
   const tags = new Set();
   state.calEvents.forEach((ev) => (ev.tags || []).forEach((t) => { if (calTagName(t)) tags.add(calTagName(t)); }));
+  // 🆕 父階標籤（無事件直接掛靠，但是其他標籤的父/祖階）也要顯示：併入 ## TAGS 樹登記的全部標籤
+  calAllTagNames().forEach((t) => tags.add(t));
   const options = document.getElementById('ev-tag-options');
   if (options) options.innerHTML = Array.from(tags).sort().map((t) => '<option value="' + escapeHtml(t) + '"></option>').join('');
   if (!tags.size) { bar.style.display = 'none'; filter.innerHTML = ''; return; }
   // ⚠️ 必須顯式給 'flex'：CSS 裡 .ev-tagbar 預設 display:none，清空 inline style 會被 CSS 覆蓋回隱藏
   bar.style.display = 'flex';
+  const calIsTagInherited = (t) => {
+    if (state.calTagFilter.indexOf(t) >= 0) return false;
+    return state.calTagFilter.some((f) => calTagDescendants(f).indexOf(t) >= 0);
+  };
   filter.innerHTML = Array.from(tags).map((t) => {
     const active = state.calTagFilter.indexOf(t) >= 0;
-    return '<span class="ev-tag-chip' + (active ? ' active' : '') + '" data-tag="' + escapeHtml(t) + '">' + escapeHtml(t) + '</span>';
+    const desc = !active && calIsTagInherited(t);
+    const cls = active ? ' active' : (desc ? ' active-desc' : '');
+    return '<span class="ev-tag-chip' + cls + '" data-tag="' + escapeHtml(t) + '">' + escapeHtml(t) + '</span>';
   }).join('');
 }
 

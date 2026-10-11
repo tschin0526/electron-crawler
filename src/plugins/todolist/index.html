@@ -1901,6 +1901,9 @@
     .ev-mode-seg button.active { background: var(--ev-primary); color: #fff; }
     .ev-add-btn { border: 1px solid var(--ev-primary); background: var(--ev-card); color: var(--ev-primary); font-size: 13px; padding: 4px 12px; border-radius: 8px; cursor: pointer; }
     .ev-add-btn:hover { background: var(--ev-primary); color: #fff; }
+    .ev-layout-btn { font-size: 12px; padding: 3px 10px; border: 1px solid var(--ev-border); background: var(--ev-card); color: var(--ev-text); border-radius: 8px; cursor: pointer; }
+    .ev-layout-btn:hover { background: var(--ev-primary); color: #fff; border-color: var(--ev-primary); }
+    .ev-layout-btn.active { background: var(--ev-primary); color: #fff; border-color: var(--ev-primary); }
     .ev-monthnav { flex: 0 0 auto; display: flex; align-items: center; gap: 10px; padding-bottom: 6px; }
     .ev-monthnav button { border: 1px solid var(--ev-border); background: var(--ev-card); color: var(--ev-text); font-size: 15px; padding: 2px 10px; border-radius: 8px; cursor: pointer; }
     #tlEvMonthTitle { flex: 1; text-align: center; font-size: 15px; font-weight: 600; }
@@ -1916,11 +1919,19 @@
     .ev-split { --ev-detail-h: 30%; display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; }
     .ev-split .ev-split-top { flex: 1 1 auto; min-height: 120px; }
     .ev-split .ev-detail { flex: 0 0 var(--ev-detail-h); min-height: 56px; }
+    /* 左右布局：复用同一套结构，仅翻转主轴；由切换开关给 .ev-split 加 .horizontal */
+    .ev-split.horizontal { flex-direction: row; }
+    .ev-split.horizontal .ev-split-top { min-height: 0; min-width: 220px; }
+    .ev-split.horizontal .ev-detail { flex-basis: var(--ev-detail-w, 30%); min-height: 0; min-width: 56px; }
     .ev-hsplit { flex: 0 0 auto; height: 12px; position: relative; cursor: row-resize; touch-action: none;
       background: var(--ev-card); border-top: 1px solid var(--ev-border); border-bottom: 1px solid var(--ev-border); }
     .ev-hsplit::after { content: ''; position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
       width: 48px; height: 3px; border-radius: 2px; background: var(--ev-border); }
     .ev-hsplit.dragging::after { background: var(--ev-primary); }
+    /* 左右布局下，分隔条变竖条（col-resize），边框/握把方向也随之翻转 */
+    .ev-split.horizontal .ev-hsplit { width: 12px; height: auto; align-self: stretch; cursor: col-resize;
+      border-top: none; border-bottom: none; border-left: 1px solid var(--ev-border); border-right: 1px solid var(--ev-border); }
+    .ev-split.horizontal .ev-hsplit::after { width: 3px; height: 48px; }
     /* 月視圖：月格自己一層滾動區（原本靠 #tlEvMonthWrap 整體滾動，明細無法固定在底部） */
     #tlEvMonthWrap { flex: 1 1 auto; min-height: 0; }
     .ev-month-scroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
@@ -2161,6 +2172,8 @@
     .ev-tag-filter { display: flex; flex-wrap: wrap; gap: 6px; }
     .ev-tag-chip { font-size: 12px; padding: 2px 10px; border-radius: 99px; border: 1px solid var(--ev-border); background: var(--ev-bg); color: var(--ev-muted); cursor: pointer; }
     .ev-tag-chip.active { background: #2563EB; color: #fff; border-color: #60A5FA; box-shadow: 0 0 0 1px rgba(96,165,250,.25); }
+    /* 🆕 继承选中（被某选中主标签的 BOM 展开覆盖的子/孙标签）：与 .active 实心蓝白不同，用 ghost 蓝，配色有差异 */
+    .ev-tag-chip.active-desc { background: rgba(37,99,235,.15); color: #2563EB; border-color: #60A5FA; }
     .tl-ev-tag-picker { position: relative; border: 1px solid var(--ev-border); border-radius: 8px; background: var(--ev-bg); padding: 5px 7px; min-height: 42px; }
     .tl-ev-tag-selected { display: flex; flex-wrap: wrap; gap: 5px; }
     .tl-ev-tag-selected:empty { display: none; }
@@ -3982,6 +3995,10 @@
           s.textContent = '.action-btn.email, #emailBtn { display: none !important; }';
           document.head.appendChild(s);
         }
+        // 🆕 直接启动行程视图（./start.sh --calendar）：标记后由 init() 自动打开上次 calendar.md 并进入行程视图
+        if (params.get('cal') === '1') {
+          window.__todoOpenCal = true;
+        }
         // 🆕 主题参数：URL 带 ?theme=dark|light 时，覆盖 localStorage 初始值。
         //    下方 body 脚本中的 loadInitialTheme() 会读取该值决定 body.dark，并同步 highlight.js 主题。
         //    仅影响「启动时的初始主题」，进入后手动切换仍生效（会再次写入 localStorage）。
@@ -4800,6 +4817,7 @@
               <button type="button" id="tlEvModeMonth">月</button>
               <button type="button" id="tlEvModeYear">年</button>
             </div>
+            <button type="button" id="tlCalLayoutBtn" class="ev-layout-btn" title="切换日历与行程明细的排布：上下 / 左右" onclick="tlToggleCalLayout()">▤ 上下</button>
             <button type="button" id="tlEvStatsBtn" class="btn ev-stats-btn" title="事件统计：主事件与备注中的子事件，按标签·完成状态统计">📊</button>
             <button type="button" id="tlIncludeListBtn" class="btn ev-stats-btn" title="Include 加载清单：列出同目录被引入的 calendar-*.md 文件及大小" onclick="tlOpenIncludeList()">📄</button>
             <span class="ev-toolbar-flex"></span>
@@ -6573,6 +6591,15 @@
       const collapsed = modal.classList.toggle('sidebar-collapsed');
       const handle = document.getElementById('editorSidebarHandle');
       if (handle) handle.title = collapsed ? '展开 操作面板' : '收起 操作面板';
+    }
+
+    // 🆕 直接启动行程视图（--calendar）时，自动收起右侧「操作面板」抽屉，让日历视图拥有完整宽度
+    function tlCloseEditorSidebar() {
+      const modal = document.querySelector('.modal.editor-layout');
+      if (!modal) return;
+      modal.classList.add('sidebar-collapsed');
+      const handle = document.getElementById('editorSidebarHandle');
+      if (handle) handle.title = '展开 操作面板';
     }
 
     // ============================================================
@@ -13805,6 +13832,33 @@
       }
     }
 
+    // 📅 直接启动行程视图（--calendar）：默认打开上次加载的 calendar.md 并进入行程视图。
+    //    优先用「上次停留的 calendar.md 页签」；没有则从最近打开记录里取最近的 calendar.md（须有绝对路径）。
+    //    两者都走既有打开入口（activateSheetTab / openExternalFile），与用户手动打开 calendar.md 行为一致，
+    //    打开后由 tlPrioritizeDedicatedEditor 自动进入行程视图。
+    async function tlAutoOpenCalendar() {
+      var calName = function (s) { return (s || '').toLowerCase() === 'calendar.md'; };
+      var tabName = function (t) {
+        return (t.title || (t.path ? t.path.split(/[\\/]/).pop() : '') || t.id || '').toLowerCase();
+      };
+      var key = null;
+      if (editorTabs && editorTabs.length) {
+        var cals = editorTabs.filter(function (t) { return calName(tabName(t)); });
+        if (cals.length) {
+          key = (lastActiveTabKey && cals.some(function (t) { return t.key === lastActiveTabKey; }))
+            ? lastActiveTabKey
+            : cals[cals.length - 1].key;
+        }
+      }
+      if (key) { await activateSheetTab(key); return; }
+      if (tlRecentOpenMap) {
+        var arr = Object.values(tlRecentOpenMap)
+          .filter(function (e) { return e && e.path && calName(e.name || e.path.split(/[\\/]/).pop() || ''); })
+          .sort(function (a, b) { return (b.ts || 0) - (a.ts || 0); });
+        if (arr.length) { await openExternalFile(arr[0].path, arr[0].name || 'calendar.md', 'md'); }
+      }
+    }
+
     async function init() {
       // 🆕 阅读进度：先恢复上次会话记住的卡片滚动位置（localStorage），再渲染
       loadCardScrollPositions();
@@ -13858,6 +13912,12 @@
       // 🆕 文件嵌入：编辑器预览的赋值点散落多处（切换模式、输入防抖、切页签…），
       //    用 MutationObserver 一处兜住所有路径：预览内容一变就补填嵌入文件内容。
       initMdPreviewEmbedObserver();
+      // 📅 直接启动行程视图（--calendar）：用上次加载的 calendar.md 为默认值自动进入行程视图
+      if (window.__todoOpenCal) {
+        try { await tlAutoOpenCalendar(); } catch (e) { console.warn('[TodoList] 自动进入行程视图失败:', e); }
+        // 🆕 自动收起右侧「操作面板」抽屉，避免遮挡日历视图
+        tlCloseEditorSidebar();
+      }
     }
 
     // 🆕 监听 #mdPreview 内容变化，自动补填其中的文件嵌入占位。

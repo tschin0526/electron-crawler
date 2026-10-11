@@ -181,7 +181,7 @@ function createWindow() {
   if (isCalendarMode || isTodolistMode) {
     // 🆕 独立模式：加载 TodoList（内含已迁移完整的行事历功能：列表/月/周/日视图、标签过滤、Todo 关联）。
     // 原独立「行事历插件」(src/plugins/calendar) 已删除；--calendar 现等价复用 TodoList 独立模式。
-    const search = '?standalone=1' + (themeArg ? '&theme=' + themeArg : '');
+    const search = '?standalone=1' + (isCalendarMode ? '&cal=1' : '') + (themeArg ? '&theme=' + themeArg : '');
     mainWindow.loadFile('src/plugins/todolist/index.html', { search });
     console.log('📌 [Main] 独立模式：主窗口已加载 TodoList（standalone=1' + (themeArg ? '，主题=' + themeArg : '') + '）');
   } else {

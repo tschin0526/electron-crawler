@@ -259,6 +259,7 @@
         if (tlCalMode === 'list') tlListScrollAnchorPending = true;
         else tlDetailListScrollPending = true;
         tlRenderEventsContent();
+        tlApplyCalLayout();
       } else {
         // 交还给原模式：这里先收掉面板，再由 toggleMdPreview 按 previewMode 重新显示
         // （toggleMdPreview 内部会一并清掉 #mdPreview 上的内联 display:none）
@@ -886,10 +887,26 @@
 
     // ===== 标签过滤 / 跨天展开 / 时间网格 辅助 =====
     // 事件是否满足当前标签过滤（空＝全部；OR 逻辑）
+    // 🆕 父阶标签 BOM 展开：选中某标签＝匹配「自身＋全部子阶＋孙阶…」的事件（沿 ## TAGS 树向下收集）
+    function tlTagDescendants(name) {
+      const m = tlTagMeta();
+      const out = [name];
+      const queue = [name];
+      const seen = new Set(queue);
+      let guard = 0;
+      while (queue.length && guard++ < 1000) {
+        const cur = queue.shift();
+        Object.keys(m).forEach((k) => { if (m[k] === cur && !seen.has(k)) { seen.add(k); out.push(k); queue.push(k); } });
+      }
+      return out;
+    }
     function tlEventMatchesTag(ev) {
       if (!tlCalTagFilter.length) return true;
       const tags = ev.tags || [];
-      return tlCalTagFilter.some((f) => tags.some((tg) => tlTagName(tg) === f));
+      return tlCalTagFilter.some((f) => {
+        const fam = tlTagDescendants(f);
+        return tags.some((tg) => fam.indexOf(tlTagName(tg)) >= 0);
+      });
     }
     // 分类显示过滤（顶栏 EVENT / REPEAT 三态勾选）：
     //   EVENT 勾选＝显示普通行程；REPEAT 三态＝none 隐藏全部 / next 只显示未来最近一次 / some 最近前一次+未来4次（最多5次）。
@@ -972,13 +989,21 @@
       if (!bar || !filter) return;
       const tags = new Set();
       tlCalEvents.forEach((ev) => (ev.tags || []).forEach((t) => { if (tlTagName(t)) tags.add(tlTagName(t)); }));
+      // 🆕 父阶标签（无事件直接挂靠，但是其他标签的父/祖阶）也要显示：并入 ## TAGS 树登记的全部标签
+      tlAllTagNames().forEach((t) => tags.add(t));
       const options = document.getElementById('tl-ev-tag-options');
       if (options) options.innerHTML = Array.from(tags).sort().map((t) => '<option value="' + tlEscapeHtml(t) + '"></option>').join('');
       if (!tags.size) { bar.style.display = 'none'; filter.innerHTML = ''; return; }
       bar.style.display = '';
+      const tlIsTagInherited = (t) => {
+        if (tlCalTagFilter.indexOf(t) >= 0) return false;
+        return tlCalTagFilter.some((f) => tlTagDescendants(f).indexOf(t) >= 0);
+      };
       filter.innerHTML = Array.from(tags).map((t) => {
         const active = tlCalTagFilter.indexOf(t) >= 0;
-        return '<span class="ev-tag-chip' + (active ? ' active' : '') + '" data-tag="' + tlEscapeHtml(t) + '">' + tlEscapeHtml(t) + '</span>';
+        const desc = !active && tlIsTagInherited(t);
+        const cls = active ? ' active' : (desc ? ' active-desc' : '');
+        return '<span class="ev-tag-chip' + cls + '" data-tag="' + tlEscapeHtml(t) + '">' + tlEscapeHtml(t) + '</span>';
       }).join('');
     }
     function tlFormTagNames() {
@@ -2591,8 +2616,9 @@
     // ===== 上下区域可拖動分割（月/週共用）=====
     // 拖動横条调整「下方行程明细」高度：写成 CSS 变量 --ev-detail-h（百分比）
     // → 窗口尺寸变化时比例自然保持，无需重算。纯 UI 偏好：内存 + localStorage，绝不写回数据文件。
-    const TL_SPLIT_MIN_PX = 56;        // 明细最小高度（至少看得见一条日期条）
+    const TL_SPLIT_MIN_PX = 56;        // 明细最小（宽/高）度（至少看得见一条日期条）
     const TL_SPLIT_TOP_MIN_PX = 120;   // 上区最小高度（仍看得见月格 / 时间网格）
+    const TL_SPLIT_LEFT_MIN_PX = 220;  // 左右布局下左区（日历）最小宽度
     const TL_SPLIT_DEFAULT = 30;       // 默认占比（%）
     let tlSplitPct = null;
     function tlLoadSplitPct() {
@@ -2606,9 +2632,19 @@
       tlSplitPct = Math.min(80, Math.max(10, Math.round(v * 10) / 10));
       try { localStorage.setItem('tlCalDetailH', String(tlSplitPct)); } catch (e) {}
     }
-    // 指针 Y → 明细高度百分比（实时量 rect，不依赖缓存尺寸）；只写 CSS 变量，不落盘
-    function tlApplySplitFromPointer(wrap, clientY) {
+    // 指针 → 明细 尺寸百分比（实时量 rect，不依赖缓存尺寸）；只写 CSS 变量，不落盘
+    // horizontal 模式（左右布局）：用宽度 + clientX 写 --ev-detail-w；否则用高度 + clientY 写 --ev-detail-h
+    function tlApplySplitFromPointer(wrap, clientX, clientY) {
+      const horizontal = wrap.classList.contains('horizontal');
       const r = wrap.getBoundingClientRect();
+      if (horizontal) {
+        if (!r.width) return null;
+        const maxPx = Math.max(TL_SPLIT_MIN_PX, r.width - TL_SPLIT_LEFT_MIN_PX);
+        const px = Math.min(Math.max(TL_SPLIT_MIN_PX, r.right - clientX), maxPx);
+        const pct = px / r.width * 100;
+        wrap.style.setProperty('--ev-detail-w', pct + '%');
+        return pct;
+      }
       if (!r.height) return null;
       const maxPx = Math.max(TL_SPLIT_MIN_PX, r.height - TL_SPLIT_TOP_MIN_PX);
       const px = Math.min(Math.max(TL_SPLIT_MIN_PX, r.bottom - clientY), maxPx);
@@ -2619,7 +2655,9 @@
     // 绑一次即可（重渲染换了新元素才会再绑）；每次调用都重新套用已存占比
     function tlBindSplit(wrap, split) {
       if (!wrap || !split) return;
-      wrap.style.setProperty('--ev-detail-h', tlLoadSplitPct() + '%');
+      const pct0 = tlLoadSplitPct();
+      wrap.style.setProperty('--ev-detail-h', pct0 + '%');
+      wrap.style.setProperty('--ev-detail-w', pct0 + '%');
       if (split.dataset.splitBound === '1') return;
       split.dataset.splitBound = '1';
       let dragging = false;
@@ -2634,14 +2672,14 @@
       split.addEventListener('pointermove', (e) => {
         if (!dragging) return;
         if ((e.buttons & 1) !== 1) { dragging = false; split.classList.remove('dragging'); return; }
-        tlApplySplitFromPointer(wrap, e.clientY);
+        tlApplySplitFromPointer(wrap, e.clientX, e.clientY);
       });
       const end = (e) => {
         if (!dragging) return;
         dragging = false;
         split.classList.remove('dragging');
         try { split.releasePointerCapture(e.pointerId); } catch (err) {}
-        const pct = tlApplySplitFromPointer(wrap, e.clientY);
+        const pct = tlApplySplitFromPointer(wrap, e.clientX, e.clientY);
         if (pct != null) tlSaveSplitPct(pct);   // 松手才落盘
       };
       split.addEventListener('pointerup', end);
@@ -2649,7 +2687,28 @@
       split.addEventListener('dblclick', () => {
         tlSaveSplitPct(TL_SPLIT_DEFAULT);
         wrap.style.setProperty('--ev-detail-h', TL_SPLIT_DEFAULT + '%');
+        wrap.style.setProperty('--ev-detail-w', TL_SPLIT_DEFAULT + '%');
       });
+    }
+
+    // ===== 上下 / 左右 布局切换（纯 UI 偏好，localStorage，绝不落盘数据文件）=====
+    const TL_LAYOUT_KEY = 'tlCalSplitLayout';
+    // 套用已存偏好：给三个 .ev-split 容器（周/月/年）统一加/去 .horizontal，并同步切换按钮文案
+    function tlApplyCalLayout() {
+      let horizontal = false;
+      try { horizontal = localStorage.getItem(TL_LAYOUT_KEY) === '1'; } catch (e) {}
+      ['tlEvWeekWrap', 'tlEvMonthWrap', 'tlEvYearWrap'].forEach((id) => {
+        const el = document.getElementById(id);
+        if (el) el.classList.toggle('horizontal', horizontal);
+      });
+      const btn = document.getElementById('tlCalLayoutBtn');
+      if (btn) { btn.textContent = horizontal ? '▥ 左右' : '▤ 上下'; btn.classList.toggle('active', horizontal); }
+    }
+    // 切换：读当前（以月视图容器为准，三容器状态一致），翻转后存盘并重套
+    function tlToggleCalLayout() {
+      const cur = (() => { const el = document.getElementById('tlEvMonthWrap'); return el && el.classList.contains('horizontal'); })();
+      try { localStorage.setItem(TL_LAYOUT_KEY, cur ? '0' : '1'); } catch (e) {}
+      tlApplyCalLayout();
     }
 
     function tlRenderMonth(content) {

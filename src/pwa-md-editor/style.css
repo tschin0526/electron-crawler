@@ -555,6 +555,8 @@ body {
 .ev-tag-filter { display: flex; gap: 6px; flex-wrap: wrap; }
 .ev-tag-chip { font-size: 12px; padding: 2px 10px; border-radius: 99px; border: 1px solid var(--border); background: var(--bg-secondary); color: var(--text-secondary); cursor: pointer; }
 .ev-tag-chip.active { background: #2563EB; color: #fff; border-color: #60A5FA; box-shadow: 0 0 0 1px rgba(96,165,250,.25); }
+/* 🆕 繼承選中（被某選中主標籤的 BOM 展開覆蓋的子/孫標籤）：與 .active 實心藍白不同，用 ghost 藍，配色有差異 */
+.ev-tag-chip.active-desc { background: rgba(37,99,235,.15); color: #2563EB; border-color: #60A5FA; }
 .ev-tag-picker { position: relative; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-primary); padding: 5px 7px; min-height: 42px; }
 .ev-tag-selected { display: flex; flex-wrap: wrap; gap: 5px; }
 .ev-tag-selected:empty { display: none; }
