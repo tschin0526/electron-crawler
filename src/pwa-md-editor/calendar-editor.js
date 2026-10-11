@@ -150,7 +150,9 @@ function parseCalendarEventBlock(block, idx) {
     repeatYearMonthDay: get('repeatYearMonthDay') || '',
     repeatEndType: get('repeatEndType') || '',
     repeatEndValue: get('repeatEndValue') || '',
-    repeatExcludeDates: parseCalendarArrField(get('repeatExcludeDates'))
+    repeatExcludeDates: parseCalendarArrField(get('repeatExcludeDates')),
+    // 🆕 桌面便利贴：instance 数（缺省 0 = 不显示为便利贴）；同事件可同时显示多张
+    sticky: parseInt(get('sticky'), 10) || 0
   };
 }
 
@@ -2444,6 +2446,8 @@ function calEventToMarkdown(ev) {
   s += '- color: `' + color + '`\n';
   s += '- tags: `' + tagsJson + '`\n';
       s += '- todoIds: `' + todoJson + '`\n';
+      // 🆕 桌面便利贴 instance 数（>0 才写出，缺省 0 不写）
+      if (ev.sticky > 0) s += '- sticky: `' + (ev.sticky | 0) + '`\n';
       if (rep) {
         s += '- repeatMode: `' + String(ev.repeatMode || '') + '`\n';
         s += '- repeatInterval: `' + String(ev.repeatInterval || '1') + '`\n';

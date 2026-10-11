@@ -104,7 +104,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   
   // 发送任意 IPC 消息到主进程（用于附件上传等）
   send: (channel, data) => {
-    const validChannels = ['set-pending-attachment', 'element-refresh-data', 'email-response'];
+    const validChannels = ['set-pending-attachment', 'element-refresh-data', 'email-response', 'sticky-note-refresh'];
     if (validChannels.includes(channel)) {
       ipcRenderer.send(channel, data);
     }
@@ -138,6 +138,21 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // 🆕 监听 Emoji 速查表的插入请求（主进程转发），回调收到 { text }
   onEmojiPick: (callback) => {
     ipcRenderer.on('emoji-pick-request', (event, payload) => callback(payload));
+  },
+
+  // 桌面便利贴「在主程式打开」：主进程转发事件 key
+  onStickyOpenEvent: (callback) => {
+    ipcRenderer.on('open-sticky-event', (event, payload) => callback(payload));
+  },
+
+  // 桌面便利贴「手动刷新」：便利贴窗请求主程式重新渲染该张并推送最新内容
+  onStickyRefreshRequest: (callback) => {
+    ipcRenderer.on('sticky-note-refresh-request', (event, payload) => callback(payload));
+  },
+
+  // 桌面便利贴：从便利贴窗请求切换「分体显示 / 翻页显示」模式（主进程转发给主程式渲染端执行）
+  onStickySetMode: (callback) => {
+    ipcRenderer.on('sticky-set-mode', (event, payload) => callback(payload));
   },
 
   // 打开 DOM 树查看器

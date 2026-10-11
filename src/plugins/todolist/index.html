@@ -1901,9 +1901,6 @@
     .ev-mode-seg button.active { background: var(--ev-primary); color: #fff; }
     .ev-add-btn { border: 1px solid var(--ev-primary); background: var(--ev-card); color: var(--ev-primary); font-size: 13px; padding: 4px 12px; border-radius: 8px; cursor: pointer; }
     .ev-add-btn:hover { background: var(--ev-primary); color: #fff; }
-    .ev-layout-btn { font-size: 12px; padding: 3px 10px; border: 1px solid var(--ev-border); background: var(--ev-card); color: var(--ev-text); border-radius: 8px; cursor: pointer; }
-    .ev-layout-btn:hover { background: var(--ev-primary); color: #fff; border-color: var(--ev-primary); }
-    .ev-layout-btn.active { background: var(--ev-primary); color: #fff; border-color: var(--ev-primary); }
     .ev-monthnav { flex: 0 0 auto; display: flex; align-items: center; gap: 10px; padding-bottom: 6px; }
     .ev-monthnav button { border: 1px solid var(--ev-border); background: var(--ev-card); color: var(--ev-text); font-size: 15px; padding: 2px 10px; border-radius: 8px; cursor: pointer; }
     #tlEvMonthTitle { flex: 1; text-align: center; font-size: 15px; font-weight: 600; }
@@ -2025,6 +2022,7 @@
     /* 📋 列表行「＋☐」：紧挨备注子事件徽章，点击开 CheckBox 小窗（加入后直接存档）；与 .tl-ev-f-mini-btn 同一套 --ev-* 变量 */
     .ev-addcheck-btn { margin-left: 8px; padding: 1px 7px; font-size: 11px; line-height: 1.6; border: 1px solid var(--ev-border, #334155); border-radius: 6px; background: var(--ev-chip-bg, rgba(124,58,237,.1)); color: var(--ev-text, #e2e8f0); cursor: pointer; vertical-align: middle; white-space: nowrap; }
     .ev-addcheck-btn:hover { background: var(--ev-accent, #7c3aed); color: #fff; border-color: var(--ev-accent, #7c3aed); }
+    .ev-sticky-flag { flex: 0 0 auto; display: inline-flex; align-items: center; margin: 0 0 0 4px; cursor: default; opacity: .92; }
     .ev-tag-view { display: inline-block; padding: 3px 12px; border-radius: 999px; background: #7C3AED; border: 1px solid #8B5CF6; color: #fff; font-size: 12px; line-height: 1.35; font-weight: 600; white-space: nowrap; }
     .ev-meta { margin-top: 2px; font-size: 12px; color: var(--ev-muted); }
     .ev-notes { margin-top: 4px; font-size: 12px; color: var(--ev-muted); white-space: normal; word-break: break-word; }
@@ -2328,6 +2326,65 @@
     /* 统计按钮：与 App 图标按钮（.btn 36×36 圆形）一致，用 ev 主题变量保持与行程面板协调 */
     .ev-stats-btn.btn { width: 34px; height: 34px; font-size: 15px; background: var(--ev-card); color: var(--ev-text); border: 1px solid var(--ev-border); }
     .ev-stats-btn.btn:hover { background: var(--ev-primary); color: #fff; }
+    /* 布局/便利贴等圆形图标钮的「已开启」态（颜色即状态） */
+    .ev-stats-btn.btn.active { background: var(--ev-primary); color: #fff; border-color: var(--ev-primary); }
+    /* 便利贴纸片图标：淡黄纸片（自带填色，不随 currentColor 变化）*/
+    .ev-sticky-ic { display: block; margin: 0 auto; pointer-events: none; filter: brightness(.92); transition: filter .15s ease; }
+    .ev-stats-btn.btn:hover .ev-sticky-ic, .ev-stats-btn.btn.active .ev-sticky-ic { filter: brightness(1.05); }
+    /* 🆕 便利贴按钮：角标 + 下拉选单 */
+    .ev-sticky-wrap { position: relative; display: inline-flex; }
+    .ev-sticky-badge {
+      position: absolute; top: -5px; right: -5px; z-index: 2;
+      min-width: 15px; height: 15px; padding: 0 3px; box-sizing: border-box;
+      background: var(--ev-primary); color: #fff;
+      border-radius: 8px; border: 1.5px solid var(--ev-card, #fff);
+      font-size: 7.5pt; line-height: 12px; text-align: center; font-weight: 700;
+      pointer-events: none;
+    }
+    body.dark .ev-sticky-badge { border-color: #1f2430; }
+    .ev-sticky-menu {
+      position: fixed; z-index: 99999; display: none;
+      min-width: 250px; max-width: 330px;
+      background: var(--ev-card); color: var(--ev-text);
+      border: 1px solid var(--ev-border); border-radius: 10px;
+      box-shadow: 0 10px 32px rgba(0,0,0,.20);
+      padding: 6px; font-size: 13px;
+    }
+    body.dark .ev-sticky-menu { box-shadow: 0 10px 32px rgba(0,0,0,.5); }
+    .ev-sticky-menu-item {
+      display: block; width: 100%; text-align: left;
+      background: transparent; border: none; color: inherit;
+      padding: 9px 10px; border-radius: 7px; cursor: pointer; font-size: 13px;
+    }
+    .ev-sticky-menu-item:hover { background: var(--ev-primary); color: #fff; }
+    .ev-sticky-menu-sep { height: 1px; background: var(--ev-border); margin: 6px 4px; }
+    .ev-sticky-menu-head { padding: 2px 10px 6px; font-size: 11px; color: var(--ev-muted); line-height: 1.4; }
+    /* 🆕 显示模式分段控件（分体显示 / 翻页显示） */
+    .ev-sticky-mode { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 4px 6px 6px; }
+    .ev-sticky-mode-label { font-size: 12px; color: var(--ev-muted); }
+    .ev-seg { display: inline-flex; border: 1px solid var(--ev-border); border-radius: 7px; overflow: hidden; }
+    .ev-seg button {
+      border: none; background: transparent; color: var(--ev-text);
+      padding: 5px 10px; font-size: 12px; cursor: pointer; line-height: 1.2;
+    }
+    .ev-seg button + button { border-left: 1px solid var(--ev-border); }
+    .ev-seg button.active { background: var(--ev-primary); color: #fff; }
+    .ev-seg button:not(.active):hover { background: var(--ev-hover, rgba(127,127,127,.10)); }
+    .ev-sticky-menu-list { max-height: 300px; overflow-y: auto; }
+    .ev-sticky-row {
+      display: flex; align-items: center; gap: 8px;
+      padding: 6px 8px; border-radius: 7px;
+    }
+    .ev-sticky-row:hover { background: var(--ev-hover, rgba(127,127,127,.10)); }
+    .ev-sticky-row-dot { width: 10px; height: 10px; border-radius: 50%; flex: 0 0 auto; }
+    .ev-sticky-row-title { flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .ev-sticky-row-meta { font-size: 10px; color: var(--ev-muted); flex: 0 0 auto; }
+    .ev-sticky-row-cancel {
+      flex: 0 0 auto; font-size: 11px; padding: 3px 9px; border-radius: 6px;
+      border: 1px solid var(--ev-border); background: transparent; color: var(--ev-text); cursor: pointer;
+    }
+    .ev-sticky-row-cancel:hover { background: #ef4444; color: #fff; border-color: #ef4444; }
+    .ev-sticky-empty { padding: 12px 10px; text-align: center; color: var(--ev-muted); font-size: 12px; line-height: 1.5; }
     .tl-ev-stats-file { display: block; font-size: 11px; font-weight: 400; color: var(--ev-muted); margin-top: 2px; }
     .tl-ev-stats-body { font-size: 13px; color: var(--ev-text); flex: 1; overflow: auto; min-height: 0; }
     /* 📂 include 加载清单：文件行（勾选框 + 文件名 + 大小） */
@@ -3999,6 +4056,10 @@
         if (params.get('cal') === '1') {
           window.__todoOpenCal = true;
         }
+        // 🆕 桌面便利贴模式（./start.sh --sticky）：自动进入行程视图并弹出桌面便利贴窗口
+        if (params.get('sticky') === '1') {
+          window.__todoOpenSticky = true;
+        }
         // 🆕 主题参数：URL 带 ?theme=dark|light 时，覆盖 localStorage 初始值。
         //    下方 body 脚本中的 loadInitialTheme() 会读取该值决定 body.dark，并同步 highlight.js 主题。
         //    仅影响「启动时的初始主题」，进入后手动切换仍生效（会再次写入 localStorage）。
@@ -4817,7 +4878,23 @@
               <button type="button" id="tlEvModeMonth">月</button>
               <button type="button" id="tlEvModeYear">年</button>
             </div>
-            <button type="button" id="tlCalLayoutBtn" class="ev-layout-btn" title="切换日历与行程明细的排布：上下 / 左右" onclick="tlToggleCalLayout()">▤ 上下</button>
+            <button type="button" id="tlCalLayoutBtn" class="btn ev-stats-btn" title="切换日历与行程明细的排布：上下 / 左右" onclick="tlToggleCalLayout()">▤</button>
+            <span class="ev-sticky-wrap" id="tlStickyWrap"><button type="button" id="tlStickyBtn" class="btn ev-stats-btn" title="桌面便利贴：把标记为「便利贴 ×N」的行程贴到 Mac 桌面（每张一个独立小窗口，可直接拖动/缩放/改色/关闭）。点击展开菜单：开启/关闭便利贴，或查看已设定的事件。" onclick="tlToggleStickyMenu()"><svg class="ev-sticky-ic" viewBox="0 0 24 24" width="17" height="17" aria-hidden="true"><rect x="2.8" y="2.8" width="18.4" height="18.4" rx="2.2" fill="#FCEFA4"/><path d="M3 18.4c0 1.5 1.2 2.8 2.8 2.8h14.4v-2.8H3Z" fill="#F7E694"/><path d="M21.2 14.8v3.6c0 1.5-1.2 2.8-2.8 2.8h-3.6l6.4-6.4Z" fill="#FDF6C8"/><path d="M21.2 14.8 14.8 21.2" stroke="#E8CE7C" stroke-width=".7" stroke-linecap="round" fill="none"/><rect x="8.6" y="6.1" width="6.8" height="1.9" rx=".95" fill="#F0C860"/><rect x="9.1" y="6.5" width="5.8" height=".8" rx=".4" fill="#FFF3C0"/><path d="M6.6 11.4h10.8M6.6 14.2h7.6" stroke="#EBD88F" stroke-width=".9" stroke-linecap="round" fill="none"/></svg><span class="ev-sticky-badge" id="tlStickyBadge" style="display:none">0</span></button>
+              <div class="ev-sticky-menu" id="tlStickyMenu" style="display:none">
+                <div class="ev-sticky-mode">
+                  <span class="ev-sticky-mode-label">显示模式</span>
+                  <div class="ev-seg" id="tlStickyModeSeg">
+                    <button type="button" data-mode="split" onclick="tlSetStickyMode('split')">分体显示</button>
+                    <button type="button" data-mode="flip" onclick="tlSetStickyMode('flip')">翻页显示</button>
+                  </div>
+                </div>
+                <div class="ev-sticky-menu-sep"></div>
+                <button type="button" class="ev-sticky-menu-item" onclick="tlToggleStickyWindow()">开启/关闭 便利贴</button>
+                <div class="ev-sticky-menu-sep"></div>
+                <div class="ev-sticky-menu-head">已设定为便利贴的事件（点「取消」可移除设定）</div>
+                <div class="ev-sticky-menu-list" id="tlStickyMenuList"></div>
+              </div>
+            </span>
             <button type="button" id="tlEvStatsBtn" class="btn ev-stats-btn" title="事件统计：主事件与备注中的子事件，按标签·完成状态统计">📊</button>
             <button type="button" id="tlIncludeListBtn" class="btn ev-stats-btn" title="Include 加载清单：列出同目录被引入的 calendar-*.md 文件及大小" onclick="tlOpenIncludeList()">📄</button>
             <span class="ev-toolbar-flex"></span>
@@ -5066,6 +5143,7 @@
         <label class="tl-ev-f-label">地点<input type="text" id="tlEvFLocation" maxlength="200" placeholder="可留空"></label>
       </div>
       <div class="tl-ev-f-label">颜色<div id="tlEvFColors" class="ev-f-colors"></div></div>
+      <label class="tl-ev-f-label">桌面便利贴 ×N<input type="number" id="tlEvFSticky" min="0" max="9" step="1" placeholder="0 = 不显示" title="在 Mac 桌面显示为便利贴的张数（instance 数）；0 = 不显示，>1 = 同事件同时显示多张" oninput="tlSyncStickyFlag()"></label>
       <div class="tl-ev-f-label">标签
         <div class="tl-ev-tag-picker" id="tl-ev-tag-picker">
           <div class="tl-ev-tag-selected" id="tl-ev-tag-selected"></div>
@@ -5078,7 +5156,7 @@
         <div id="tlEvTodoDropdown" class="ev-todo-dropdown"></div>
       </div>
       <div class="tl-ev-f-label">备注
-        <button type="button" class="tl-ev-f-mini-btn" id="tlEvAddCheckBtn" onclick="tlOpenAddCheckDialog()" title="建立 CheckBox 项目：输入内容将以 - [ ] 形式加到备注末尾">＋ CheckBox</button>
+        <button type="button" class="tl-ev-f-mini-btn" id="tlEvAddCheckBtn" onclick="tlOpenAddCheckDialog()" title="建立 CheckBox 项目：输入内容将以 - [ ] 形式加到备注末尾">＋ CheckBox</button><span class="ev-sticky-flag" id="tlEvFStickyFlag" title="该事件已设为便利贴（桌面可见）" style="display:none"><svg class="ev-sticky-ic" viewBox="0 0 24 24" width="13" height="13" aria-hidden="true"><rect x="2.8" y="2.8" width="18.4" height="18.4" rx="2.2" fill="#FCEFA4"/><path d="M3 18.4c0 1.5 1.2 2.8 2.8 2.8h14.4v-2.8H3Z" fill="#F7E694"/><path d="M21.2 14.8v3.6c0 1.5-1.2 2.8-2.8 2.8h-3.6l6.4-6.4Z" fill="#FDF6C8"/><path d="M21.2 14.8 14.8 21.2" stroke="#E8CE7C" stroke-width=".7" stroke-linecap="round" fill="none"/><rect x="8.6" y="6.1" width="6.8" height="1.9" rx=".95" fill="#F0C860"/><rect x="9.1" y="6.5" width="5.8" height=".8" rx=".4" fill="#FFF3C0"/><path d="M6.6 11.4h10.8M6.6 14.2h7.6" stroke="#EBD88F" stroke-width=".9" stroke-linecap="round" fill="none"/></svg></span>
         <textarea id="tlEvFNotes" rows="3" placeholder="可留空，支持多行"></textarea>
       </div>
       <div class="tl-ev-form-actions">
@@ -6600,6 +6678,198 @@
       modal.classList.add('sidebar-collapsed');
       const handle = document.getElementById('editorSidebarHandle');
       if (handle) handle.title = '展开 操作面板';
+    }
+
+    // 🆕 桌面便利贴开关：请求主进程「切换」全部便利贴窗口（每张一个独立小窗口）
+    let tlStickyNotesOpen = false;
+    let tlStickyMode = (localStorage.getItem('tlStickyDisplayMode') || 'split'); // 'split'（分体显示）/ 'flip'（翻页显示）
+    function tlSyncStickyModeSeg() {
+      const seg = document.getElementById('tlStickyModeSeg');
+      if (!seg) return;
+      seg.querySelectorAll('button[data-mode]').forEach(function (b) { b.classList.toggle('active', b.getAttribute('data-mode') === tlStickyMode); });
+    }
+    function tlSyncStickyBtn() {
+      const b = document.getElementById('tlStickyBtn');
+      if (b) {
+        b.classList.toggle('active', tlStickyNotesOpen);
+        b.title = tlStickyNotesOpen
+          ? ('桌面便利贴已开启（' + (tlStickyMode === 'flip' ? '翻页显示' : '分体显示') + '，点击关闭全部）')
+          : '桌面便利贴：把标记为「便利贴 ×N」的行程贴到 Mac 桌面（每张一个独立小窗口，可直接拖动/缩放/改色/关闭）';
+      }
+    }
+    async function tlToggleStickyWindow() {
+      tlCloseStickyMenu();
+      if (!externalFilePath) {
+        if (typeof showToast === 'function') showToast('请先打开 calendar.md', 'danger');
+        return;
+      }
+      try {
+        if (!window.electronAPI || !window.electronAPI.invoke) return;
+        if (tlStickyNotesOpen) {
+          await window.electronAPI.invoke('close-sticky-notes');
+          tlStickyNotesOpen = false;
+          tlSyncStickyBtn();
+          tlUpdateStickyBadge();
+          if (typeof showToast === 'function') showToast('已关闭桌面便利贴');
+          return;
+        }
+        await tlOpenStickyNotes();
+      } catch (e) { console.warn('[TodoList] 切换桌面便利贴失败:', e); }
+    }
+
+    // 🆕 以当前显示模式开启全部便利贴窗口（分体＝每贴一窗；翻页＝单窗循环）
+    async function tlOpenStickyNotes() {
+      if (!window.electronAPI || !window.electronAPI.invoke) return;
+      if (!externalFilePath) { if (typeof showToast === 'function') showToast('请先打开 calendar.md', 'danger'); return; }
+      const refs = (typeof tlStickyNoteRefs === 'function') ? tlStickyNoteRefs() : [];
+      const r = await window.electronAPI.invoke('open-sticky-notes', { file: externalFilePath, notes: refs, mode: tlStickyMode });
+      tlStickyNotesOpen = !!(r && r.ok);
+      tlSyncStickyBtn();
+      tlUpdateStickyBadge();
+      if (typeof showToast === 'function') {
+        if (r && r.count) {
+          if (tlStickyMode === 'flip') showToast('已开启翻页便利贴（' + r.count + ' 张，◀ ▶ 翻页）');
+          else showToast('已开启 ' + r.count + ' 张桌面便利贴');
+        } else showToast('没有标记为便利贴的事件（把「便利贴 ×N」设为 ≥1）');
+      }
+    }
+
+    // 🆕 切换显示模式（分体显示 / 翻页显示）：记忆到 localStorage；若正开启则按新模式重开
+    async function tlSetStickyMode(mode) {
+      if (mode !== 'split' && mode !== 'flip') return;
+      tlStickyMode = mode;
+      try { localStorage.setItem('tlStickyDisplayMode', mode); } catch (e) {}
+      tlSyncStickyModeSeg();
+      if (tlStickyNotesOpen) {
+        try { await window.electronAPI.invoke('close-sticky-notes'); } catch (e) {}
+        tlStickyNotesOpen = false;
+        await tlOpenStickyNotes();
+      }
+    }
+
+    // 🆕 便利贴按钮角标：显示当前 calendar.md 中一共设定了几张便利贴（六号字 ≈ 7.5pt）
+    function tlUpdateStickyBadge() {
+      const el = document.getElementById('tlStickyBadge');
+      if (!el) return;
+      const refs = (typeof tlStickyNoteRefs === 'function') ? tlStickyNoteRefs() : [];
+      const n = refs.length;
+      el.textContent = n > 99 ? '99+' : String(n);
+      el.style.display = n > 0 ? '' : 'none';
+    }
+
+    // 🆕 便利贴按钮：点击展开下拉选单（开启/关闭 + 已设定事件列表）
+    function tlToggleStickyMenu() {
+      const menu = document.getElementById('tlStickyMenu');
+      const btn = document.getElementById('tlStickyBtn');
+      if (!menu || !btn) return;
+      if (menu.style.display === 'block') { tlCloseStickyMenu(); return; }
+      tlRenderStickyMenuList();
+      tlSyncStickyModeSeg();
+      menu.style.display = 'block';
+      const r = btn.getBoundingClientRect();
+      const mw = menu.offsetWidth || 260;
+      let left = r.right - mw;
+      if (left < 8) left = 8;
+      menu.style.top = (r.bottom + 6) + 'px';
+      menu.style.left = left + 'px';
+    }
+    function tlCloseStickyMenu() {
+      const menu = document.getElementById('tlStickyMenu');
+      if (menu) menu.style.display = 'none';
+    }
+
+    // 🆕 便利贴选单：列出所有已设定为便利贴的事件，可逐条取消
+    function tlRenderStickyMenuList() {
+      const list = document.getElementById('tlStickyMenuList');
+      if (!list) return;
+      const events = (typeof tlCalEvents !== 'undefined' && Array.isArray(tlCalEvents))
+        ? tlCalEvents.filter(function (e) { return (e.sticky | 0) > 0; }) : [];
+      if (!events.length) {
+        list.innerHTML = '<div class="ev-sticky-empty">还没有事件被设为便利贴<br>（在行程表单里把「桌面便利贴 ×N」设为 ≥1）</div>';
+        return;
+      }
+      list.innerHTML = events.map(function (ev) {
+        const color = ev.color || '#7c3aed';
+        const n = ev.sticky | 0;
+        const esc = function (s) { return String(s).replace(/[<>&]/g, function (c) { return { '<': '&lt;', '>': '&gt;', '&': '&amp;' }[c]; }); };
+        const title = esc(ev.title || '(无标题)');
+        const uid = String(ev.uid || '').replace(/"/g, '');
+        return '<div class="ev-sticky-row" data-uid="' + uid + '">'
+          + '<span class="ev-sticky-row-dot" style="background:' + color + '"></span>'
+          + '<span class="ev-sticky-row-title" title="' + title + '">' + title + '</span>'
+          + '<span class="ev-sticky-row-meta">' + (ev.date || '') + ' · ×' + n + '</span>'
+          + '<button type="button" class="ev-sticky-row-cancel" onclick="tlCancelSticky(\'' + uid + '\')">取消</button>'
+          + '</div>';
+      }).join('');
+    }
+
+    // 🆕 便利贴选单：取消某事件的便利贴设定（写回 calendar.md）
+    async function tlCancelSticky(uid) {
+      if (!window.electronAPI || !window.electronAPI.invoke) return;
+      if (typeof tlCalEvents === 'undefined') return;
+      tlCalEvents = tlAllEvents(document.getElementById('taskText').value);
+      const ev = tlCalEvents.find(function (x) { return x.uid === uid; });
+      if (!ev) { if (typeof showToast === 'function') showToast('找不到该行程（内容可能已被修改）', 'danger'); return; }
+      if (ev.ro) { if (typeof showToast === 'function') showToast('此行程来自只读包含文件，不可更改', 'danger'); return; }
+      const n = ev.sticky | 0;
+      const key = (ev.title || '') + '|' + (ev.date || '');
+      ev.sticky = 0;
+      tlApplyEventsToBuffer();
+      if (typeof saveTask === 'function') saveTask(false); // 落盘到 calendar.md
+      // 若便利贴正开启，关掉这张（及其多 instance）
+      if (tlStickyNotesOpen && n > 0) {
+        for (let i = 0; i < n; i++) {
+          try { await window.electronAPI.invoke('sticky-note-close', { key: key, idx: i }); } catch (e) {}
+        }
+      }
+      tlCloseStickyMenu();
+      tlRenderStickyMenuList();
+      tlUpdateStickyBadge();
+      if (typeof showToast === 'function') showToast('已取消「' + (ev.title || '') + '」的桌面便利贴设定', 'success');
+    }
+
+    // 🆕 点击空白处关闭便利贴选单
+    document.addEventListener('click', function (e) {
+      const menu = document.getElementById('tlStickyMenu');
+      if (!menu || menu.style.display !== 'block') return;
+      const wrap = document.getElementById('tlStickyWrap');
+      if (wrap && wrap.contains(e.target)) return;
+      tlCloseStickyMenu();
+    }, true);
+
+    // 🆕 桌面便利贴「在主程式打开」：主进程把事件 key 送来 → 定位并打开该行程表单
+    function tlOnStickyOpenEvent(payload) {
+      const key = payload && payload.key;
+      if (!key) return;
+      tlCalEvents = (typeof tlAllEvents === 'function')
+        ? tlAllEvents(document.getElementById('taskText').value)
+        : tlCalEvents;
+      const uid = (typeof tlFindEventUidByKey === 'function') ? tlFindEventUidByKey(key) : null;
+      if (!uid) { if (typeof showToast === 'function') showToast('找不到该行程', 'danger'); return; }
+      try { if (typeof tlOpenEventForm === 'function') tlOpenEventForm(uid); }
+      catch (e) { console.warn('[TodoList] 打开便利贴对应行程失败:', e); }
+    }
+    if (window.electronAPI && typeof window.electronAPI.onStickyOpenEvent === 'function') {
+      window.electronAPI.onStickyOpenEvent(function (p) { tlOnStickyOpenEvent(p); });
+    }
+    // 🆕 便利贴窗点「刷新」→ 主程式重渲染该张（或所有）便利贴并回推最新内容
+    function tlOnStickyRefreshRequest(payload) {
+      if (!window.electronAPI || !window.electronAPI.send) return;
+      const refs = (typeof tlStickyNoteRefs === 'function') ? tlStickyNoteRefs() : [];
+      if (payload && typeof payload.key === 'string') {
+        const key = payload.key, idx = +payload.idx || 0;
+        const ref = refs.find(r => r.key === key && r.idx === idx);
+        if (ref) window.electronAPI.send('sticky-note-refresh', ref);
+      } else {
+        refs.forEach(r => window.electronAPI.send('sticky-note-refresh', r));
+      }
+    }
+    if (window.electronAPI && typeof window.electronAPI.onStickyRefreshRequest === 'function') {
+      window.electronAPI.onStickyRefreshRequest(function (p) { tlOnStickyRefreshRequest(p); });
+    }
+    // 🆕 便利贴窗下拉菜单请求切换显示模式（分体/翻页）：转给 tlSetStickyMode 统一处理（记忆 + 重开）
+    if (window.electronAPI && typeof window.electronAPI.onStickySetMode === 'function') {
+      window.electronAPI.onStickySetMode(function (p) { if (p && (p.mode === 'split' || p.mode === 'flip')) tlSetStickyMode(p.mode); });
     }
 
     // ============================================================
@@ -13917,7 +14187,19 @@
         try { await tlAutoOpenCalendar(); } catch (e) { console.warn('[TodoList] 自动进入行程视图失败:', e); }
         // 🆕 自动收起右侧「操作面板」抽屉，避免遮挡日历视图
         tlCloseEditorSidebar();
+        // 🆕 桌面便利贴模式：自动弹出桌面便利贴窗口（传入当前 calendar.md 路径）
+        if (window.__todoOpenSticky && externalFilePath) {
+          try {
+            if (window.electronAPI && window.electronAPI.invoke) {
+              const refs = (typeof tlStickyNoteRefs === 'function') ? tlStickyNoteRefs() : [];
+              const rr = await window.electronAPI.invoke('open-sticky-notes', { file: externalFilePath, notes: refs, mode: (localStorage.getItem('tlStickyDisplayMode') || 'split') });
+              tlStickyNotesOpen = !!(rr && rr.ok);
+              tlSyncStickyBtn();
+            }
+          } catch (e) { console.warn('[TodoList] 弹出桌面便利贴窗口失败:', e); }
+        }
       }
+      tlUpdateStickyBadge();
     }
 
     // 🆕 监听 #mdPreview 内容变化，自动补填其中的文件嵌入占位。

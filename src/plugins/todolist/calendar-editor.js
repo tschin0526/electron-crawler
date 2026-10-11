@@ -68,6 +68,18 @@
     let tlEvFormTodoIds = [];   // 表单内「关联 Todo 卡片」临时列表（仅编辑期，不污染存档对象）
     let tlEvFormUid = null;
     let tlEvFormColor = null;
+    let tlEvFormSticky = 0;   // 🆕 桌面便利贴 instance 数（表单临时值，不污染存档对象）
+
+    // 表单内「＋ CheckBox」按钮旁的便利贴小图标：sticky>0 才显示（开表单时载入 + sticky 字段改动时实时同步）
+    function tlSyncStickyFlag() {
+      const flag = document.getElementById('tlEvFStickyFlag');
+      if (!flag) return;
+      const v = parseInt((document.getElementById('tlEvFSticky') || {}).value, 10) || 0;
+      flag.style.display = v > 0 ? '' : 'none';
+    }
+
+    // 🆕 便利贴小图标：与工具栏 #tlStickyBtn 用的同一段 SVG（淡黄折叠便签造型），保证视觉一致
+    const TL_STICKY_IC_SVG = '<svg class="ev-sticky-ic" viewBox="0 0 24 24" width="13" height="13" aria-hidden="true"><rect x="2.8" y="2.8" width="18.4" height="18.4" rx="2.2" fill="#FCEFA4"/><path d="M3 18.4c0 1.5 1.2 2.8 2.8 2.8h14.4v-2.8H3Z" fill="#F7E694"/><path d="M21.2 14.8v3.6c0 1.5-1.2 2.8-2.8 2.8h-3.6l6.4-6.4Z" fill="#FDF6C8"/><path d="M21.2 14.8 14.8 21.2" stroke="#E8CE7C" stroke-width=".7" stroke-linecap="round" fill="none"/><rect x="8.6" y="6.1" width="6.8" height="1.9" rx=".95" fill="#F0C860"/><rect x="9.1" y="6.5" width="5.8" height=".8" rx=".4" fill="#FFF3C0"/><path d="M6.6 11.4h10.8M6.6 14.2h7.6" stroke="#EBD88F" stroke-width=".9" stroke-linecap="round" fill="none"/></svg>';
     let tlEvFormTags = [];
     let tlEvTagEditIndex = -1;   // 正在内联编辑分类的选中标签下标（-1＝无）
     const TL_CAL_COLORS = ['#FF3B30', '#FF9500', '#FFCC00', '#34C759', '#5AC8FA', '#007AFF', '#5856D6', '#AF52DE', '#FF2D55', '#A2845E', '#8E8E93'];
@@ -485,7 +497,9 @@
         repeatYearMonthDay: get('repeatYearMonthDay') || '',
         repeatEndType: get('repeatEndType') || '',
         repeatEndValue: get('repeatEndValue') || '',
-        repeatExcludeDates: tlParseArr(get('repeatExcludeDates'))
+        repeatExcludeDates: tlParseArr(get('repeatExcludeDates')),
+        // 🆕 桌面便利贴：instance 数（缺省 0 = 不显示为便利贴）；同事件可同时显示多张
+        sticky: parseInt(get('sticky'), 10) || 0
       };
     }
     function tlParseEvents(md) {
@@ -622,6 +636,8 @@
       s += '- color: `' + color + '`\n';
       s += '- tags: `' + tagsJson + '`\n';
       s += '- todoIds: `' + todoJson + '`\n';
+      // 🆕 桌面便利贴 instance 数（>0 才写出，缺省 0 不写）
+      if (ev.sticky > 0) s += '- sticky: `' + (ev.sticky | 0) + '`\n';
       if (rep) {
         s += '- repeatMode: `' + String(ev.repeatMode || '') + '`\n';
         s += '- repeatInterval: `' + String(ev.repeatInterval || '1') + '`\n';
@@ -693,6 +709,36 @@
       return String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
     }
     // ===== 跨天行程辅助 =====
+    // 🆕 桌面便利贴清单：把 sticky>0 的事件展开成 [{key,idx,html}]（key = 标题|日期，供桌面便利贴窗口定位）
+    //    html 复用主程式 tlRenderNotes/renderMarkdown 管线（含 [[cp:]]→✅、[[dl:]]→📅、checkbox），
+    //    渲染好的 HTML 交给便利贴窗口显示 → 单一可信来源，两处渲染永不漂移。
+    function tlStickyNoteRefs() {
+      const out = [];
+      tlCalEvents.forEach((ev) => {
+        const n = parseInt(ev && ev.sticky, 10) || 0;
+        if (n > 0) {
+          const key = (ev.title || '') + '|' + (ev.date || '');
+          const html = (typeof tlRenderNotes === 'function') ? tlRenderNotes(ev.notes, null) : '';
+          // 🆕 标题同样由主窗口渲染（与列表行同一 tlRenderInlineMarkdown 管线），避免便利贴里显示原始 <BIG> 等标签
+          const titleHtml = (typeof tlRenderInlineMarkdown === 'function') ? tlRenderInlineMarkdown(ev.title || '') : '';
+          for (let i = 0; i < n; i++) out.push({ key, idx: i, html, titleHtml });
+        }
+      });
+      return out;
+    }
+    // 🆕 主程式事件变更后，把每张便利贴最新渲染结果推给对应便利贴窗（经由主进程中转）
+    //   仅在便利贴开启时推送，避免无谓渲染；主进程会只转发给真实存在的窗口
+    function tlPushStickyRefreshes() {
+      if (typeof tlStickyNotesOpen !== 'undefined' && !tlStickyNotesOpen) return;
+      if (!window.electronAPI || !window.electronAPI.send) return;
+      tlStickyNoteRefs().forEach((ref) => { window.electronAPI.send('sticky-note-refresh', ref); });
+    }
+    // 依据标题|日期 找事件 uid（供桌面便利贴「在主程式打开」用）
+    function tlFindEventUidByKey(key) {
+      const ev = tlCalEvents.find((x) => ((x.title || '') + '|' + (x.date || '')) === key);
+      return ev ? ev.uid : null;
+    }
+
     function tlIsMultiDay(ev) { return !!(ev && ev.endDate && ev.endDate !== ev.date); }
     // ⚠️ 必须含「日」：曾漏掉 (+m[3]) → 跨天行程/假日区间显示成「2026/9 – 2026/9」（看不出是哪天）。与 LITE calMdShort 对齐。
     function tlMdShort(d) { const m = String(d || '').match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/); return m ? (+m[1]) + '/' + (+m[2]) + '/' + (+m[3]) : (d || ''); }
@@ -2113,6 +2159,7 @@
         tlSubProgressBadge(ev) +
         // 📋 列表行「＋☐」：与编辑表单备注旁同一入口（开 CheckBox 小窗）；列表模式按「加入备注」直接存档
         (ev.ro ? '' : '<button type="button" class="ev-addcheck-btn" title="在备注末尾加入 CheckBox（加入后直接存档）" onclick="tlOpenAddCheckDialog(\'' + tlEscapeHtml(ev.uid) + '\')">＋☐</button>') +
+        (ev.sticky > 0 ? '<span class="ev-sticky-flag" title="该事件已设为便利贴（桌面可见）">' + TL_STICKY_IC_SVG + '</span>' : '') +
         tlEventTodoLinks(ev) +
         '</div>' +
         '<div class="ev-meta">' + tlEscapeHtml(time) + (ev.location ? ' \u00b7 \ud83d\udccd' + tlEscapeHtml(ev.location) : '') + '</div>' +
@@ -2702,7 +2749,12 @@
         if (el) el.classList.toggle('horizontal', horizontal);
       });
       const btn = document.getElementById('tlCalLayoutBtn');
-      if (btn) { btn.textContent = horizontal ? '▥ 左右' : '▤ 上下'; btn.classList.toggle('active', horizontal); }
+      // 圆形图标钮：▤＝上下、▥＝左右；.active 高亮表示当前为左右布局（颜色即状态）
+      if (btn) {
+        btn.textContent = horizontal ? '▥' : '▤';
+        btn.title = horizontal ? '当前：左右布局（点击切换为上下）' : '当前：上下布局（点击切换为左右）';
+        btn.classList.toggle('active', horizontal);
+      }
     }
     // 切换：读当前（以月视图容器为准，三容器状态一致），翻转后存盘并重套
     function tlToggleCalLayout() {
@@ -2928,6 +2980,9 @@
       tlToggleAllDay();
       document.getElementById('tlEvFLocation').value = ev ? ev.location : '';
       tlEvFormColor = ev ? ev.color : TL_CAL_COLORS[0];
+      tlEvFormSticky = ev ? (ev.sticky || 0) : 0;
+      document.getElementById('tlEvFSticky').value = tlEvFormSticky;
+      tlSyncStickyFlag();
       tlEvFormTags = tlNormalizeTags(ev && ev.tags ? ev.tags : []);
       document.getElementById('tlEvFTags').value = '';
       tlRenderTagPicker();
@@ -3105,6 +3160,8 @@
         endTime: allDay ? '' : document.getElementById('tlEvFEnd').value,
         location: document.getElementById('tlEvFLocation').value.trim(),
         color: tlEvFormColor || TL_CAL_COLORS[0],
+        // 🆕 桌面便利贴 instance 数（0 = 不显示为便利贴）
+        sticky: Math.max(0, parseInt(document.getElementById('tlEvFSticky').value, 10) || 0),
         tags: tlEvFormTags.slice(),
         notes: document.getElementById('tlEvFNotes').value.replace(/\r\n/g, '\n'),
         todoIds: tlEvFormTodoIds.slice()
@@ -3392,6 +3449,8 @@
       if (typeof autoGrowTextarea === 'function') autoGrowTextarea(ta);
       if (typeof markCurrentTabDirty === 'function') markCurrentTabDirty();
       tlRenderEventsContent();
+      if (typeof tlUpdateStickyBadge === 'function') tlUpdateStickyBadge();
+      if (typeof tlPushStickyRefreshes === 'function') tlPushStickyRefreshes();
     }
 
     // ===== 🖱 悬停行程事件 → 放大提示框（更大字体显示事件内容） =====

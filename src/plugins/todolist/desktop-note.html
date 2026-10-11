@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <title>便利贴</title>
+  <style>
+    html, body { margin: 0; padding: 0; width: 100%; height: 100%; background: transparent; overflow: hidden; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; user-select: none; }
+    #note {
+      position: absolute; inset: 0; box-sizing: border-box;
+      border-radius: 12px; overflow: hidden;
+      box-shadow: 0 8px 22px rgba(0,0,0,.28), 0 1px 3px rgba(0,0,0,.15);
+      border: 1px solid rgba(0,0,0,.06);
+      display: flex; flex-direction: column;
+      -webkit-app-region: drag; /* 原生拖拽：由窗口服务器直接移动（零 IPC、零 rAF，最丝滑） */
+    }
+    .bar { height: 6px; flex: none; }
+    .head { display: flex; align-items: center; gap: 6px; padding: 8px 34px 4px 12px; flex: none; }
+    /* 拖拽区＝色条/标题栏/日期/标签：手型光标提示「这里就是拖动把手」 */
+    .bar, .head, .meta, .tags { -webkit-app-region: drag; cursor: grab; }
+    .title { font-weight: 700; font-size: 14px; color: #1f2430; flex: 1; word-break: break-word; line-height: 1.35; }
+    .iconbtn {
+      flex: none; width: 22px; height: 22px; border-radius: 6px; border: none; cursor: pointer;
+      background: rgba(0,0,0,.06); color: #4b5160; font-size: 12px; line-height: 1; display: inline-flex;
+      align-items: center; justify-content: center;
+      -webkit-app-region: no-drag;
+    }
+    .iconbtn:hover { background: rgba(0,0,0,.12); }
+    /* 右上角 ☰ 菜单按钮：绝对定位贴角，距上边＝距右边（各 6px），背景透明 */
+    #btnMenu { position: absolute; top: 6px; right: 6px; background: transparent; }
+    #btnMenu:hover { background: rgba(0,0,0,.08); }
+    .meta { padding: 0 12px; font-size: 11px; color: #8a8f99; flex: none; }
+    .tags { margin: 6px 12px 0; padding: 0; list-style: none; display: flex; flex-wrap: wrap; gap: 4px; flex: none; }
+    .tags li { background: rgba(0,0,0,.06); border-radius: 99px; padding: 1px 8px; font-size: 10px; color: #5b6170; }
+    .body { padding: 6px 12px 10px; font-size: 12px; color: #33384a; overflow: auto; flex: 1; line-height: 1.5; -webkit-app-region: no-drag; }
+    .body > *:first-child { margin-top: 0; }
+    .body > *:last-child { margin-bottom: 0; }
+    .body h1 { font-size: 1.35em; font-weight: 700; margin: .6em 0 .3em; }
+    .body h2 { font-size: 1.2em; font-weight: 700; margin: .55em 0 .3em; }
+    .body h3 { font-size: 1.08em; font-weight: 600; margin: .5em 0 .25em; }
+    .body h4, .body h5, .body h6 { font-size: 1em; font-weight: 600; margin: .45em 0 .2em; }
+    .body p { margin: .35em 0; }
+    .body strong { font-weight: 700; }
+    .body em { font-style: italic; }
+    .body del { text-decoration: line-through; opacity: .7; }
+    .body ul, .body ol { margin: .3em 0; padding-left: 1.4em; }
+    .body li { margin: .15em 0; }
+    .body ul li { list-style: disc; } .body ol li { list-style: decimal; }
+    .body ul li input[type=checkbox], .body ol li input[type=checkbox] { margin-right: 4px; vertical-align: -1px; }
+    .body blockquote { margin: .4em 0; padding: .2em 0 .2em .8em; border-left: 3px solid rgba(0,0,0,.16); color: #5b6170; }
+    .body hr { border: none; border-top: 1px solid rgba(0,0,0,.12); margin: .6em 0; }
+    .body a { color: #2563EB; text-decoration: underline; }
+    .body img { max-width: 100%; height: auto; border-radius: 6px; margin: .2em 0; }
+    .body table { border-collapse: collapse; margin: .4em 0; font-size: 11px; width: 100%; }
+    .body th, .body td { border: 1px solid rgba(0,0,0,.14); padding: 3px 6px; text-align: left; }
+    .body th { background: rgba(0,0,0,.05); font-weight: 600; }
+    .body code { background: rgba(0,0,0,.06); padding: 0 3px; border-radius: 3px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .95em; }
+    .body pre { background: rgba(0,0,0,.06); padding: 8px; border-radius: 6px; overflow: auto; }
+    .body pre code { background: none; padding: 0; }
+    .body .katex { font-size: 1em; }
+    /* 📝 備註 Markdown checkbox：與主程式 index.html 的 .ev-cb / .ev-md-check 同源樣式
+       （uid 传 null → 无 data-uid，故为只读观感，方框/勾选填充/删除线靠 CSS 呈现） */
+    .ev-cb {
+      display: inline-block; min-width: 11px; height: 11px;
+      border: 1px solid var(--ev-muted, #94a3b8); border-radius: 3px;
+      margin-right: 4px; vertical-align: -1px; text-align: center;
+      font-size: 9px; line-height: 11px; color: #fff;
+    }
+    .ev-md-check.done .ev-cb { background: var(--ev-primary, #7c3aed); border-color: var(--ev-primary, #7c3aed); }
+    .ev-md-check.done { text-decoration: line-through; opacity: 0.75; }
+    .ev-md-check { cursor: default; }
+    .body h1, .body h2, .body h3 { font-size: 13px; margin: .4em 0 .2em; }
+    .body p { margin: .3em 0; }
+    .body code { background: rgba(0,0,0,.06); padding: 0 3px; border-radius: 3px; }
+    .body pre { background: rgba(0,0,0,.06); padding: 6px; border-radius: 6px; overflow: auto; }
+    .rz { position: absolute; right: 0; bottom: 0; width: 18px; height: 18px; cursor: nwse-resize; z-index: 6;
+      background: linear-gradient(135deg, transparent 50%, rgba(0,0,0,.4) 50%, rgba(0,0,0,.4) 62%, transparent 62%, transparent 72%, rgba(0,0,0,.4) 72%, rgba(0,0,0,.4) 84%, transparent 84%); -webkit-app-region: no-drag; }
+    /* 🆕 汉堡下拉菜单：收纳全部操作（翻页◀▶ / 刷新 / 打开 / 颜色·透明度 / 最小化 / 关闭），
+       画面只留右上角一个 ☰ 按钮 */
+    .menu {
+      position: absolute; top: 32px; right: 6px; z-index: 20; display: none;
+      min-width: 158px; max-width: 210px; max-height: calc(100% - 40px); overflow-y: auto;
+      background: rgba(255,255,255,.97); border-radius: 10px; padding: 4px;
+      box-shadow: 0 6px 18px rgba(0,0,0,.25); color: #33384a; font-size: 12px;
+      -webkit-app-region: no-drag;
+    }
+    .menu.open { display: block; }
+    .mi { display: block; width: 100%; text-align: left; background: transparent; border: none; color: inherit;
+      padding: 2px 9px; border-radius: 6px; cursor: pointer; font-size: 12px; white-space: nowrap; }
+    .mi:hover { background: rgba(0,0,0,.08); }
+    .mi:disabled { opacity: .35; cursor: default; }
+    .mi:disabled:hover { background: transparent; }
+    .msep { height: 1px; background: rgba(0,0,0,.10); margin: 2px 6px; }
+    /* 菜单内的翻页行 ◀ n/N ▶（仅翻页模式显示） */
+    .m-nav { display: flex; align-items: center; gap: 6px; padding: 0 2px; }
+    .m-nav .mi { width: 28px; text-align: center; flex: none; padding: 2px 0; }
+    .mind { flex: 1; text-align: center; font-size: 11px; color: #5b6170; font-variant-numeric: tabular-nums; }
+    #mFlipWrap { display: none; }
+    #note.flip #mFlipWrap { display: block; }
+    /* 菜单内的「背景色 / 透明度」子区（点 🎨 菜单项展开/收起） */
+    .m-cfg { display: none; padding: 2px 6px 6px; }
+    .m-cfg.open { display: block; }
+    /* 菜单内的「显示模式」分段控件（分体 / 翻页） */
+    .m-mode { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 2px 8px 4px; }
+    .m-mode-label { font-size: 11px; color: #5b6170; }
+    .m-seg { display: inline-flex; border: 1px solid rgba(0,0,0,.15); border-radius: 6px; overflow: hidden; }
+    .m-seg-btn { width: auto; flex: none; text-align: center; padding: 3px 10px; border-radius: 0; }
+    .m-seg-btn + .m-seg-btn { border-left: 1px solid rgba(0,0,0,.15); }
+    .m-seg-btn.active { background: #2563EB; color: #fff; }
+    .m-seg-btn:not(.active):hover { background: rgba(0,0,0,.08); }
+    /* 颜色/透明度子区（收纳于下拉菜单内） */
+    .plabel { margin: 4px 0 5px; font-size: 11px; color: #6b7280; }
+    .swatches { display: grid; grid-template-columns: repeat(6, 1fr); gap: 5px; margin-bottom: 8px; }
+    .swatches .sw { width: 18px; height: 18px; border-radius: 50%; cursor: pointer; border: 1px solid rgba(0,0,0,.15); }
+    .opacityRow { display: flex; align-items: center; gap: 6px; }
+    .opacityRow input[type=range] { flex: 1; }
+    /* 字体颜色选中环 + 字重分段按钮 */
+    .swatches .sw.active { box-shadow: 0 0 0 2px #2563EB; }
+    .m-weight { display: flex; gap: 4px; }
+    .m-wbtn { width: auto; flex: 1; text-align: center; padding: 3px 0; background: rgba(0,0,0,.05); border-radius: 6px; }
+    .m-wbtn.active { background: #2563EB; color: #fff; }
+    .m-wbtn:not(.active):hover { background: rgba(0,0,0,.10); }
+    /* 🆕 最小化（收合成小卡）：隐藏正文/缩放把手，保留 标题＋日期＋标签＋☰菜单（紧凑小卡） */
+    #note.minimized .body, #note.minimized .rz { display: none; }
+  </style>
+</head>
+<body>
+  <div id="note">
+    <div class="bar" id="bar"></div>
+    <div class="head">
+      <div class="title" id="title"></div>
+      <button class="iconbtn" id="btnMenu" title="菜单：翻页 / 刷新 / 打开 / 颜色 / 最小化 / 关闭">☰</button>
+    </div>
+    <div class="meta" id="meta"></div>
+    <ul class="tags" id="tags"></ul>
+    <div class="body" id="body"></div>
+    <div class="menu" id="menu">
+      <div class="m-mode">
+        <span class="m-mode-label">显示模式</span>
+        <div class="m-seg">
+          <button class="mi m-seg-btn" id="miModeSplit" data-mode="split">分体</button>
+          <button class="mi m-seg-btn" id="miModeFlip" data-mode="flip">翻页</button>
+        </div>
+      </div>
+      <div class="msep"></div>
+      <div id="mFlipWrap">
+        <div class="m-nav">
+          <button class="mi" id="miPrev" title="上一张（←）">◀</button>
+          <span class="mind" id="flipInd">1 / 1</span>
+          <button class="mi" id="miNext" title="下一张（→）">▶</button>
+        </div>
+        <div class="msep"></div>
+      </div>
+      <button class="mi" id="miRefresh">🔄 刷新内容</button>
+      <button class="mi" id="miOpen">📂 在主程式打开</button>
+      <button class="mi" id="miCfg">🎨 背景色 / 透明度 ▾</button>
+      <div class="m-cfg" id="mCfg">
+        <div class="plabel">背景色</div>
+        <div class="swatches" id="swatches"></div>
+        <div class="plabel">透明度</div>
+        <div class="opacityRow"><input type="range" id="opacity" min="20" max="100" step="5"><span id="opacityVal"></span></div>
+        <div class="plabel">字体颜色</div>
+        <div class="swatches" id="textSwatches"></div>
+        <div class="plabel">字重</div>
+        <div class="m-weight">
+          <button class="mi m-wbtn" data-w="400">常规</button>
+          <button class="mi m-wbtn" data-w="600">半粗</button>
+          <button class="mi m-wbtn" data-w="700">粗体</button>
+        </div>
+      </div>
+      <div class="msep"></div>
+      <div class="m-nav">
+        <button class="mi" id="miZoomOut" title="缩小内容字体（A−）">A−</button>
+        <span class="mind" id="zoomInd">100%</span>
+        <button class="mi" id="miZoomIn" title="放大内容字体（A＋）">A＋</button>
+      </div>
+      <div class="msep"></div>
+      <button class="mi" id="miMin">▁ 最小化（收合成小卡）</button>
+      <button class="mi" id="miClose">× 关闭</button>
+    </div>
+    <div class="rz" id="rz"></div>
+  </div>
+  <script src="desktop-note.js"></script>
+</body>
+</html>

@@ -2,7 +2,7 @@
  * 窗口管理与 UI IPC 模组
  * 从 main.js 拆分而来
  */
-const { BrowserWindow, ipcMain, clipboard, nativeImage, app, dialog } = require('electron');
+const { BrowserWindow, ipcMain, clipboard, nativeImage, app, dialog, screen } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
@@ -14,6 +14,7 @@ let mainWindow = null;
 let elementViewerWindow = null;
 let domTreeViewWindow = null;
 let aiResponseViewerWindow = null;
+const stickyNoteWindows = new Map();   // 'noteKey#idx' -> BrowserWindow
 
 // 🆕 B方案：邮件详情窗口主题跟随主程式统一控制
 //    主进程维护全局工作区黑夜模式状态，并跟踪所有已打开的邮件详情窗口，
@@ -148,6 +149,10 @@ function createWindow() {
   //    邮件按钮因依赖 webview 宿主桥接，在独立模式下由插件自身的 index.html 隐藏。
   const isTodolistMode = process.argv.includes('--todolist');
   const isCalendarMode = process.argv.includes('--calendar');
+  const isStickyMode = process.argv.includes('--sticky');
+  // --sticky 单独使用时（未带 --calendar/--todolist）：只显示桌面便利贴，
+  // 主窗口（calendar 应用）不展开在画面上，仅停驻功能坞（Dock）。
+  const isStickyOnly = isStickyMode && !isCalendarMode && !isTodolistMode;
 
   // 🆕 主题参数：--dark 强制暗色、--light 强制亮色。
   //    解析后作为查询参数透传给入口 HTML：独立模式由 TodoList 自身读取，主程序模式暂透传（留待后续接入）。
@@ -171,17 +176,21 @@ function createWindow() {
       webviewTag: true
     },
     icon: path.join(APP_ROOT, 'icon.png'),
-    show: true,
+    // --sticky 单独启动：主窗口隐藏，只让便利贴浮在桌面上，calendar 应用仅驻留 Dock
+    show: !isStickyOnly,
     backgroundColor: '#ffffff'
   });
 
   // 同步主窗口引用回 main.js（供其他模组/逻辑访问）
   setMainWindowCallback(mainWindow);
 
-  if (isCalendarMode || isTodolistMode) {
+  if (isCalendarMode || isTodolistMode || isStickyMode) {
     // 🆕 独立模式：加载 TodoList（内含已迁移完整的行事历功能：列表/月/周/日视图、标签过滤、Todo 关联）。
     // 原独立「行事历插件」(src/plugins/calendar) 已删除；--calendar 现等价复用 TodoList 独立模式。
-    const search = '?standalone=1' + (isCalendarMode ? '&cal=1' : '') + (themeArg ? '&theme=' + themeArg : '');
+    // 🆕 --sticky：进入日历（后台加载 calendar.md 以便取得路径与便利贴清单）并自动弹出桌面便利贴窗口。
+    //    --sticky 单独使用时主窗口已设为 show:false（仅驻留 Dock），画面上只显示便利贴；
+    //    --calendar --sticky 同时使用时主窗口照常展开日历并叠加便利贴。
+    const search = '?standalone=1' + ((isCalendarMode || isStickyMode) ? '&cal=1' : '') + (isStickyMode ? '&sticky=1' : '') + (themeArg ? '&theme=' + themeArg : '');
     mainWindow.loadFile('src/plugins/todolist/index.html', { search });
     console.log('📌 [Main] 独立模式：主窗口已加载 TodoList（standalone=1' + (themeArg ? '，主题=' + themeArg : '') + '）');
   } else {
@@ -207,6 +216,273 @@ function createWindow() {
     setMainWindowCallback(null);
   });
 }
+
+// ============================================================
+// 🆕 桌面便利贴（每张一个独立小窗口）
+//    每张便利贴 = 一个 frameless 小窗，只占自己那一小块 → 不挡整个桌面，
+//    拖动/缩放/关闭/改色/透明度/唤起主程式全部在贴纸本体上直接操作（无需主程式整理模式）。
+//    状态（位置/尺寸/颜色/透明度）集中存 calendar.md 同目录 sticky-notes-state.json。
+// ============================================================
+const stickyNoteHtml = new Map();     // 'noteKey#idx' -> 主窗口渲染好的 Markdown HTML
+const stickyNoteTitleHtml = new Map(); // 'noteKey#idx' -> 主窗口渲染好的标题 HTML（与列表行同一 tlRenderInlineMarkdown 管线）
+
+// 🆕 翻页显示模式：single window 循环多张便利贴
+let stickyNoteOrder = [];          // 翻页顺序 [{key, idx}]（与 split 模式并行存在）
+let stickyNoteMode = 'split';       // 'split'（分体显示：每张一个独立小窗）/ 'flip'（翻页显示：单窗循环）
+let stickyNoteFlipWindow = null;    // 翻页模式唯一的窗口
+const FLIP_KEY = '__flip__', FLIP_IDX = 0; // 翻页窗几何专用 id（位置/尺寸独立，与「当前显示哪张」无关）
+
+function stickyStatePath() {
+  return stickyNoteFile ? path.join(path.dirname(stickyNoteFile), 'sticky-notes-state.json') : '';
+}
+function loadStickyNoteState() {
+  try {
+    const p = stickyStatePath();
+    if (p && fs.existsSync(p)) return JSON.parse(fs.readFileSync(p, 'utf8') || '{}');
+  } catch (e) { /* 状态损坏则从默认开始 */ }
+  return {};
+}
+function saveStickyNoteState() {
+  try {
+    const p = stickyStatePath();
+    if (p) fs.writeFileSync(p, JSON.stringify(stickyNoteState || {}, null, 2), 'utf8');
+  } catch (e) { /* 只影响下次布局，不阻塞 */ }
+}
+function noteWinId(key, idx) { return key + '#' + idx; }
+function noteInst(key, idx) {
+  if (!stickyNoteState) stickyNoteState = loadStickyNoteState();
+  if (!Array.isArray(stickyNoteState[key])) stickyNoteState[key] = [];
+  if (!stickyNoteState[key][idx]) stickyNoteState[key][idx] = {};
+  return stickyNoteState[key][idx];
+}
+
+function createStickyNoteWindow(key, idx) {
+  const id = noteWinId(key, idx);
+  const exist = stickyNoteWindows.get(id);
+  if (exist && !exist.isDestroyed()) return exist;
+
+  const inst = noteInst(key, idx);
+  const minimized0 = !!(inst && inst.minimized);
+  const w = (typeof inst.w === 'number' && inst.w > 140) ? Math.round(inst.w) : 240;
+  const h = minimized0 ? ((typeof inst.minH === 'number' && inst.minH > 20) ? Math.round(inst.minH) : 90)
+                       : ((typeof inst.h === 'number' && inst.h > 90) ? Math.round(inst.h) : 170);
+  const { width: sw, height: sh } = screen.getPrimaryDisplay().workAreaSize;
+  const x = (typeof inst.x === 'number') ? Math.round(inst.x) : Math.round(60 + idx * 28);
+  const y = (typeof inst.y === 'number') ? Math.round(inst.y) : Math.round(60 + idx * 28);
+
+  const win = new BrowserWindow({
+    width: w, height: h, x, y,
+    transparent: true,
+    frame: false,
+    alwaysOnTop: true,
+    skipTaskbar: true,
+    resizable: false,        // 缩放走贴纸右下角自绘把手（IPC setBounds）
+    movable: true,           // ⚠️ 必须为 true：拖动改用 OS 原生 -webkit-app-region: drag（movable:false 会禁掉系统拖拽通道）
+    minimizable: false,
+    maximizable: false,
+    fullscreenable: false,
+    hasShadow: false,
+    show: true,
+    backgroundColor: '#00000000',
+    webPreferences: {
+      nodeIntegration: true,
+      contextIsolation: false,
+      webSecurity: false
+    }
+  });
+  const search = '?file=' + encodeURIComponent(stickyNoteFile) +
+                 '&key=' + encodeURIComponent(key) +
+                 '&idx=' + encodeURIComponent(String(idx));
+  win.loadFile('src/plugins/todolist/desktop-note.html', { search });
+  win.setAlwaysOnTop(true, 'floating');
+  win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+  // 移动窗口后回写位置
+  // 移动窗口后回写位置：内存即时更新，但落盘「去抖」（拖动用 setPosition 会高频触发 moved，
+  // 若每帧都同步重写整个 sticky-notes-state.json 会严重卡顿）。关闭窗口时再补一次确保不丢最后位置。
+  let posSaveTimer = null;
+  const persistPos = () => {
+    if (win.isDestroyed()) return;
+    const b = win.getBounds();
+    const it = noteInst(key, idx);
+    it.x = b.x; it.y = b.y;
+    if (posSaveTimer) clearTimeout(posSaveTimer);
+    posSaveTimer = setTimeout(() => { saveStickyNoteState(); }, 400);
+  };
+  win.on('moved', persistPos);
+  win.on('closed', () => { if (posSaveTimer) clearTimeout(posSaveTimer); saveStickyNoteState(); stickyNoteWindows.delete(id); });
+  stickyNoteWindows.set(id, win);
+  return win;
+}
+
+// 🆕 翻页模式：只建一个窗口（注册在 '__flip__#0'），循环显示 stickyNoteOrder 里的所有便利贴。
+//    几何（位置/尺寸）独立存 '__flip__#0'，与「当前显示哪张」无关；颜色/透明度由渲染端按各便利贴自身状态保存。
+function createFlipStickyWindow() {
+  if (stickyNoteFlipWindow && !stickyNoteFlipWindow.isDestroyed()) stickyNoteFlipWindow.close();
+  const id = noteWinId(FLIP_KEY, FLIP_IDX);
+  const inst = noteInst(FLIP_KEY, FLIP_IDX);
+  const minimized0 = !!(inst && inst.minimized);
+  const w = (typeof inst.w === 'number' && inst.w > 140) ? Math.round(inst.w) : 240;
+  const h = minimized0 ? ((typeof inst.minH === 'number' && inst.minH > 20) ? Math.round(inst.minH) : 90)
+                       : ((typeof inst.h === 'number' && inst.h > 90) ? Math.round(inst.h) : 170);
+  const x = (typeof inst.x === 'number') ? Math.round(inst.x) : Math.round(60);
+  const y = (typeof inst.y === 'number') ? Math.round(inst.y) : Math.round(60);
+
+  const win = new BrowserWindow({
+    width: w, height: h, x, y,
+    transparent: true, frame: false, alwaysOnTop: true, skipTaskbar: true,
+    resizable: false, movable: true, minimizable: false, maximizable: false,
+    fullscreenable: false, hasShadow: false, show: true, backgroundColor: '#00000000',
+    webPreferences: { nodeIntegration: true, contextIsolation: false, webSecurity: false }
+  });
+  const search = '?mode=flip&file=' + encodeURIComponent(stickyNoteFile);
+  win.loadFile('src/plugins/todolist/desktop-note.html', { search });
+  win.setAlwaysOnTop(true, 'floating');
+  win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+  let posSaveTimer = null;
+  const persistPos = () => {
+    if (win.isDestroyed()) return;
+    const b = win.getBounds();
+    const it = noteInst(FLIP_KEY, FLIP_IDX);
+    it.x = b.x; it.y = b.y;
+    if (posSaveTimer) clearTimeout(posSaveTimer);
+    posSaveTimer = setTimeout(() => { saveStickyNoteState(); }, 400);
+  };
+  win.on('moved', persistPos);
+  win.on('closed', () => {
+    if (posSaveTimer) clearTimeout(posSaveTimer);
+    saveStickyNoteState();
+    stickyNoteWindows.delete(id);
+    if (stickyNoteFlipWindow === win) stickyNoteFlipWindow = null;
+  });
+  stickyNoteWindows.set(id, win);
+  stickyNoteFlipWindow = win;
+  return win;
+}
+
+function closeAllStickyNoteWindows() {
+  stickyNoteWindows.forEach(w => { if (w && !w.isDestroyed()) w.close(); });
+  stickyNoteWindows.clear();
+  stickyNoteFlipWindow = null;
+}
+
+// 渲染端请求开启/关闭桌面便利贴（传入 calendar.md 路径 + 要显示的便利贴清单 [{key,idx}] + mode）
+ipcMain.handle('open-sticky-notes', (e, arg) => {
+  try {
+    closeAllStickyNoteWindows();
+    stickyNoteFile = (arg && arg.file) || '';
+    stickyNoteState = loadStickyNoteState();
+    const notes = (arg && Array.isArray(arg.notes)) ? arg.notes : [];
+    stickyNoteHtml.clear();
+    stickyNoteTitleHtml.clear();
+    notes.forEach(n => {
+      if (n && typeof n.key === 'string') {
+        stickyNoteHtml.set(noteWinId(n.key, +n.idx || 0), typeof n.html === 'string' ? n.html : '');
+        stickyNoteTitleHtml.set(noteWinId(n.key, +n.idx || 0), typeof n.titleHtml === 'string' ? n.titleHtml : '');
+      }
+    });
+    stickyNoteOrder = notes.filter(n => n && typeof n.key === 'string').map(n => ({ key: n.key, idx: +n.idx || 0 }));
+    const mode = (arg && arg.mode === 'flip') ? 'flip' : 'split';
+    stickyNoteMode = mode;
+    let count = 0;
+    if (mode === 'flip') {
+      stickyNoteFlipWindow = null;
+      if (stickyNoteOrder.length > 0) { createFlipStickyWindow(); count = stickyNoteFlipWindow ? 1 : 0; }
+    } else {
+      notes.forEach(n => { if (n && typeof n.key === 'string') createStickyNoteWindow(n.key, +n.idx || 0); });
+      count = stickyNoteWindows.size;
+    }
+    return { ok: true, count, mode };
+  } catch (err) {
+    console.warn('[Main] 开启桌面便利贴失败:', err);
+    return { ok: false, error: String(err && err.message || err) };
+  }
+});
+// 🆕 翻页模式：渲染端拉取便利贴顺序（[{key,idx}]），用于 ◀ ▶ 翻页
+ipcMain.handle('sticky-note-order', () => ({ order: stickyNoteOrder }));
+// 🆕 便利贴窗查询当前显示模式（split / flip），用于下拉菜单高亮
+ipcMain.handle('sticky-note-mode', () => ({ mode: stickyNoteMode }));
+// 🆕 便利贴窗请求切换显示模式：转交主程式渲染端执行（模式记忆/重开逻辑集中在主程式 tlSetStickyMode）
+ipcMain.handle('request-sticky-display-mode', (e, arg) => {
+  const mode = (arg && arg.mode === 'flip') ? 'flip' : 'split';
+  if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('sticky-set-mode', { mode });
+  return { ok: true, mode };
+});
+ipcMain.handle('close-sticky-notes', () => {
+  closeAllStickyNoteWindows();
+  stickyNoteHtml.clear(); stickyNoteTitleHtml.clear();
+  stickyNoteFlipWindow = null; stickyNoteMode = 'split'; stickyNoteOrder = [];
+  return { ok: true };
+});
+// 单张便利贴：取主窗口渲染好的 Markdown HTML＋标题 HTML（避免便利贴自己复制一套 marked 管线）
+ipcMain.handle('sticky-note-html', (e, arg) => {
+  const id = noteWinId(String(arg && arg.key), +arg.idx || 0);
+  return { html: stickyNoteHtml.get(id) || '', titleHtml: stickyNoteTitleHtml.get(id) || '' };
+});
+// 🆕 便利贴内容刷新：渲染端（主程式）把某张便利贴最新渲染结果推过来 → 中转给对应便利贴窗并刷新缓存
+ipcMain.on('sticky-note-refresh', (e, arg) => {
+  if (!arg || typeof arg.key !== 'string') return;
+  const id = noteWinId(arg.key, +arg.idx || 0);
+  if (typeof arg.html === 'string') stickyNoteHtml.set(id, arg.html);
+  if (typeof arg.titleHtml === 'string') stickyNoteTitleHtml.set(id, arg.titleHtml);
+  // 翻页模式：唯一窗口即翻页窗（注册在 '__flip__#0'），与该刷新针对哪张便利贴无关
+  const win = (stickyNoteMode === 'flip') ? stickyNoteFlipWindow : stickyNoteWindows.get(id);
+  if (win && !win.isDestroyed()) win.webContents.send('sticky-note-refresh', arg);
+});
+// 🆕 便利贴窗点「刷新」按钮 → 中继给主程式窗口，由它重新渲染该张并回推（便利贴窗无法直接渲染 Markdown）
+ipcMain.on('sticky-note-refresh-request', (e, arg) => {
+  if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('sticky-note-refresh-request', arg || {});
+});
+ipcMain.handle('sticky-notes-count', () => ({ count: stickyNoteWindows.size }));
+
+// 单张便利贴：读取自身状态（位置/尺寸/颜色/透明度）
+ipcMain.handle('sticky-note-get', (e, arg) => {
+  const it = noteInst(String(arg && arg.key), +arg.idx || 0);
+  return Object.assign({}, it);
+});
+// 单张便利贴：保存状态补丁 {key, idx, patch:{x,y,w,h,color,opacity}}
+ipcMain.handle('sticky-note-set', (e, arg) => {
+  const key = String(arg && arg.key), idx = +arg.idx || 0;
+  const it = noteInst(key, idx);
+  Object.assign(it, (arg && arg.patch) || {});
+  saveStickyNoteState();
+  return true;
+});
+// 单张便利贴：窗口几何操作（翻页模式指向唯一的翻页窗）
+ipcMain.handle('sticky-note-bounds', (e, arg) => {
+  const win = (stickyNoteMode === 'flip') ? stickyNoteFlipWindow
+                                         : stickyNoteWindows.get(noteWinId(String(arg && arg.key), +arg.idx || 0));
+  if (!win || win.isDestroyed()) return null;
+  const b = win.getBounds();
+  if (arg && typeof arg.x === 'number' && typeof arg.y === 'number') win.setPosition(Math.round(arg.x), Math.round(arg.y));
+  if (arg && typeof arg.width === 'number' && typeof arg.height === 'number') {
+    // 高度下限 48：给「最小化小卡」（~85px）留出空间；常规缩放下限由渲染端 .rz 把手自己保证（MIN_H=90）
+    win.setBounds({ x: b.x, y: b.y, width: Math.max(140, Math.round(arg.width)), height: Math.max(48, Math.round(arg.height)) });
+  }
+  return win.getBounds();
+});
+// 🆕 拖动用：单向、无回传（ipcRenderer.send），避免 invoke 的来回等待造成迟滞；落盘去抖见 persistPos
+ipcMain.on('sticky-note-move', (e, arg) => {
+  const win = stickyNoteWindows.get(noteWinId(String(arg && arg.key), +arg.idx || 0));
+  if (!win || win.isDestroyed()) return;
+  if (arg && typeof arg.x === 'number' && typeof arg.y === 'number') win.setPosition(Math.round(arg.x), Math.round(arg.y));
+});
+// 单张便利贴：关闭这一张（仅本次；重新开启会按 ×N 回来）。翻页模式下 × 关闭整窗＝结束翻页会话。
+ipcMain.handle('sticky-note-close', (e, arg) => {
+  const win = (stickyNoteMode === 'flip') ? stickyNoteFlipWindow
+                                         : stickyNoteWindows.get(noteWinId(String(arg && arg.key), +arg.idx || 0));
+  if (win && !win.isDestroyed()) win.close();
+  return true;
+});
+// 单张便利贴：唤起主程式（显示/聚焦主窗口，并让 TodoList 打开该事件）
+ipcMain.handle('wake-main-from-note', (e, arg) => {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    if (mainWindow.isMinimized()) mainWindow.restore();
+    mainWindow.show();
+    mainWindow.focus();
+    mainWindow.webContents.send('open-sticky-event', { key: (arg && arg.key) || '' });
+  }
+  return true;
+});
 
 function init(shared) {
   // shared.app — Electron app 实例（本模组已自行 require，保留以兼容旧接口）
