@@ -709,7 +709,10 @@
       return String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
     }
     // ===== 跨天行程辅助 =====
-    // 🆕 桌面便利贴清单：把 sticky>0 的事件展开成 [{key,idx,html}]（key = 标题|日期，供桌面便利贴窗口定位）
+    // 🆕 桌面便利贴清单：把 sticky>0 的事件展开成 [{key,idx,html}]（key = 事件 uid，供桌面便利贴窗口定位）
+    //    ⚠️ 关键修复：曾经用 key = 标题|日期 做关联，一改标题/日期 key 就变 → 已开启的便利贴窗口在
+    //       stickyNoteWindows 里仍用旧 key 注册 → 主进程按新 key 查不到窗口 → 刷新被静默丢弃 → 标题不刷新。
+    //       改用事件稳定 uid（'evp'+EVENT分块序号，与桌面 renderer 的 parseEvents 算法一致），改标题/日期不再断开关联。
     //    html 复用主程式 tlRenderNotes/renderMarkdown 管线（含 [[cp:]]→✅、[[dl:]]→📅、checkbox），
     //    渲染好的 HTML 交给便利贴窗口显示 → 单一可信来源，两处渲染永不漂移。
     function tlStickyNoteRefs() {
@@ -717,7 +720,7 @@
       tlCalEvents.forEach((ev) => {
         const n = parseInt(ev && ev.sticky, 10) || 0;
         if (n > 0) {
-          const key = (ev.title || '') + '|' + (ev.date || '');
+          const key = ev.uid || ((ev.title || '') + '|' + (ev.date || ''));
           const html = (typeof tlRenderNotes === 'function') ? tlRenderNotes(ev.notes, null) : '';
           // 🆕 标题同样由主窗口渲染（与列表行同一 tlRenderInlineMarkdown 管线），避免便利贴里显示原始 <BIG> 等标签
           const titleHtml = (typeof tlRenderInlineMarkdown === 'function') ? tlRenderInlineMarkdown(ev.title || '') : '';
@@ -733,9 +736,9 @@
       if (!window.electronAPI || !window.electronAPI.send) return;
       tlStickyNoteRefs().forEach((ref) => { window.electronAPI.send('sticky-note-refresh', ref); });
     }
-    // 依据标题|日期 找事件 uid（供桌面便利贴「在主程式打开」用）
+    // 依据便利贴 key（= 事件 uid）找事件 uid（供桌面便利贴「在主程式打开 / 编辑回写」定位事件）
     function tlFindEventUidByKey(key) {
-      const ev = tlCalEvents.find((x) => ((x.title || '') + '|' + (x.date || '')) === key);
+      const ev = tlCalEvents.find((x) => (x.uid || '') === key);
       return ev ? ev.uid : null;
     }
 

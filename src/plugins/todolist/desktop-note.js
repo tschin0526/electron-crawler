@@ -5,10 +5,25 @@
 const fs = require('fs');
 const { ipcRenderer } = require('electron');
 
-const PALETTE = ['#FF3B30', '#FF9500', '#FFCC00', '#34C759', '#5AC8FA', '#007AFF', '#5856D6', '#AF52DE', '#FF2D55', '#A2845E', '#8E8E93', '#FFF3B0'];
-// 内容字体颜色候选（首个 = 默认正文色 #33384a，兼作「恢复默认」）
-const TEXT_PALETTE = ['#33384a', '#1f2430', '#4b5160', '#8E8E93', '#A2845E', '#007AFF', '#34C759', '#AF52DE', '#FF3B30', '#FF9500'];
+// 背景色候选（含纯黑 #000000 与纯白 #FFFFFF；共 30 色，网格 6 列 = 5 行）
+const PALETTE = [
+  '#FFFFFF', '#000000', '#FF3B30', '#FF9500', '#FFCC00', '#34C759',
+  '#5AC8FA', '#007AFF', '#5856D6', '#AF52DE', '#FF2D55', '#A2845E',
+  '#8E8E93', '#FFF3B0', '#FFC9C9', '#FFE8CC', '#D3F9D8', '#A5D8FF',
+  '#E5DBFF', '#FF8787', '#FFA94D', '#FFE066', '#8CE99A', '#74C0FC',
+  '#B197FC', '#FAD8C0', '#FFE3E3', '#E7F5C2', '#C3FAE8', '#FFE9F0'
+];
+// 内容字体颜色候选（共 24 色 = 4 行 × 6；首个 = 默认正文色 #33384a，兼作「恢复默认」；纯黑与纯白紧挨排在最前）
+const TEXT_PALETTE = [
+  '#33384a', '#000000', '#FFFFFF', '#1f2430', '#4b5160', '#8E8E93',
+  '#A2845E', '#007AFF', '#34C759', '#AF52DE', '#FF3B30', '#FF9500',
+  '#E03131', '#2F9E44', '#0B7285', '#1864AB', '#5F3DC4', '#A61E4D',
+  '#704818', '#F59F00', '#1098AD', '#495057', '#ADB5BD', '#212529'
+];
 const DEFAULT_W = 240, DEFAULT_H = 170, MIN_W = 140, MIN_H = 90;
+// 新便利贴默认配色：纸质便利贴淡黄底 + 纯黑字（覆盖事件色继承；#FFF3B0 已在 PALETTE 中，可重新选中高亮）
+const STICKY_DEF_BG = '#FFF3B0';
+const STICKY_DEF_FG = '#000000';
 
 const qs = new URLSearchParams(location.search);
 const FILE = qs.get('file') || '';
@@ -23,6 +38,8 @@ const FLIP_KEY = '__flip__', FLIP_IDX = 0;
 let flipOrder = [];   // [{key, idx}]
 let flipIndex = 0;    // 当前页
 let flipTotal = 0;
+let editMode = false; // 内容模式：false＝渲染（Markdown 预览）/ true＝编辑（直接改原始 notes）
+let editDirty = false;// 编辑后是否有未保存改动（⌘S 才落盘）
 function geomId() { return IS_FLIP ? { key: FLIP_KEY, idx: FLIP_IDX } : { key: KEY, idx: IDX }; }
 
 let marked = null;
@@ -38,28 +55,72 @@ function tint(hex, opacityPct) {
 function parseEvents(md) {
   if (!md) return [];
   const out = [];
+  // ⚠️ 与桌面主程式 tlParseEvents 用相同分块正则、相同序号 i 生成 uid='evp'+i，
+  //    使便利贴 KEY 与主程式一致（改标题/日期不再断开关联）。i 从 0 起，与 tlParseBlock(idx) 对齐。
   const blocks = String(md).split(/^##[ \t]*EVENT(?:\([^)]*\))?[ \t]*$/m);
-  for (const b of blocks) {
+  blocks.forEach((b, i) => {
     const cut = b.search(/^##[ \t]*HOLIDAY[ \t]*$/m);
     const blk = cut >= 0 ? b.slice(0, cut) : b;
     const get = (k) => { const m = blk.match(new RegExp('^- ' + k + ':\\s*`?([^`\\n]*)`?', 'm')); return m ? m[1].trim() : ''; };
     const title = get('title');
-    if (!title) continue;
+    if (!title) return;
     let color = get('color').replace(/^"|"$/g, '');
     let tags = []; try { tags = JSON.parse(get('tags')) || []; } catch (e) { tags = []; }
     let notes = '';
     const rm = blk.match(/- Remark:\s*\n```\n([\s\S]*?)\n```/) || blk.match(/```\n([\s\S]*?)\n```/);
     if (rm) notes = rm[1];
+    const uid = 'evp' + i;
     out.push({
       title, date: get('date'), color: color || '#FFCC00',
       tags: Array.isArray(tags) ? tags : [], notes, done: get('done') === 'true',
-      key: title + '|' + get('date')
+      uid, key: uid
     });
-  }
+  });
   return out;
 }
 
-const state = { w: DEFAULT_W, h: DEFAULT_H, color: '#FFCC00', opacity: 100, minimized: false, minH: 0, fontScale: 1, fontColor: '#33384a', fontWeight: 400 };
+// ===== 标签显示 / 子事件进度（与主程式 calendar 事件行的显示样式对齐）=====
+// 标签显示文字＝「名·子标签(cat 分类)」，与主程式 tlTagLabel 同源同格式（tags JSON 为 {name, cat}）
+function tagLabelOf(t) {
+  const n = (t && typeof t === 'object') ? (t.name || '') : (t || '');
+  const c = (t && typeof t === 'object') ? (t.cat || '') : '';
+  return c ? (n + '·' + c) : n;
+}
+// 解析备注中的 Markdown checkbox 行 → 子事件 [{text, done}]（与主程式 tlParseNoteChecks 同规则：
+// 跳过 ``` 代码围栏内的行；- [x]/[X]＝已完成、- [ ]＝未完成）
+function parseNoteChecks(text) {
+  const out = [];
+  if (!text) return out;
+  let inFence = false;
+  String(text).split('\n').forEach((line) => {
+    if (/^\s*```/.test(line)) { inFence = !inFence; return; }
+    if (inFence) return;
+    const m = line.match(/^(\s*)-\s+\[([ xX])\]\s?(.*)$/);
+    if (m) out.push({ text: (m[3] || '').trim(), done: m[2] !== ' ' });
+  });
+  return out;
+}
+// 子事件进度胶囊「完成/总数」（全完成转绿）——与主程式列表行 .ev-sub-progress 同款式
+function subProgressBadge(ev) {
+  const subs = parseNoteChecks(ev && ev.notes);
+  if (!subs.length) return '';
+  const done = subs.filter((s) => s.done).length;
+  const all = done === subs.length;
+  return '<span class="note-sub-progress' + (all ? ' all-done' : '') +
+    '" title="子事件：' + done + ' / ' + subs.length + ' 已完成">' + done + '/' + subs.length + '</span>';
+}
+// meta 行统一渲染：日期（·已完成）在前，右侧接「完成/总数」胶囊与「＋☐」加入子事件按钮
+function renderMeta(ev) {
+  const dateText = escapeHtml((ev.date || '') + (ev.done ? ' · 已完成' : ''));
+  document.getElementById('meta').innerHTML = dateText + subProgressBadge(ev) +
+    '<button type="button" class="note-addcheck" title="加入子事件（在备注末尾加 CheckBox，直接存档）">＋☐</button>';
+}
+// 标签列表统一渲染：显示「名·子标签」
+function renderTags(ev) {
+  document.getElementById('tags').innerHTML = (ev.tags || []).map((t) => '<li>' + escapeHtml(tagLabelOf(t)) + '</li>').join('');
+}
+
+const state = { w: DEFAULT_W, h: DEFAULT_H, color: STICKY_DEF_BG, opacity: 100, minimized: false, minH: 0, fontScale: 1, fontColor: STICKY_DEF_FG, fontWeight: 400 };
 
 async function init() {
   if (IS_FLIP) { await initFlip(); return; }
@@ -68,12 +129,12 @@ async function init() {
   Object.assign(state, {
     w: (typeof inst.w === 'number' && inst.w > MIN_W) ? inst.w : DEFAULT_W,
     h: (typeof inst.h === 'number' && inst.h > MIN_H) ? inst.h : DEFAULT_H,
-    color: inst.color || '#FFCC00',
+    color: inst.color || STICKY_DEF_BG,
     opacity: (typeof inst.opacity === 'number') ? inst.opacity : 100,
     minimized: !!inst.minimized,
     minH: (typeof inst.minH === 'number' && inst.minH > 20) ? inst.minH : 0,
     fontScale: (typeof inst.fontScale === 'number') ? inst.fontScale : 1,
-    fontColor: (typeof inst.fontColor === 'string' && inst.fontColor) ? inst.fontColor : '#33384a',
+    fontColor: (typeof inst.fontColor === 'string' && inst.fontColor) ? inst.fontColor : STICKY_DEF_FG,
     fontWeight: (typeof inst.fontWeight === 'number') ? inst.fontWeight : 400
   });
 
@@ -82,8 +143,8 @@ async function init() {
   const ev = parseEvents(md).find(e => e.key === KEY);
   if (!ev) { document.getElementById('title').textContent = '(找不到该便利贴)'; applyColor(); return; }
 
-  document.getElementById('meta').textContent = (ev.date || '') + (ev.done ? ' · 已完成' : '');
-  document.getElementById('tags').innerHTML = (ev.tags || []).map(t => '<li>' + escapeHtml((t && t.name) ? t.name : t) + '</li>').join('');
+  renderMeta(ev);
+  renderTags(ev);
   // 正文/标题都用主窗口渲染好的 HTML（同一套 renderMarkdown/tlRenderNotes/tlRenderInlineMarkdown 管线：
   //    正文含 [[cp:]]→✅、[[dl:]]→📅、checkbox、GFM 表格/清单/代码块等；标题含 <BIG> 等行内标签），此处只负责显示。
   let html = '', titleHtml = '';
@@ -98,8 +159,8 @@ async function init() {
   // 兜底：主窗口未就绪时退回纯文本，避免空白
   if (!html && ev.notes) html = '<p>' + escapeHtml(ev.notes).replace(/\n/g, '<br>') + '</p>';
   document.getElementById('body').innerHTML = html;
-  // 事件色作为默认底色（仅当用户未手动改过色时）
-  if (!inst.color) state.color = ev.color;
+  // 新便利贴默认淡黄纸底（仅当用户未手动改过色时）；不再继承事件色，保持纸质便利贴观感
+  if (!inst.color) state.color = STICKY_DEF_BG;
   // 勾选框填充色跟随事件色（与日历渲染一致：.ev-md-check.done .ev-cb 用事件色）
   document.getElementById('note').style.setProperty('--ev-primary', ev.color || '#7c3aed');
   applyColor();
@@ -131,6 +192,12 @@ function setupControls() {
   }, true);
   document.getElementById('miClose').onclick = (e) => {
     e.stopPropagation();
+    // 关闭前若有未保存改动 → 先确认（取消＝不关闭，避免静默丢数据）
+    if (editMode && editDirty) {
+      const ok = window.confirm('内容有未保存的改动。\n\n确定＝保存后关闭\n取消＝不关闭');
+      if (!ok) return;
+      saveNoteEdit();
+    }
     if (IS_FLIP) ipcRenderer.invoke('close-sticky-notes');          // 翻页模式：结束整个翻页会话
     else ipcRenderer.invoke('sticky-note-close', { key: KEY, idx: IDX });
   };
@@ -148,6 +215,33 @@ function setupControls() {
   document.getElementById('miModeSplit').onclick = (e) => { e.stopPropagation(); requestStickyDisplayMode('split'); };
   document.getElementById('miModeFlip').onclick = (e) => { e.stopPropagation(); requestStickyDisplayMode('flip'); };
   syncModeSeg();
+  // 内容模式（渲染 / 编辑）：编辑模式＝textarea 直改事件原始 Markdown（notes）；默认渲染
+  document.getElementById('miRender').onclick = (e) => { e.stopPropagation(); setEditMode(false); };
+  document.getElementById('miEdit').onclick = (e) => { e.stopPropagation(); setEditMode(true); };
+  syncEditSeg();
+  const editArea = document.getElementById('editArea');
+  if (editArea) {
+    // 🆕 手动保存制：输入只标记「未保存」，不再自动落盘（避免打断思路、浪费 IO）
+    editArea.addEventListener('input', () => { editDirty = true; markEditDirty(true); });
+    // 编辑区不触发「点击唤起主程式」/ 双击跳转
+    editArea.addEventListener('click', (e) => e.stopPropagation());
+    editArea.addEventListener('dblclick', (e) => e.stopPropagation());
+  }
+  // ⌘S / Ctrl+S 手动保存（编辑模式）；＋☐ 浮层打开时＝确认加入（焦点在 textarea 时由其自身 keydown 处理，这里兜底焦点在浮层外的情况）；本窗口无应用菜单，不会被系统抢走
+  window.addEventListener('keydown', (e) => {
+    const acOv = document.getElementById('addCheckOv');
+    if (acOv && acOv.classList.contains('show')) {
+      if ((e.metaKey || e.ctrlKey) && (e.key === 's' || e.key === 'S')) { e.preventDefault(); e.stopPropagation(); confirmAddCheck(); }
+      else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); closeAddCheck(); }
+      return;
+    }
+    if (!editMode) return;
+    if ((e.metaKey || e.ctrlKey) && (e.key === 's' || e.key === 'S')) {
+      e.preventDefault();
+      e.stopPropagation();
+      saveNoteEdit();
+    }
+  });
   document.getElementById('swatches').innerHTML = PALETTE.map(c => '<span class="sw" data-color="' + c + '" style="background:' + c + '"></span>').join('');
   document.getElementById('swatches').onclick = (e) => {
     const c = e.target.getAttribute && e.target.getAttribute('data-color');
@@ -169,9 +263,49 @@ function setupControls() {
   document.querySelectorAll('#mCfg .m-wbtn').forEach(b => {
     b.onclick = (e) => { e.stopPropagation(); state.fontWeight = +b.getAttribute('data-w') || 400; applyContentFont(); syncTextAppearance(); persist(); };
   });
+  // 🎨 自选色（调色盘）：两块色板末尾各加一个「自选色」彩虹圆点，内嵌透明 input[type=color]；
+  //    input＝拖动调色盘实时预览，change＝收盘后落盘。色值统一转大写（与 PALETTE 一致）。
+  function addCustomSwatch(boxId, getCur, onInput, onCommit) {
+    const box = document.getElementById(boxId);
+    if (!box) return null;
+    const wrap = document.createElement('span');
+    wrap.className = 'sw sw-custom';
+    wrap.title = '自选色（调色盘）';
+    const inp = document.createElement('input');
+    inp.type = 'color';
+    inp.value = getCur();
+    inp.addEventListener('input', () => onInput(String(inp.value).toUpperCase()));
+    inp.addEventListener('change', () => onCommit(String(inp.value).toUpperCase()));
+    wrap.appendChild(inp);
+    box.appendChild(wrap);
+    return wrap;
+  }
+  addCustomSwatch('swatches',
+    () => (/^#[0-9a-fA-F]{6}$/.test(state.color) ? state.color : STICKY_DEF_BG),
+    (c) => { state.color = c; applyColor(); },
+    () => { persist(); syncCustomSwatchActive(); });
+  addCustomSwatch('textSwatches',
+    () => (/^#[0-9a-fA-F]{6}$/.test(state.fontColor) ? state.fontColor : STICKY_DEF_FG),
+    (c) => { state.fontColor = c; applyContentFont(); },
+    () => { persist(); syncTextAppearance(); });
   syncTextAppearance();
   document.getElementById('menu').addEventListener('pointerdown', e => e.stopPropagation());
   document.getElementById('rz').addEventListener('pointerdown', startResize);
+  // 🆕 ＋☐ 加入子事件：meta 内按钮用事件委托（innerHTML 每次重绘），浮层 Enter/⌘S 确认、Esc 取消
+  const ov = document.getElementById('addCheckOv');
+  const metaEl = document.getElementById('meta');
+  if (metaEl) metaEl.addEventListener('click', (e) => { if (e.target.closest('.note-addcheck')) openAddCheck(); });
+  if (ov) ov.addEventListener('click', (e) => { if (e.target === ov) closeAddCheck(); });
+  const acInput = document.getElementById('addCheckInput');
+  if (acInput) {
+    acInput.addEventListener('keydown', (e) => {
+      e.stopPropagation();
+      if ((e.metaKey || e.ctrlKey) && (e.key === 's' || e.key === 'S')) { e.preventDefault(); confirmAddCheck(); }
+      else if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); confirmAddCheck(); }
+      else if (e.key === 'Escape') { e.preventDefault(); closeAddCheck(); }
+    });
+    acInput.addEventListener('pointerdown', (e) => e.stopPropagation());
+  }
   // 拖动交给 OS 原生（CSS -webkit-app-region: drag）；这里只处理「点击（未拖动）唤起主程式」/ 双击跳转
   const note = document.getElementById('note');
   note.addEventListener('click', onNoteClick);
@@ -182,7 +316,7 @@ function setupControls() {
 // 原生拖拽由 OS 处理；只有「按下后未移动、松开＝点击」才会触发此 handler
 // （拖拽过程中 OS 不会派发 click），故可安全用它区分「点一下＝唤起主程式」
 function onNoteClick(e) {
-  if (e.target.closest('.iconbtn')) return;                   // 按钮各自处理
+  if (e.target.closest('.iconbtn, .note-addcheck')) return;  // 按钮各自处理
   if (!e.target.closest('.bar, .head, .meta, .tags')) return; // 仅拖拽区点击＝唤起主程式
   ipcRenderer.invoke('wake-main-from-note', { key: KEY });
 }
@@ -190,8 +324,35 @@ function onNoteClick(e) {
 // 双击便利贴（标题栏或正文）：唤起主程式并打开该事件表单
 // 正文区是 -webkit-app-region: no-drag，双击不会触发拖动，故可安全复用「唤起+打开事件」管线
 function onNoteDblClick(e) {
-  if (e.target.closest('.iconbtn, .menu, .rz')) return; // 菜单/☰按钮/缩放把手各自处理
+  if (e.target.closest('.iconbtn, .menu, .rz, .note-addcheck')) return; // 菜单/☰按钮/缩放把手/＋☐各自处理
   ipcRenderer.invoke('wake-main-from-note', { key: KEY });
+}
+
+// ===== 🆕 便利贴「＋☐」加入子事件：对齐 calendar 列表行 tlOpenAddCheckDialog =====
+// 逐行输入 → 每行列成「- [ ] 行」追加到事件备注末尾，经 sticky-note-edit 落盘（主程式重解析+saveTask+推刷新）。
+// 只读包含文件（ev.ro）由主程式拦截并 toast，这里无需额外判断。
+function openAddCheck() {
+  const inp = document.getElementById('addCheckInput');
+  if (inp) inp.value = '';
+  const ov = document.getElementById('addCheckOv');
+  if (ov) ov.classList.add('show');
+  if (inp) setTimeout(() => inp.focus(), 0);
+}
+function closeAddCheck() {
+  const ov = document.getElementById('addCheckOv');
+  if (ov) ov.classList.remove('show');
+}
+function confirmAddCheck() {
+  const inp = document.getElementById('addCheckInput');
+  if (!inp) { closeAddCheck(); return; }
+  const lines = inp.value.replace(/\r\n/g, '\n').split('\n').map((l) => l.trim()).filter(Boolean);
+  closeAddCheck();
+  if (!lines.length) return;
+  const md = lines.map((l) => '- [ ] ' + l).join('\n');
+  const ev = parseEvents(readMd()).find((x) => x.key === KEY);
+  if (!ev) return;
+  const notes = (ev.notes ? String(ev.notes).replace(/\s*$/, '') + '\n' : '') + md + '\n';
+  ipcRenderer.send('sticky-note-edit', { key: KEY, idx: IDX, notes });
 }
 
 // 🆕 刷新内容：接收主程式推来的最新渲染结果（arg.{html,titleHtml}），同步标题/正文/日期/标签
@@ -214,8 +375,8 @@ function applyNoteContent(arg) {
   document.getElementById('body').innerHTML = html;
   const ev = parseEvents(readMd()).find(e => e.key === KEY);
   if (ev) {
-    document.getElementById('meta').textContent = (ev.date || '') + (ev.done ? ' · 已完成' : '');
-    document.getElementById('tags').innerHTML = (ev.tags || []).map(t => '<li>' + escapeHtml((t && t.name) ? t.name : t) + '</li>').join('');
+    renderMeta(ev);
+    renderTags(ev);
   }
   // 最小化态需按新内容重测紧凑卡高度（标题/标签变化可能改变高度）
   if (document.getElementById('note').classList.contains('minimized')) {
@@ -232,6 +393,10 @@ function applyColor() {
   const hex = tint(state.color, state.opacity);
   document.getElementById('note').style.background = hex;
   document.getElementById('bar').style.background = state.color;
+  // ＋☐ 浮层盒与便利贴同背景色（取实色 tint(…,100)，不随透明度变淡，保证浮层可读）；文字色经 --note-fg 继承
+  const acBox = document.getElementById('addCheckBox');
+  if (acBox) acBox.style.background = tint(state.color, 100);
+  syncCustomSwatchActive();
 }
 function persist() {
   if (IS_FLIP) {
@@ -244,22 +409,47 @@ function persist() {
   ipcRenderer.invoke('sticky-note-set', { key: KEY, idx: IDX, patch: { w: state.w, h: state.h, color: state.color, opacity: state.opacity, minimized: state.minimized, minH: state.minH, fontScale: state.fontScale, fontColor: state.fontColor, fontWeight: state.fontWeight } });
 }
 
+// 依字体色亮度取反色：浅色文字 → 给标签一个深底；深色文字 → 给浅底（保证标签始终可读）
+function contrastTagBg(hex) {
+  let h = String(hex || '').replace('#', '');
+  if (h.length === 3) h = h.split('').map(c => c + c).join('');
+  if (h.length !== 6) return 'rgba(0,0,0,.06)';
+  const r = parseInt(h.slice(0, 2), 16), g = parseInt(h.slice(2, 4), 16), b = parseInt(h.slice(4, 6), 16);
+  const lum = (0.299 * r + 0.587 * g + 0.114 * b) / 255;   // 感知亮度
+  return lum > 0.6 ? 'rgba(0,0,0,.18)' : 'rgba(255,255,255,.28)';
+}
+
 // 内容字号/颜色/字重：以 12px 为基准按 fontScale 等比例缩放（heading 等均用 em，随基准同步放大/缩小）
+// 字体颜色同时驱动 标题/日期/标签（CSS 变量 --note-fg），标签底色自动反差（--tag-bg）
 function applyContentFont() {
+  const fg = state.fontColor || STICKY_DEF_FG;
+  const note = document.getElementById('note');
+  if (note) {
+    note.style.setProperty('--note-fg', fg);
+    note.style.setProperty('--tag-bg', contrastTagBg(fg));
+  }
   const body = document.getElementById('body');
   if (!body) return;
   body.style.fontSize = (12 * (state.fontScale || 1)).toFixed(2) + 'px';
-  body.style.color = state.fontColor || '#33384a';
+  body.style.color = fg;
   body.style.fontWeight = state.fontWeight || 400;
 }
 // 同步「字体颜色 / 字重」选中态（菜单内色板 + 分段按钮）
 function syncTextAppearance() {
   document.querySelectorAll('#textSwatches .sw').forEach(el => {
-    el.classList.toggle('active', (el.getAttribute('data-color') || '') === (state.fontColor || '#33384a'));
+    el.classList.toggle('active', (el.getAttribute('data-color') || '') === (state.fontColor || STICKY_DEF_FG));
   });
   document.querySelectorAll('#mCfg .m-wbtn').forEach(b => {
     b.classList.toggle('active', (+b.getAttribute('data-w') || 400) === (state.fontWeight || 400));
   });
+  syncCustomSwatchActive();
+}
+// 自选色圆点选中态：当前色不在固定色板内＝正用自选色 → 高亮对应彩虹圆点（蓝圈）
+function syncCustomSwatchActive() {
+  const bg = document.querySelector('#swatches .sw-custom');
+  if (bg) bg.classList.toggle('active', !PALETTE.includes(state.color));
+  const tx = document.querySelector('#textSwatches .sw-custom');
+  if (tx) tx.classList.toggle('active', !TEXT_PALETTE.includes(state.fontColor));
 }
 function updateZoomInd() {
   const el = document.getElementById('zoomInd');
@@ -284,6 +474,90 @@ async function syncModeSeg() {
   if (s) s.classList.toggle('active', mode === 'split');
   if (f) f.classList.toggle('active', mode === 'flip');
 }
+// 下拉菜单高亮当前内容模式（渲染 / 编辑）
+function syncEditSeg() {
+  const r = document.getElementById('miRender'), e = document.getElementById('miEdit');
+  if (r) r.classList.toggle('active', !editMode);
+  if (e) e.classList.toggle('active', editMode);
+}
+
+// 读取当前事件（KEY/IDX）的原始 notes（直接回读 calendar.md，保证权威）
+function getEventNotes() {
+  const ev = parseEvents(readMd()).find(x => x.key === KEY);
+  return ev ? (ev.notes || '') : '';
+}
+// 统一重渲染正文/标题/日期/标签（用主窗口渲染好的 HTML）：编辑→渲染切换时复用
+async function renderNoteContent() {
+  const ev = parseEvents(readMd()).find(x => x.key === KEY);
+  const titleEl = document.getElementById('title');
+  if (!ev) {
+    titleEl.textContent = '(找不到该便利贴)';
+    document.getElementById('meta').textContent = '';
+    document.getElementById('tags').innerHTML = '';
+    document.getElementById('body').innerHTML = '';
+    return false;
+  }
+  let html = '', titleHtml = '';
+  try {
+    const res = (await ipcRenderer.invoke('sticky-note-html', { key: KEY, idx: IDX })) || {};
+    html = (typeof res.html === 'string') ? res.html : '';
+    titleHtml = (typeof res.titleHtml === 'string') ? res.titleHtml : '';
+  } catch (e) {}
+  if (titleHtml) titleEl.innerHTML = titleHtml; else titleEl.textContent = ev.title;
+  if (!html && ev.notes) html = '<p>' + escapeHtml(ev.notes).replace(/\n/g, '<br>') + '</p>';
+  document.getElementById('body').innerHTML = html;
+  renderMeta(ev);
+  renderTags(ev);
+  return true;
+}
+// 切换内容模式：edit=true 进编辑（textarea 填原始 notes）/ false 回渲染（重新取最新 HTML）
+function setEditMode(edit) {
+  const note = document.getElementById('note');
+  const ea = document.getElementById('editArea');
+  // 离开编辑模式前：有未保存改动 → 先确认（默认留在编辑模式，取消＝不丢改动）
+  if (!edit && editMode && editDirty) {
+    const ok = window.confirm('内容有未保存的改动。\n\n确定＝先保存再返回渲染模式\n取消＝留在编辑模式（不丢改动）');
+    if (ok) saveNoteEdit();
+    else { syncEditSeg(); return; }
+  }
+  editMode = !!edit;
+  if (editMode) {
+    if (ea) { ea.value = getEventNotes(); applyContentFont(); ea.scrollTop = 0; ea.style.boxShadow = ''; }
+    if (note) note.classList.add('editing');
+  } else {
+    if (note) note.classList.remove('editing');
+    editDirty = false;
+    // 渲染模式：重新拉取最新渲染结果（编辑回写后已落盘 + 主程式刷新过，这里确保显示最新）
+    renderNoteContent();
+  }
+  syncEditSeg();
+}
+
+// 🆕 手动保存（⌘S）：把 textarea 内容回写到 calendar.md。
+//    保存成功后主程式会重渲染该张便利贴（tlPushStickyRefreshes），切回渲染模式即可看到。
+function saveNoteEdit() {
+  const ea = document.getElementById('editArea');
+  if (!ea) return;
+  ipcRenderer.send('sticky-note-edit', { key: KEY, idx: IDX, notes: ea.value });
+  editDirty = false;
+  markEditDirty(false);
+}
+// 未保存状态提示：用编辑框内圈描边表示（不新增 DOM，保持画面干净）
+//   红框＝有未保存改动；按 ⌘S 后转绿框，1.6 秒后自动淡出
+let dirtyTimer = null;
+function markEditDirty(on) {
+  const ea = document.getElementById('editArea');
+  if (!ea) return;
+  if (dirtyTimer) { clearTimeout(dirtyTimer); dirtyTimer = null; }
+  if (on) {
+    ea.title = '有未保存的改动 —— 按 ⌘S（Windows 为 Ctrl+S）保存';
+    ea.style.boxShadow = 'inset 0 0 0 1px rgba(220,38,38,.55)';
+  } else {
+    ea.title = '已保存到 calendar.md';
+    ea.style.boxShadow = 'inset 0 0 0 1px rgba(34,197,94,.5)';
+    dirtyTimer = setTimeout(() => { if (ea) ea.style.boxShadow = ''; dirtyTimer = null; }, 1600);
+  }
+}
 
 // 🆕 最小化：收合成小卡（标题＋日期＋标签）。状态随便利贴一并持久化，重新开启时还原
 // ⚠️ sticky-note-bounds 的宽/高是成对判定（缺 width 则 setBounds 不执行），所以这里必须同时传 width+height
@@ -303,8 +577,9 @@ function collapsedH() {
 function updateMinBtn() {
   const b = document.getElementById('miMin');
   if (!b) return;
-  if (state.minimized) b.textContent = '▢ 还原（展开便利贴）';
-  else b.textContent = '▁ 最小化（收合成小卡）';
+  // 纯图标按钮：只换图标 + tooltip，不注入文字（文字会撑破图标排版）
+  if (state.minimized) { b.textContent = '▢'; b.title = '还原（展开便利贴）'; }
+  else { b.textContent = '▁'; b.title = '最小化（收合成小卡）'; }
 }
 function toggleMinimize() {
   const note = document.getElementById('note');
@@ -378,6 +653,19 @@ async function renderFlipPage(i) {
   if (flipTotal === 0) return;
   i = Math.max(0, Math.min(flipTotal - 1, i));
   flipIndex = i;
+  // 翻页：退出编辑模式（每页各自编辑，翻页即切到该页的渲染视图，避免 textarea 内容错位）
+  // ⚠️ 有未保存改动时不静默丢弃：先确认（确定＝保存并翻页；取消＝中止本次翻页）
+  if (editMode && editDirty) {
+    const ok = window.confirm('内容有未保存的改动。\n\n确定＝先保存再翻页\n取消＝留在本页不翻');
+    if (!ok) return;
+    saveNoteEdit();
+  }
+  editMode = false;
+  editDirty = false;
+  const noteEl0 = document.getElementById('note');
+  if (noteEl0) noteEl0.classList.remove('editing');
+  const eaEl0 = document.getElementById('editArea');
+  if (eaEl0) eaEl0.style.boxShadow = '';
   KEY = flipOrder[i].key;
   IDX = +flipOrder[i].idx || 0;
   const ev = parseEvents(readMd()).find(e => e.key === KEY);
@@ -389,16 +677,16 @@ async function renderFlipPage(i) {
     updateFlipInd();
     return;
   }
-  // 颜色/透明度/字号：优先用该便利贴自身已存状态，否则退回事件色
+  // 颜色/透明度/字号：优先用该便利贴自身已存状态，否则退回纸质默认（淡黄底 + 纯黑字）
   const inst = (await ipcRenderer.invoke('sticky-note-get', { key: KEY, idx: IDX })) || {};
-  state.color = (inst && inst.color) ? inst.color : ev.color;
+  state.color = (inst && inst.color) ? inst.color : STICKY_DEF_BG;
   state.opacity = (inst && typeof inst.opacity === 'number') ? inst.opacity : 100;
   state.fontScale = (inst && typeof inst.fontScale === 'number') ? inst.fontScale : 1;
-  state.fontColor = (inst && typeof inst.fontColor === 'string' && inst.fontColor) ? inst.fontColor : '#33384a';
+  state.fontColor = (inst && typeof inst.fontColor === 'string' && inst.fontColor) ? inst.fontColor : STICKY_DEF_FG;
   state.fontWeight = (inst && typeof inst.fontWeight === 'number') ? inst.fontWeight : 400;
 
-  document.getElementById('meta').textContent = (ev.date || '') + (ev.done ? ' · 已完成' : '');
-  document.getElementById('tags').innerHTML = (ev.tags || []).map(t => '<li>' + escapeHtml((t && t.name) ? t.name : t) + '</li>').join('');
+  renderMeta(ev);
+  renderTags(ev);
   document.getElementById('note').style.setProperty('--ev-primary', ev.color || '#7c3aed');
 
   let html = '', titleHtml = '';
@@ -419,6 +707,7 @@ async function renderFlipPage(i) {
   if (op) { op.value = String(state.opacity); document.getElementById('opacityVal').textContent = state.opacity + '%'; }
   updateZoomInd();
   updateFlipInd();
+  syncEditSeg();
 }
 
 function updateFlipInd() {
@@ -436,6 +725,12 @@ function bindFlipNav() {
   if (prev) prev.onclick = (e) => { e.stopPropagation(); renderFlipPage(flipIndex - 1); };
   if (next) next.onclick = (e) => { e.stopPropagation(); renderFlipPage(flipIndex + 1); };
   window.addEventListener('keydown', (e) => {
+    // 🆕 编辑模式、或焦点落在可输入控件时：所有按键交给文本编辑
+    //    （← → ↑ ↓、空白、中英/输入法切换、复制粘贴等组合键），绝不抢去翻页
+    if (editMode) return;
+    const t = e.target;
+    if (t && (t.tagName === 'TEXTAREA' || t.tagName === 'INPUT' || t.tagName === 'SELECT'
+              || (t.closest && t.closest('#editArea')))) return;
     if (e.key === 'ArrowLeft') { e.preventDefault(); renderFlipPage(flipIndex - 1); }
     else if (e.key === 'ArrowRight') { e.preventDefault(); renderFlipPage(flipIndex + 1); }
   });

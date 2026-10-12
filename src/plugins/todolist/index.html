@@ -6867,6 +6867,25 @@
     if (window.electronAPI && typeof window.electronAPI.onStickyRefreshRequest === 'function') {
       window.electronAPI.onStickyRefreshRequest(function (p) { tlOnStickyRefreshRequest(p); });
     }
+    // 🆕 便利贴「编辑模式」回写：便利贴窗把事件原始 notes 发来 → 定位事件、写回 calendar.md、重渲染该张
+    function tlOnStickyEdit(payload) {
+      if (!payload || typeof payload.key !== 'string') return;
+      if (!window.electronAPI || !window.electronAPI.invoke) return;
+      if (typeof tlCalEvents === 'undefined') return;
+      tlCalEvents = (typeof tlAllEvents === 'function')
+        ? tlAllEvents(document.getElementById('taskText').value)
+        : tlCalEvents;
+      const uid = (typeof tlFindEventUidByKey === 'function') ? tlFindEventUidByKey(payload.key) : null;
+      const ev = tlCalEvents.find(function (x) { return x.uid === uid; });
+      if (!ev) { if (typeof showToast === 'function') showToast('找不到该行程（内容可能已被修改）', 'danger'); return; }
+      if (ev.ro) { if (typeof showToast === 'function') showToast('此行程来自只读包含文件，不可更改', 'danger'); return; }
+      ev.notes = (payload.notes != null) ? String(payload.notes) : '';
+      tlApplyEventsToBuffer();   // 重序列化 taskText + 重绘行程视图 + 重新推送便利贴刷新（tlPushStickyRefreshes）
+      if (typeof saveTask === 'function') saveTask(false); // 落盘到 calendar.md（不关闭窗）
+    }
+    if (window.electronAPI && typeof window.electronAPI.onStickyEdit === 'function') {
+      window.electronAPI.onStickyEdit(function (p) { tlOnStickyEdit(p); });
+    }
     // 🆕 便利贴窗下拉菜单请求切换显示模式（分体/翻页）：转给 tlSetStickyMode 统一处理（记忆 + 重开）
     if (window.electronAPI && typeof window.electronAPI.onStickySetMode === 'function') {
       window.electronAPI.onStickySetMode(function (p) { if (p && (p.mode === 'split' || p.mode === 'flip')) tlSetStickyMode(p.mode); });

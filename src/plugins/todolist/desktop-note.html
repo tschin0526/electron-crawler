@@ -18,7 +18,7 @@
     .head { display: flex; align-items: center; gap: 6px; padding: 8px 34px 4px 12px; flex: none; }
     /* 拖拽区＝色条/标题栏/日期/标签：手型光标提示「这里就是拖动把手」 */
     .bar, .head, .meta, .tags { -webkit-app-region: drag; cursor: grab; }
-    .title { font-weight: 700; font-size: 14px; color: #1f2430; flex: 1; word-break: break-word; line-height: 1.35; }
+    .title { font-weight: 700; font-size: 14px; color: var(--note-fg, #1f2430); flex: 1; word-break: break-word; line-height: 1.35; }
     .iconbtn {
       flex: none; width: 22px; height: 22px; border-radius: 6px; border: none; cursor: pointer;
       background: rgba(0,0,0,.06); color: #4b5160; font-size: 12px; line-height: 1; display: inline-flex;
@@ -26,13 +26,29 @@
       -webkit-app-region: no-drag;
     }
     .iconbtn:hover { background: rgba(0,0,0,.12); }
-    /* 右上角 ☰ 菜单按钮：绝对定位贴角，距上边＝距右边（各 6px），背景透明 */
-    #btnMenu { position: absolute; top: 6px; right: 6px; background: transparent; }
-    #btnMenu:hover { background: rgba(0,0,0,.08); }
-    .meta { padding: 0 12px; font-size: 11px; color: #8a8f99; flex: none; }
+    /* 右上角 ☰ 菜单按钮：绝对定位贴角，距上边＝距右边（各 6px），背景透明。
+       图标放大（17px）并改用笔记内容色 var(--note-fg)，使三条线在任意背景（白→黑）上都清晰可读 */
+    #btnMenu { position: absolute; top: 6px; right: 6px; background: transparent; width: 26px; height: 26px; font-size: 17px; color: var(--note-fg, #4b5160); }
+    #btnMenu:hover { background: rgba(127,127,127,.18); }
+    .meta { padding: 0 12px; font-size: 11px; color: var(--note-fg, #8a8f99); flex: none; }
+    /* 子事件进度胶囊「完成/总数」（日期右边；全完成转绿）——与主程式列表行 .ev-sub-progress 同款式 */
+    .note-sub-progress { display: inline-block; margin-left: 6px; padding: 1px 8px; border-radius: 999px; font-size: 10px; line-height: 1.5; font-weight: 600; white-space: nowrap; vertical-align: middle; color: var(--note-fg, #33384a); background: rgba(127,127,127,.16); border: 1px solid rgba(127,127,127,.4); }
+    .note-sub-progress.all-done { background: rgba(52,199,89,.2); border-color: rgba(52,199,89,.6); color: #2F9E44; }
+    /* 日期右侧「＋☐」加入子事件按钮（与 calendar 列表行 .ev-addcheck-btn 同功能；置于拖拽区内故需 no-drag） */
+    .note-addcheck { display: inline-flex; align-items: center; justify-content: center; margin-left: 6px; width: auto; padding: 0 5px; height: 16px; border-radius: 999px; border: 1px solid rgba(127,127,127,.4); background: rgba(127,127,127,.12); color: var(--note-fg, #4b5160); font-size: 11px; line-height: 1; cursor: pointer; vertical-align: middle; white-space: nowrap; -webkit-app-region: no-drag; }
+    .note-addcheck:hover { background: rgba(127,127,127,.26); }
+    /* 🆕 加入子事件浮层（复用 sticky-note-edit 落盘链路；盒底色由 JS 套用与便利贴同色 tint(state.color,100)，文字用 --note-fg） */
+    .addcheck-ov { position: absolute; inset: 0; z-index: 30; display: none; align-items: center; justify-content: center; padding: 10px; background: rgba(0,0,0,.2); -webkit-app-region: no-drag; }
+    .addcheck-ov.show { display: flex; }
+    .addcheck-box { width: min(88vw, 440px); background: rgba(255,255,255,.98); border: 1.5px solid #D4AF37; border-radius: 10px; padding: 10px; box-shadow: 0 12px 30px rgba(0,0,0,.45), 0 3px 8px rgba(0,0,0,.28); color: var(--note-fg, #33384a); font-size: 12px; }
+    .addcheck-box .ac-title { font-weight: 600; margin-bottom: 6px; }
+    .addcheck-box textarea { width: 100%; box-sizing: border-box; height: max(36vh, 54px); resize: none; border: 1px solid #D4AF37; border-radius: 6px; padding: 6px; font: inherit; font-size: 12px; color: var(--note-fg, #33384a); background: rgba(127,127,127,.08); -webkit-app-region: no-drag; }
+    .addcheck-box textarea:focus { outline: none; box-shadow: 0 0 0 1px #D4AF37; }
+    .addcheck-box .ac-hint { margin-top: 6px; font-size: 10px; opacity: .65; }
     .tags { margin: 6px 12px 0; padding: 0; list-style: none; display: flex; flex-wrap: wrap; gap: 4px; flex: none; }
-    .tags li { background: rgba(0,0,0,.06); border-radius: 99px; padding: 1px 8px; font-size: 10px; color: #5b6170; }
-    .body { padding: 6px 12px 10px; font-size: 12px; color: #33384a; overflow: auto; flex: 1; line-height: 1.5; -webkit-app-region: no-drag; }
+    /* 标签：文字跟随字体颜色；底色由 JS 按字体色亮度自动取反色（浅字→深底 / 深字→浅底）；外框固定金色描边 */
+    .tags li { background: var(--tag-bg, rgba(0,0,0,.06)); border: 1px solid #D4AF37; border-radius: 99px; padding: 1px 8px; font-size: 10px; color: var(--note-fg, #5b6170); box-sizing: border-box; }
+    .body { padding: 6px 12px 10px; font-size: 12px; color: var(--note-fg, #33384a); overflow: auto; flex: 1; line-height: 1.5; -webkit-app-region: no-drag; }
     .body > *:first-child { margin-top: 0; }
     .body > *:last-child { margin-bottom: 0; }
     .body h1 { font-size: 1.35em; font-weight: 700; margin: .6em 0 .3em; }
@@ -91,6 +107,13 @@
     .mi:disabled { opacity: .35; cursor: default; }
     .mi:disabled:hover { background: transparent; }
     .msep { height: 1px; background: rgba(0,0,0,.10); margin: 2px 6px; }
+    /* 菜单第一行：4 个纯图标按钮并排等宽居中（说明文字在title tooltip） */
+    .m-actions { display: flex; align-items: center; gap: 4px; padding: 1px 2px; }
+    .m-actions .m-act {
+      flex: 1; width: auto; min-width: 0; height: 24px; padding: 0;
+      display: inline-flex; align-items: center; justify-content: center;
+      font-size: 13px; line-height: 1; border-radius: 6px;
+    }
     /* 菜单内的翻页行 ◀ n/N ▶（仅翻页模式显示） */
     .m-nav { display: flex; align-items: center; gap: 6px; padding: 0 2px; }
     .m-nav .mi { width: 28px; text-align: center; flex: none; padding: 2px 0; }
@@ -112,6 +135,9 @@
     .plabel { margin: 4px 0 5px; font-size: 11px; color: #6b7280; }
     .swatches { display: grid; grid-template-columns: repeat(6, 1fr); gap: 5px; margin-bottom: 8px; }
     .swatches .sw { width: 18px; height: 18px; border-radius: 50%; cursor: pointer; border: 1px solid rgba(0,0,0,.15); }
+    /* 🎨 自选色（调色盘）：彩虹渐变圆点，内嵌透明 input[type=color]，点开系统调色盘；当前色不在固定色板时高亮蓝圈 */
+    .swatches .sw.sw-custom { background: conic-gradient(#ff3b30,#ffcc00,#34c759,#5ac8fa,#007aff,#af52de,#ff3b30); position: relative; overflow: hidden; }
+    .sw-custom input[type=color] { position: absolute; inset: -2px; width: calc(100% + 4px); height: calc(100% + 4px); opacity: 0; border: none; padding: 0; cursor: pointer; }
     .opacityRow { display: flex; align-items: center; gap: 6px; }
     .opacityRow input[type=range] { flex: 1; }
     /* 字体颜色选中环 + 字重分段按钮 */
@@ -122,6 +148,14 @@
     .m-wbtn:not(.active):hover { background: rgba(0,0,0,.10); }
     /* 🆕 最小化（收合成小卡）：隐藏正文/缩放把手，保留 标题＋日期＋标签＋☰菜单（紧凑小卡） */
     #note.minimized .body, #note.minimized .rz { display: none; }
+    /* 🆕 编辑模式：textarea 直接改事件原始 Markdown（notes）；渲染模式隐藏正文 */
+    .editArea {
+      display: none; flex: 1; width: 100%; box-sizing: border-box; border: none; outline: none; resize: none;
+      padding: 6px 12px 10px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; line-height: 1.5;
+      background: transparent; color: var(--note-fg, #33384a); user-select: text; -webkit-app-region: no-drag;
+    }
+    #note.editing .body { display: none; }
+    #note.editing .editArea { display: block; }
   </style>
 </head>
 <body>
@@ -134,7 +168,17 @@
     <div class="meta" id="meta"></div>
     <ul class="tags" id="tags"></ul>
     <div class="body" id="body"></div>
+    <textarea class="editArea" id="editArea" spellcheck="false" placeholder="在此直接编辑事件内容（Markdown）…"></textarea>
     <div class="menu" id="menu">
+      <!-- 第 1 行：4 个纯图标按钮（说明文字放title tooltip） -->
+      <div class="m-actions">
+        <button class="mi m-act" id="miMin" title="最小化（收合成小卡）">▁</button>
+        <button class="mi m-act" id="miRefresh" title="刷新内容">🔄</button>
+        <button class="mi m-act" id="miOpen" title="在主程式打开">📂</button>
+        <button class="mi m-act" id="miClose" title="关闭便利贴">×</button>
+      </div>
+      <div class="msep"></div>
+      <!-- 第 2 行：显示模式（分体 / 翻页） -->
       <div class="m-mode">
         <span class="m-mode-label">显示模式</span>
         <div class="m-seg">
@@ -142,18 +186,25 @@
           <button class="mi m-seg-btn" id="miModeFlip" data-mode="flip">翻页</button>
         </div>
       </div>
-      <div class="msep"></div>
+      <!-- 第 2 行：内容模式（渲染 / 编辑）——与显示模式同属「模式」类，分组在一起 -->
+      <div class="m-mode">
+        <span class="m-mode-label">内容模式</span>
+        <div class="m-seg">
+          <button class="mi m-seg-btn" id="miRender" data-edit="0">渲染</button>
+          <button class="mi m-seg-btn" id="miEdit" data-edit="1">编辑</button>
+        </div>
+      </div>
+      <!-- 翻页 ◀ ▶（仅翻页模式显示，仍并入第 2 行区域） -->
       <div id="mFlipWrap">
         <div class="m-nav">
           <button class="mi" id="miPrev" title="上一张（←）">◀</button>
           <span class="mind" id="flipInd">1 / 1</span>
           <button class="mi" id="miNext" title="下一张（→）">▶</button>
         </div>
-        <div class="msep"></div>
       </div>
-      <button class="mi" id="miRefresh">🔄 刷新内容</button>
-      <button class="mi" id="miOpen">📂 在主程式打开</button>
-      <button class="mi" id="miCfg">🎨 背景色 / 透明度 ▾</button>
+      <div class="msep"></div>
+      <!-- 第 3 行：颜色（背景色 / 透明度 / 字体颜色 / 字重，收在可展开子区） -->
+      <button class="mi" id="miCfg" title="背景色 / 透明度 / 字体颜色 / 字重">🎨 颜色 ▾</button>
       <div class="m-cfg" id="mCfg">
         <div class="plabel">背景色</div>
         <div class="swatches" id="swatches"></div>
@@ -169,14 +220,20 @@
         </div>
       </div>
       <div class="msep"></div>
+      <!-- 第 4 行：字体大小（A− 百分比 A＋） -->
       <div class="m-nav">
         <button class="mi" id="miZoomOut" title="缩小内容字体（A−）">A−</button>
         <span class="mind" id="zoomInd">100%</span>
         <button class="mi" id="miZoomIn" title="放大内容字体（A＋）">A＋</button>
       </div>
-      <div class="msep"></div>
-      <button class="mi" id="miMin">▁ 最小化（收合成小卡）</button>
-      <button class="mi" id="miClose">× 关闭</button>
+    </div>
+    <!-- 🆕 加入子事件浮层（＋☐ 触发；⌘S=加入 / Esc=取消） -->
+    <div class="addcheck-ov" id="addCheckOv">
+      <div class="addcheck-box" id="addCheckBox">
+        <div class="ac-title">加入子事件（CheckBox）</div>
+        <textarea id="addCheckInput" placeholder="每行一个子事件，回车直接加入…"></textarea>
+        <div class="ac-hint">⌘S 加入 · Esc 取消</div>
+      </div>
     </div>
     <div class="rz" id="rz"></div>
   </div>

@@ -249,12 +249,56 @@ function saveStickyNoteState() {
   } catch (e) { /* 只影响下次布局，不阻塞 */ }
 }
 function noteWinId(key, idx) { return key + '#' + idx; }
+
+// 🆕 把某张便利贴窗口「当前实时 bounds」直接写回存档（不依赖 'moved' 事件／400ms 去抖）。
+//    ⚠️ 背景：曾经只靠 win.on('moved')→内存＋400ms 去抖落盘，退出前最后一程拖动若没赶上
+//    'moved' 派发／去抖还没跑，退出时写进档的就是上一次的旧位置 → 重启后便利贴「回到旧位置」。
+//    现在 close/before-quit 时直接读 win.getBounds() 快照，位置绝不丢。id = noteWinId(key,idx)。
+function captureStickyBoundsById(id, win) {
+  try {
+    if (!win || win.isDestroyed()) return;
+    const sep = id.lastIndexOf('#');
+    if (sep < 0) return;
+    const key = id.slice(0, sep), idx = +id.slice(sep + 1) || 0;
+    const b = win.getBounds();
+    const it = noteInst(key, idx);
+    it.x = b.x; it.y = b.y; it.w = b.width; it.h = b.height;
+  } catch (e) { /* 只影响位置还原，不阻塞退出 */ }
+}
 function noteInst(key, idx) {
   if (!stickyNoteState) stickyNoteState = loadStickyNoteState();
   if (!Array.isArray(stickyNoteState[key])) stickyNoteState[key] = [];
   if (!stickyNoteState[key][idx]) stickyNoteState[key][idx] = {};
   return stickyNoteState[key][idx];
 }
+
+// 🆕 还原本次启动前的位置，但必须夹回当前屏幕可见范围内：
+//    上次退出时接的外接屏/副屏这次没接（或分辨率变了）→ 存档坐标可能落在屏幕外，
+//    直接用会让便利贴「开不出来」（跑掉屏幕外）。故按当前任一显示器的工作区校正。
+function clampToVisible(x, y, w, h) {
+  const displays = (screen.getAllDisplays && screen.getAllDisplays().length)
+    ? screen.getAllDisplays() : [screen.getPrimaryDisplay()];
+  // 落在任一显示器工作区内（含部分可见）即视为合法
+  for (const d of displays) {
+    const a = d.workArea;
+    if (x + w > a.x + 40 && x < a.x + a.width - 40 &&
+        y + h > a.y && y < a.y + a.height - 40) return { x: Math.round(x), y: Math.round(y) };
+  }
+  // 否则夹回主显示器工作区（留边距，确保标题栏 ☰ 可点到）
+  const p = screen.getPrimaryDisplay().workArea;
+  return {
+    x: Math.round(Math.min(Math.max(x, p.x + 10), p.x + p.width - w - 10)),
+    y: Math.round(Math.min(Math.max(y, p.y + 10), p.y + p.height - Math.min(h, 120) - 10))
+  };
+}
+
+// 退出前先把所有还开着的便利贴「最终实时 bounds」快照进存档再落盘（不依赖 moved 事件/去抖）
+app.on('before-quit', () => {
+  try {
+    stickyNoteWindows.forEach((win, id) => captureStickyBoundsById(id, win));
+    saveStickyNoteState();
+  } catch (e) {}
+});
 
 function createStickyNoteWindow(key, idx) {
   const id = noteWinId(key, idx);
@@ -267,14 +311,18 @@ function createStickyNoteWindow(key, idx) {
   const h = minimized0 ? ((typeof inst.minH === 'number' && inst.minH > 20) ? Math.round(inst.minH) : 90)
                        : ((typeof inst.h === 'number' && inst.h > 90) ? Math.round(inst.h) : 170);
   const { width: sw, height: sh } = screen.getPrimaryDisplay().workAreaSize;
-  const x = (typeof inst.x === 'number') ? Math.round(inst.x) : Math.round(60 + idx * 28);
-  const y = (typeof inst.y === 'number') ? Math.round(inst.y) : Math.round(60 + idx * 28);
+  // 优先还原存档位置（上次关闭前的位置），并夹回当前屏幕可见范围
+  const pos = clampToVisible(
+    (typeof inst.x === 'number') ? inst.x : Math.round(60 + idx * 28),
+    (typeof inst.y === 'number') ? inst.y : Math.round(60 + idx * 28),
+    w, h
+  );
+  const x = pos.x, y = pos.y;
 
   const win = new BrowserWindow({
     width: w, height: h, x, y,
     transparent: true,
     frame: false,
-    alwaysOnTop: true,
     skipTaskbar: true,
     resizable: false,        // 缩放走贴纸右下角自绘把手（IPC setBounds）
     movable: true,           // ⚠️ 必须为 true：拖动改用 OS 原生 -webkit-app-region: drag（movable:false 会禁掉系统拖拽通道）
@@ -290,11 +338,15 @@ function createStickyNoteWindow(key, idx) {
       webSecurity: false
     }
   });
+  // ⚠️ macOS 实测（Electron 28）：构造参数里的 x 会被系统「新窗落点策略」无视——y 生效、
+  //    x 一律被放到系统自选落点（~221），造成「重启后便利贴向右移动一段距离」的假象。
+  //    解法（已用最小 repro 实证）：建窗后立刻 setPosition 显式钉回存档位置。
+  win.setPosition(x, y);
   const search = '?file=' + encodeURIComponent(stickyNoteFile) +
                  '&key=' + encodeURIComponent(key) +
                  '&idx=' + encodeURIComponent(String(idx));
   win.loadFile('src/plugins/todolist/desktop-note.html', { search });
-  win.setAlwaysOnTop(true, 'floating');
+  // 图层层级＝一般视窗：不常驻最上层；点选这张便利贴时由 OS 自动提到最前，行为与普通视窗一致
   win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
   // 移动窗口后回写位置
   // 移动窗口后回写位置：内存即时更新，但落盘「去抖」（拖动用 setPosition 会高频触发 moved，
@@ -309,6 +361,8 @@ function createStickyNoteWindow(key, idx) {
     posSaveTimer = setTimeout(() => { saveStickyNoteState(); }, 400);
   };
   win.on('moved', persistPos);
+  // close（销毁前）快照最终位置：'closed' 时窗口已销毁读不到 bounds，只剩内存旧值
+  win.on('close', () => captureStickyBoundsById(id, win));
   win.on('closed', () => { if (posSaveTimer) clearTimeout(posSaveTimer); saveStickyNoteState(); stickyNoteWindows.delete(id); });
   stickyNoteWindows.set(id, win);
   return win;
@@ -324,19 +378,25 @@ function createFlipStickyWindow() {
   const w = (typeof inst.w === 'number' && inst.w > 140) ? Math.round(inst.w) : 240;
   const h = minimized0 ? ((typeof inst.minH === 'number' && inst.minH > 20) ? Math.round(inst.minH) : 90)
                        : ((typeof inst.h === 'number' && inst.h > 90) ? Math.round(inst.h) : 170);
-  const x = (typeof inst.x === 'number') ? Math.round(inst.x) : Math.round(60);
-  const y = (typeof inst.y === 'number') ? Math.round(inst.y) : Math.round(60);
+  const pos = clampToVisible(
+    (typeof inst.x === 'number') ? inst.x : Math.round(60),
+    (typeof inst.y === 'number') ? inst.y : Math.round(60),
+    w, h
+  );
+  const x = pos.x, y = pos.y;
 
   const win = new BrowserWindow({
     width: w, height: h, x, y,
-    transparent: true, frame: false, alwaysOnTop: true, skipTaskbar: true,
+    transparent: true, frame: false, skipTaskbar: true,
     resizable: false, movable: true, minimizable: false, maximizable: false,
     fullscreenable: false, hasShadow: false, show: true, backgroundColor: '#00000000',
     webPreferences: { nodeIntegration: true, contextIsolation: false, webSecurity: false }
   });
+  // ⚠️ 同分体窗：macOS 会无视构造 x，建窗后 setPosition 钉回存档位置（详见 createStickyNoteWindow 注释）
+  win.setPosition(x, y);
   const search = '?mode=flip&file=' + encodeURIComponent(stickyNoteFile);
   win.loadFile('src/plugins/todolist/desktop-note.html', { search });
-  win.setAlwaysOnTop(true, 'floating');
+  // 图层层级＝一般视窗：不常驻最上层；点选时由 OS 自动提到最前
   win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
   let posSaveTimer = null;
   const persistPos = () => {
@@ -348,6 +408,8 @@ function createFlipStickyWindow() {
     posSaveTimer = setTimeout(() => { saveStickyNoteState(); }, 400);
   };
   win.on('moved', persistPos);
+  // close（销毁前）快照最终位置（同分体窗：'closed' 读不到 bounds）
+  win.on('close', () => captureStickyBoundsById(id, win));
   win.on('closed', () => {
     if (posSaveTimer) clearTimeout(posSaveTimer);
     saveStickyNoteState();
@@ -431,6 +493,10 @@ ipcMain.on('sticky-note-refresh', (e, arg) => {
 // 🆕 便利贴窗点「刷新」按钮 → 中继给主程式窗口，由它重新渲染该张并回推（便利贴窗无法直接渲染 Markdown）
 ipcMain.on('sticky-note-refresh-request', (e, arg) => {
   if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('sticky-note-refresh-request', arg || {});
+});
+// 🆕 便利贴「编辑模式」回写：便利贴窗把事件原始 notes 发来 → 中继给主程式窗口写回 calendar.md
+ipcMain.on('sticky-note-edit', (e, arg) => {
+  if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('sticky-note-edit', arg || {});
 });
 ipcMain.handle('sticky-notes-count', () => ({ count: stickyNoteWindows.size }));
 
