@@ -71,7 +71,7 @@ function parseEvents(md) {
     if (rm) notes = rm[1];
     const uid = 'evp' + i;
     out.push({
-      title, date: get('date'), color: color || '#FFCC00',
+      title, date: get('date'), endDate: get('endDate'), color: color || '#FFCC00',
       tags: Array.isArray(tags) ? tags : [], notes, done: get('done') === 'true',
       uid, key: uid
     });
@@ -109,9 +109,25 @@ function subProgressBadge(ev) {
   return '<span class="note-sub-progress' + (all ? ' all-done' : '') +
     '" title="子事件：' + done + ' / ' + subs.length + ' 已完成">' + done + '/' + subs.length + '</span>';
 }
-// meta 行统一渲染：日期（·已完成）在前，右侧接「完成/总数」胶囊与「＋☐」加入子事件按钮
+// 跨天行程天数（含首尾；与主程式 tlSpanDays 同算法）
+function spanDays(a, b) {
+  const d1 = new Date(a + 'T00:00:00'), d2 = new Date(b + 'T00:00:00');
+  if (isNaN(d1) || isNaN(d2)) return 1;
+  return Math.round((d2 - d1) / 86400000) + 1;
+}
+// meta 行日期文字（2026-10-13 修复：跨天行程漏显示结束日期）：
+//   单日＝date；跨天（endDate 存在且 ≠ date）＝「date – endDate · 共N天」
+// ⚠️ 与主程式 tlIsMultiDay / tlRangeLabel / tlSpanDays 同源同义；便利贴自身日期沿用原始 ISO 格式
+//   （与正文里 [[dl:]]/[[cp:]] 渲染出的 📅/✅ 日期标记一致，不改动既有单日显示）
+function metaDateText(ev) {
+  const d = (ev && ev.date) || '';
+  const e = (ev && ev.endDate && ev.endDate !== ev.date) ? ev.endDate : '';
+  if (d && e) return d + ' – ' + e + ' · 共' + spanDays(d, e) + '天';
+  return d || e || '';
+}
+// meta 行统一渲染：日期（跨天含结束日期与总天数 ·已完成）在前，右侧接「完成/总数」胶囊与「＋☐」加入子事件按钮
 function renderMeta(ev) {
-  const dateText = escapeHtml((ev.date || '') + (ev.done ? ' · 已完成' : ''));
+  const dateText = escapeHtml(metaDateText(ev) + (ev.done ? ' · 已完成' : ''));
   document.getElementById('meta').innerHTML = dateText + subProgressBadge(ev) +
     '<button type="button" class="note-addcheck" title="加入子事件（在备注末尾加 CheckBox，直接存档）">＋☐</button>';
 }
@@ -190,19 +206,20 @@ function setupControls() {
     if (menu.contains(e.target) || (btnMenu && btnMenu.contains(e.target))) return;
     closeMenu();
   }, true);
-  document.getElementById('miClose').onclick = (e) => {
+  document.getElementById('miClose').onclick = async (e) => {
     e.stopPropagation();
     // 关闭前若有未保存改动 → 先确认（取消＝不关闭，避免静默丢数据）
     if (editMode && editDirty) {
       const ok = window.confirm('内容有未保存的改动。\n\n确定＝保存后关闭\n取消＝不关闭');
       if (!ok) return;
-      saveNoteEdit();
+      if (!await saveNoteEdit()) return;
     }
     if (IS_FLIP) ipcRenderer.invoke('close-sticky-notes');          // 翻页模式：结束整个翻页会话
     else ipcRenderer.invoke('sticky-note-close', { key: KEY, idx: IDX });
   };
   document.getElementById('miRefresh').onclick = (e) => { e.stopPropagation(); closeMenu(); ipcRenderer.send('sticky-note-refresh-request', { key: KEY, idx: IDX }); };
   document.getElementById('miOpen').onclick = (e) => { e.stopPropagation(); closeMenu(); ipcRenderer.invoke('wake-main-from-note', { key: KEY }); };
+  document.getElementById('miCalendar').onclick = (e) => { e.stopPropagation(); closeMenu(); ipcRenderer.invoke('activate-main-window'); };
   document.getElementById('miMin').onclick = (e) => { e.stopPropagation(); closeMenu(); toggleMinimize(); };
   document.getElementById('miCfg').onclick = (e) => {
     e.stopPropagation();
@@ -329,7 +346,7 @@ function onNoteDblClick(e) {
 }
 
 // ===== 🆕 便利贴「＋☐」加入子事件：对齐 calendar 列表行 tlOpenAddCheckDialog =====
-// 逐行输入 → 每行列成「- [ ] 行」追加到事件备注末尾，经 sticky-note-edit 落盘（主程式重解析+saveTask+推刷新）。
+// 逐行输入 → 每行列成「- [ ] 行」追加到事件备注末尾；Calendar 关闭时由主进程唤醒并交由其保存。
 // 只读包含文件（ev.ro）由主程式拦截并 toast，这里无需额外判断。
 function openAddCheck() {
   const inp = document.getElementById('addCheckInput');
@@ -342,17 +359,33 @@ function closeAddCheck() {
   const ov = document.getElementById('addCheckOv');
   if (ov) ov.classList.remove('show');
 }
-function confirmAddCheck() {
+let addCheckSavePending = false;
+async function confirmAddCheck() {
   const inp = document.getElementById('addCheckInput');
   if (!inp) { closeAddCheck(); return; }
   const lines = inp.value.replace(/\r\n/g, '\n').split('\n').map((l) => l.trim()).filter(Boolean);
-  closeAddCheck();
   if (!lines.length) return;
+  if (addCheckSavePending) return;
   const md = lines.map((l) => '- [ ] ' + l).join('\n');
   const ev = parseEvents(readMd()).find((x) => x.key === KEY);
-  if (!ev) return;
+  if (!ev) {
+    window.alert('找不到该行程，无法保存子事件');
+    return;
+  }
   const notes = (ev.notes ? String(ev.notes).replace(/\s*$/, '') + '\n' : '') + md + '\n';
-  ipcRenderer.send('sticky-note-edit', { key: KEY, idx: IDX, notes });
+  addCheckSavePending = true;
+  try {
+    const result = await ipcRenderer.invoke('sticky-note-save-edit', { key: KEY, idx: IDX, notes });
+    if (!result || !result.success) {
+      window.alert('保存子事件失败：' + ((result && result.error) || '主进程未确认保存'));
+      return;
+    }
+    closeAddCheck();
+  } catch (error) {
+    window.alert('保存子事件失败：' + (error && error.message ? error.message : error));
+  } finally {
+    addCheckSavePending = false;
+  }
 }
 
 // 🆕 刷新内容：接收主程式推来的最新渲染结果（arg.{html,titleHtml}），同步标题/正文/日期/标签
@@ -511,13 +544,15 @@ async function renderNoteContent() {
   return true;
 }
 // 切换内容模式：edit=true 进编辑（textarea 填原始 notes）/ false 回渲染（重新取最新 HTML）
-function setEditMode(edit) {
+async function setEditMode(edit) {
   const note = document.getElementById('note');
   const ea = document.getElementById('editArea');
   // 离开编辑模式前：有未保存改动 → 先确认（默认留在编辑模式，取消＝不丢改动）
   if (!edit && editMode && editDirty) {
     const ok = window.confirm('内容有未保存的改动。\n\n确定＝先保存再返回渲染模式\n取消＝留在编辑模式（不丢改动）');
-    if (ok) saveNoteEdit();
+    if (ok) {
+      if (!await saveNoteEdit()) return;
+    }
     else { syncEditSeg(); return; }
   }
   editMode = !!edit;
@@ -533,14 +568,28 @@ function setEditMode(edit) {
   syncEditSeg();
 }
 
-// 🆕 手动保存（⌘S）：把 textarea 内容回写到 calendar.md。
-//    保存成功后主程式会重渲染该张便利贴（tlPushStickyRefreshes），切回渲染模式即可看到。
-function saveNoteEdit() {
+// 🆕 手动保存（⌘S）：把 textarea 内容回写到 calendar.md；Calendar 关闭时由主进程直接写文件。
+let editSavePending = false;
+async function saveNoteEdit() {
   const ea = document.getElementById('editArea');
-  if (!ea) return;
-  ipcRenderer.send('sticky-note-edit', { key: KEY, idx: IDX, notes: ea.value });
+  if (!ea || editSavePending) return false;
+  editSavePending = true;
+  let result;
+  try {
+    result = await ipcRenderer.invoke('sticky-note-save-edit', { key: KEY, idx: IDX, notes: ea.value });
+  } catch (error) {
+    window.alert('保存便利贴失败：' + (error && error.message ? error.message : error));
+    editSavePending = false;
+    return false;
+  }
+  editSavePending = false;
+  if (!result || !result.success) {
+    window.alert('保存便利贴失败：' + ((result && result.error) || '主进程未确认保存'));
+    return false;
+  }
   editDirty = false;
   markEditDirty(false);
+  return true;
 }
 // 未保存状态提示：用编辑框内圈描边表示（不新增 DOM，保持画面干净）
 //   红框＝有未保存改动；按 ⌘S 后转绿框，1.6 秒后自动淡出

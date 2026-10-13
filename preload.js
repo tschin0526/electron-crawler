@@ -155,7 +155,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.on('sticky-set-mode', (event, payload) => callback(payload));
   },
 
-  // 桌面便利贴「编辑模式」回写：便利贴窗把事件原始 notes 发来 → 主程式写回 calendar.md
+  // 桌面便利贴「编辑模式」回写：主进程转发请求给 Calendar 渲染进程，由其按既有流程写回 calendar.md
   onStickyEdit: (callback) => {
     ipcRenderer.on('sticky-note-edit', (event, payload) => callback(payload));
   },

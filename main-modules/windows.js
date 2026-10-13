@@ -11,6 +11,7 @@ const os = require('os');
 const APP_ROOT = path.join(__dirname, '..');
 
 let mainWindow = null;
+let stickyCalendarReadyWindowId = null;
 let elementViewerWindow = null;
 let domTreeViewWindow = null;
 let aiResponseViewerWindow = null;
@@ -135,7 +136,7 @@ function createAiResponseViewerWindow() {
   return aiResponseViewerWindow;
 }
 
-function createWindow() {
+function createWindow(options = {}) {
   const { screen } = require('electron');
   const primaryDisplay = screen.getPrimaryDisplay();
   const { width: screenWidth, height: screenHeight } = primaryDisplay.size;
@@ -160,6 +161,7 @@ function createWindow() {
   if (process.argv.includes('--dark')) themeArg = 'dark';
   else if (process.argv.includes('--light')) themeArg = 'light';
 
+  stickyCalendarReadyWindowId = null;
   mainWindow = new BrowserWindow({
     width: windowWidth,
     height: windowHeight,
@@ -177,7 +179,7 @@ function createWindow() {
     },
     icon: path.join(APP_ROOT, 'icon.png'),
     // --sticky 单独启动：主窗口隐藏，只让便利贴浮在桌面上，calendar 应用仅驻留 Dock
-    show: !isStickyOnly,
+    show: typeof options.show === 'boolean' ? options.show : !isStickyOnly,
     backgroundColor: '#ffffff'
   });
 
@@ -190,7 +192,8 @@ function createWindow() {
     // 🆕 --sticky：进入日历（后台加载 calendar.md 以便取得路径与便利贴清单）并自动弹出桌面便利贴窗口。
     //    --sticky 单独使用时主窗口已设为 show:false（仅驻留 Dock），画面上只显示便利贴；
     //    --calendar --sticky 同时使用时主窗口照常展开日历并叠加便利贴。
-    const search = '?standalone=1' + ((isCalendarMode || isStickyMode) ? '&cal=1' : '') + (isStickyMode ? '&sticky=1' : '') + (themeArg ? '&theme=' + themeArg : '');
+    const search = '?standalone=1' + ((isCalendarMode || isStickyMode) ? '&cal=1' : '') +
+      (isStickyMode && !options.skipStickyRestore ? '&sticky=1' : '') + (themeArg ? '&theme=' + themeArg : '');
     mainWindow.loadFile('src/plugins/todolist/index.html', { search });
     console.log('📌 [Main] 独立模式：主窗口已加载 TodoList（standalone=1' + (themeArg ? '，主题=' + themeArg : '') + '）');
   } else {
@@ -213,8 +216,26 @@ function createWindow() {
 
   mainWindow.on('closed', () => {
     mainWindow = null;
+    stickyCalendarReadyWindowId = null;
     setMainWindowCallback(null);
   });
+}
+
+function showMainWindow() {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    createWindow({ show: true, skipStickyRestore: true });
+  }
+  if (mainWindow.isMinimized()) mainWindow.restore();
+  mainWindow.show();
+  mainWindow.focus();
+  return mainWindow;
+}
+
+function ensureMainWindowForBackgroundSave() {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    createWindow({ show: false, skipStickyRestore: true });
+  }
+  return mainWindow;
 }
 
 // ============================================================
@@ -231,6 +252,8 @@ let stickyNoteOrder = [];          // 翻页顺序 [{key, idx}]（与 split 模�
 let stickyNoteMode = 'split';       // 'split'（分体显示：每张一个独立小窗）/ 'flip'（翻页显示：单窗循环）
 let stickyNoteFlipWindow = null;    // 翻页模式唯一的窗口
 const FLIP_KEY = '__flip__', FLIP_IDX = 0; // 翻页窗几何专用 id（位置/尺寸独立，与「当前显示哪张」无关）
+const pendingStickyEditSaves = new Map();
+let stickyEditSaveSeq = 0;
 
 function stickyStatePath() {
   return stickyNoteFile ? path.join(path.dirname(stickyNoteFile), 'sticky-notes-state.json') : '';
@@ -494,9 +517,72 @@ ipcMain.on('sticky-note-refresh', (e, arg) => {
 ipcMain.on('sticky-note-refresh-request', (e, arg) => {
   if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('sticky-note-refresh-request', arg || {});
 });
-// 🆕 便利贴「编辑模式」回写：便利贴窗把事件原始 notes 发来 → 中继给主程式窗口写回 calendar.md
-ipcMain.on('sticky-note-edit', (e, arg) => {
-  if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('sticky-note-edit', arg || {});
+// 🆕 便利贴「编辑模式」回写：唤醒 Calendar 后，由其渲染进程按既有流程写回 calendar.md
+ipcMain.handle('sticky-note-save-edit', async (e, arg) => {
+  try {
+    if (!arg || typeof arg.key !== 'string' || typeof arg.notes !== 'string') {
+      throw new Error('便利贴保存参数无效');
+    }
+    if (!stickyNoteFile) throw new Error('Calendar 文件路径不可用，无法保存便利贴');
+    const win = ensureMainWindowForBackgroundSave();
+    const requestId = 'sticky-save-' + Date.now() + '-' + (++stickyEditSaveSeq);
+    return await new Promise((resolve) => {
+      const timer = setTimeout(() => {
+        pendingStickyEditSaves.delete(requestId);
+        resolve({ success: false, error: 'Calendar 保存响应超时，请确认 Calendar 已打开后重试' });
+      }, 30000);
+      const pendingSave = {
+        resolve,
+        timer,
+        webContentsId: win.webContents.id,
+        sent: false,
+        send: null
+      };
+      pendingStickyEditSaves.set(requestId, pendingSave);
+
+      const sendSaveRequest = () => {
+        const pending = pendingStickyEditSaves.get(requestId);
+        if (!pending || pending.sent) return;
+        if (win.isDestroyed() || win.webContents.isDestroyed()) {
+          clearTimeout(pending.timer);
+          pendingStickyEditSaves.delete(requestId);
+          resolve({ success: false, error: 'Calendar 窗口已关闭，未能保存便利贴' });
+          return;
+        }
+        pending.sent = true;
+        win.webContents.send('sticky-note-edit', Object.assign({}, arg, {
+          file: stickyNoteFile,
+          requestId
+        }));
+      };
+      pendingSave.send = sendSaveRequest;
+
+      if (stickyCalendarReadyWindowId === win.webContents.id) {
+        sendSaveRequest();
+      }
+    });
+  } catch (error) {
+    console.error('[Main] 便利贴保存失败:', error);
+    return { success: false, error: error.message };
+  }
+});
+ipcMain.handle('sticky-note-save-edit-result', (event, payload) => {
+  const pending = payload && pendingStickyEditSaves.get(payload.requestId);
+  if (!pending || pending.webContentsId !== event.sender.id) return { success: false, error: '保存请求无效' };
+  clearTimeout(pending.timer);
+  pendingStickyEditSaves.delete(payload.requestId);
+  pending.resolve(payload.result || { success: false, error: 'Calendar 未返回保存结果' });
+  return { success: true };
+});
+ipcMain.handle('sticky-calendar-ready', (event) => {
+  if (!mainWindow || mainWindow.isDestroyed() || mainWindow.webContents.id !== event.sender.id) {
+    return { success: false };
+  }
+  stickyCalendarReadyWindowId = event.sender.id;
+  pendingStickyEditSaves.forEach((pending) => {
+    if (pending.webContentsId === event.sender.id && !pending.sent && pending.send) pending.send();
+  });
+  return { success: true };
 });
 ipcMain.handle('sticky-notes-count', () => ({ count: stickyNoteWindows.size }));
 
@@ -541,12 +627,12 @@ ipcMain.handle('sticky-note-close', (e, arg) => {
 });
 // 单张便利贴：唤起主程式（显示/聚焦主窗口，并让 TodoList 打开该事件）
 ipcMain.handle('wake-main-from-note', (e, arg) => {
-  if (mainWindow && !mainWindow.isDestroyed()) {
-    if (mainWindow.isMinimized()) mainWindow.restore();
-    mainWindow.show();
-    mainWindow.focus();
-    mainWindow.webContents.send('open-sticky-event', { key: (arg && arg.key) || '' });
-  }
+  const win = showMainWindow();
+  const openStickyEvent = () => {
+    if (!win.isDestroyed()) win.webContents.send('open-sticky-event', { key: (arg && arg.key) || '' });
+  };
+  if (win.webContents.isLoading()) win.webContents.once('did-finish-load', openStickyEvent);
+  else openStickyEvent();
   return true;
 });
 
@@ -1184,17 +1270,7 @@ function init(shared) {
     console.log('[Main] 🖥️ 收到 activate-main-window 请求！');
 
     try {
-      if (!mainWindow || mainWindow.isDestroyed()) {
-        console.error('[Main] ❌ 主窗口不存在');
-        return { success: false, error: '主窗口不存在' };
-      }
-
-      mainWindow.show();
-      mainWindow.focus();
-
-      if (mainWindow.isMinimized()) {
-        mainWindow.restore();
-      }
+      showMainWindow();
 
       console.log('[Main] ✅ 主窗口已激活！');
       return { success: true, message: '主窗口已激活' };

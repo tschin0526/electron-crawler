@@ -1271,6 +1271,10 @@
       const fStatus = (filter && filter.status) || 'all';
       // 「只显示事件主体」（2026-10-10）：无子事件的事件本身＝主体；有子事件的事件不算主体（由其子事件代表）
       const fMainOnly = !!(filter && filter.mainOnly);
+      // 🆕 父阶标签 BOM 展开（2026-10-13）：勾选父阶标签＝匹配「自身＋全部子阶/孙阶…」，
+      //    与主程式标签过滤 tlEventMatchesTag()/tlTagDescendants() 完全同逻辑（沿 ## TAGS 树向下收集）
+      const fam = new Set();
+      if (fTags) fTags.forEach((t) => tlTagDescendants(t).forEach((d) => fam.add(d)));
       const tagMap = new Map();   // tagName -> { mainTotal, mainDone, mainUndone, subTotal, subDone, subUndone, mains:[], subs:[] }
       const ensure = (k) => { if (!tagMap.has(k)) tagMap.set(k, { mainTotal: 0, mainDone: 0, mainUndone: 0, subTotal: 0, subDone: 0, subUndone: 0, mains: [], subs: [] }); return tagMap.get(k); };
       let mainT = 0, mainD = 0, mainU = 0, subT = 0, subD = 0, subU = 0;
@@ -1279,9 +1283,9 @@
         if (fStatus === 'done' && !ev.done) return;
         if (fStatus === 'undone' && ev.done) return;
         const tagNames = (ev.tags || []).map((t) => tlTagName(t)).filter(Boolean);
-        // 标签过滤：事件须命中至少一个所选标签（OR）；无标签事件仅在选中「(无标签)」时计入
+        // 标签过滤：事件须命中至少一个所选标签的 BOM 家族（OR，含子孙标签）；无标签事件仅在选中「(无标签)」时计入
         if (fTags) {
-          const hit = tagNames.some((t) => fTags.has(t));
+          const hit = tagNames.some((t) => fam.has(t));
           const noTagHit = (tagNames.length === 0 && fTags.has('(无标签)'));
           if (!hit && !noTagHit) return;
         }
@@ -1293,10 +1297,10 @@
         const subs = fStatus === 'all' ? allSubs : allSubs.filter((s) => (fStatus === 'done' ? s.done : !s.done));
         const subDoneCount = subs.filter((s) => s.done).length;
         subT += subs.length; subD += subDoneCount; subU += (subs.length - subDoneCount);
-        // 标签分组（含「无标签」），仅保留所选标签分组
+        // 标签分组（含「无标签」），仅保留所选标签（或其 BOM 子孙标签）分组
         const groups = tagNames.length ? tagNames : ['(无标签)'];
         groups.forEach((g) => {
-          if (fTags && !fTags.has(g)) return;
+          if (fTags && !fam.has(g)) return;
           const r = ensure(g);
           if (countMain) { r.mainTotal++; if (ev.done) r.mainDone++; else r.mainUndone++; }
           r.subTotal += subs.length; r.subDone += subDoneCount; r.subUndone += (subs.length - subDoneCount);
@@ -1310,7 +1314,7 @@
         mainT, mainD, mainU, subT, subD, subU,
         mainRate: pct(mainD, mainT), subRate: pct(subD, subT),
         mainOnly: fMainOnly,
-        rows: tagMap, pct,
+        rows: tagMap, pct, fam,
       };
     }
     function tlStatsSummaryHtml(s) {
@@ -1374,9 +1378,19 @@
     }
     function tlStatsTableHtml(s) {
       const head = '<thead><tr><th>标签</th><th>主事件<br>总计</th><th>主·完成</th><th>主·未完成</th><th>子事件<br>总计</th><th>子·完成</th><th>子·未完成</th></tr></thead>';
+      const fam = s.fam || new Set();
+      const tagCell = (name) => {
+        if (name === '(无标签)') return '<span class="muted">(无标签)</span>';
+        // 🆕 未勾选、但被已勾选父阶标签 BOM 带入的子孙标签：标「↳」并注明继承来源（与主程式标签条 active-desc 同义）
+        if (!tlStatsFilter.tags.has(name) && fam.has(name)) {
+          const src = tlStatsTagInheritSource(name);
+          return '<span class="tl-stats-tag-inherit" title="BOM 继承自父阶标签「' + tlEscapeHtml(src) + '」">↳ ' + tlEscapeHtml(name) + '</span>';
+        }
+        return tlEscapeHtml(name);
+      };
       const body = Array.from(s.rows.entries()).sort((a, b) => a[0].localeCompare(b[0], 'zh-Hans')).map(([name, r]) => {
         const detail = '<tr class="tl-stats-detail"><td class="tl-stats-detail" colspan="7"><details><summary>展开明细</summary>' + tlStatsDetailHtml(r) + '</details></td></tr>';
-        return '<tr><td class="tl-stats-tag">' + (name === '(无标签)' ? '<span class="muted">(无标签)</span>' : tlEscapeHtml(name)) + '</td>' +
+        return '<tr><td class="tl-stats-tag">' + tagCell(name) + '</td>' +
           '<td>' + r.mainTotal + '</td><td>' + r.mainDone + '</td><td>' + r.mainUndone + '</td>' +
           '<td>' + r.subTotal + '</td><td>' + r.subDone + '</td><td>' + r.subUndone + '</td></tr>' + detail;
       }).join('');
@@ -1386,33 +1400,63 @@
       return '<table class="tl-stats-table">' + head + '<tbody>' + body + total + '</tbody></table>';
     }
     let tlStatsFilter = { tags: new Set(), status: 'all', mainOnly: false };  // 默认：全部（mainOnly＝只显示事件主体）
+    // 统计可选标签＝事件上用过的标签 ∪ ## TAGS 树登记的全部标签
+    // 🆕 父阶标签（无事件直接挂靠，如「工作」）也要显示：与主程式标签过滤条 tlRenderTagBar() 同源合并
     function tlStatsTagOptions() {
       const set = new Set();
       tlCalEvents.forEach((ev) => (ev.tags || []).forEach((t) => { const n = tlTagName(t); if (n) set.add(n); }));
+      tlAllTagNames().forEach((t) => set.add(t));
       const arr = Array.from(set).sort((a, b) => a.localeCompare(b, 'zh-Hans'));
       arr.push('(无标签)');
       return arr;
     }
+    // 该子孙标签是被哪个「已勾选的（祖）父阶标签」BOM 带入：沿父阶向上找最近的已勾选祖先
+    function tlStatsTagInheritSource(name) {
+      let cur = tlTagParent(name), guard = 0;
+      while (cur && guard++ < 100) {
+        if (tlStatsFilter.tags.has(cur)) return cur;
+        cur = tlTagParent(cur);
+      }
+      return '';
+    }
+    let tlStatsTagBoxBound = false;  // 标签胶囊点击委托是否已绑定（只绑一次：容器 #tlEvStatsFilters 稳定，chips 每次重绘）
     function tlRenderStatsFilters() {
       const box = document.getElementById('tlEvStatsFilters');
       if (!box) return;
       const tags = tlStatsTagOptions();
-      const tagChips = tags.map((t) =>
-        '<label class="tl-stats-tag-filter"><input type="checkbox" data-tl-stats-tag="' + tlEscapeHtml(t) + '"' + (tlStatsFilter.tags.has(t) ? ' checked' : '') + '> ' + tlEscapeHtml(t) + '</label>'
-      ).join('');
+      // 🆕 勾选父阶标签 → BOM 展开出全部子孙标签；未勾选的子孙标签以「继承」态显示（与主程式标签条 active-desc 一致）
+      const fam = new Set();
+      tlStatsFilter.tags.forEach((t) => tlTagDescendants(t).forEach((d) => fam.add(d)));
+      // 胶囊渲染（2026-10-13 由 checkbox 改为胶囊）：与主程式标签过滤条 .ev-tag-chip 完全同一套类名与三态——
+      //   .active＝主动勾选（实心蓝白）／.active-desc＝选父阶后被动带入的子孙（ghost 蓝）／无类＝未选
+      const tagChips = tags.map((t) => {
+        const checked = tlStatsFilter.tags.has(t);
+        const inherit = !checked && fam.has(t);
+        const cls = 'ev-tag-chip' + (checked ? ' active' : (inherit ? ' active-desc' : ''));
+        if (!inherit) {
+          return '<span class="' + cls + '" data-tl-stats-tag="' + tlEscapeHtml(t) + '">' + tlEscapeHtml(t) + '</span>';
+        }
+        const src = tlStatsTagInheritSource(t);
+        return '<span class="' + cls + '" data-tl-stats-tag="' + tlEscapeHtml(t) + '" title="BOM 继承自父阶标签「' + tlEscapeHtml(src) + '」（点选可主动勾选）">' + tlEscapeHtml(t) + '</span>';
+      }).join('');
       const st = tlStatsFilter.status;
       const radio = (v, label) => '<label class="tl-stats-status"><input type="radio" name="tlStatsStatus" value="' + v + '"' + (st === v ? ' checked' : '') + '> ' + label + '</label>';
       box.innerHTML =
-        '<div class="tl-stats-filter-row"><span class="lbl">标签：</span><div class="tl-stats-tag-filters">' + (tagChips || '<span class="muted">（无标签可选）</span>') + '</div></div>' +
+        '<div class="tl-stats-filter-row"><span class="lbl" title="点选胶囊过滤；点选父阶标签＝自动展开 BOM，纳入其全部子孙标签（与主程式标签过滤条同逻辑）">标签：</span><div class="tl-stats-tag-filters">' + (tagChips || '<span class="muted">（无标签可选）</span>') + '</div></div>' +
         '<div class="tl-stats-filter-row"><span class="lbl">完成状态：</span>' + radio('all', '全部') + radio('done', '已完成') + radio('undone', '未完成') +
         '<label class="tl-stats-status tl-stats-mainonly" title="事件主体：无子事件的事件本身＝主体；有子事件的事件由其子事件代表（主事件本身不计入主事件栏）"><input type="checkbox" data-tl-stats-mainonly="1"' + (tlStatsFilter.mainOnly ? ' checked' : '') + '> 只显示事件主体</label></div>';
-      box.querySelectorAll('input[data-tl-stats-tag]').forEach((cb) => {
-        cb.addEventListener('change', () => {
-          const v = cb.getAttribute('data-tl-stats-tag');
-          if (cb.checked) tlStatsFilter.tags.add(v); else tlStatsFilter.tags.delete(v);
+      // 标签胶囊点击（事件委托，绑定在稳定容器上只绑一次；与主程式 #tlEvTagFilter 委托同模式）
+      if (!tlStatsTagBoxBound) {
+        tlStatsTagBoxBound = true;
+        box.addEventListener('click', (e) => {
+          const chip = e.target.closest ? e.target.closest('[data-tl-stats-tag]') : null;
+          if (!chip) return;
+          const v = chip.getAttribute('data-tl-stats-tag');
+          if (tlStatsFilter.tags.has(v)) tlStatsFilter.tags.delete(v); else tlStatsFilter.tags.add(v);
+          tlRenderStatsFilters();  // 重绘胶囊：即时切换主动/被动（继承）态
           tlRenderStatsBody();
         });
-      });
+      }
       box.querySelectorAll('input[name="tlStatsStatus"]').forEach((rb) => {
         rb.addEventListener('change', () => { if (rb.checked) { tlStatsFilter.status = rb.value; tlRenderStatsBody(); } });
       });

@@ -2281,8 +2281,9 @@
     .tl-stats-filter-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-bottom: 6px; }
     .tl-stats-filter-row:last-child { margin-bottom: 0; }
     .tl-stats-filter-row .lbl { font-size: 12px; color: var(--ev-muted); margin-right: 2px; }
-    .tl-stats-tag-filters { display: flex; flex-wrap: wrap; gap: 4px 10px; }
-    .tl-stats-tag-filter, .tl-stats-status { font-size: 12px; color: var(--ev-text); display: inline-flex; align-items: center; gap: 3px; cursor: pointer; }
+    .tl-stats-tag-filters { display: flex; flex-wrap: wrap; gap: 6px; }
+    /* 标签胶囊：复用主程式标签过滤条 .ev-tag-chip 三态（active＝主动勾选 / active-desc＝父阶 BOM 被动带入） */
+    .tl-stats-status { font-size: 12px; color: var(--ev-text); display: inline-flex; align-items: center; gap: 3px; cursor: pointer; }
     /* 「只显示事件主体」checkbox：与完成状态单选组留距区隔 */
     .tl-stats-mainonly { margin-left: 16px; }
     .tl-stats-detail-table { width: 100%; border-collapse: collapse; font-size: 12px; text-align: left; margin-top: 2px; }
@@ -2407,6 +2408,8 @@
     .tl-stats-table th, .tl-stats-table td { border: 1px solid var(--ev-border); padding: 6px 8px; text-align: center; }
     .tl-stats-table th { background: var(--ev-chip-bg, rgba(124,58,237,.1)); color: var(--ev-text); font-weight: 600; }
     .tl-stats-table td.tl-stats-tag { text-align: left; font-weight: 600; color: var(--ev-text); }
+    /* 📊 统计表：BOM 继承行（子孙标签被已勾选的父阶标签带入）↳ 蓝字标注 */
+    .tl-stats-table td.tl-stats-tag .tl-stats-tag-inherit { color: #2563EB; font-weight: 600; }
     .tl-stats-table tr.tl-stats-total td { font-weight: 700; background: var(--ev-chip-bg, rgba(124,58,237,.06)); }
     .tl-stats-table .muted { color: var(--ev-muted); }
     .tl-stats-detail { text-align: left; padding: 0 !important; }
@@ -5227,7 +5230,7 @@
         <div class="tl-ev-stats-title">📊 事件统计<span class="tl-ev-stats-file" id="tlEvStatsFile"></span></div>
         <button type="button" class="tl-ev-stats-close" onclick="tlCloseStats()" aria-label="关闭">✕</button>
       </div>
-      <div class="tl-ev-stats-sub">主事件 + 备注中的子事件（<code>- [ ]</code>），按标签与完成状态分类</div>
+      <div class="tl-ev-stats-sub">主事件 + 备注中的子事件（<code>- [ ]</code>），按标签与完成状态分类；点选父阶标签将自动展开 BOM，纳入其全部子孙标签过滤</div>
       <div id="tlEvStatsFilters" class="tl-ev-stats-filters"></div>
       <div id="tlEvStatsBody" class="tl-ev-stats-body"></div>
     </div>
@@ -6867,21 +6870,49 @@
     if (window.electronAPI && typeof window.electronAPI.onStickyRefreshRequest === 'function') {
       window.electronAPI.onStickyRefreshRequest(function (p) { tlOnStickyRefreshRequest(p); });
     }
-    // 🆕 便利贴「编辑模式」回写：便利贴窗把事件原始 notes 发来 → 定位事件、写回 calendar.md、重渲染该张
-    function tlOnStickyEdit(payload) {
+    // 🆕 便利贴「编辑模式」回写：定位行程、更新编辑缓冲并通过 Calendar 既有保存流程写回 calendar.md
+    async function tlOnStickyEdit(payload) {
       if (!payload || typeof payload.key !== 'string') return;
-      if (!window.electronAPI || !window.electronAPI.invoke) return;
-      if (typeof tlCalEvents === 'undefined') return;
-      tlCalEvents = (typeof tlAllEvents === 'function')
-        ? tlAllEvents(document.getElementById('taskText').value)
-        : tlCalEvents;
-      const uid = (typeof tlFindEventUidByKey === 'function') ? tlFindEventUidByKey(payload.key) : null;
-      const ev = tlCalEvents.find(function (x) { return x.uid === uid; });
-      if (!ev) { if (typeof showToast === 'function') showToast('找不到该行程（内容可能已被修改）', 'danger'); return; }
-      if (ev.ro) { if (typeof showToast === 'function') showToast('此行程来自只读包含文件，不可更改', 'danger'); return; }
-      ev.notes = (payload.notes != null) ? String(payload.notes) : '';
-      tlApplyEventsToBuffer();   // 重序列化 taskText + 重绘行程视图 + 重新推送便利贴刷新（tlPushStickyRefreshes）
-      if (typeof saveTask === 'function') saveTask(false); // 落盘到 calendar.md（不关闭窗）
+      const reply = async (result) => {
+        if (payload.requestId && window.electronAPI && window.electronAPI.invoke) {
+          await window.electronAPI.invoke('sticky-note-save-edit-result', {
+            requestId: payload.requestId,
+            result
+          });
+        }
+      };
+      try {
+        if (!window.electronAPI || !window.electronAPI.invoke) throw new Error('Calendar 保存接口不可用');
+        if (typeof tlCalEvents === 'undefined') throw new Error('Calendar 行程视图尚未初始化');
+
+        if (payload.file && externalFilePath !== payload.file) {
+          const fileName = payload.file.split(/[\\/]/).pop() || 'calendar.md';
+          await openExternalFile(payload.file, fileName, 'md');
+        }
+        if (payload.file && externalFilePath !== payload.file) {
+          throw new Error('无法打开便利贴所属的 Calendar 文件');
+        }
+
+        tlCalEvents = (typeof tlAllEvents === 'function')
+          ? tlAllEvents(document.getElementById('taskText').value)
+          : tlCalEvents;
+        const uid = (typeof tlFindEventUidByKey === 'function') ? tlFindEventUidByKey(payload.key) : null;
+        const ev = tlCalEvents.find(function (x) { return x.uid === uid; });
+        if (!ev) throw new Error('找不到该行程（内容可能已被修改）');
+        if (ev.ro) throw new Error('此行程来自只读包含文件，不可更改');
+
+        ev.notes = (payload.notes != null) ? String(payload.notes) : '';
+        tlApplyEventsToBuffer();
+        if (typeof saveTask !== 'function') throw new Error('Calendar 保存功能不可用');
+        const saved = await saveTask(false, true, true);
+        if (!saved) throw new Error('Calendar 未确认保存完成');
+        if (typeof showToast === 'function') showToast('便利贴内容已保存到 Calendar', 'success');
+        await reply({ success: true });
+      } catch (error) {
+        console.error('[TodoList] 便利贴内容保存失败:', error);
+        if (typeof showToast === 'function') showToast('便利贴保存失败：' + (error.message || error), 'danger');
+        await reply({ success: false, error: error.message || String(error) });
+      }
     }
     if (window.electronAPI && typeof window.electronAPI.onStickyEdit === 'function') {
       window.electronAPI.onStickyEdit(function (p) { tlOnStickyEdit(p); });
@@ -12767,7 +12798,7 @@
       }
     }
 
-    async function saveTask(closeAfterSave = true, silent = false) {
+    async function saveTask(closeAfterSave = true, silent = false, propagateMdError = false) {
       // 🆕 本次保存是否「新建了 todo 卡片」——记录新卡片 id，供保存后切换编辑器状态用。
       //    不切态的话，10 秒一次的自动保存 / 用户再点「保存」都会重复走新增分支，
       //    以新的 Date.now() 生成不同档名，重复落盘一堆 todo-<时间戳>.json（严重 bug）。
@@ -12875,28 +12906,35 @@
       // ===== MD 文件（纯 .md，无 JSON / 无标签·颜色·附件等元数据）=====
       if (activeFileTab === 'md') {
         if (!text) {
+          if (propagateMdError) throw new Error('Calendar 内容为空，未保存');
           if (!silent) alert('请输入内容');
-          return;
+          return false;
         }
         try {
+          let saveResult;
           if (externalFilePath) {
             // 📂 外部文件模式：写回原路径
-            await window.electronAPI.saveFileByPath(externalFilePath, textarea.value.replace(/\r\n/g, '\n'));
+            saveResult = await window.electronAPI.saveFileByPath(externalFilePath, textarea.value.replace(/\r\n/g, '\n'));
           } else {
             let mdId = currentMdId;
             if (!mdId) { mdId = 'md-' + Date.now().toString(); currentMdId = mdId; }
-            await window.electronAPI.saveMdFile(mdId, textarea.value.replace(/\r\n/g, '\n'));
+            saveResult = await window.electronAPI.saveMdFile(mdId, textarea.value.replace(/\r\n/g, '\n'));
+          }
+          if (propagateMdError && (!saveResult || saveResult.success !== true)) {
+            throw new Error((saveResult && saveResult.error) || '文件系统未确认写入成功');
           }
           // 🆕 保存成功后刷新「未保存检测」快照：此后 hasUnsavedChanges() 应为 false，
           //    页签脏标记 / 关闭问询都依赖它（否则 Cmd+S 保存后关闭还会误报未保存）。
           captureEditSnapshot();
           if (closeAfterSave) { closeModal(undefined, undefined, true); }
           if (!silent) showToast('已保存 ' + (externalFilePath ? externalFilePath.split('/').pop() : (currentMdId + '.md')), 'success');
+          return true;
         } catch (e) {
           console.error('[TodoList] 保存 MD 文件失败:', e);
+          if (propagateMdError) throw e;
           if (!silent) alert('保存 MD 文件失败：' + (e && e.message ? e.message : e));
+          return false;
         }
-        return;
       }
 
       // ===== todo 卡片（JSON）=====
@@ -14219,6 +14257,9 @@
         }
       }
       tlUpdateStickyBadge();
+      if (window.electronAPI && window.electronAPI.invoke) {
+        await window.electronAPI.invoke('sticky-calendar-ready');
+      }
     }
 
     // 🆕 监听 #mdPreview 内容变化，自动补填其中的文件嵌入占位。
