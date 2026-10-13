@@ -82,6 +82,7 @@
     const TL_STICKY_IC_SVG = '<svg class="ev-sticky-ic" viewBox="0 0 24 24" width="13" height="13" aria-hidden="true"><rect x="2.8" y="2.8" width="18.4" height="18.4" rx="2.2" fill="#FCEFA4"/><path d="M3 18.4c0 1.5 1.2 2.8 2.8 2.8h14.4v-2.8H3Z" fill="#F7E694"/><path d="M21.2 14.8v3.6c0 1.5-1.2 2.8-2.8 2.8h-3.6l6.4-6.4Z" fill="#FDF6C8"/><path d="M21.2 14.8 14.8 21.2" stroke="#E8CE7C" stroke-width=".7" stroke-linecap="round" fill="none"/><rect x="8.6" y="6.1" width="6.8" height="1.9" rx=".95" fill="#F0C860"/><rect x="9.1" y="6.5" width="5.8" height=".8" rx=".4" fill="#FFF3C0"/><path d="M6.6 11.4h10.8M6.6 14.2h7.6" stroke="#EBD88F" stroke-width=".9" stroke-linecap="round" fill="none"/></svg>';
     let tlEvFormTags = [];
     let tlEvTagEditIndex = -1;   // 正在内联编辑分类的选中标签下标（-1＝无）
+    let tlEvTagEditLevel = 'cat';
     const TL_CAL_COLORS = ['#FF3B30', '#FF9500', '#FFCC00', '#34C759', '#5AC8FA', '#007AFF', '#5856D6', '#AF52DE', '#FF2D55', '#A2845E', '#8E8E93'];
 
     // 当前编辑器打开的文件是不是 calendar.md（行程应用数据文件）
@@ -316,14 +317,15 @@
       if (!s) return [];
       try { const a = JSON.parse(s); return Array.isArray(a) ? a : []; } catch (e) { return []; }
     }
-    // ===== 標籤結構：{name, cat?}（cat＝分類）；舊資料純字串自動升級為 {name,cat:''} =====
+    // ===== 標籤結構：{name, cat?, subcat?}；舊資料純字串自動升級 =====
     function tlTagName(t) { return (t && typeof t === 'object') ? (t.name || '') : (t || ''); }
     function tlTagCat(t) { return (t && typeof t === 'object') ? (t.cat || '') : ''; }
-    function tlTagLabel(t) { const n = tlTagName(t), c = tlTagCat(t); return c ? n + '·' + c : n; }
+    function tlTagSubcat(t) { return (t && typeof t === 'object') ? (t.subcat || '') : ''; }
+    function tlTagLabel(t) { const n = tlTagName(t), c = tlTagCat(t), s = tlTagSubcat(t); return n + (c ? '·' + c : '') + (s ? '·' + s : ''); }
     function tlNormalizeTags(arr) {
       return (Array.isArray(arr) ? arr : []).map((t) => (t && typeof t === 'object')
-        ? { name: t.name || '', cat: t.cat || '' }
-        : { name: String(t || ''), cat: '' });
+        ? { name: t.name || '', cat: t.cat || '', subcat: t.subcat || '' }
+        : { name: String(t || ''), cat: '', subcat: '' });
     }
     // ===== 標籤父階（樹形結構）：標籤名 → 父標籤名，集中存於 calendar.md 的 ## TAGS 區塊 =====
     // ⚠️ 與事件/日記不同：標籤父階是全文件級元數據（一棵標籤名組成的樹），不依附於單一事件，
@@ -719,7 +721,7 @@
         const n = parseInt(ev && ev.sticky, 10) || 0;
         if (n > 0) {
           const key = ev.uid || ((ev.title || '') + '|' + (ev.date || ''));
-          const html = (typeof tlRenderNotes === 'function') ? tlRenderNotes(ev.notes, null) : '';
+          const html = (typeof tlRenderNotes === 'function') ? tlRenderNotes(ev.notes, ev.uid || key) : '';
           // 🆕 标题同样由主窗口渲染（与列表行同一 tlRenderInlineMarkdown 管线），避免便利贴里显示原始 <BIG> 等标签
           const titleHtml = (typeof tlRenderInlineMarkdown === 'function') ? tlRenderInlineMarkdown(ev.title || '') : '';
           const titleNode = document.createElement('div');
@@ -889,7 +891,7 @@
       }
       return html;
     }
-    // 備註：先處理可點擊 checkbox，再整段 renderMarkdown；uid 為 null 時 checkbox 只顯示、不交互。
+    // 備註：先處理 checkbox 與子事件編輯按鈕，再整段 renderMarkdown；uid 為 null 時只顯示、不交互。
     function tlRenderNotes(notes, uid) {
       if (!notes) return '';
       const withChecks = tlNotesWithChecks(String(notes), uid);
@@ -909,6 +911,11 @@
         const m = line.match(/^(\s*)-\s+\[([ xX])\]\s?(.*)$/);
         if (!m) return line;
         const done = m[2] !== ' ';
+        const event = uid && tlCalEvents.find((item) => item.uid === uid);
+        const editButton = uid && event && !event.ro
+          ? '<button type="button" class="ev-md-edit" title="编辑子事件" onclick="tlOpenEditNoteCheckDialog(event,\'' +
+            tlEscapeHtml(uid) + '\',' + i + ')">\u270e</button>'
+          : '';
         const cbAttr = uid
           ? ' class="ev-cb interactive" data-uid="' + tlEscapeHtml(uid) + '" data-line="' + i + '"' +
             ' onclick="tlToggleNoteCheck(event,\'' + tlEscapeHtml(uid) + '\',' + i + ')"' +
@@ -916,6 +923,7 @@
             ' role="checkbox" aria-checked="' + (done ? 'true' : 'false') + '" tabindex="0"'
           : ' class="ev-cb"';
         return m[1] + '<span class="ev-md-check' + (done ? ' done' : '') + '">' +
+          editButton +
           '<span' + cbAttr + '>' + (done ? '\u2713' : '') + '</span>' +
           '<span class="ev-md-check-text">' + tlRenderInlineMarkdown(tlRenderNoteMarkers(m[3])) + '</span></span>';
       }).join('\n');
@@ -1073,6 +1081,17 @@
       tlCalEvents.forEach((ev) => (ev.tags || []).forEach((t) => { if (tlTagName(t) === tagName) { const c = tlTagCat(t); if (c) cats.add(c); } }));
       return Array.from(cats).sort((a, b) => a.localeCompare(b, 'zh-Hans'));
     }
+    function tlFormSubcatNames(tagName, cat) {
+      const subcats = new Set();
+      if (!tagName || !cat) return [];
+      tlCalEvents.forEach((ev) => (ev.tags || []).forEach((t) => {
+        if (tlTagName(t) === tagName && tlTagCat(t) === cat) {
+          const subcat = tlTagSubcat(t);
+          if (subcat) subcats.add(subcat);
+        }
+      }));
+      return Array.from(subcats).sort((a, b) => a.localeCompare(b, 'zh-Hans'));
+    }
     function tlRenderTagPicker() {
       const picker = document.getElementById('tl-ev-tag-picker');
       const selected = document.getElementById('tl-ev-tag-selected');
@@ -1081,19 +1100,29 @@
       if (!picker || !selected || !menu || !input) return;
       selected.innerHTML = tlEvFormTags.map((t, i) => {
         if (i === tlEvTagEditIndex) {
-          return '<span class="tl-ev-tag-selected-chip"><input type="text" class="tl-ev-tag-cat-input" data-tl-ev-tag-cat="' + i + '" maxlength="40" value="' + tlEscapeHtml(tlTagCat(t)) + '" placeholder="分类" list="tl-ev-cat-options"></span>';
+          const isSubcat = tlEvTagEditLevel === 'subcat';
+          const value = isSubcat ? tlTagSubcat(t) : tlTagCat(t);
+          const listId = isSubcat ? 'tl-ev-subcat-options' : 'tl-ev-cat-options';
+          return '<span class="tl-ev-tag-selected-chip"><input type="text" class="tl-ev-tag-cat-input" data-tl-ev-tag-cat="' + i + '" maxlength="40" value="' + tlEscapeHtml(value) + '" placeholder="' + (isSubcat ? '第3段标签' : '次标签') + '" list="' + listId + '"></span>';
         }
         const name = tlEscapeHtml(tlTagName(t));
         const cat = tlTagCat(t);
-        const catHtml = cat ? '<span class="ev-tag-cat">·' + tlEscapeHtml(cat) + '</span>' : '';
-        return '<span class="tl-ev-tag-selected-chip">' + '<span class="tl-ev-tag-name" data-tl-ev-tag-edit="' + i + '" title="点击输入分类">' + name + '</span>' + catHtml + '<button type="button" data-tl-ev-tag-remove="' + tlEscapeHtml(tlTagName(t)) + '" aria-label="删除标签">×</button></span>';
+        const subcat = tlTagSubcat(t);
+        const catHtml = cat ? '<span class="ev-tag-cat" data-tl-ev-tag-subcat-edit="' + i + '" title="点击输入第3段标签">·' + tlEscapeHtml(cat) + '</span>' : '';
+        const subcatHtml = subcat ? '<span class="ev-tag-cat" data-tl-ev-tag-subcat-edit="' + i + '" title="点击编辑第3段标签">·' + tlEscapeHtml(subcat) + '</span>' : '';
+        return '<span class="tl-ev-tag-selected-chip">' + '<span class="tl-ev-tag-name" data-tl-ev-tag-edit="' + i + '" title="点击输入次标签">' + name + '</span>' + catHtml + subcatHtml + '<button type="button" data-tl-ev-tag-remove="' + tlEscapeHtml(tlTagName(t)) + '" aria-label="删除标签">×</button></span>';
       }).join('');
       // 子标签（分类）历史下拉：原生 datalist，与标签菜单同源（calendar.md 已有事件）
       // ⚠️ 只列当前编辑标签所属的子分类，不混入其他标签的子分类（从属关系）
       let catList = picker.querySelector('#tl-ev-cat-options');
       if (!catList) { catList = document.createElement('datalist'); catList.id = 'tl-ev-cat-options'; picker.appendChild(catList); }
-      const catNames = tlFormCatNames(tlEvTagEditIndex >= 0 ? tlTagName(tlEvFormTags[tlEvTagEditIndex]) : null);
+      const editingTag = tlEvTagEditIndex >= 0 ? tlEvFormTags[tlEvTagEditIndex] : null;
+      const catNames = tlFormCatNames(editingTag ? tlTagName(editingTag) : null);
       catList.innerHTML = catNames.map((c) => '<option value="' + tlEscapeHtml(c) + '"></option>').join('');
+      let subcatList = picker.querySelector('#tl-ev-subcat-options');
+      if (!subcatList) { subcatList = document.createElement('datalist'); subcatList.id = 'tl-ev-subcat-options'; picker.appendChild(subcatList); }
+      const subcatNames = editingTag ? tlFormSubcatNames(tlTagName(editingTag), tlTagCat(editingTag)) : [];
+      subcatList.innerHTML = subcatNames.map((c) => '<option value="' + tlEscapeHtml(c) + '"></option>').join('');
       const query = input.value.trim().toLowerCase();
       const names = tlFormTagNames().filter((t) => !query || t.toLowerCase().includes(query));
       menu.innerHTML = names.length ? names.map((t) => '<button type="button" class="tl-ev-tag-option' + (tlEvFormTags.some((x) => tlTagName(x) === t) ? ' selected' : '') + '" data-tl-ev-tag-option="' + tlEscapeHtml(t) + '">' + (tlEvFormTags.some((x) => tlTagName(x) === t) ? '✓ ' : '') + tlEscapeHtml(t) + '</button>').join('') : '<div class="tl-ev-tag-option">暂无可选标签</div>';
@@ -1102,24 +1131,34 @@
         if (ci) {
           ci.focus(); ci.select();
           // 有历史分类时自动弹下拉（showPicker 需用户手势；此处由点击标签名触发，正处手势链路内）
-          try { if (catNames.length && typeof ci.showPicker === 'function') ci.showPicker(); } catch (err) { /* 无手势等场景忽略，仍可手动点箭头 */ }
+          const suggestions = tlEvTagEditLevel === 'subcat' ? subcatNames : catNames;
+          try { if (suggestions.length && typeof ci.showPicker === 'function') ci.showPicker(); } catch (err) { /* 无手势等场景忽略，仍可手动点箭头 */ }
+          const editIndex = tlEvTagEditIndex;
+          const editLevel = tlEvTagEditLevel;
           ci.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter') { e.preventDefault(); tlCommitTagCat(tlEvTagEditIndex, ci.value); }
+            if (e.key === 'Enter') { e.preventDefault(); tlCommitTagCat(editIndex, ci.value, editLevel); }
             else if (e.key === 'Escape') { e.preventDefault(); tlEvTagEditIndex = -1; tlRenderTagPicker(); }
           });
           // datalist 选中历史分类后立即提交（change 在 blur 前触发；重复提交无副作用）
-          ci.addEventListener('change', () => tlCommitTagCat(tlEvTagEditIndex, ci.value));
-          ci.addEventListener('blur', () => tlCommitTagCat(tlEvTagEditIndex, ci.value));
+          ci.addEventListener('change', () => tlCommitTagCat(editIndex, ci.value, editLevel));
+          ci.addEventListener('blur', () => tlCommitTagCat(editIndex, ci.value, editLevel));
         }
       }
     }
-    function tlCommitTagCat(i, val) {
-      if (tlEvFormTags[i]) tlEvFormTags[i].cat = (val || '').trim();
+    function tlCommitTagCat(i, val, level) {
+      if (tlEvFormTags[i]) {
+        const value = (val || '').trim();
+        if (level === 'subcat') tlEvFormTags[i].subcat = value;
+        else {
+          if (tlEvFormTags[i].cat !== value) tlEvFormTags[i].subcat = '';
+          tlEvFormTags[i].cat = value;
+        }
+      }
       tlEvTagEditIndex = -1;
       tlRenderTagPicker();
     }
     function tlAddFormTag(value) {
-      String(value || '').split(/[,，]/).map((t) => t.trim()).filter(Boolean).forEach((t) => { if (!tlEvFormTags.some((x) => tlTagName(x) === t)) tlEvFormTags.push({ name: t, cat: '' }); });
+      String(value || '').split(/[,，]/).map((t) => t.trim()).filter(Boolean).forEach((t) => { if (!tlEvFormTags.some((x) => tlTagName(x) === t)) tlEvFormTags.push({ name: t, cat: '', subcat: '' }); });
       document.getElementById('tlEvFTags').value = '';
       tlRenderTagPicker();
     }
@@ -3153,22 +3192,111 @@
     // 两种模式：tlAddCheckTargetUid=null＝编辑表单模式（追加到 #tlEvFNotes，等表单保存）；
     //          非空＝列表模式（追加到该事件备注后**直接存档**：写缓冲＋落盘 calendar.md，2026-10-10 用户需求）
     let tlAddCheckTargetUid = null;
+    let tlEditNoteCheckTarget = null;
     function tlOpenAddCheckDialog(uid) {
       tlAddCheckTargetUid = uid || null;
+      tlEditNoteCheckTarget = null;
       const ov = document.getElementById('tlAddCheckOverlay');
       const inp = document.getElementById('tlAddCheckInput');
+      const copyButton = document.getElementById('tlCopyNoteCheckButton');
+      if (ov) ov.onkeydown = null;
+      if (copyButton) copyButton.style.display = 'none';
+      document.querySelector('#tlAddCheckOverlay .tl-ev-form-title').textContent = '建立 CheckBox 项目';
+      document.querySelector('#tlAddCheckOverlay .tl-ev-form-hint').innerHTML = '每行一个项目，保存后以 <code>- [ ] …</code> 形式追加到「备注」末尾';
+      document.querySelector('#tlAddCheckOverlay .btn-primary').textContent = '加入备注';
       if (inp) inp.value = '';
+      if (inp) inp.rows = 4;
       if (ov) ov.style.display = 'flex';
       if (inp) setTimeout(() => inp.focus(), 0);
+    }
+    function tlOpenEditNoteCheckDialog(event, uid, line) {
+      if (event) { event.preventDefault(); event.stopPropagation(); }
+      tlCalEvents = tlAllEvents(document.getElementById('taskText').value);
+      const ev = tlCalEvents.find((item) => item.uid === uid);
+      if (!ev) { showToast('找不到该条行程（内容可能已被修改）', 'danger'); return; }
+      if (ev.ro) { showToast('此行程来自被包含的只读文件，不可修改', 'danger'); return; }
+      const lines = String(ev.notes || '').split('\n');
+      if (line < 0 || line >= lines.length) return;
+      const match = lines[line].match(/^(\s*)-\s+\[([ xX])\]\s?(.*)$/);
+      if (!match) { showToast('该子事件已被修改，请刷新后重试', 'danger'); return; }
+
+      const markerPattern = /\[\[(?:dl|cp):\d{4}-\d{2}-\d{2}\]\]|\[\[\d{4}-\d{2}-\d{2}\]\]/g;
+      const markers = match[3].match(markerPattern) || [];
+      tlAddCheckTargetUid = null;
+      tlEditNoteCheckTarget = { uid, line, markers };
+      const ov = document.getElementById('tlAddCheckOverlay');
+      const inp = document.getElementById('tlAddCheckInput');
+      const copyButton = document.getElementById('tlCopyNoteCheckButton');
+      document.querySelector('#tlAddCheckOverlay .tl-ev-form-title').textContent = '编辑 CheckBox 子事件';
+      document.querySelector('#tlAddCheckOverlay .tl-ev-form-hint').textContent = '只修改子事件文字；勾选状态与日期标记会保留';
+      document.querySelector('#tlAddCheckOverlay .btn-primary').textContent = '保存修改';
+      if (copyButton) copyButton.style.display = '';
+      if (ov) ov.onkeydown = (e) => {
+        if ((e.metaKey || e.ctrlKey) && !e.altKey && (e.key === 's' || e.key === 'S')) {
+          e.preventDefault();
+          e.stopPropagation();
+          tlSaveAddCheckDialog();
+        }
+      };
+      if (inp) {
+        inp.value = match[3].replace(markerPattern, '').replace(/\s{2,}/g, ' ').trim();
+        inp.rows = 2;
+      }
+      if (ov) ov.style.display = 'flex';
+      if (inp) setTimeout(() => inp.focus(), 0);
+    }
+    async function tlCopyNoteCheckText() {
+      const inp = document.getElementById('tlAddCheckInput');
+      if (!inp || !inp.value) { showToast('没有可复制的子事件内容', 'danger'); return; }
+      try {
+        if (!window.electronAPI || typeof window.electronAPI.writeTextToClipboard !== 'function') {
+          throw new Error('剪贴板功能不可用');
+        }
+        const result = await window.electronAPI.writeTextToClipboard(inp.value);
+        if (!result || result.success !== true) throw new Error((result && result.error) || '写入剪贴板失败');
+        showToast('子事件内容已复制', 'success');
+      } catch (error) {
+        showToast('复制子事件失败：' + (error.message || error), 'danger');
+      }
     }
     function tlCloseAddCheckDialog() {
       const ov = document.getElementById('tlAddCheckOverlay');
       if (ov) ov.style.display = 'none';
       tlAddCheckTargetUid = null;
+      tlEditNoteCheckTarget = null;
     }
-    function tlSaveAddCheckDialog() {
+    async function tlSaveAddCheckDialog() {
       const inp = document.getElementById('tlAddCheckInput');
       if (!inp) return;
+      if (tlEditNoteCheckTarget) {
+        const target = tlEditNoteCheckTarget;
+        const text = inp.value.replace(/\r\n/g, '\n').replace(/\n/g, ' ').trim();
+        if (!text) { showToast('子事件内容不可为空', 'danger'); return; }
+        tlCalEvents = tlAllEvents(document.getElementById('taskText').value);
+        const ev = tlCalEvents.find((item) => item.uid === target.uid);
+        if (!ev) { tlCloseAddCheckDialog(); showToast('找不到该条行程（内容可能已被修改）', 'danger'); return; }
+        if (ev.ro) { tlCloseAddCheckDialog(); showToast('此行程来自被包含的只读文件，不可修改', 'danger'); return; }
+        const lines = String(ev.notes || '').split('\n');
+        if (target.line < 0 || target.line >= lines.length) {
+          tlCloseAddCheckDialog();
+          showToast('该子事件已被修改，请重新打开后编辑', 'danger');
+          return;
+        }
+        const match = lines[target.line].match(/^(\s*)-\s+\[([ xX])\]\s?(.*)$/);
+        if (!match) {
+          tlCloseAddCheckDialog();
+          showToast('该子事件已被修改，请重新打开后编辑', 'danger');
+          return;
+        }
+        const suffix = target.markers.length ? ' ' + target.markers.join(' ') : '';
+        lines[target.line] = match[1] + '- [' + match[2] + '] ' + text + suffix;
+        ev.notes = lines.join('\n');
+        tlCloseAddCheckDialog();
+        tlApplyEventsToBuffer();
+        const saved = typeof saveTask === 'function' ? await saveTask(false) : false;
+        showToast(saved ? '子事件已修改并存档' : '子事件已修改到行程缓冲，但尚未确认存档成功', saved ? 'success' : 'danger');
+        return;
+      }
       const lines = inp.value.replace(/\r\n/g, '\n').split('\n').map((l) => l.trim()).filter((l) => l.length);
       if (!lines.length) { tlCloseAddCheckDialog(); return; }
       const md = lines.map((l) => '- [ ] ' + l).join('\n');
@@ -3774,7 +3902,19 @@
       if (tagPicker && tagInput) {
         tagPicker.addEventListener('click', (e) => {
           const edit = e.target.closest('[data-tl-ev-tag-edit]');
-          if (edit) { tlEvTagEditIndex = parseInt(edit.getAttribute('data-tl-ev-tag-edit'), 10); tlRenderTagPicker(); return; }
+          const editSubcat = e.target.closest('[data-tl-ev-tag-subcat-edit]');
+          if (edit) {
+            tlEvTagEditIndex = parseInt(edit.getAttribute('data-tl-ev-tag-edit'), 10);
+            tlEvTagEditLevel = 'cat';
+            tlRenderTagPicker();
+            return;
+          }
+          if (editSubcat) {
+            tlEvTagEditIndex = parseInt(editSubcat.getAttribute('data-tl-ev-tag-subcat-edit'), 10);
+            tlEvTagEditLevel = 'subcat';
+            tlRenderTagPicker();
+            return;
+          }
           const remove = e.target.closest('[data-tl-ev-tag-remove]');
           const option = e.target.closest('[data-tl-ev-tag-option]');
           if (remove) tlRemoveFormTag(remove.getAttribute('data-tl-ev-tag-remove'));

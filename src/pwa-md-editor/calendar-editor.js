@@ -30,14 +30,15 @@ function parseCalendarArrField(s) {
   try { const a = JSON.parse(s); return Array.isArray(a) ? a : []; }
   catch (e) { return []; }
 }
-// ===== 標籤結構：{name, cat?}（cat＝分類）；舊資料純字串自動升級為 {name,cat:''} =====
+// ===== 標籤結構：{name, cat?, subcat?}；舊資料純字串自動升級 =====
 function calTagName(t) { return (t && typeof t === 'object') ? (t.name || '') : (t || ''); }
 function calTagCat(t) { return (t && typeof t === 'object') ? (t.cat || '') : ''; }
-function calTagLabel(t) { const n = calTagName(t), c = calTagCat(t); return c ? n + '·' + c : n; }
+function calTagSubcat(t) { return (t && typeof t === 'object') ? (t.subcat || '') : ''; }
+function calTagLabel(t) { const n = calTagName(t), c = calTagCat(t), s = calTagSubcat(t); return n + (c ? '·' + c : '') + (s ? '·' + s : ''); }
 function calNormalizeTags(arr) {
   return (Array.isArray(arr) ? arr : []).map((t) => (t && typeof t === 'object')
-    ? { name: t.name || '', cat: t.cat || '' }
-    : { name: String(t || ''), cat: '' });
+    ? { name: t.name || '', cat: t.cat || '', subcat: t.subcat || '' }
+    : { name: String(t || ''), cat: '', subcat: '' });
 }
 // ===== 標籤父階（樹形結構）：標籤名 → 父標籤名，集中存於 calendar.md 的 ## TAGS 區塊 =====
 function calParseTagsMeta(md) {
@@ -97,6 +98,7 @@ function calSetTagParent(name, parent) {
   return true;
 }
 let calEvTagEditIndex = -1;   // 正在内联编辑分類的选中標籤下标（-1＝无）
+let calEvTagEditLevel = 'cat';
 
 function parseCalendarEventBlock(block, idx) {
   // 先把 Remark 代碼塊與字段頭部切開，避免備注內容干擾字段解析（與 calendar 插件一致）
@@ -895,6 +897,17 @@ function calFormCatNames(tagName) {
   state.calEvents.forEach((ev) => (ev.tags || []).forEach((t) => { if (calTagName(t) === tagName) { const c = calTagCat(t); if (c) cats.add(c); } }));
   return Array.from(cats).sort((a, b) => a.localeCompare(b, 'zh-Hans'));
 }
+function calFormSubcatNames(tagName, cat) {
+  const subcats = new Set();
+  if (!tagName || !cat) return [];
+  state.calEvents.forEach((ev) => (ev.tags || []).forEach((t) => {
+    if (calTagName(t) === tagName && calTagCat(t) === cat) {
+      const subcat = calTagSubcat(t);
+      if (subcat) subcats.add(subcat);
+    }
+  }));
+  return Array.from(subcats).sort((a, b) => a.localeCompare(b, 'zh-Hans'));
+}
 function calRenderTagPicker() {
   const picker = document.getElementById('ev-tag-picker');
   const selected = document.getElementById('ev-tag-selected');
@@ -902,12 +915,17 @@ function calRenderTagPicker() {
   if (!picker || !selected || !menu || !elements.evFTags) return;
   selected.innerHTML = state.evFormTags.map((t, i) => {
     if (i === calEvTagEditIndex) {
-      return '<span class="ev-tag-selected-chip"><input type="text" class="ev-tag-cat-input" data-ev-tag-cat="' + i + '" maxlength="40" value="' + escapeHtml(calTagCat(t)) + '" placeholder="分類" list="ev-cat-options"></span>';
+      const isSubcat = calEvTagEditLevel === 'subcat';
+      const value = isSubcat ? calTagSubcat(t) : calTagCat(t);
+      const listId = isSubcat ? 'ev-subcat-options' : 'ev-cat-options';
+      return '<span class="ev-tag-selected-chip"><input type="text" class="ev-tag-cat-input" data-ev-tag-cat="' + i + '" maxlength="40" value="' + escapeHtml(value) + '" placeholder="' + (isSubcat ? '第3段標籤' : '次標籤') + '" list="' + listId + '"></span>';
     }
     const name = escapeHtml(calTagName(t));
     const cat = calTagCat(t);
-    const catHtml = cat ? '<span class="ev-tag-cat">·' + escapeHtml(cat) + '</span>' : '';
-    return '<span class="ev-tag-selected-chip">' + '<span class="ev-tag-name" data-ev-tag-edit="' + i + '" title="點擊輸入分類">' + name + '</span>' + catHtml + '<button type="button" data-ev-tag-remove="' + escapeHtml(calTagName(t)) + '" aria-label="刪除標籤">×</button></span>';
+    const subcat = calTagSubcat(t);
+    const catHtml = cat ? '<span class="ev-tag-cat" data-ev-tag-subcat-edit="' + i + '" title="點擊輸入第3段標籤">·' + escapeHtml(cat) + '</span>' : '';
+    const subcatHtml = subcat ? '<span class="ev-tag-cat" data-ev-tag-subcat-edit="' + i + '" title="點擊編輯第3段標籤">·' + escapeHtml(subcat) + '</span>' : '';
+    return '<span class="ev-tag-selected-chip">' + '<span class="ev-tag-name" data-ev-tag-edit="' + i + '" title="點擊輸入次標籤">' + name + '</span>' + catHtml + subcatHtml + '<button type="button" data-ev-tag-remove="' + escapeHtml(calTagName(t)) + '" aria-label="刪除標籤">×</button></span>';
   }).join('');
   const query = elements.evFTags.value.trim().toLowerCase();
   const names = calFormTagNames().filter((t) => !query || t.toLowerCase().includes(query));
@@ -915,31 +933,45 @@ function calRenderTagPicker() {
   // 子標籤（分類）歷史下拉：原生 datalist，按當前編輯標籤從屬過濾（與桌面對齊）
   let catList = picker.querySelector('#ev-cat-options');
   if (!catList) { catList = document.createElement('datalist'); catList.id = 'ev-cat-options'; picker.appendChild(catList); }
-  const catNames = calFormCatNames(calEvTagEditIndex >= 0 ? calTagName(state.evFormTags[calEvTagEditIndex]) : null);
+  const editingTag = calEvTagEditIndex >= 0 ? state.evFormTags[calEvTagEditIndex] : null;
+  const catNames = calFormCatNames(editingTag ? calTagName(editingTag) : null);
   catList.innerHTML = catNames.map((c) => '<option value="' + escapeHtml(c) + '"></option>').join('');
+  let subcatList = picker.querySelector('#ev-subcat-options');
+  if (!subcatList) { subcatList = document.createElement('datalist'); subcatList.id = 'ev-subcat-options'; picker.appendChild(subcatList); }
+  const subcatNames = editingTag ? calFormSubcatNames(calTagName(editingTag), calTagCat(editingTag)) : [];
+  subcatList.innerHTML = subcatNames.map((c) => '<option value="' + escapeHtml(c) + '"></option>').join('');
   if (calEvTagEditIndex >= 0) {
     const ci = selected.querySelector('.ev-tag-cat-input[data-ev-tag-cat="' + calEvTagEditIndex + '"]');
     if (ci) {
       ci.focus(); ci.select();
+      const editIndex = calEvTagEditIndex;
+      const editLevel = calEvTagEditLevel;
       // 有歷史分類時自動彈下拉（showPicker 需使用者手勢；此處由點擊標籤名觸發，正處手勢鏈路內）
       try { if (catNames.length && typeof ci.showPicker === 'function') ci.showPicker(); } catch (err) { /* 無手勢等場景忽略，仍可手動點箭頭 */ }
       ci.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter') { e.preventDefault(); calCommitTagCat(calEvTagEditIndex, ci.value); }
+        if (e.key === 'Enter') { e.preventDefault(); calCommitTagCat(editIndex, ci.value, editLevel); }
         else if (e.key === 'Escape') { e.preventDefault(); calEvTagEditIndex = -1; calRenderTagPicker(); }
       });
       // datalist 選中歷史分類後立即提交（change 在 blur 前觸發；重複提交無副作用）
-      ci.addEventListener('change', () => calCommitTagCat(calEvTagEditIndex, ci.value));
-      ci.addEventListener('blur', () => calCommitTagCat(calEvTagEditIndex, ci.value));
+      ci.addEventListener('change', () => calCommitTagCat(editIndex, ci.value, editLevel));
+      ci.addEventListener('blur', () => calCommitTagCat(editIndex, ci.value, editLevel));
     }
   }
 }
-function calCommitTagCat(i, val) {
-  if (state.evFormTags[i]) state.evFormTags[i].cat = (val || '').trim();
+function calCommitTagCat(i, val, level) {
+  if (state.evFormTags[i]) {
+    const value = (val || '').trim();
+    if (level === 'subcat') state.evFormTags[i].subcat = value;
+    else {
+      if (state.evFormTags[i].cat !== value) state.evFormTags[i].subcat = '';
+      state.evFormTags[i].cat = value;
+    }
+  }
   calEvTagEditIndex = -1;
   calRenderTagPicker();
 }
 function calAddFormTag(value) {
-  String(value || '').split(/[,，]/).map((t) => t.trim()).filter(Boolean).forEach((t) => { if (!state.evFormTags.some((x) => calTagName(x) === t)) state.evFormTags.push({ name: t, cat: '' }); });
+  String(value || '').split(/[,，]/).map((t) => t.trim()).filter(Boolean).forEach((t) => { if (!state.evFormTags.some((x) => calTagName(x) === t)) state.evFormTags.push({ name: t, cat: '', subcat: '' }); });
   elements.evFTags.value = '';
   calRenderTagPicker();
 }

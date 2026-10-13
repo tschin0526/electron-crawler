@@ -565,6 +565,8 @@ body {
 .ev-tag-name { cursor: pointer; border-bottom: 1px dotted rgba(255,255,255,.55); }
 .ev-tag-name:hover { border-bottom-color: #fff; }
 .ev-tag-cat { opacity: .85; font-weight: 500; }
+.ev-tag-cat[data-ev-tag-subcat-edit] { cursor: pointer; border-bottom: 1px dotted rgba(255,255,255,.55); }
+.ev-tag-cat[data-ev-tag-subcat-edit]:hover { border-bottom-color: #fff; }
 .ev-tag-cat-input { width: 60px; border: 0; outline: 0; background: rgba(255,255,255,.2); color: #fff; font-size: 12px; border-radius: 6px; padding: 1px 5px; }
 .ev-tag-cat-input::placeholder { color: rgba(255,255,255,.7); }
 .ev-tag-picker > input { width: 100%; margin-top: 4px; border: 0; outline: 0; background: transparent; color: var(--text); font-size: 13px; }
@@ -1296,4 +1298,3 @@ p[data-cols-marker="true"] { display: none; }
 
 /* KaTeX 暗色模式：數學式隨主題配色 */
 .dark-mode .preview .katex { color: var(--text); }
-

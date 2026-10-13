@@ -329,7 +329,19 @@ function setupEventListeners() {
   if (tagPicker && elements.evFTags) {
     tagPicker.addEventListener('click', (e) => {
       const edit = e.target.closest('[data-ev-tag-edit]');
-      if (edit) { calEvTagEditIndex = parseInt(edit.getAttribute('data-ev-tag-edit'), 10); calRenderTagPicker(); return; }
+      const editSubcat = e.target.closest('[data-ev-tag-subcat-edit]');
+      if (edit) {
+        calEvTagEditIndex = parseInt(edit.getAttribute('data-ev-tag-edit'), 10);
+        calEvTagEditLevel = 'cat';
+        calRenderTagPicker();
+        return;
+      }
+      if (editSubcat) {
+        calEvTagEditIndex = parseInt(editSubcat.getAttribute('data-ev-tag-subcat-edit'), 10);
+        calEvTagEditLevel = 'subcat';
+        calRenderTagPicker();
+        return;
+      }
       const remove = e.target.closest('[data-ev-tag-remove]');
       const option = e.target.closest('[data-ev-tag-option]');
       if (remove) calRemoveFormTag(remove.getAttribute('data-ev-tag-remove'));

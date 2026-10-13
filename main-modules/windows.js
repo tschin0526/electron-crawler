@@ -249,11 +249,14 @@ const stickyNoteTitleHtml = new Map(); // 'noteKey#idx' -> 主窗口渲染好的
 
 // 🆕 翻页显示模式：single window 循环多张便利贴
 let stickyNoteOrder = [];          // 翻页顺序 [{key, idx}]（与 split 模式并行存在）
+let stickyNoteCatalog = [];        // 本次 Calendar 会话中全部已设定的便利贴（含已关闭项）
 let stickyNoteMode = 'split';       // 'split'（分体显示：每张一个独立小窗）/ 'flip'（翻页显示：单窗循环）
 let stickyNoteFlipWindow = null;    // 翻页模式唯一的窗口
 const FLIP_KEY = '__flip__', FLIP_IDX = 0; // 翻页窗几何专用 id（位置/尺寸独立，与「当前显示哪张」无关）
 const pendingStickyEditSaves = new Map();
 let stickyEditSaveSeq = 0;
+const pendingStickyMenuCloses = new Map();
+let stickyMenuCloseSeq = 0;
 
 function stickyStatePath() {
   return stickyNoteFile ? path.join(path.dirname(stickyNoteFile), 'sticky-notes-state.json') : '';
@@ -293,6 +296,15 @@ function noteInst(key, idx) {
   if (!Array.isArray(stickyNoteState[key])) stickyNoteState[key] = [];
   if (!stickyNoteState[key][idx]) stickyNoteState[key][idx] = {};
   return stickyNoteState[key][idx];
+}
+function stickyNotesAreOpen() {
+  if (stickyNoteMode === 'flip') return !!(stickyNoteFlipWindow && !stickyNoteFlipWindow.isDestroyed() && stickyNoteOrder.length);
+  return Array.from(stickyNoteWindows.values()).some(win => win && !win.isDestroyed());
+}
+function notifyStickyNoteOpenState() {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('sticky-note-state-changed', { isOpen: stickyNotesAreOpen() });
+  }
 }
 
 // 🆕 还原本次启动前的位置，但必须夹回当前屏幕可见范围内：
@@ -386,7 +398,12 @@ function createStickyNoteWindow(key, idx) {
   win.on('moved', persistPos);
   // close（销毁前）快照最终位置：'closed' 时窗口已销毁读不到 bounds，只剩内存旧值
   win.on('close', () => captureStickyBoundsById(id, win));
-  win.on('closed', () => { if (posSaveTimer) clearTimeout(posSaveTimer); saveStickyNoteState(); stickyNoteWindows.delete(id); });
+  win.on('closed', () => {
+    if (posSaveTimer) clearTimeout(posSaveTimer);
+    saveStickyNoteState();
+    stickyNoteWindows.delete(id);
+    notifyStickyNoteOpenState();
+  });
   stickyNoteWindows.set(id, win);
   return win;
 }
@@ -438,6 +455,7 @@ function createFlipStickyWindow() {
     saveStickyNoteState();
     stickyNoteWindows.delete(id);
     if (stickyNoteFlipWindow === win) stickyNoteFlipWindow = null;
+    notifyStickyNoteOpenState();
   });
   stickyNoteWindows.set(id, win);
   stickyNoteFlipWindow = win;
@@ -468,6 +486,7 @@ ipcMain.handle('open-sticky-notes', (e, arg) => {
     stickyNoteOrder = notes.filter(n => n && typeof n.key === 'string').map(n => ({
       key: n.key, idx: +n.idx || 0, title: typeof n.title === 'string' ? n.title : ''
     }));
+    stickyNoteCatalog = stickyNoteOrder.slice();
     const mode = (arg && arg.mode === 'flip') ? 'flip' : 'split';
     stickyNoteMode = mode;
     let count = 0;
@@ -478,21 +497,82 @@ ipcMain.handle('open-sticky-notes', (e, arg) => {
       notes.forEach(n => { if (n && typeof n.key === 'string') createStickyNoteWindow(n.key, +n.idx || 0); });
       count = stickyNoteWindows.size;
     }
+    notifyStickyNoteOpenState();
     return { ok: true, count, mode };
   } catch (err) {
     console.warn('[Main] 开启桌面便利贴失败:', err);
     return { ok: false, error: String(err && err.message || err) };
   }
 });
-// 当前已开启的便利贴清单；分体模式只列出仍存在的窗口，翻页模式列出当前会话里的所有页。
+// 返回本次 Calendar 会话中全部已设定的便利贴，以及每张目前是否开启。
 ipcMain.handle('sticky-note-order', () => {
-  const order = stickyNoteMode === 'flip'
-    ? (stickyNoteFlipWindow && !stickyNoteFlipWindow.isDestroyed() ? stickyNoteOrder : [])
-    : stickyNoteOrder.filter(note => {
-        const win = stickyNoteWindows.get(noteWinId(note.key, note.idx));
-        return win && !win.isDestroyed();
-      });
-  return { order };
+  const flipOpen = stickyNoteFlipWindow && !stickyNoteFlipWindow.isDestroyed();
+  const notes = stickyNoteCatalog.map(note => {
+    const win = stickyNoteMode === 'flip'
+      ? flipOpen && stickyNoteOrder.some(active => active.key === note.key && active.idx === note.idx)
+      : stickyNoteWindows.get(noteWinId(note.key, note.idx));
+    return Object.assign({}, note, { isOpen: !!(win && !win.isDestroyed()) });
+  });
+  return { order: notes.filter(note => note.isOpen), notes };
+});
+function requestStickyNoteClose(win) {
+  const requestId = 'sticky-menu-close-' + Date.now() + '-' + (++stickyMenuCloseSeq);
+  return new Promise(resolve => {
+    const timer = setTimeout(() => {
+      pendingStickyMenuCloses.delete(requestId);
+      resolve(false);
+    }, 30000);
+    pendingStickyMenuCloses.set(requestId, { resolve, timer, webContentsId: win.webContents.id });
+    win.webContents.send('sticky-note-close-request', { requestId });
+  });
+}
+ipcMain.handle('toggle-sticky-note', async (event, arg) => {
+  if (!arg || typeof arg.key !== 'string') return { success: false };
+  const idx = +arg.idx || 0;
+  const note = stickyNoteCatalog.find(item => item.key === arg.key && item.idx === idx);
+  if (!note) return { success: false };
+
+  if (stickyNoteMode === 'flip') {
+    const activeIndex = stickyNoteOrder.findIndex(item => item.key === arg.key && item.idx === idx);
+    const currentWindow = stickyNoteFlipWindow;
+    if (currentWindow && !currentWindow.isDestroyed() && !await requestStickyNoteClose(currentWindow)) {
+      return { success: false, isOpen: activeIndex >= 0 };
+    }
+    if (activeIndex >= 0) stickyNoteOrder.splice(activeIndex, 1);
+    else stickyNoteOrder.push(note);
+    if (currentWindow && !currentWindow.isDestroyed()) currentWindow.close();
+    stickyNoteFlipWindow = null;
+    if (stickyNoteOrder.length) createFlipStickyWindow();
+    notifyStickyNoteOpenState();
+    return { success: true, isOpen: activeIndex < 0 };
+  }
+
+  const id = noteWinId(arg.key, idx);
+  const existing = stickyNoteWindows.get(id);
+  if (existing && !existing.isDestroyed()) {
+    if (!await requestStickyNoteClose(existing)) return { success: false, isOpen: true };
+    if (!existing.isDestroyed()) existing.close();
+    notifyStickyNoteOpenState();
+    return { success: true, isOpen: false };
+  }
+
+  const win = createStickyNoteWindow(note.key, note.idx);
+  if (win && !win.isDestroyed()) {
+    win.show();
+    win.moveTop();
+    win.focus();
+    notifyStickyNoteOpenState();
+    return { success: true, isOpen: true };
+  }
+  return { success: false, isOpen: false };
+});
+ipcMain.handle('sticky-note-menu-close-result', (event, payload) => {
+  const pending = payload && pendingStickyMenuCloses.get(payload.requestId);
+  if (!pending || pending.webContentsId !== event.sender.id) return { success: false };
+  clearTimeout(pending.timer);
+  pendingStickyMenuCloses.delete(payload.requestId);
+  pending.resolve(!!payload.accepted);
+  return { success: true };
 });
 ipcMain.handle('focus-sticky-note', (event, arg) => {
   if (!arg || typeof arg.key !== 'string') return { success: false };
@@ -524,7 +604,8 @@ ipcMain.handle('request-sticky-display-mode', (e, arg) => {
 ipcMain.handle('close-sticky-notes', () => {
   closeAllStickyNoteWindows();
   stickyNoteHtml.clear(); stickyNoteTitleHtml.clear();
-  stickyNoteFlipWindow = null; stickyNoteMode = 'split'; stickyNoteOrder = [];
+  stickyNoteFlipWindow = null; stickyNoteMode = 'split'; stickyNoteOrder = []; stickyNoteCatalog = [];
+  notifyStickyNoteOpenState();
   return { ok: true };
 });
 // 单张便利贴：取主窗口渲染好的 Markdown HTML＋标题 HTML（避免便利贴自己复制一套 marked 管线）

@@ -2180,6 +2180,8 @@
     .tl-ev-tag-name { cursor: pointer; border-bottom: 1px dotted rgba(255,255,255,.55); }
     .tl-ev-tag-name:hover { border-bottom-color: #fff; }
     .ev-tag-cat { opacity: .85; font-weight: 500; }
+    .ev-tag-cat[data-tl-ev-tag-subcat-edit] { cursor: pointer; border-bottom: 1px dotted rgba(255,255,255,.55); }
+    .ev-tag-cat[data-tl-ev-tag-subcat-edit]:hover { border-bottom-color: #fff; }
     .tl-ev-tag-cat-input { width: 60px; border: 0; outline: 0; background: rgba(255,255,255,.2); color: #fff; font-size: 12px; border-radius: 6px; padding: 1px 5px; }
     .tl-ev-tag-cat-input::placeholder { color: rgba(255,255,255,.7); }
     .tl-ev-tag-picker > input { width: 100%; margin-top: 4px; border: 0; outline: 0; background: transparent; color: var(--ev-text); font-size: 13px; }
@@ -2236,8 +2238,10 @@
     .ev-cb { display: inline-block; min-width: 11px; height: 11px; border: 1px solid var(--ev-muted); border-radius: 3px; margin-right: 4px; vertical-align: -1px; text-align: center; font-size: 9px; line-height: 11px; color: #fff; }
     .ev-cb.interactive { cursor: pointer; }
     .ev-cb.interactive:hover { outline: 2px solid var(--ev-primary); outline-offset: 1px; }
+    .ev-md-edit { display: inline-flex; width: 14px; height: 14px; padding: 0; margin: 0 4px 0 0; align-items: center; justify-content: center; vertical-align: -2px; border: 0; border-radius: 50%; background: var(--ev-primary); color: #fff; font-size: 9px; line-height: 1; cursor: pointer; opacity: .78; }
+    .ev-md-edit:hover, .ev-md-edit:focus-visible { opacity: 1; outline: 2px solid var(--ev-primary); outline-offset: 1px; }
     .ev-md-check.done .ev-cb { background: var(--ev-primary); border-color: var(--ev-primary); }
-    .ev-md-check.done { text-decoration: line-through; opacity: 0.75; }
+    .ev-md-check.done .ev-md-check-text { text-decoration: line-through; opacity: 0.75; }
     .ev-block.done { opacity: 0.55; }
     /* 🌙 黑夜模式：文字統一白色，設定的顏色只作為事件「外框」（邊框）顏色，背景改用深色面板。
        白天模式不變（顏色＝背景色塊）。跨天色條（.ev-chip.span）同理——顏色經由 --ev-color 傳入。 */
@@ -5182,6 +5186,7 @@
       <textarea id="tlAddCheckInput" rows="4" placeholder="例如：&#10;准备会议资料&#10;发送邀请函"></textarea>
       <div class="tl-ev-form-actions">
         <button type="button" class="btn btn-secondary" onclick="tlCloseAddCheckDialog()">取消</button>
+        <button type="button" class="btn btn-secondary" id="tlCopyNoteCheckButton" style="display:none" onclick="tlCopyNoteCheckText()">复制</button>
         <button type="button" class="btn btn-primary" onclick="tlSaveAddCheckDialog()">加入备注</button>
       </div>
     </div>
@@ -6939,6 +6944,13 @@
     // 🆕 便利贴窗下拉菜单请求切换显示模式（分体/翻页）：转给 tlSetStickyMode 统一处理（记忆 + 重开）
     if (window.electronAPI && typeof window.electronAPI.onStickySetMode === 'function') {
       window.electronAPI.onStickySetMode(function (p) { if (p && (p.mode === 'split' || p.mode === 'flip')) tlSetStickyMode(p.mode); });
+    }
+    if (window.electronAPI && typeof window.electronAPI.onStickyStateChanged === 'function') {
+      window.electronAPI.onStickyStateChanged(function (p) {
+        tlStickyNotesOpen = !!(p && p.isOpen);
+        tlSyncStickyBtn();
+        tlUpdateStickyBadge();
+      });
     }
 
     // ============================================================

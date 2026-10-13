@@ -80,11 +80,12 @@ function parseEvents(md) {
 }
 
 // ===== 标签显示 / 子事件进度（与主程式 calendar 事件行的显示样式对齐）=====
-// 标签显示文字＝「名·子标签(cat 分类)」，与主程式 tlTagLabel 同源同格式（tags JSON 为 {name, cat}）
+// 标签显示文字＝「一级·二级·三级」，与主程式 tlTagLabel 同源同格式
 function tagLabelOf(t) {
   const n = (t && typeof t === 'object') ? (t.name || '') : (t || '');
   const c = (t && typeof t === 'object') ? (t.cat || '') : '';
-  return c ? (n + '·' + c) : n;
+  const s = (t && typeof t === 'object') ? (t.subcat || '') : '';
+  return n + (c ? '·' + c : '') + (s ? '·' + s : '');
 }
 // 解析备注中的 Markdown checkbox 行 → 子事件 [{text, done}]（与主程式 tlParseNoteChecks 同规则：
 // 跳过 ``` 代码围栏内的行；- [x]/[X]＝已完成、- [ ]＝未完成）
@@ -199,6 +200,26 @@ function setupControls() {
   const menu = document.getElementById('menu');
   const btnMenu = document.getElementById('btnMenu');
   const closeMenu = () => { if (menu) menu.classList.remove('open'); };
+  const confirmClose = async () => {
+    if (editMode && editDirty) {
+      const ok = window.confirm('内容有未保存的改动。\n\n确定＝保存后关闭\n取消＝不关闭');
+      if (!ok) return false;
+      if (!await saveNoteEdit()) return false;
+    }
+    return true;
+  };
+  ipcRenderer.on('sticky-note-close-request', async (event, payload) => {
+    if (!payload || typeof payload.requestId !== 'string') return;
+    const accepted = await confirmClose();
+    try {
+      await ipcRenderer.invoke('sticky-note-menu-close-result', {
+        requestId: payload.requestId,
+        accepted
+      });
+    } catch (error) {
+      console.error('[StickyNote] 关闭便利贴失败:', error);
+    }
+  });
   if (btnMenu) btnMenu.onclick = (e) => {
     e.stopPropagation();
     if (menu) menu.classList.toggle('open');
@@ -212,12 +233,7 @@ function setupControls() {
   }, true);
   document.getElementById('miClose').onclick = async (e) => {
     e.stopPropagation();
-    // 关闭前若有未保存改动 → 先确认（取消＝不关闭，避免静默丢数据）
-    if (editMode && editDirty) {
-      const ok = window.confirm('内容有未保存的改动。\n\n确定＝保存后关闭\n取消＝不关闭');
-      if (!ok) return;
-      if (!await saveNoteEdit()) return;
-    }
+    if (!await confirmClose()) return;
     if (IS_FLIP) ipcRenderer.invoke('close-sticky-notes');          // 翻页模式：结束整个翻页会话
     else ipcRenderer.invoke('sticky-note-close', { key: KEY, idx: IDX });
   };
@@ -238,14 +254,14 @@ function setupControls() {
     const button = e.target.closest('button[data-key]');
     if (!button) return;
     e.stopPropagation();
-    closeMenu();
     try {
-      await ipcRenderer.invoke('focus-sticky-note', {
+      const result = await ipcRenderer.invoke('toggle-sticky-note', {
         key: button.dataset.key,
         idx: Number(button.dataset.idx) || 0
       });
+      if (result && result.success) await loadStickyMenuNotes();
     } catch (error) {
-      console.error('[StickyNote] 聚焦便利贴失败:', error);
+      console.error('[StickyNote] 切换便利贴状态失败:', error);
     }
   };
   loadStickyMenuNotes();
@@ -352,6 +368,7 @@ function setupControls() {
     });
     acInput.addEventListener('pointerdown', (e) => e.stopPropagation());
   }
+  if (ov) ov.addEventListener('pointerdown', (e) => e.stopPropagation());
   // 拖动交给 OS 原生（CSS -webkit-app-region: drag）；这里只处理「点击（未拖动）唤起主程式」/ 双击跳转
   const note = document.getElementById('note');
   note.addEventListener('click', onNoteClick);
@@ -370,7 +387,7 @@ function onNoteClick(e) {
 // 双击便利贴（标题栏或正文）：唤起主程式并打开该事件表单
 // 正文区是 -webkit-app-region: no-drag，双击不会触发拖动，故可安全复用「唤起+打开事件」管线
 function onNoteDblClick(e) {
-  if (e.target.closest('.iconbtn, .menu, .rz, .note-addcheck')) return; // 菜单/☰按钮/缩放把手/＋☐各自处理
+  if (e.target.closest('.iconbtn, .menu, .rz, .note-addcheck, .ev-md-edit, .ev-cb')) return; // 菜单/☰按钮/缩放把手/checkbox 控件各自处理
   ipcRenderer.invoke('wake-main-from-note', { key: KEY });
 }
 
@@ -379,19 +396,182 @@ function onNoteDblClick(e) {
 // 只读包含文件（ev.ro）由主程式拦截并 toast，这里无需额外判断。
 function openAddCheck() {
   const inp = document.getElementById('addCheckInput');
-  if (inp) inp.value = '';
   const ov = document.getElementById('addCheckOv');
+  const title = ov && ov.querySelector('.ac-title');
+  const hint = ov && ov.querySelector('.ac-hint');
+  const copyButton = document.getElementById('copyNoteCheckButton');
+  noteCheckEditTarget = null;
+  if (title) title.textContent = '加入子事件（CheckBox）';
+  if (hint) hint.textContent = '⌘S 加入 · Esc 取消';
+  if (copyButton) copyButton.style.display = 'none';
+  if (inp) { inp.value = ''; inp.placeholder = '每行一个子事件，回车直接加入…'; }
   if (ov) ov.classList.add('show');
   if (inp) setTimeout(() => inp.focus(), 0);
 }
 function closeAddCheck() {
   const ov = document.getElementById('addCheckOv');
   if (ov) ov.classList.remove('show');
+  noteCheckEditTarget = null;
 }
 let addCheckSavePending = false;
+let noteCheckEditTarget = null;
+function closeEditNoteCheck() {
+  noteCheckEditTarget = null;
+  closeAddCheck();
+}
+function eventNotesForKey(key) {
+  const ev = parseEvents(readMd()).find(item => item.key === key);
+  return ev ? ev.notes || '' : null;
+}
+function localDateString(date = new Date()) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+function transformNoteCheck(line, checked) {
+  const match = line.match(/^(\s*)-\s+\[([ xX])\]\s?(.*)$/);
+  if (!match) return null;
+  let text = match[3] || '';
+  if (checked) {
+    text = text.replace(/\[\[(\d{4}-\d{2}-\d{2})\]\]/g, '[[dl:$1]]');
+    if (!/\[\[cp:\d{4}-\d{2}-\d{2}\]\]/.test(text)) {
+      text = text.replace(/\s+$/, '') + ' [[cp:' + localDateString() + ']]';
+    }
+  } else {
+    text = text.replace(/\s*\[\[cp:\d{4}-\d{2}-\d{2}\]\]/g, '');
+  }
+  return match[1] + '- [' + (checked ? 'x' : ' ') + ']' + (text ? ' ' + text : '');
+}
+async function saveStickyNoteContent(notes, errorLabel, eventKey) {
+  if (addCheckSavePending) return false;
+  addCheckSavePending = true;
+  try {
+    const targetKey = eventKey || KEY;
+    const result = await ipcRenderer.invoke('sticky-note-save-edit', { key: targetKey, idx: IDX, notes });
+    if (!result || !result.success) {
+      window.alert(errorLabel + '失败：' + ((result && result.error) || '主进程未确认保存'));
+      return false;
+    }
+    const savedEvent = parseEvents(readMd()).find(item => item.key === targetKey);
+    ipcRenderer.send('sticky-note-refresh-request', {
+      key: KEY,
+      idx: IDX,
+      title: savedEvent ? savedEvent.title : '',
+      date: savedEvent ? savedEvent.date : ''
+    });
+    return true;
+  } catch (error) {
+    window.alert(errorLabel + '失败：' + (error && error.message ? error.message : error));
+    return false;
+  } finally {
+    addCheckSavePending = false;
+  }
+}
+window.tlToggleNoteCheck = async function (event, uid, line) {
+  const checkbox = event && event.target.closest('.ev-cb.interactive');
+  if (!checkbox || checkbox.dataset.uid !== uid) return;
+  event.preventDefault();
+  event.stopPropagation();
+  if (addCheckSavePending) return;
+  const notes = eventNotesForKey(uid);
+  if (notes == null) {
+    window.alert('找不到该行程，无法更新子事件');
+    return;
+  }
+  const lines = notes.split('\n');
+  if (!Number.isInteger(line) || line < 0 || line >= lines.length) return;
+  const match = lines[line].match(/^(\s*)-\s+\[([ xX])\]\s?(.*)$/);
+  if (!match) {
+    window.alert('该子事件内容已变化，请刷新便利贴后重试');
+    return;
+  }
+  const updatedLine = transformNoteCheck(lines[line], match[2] === ' ');
+  if (!updatedLine) return;
+  lines[line] = updatedLine;
+  await saveStickyNoteContent(lines.join('\n'), '更新子事件', uid);
+};
+window.tlCalCheckKey = function (event, uid, line) {
+  if (!event || ![' ', 'Spacebar', 'Enter'].includes(event.key)) return;
+  event.preventDefault();
+  window.tlToggleNoteCheck(event, uid, line);
+};
+window.tlOpenEditNoteCheckDialog = function (event, uid, line) {
+  if (event) { event.preventDefault(); event.stopPropagation(); }
+  if (!event || !event.target.closest('.ev-md-edit')) return;
+  const notes = eventNotesForKey(uid);
+  if (notes == null) {
+    window.alert('找不到该行程，无法编辑子事件');
+    return;
+  }
+  const lines = notes.split('\n');
+  if (!Number.isInteger(line) || line < 0 || line >= lines.length) return;
+  const match = lines[line].match(/^(\s*)-\s+\[([ xX])\]\s?(.*)$/);
+  if (!match) {
+    window.alert('该子事件内容已变化，请刷新便利贴后重试');
+    return;
+  }
+  const markerPattern = /\[\[(?:dl|cp):\d{4}-\d{2}-\d{2}\]\]|\[\[\d{4}-\d{2}-\d{2}\]\]/g;
+  noteCheckEditTarget = { uid, line, markers: match[3].match(markerPattern) || [] };
+  const ov = document.getElementById('addCheckOv');
+  const inp = document.getElementById('addCheckInput');
+  const copyButton = document.getElementById('copyNoteCheckButton');
+  if (ov) {
+    ov.querySelector('.ac-title').textContent = '编辑子事件（CheckBox）';
+    ov.querySelector('.ac-hint').textContent = '⌘S 保存修改 · Esc 取消；勾选状态与日期标记会保留';
+    ov.classList.add('show');
+  }
+  if (copyButton) {
+    copyButton.style.display = '';
+    copyButton.onclick = async (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      if (!inp || !inp.value) { window.alert('没有可复制的子事件内容'); return; }
+      try {
+        const result = await ipcRenderer.invoke('write-text-to-clipboard', inp.value);
+        if (!result || result.success !== true) throw new Error((result && result.error) || '写入剪贴板失败');
+        const originalText = copyButton.textContent;
+        copyButton.textContent = '已复制';
+        setTimeout(() => { if (copyButton) copyButton.textContent = originalText; }, 1200);
+      } catch (error) {
+        window.alert('复制子事件失败：' + (error && error.message ? error.message : error));
+      }
+    };
+  }
+  if (inp) {
+    inp.value = match[3].replace(markerPattern, '').replace(/\s{2,}/g, ' ').trim();
+    inp.placeholder = '输入子事件内容…';
+    setTimeout(() => inp.focus(), 0);
+  }
+};
 async function confirmAddCheck() {
   const inp = document.getElementById('addCheckInput');
   if (!inp) { closeAddCheck(); return; }
+  if (noteCheckEditTarget) {
+    if (addCheckSavePending) return;
+    const target = noteCheckEditTarget;
+    const text = inp.value.replace(/\r\n/g, '\n').replace(/\n/g, ' ').trim();
+    if (!text) { window.alert('子事件内容不可为空'); return; }
+    const notes = eventNotesForKey(target.uid);
+    if (notes == null) {
+      window.alert('找不到该行程，无法保存子事件');
+      return;
+    }
+    const lines = notes.split('\n');
+    if (target.line < 0 || target.line >= lines.length) {
+      window.alert('该子事件内容已变化，请刷新便利贴后重试');
+      return;
+    }
+    const match = lines[target.line].match(/^(\s*)-\s+\[([ xX])\]\s?(.*)$/);
+    if (!match) {
+      window.alert('该子事件内容已变化，请刷新便利贴后重试');
+      return;
+    }
+    const suffix = target.markers.length ? ' ' + target.markers.join(' ') : '';
+    lines[target.line] = match[1] + '- [' + match[2] + '] ' + text + suffix;
+    if (await saveStickyNoteContent(lines.join('\n'), '保存子事件', target.uid)) closeEditNoteCheck();
+    return;
+  }
   const lines = inp.value.replace(/\r\n/g, '\n').split('\n').map((l) => l.trim()).filter(Boolean);
   if (!lines.length) return;
   if (addCheckSavePending) return;
@@ -402,19 +582,7 @@ async function confirmAddCheck() {
     return;
   }
   const notes = (ev.notes ? String(ev.notes).replace(/\s*$/, '') + '\n' : '') + md + '\n';
-  addCheckSavePending = true;
-  try {
-    const result = await ipcRenderer.invoke('sticky-note-save-edit', { key: KEY, idx: IDX, notes });
-    if (!result || !result.success) {
-      window.alert('保存子事件失败：' + ((result && result.error) || '主进程未确认保存'));
-      return;
-    }
-    closeAddCheck();
-  } catch (error) {
-    window.alert('保存子事件失败：' + (error && error.message ? error.message : error));
-  } finally {
-    addCheckSavePending = false;
-  }
+  if (await saveStickyNoteContent(notes, '保存子事件')) closeAddCheck();
 }
 
 // 🆕 刷新内容：接收主程式推来的最新渲染结果（arg.{html,titleHtml}），同步标题/正文/日期/标签
@@ -494,11 +662,15 @@ function applyContentFont() {
     note.style.setProperty('--note-fg', fg);
     note.style.setProperty('--tag-bg', contrastTagBg(fg));
   }
+  const fontSize = (12 * (state.fontScale || 1)).toFixed(2) + 'px';
   const body = document.getElementById('body');
-  if (!body) return;
-  body.style.fontSize = (12 * (state.fontScale || 1)).toFixed(2) + 'px';
-  body.style.color = fg;
-  body.style.fontWeight = state.fontWeight || 400;
+  if (body) {
+    body.style.fontSize = fontSize;
+    body.style.color = fg;
+    body.style.fontWeight = state.fontWeight || 400;
+  }
+  const editArea = document.getElementById('editArea');
+  if (editArea) editArea.style.fontSize = fontSize;
 }
 // 同步「字体颜色 / 字重」选中态（菜单内色板 + 分段按钮）
 function syncTextAppearance() {
@@ -739,7 +911,9 @@ async function loadStickyMenuNotes() {
   if (!wrap || !list) return;
   try {
     const result = await ipcRenderer.invoke('sticky-note-order');
-    const notes = result && Array.isArray(result.order) ? result.order : [];
+    const notes = result && Array.isArray(result.notes)
+      ? result.notes
+      : (result && Array.isArray(result.order) ? result.order : []);
     list.replaceChildren();
     notes.forEach((item) => {
       const button = document.createElement('button');
@@ -748,8 +922,15 @@ async function loadStickyMenuNotes() {
       button.dataset.key = item.key;
       button.dataset.idx = String(item.idx || 0);
       const name = String(item.title || item.key || '未命名便利贴').replace(/\s+/g, ' ').trim();
-      button.textContent = (name || '未命名便利贴') + ((+item.idx || 0) > 0 ? ' (' + ((+item.idx || 0) + 1) + ')' : '');
-      button.title = button.textContent;
+      const label = (name || '未命名便利贴') + ((+item.idx || 0) > 0 ? ' (' + ((+item.idx || 0) + 1) + ')' : '');
+      const nameEl = document.createElement('span');
+      nameEl.className = 'm-sticky-item-name';
+      nameEl.textContent = label;
+      const stateEl = document.createElement('span');
+      stateEl.className = 'm-sticky-item-state' + (item.isOpen ? ' open' : '');
+      stateEl.textContent = item.isOpen ? '开' : '关';
+      button.title = label + (item.isOpen ? '（点击关闭）' : '（点击开启）');
+      button.append(nameEl, stateEl);
       list.appendChild(button);
     });
     wrap.classList.toggle('open', notes.length > 0);
