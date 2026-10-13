@@ -199,7 +199,11 @@ function setupControls() {
   const menu = document.getElementById('menu');
   const btnMenu = document.getElementById('btnMenu');
   const closeMenu = () => { if (menu) menu.classList.remove('open'); };
-  if (btnMenu) btnMenu.onclick = (e) => { e.stopPropagation(); if (menu) menu.classList.toggle('open'); };
+  if (btnMenu) btnMenu.onclick = (e) => {
+    e.stopPropagation();
+    if (menu) menu.classList.toggle('open');
+    if (menu && menu.classList.contains('open')) loadStickyMenuNotes();
+  };
   // 点击菜单与 ☰ 以外任意处（含便利贴本体）关闭菜单
   document.addEventListener('click', (e) => {
     if (!menu || !menu.classList.contains('open')) return;
@@ -220,6 +224,22 @@ function setupControls() {
   document.getElementById('miRefresh').onclick = (e) => { e.stopPropagation(); closeMenu(); ipcRenderer.send('sticky-note-refresh-request', { key: KEY, idx: IDX }); };
   document.getElementById('miOpen').onclick = (e) => { e.stopPropagation(); closeMenu(); ipcRenderer.invoke('wake-main-from-note', { key: KEY }); };
   document.getElementById('miCalendar').onclick = (e) => { e.stopPropagation(); closeMenu(); ipcRenderer.invoke('activate-main-window'); };
+  const stickyList = document.getElementById('mStickyList');
+  if (stickyList) stickyList.onclick = async (e) => {
+    const button = e.target.closest('button[data-key]');
+    if (!button) return;
+    e.stopPropagation();
+    closeMenu();
+    try {
+      await ipcRenderer.invoke('focus-sticky-note', {
+        key: button.dataset.key,
+        idx: Number(button.dataset.idx) || 0
+      });
+    } catch (error) {
+      console.error('[StickyNote] 聚焦便利贴失败:', error);
+    }
+  };
+  loadStickyMenuNotes();
   document.getElementById('miMin').onclick = (e) => { e.stopPropagation(); closeMenu(); toggleMinimize(); };
   document.getElementById('miCfg').onclick = (e) => {
     e.stopPropagation();
@@ -680,6 +700,9 @@ async function initFlip() {
   document.getElementById('note').classList.add('flip');
   setupControls();
   bindFlipNav();
+  ipcRenderer.on('sticky-note-show-page', (e, payload) => {
+    if (payload && Number.isInteger(payload.index)) renderFlipPage(payload.index);
+  });
   if (flipTotal === 0) {
     document.getElementById('title').textContent = '(没有便利贴)';
     document.getElementById('meta').textContent = '';
@@ -695,6 +718,32 @@ async function initFlip() {
   }
   updateMinBtn();
   await renderFlipPage(0);
+}
+
+async function loadStickyMenuNotes() {
+  const wrap = document.getElementById('mStickyListWrap');
+  const list = document.getElementById('mStickyList');
+  if (!wrap || !list) return;
+  try {
+    const result = await ipcRenderer.invoke('sticky-note-order');
+    const notes = result && Array.isArray(result.order) ? result.order : [];
+    list.replaceChildren();
+    notes.forEach((item) => {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'mi m-sticky-item';
+      button.dataset.key = item.key;
+      button.dataset.idx = String(item.idx || 0);
+      const name = String(item.title || item.key || '未命名便利贴').replace(/\s+/g, ' ').trim();
+      button.textContent = (name || '未命名便利贴') + ((+item.idx || 0) > 0 ? ' (' + ((+item.idx || 0) + 1) + ')' : '');
+      button.title = button.textContent;
+      list.appendChild(button);
+    });
+    wrap.classList.toggle('open', notes.length > 0);
+  } catch (error) {
+    console.error('[StickyNote] 读取便利贴清单失败:', error);
+    wrap.classList.remove('open');
+  }
 }
 
 // 渲染第 i 张：切换 KEY/IDX（内容＋颜色/透明度按该便利贴自身状态），翻页窗几何保持不变

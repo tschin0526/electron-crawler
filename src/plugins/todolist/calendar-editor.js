@@ -724,7 +724,10 @@
           const html = (typeof tlRenderNotes === 'function') ? tlRenderNotes(ev.notes, null) : '';
           // 🆕 标题同样由主窗口渲染（与列表行同一 tlRenderInlineMarkdown 管线），避免便利贴里显示原始 <BIG> 等标签
           const titleHtml = (typeof tlRenderInlineMarkdown === 'function') ? tlRenderInlineMarkdown(ev.title || '') : '';
-          for (let i = 0; i < n; i++) out.push({ key, idx: i, html, titleHtml });
+          const titleNode = document.createElement('div');
+          titleNode.innerHTML = titleHtml;
+          const title = (titleNode.textContent || titleNode.innerText || ev.title || '').replace(/\s+/g, ' ').trim();
+          for (let i = 0; i < n; i++) out.push({ key, idx: i, html, titleHtml, title });
         }
       });
       return out;

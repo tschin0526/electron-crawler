@@ -465,7 +465,9 @@ ipcMain.handle('open-sticky-notes', (e, arg) => {
         stickyNoteTitleHtml.set(noteWinId(n.key, +n.idx || 0), typeof n.titleHtml === 'string' ? n.titleHtml : '');
       }
     });
-    stickyNoteOrder = notes.filter(n => n && typeof n.key === 'string').map(n => ({ key: n.key, idx: +n.idx || 0 }));
+    stickyNoteOrder = notes.filter(n => n && typeof n.key === 'string').map(n => ({
+      key: n.key, idx: +n.idx || 0, title: typeof n.title === 'string' ? n.title : ''
+    }));
     const mode = (arg && arg.mode === 'flip') ? 'flip' : 'split';
     stickyNoteMode = mode;
     let count = 0;
@@ -482,8 +484,35 @@ ipcMain.handle('open-sticky-notes', (e, arg) => {
     return { ok: false, error: String(err && err.message || err) };
   }
 });
-// 🆕 翻页模式：渲染端拉取便利贴顺序（[{key,idx}]），用于 ◀ ▶ 翻页
-ipcMain.handle('sticky-note-order', () => ({ order: stickyNoteOrder }));
+// 当前已开启的便利贴清单；分体模式只列出仍存在的窗口，翻页模式列出当前会话里的所有页。
+ipcMain.handle('sticky-note-order', () => {
+  const order = stickyNoteMode === 'flip'
+    ? (stickyNoteFlipWindow && !stickyNoteFlipWindow.isDestroyed() ? stickyNoteOrder : [])
+    : stickyNoteOrder.filter(note => {
+        const win = stickyNoteWindows.get(noteWinId(note.key, note.idx));
+        return win && !win.isDestroyed();
+      });
+  return { order };
+});
+ipcMain.handle('focus-sticky-note', (event, arg) => {
+  if (!arg || typeof arg.key !== 'string') return { success: false };
+  const idx = +arg.idx || 0;
+  let win;
+  if (stickyNoteMode === 'flip') {
+    win = stickyNoteFlipWindow;
+    const pageIndex = stickyNoteOrder.findIndex(note => note.key === arg.key && note.idx === idx);
+    if (!win || win.isDestroyed() || pageIndex < 0) return { success: false };
+    win.webContents.send('sticky-note-show-page', { index: pageIndex });
+  } else {
+    win = stickyNoteWindows.get(noteWinId(arg.key, idx));
+    if (!win || win.isDestroyed()) return { success: false };
+  }
+  if (win.isMinimized()) win.restore();
+  win.show();
+  win.moveTop();
+  win.focus();
+  return { success: true };
+});
 // 🆕 便利贴窗查询当前显示模式（split / flip），用于下拉菜单高亮
 ipcMain.handle('sticky-note-mode', () => ({ mode: stickyNoteMode }));
 // 🆕 便利贴窗请求切换显示模式：转交主程式渲染端执行（模式记忆/重开逻辑集中在主程式 tlSetStickyMode）

@@ -10,7 +10,7 @@
       position: absolute; inset: 0; box-sizing: border-box;
       border-radius: 12px; overflow: hidden;
       box-shadow: 0 8px 22px rgba(0,0,0,.28), 0 1px 3px rgba(0,0,0,.15);
-      border: 1px solid rgba(0,0,0,.06);
+      border: 1px solid #D4AF37;
       display: flex; flex-direction: column;
       -webkit-app-region: drag; /* 原生拖拽：由窗口服务器直接移动（零 IPC、零 rAF，最丝滑） */
     }
@@ -107,6 +107,11 @@
     .mi:disabled { opacity: .35; cursor: default; }
     .mi:disabled:hover { background: transparent; }
     .msep { height: 1px; background: rgba(0,0,0,.10); margin: 2px 6px; }
+    .m-sticky-list { display: none; padding: 2px 0; }
+    .m-sticky-list.open { display: block; }
+    .m-sticky-list-title { padding: 2px 9px 3px; color: #6b7280; font-size: 10px; }
+    .m-sticky-list-items { max-height: 120px; overflow-y: auto; }
+    .m-sticky-item { overflow: hidden; text-overflow: ellipsis; }
     /* 菜单第一行：4 个纯图标按钮并排等宽居中（说明文字在title tooltip） */
     .m-actions { display: flex; align-items: center; gap: 4px; padding: 1px 2px; }
     .m-actions .m-act {
@@ -179,6 +184,10 @@
       </div>
       <div class="msep"></div>
       <button class="mi" id="miCalendar" title="开启 Calendar">📅 开启 Calendar</button>
+      <div class="m-sticky-list" id="mStickyListWrap">
+        <div class="m-sticky-list-title">当前开启的便利贴</div>
+        <div class="m-sticky-list-items" id="mStickyList"></div>
+      </div>
       <!-- 第 2 行：显示模式（分体 / 翻页） -->
       <div class="m-mode">
         <span class="m-mode-label">显示模式</span>
