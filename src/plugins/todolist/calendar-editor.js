@@ -710,9 +710,7 @@
     }
     // ===== 跨天行程辅助 =====
     // 🆕 桌面便利贴清单：把 sticky>0 的事件展开成 [{key,idx,html}]（key = 事件 uid，供桌面便利贴窗口定位）
-    //    ⚠️ 关键修复：曾经用 key = 标题|日期 做关联，一改标题/日期 key 就变 → 已开启的便利贴窗口在
-    //       stickyNoteWindows 里仍用旧 key 注册 → 主进程按新 key 查不到窗口 → 刷新被静默丢弃 → 标题不刷新。
-    //       改用事件稳定 uid（'evp'+EVENT分块序号，与桌面 renderer 的 parseEvents 算法一致），改标题/日期不再断开关联。
+    //    evpN 是当前 Markdown 分块位置生成的临时 key，重排事件后可能变化；刷新时由标题/日期回退定位旧便利贴。
     //    html 复用主程式 tlRenderNotes/renderMarkdown 管线（含 [[cp:]]→✅、[[dl:]]→📅、checkbox），
     //    渲染好的 HTML 交给便利贴窗口显示 → 单一可信来源，两处渲染永不漂移。
     function tlStickyNoteRefs() {
@@ -727,7 +725,10 @@
           const titleNode = document.createElement('div');
           titleNode.innerHTML = titleHtml;
           const title = (titleNode.textContent || titleNode.innerText || ev.title || '').replace(/\s+/g, ' ').trim();
-          for (let i = 0; i < n; i++) out.push({ key, idx: i, html, titleHtml, title });
+          for (let i = 0; i < n; i++) out.push({
+            key, idx: i, html, titleHtml, title, date: ev.date || '',
+            done: !!ev.done, tags: Array.isArray(ev.tags) ? ev.tags : []
+          });
         }
       });
       return out;
@@ -909,13 +910,14 @@
         if (!m) return line;
         const done = m[2] !== ' ';
         const cbAttr = uid
-          ? ' data-uid="' + tlEscapeHtml(uid) + '" data-line="' + i + '"' +
+          ? ' class="ev-cb interactive" data-uid="' + tlEscapeHtml(uid) + '" data-line="' + i + '"' +
             ' onclick="tlToggleNoteCheck(event,\'' + tlEscapeHtml(uid) + '\',' + i + ')"' +
-            ' onkeydown="tlCalCheckKey(event,\'' + tlEscapeHtml(uid) + '\',' + i + ')"'
-          : '';
-        return m[1] + '<span class="ev-md-check' + (done ? ' done' : '') + '"' + cbAttr +
-          ' role="checkbox" aria-checked="' + (done ? 'true' : 'false') + '" tabindex="0">' +
-          '<span class="ev-cb">' + (done ? '\u2713' : '') + '</span>' + tlRenderInlineMarkdown(tlRenderNoteMarkers(m[3])) + '</span>';
+            ' onkeydown="tlCalCheckKey(event,\'' + tlEscapeHtml(uid) + '\',' + i + ')"' +
+            ' role="checkbox" aria-checked="' + (done ? 'true' : 'false') + '" tabindex="0"'
+          : ' class="ev-cb"';
+        return m[1] + '<span class="ev-md-check' + (done ? ' done' : '') + '">' +
+          '<span' + cbAttr + '>' + (done ? '\u2713' : '') + '</span>' +
+          '<span class="ev-md-check-text">' + tlRenderInlineMarkdown(tlRenderNoteMarkers(m[3])) + '</span></span>';
       }).join('\n');
     }
     // 🔁 重复事件小图标（## EVENT(REPEAT)）：双箭头环形，随文色（灰），用于月格 chip / 时间网格 / 列表行 / 悬停提示

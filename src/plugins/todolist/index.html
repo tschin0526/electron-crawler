@@ -2234,6 +2234,8 @@
     .ev-block .loc { font-size: 10px; opacity: 0.9; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     /* 📝 備註 Markdown checkbox：- [ ] / - [x] → ☐/☑（只讀樣式，勾選項加刪除線） */
     .ev-cb { display: inline-block; min-width: 11px; height: 11px; border: 1px solid var(--ev-muted); border-radius: 3px; margin-right: 4px; vertical-align: -1px; text-align: center; font-size: 9px; line-height: 11px; color: #fff; }
+    .ev-cb.interactive { cursor: pointer; }
+    .ev-cb.interactive:hover { outline: 2px solid var(--ev-primary); outline-offset: 1px; }
     .ev-md-check.done .ev-cb { background: var(--ev-primary); border-color: var(--ev-primary); }
     .ev-md-check.done { text-decoration: line-through; opacity: 0.75; }
     .ev-block.done { opacity: 0.55; }
@@ -6858,11 +6860,28 @@
     // 🆕 便利贴窗点「刷新」→ 主程式重渲染该张（或所有）便利贴并回推最新内容
     function tlOnStickyRefreshRequest(payload) {
       if (!window.electronAPI || !window.electronAPI.send) return;
+      if (typeof tlAllEvents === 'function') {
+        tlCalEvents = tlAllEvents(document.getElementById('taskText').value);
+      }
       const refs = (typeof tlStickyNoteRefs === 'function') ? tlStickyNoteRefs() : [];
       if (payload && typeof payload.key === 'string') {
         const key = payload.key, idx = +payload.idx || 0;
-        const ref = refs.find(r => r.key === key && r.idx === idx);
-        if (ref) window.electronAPI.send('sticky-note-refresh', ref);
+        let ref = refs.find(r => r.key === key && r.idx === idx);
+        let titleCandidates = [];
+        if (!ref && typeof payload.title === 'string') {
+          const title = payload.title.replace(/\s+/g, ' ').trim();
+          titleCandidates = refs.filter(r => r.idx === idx && r.title === title);
+          const datedCandidates = payload.date
+            ? titleCandidates.filter(r => r.date === payload.date)
+            : [];
+          if (datedCandidates.length === 1) ref = datedCandidates[0];
+          else if (titleCandidates.length === 1) ref = titleCandidates[0];
+        }
+        if (!ref && payload.date && (!payload.title || titleCandidates.length === 0)) {
+          const candidates = refs.filter(r => r.idx === idx && r.date === payload.date);
+          if (candidates.length === 1) ref = candidates[0];
+        }
+        if (ref) window.electronAPI.send('sticky-note-refresh', Object.assign({}, ref, { key, idx }));
       } else {
         refs.forEach(r => window.electronAPI.send('sticky-note-refresh', r));
       }
@@ -14255,6 +14274,11 @@
             }
           } catch (e) { console.warn('[TodoList] 弹出桌面便利贴窗口失败:', e); }
         }
+      }
+      if (window.electronAPI && window.electronAPI.invoke) {
+        const stickyState = await window.electronAPI.invoke('sticky-note-order');
+        tlStickyNotesOpen = !!(stickyState && Array.isArray(stickyState.order) && stickyState.order.length);
+        tlSyncStickyBtn();
       }
       tlUpdateStickyBadge();
       if (window.electronAPI && window.electronAPI.invoke) {

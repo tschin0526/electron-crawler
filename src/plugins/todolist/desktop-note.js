@@ -221,7 +221,16 @@ function setupControls() {
     if (IS_FLIP) ipcRenderer.invoke('close-sticky-notes');          // 翻页模式：结束整个翻页会话
     else ipcRenderer.invoke('sticky-note-close', { key: KEY, idx: IDX });
   };
-  document.getElementById('miRefresh').onclick = (e) => { e.stopPropagation(); closeMenu(); ipcRenderer.send('sticky-note-refresh-request', { key: KEY, idx: IDX }); };
+  document.getElementById('miRefresh').onclick = (e) => {
+    e.stopPropagation();
+    closeMenu();
+    const ev = parseEvents(readMd()).find(item => item.key === KEY);
+    ipcRenderer.send('sticky-note-refresh-request', {
+      key: KEY, idx: IDX,
+      title: (document.getElementById('title').textContent || '').replace(/\s+/g, ' ').trim(),
+      date: ev ? ev.date : ''
+    });
+  };
   document.getElementById('miOpen').onclick = (e) => { e.stopPropagation(); closeMenu(); ipcRenderer.invoke('wake-main-from-note', { key: KEY }); };
   document.getElementById('miCalendar').onclick = (e) => { e.stopPropagation(); closeMenu(); ipcRenderer.invoke('activate-main-window'); };
   const stickyList = document.getElementById('mStickyList');
@@ -427,9 +436,13 @@ function applyNoteContent(arg) {
   }
   document.getElementById('body').innerHTML = html;
   const ev = parseEvents(readMd()).find(e => e.key === KEY);
-  if (ev) {
-    renderMeta(ev);
-    renderTags(ev);
+  if (ev || arg) {
+    renderMeta(Object.assign({}, ev || {}, {
+      date: arg && typeof arg.date === 'string' ? arg.date : (ev && ev.date),
+      done: arg && typeof arg.done === 'boolean' ? arg.done : !!(ev && ev.done),
+      tags: arg && Array.isArray(arg.tags) ? arg.tags : ((ev && ev.tags) || [])
+    }));
+    renderTags({ tags: arg && Array.isArray(arg.tags) ? arg.tags : ((ev && ev.tags) || []) });
   }
   // 最小化态需按新内容重测紧凑卡高度（标题/标签变化可能改变高度）
   if (document.getElementById('note').classList.contains('minimized')) {
