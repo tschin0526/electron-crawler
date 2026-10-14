@@ -1896,6 +1896,19 @@
     .ev-toolbar { flex: 0 0 auto; display: flex; align-items: center; gap: 10px; padding-bottom: 8px; }
     .ev-toolbar-flex { flex: 1; }
     .ev-hint-text { font-size: 11px; color: var(--ev-muted); }
+    .ev-toolbar-combo { position: relative; display: inline-flex; align-items: center; gap: 5px; }
+    .ev-toolbar-combo-trigger { border: 1px solid var(--ev-border); background: var(--ev-card); color: var(--ev-text); border-radius: 7px; padding: 5px 8px; cursor: pointer; font-size: 12px; line-height: 1; }
+    .ev-toolbar-combo-trigger:hover, .ev-toolbar-combo-trigger[aria-expanded="true"] { border-color: var(--ev-primary); color: var(--ev-primary); }
+    .ev-toolbar-combo-exposed { display: inline-flex; align-items: center; gap: 5px; }
+    .ev-toolbar-combo-item[hidden] { display: none !important; }
+    .ev-toolbar-combo-menu { position: absolute; z-index: 10000; top: calc(100% + 5px); left: 0; display: none; min-width: 220px; padding: 6px; border: 1px solid var(--ev-border); border-radius: 8px; background: var(--ev-card); color: var(--ev-text); box-shadow: 0 8px 24px rgba(0,0,0,.24); }
+    .ev-toolbar-combo-menu.open { display: block; }
+    .ev-toolbar-combo-menu-title { padding: 3px 7px 6px; color: var(--ev-muted); font-size: 11px; }
+    .ev-toolbar-combo-option { display: flex; align-items: center; gap: 8px; padding: 4px; border-radius: 5px; }
+    .ev-toolbar-combo-option:hover { background: rgba(127,127,127,.12); }
+    .ev-toolbar-combo-option input { flex: none; margin: 0 3px; accent-color: var(--ev-primary); }
+    .ev-toolbar-combo-action { flex: 1; border: 0; border-radius: 4px; padding: 5px 4px; background: transparent; color: inherit; text-align: left; font: inherit; cursor: pointer; }
+    .ev-toolbar-combo-action:hover { color: var(--ev-primary); background: rgba(127,127,127,.12); }
     .ev-mode-seg { display: flex; border: 1px solid var(--ev-border); border-radius: 8px; overflow: hidden; }
     .ev-mode-seg button { border: none; background: var(--ev-card); color: var(--ev-muted); font-size: 13px; padding: 4px 14px; cursor: pointer; }
     .ev-mode-seg button.active { background: var(--ev-primary); color: #fff; }
@@ -2031,6 +2044,7 @@
     .ev-notes { margin-top: 4px; font-size: 12px; color: var(--ev-muted); white-space: normal; word-break: break-word; }
     .ev-notes p { margin: 0 0 0.35em 0; }
     .ev-notes p:last-child { margin-bottom: 0; }
+    .ev-notes hr, .ev-block .notes hr, .ev-tip-notes hr { border: 0; border-top: 1px solid var(--ev-border); height: 0; margin: .45em 0; }
     .ev-notes ul, .ev-notes ol { margin: 0.25em 0; padding-left: 1.5em; }
     .ev-notes li { margin: 0.15em 0; }
     .ev-notes pre { margin: 0.35em 0; overflow-x: auto; }
@@ -4895,6 +4909,17 @@
               <button type="button" id="tlEvModeWeek">周</button>
               <button type="button" id="tlEvModeMonth">月</button>
               <button type="button" id="tlEvModeYear">年</button>
+            </div>
+            <div class="ev-toolbar-combo" id="tlEvToolbarCombo">
+              <button type="button" class="ev-toolbar-combo-trigger" id="tlEvToolbarComboTrigger" aria-expanded="false" aria-label="日历功能菜单">☷ ▾</button>
+              <div class="ev-toolbar-combo-exposed" id="tlEvToolbarExposed"></div>
+              <div class="ev-toolbar-combo-menu" id="tlEvToolbarComboMenu" role="group" aria-label="选择曝露的日历功能">
+                <div class="ev-toolbar-combo-menu-title">勾选要显示在工具列的功能</div>
+                <div class="ev-toolbar-combo-option"><input type="checkbox" data-toolbar-expose="layout" checked aria-label="曝露左右布局按钮"><button type="button" class="ev-toolbar-combo-action" data-toolbar-action="layout">左右布局</button></div>
+                <div class="ev-toolbar-combo-option"><input type="checkbox" data-toolbar-expose="sticky" checked aria-label="曝露便利贴管理按钮"><button type="button" class="ev-toolbar-combo-action" data-toolbar-action="sticky">便利贴管理</button></div>
+                <div class="ev-toolbar-combo-option"><input type="checkbox" data-toolbar-expose="stats" checked aria-label="曝露事件统计按钮"><button type="button" class="ev-toolbar-combo-action" data-toolbar-action="stats">事件统计</button></div>
+                <div class="ev-toolbar-combo-option"><input type="checkbox" data-toolbar-expose="includes" checked aria-label="曝露 Include 加载清单按钮"><button type="button" class="ev-toolbar-combo-action" data-toolbar-action="includes">Include 加载清单</button></div>
+              </div>
             </div>
             <button type="button" id="tlCalLayoutBtn" class="btn ev-stats-btn" title="切换日历与行程明细的排布：上下 / 左右" onclick="tlToggleCalLayout()">▤</button>
             <span class="ev-sticky-wrap" id="tlStickyWrap"><button type="button" id="tlStickyBtn" class="btn ev-stats-btn" title="桌面便利贴：把标记为「便利贴 ×N」的行程贴到 Mac 桌面（每张一个独立小窗口，可直接拖动/缩放/改色/关闭）。点击展开菜单：开启/关闭便利贴，或查看已设定的事件。" onclick="tlToggleStickyMenu()"><svg class="ev-sticky-ic" viewBox="0 0 24 24" width="17" height="17" aria-hidden="true"><rect x="2.8" y="2.8" width="18.4" height="18.4" rx="2.2" fill="#FCEFA4"/><path d="M3 18.4c0 1.5 1.2 2.8 2.8 2.8h14.4v-2.8H3Z" fill="#F7E694"/><path d="M21.2 14.8v3.6c0 1.5-1.2 2.8-2.8 2.8h-3.6l6.4-6.4Z" fill="#FDF6C8"/><path d="M21.2 14.8 14.8 21.2" stroke="#E8CE7C" stroke-width=".7" stroke-linecap="round" fill="none"/><rect x="8.6" y="6.1" width="6.8" height="1.9" rx=".95" fill="#F0C860"/><rect x="9.1" y="6.5" width="5.8" height=".8" rx=".4" fill="#FFF3C0"/><path d="M6.6 11.4h10.8M6.6 14.2h7.6" stroke="#EBD88F" stroke-width=".9" stroke-linecap="round" fill="none"/></svg><span class="ev-sticky-badge" id="tlStickyBadge" style="display:none">0</span></button>

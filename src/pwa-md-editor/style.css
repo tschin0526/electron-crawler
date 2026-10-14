@@ -408,6 +408,7 @@ body {
 .ev-notes { margin-top: 4px; font-size: 12px; color: var(--text-secondary); white-space: normal; word-break: break-word; }
 .ev-notes p { margin: 0 0 0.35em 0; }
 .ev-notes p:last-child { margin-bottom: 0; }
+.ev-notes hr, .ev-block .notes hr, .ev-tip-notes hr { border: 0; border-top: 1px solid var(--border); height: 0; margin: .45em 0; }
 .ev-notes ul, .ev-notes ol { margin: 0.25em 0; padding-left: 1.5em; }
 .ev-notes li { margin: 0.15em 0; }
 .ev-notes pre { margin: 0.35em 0; overflow-x: auto; }

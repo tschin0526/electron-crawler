@@ -2907,6 +2907,90 @@
       tlApplyCalLayout();
     }
 
+    const TL_TOOLBAR_EXPOSE_KEY = 'tlCalToolbarExposed';
+    function tlInitCalendarToolbarCombo() {
+      const combo = document.getElementById('tlEvToolbarCombo');
+      const exposed = document.getElementById('tlEvToolbarExposed');
+      const trigger = document.getElementById('tlEvToolbarComboTrigger');
+      const menu = document.getElementById('tlEvToolbarComboMenu');
+      if (!combo || !exposed || !trigger || !menu || combo.dataset.initialized === '1') return;
+      combo.dataset.initialized = '1';
+
+      const definitions = [
+        { key: 'layout', id: 'tlCalLayoutBtn' },
+        { key: 'sticky', id: 'tlStickyWrap' },
+        { key: 'stats', id: 'tlEvStatsBtn' },
+        { key: 'includes', id: 'tlIncludeListBtn' }
+      ];
+      const controls = new Map();
+      let selected = definitions.map(item => item.key);
+      try {
+        const stored = JSON.parse(localStorage.getItem(TL_TOOLBAR_EXPOSE_KEY) || 'null');
+        if (Array.isArray(stored)) selected = stored.filter(key => definitions.some(item => item.key === key));
+      } catch (error) {
+        console.warn('[TodoList] 读取日历工具列偏好失败:', error);
+      }
+
+      const items = new Map();
+      definitions.forEach(item => {
+        const control = document.getElementById(item.id);
+        if (!control) return;
+        controls.set(item.key, item.key === 'sticky' ? control.querySelector('#tlStickyBtn') : control);
+        const wrapper = document.createElement('span');
+        wrapper.className = 'ev-toolbar-combo-item';
+        wrapper.dataset.toolbarItem = item.key;
+        if (item.key === 'sticky') {
+          wrapper.appendChild(control);
+        } else {
+          const parent = control.parentElement;
+          if (parent && parent !== combo) parent.removeChild(control);
+          wrapper.appendChild(control);
+        }
+        exposed.appendChild(wrapper);
+        items.set(item.key, wrapper);
+      });
+
+      const checkboxes = Array.from(menu.querySelectorAll('input[data-toolbar-expose]'));
+      const apply = () => {
+        checkboxes.forEach(input => {
+          const key = input.getAttribute('data-toolbar-expose');
+          const wrapper = items.get(key);
+          input.checked = selected.includes(key);
+          if (wrapper) wrapper.hidden = !input.checked;
+        });
+      };
+      const closeMenu = () => {
+        menu.classList.remove('open');
+        trigger.setAttribute('aria-expanded', 'false');
+      };
+
+      apply();
+      trigger.addEventListener('click', event => {
+        event.stopPropagation();
+        const open = !menu.classList.contains('open');
+        menu.classList.toggle('open', open);
+        trigger.setAttribute('aria-expanded', String(open));
+      });
+      menu.addEventListener('click', event => event.stopPropagation());
+      menu.querySelectorAll('button[data-toolbar-action]').forEach(button => {
+        button.addEventListener('click', () => {
+          const control = controls.get(button.getAttribute('data-toolbar-action'));
+          closeMenu();
+          if (control) control.click();
+        });
+      });
+      checkboxes.forEach(input => input.addEventListener('change', () => {
+        const key = input.getAttribute('data-toolbar-expose');
+        selected = input.checked ? Array.from(new Set(selected.concat(key))) : selected.filter(item => item !== key);
+        apply();
+        try { localStorage.setItem(TL_TOOLBAR_EXPOSE_KEY, JSON.stringify(selected)); }
+        catch (error) { console.warn('[TodoList] 保存日历工具列偏好失败:', error); }
+      }));
+      document.addEventListener('click', event => {
+        if (!combo.contains(event.target)) closeMenu();
+      });
+    }
+
     function tlRenderMonth(content) {
       tlCalEvents = tlAllEvents(content);
       tlCalHolidays = tlAllHolidays(content);
@@ -3926,6 +4010,7 @@
     // 事件绑定（DOM 就绪时执行一次）
     (function bindCalendarEventsUI() {
       const on = (id, ev, fn) => { const el = document.getElementById(id); if (el) el.addEventListener(ev, fn); };
+      tlInitCalendarToolbarCombo();
       on('tlEvModeList', 'click', () => tlSetMode('list'));
       on('tlEvModeDay', 'click', () => tlSetMode('day'));
       on('tlEvModeWeek', 'click', () => tlSetMode('week'));

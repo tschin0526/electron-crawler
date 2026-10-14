@@ -39,6 +39,8 @@ let flipOrder = [];   // [{key, idx}]
 let flipIndex = 0;    // 当前页
 let flipTotal = 0;
 let flipPointerX = null;
+let pointerClientX = null;
+let pointerClientY = null;
 const FLIP_EDGE_TRIGGER_PX = 48;
 let editMode = false; // 内容模式：false＝渲染（Markdown 预览）/ true＝编辑（直接改原始 notes）
 let editDirty = false;// 编辑后是否有未保存改动（⌘S 才落盘）
@@ -193,7 +195,7 @@ async function init() {
     const chx = collapsedH() || state.minH || 90;
     if (chx > 0) ipcRenderer.invoke('sticky-note-bounds', { key: KEY, idx: IDX, width: state.w, height: chx });
   }
-  updateMinBtn();
+  updateMinHandle();
 
   // 控件（分体/翻页共用：关闭/刷新/唤起主程式/最小化/改色/透明度/缩放 + 点击唤起主程式）
   setupControls();
@@ -202,7 +204,7 @@ async function init() {
 // 右上角 ☰ 下拉菜单：收纳全部操作（翻页◀▶ / 刷新 / 打开 / 颜色·透明度 / 最小化 / 关闭）
 function setupControls() {
   const menu = document.getElementById('menu');
-  const btnMenu = document.getElementById('btnMenu');
+  const menuHandle = document.getElementById('noteMenuHandle');
   const closeMenu = () => { if (menu) menu.classList.remove('open'); };
   const undoneChecksButton = document.getElementById('miUndoneChecks');
   if (undoneChecksButton) undoneChecksButton.onclick = (e) => {
@@ -216,8 +218,12 @@ function setupControls() {
       const ok = window.confirm('内容有未保存的改动。\n\n确定＝保存后关闭\n取消＝不关闭');
       if (!ok) return false;
       if (!await saveNoteEdit()) return false;
+      return true;
     }
-    return true;
+    const message = IS_FLIP
+      ? '确定要关闭便利贴翻页窗口吗？\n\n关闭后将结束当前翻页显示。'
+      : '确定要关闭这张便利贴吗？\n\n之后仍可从便利贴菜单重新开启。';
+    return window.confirm(message);
   };
   ipcRenderer.on('sticky-note-close-request', async (event, payload) => {
     if (!payload || typeof payload.requestId !== 'string') return;
@@ -231,15 +237,15 @@ function setupControls() {
       console.error('[StickyNote] 关闭便利贴失败:', error);
     }
   });
-  if (btnMenu) btnMenu.onclick = (e) => {
+  if (menuHandle) menuHandle.onclick = (e) => {
     e.stopPropagation();
     if (menu) menu.classList.toggle('open');
     if (menu && menu.classList.contains('open')) loadStickyMenuNotes();
   };
-  // 点击菜单与 ☰ 以外任意处（含便利贴本体）关闭菜单
+  // 点击菜单与右上角手柄以外任意处（含便利贴本体）关闭菜单
   document.addEventListener('click', (e) => {
     if (!menu || !menu.classList.contains('open')) return;
-    if (menu.contains(e.target) || (btnMenu && btnMenu.contains(e.target))) return;
+    if (menu.contains(e.target) || (menuHandle && menuHandle.contains(e.target))) return;
     closeMenu();
   }, true);
   document.getElementById('miClose').onclick = async (e) => {
@@ -287,7 +293,10 @@ function setupControls() {
     }
   };
   loadStickyMenuNotes();
-  document.getElementById('miMin').onclick = (e) => { e.stopPropagation(); closeMenu(); toggleMinimize(); };
+  document.getElementById('noteMinHandle').onclick = (e) => {
+    e.stopPropagation();
+    toggleMinimize();
+  };
   document.getElementById('miCfg').onclick = (e) => {
     e.stopPropagation();
     const cfg = document.getElementById('mCfg');
@@ -299,9 +308,11 @@ function setupControls() {
   document.getElementById('miModeSplit').onclick = (e) => { e.stopPropagation(); requestStickyDisplayMode('split'); };
   document.getElementById('miModeFlip').onclick = (e) => { e.stopPropagation(); requestStickyDisplayMode('flip'); };
   syncModeSeg();
-  // 内容模式（渲染 / 编辑）：编辑模式＝textarea 直改事件原始 Markdown（notes）；默认渲染
-  document.getElementById('miRender').onclick = (e) => { e.stopPropagation(); setEditMode(false); };
-  document.getElementById('miEdit').onclick = (e) => { e.stopPropagation(); setEditMode(true); };
+  // 内容模式由左下角浮动手柄切换；编辑模式直接改事件原始 Markdown（notes）
+  document.getElementById('noteModeHandle').onclick = (e) => {
+    e.stopPropagation();
+    setEditMode(!editMode);
+  };
   syncEditSeg();
   const editArea = document.getElementById('editArea');
   if (editArea) {
@@ -395,13 +406,42 @@ function setupControls() {
   const note = document.getElementById('note');
   note.addEventListener('click', onNoteClick);
   note.addEventListener('dblclick', onNoteDblClick);
+  note.addEventListener('pointermove', (e) => {
+    pointerClientX = e.clientX;
+    pointerClientY = e.clientY;
+    const rect = note.getBoundingClientRect();
+    const rightGap = rect.right - e.clientX;
+    const leftGap = e.clientX - rect.left;
+    const topGap = e.clientY - rect.top;
+    const bottomGap = rect.bottom - e.clientY;
+    const centerGap = Math.abs(e.clientX - (rect.left + rect.width / 2));
+    const nearBottomRight = rightGap >= 0 && rightGap <= 48 && bottomGap >= 0 && bottomGap <= 48;
+    const nearBottomLeft = leftGap >= 0 && leftGap <= 48 && bottomGap >= 0 && bottomGap <= 48;
+    const nearTopLeft = leftGap >= 0 && leftGap <= 48 && topGap >= 0 && topGap <= 48;
+    const nearTopRight = rightGap >= 0 && rightGap <= 48 && topGap >= 0 && topGap <= 48;
+    const nearTopCenter = centerGap <= 48 && topGap >= 0 && topGap <= 48;
+    document.getElementById('rz').classList.toggle('visible', nearBottomRight || !!rz);
+    document.getElementById('noteModeHandle').classList.toggle('visible', nearBottomLeft);
+    document.getElementById('noteMinHandle').classList.toggle('visible', nearTopLeft);
+    document.getElementById('noteMenuHandle').classList.toggle('visible', nearTopRight);
+    document.getElementById('miClose').classList.toggle('visible', nearTopCenter);
+  });
+  note.addEventListener('pointerleave', () => {
+    pointerClientX = null;
+    pointerClientY = null;
+    if (!rz) document.getElementById('rz').classList.remove('visible');
+    document.getElementById('noteModeHandle').classList.remove('visible');
+    document.getElementById('noteMinHandle').classList.remove('visible');
+    document.getElementById('noteMenuHandle').classList.remove('visible');
+    document.getElementById('miClose').classList.remove('visible');
+  });
   if (IS_FLIP) bindFlipNav();
 }
 
 // 原生拖拽由 OS 处理；只有「按下后未移动、松开＝点击」才会触发此 handler
 // （拖拽过程中 OS 不会派发 click），故可安全用它区分「点一下＝唤起主程式」
 function onNoteClick(e) {
-  if (e.target.closest('.iconbtn, .note-addcheck, .flip-edge')) return;  // 按钮各自处理
+  if (e.target.closest('.iconbtn, .note-mode-handle, .note-min-handle, .note-menu-handle, .note-addcheck, .flip-edge')) return;  // 按钮各自处理
   if (!e.target.closest('.bar, .head, .meta, .tags')) return; // 仅拖拽区点击＝唤起主程式
   ipcRenderer.invoke('wake-main-from-note', { key: KEY });
 }
@@ -745,9 +785,12 @@ async function syncModeSeg() {
 }
 // 下拉菜单高亮当前内容模式（渲染 / 编辑）
 function syncEditSeg() {
-  const r = document.getElementById('miRender'), e = document.getElementById('miEdit');
-  if (r) r.classList.toggle('active', !editMode);
-  if (e) e.classList.toggle('active', editMode);
+  const handle = document.getElementById('noteModeHandle');
+  if (handle) {
+    handle.textContent = editMode ? '▤' : '✎';
+    handle.title = editMode ? '切换到渲染模式' : '切换到编辑模式';
+    handle.setAttribute('aria-label', handle.title);
+  }
 }
 
 // 读取当前事件（KEY/IDX）的原始 notes（直接回读 calendar.md，保证权威）
@@ -860,12 +903,15 @@ function collapsedH() {
   });
   return Math.round(h) + 8; // 底部留白
 }
-function updateMinBtn() {
-  const b = document.getElementById('miMin');
-  if (!b) return;
-  // 纯图标按钮：只换图标 + tooltip，不注入文字（文字会撑破图标排版）
-  if (state.minimized) { b.textContent = '▢'; b.title = '还原（展开便利贴）'; }
-  else { b.textContent = '▁'; b.title = '最小化（收合成小卡）'; }
+function updateMinHandle() {
+  const handle = document.getElementById('noteMinHandle');
+  const icon = state.minimized ? '▢' : '▁';
+  const title = state.minimized ? '还原（展开便利贴）' : '最小化（收合成小卡）';
+  if (handle) {
+    handle.textContent = icon;
+    handle.title = title;
+    handle.setAttribute('aria-label', title);
+  }
 }
 function toggleMinimize() {
   const note = document.getElementById('note');
@@ -880,7 +926,7 @@ function toggleMinimize() {
     note.classList.add('minimized');
     if (ch > 0) { state.minH = ch; ipcRenderer.invoke('sticky-note-bounds', { key: g.key, idx: g.idx, width: state.w, height: ch }); }
   }
-  updateMinBtn();
+  updateMinHandle();
   persist();
 }
 
@@ -890,18 +936,31 @@ function toggleMinimize() {
 let rz = null;
 function startResize(e) {
   e.stopPropagation(); e.preventDefault();
+  document.getElementById('rz').classList.add('visible');
   rz = { sx: e.clientX, sy: e.clientY, w: state.w, h: state.h };
   window.addEventListener('pointermove', onResize);
   window.addEventListener('pointerup', endResize, { once: true });
 }
 function onResize(e) {
   if (!rz) return;
+  pointerClientX = e.clientX;
+  pointerClientY = e.clientY;
   state.w = Math.max(MIN_W, rz.w + (e.clientX - rz.sx));
   state.h = Math.max(MIN_H, rz.h + (e.clientY - rz.sy));
   const g = geomId();
   ipcRenderer.invoke('sticky-note-bounds', { key: g.key, idx: g.idx, width: state.w, height: state.h });
 }
-function endResize() { window.removeEventListener('pointermove', onResize); if (rz) { persist(); rz = null; } }
+function endResize() {
+  window.removeEventListener('pointermove', onResize);
+  if (rz) { persist(); rz = null; }
+  const note = document.getElementById('note');
+  const rect = note.getBoundingClientRect();
+  const rightGap = pointerClientX === null ? Infinity : rect.right - pointerClientX;
+  const bottomGap = pointerClientY === null ? Infinity : rect.bottom - pointerClientY;
+  const nearBottomRight = pointerClientX !== null && pointerClientY !== null
+    && rightGap >= 0 && rightGap <= 48 && bottomGap >= 0 && bottomGap <= 48;
+  document.getElementById('rz').classList.toggle('visible', nearBottomRight);
+}
 
 // 🆕 翻页模式入口：拉取顺序、建翻页窗、渲染第 0 张，并绑定 ◀ ▶ 与 ← → 翻页
 async function initFlip() {
@@ -944,7 +1003,7 @@ async function initFlip() {
     const ch = collapsedH() || state.minH || 90;
     if (ch > 0) ipcRenderer.invoke('sticky-note-bounds', { key: FLIP_KEY, idx: FLIP_IDX, width: state.w, height: ch });
   }
-  updateMinBtn();
+  updateMinHandle();
   await renderFlipPage(0);
 }
 
@@ -1004,6 +1063,7 @@ async function renderFlipPage(i) {
   }
   editMode = false;
   editDirty = false;
+  syncEditSeg();
   const noteEl0 = document.getElementById('note');
   if (noteEl0) noteEl0.classList.remove('editing');
   const eaEl0 = document.getElementById('editArea');
