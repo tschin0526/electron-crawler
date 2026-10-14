@@ -398,6 +398,10 @@ body {
 .ev-title p { margin: 0; }
 /* 🔁 重複事件小圖標（## EVENT(REPEAT)）：隨文色（灰），chip/時間網格/列表行/懸停提示通用 */
 .ev-repeat-ic { color: var(--text-secondary); vertical-align: -1px; margin-right: 3px; flex: none; }
+.ev-sub-progress { display: inline-block; margin-left: 8px; padding: 2px 9px; border-radius: 999px; background: var(--bg-secondary); border: 1px solid var(--border); color: var(--text); font-size: 11px; line-height: 1.4; font-weight: 600; white-space: nowrap; vertical-align: middle; }
+.ev-sub-progress.all-done { background: rgba(52,199,89,.15); border-color: rgba(52,199,89,.55); color: #34C759; }
+.ev-span-display-mode { display: inline-flex; align-items: center; justify-content: center; min-width: 18px; box-sizing: border-box; margin-left: 4px; padding: 1px 5px; border: 1px solid #f5c518; border-radius: 999px; color: #f5c518; font-size: 10px; line-height: 1.4; font-weight: 700; vertical-align: middle; }
+.ev-item .ev-title .ev-link { display: inline-flex; align-items: center; justify-content: center; min-width: 22px; min-height: 22px; box-sizing: border-box; margin-left: 4px; padding: 2px 4px; border: 1px solid #f5c518; border-radius: 999px; color: #f5c518; }
 .ev-tags { display: inline-flex; flex-wrap: wrap; gap: 4px; margin-left: 8px; vertical-align: middle; }
 .ev-tag-view { display: inline-block; padding: 3px 12px; border-radius: 999px; background: #7C3AED; border: 1px solid #8B5CF6; color: #fff; font-size: 12px; line-height: 1.35; font-weight: 600; white-space: nowrap; }
 .ev-meta { margin-top: 2px; font-size: 12px; color: var(--text-secondary); }
@@ -485,7 +489,7 @@ body {
 .ev-year-dot { width: 4px; height: 4px; border-radius: 50%; }
 .ev-year-more { font-size: 8px; color: var(--text-secondary); line-height: 4px; }
 /* 跨天行程：列表項徽章 + 月視圖跨日色條 */
-.ev-span-badge { margin-left: 6px; font-size: 10px; font-weight: 400; color: var(--primary); border: 1px solid var(--primary); padding: 0 6px; border-radius: 99px; white-space: nowrap; }
+.ev-span-badge { margin-left: 6px; font-size: 10px; font-weight: 600; color: #f5c518; border: 1px solid #f5c518; padding: 0 6px; border-radius: 99px; white-space: nowrap; }
 .ev-item.multi .ev-meta { color: var(--primary); font-weight: 500; }
 /* ## HOLIDAY：日志/列表视图专用，与 EVENT（.ev-item）明显区隔——左侧 type 色条＋类型徽章，无勾选框/编辑删除 */
 .ev-holiday { display: flex; align-items: flex-start; gap: 10px; padding: 10px 14px; margin: 4px 0; border-radius: 8px; background: var(--bg-secondary); border: 1px solid var(--border); border-left: 4px solid var(--holiday-color, #FF9500); }

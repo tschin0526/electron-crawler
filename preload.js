@@ -104,7 +104,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   
   // 发送任意 IPC 消息到主进程（用于附件上传等）
   send: (channel, data) => {
-    const validChannels = ['set-pending-attachment', 'element-refresh-data', 'email-response', 'sticky-note-refresh'];
+    const validChannels = ['set-pending-attachment', 'element-refresh-data', 'email-response', 'sticky-note-refresh', 'sticky-note-sync'];
     if (validChannels.includes(channel)) {
       ipcRenderer.send(channel, data);
     }

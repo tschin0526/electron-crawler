@@ -37,6 +37,18 @@
     let tlIncludedFiles = [];    // 📎 include 加载的文件清单 [{ name, size }]（供「加载清单」按钮展示，含全部同目录 calendar-*.md，不只勾选的）
     let tlIncludeListBound = false; // 📎 Include 弹窗的 change 委托监听器是否已绑定（只绑一次）
     let tlCalTagFilter = [];   // 标签过滤（空＝全部；OR 逻辑：事件 tags 命中任一即显示）
+    const TL_UNDONE_CHECKS_KEY = 'tlCalUndoneChecksByEvent';
+    let tlUndoneChecksByEvent = {};
+    try {
+      const savedUndoneChecks = JSON.parse(localStorage.getItem(TL_UNDONE_CHECKS_KEY) || '{}');
+      if (savedUndoneChecks && typeof savedUndoneChecks === 'object' && !Array.isArray(savedUndoneChecks)) {
+        tlUndoneChecksByEvent = savedUndoneChecks;
+      } else {
+        console.warn('[calendar-editor] 忽略无效的每事件 checkbox 筛选设置');
+      }
+    } catch (error) {
+      console.warn('[calendar-editor] 读取每事件 checkbox 筛选设置失败', error);
+    }
     let tlCalRegionFilter = [];   // ## HOLIDAY 地区过滤（图例 checkbox 勾选；第十一批依用户截图设定：默认为空＝不显示任何地区假日；只影响显示，不改数据）
     let tlCalShowEvents = true;   // 分类显示：普通行程 EVENT（默认勾选；只影响显示，不改数据）
     let tlCalShowRepeat = 'next';   // 分类显示：重复行程 REPEAT 三态（none=隐藏 / next=只显示未来最近一次 / some=最近前一次+未来4次≤5；第十一批依用户截图设定默认 'next'；只影响显示，不改数据）
@@ -476,6 +488,7 @@
         idx, uid: 'evp' + idx, title,
         date: get('date'),
         endDate: get('endDate'),
+        spanDisplay: get('spanDisplay') || 'daily',
         allDay: get('allDay') === 'true',
         // 完成状态：旧文件没有 - done 栏位 → 视为未设定 = 未完成
         done: get('done') === 'true',
@@ -629,6 +642,7 @@
       s += '- title: `' + tlMdEscape(ev.title) + '`\n';
       s += '- date: `' + tlMdEscape(ev.date) + '`\n';
       if (ev.endDate && ev.endDate !== ev.date) s += '- endDate: `' + tlMdEscape(ev.endDate) + '`\n';
+      if (ev.spanDisplay === 'first' || ev.spanDisplay === 'last') s += '- spanDisplay: `' + ev.spanDisplay + '`\n';
       s += '- allDay: `' + (ev.allDay ? 'true' : 'false') + '`\n';
       // 完成状态：永远显式写出（与桌面 calendar 插件同一栏位、同一顺序）
       s += '- done: `' + (ev.done ? 'true' : 'false') + '`\n';
@@ -728,8 +742,9 @@
           titleNode.innerHTML = titleHtml;
           const title = (titleNode.textContent || titleNode.innerText || ev.title || '').replace(/\s+/g, ' ').trim();
           for (let i = 0; i < n; i++) out.push({
-            key, idx: i, html, titleHtml, title, date: ev.date || '',
-            done: !!ev.done, tags: Array.isArray(ev.tags) ? ev.tags : []
+            key, idx: i, html, titleHtml, title, date: ev.date || '', endDate: ev.endDate || '',
+            color: ev.color || '', done: !!ev.done, tags: Array.isArray(ev.tags) ? ev.tags : [],
+            notes: ev.notes || ''
           });
         }
       });
@@ -775,7 +790,7 @@
             out.push({ date: ds, ev, pos, idx, total });
             cur.setDate(cur.getDate() + 1);
           }
-          return out;
+          return tlFilterSpanDisplay(ev, out);
         }
       }
       // ===== ## EVENT(REPEAT) 重複事件：展開為可見範圍內的發生日 =====
@@ -800,7 +815,14 @@
         return (past.length ? [past[past.length - 1]] : []).concat(future.slice(0, 4));
       }
       out.push({ date: ev.date, ev, pos: 'single', idx: 1, total: 1 });
-      return out;
+      return tlFilterSpanDisplay(ev, out);
+    }
+    function tlFilterSpanDisplay(ev, occurrences) {
+      if (!tlIsMultiDay(ev)) return occurrences;
+      const mode = ev && (ev.spanDisplay === 'first' || ev.spanDisplay === 'last') ? ev.spanDisplay : 'daily';
+      if (mode === 'first') return occurrences.filter((o) => o.pos === 'start');
+      if (mode === 'last') return occurrences.filter((o) => o.pos === 'end');
+      return occurrences;
     }
     // 重複展開視窗：各視圖渲染前用 tlSetRepeatWindow 設定，避免 never 模式無限展開
     let tlRepeatFrom = '2000-01-01', tlRepeatTo = '2100-01-01';
@@ -1301,8 +1323,8 @@
         const dlM = raw.match(/\[\[(?:dl:)?(\d{4}-\d{2}-\d{2})\]\]/);
         const cpM = raw.match(/\[\[cp:(\d{4}-\d{2}-\d{2})\]\]/);
         const txt = raw
-          .replace(/\[\[(?:dl:)?(\d{4}-\d{2}-\d{2})\]\]/g, '$1')
-          .replace(/\[\[cp:(\d{4}-\d{2}-\d{2})\]\]/g, '$1')
+          .replace(/\[\[(?:dl:)?\d{4}-\d{2}-\d{2}\]\]/g, '')
+          .replace(/\[\[cp:\d{4}-\d{2}-\d{2}\]\]/g, '')
           .replace(/\s{2,}/g, ' ').trim();
         out.push({ text: txt, done: m[2] !== ' ', dl: dlM ? dlM[1] : '', cp: cpM ? cpM[1] : '' });
       });
@@ -1323,9 +1345,6 @@
       const ensure = (k) => { if (!tagMap.has(k)) tagMap.set(k, { mainTotal: 0, mainDone: 0, mainUndone: 0, subTotal: 0, subDone: 0, subUndone: 0, mains: [], subs: [] }); return tagMap.get(k); };
       let mainT = 0, mainD = 0, mainU = 0, subT = 0, subD = 0, subU = 0;
       tlCalEvents.forEach((ev) => {
-        // 完成状态过滤（作用于主事件 done）
-        if (fStatus === 'done' && !ev.done) return;
-        if (fStatus === 'undone' && ev.done) return;
         const tagNames = (ev.tags || []).map((t) => tlTagName(t)).filter(Boolean);
         // 标签过滤：事件须命中至少一个所选标签的 BOM 家族（OR，含子孙标签）；无标签事件仅在选中「(无标签)」时计入
         if (fTags) {
@@ -1334,11 +1353,13 @@
           if (!hit && !noTagHit) return;
         }
         const allSubs = tlParseNoteChecks(ev.notes);
+        const matchesMainStatus = fStatus === 'all' || (fStatus === 'done' ? ev.done : !ev.done);
         // mainOnly：有子事件的事件本身不算主体 → 主事件栏（计数＋明细）不计，其子事件照常计入子事件栏
-        const countMain = !(fMainOnly && allSubs.length > 0);
-        if (countMain) { mainT++; if (ev.done) mainD++; else mainU++; }
+        const countMain = matchesMainStatus && !(fMainOnly && allSubs.length > 0);
         // 完成状态过滤同样作用于子事件（按每条子事件自身 done 过滤，与主事件一致）
         const subs = fStatus === 'all' ? allSubs : allSubs.filter((s) => (fStatus === 'done' ? s.done : !s.done));
+        if (!countMain && subs.length === 0) return;
+        if (countMain) { mainT++; if (ev.done) mainD++; else mainU++; }
         const subDoneCount = subs.filter((s) => s.done).length;
         subT += subs.length; subD += subDoneCount; subU += (subs.length - subDoneCount);
         // 标签分组（含「无标签」），仅保留所选标签（或其 BOM 子孙标签）分组
@@ -2223,6 +2244,36 @@
       const all = done === subs.length;
       return '<span class="ev-sub-progress' + (all ? ' all-done' : '') + '" title="备注子事件：' + done + ' / ' + subs.length + ' 已完成">' + done + '/' + subs.length + '</span>';
     }
+    function tlSpanDisplayModeBadge(ev) {
+      if (!tlIsMultiDay(ev)) return '';
+      const mode = ev.spanDisplay === 'first' || ev.spanDisplay === 'last' ? ev.spanDisplay : 'daily';
+      const letter = mode === 'first' ? 'H' : mode === 'last' ? 'E' : 'A';
+      const label = mode === 'first' ? '首天显示' : mode === 'last' ? '末天显示' : '每天显示';
+      return '<span class="ev-span-display-mode" title="跨天模式：' + label + '">' + letter + '</span>';
+    }
+    function tlEventUndoneChecksOnly(uid) {
+      return tlUndoneChecksByEvent[uid] === true;
+    }
+    function tlToggleEventUndoneChecks(uid, button) {
+      const next = !tlEventUndoneChecksOnly(uid);
+      if (next) tlUndoneChecksByEvent[uid] = true;
+      else delete tlUndoneChecksByEvent[uid];
+      try {
+        localStorage.setItem(TL_UNDONE_CHECKS_KEY, JSON.stringify(tlUndoneChecksByEvent));
+      } catch (error) {
+        showToast('无法保存该事件的 checkbox 显示设置：' + ((error && error.message) || error), 'danger');
+      }
+      const item = button && button.closest('.ev-item');
+      if (item) item.classList.toggle('only-undone-checks', next);
+      if (button) {
+        button.classList.toggle('active', next);
+        button.textContent = next ? '☑' : '☐';
+        button.setAttribute('aria-pressed', next ? 'true' : 'false');
+        button.title = next
+          ? '仅显示该事件未完成的 checkbox 子事件（点击显示全部）'
+          : '只显示该事件未完成的 checkbox 子事件';
+      }
+    }
     function tlItemHtml(ev, today, occDate) {
       const multi = tlIsMultiDay(ev);
       const isRep = !!ev.repeatMode;
@@ -2238,7 +2289,7 @@
         time = ev.allDay ? '\u5168\u5929' : ((ev.startTime || '') + (ev.endTime ? '-' + ev.endTime : ''));
       }
       const spanBadge = multi ? '<span class="ev-span-badge" title="\u8de8\u5929\u884c\u7a0b">\u2922 \u8de8' + tlSpanDays(ev.date, ev.endDate) + '\u5929</span>' : '';
-      return '<div class="ev-item' + (past ? ' past' : '') + (ev.done ? ' done' : '') + (multi ? ' multi' : '') + '" data-uid="' + tlEscapeHtml(ev.uid) + '" data-occ-date="' + tlEscapeHtml(occDate || ev.date) + '">' +
+      return '<div class="ev-item' + (past ? ' past' : '') + (ev.done ? ' done' : '') + (multi ? ' multi' : '') + (tlEventUndoneChecksOnly(ev.uid) ? ' only-undone-checks' : '') + '" data-uid="' + tlEscapeHtml(ev.uid) + '" data-occ-date="' + tlEscapeHtml(occDate || ev.date) + '">' +
         '<input type="checkbox" class="ev-check" onchange="tlToggleDone(\'' + ev.uid + '\', this.checked)"' +
         (ev.done ? ' checked' : '') + ' title="\u52fe\u9009=\u5df2\u5b8c\u6210\uff0c\u53d6\u6d88\u52fe\u9009=\u672a\u5b8c\u6210">' +
         (ev.ro ? '<span class="ev-ro-icon" title="来自被包含的只读文件，不可编辑">\u26d4</span>' : '') +
@@ -2248,9 +2299,11 @@
         '<div class="ev-title">' + tlRepeatIcon(ev) + tlRenderInlineMarkdown(ev.title) + tlSpanDaySuffix(ev, occDate) + spanBadge +
         (ev.tags && ev.tags.length ? '<span class="ev-tags">' + ev.tags.map((t) => '<span class="ev-tag-view" data-tag="' + tlEscapeHtml(tlTagName(t)) + '">' + tlEscapeHtml(tlTagLabel(t)) + '</span>').join('') + '</span>' : '') +
         tlSubProgressBadge(ev) +
+        tlSpanDisplayModeBadge(ev) +
+        (ev.sticky > 0 ? '<span class="ev-sticky-flag" title="该事件已设为便利贴（桌面可见）">' + TL_STICKY_IC_SVG + '</span>' : '') +
         // 📋 列表行「＋☐」：与编辑表单备注旁同一入口（开 CheckBox 小窗）；列表模式按「加入备注」直接存档
         (ev.ro ? '' : '<button type="button" class="ev-addcheck-btn" title="在备注末尾加入 CheckBox（加入后直接存档）" onclick="tlOpenAddCheckDialog(\'' + tlEscapeHtml(ev.uid) + '\')">＋☐</button>') +
-        (ev.sticky > 0 ? '<span class="ev-sticky-flag" title="该事件已设为便利贴（桌面可见）">' + TL_STICKY_IC_SVG + '</span>' : '') +
+        '<button type="button" class="ev-undone-filter-btn' + (tlEventUndoneChecksOnly(ev.uid) ? ' active' : '') + '" data-uid="' + tlEscapeHtml(ev.uid) + '" aria-pressed="' + (tlEventUndoneChecksOnly(ev.uid) ? 'true' : 'false') + '" title="' + (tlEventUndoneChecksOnly(ev.uid) ? '仅显示该事件未完成的 checkbox 子事件（点击显示全部）' : '只显示该事件未完成的 checkbox 子事件') + '">' + (tlEventUndoneChecksOnly(ev.uid) ? '☑' : '☐') + '</button>' +
         tlEventTodoLinks(ev) +
         '</div>' +
         '<div class="ev-meta">' + tlEscapeHtml(time) + (ev.location ? ' \u00b7 \ud83d\udccd' + tlEscapeHtml(ev.location) : '') + '</div>' +
@@ -2410,7 +2463,7 @@
       b.textContent = one ? '跨天一笔' : '跨天多笔';
       b.classList.toggle('active', one);
       b.title = one
-        ? '当前「跨天一笔」：跨天行程只在起始日显示一笔 · 点击改为「跨天多笔」'
+        ? '当前「跨天一笔」：每天显示的事件集中在首天，首天/末天设置按事件设定显示 · 点击改为「跨天多笔」'
         : '当前「跨天多笔」：跨天行程跨几天就显示几笔 · 点击改为「跨天一笔」';
     }
     function tlSetMultiDayMode(mode) {
@@ -2421,7 +2474,7 @@
       tlRerenderCalendarView();
     }
     function tlToggleMultiDayMode() { tlSetMultiDayMode(tlCalMultiDayMode === 'one' ? 'multi' : 'one'); }
-    // 「跨天一笔」：同一个跨天行程在整份列表里只保留「最早出现日」那一笔，其余各天移除；
+    // 「跨天一笔」：默认每天显示的跨天行程只保留首天；事件设为末天的则在末天显示。
     // 被清空的日期（原本只挂着这一个跨天行程）整条删掉，避免留下「· 0 条」的空标题。
     // ⚠️ 就地改的是 tlRenderList 自己那份 byDate 副本——tlEventsByDate 的「逐日展开」口径不动，
     //    所以月格 chip / 时间网格 / 日明细一律不受影响（用户约定：只调列表模式）。
@@ -3045,6 +3098,7 @@
       document.getElementById('tlEvFTitle').value = ev ? ev.title : '';
       document.getElementById('tlEvFDate').value = ev ? ev.date : (defaultDate || (tlCalMode === 'month' ? tlCalSelected : today) || today);
       document.getElementById('tlEvFEndDate').value = ev ? (ev.endDate || '') : '';
+      document.getElementById('tlEvFSpanDisplay').value = ev && (ev.spanDisplay === 'first' || ev.spanDisplay === 'last') ? ev.spanDisplay : 'daily';
       // ===== 重複事件 =====
       // p.repeat：由「重复事件一览」的新增按钮传入 → 新增时直接进「重复」模式并带出起始日的星期
       const rMode = ev ? (ev.repeatMode || '') : (p.repeat ? 'weekly' : '');
@@ -3335,6 +3389,7 @@
       const ev = {
         uid: tlEvFormUid || tlGenId(),
         title, date, endDate: endDate || '', allDay,
+        spanDisplay: document.getElementById('tlEvFSpanDisplay').value,
         done: document.getElementById('tlEvFDone').checked,
         startTime: allDay ? '' : document.getElementById('tlEvFStart').value,
         endTime: allDay ? '' : document.getElementById('tlEvFEnd').value,
@@ -3878,6 +3933,13 @@
       on('tlEvModeYear', 'click', () => tlSetMode('year'));
       on('tlEvAddBtn', 'click', () => tlOpenEventForm(null));
       on('tlEvStatsBtn', 'click', () => tlOpenStats());
+      document.addEventListener('click', (event) => {
+        const button = event.target instanceof Element ? event.target.closest('.ev-undone-filter-btn') : null;
+        if (!button) return;
+        event.preventDefault();
+        event.stopPropagation();
+        tlToggleEventUndoneChecks(button.getAttribute('data-uid') || '', button);
+      });
       on('tlEvPrevMonth', 'click', () => { if (tlCalMode === 'list') tlListNavDay(-1); else tlCalStepCursor(-1); });
       on('tlEvNextMonth', 'click', () => { if (tlCalMode === 'list') tlListNavDay(1); else tlCalStepCursor(1); });
       on('tlEvTodayBtn', 'click', () => {

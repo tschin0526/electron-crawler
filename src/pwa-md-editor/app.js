@@ -148,6 +148,7 @@ const elements = {
   evFTitle: document.getElementById('ev-f-title'),
   evFDate: document.getElementById('ev-f-date'),
   evFEndDate: document.getElementById('ev-f-enddate'),
+  evFSpanDisplay: document.getElementById('ev-f-span-display'),
   evFAllday: document.getElementById('ev-f-allday'),
   evFDone: document.getElementById('ev-f-done'),
   evFStart: document.getElementById('ev-f-start'),
@@ -274,7 +275,7 @@ function setupEventListeners() {
   // ‹ › 依當前模式步進：月→月、週→週、日→日
   if (elements.evPrevMonth) elements.evPrevMonth.addEventListener('click', () => { if (state.calMode === 'list') calListNavDay(-1); else calStepCursor(-1); });
   if (elements.evNextMonth) elements.evNextMonth.addEventListener('click', () => { if (state.calMode === 'list') calListNavDay(1); else calStepCursor(1); });
-  if (elements.evTodayBtn) elements.evTodayBtn.addEventListener('click', () => { state.calCursor = new Date(); state.calSelectedDate = calendarFmtDate(new Date()); state.calListSel = calendarFmtDate(new Date()); if (state.calMode === 'month') calMonthAutoScrollPending = true; if (state.calMode === 'year') calYearAutoScrollPending = true; renderEventsContent(); });
+  if (elements.evTodayBtn) elements.evTodayBtn.addEventListener('click', () => { state.calCursor = new Date(); state.calSelectedDate = calendarFmtDate(new Date()); state.calListSel = calendarFmtDate(new Date()); calAutoScrollToTodayPending = true; renderEventsContent(); });
   // 📋 列表模式：跨天一筆 / 跨天多筆（僅列表模式顯示；其餘模式不受影響）
   if (elements.evMultiDayBtn) elements.evMultiDayBtn.addEventListener('click', () => calToggleMultiDayMode());
   if (elements.evMonthGrid) elements.evMonthGrid.addEventListener('click', (e) => {
@@ -1036,12 +1037,11 @@ function updatePreview() {
   if (state.view === 'events') {
     // 📆 進入程式首次進入行程視圖：自動「按今天」→ 年視圖滾到當月 / 月視圖滾到今天
     //    （對齊使用者習慣：進入畫面即見當月曆；其餘切換回行程視圖不再重複滾動）
-    if (!calStartupAutoScrollDone) {
+    if (!calStartupAutoScrollDone && isCalendarMd()) {
       state.calCursor = new Date();
       state.calSelectedDate = calendarFmtDate(new Date());
       state.calListSel = calendarFmtDate(new Date());
-      if (state.calMode === 'month') calMonthAutoScrollPending = true;
-      if (state.calMode === 'year') calYearAutoScrollPending = true;
+      calAutoScrollToTodayPending = true;
       calStartupAutoScrollDone = true;
     }
     renderEventsContent();

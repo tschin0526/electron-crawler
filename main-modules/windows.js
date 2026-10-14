@@ -484,7 +484,13 @@ ipcMain.handle('open-sticky-notes', (e, arg) => {
       }
     });
     stickyNoteOrder = notes.filter(n => n && typeof n.key === 'string').map(n => ({
-      key: n.key, idx: +n.idx || 0, title: typeof n.title === 'string' ? n.title : ''
+      key: n.key, idx: +n.idx || 0, title: typeof n.title === 'string' ? n.title : '',
+      date: typeof n.date === 'string' ? n.date : '',
+      endDate: typeof n.endDate === 'string' ? n.endDate : '',
+      color: typeof n.color === 'string' ? n.color : '',
+      done: !!n.done,
+      tags: Array.isArray(n.tags) ? n.tags : [],
+      notes: typeof n.notes === 'string' ? n.notes : ''
     }));
     stickyNoteCatalog = stickyNoteOrder.slice();
     const mode = (arg && arg.mode === 'flip') ? 'flip' : 'split';
@@ -508,10 +514,14 @@ ipcMain.handle('open-sticky-notes', (e, arg) => {
 ipcMain.handle('sticky-note-order', () => {
   const flipOpen = stickyNoteFlipWindow && !stickyNoteFlipWindow.isDestroyed();
   const notes = stickyNoteCatalog.map(note => {
-    const win = stickyNoteMode === 'flip'
-      ? flipOpen && stickyNoteOrder.some(active => active.key === note.key && active.idx === note.idx)
-      : stickyNoteWindows.get(noteWinId(note.key, note.idx));
-    return Object.assign({}, note, { isOpen: !!(win && !win.isDestroyed()) });
+    let isOpen;
+    if (stickyNoteMode === 'flip') {
+      isOpen = !!(flipOpen && stickyNoteOrder.some(active => active.key === note.key && active.idx === note.idx));
+    } else {
+      const win = stickyNoteWindows.get(noteWinId(note.key, note.idx));
+      isOpen = !!(win && !win.isDestroyed());
+    }
+    return Object.assign({}, note, { isOpen });
   });
   return { order: notes.filter(note => note.isOpen), notes };
 });
@@ -622,6 +632,56 @@ ipcMain.on('sticky-note-refresh', (e, arg) => {
   // 翻页模式：唯一窗口即翻页窗（注册在 '__flip__#0'），与该刷新针对哪张便利贴无关
   const win = (stickyNoteMode === 'flip') ? stickyNoteFlipWindow : stickyNoteWindows.get(id);
   if (win && !win.isDestroyed()) win.webContents.send('sticky-note-refresh', arg);
+});
+ipcMain.on('sticky-note-sync', (e, arg) => {
+  const refs = arg && Array.isArray(arg.notes) ? arg.notes : [];
+  const previousCatalog = new Map(stickyNoteCatalog.map(note => [noteWinId(note.key, note.idx), note]));
+  const previousOrder = new Map(stickyNoteOrder.map((note, index) => [noteWinId(note.key, note.idx), index]));
+  const nextCatalog = [];
+  const nextOrder = [];
+  const nextIds = new Set();
+
+  refs.forEach(note => {
+    if (!note || typeof note.key !== 'string') return;
+    const idx = +note.idx || 0;
+    const id = noteWinId(note.key, idx);
+    const normalized = Object.assign({}, note, { idx });
+    nextIds.add(id);
+    nextCatalog.push(normalized);
+    if (typeof note.html === 'string') stickyNoteHtml.set(id, note.html);
+    if (typeof note.titleHtml === 'string') stickyNoteTitleHtml.set(id, note.titleHtml);
+
+    if (stickyNoteMode === 'flip') {
+      if (previousCatalog.has(id) ? previousOrder.has(id) : true) nextOrder.push(normalized);
+    } else if (!previousCatalog.has(id)) {
+      createStickyNoteWindow(note.key, idx);
+    } else {
+      const win = stickyNoteWindows.get(id);
+      if (win && !win.isDestroyed()) win.webContents.send('sticky-note-refresh', normalized);
+    }
+  });
+
+  // 保留已开启但刚从设定清单移除的页面，避免刷新时丢失仍在显示的便利贴。
+  stickyNoteCatalog.forEach(note => {
+    const id = noteWinId(note.key, note.idx);
+    if (nextIds.has(id)) return;
+    if (stickyNoteMode === 'flip' && previousOrder.has(id)) {
+      nextCatalog.push(note);
+      nextOrder.push(note);
+    } else if (stickyNoteMode !== 'flip') {
+      const win = stickyNoteWindows.get(id);
+      if (win && !win.isDestroyed()) nextCatalog.push(note);
+    }
+  });
+
+  stickyNoteCatalog = nextCatalog;
+  if (stickyNoteMode === 'flip') {
+    stickyNoteOrder = nextOrder;
+    if (stickyNoteFlipWindow && !stickyNoteFlipWindow.isDestroyed()) {
+      stickyNoteFlipWindow.webContents.send('sticky-note-order-updated', { order: stickyNoteOrder });
+    }
+  }
+  notifyStickyNoteOpenState();
 });
 // 🆕 便利贴窗点「刷新」按钮 → 中继给主程式窗口，由它重新渲染该张并回推（便利贴窗无法直接渲染 Markdown）
 ipcMain.on('sticky-note-refresh-request', (e, arg) => {

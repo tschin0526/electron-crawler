@@ -38,6 +38,8 @@ const FLIP_KEY = '__flip__', FLIP_IDX = 0;
 let flipOrder = [];   // [{key, idx}]
 let flipIndex = 0;    // 当前页
 let flipTotal = 0;
+let flipPointerX = null;
+const FLIP_EDGE_TRIGGER_PX = 48;
 let editMode = false; // 内容模式：false＝渲染（Markdown 预览）/ true＝编辑（直接改原始 notes）
 let editDirty = false;// 编辑后是否有未保存改动（⌘S 才落盘）
 function geomId() { return IS_FLIP ? { key: FLIP_KEY, idx: FLIP_IDX } : { key: KEY, idx: IDX }; }
@@ -137,7 +139,7 @@ function renderTags(ev) {
   document.getElementById('tags').innerHTML = (ev.tags || []).map((t) => '<li>' + escapeHtml(tagLabelOf(t)) + '</li>').join('');
 }
 
-const state = { w: DEFAULT_W, h: DEFAULT_H, color: STICKY_DEF_BG, opacity: 100, minimized: false, minH: 0, fontScale: 1, fontColor: STICKY_DEF_FG, fontWeight: 400 };
+const state = { w: DEFAULT_W, h: DEFAULT_H, color: STICKY_DEF_BG, opacity: 100, minimized: false, minH: 0, fontScale: 1, fontColor: STICKY_DEF_FG, fontWeight: 400, undoneChecksOnly: false };
 
 async function init() {
   if (IS_FLIP) { await initFlip(); return; }
@@ -152,7 +154,8 @@ async function init() {
     minH: (typeof inst.minH === 'number' && inst.minH > 20) ? inst.minH : 0,
     fontScale: (typeof inst.fontScale === 'number') ? inst.fontScale : 1,
     fontColor: (typeof inst.fontColor === 'string' && inst.fontColor) ? inst.fontColor : STICKY_DEF_FG,
-    fontWeight: (typeof inst.fontWeight === 'number') ? inst.fontWeight : 400
+    fontWeight: (typeof inst.fontWeight === 'number') ? inst.fontWeight : 400,
+    undoneChecksOnly: !!inst.undoneChecksOnly
   });
 
   let md = '';
@@ -176,6 +179,7 @@ async function init() {
   // 兜底：主窗口未就绪时退回纯文本，避免空白
   if (!html && ev.notes) html = '<p>' + escapeHtml(ev.notes).replace(/\n/g, '<br>') + '</p>';
   document.getElementById('body').innerHTML = html;
+  syncUndoneChecksFilter();
   // 新便利贴默认淡黄纸底（仅当用户未手动改过色时）；不再继承事件色，保持纸质便利贴观感
   if (!inst.color) state.color = STICKY_DEF_BG;
   // 勾选框填充色跟随事件色（与日历渲染一致：.ev-md-check.done .ev-cb 用事件色）
@@ -200,6 +204,13 @@ function setupControls() {
   const menu = document.getElementById('menu');
   const btnMenu = document.getElementById('btnMenu');
   const closeMenu = () => { if (menu) menu.classList.remove('open'); };
+  const undoneChecksButton = document.getElementById('miUndoneChecks');
+  if (undoneChecksButton) undoneChecksButton.onclick = (e) => {
+    e.stopPropagation();
+    state.undoneChecksOnly = !state.undoneChecksOnly;
+    syncUndoneChecksFilter();
+    persist();
+  };
   const confirmClose = async () => {
     if (editMode && editDirty) {
       const ok = window.confirm('内容有未保存的改动。\n\n确定＝保存后关闭\n取消＝不关闭');
@@ -251,17 +262,28 @@ function setupControls() {
   document.getElementById('miCalendar').onclick = (e) => { e.stopPropagation(); closeMenu(); ipcRenderer.invoke('activate-main-window'); };
   const stickyList = document.getElementById('mStickyList');
   if (stickyList) stickyList.onclick = async (e) => {
-    const button = e.target.closest('button[data-key]');
+    const target = e.target instanceof Element ? e.target : null;
+    const stateButton = target && target.closest('button[data-action="toggle"][data-key]');
+    const row = target && target.closest('.m-sticky-item');
+    const itemButton = row && row.querySelector('button[data-action="show"][data-key]');
+    const button = stateButton || itemButton;
     if (!button) return;
     e.stopPropagation();
     try {
-      const result = await ipcRenderer.invoke('toggle-sticky-note', {
-        key: button.dataset.key,
-        idx: Number(button.dataset.idx) || 0
-      });
-      if (result && result.success) await loadStickyMenuNotes();
+      const note = { key: button.dataset.key, idx: Number(button.dataset.idx) || 0 };
+      if (stateButton) {
+        const result = await ipcRenderer.invoke('toggle-sticky-note', note);
+        if (result && result.success) await loadStickyMenuNotes();
+        return;
+      }
+      closeMenu();
+      let result = await ipcRenderer.invoke('focus-sticky-note', note);
+      if (!result || !result.success) {
+        result = await ipcRenderer.invoke('toggle-sticky-note', note);
+        if (result && result.success) await ipcRenderer.invoke('focus-sticky-note', note);
+      }
     } catch (error) {
-      console.error('[StickyNote] 切换便利贴状态失败:', error);
+      console.error('[StickyNote] 显示便利贴失败:', error);
     }
   };
   loadStickyMenuNotes();
@@ -379,7 +401,7 @@ function setupControls() {
 // 原生拖拽由 OS 处理；只有「按下后未移动、松开＝点击」才会触发此 handler
 // （拖拽过程中 OS 不会派发 click），故可安全用它区分「点一下＝唤起主程式」
 function onNoteClick(e) {
-  if (e.target.closest('.iconbtn, .note-addcheck')) return;  // 按钮各自处理
+  if (e.target.closest('.iconbtn, .note-addcheck, .flip-edge')) return;  // 按钮各自处理
   if (!e.target.closest('.bar, .head, .meta, .tags')) return; // 仅拖拽区点击＝唤起主程式
   ipcRenderer.invoke('wake-main-from-note', { key: KEY });
 }
@@ -387,7 +409,7 @@ function onNoteClick(e) {
 // 双击便利贴（标题栏或正文）：唤起主程式并打开该事件表单
 // 正文区是 -webkit-app-region: no-drag，双击不会触发拖动，故可安全复用「唤起+打开事件」管线
 function onNoteDblClick(e) {
-  if (e.target.closest('.iconbtn, .menu, .rz, .note-addcheck, .ev-md-edit, .ev-cb')) return; // 菜单/☰按钮/缩放把手/checkbox 控件各自处理
+  if (e.target.closest('.iconbtn, .menu, .rz, .note-addcheck, .flip-edge, .ev-md-edit, .ev-cb')) return; // 菜单/☰按钮/翻页把手/缩放把手/checkbox 控件各自处理
   ipcRenderer.invoke('wake-main-from-note', { key: KEY });
 }
 
@@ -632,15 +654,24 @@ function applyColor() {
   if (acBox) acBox.style.background = tint(state.color, 100);
   syncCustomSwatchActive();
 }
+function syncUndoneChecksFilter() {
+  const body = document.getElementById('body');
+  const button = document.getElementById('miUndoneChecks');
+  if (body) body.classList.toggle('only-undone-checks', !!state.undoneChecksOnly);
+  if (button) {
+    button.textContent = '只显示未完成 checkbox：' + (state.undoneChecksOnly ? '开' : '关');
+    button.setAttribute('aria-pressed', state.undoneChecksOnly ? 'true' : 'false');
+  }
+}
 function persist() {
   if (IS_FLIP) {
     // 几何（位置/尺寸/最小化）写翻页窗专用 id；颜色/透明度/字号按当前显示的便利贴自身状态写
     const g = geomId();
     ipcRenderer.invoke('sticky-note-set', { key: g.key, idx: g.idx, patch: { w: state.w, h: state.h, minimized: state.minimized, minH: state.minH } });
-    ipcRenderer.invoke('sticky-note-set', { key: KEY, idx: IDX, patch: { color: state.color, opacity: state.opacity, fontScale: state.fontScale, fontColor: state.fontColor, fontWeight: state.fontWeight } });
+    ipcRenderer.invoke('sticky-note-set', { key: KEY, idx: IDX, patch: { color: state.color, opacity: state.opacity, fontScale: state.fontScale, fontColor: state.fontColor, fontWeight: state.fontWeight, undoneChecksOnly: state.undoneChecksOnly } });
     return;
   }
-  ipcRenderer.invoke('sticky-note-set', { key: KEY, idx: IDX, patch: { w: state.w, h: state.h, color: state.color, opacity: state.opacity, minimized: state.minimized, minH: state.minH, fontScale: state.fontScale, fontColor: state.fontColor, fontWeight: state.fontWeight } });
+  ipcRenderer.invoke('sticky-note-set', { key: KEY, idx: IDX, patch: { w: state.w, h: state.h, color: state.color, opacity: state.opacity, minimized: state.minimized, minH: state.minH, fontScale: state.fontScale, fontColor: state.fontColor, fontWeight: state.fontWeight, undoneChecksOnly: state.undoneChecksOnly } });
 }
 
 // 依字体色亮度取反色：浅色文字 → 给标签一个深底；深色文字 → 给浅底（保证标签始终可读）
@@ -744,6 +775,7 @@ async function renderNoteContent() {
   if (titleHtml) titleEl.innerHTML = titleHtml; else titleEl.textContent = ev.title;
   if (!html && ev.notes) html = '<p>' + escapeHtml(ev.notes).replace(/\n/g, '<br>') + '</p>';
   document.getElementById('body').innerHTML = html;
+  syncUndoneChecksFilter();
   renderMeta(ev);
   renderTags(ev);
   return true;
@@ -884,15 +916,26 @@ async function initFlip() {
   });
   document.getElementById('note').classList.add('flip');
   setupControls();
-  bindFlipNav();
   ipcRenderer.on('sticky-note-show-page', (e, payload) => {
     if (payload && Number.isInteger(payload.index)) renderFlipPage(payload.index);
   });
+  ipcRenderer.on('sticky-note-order-updated', (e, payload) => {
+    const current = flipOrder[flipIndex];
+    const currentKey = current && current.key;
+    const currentIdx = current && (+current.idx || 0);
+    flipOrder = payload && Array.isArray(payload.order) ? payload.order : [];
+    flipTotal = flipOrder.length;
+    const currentIndex = flipOrder.findIndex(note => note.key === currentKey && (+note.idx || 0) === currentIdx);
+    const targetIndex = currentIndex >= 0 ? currentIndex : Math.min(flipIndex, Math.max(0, flipTotal - 1));
+    updateFlipInd();
+    if (flipTotal) renderFlipPage(targetIndex);
+  });
   if (flipTotal === 0) {
-    document.getElementById('title').textContent = '(没有便利贴)';
+    document.getElementById('title').textContent = '(没有可翻页的便利贴)';
     document.getElementById('meta').textContent = '';
     document.getElementById('tags').innerHTML = '';
     document.getElementById('body').innerHTML = '';
+    applyColor();
     updateFlipInd();
     return;
   }
@@ -916,22 +959,29 @@ async function loadStickyMenuNotes() {
       : (result && Array.isArray(result.order) ? result.order : []);
     list.replaceChildren();
     notes.forEach((item) => {
-      const button = document.createElement('button');
-      button.type = 'button';
-      button.className = 'mi m-sticky-item';
-      button.dataset.key = item.key;
-      button.dataset.idx = String(item.idx || 0);
+      const row = document.createElement('div');
+      row.className = 'm-sticky-item';
       const name = String(item.title || item.key || '未命名便利贴').replace(/\s+/g, ' ').trim();
       const label = (name || '未命名便利贴') + ((+item.idx || 0) > 0 ? ' (' + ((+item.idx || 0) + 1) + ')' : '');
-      const nameEl = document.createElement('span');
-      nameEl.className = 'm-sticky-item-name';
+      const nameEl = document.createElement('button');
+      nameEl.type = 'button';
+      nameEl.className = 'mi m-sticky-item-name';
+      nameEl.dataset.action = 'show';
+      nameEl.dataset.key = item.key;
+      nameEl.dataset.idx = String(item.idx || 0);
       nameEl.textContent = label;
-      const stateEl = document.createElement('span');
-      stateEl.className = 'm-sticky-item-state' + (item.isOpen ? ' open' : '');
+      nameEl.title = label + '（点击显示该便利贴）';
+      const stateEl = document.createElement('button');
+      stateEl.type = 'button';
+      stateEl.className = 'mi m-sticky-item-state' + (item.isOpen ? ' open' : '');
+      stateEl.dataset.action = 'toggle';
+      stateEl.dataset.key = item.key;
+      stateEl.dataset.idx = String(item.idx || 0);
       stateEl.textContent = item.isOpen ? '开' : '关';
-      button.title = label + (item.isOpen ? '（点击关闭）' : '（点击开启）');
-      button.append(nameEl, stateEl);
-      list.appendChild(button);
+      stateEl.title = item.isOpen ? '点击关闭该便利贴' : '点击开启该便利贴';
+      stateEl.setAttribute('aria-label', item.isOpen ? '关闭该便利贴' : '开启该便利贴');
+      row.append(nameEl, stateEl);
+      list.appendChild(row);
     });
     wrap.classList.toggle('open', notes.length > 0);
   } catch (error) {
@@ -960,12 +1010,15 @@ async function renderFlipPage(i) {
   if (eaEl0) eaEl0.style.boxShadow = '';
   KEY = flipOrder[i].key;
   IDX = +flipOrder[i].idx || 0;
-  const ev = parseEvents(readMd()).find(e => e.key === KEY);
+  const listed = flipOrder[i];
+  const parsedEvent = parseEvents(readMd()).find(e => e.key === KEY);
+  const ev = listed ? Object.assign({}, parsedEvent || {}, listed, { key: KEY, uid: KEY }) : parsedEvent;
   if (!ev) {
-    document.getElementById('title').textContent = '(找不到该便利贴)';
+    document.getElementById('title').textContent = '(无法载入该便利贴)';
     document.getElementById('meta').textContent = '';
     document.getElementById('tags').innerHTML = '';
     document.getElementById('body').innerHTML = '';
+    applyColor();
     updateFlipInd();
     return;
   }
@@ -976,6 +1029,7 @@ async function renderFlipPage(i) {
   state.fontScale = (inst && typeof inst.fontScale === 'number') ? inst.fontScale : 1;
   state.fontColor = (inst && typeof inst.fontColor === 'string' && inst.fontColor) ? inst.fontColor : STICKY_DEF_FG;
   state.fontWeight = (inst && typeof inst.fontWeight === 'number') ? inst.fontWeight : 400;
+  state.undoneChecksOnly = !!(inst && inst.undoneChecksOnly);
 
   renderMeta(ev);
   renderTags(ev);
@@ -991,6 +1045,7 @@ async function renderFlipPage(i) {
   if (titleHtml) titleEl.innerHTML = titleHtml; else titleEl.textContent = ev.title;
   if (!html && ev.notes) html = '<p>' + escapeHtml(ev.notes).replace(/\n/g, '<br>') + '</p>';
   document.getElementById('body').innerHTML = html;
+  syncUndoneChecksFilter();
   applyColor();
   applyContentFont();
   syncTextAppearance();
@@ -1003,19 +1058,40 @@ async function renderFlipPage(i) {
 }
 
 function updateFlipInd() {
-  const el = document.getElementById('flipInd');
-  if (el) el.textContent = flipTotal ? ((flipIndex + 1) + ' / ' + flipTotal) : '0 / 0';
-  const prev = document.getElementById('miPrev');
-  const next = document.getElementById('miNext');
-  if (prev) prev.disabled = flipIndex <= 0;
-  if (next) next.disabled = flipIndex >= flipTotal - 1;
+  updateFlipEdgeHandles();
+}
+
+function updateFlipEdgeHandles() {
+  const prev = document.getElementById('flipPrevEdge');
+  const next = document.getElementById('flipNextEdge');
+  if (!prev || !next) return;
+  const note = document.getElementById('note');
+  const nearLeft = flipPointerX !== null && flipPointerX <= FLIP_EDGE_TRIGGER_PX;
+  const nearRight = flipPointerX !== null && note.clientWidth - flipPointerX <= FLIP_EDGE_TRIGGER_PX;
+  const previousPage = flipIndex;
+  const nextPage = flipIndex + 2;
+  prev.title = '上一张 · page ' + previousPage + ' of ' + flipTotal;
+  next.title = '下一张 · page ' + nextPage + ' of ' + flipTotal;
+  prev.classList.toggle('visible', flipIndex > 0 && nearLeft);
+  next.classList.toggle('visible', flipIndex < flipTotal - 1 && nearRight);
 }
 
 function bindFlipNav() {
-  const prev = document.getElementById('miPrev');
-  const next = document.getElementById('miNext');
-  if (prev) prev.onclick = (e) => { e.stopPropagation(); renderFlipPage(flipIndex - 1); };
-  if (next) next.onclick = (e) => { e.stopPropagation(); renderFlipPage(flipIndex + 1); };
+  const note = document.getElementById('note');
+  const prevEdge = document.getElementById('flipPrevEdge');
+  const nextEdge = document.getElementById('flipNextEdge');
+  if (note) {
+    note.addEventListener('pointermove', (e) => {
+      flipPointerX = e.clientX;
+      updateFlipEdgeHandles();
+    });
+    note.addEventListener('pointerleave', () => {
+      flipPointerX = null;
+      updateFlipEdgeHandles();
+    });
+  }
+  if (prevEdge) prevEdge.onclick = (e) => { e.stopPropagation(); renderFlipPage(flipIndex - 1); };
+  if (nextEdge) nextEdge.onclick = (e) => { e.stopPropagation(); renderFlipPage(flipIndex + 1); };
   window.addEventListener('keydown', (e) => {
     // 🆕 编辑模式、或焦点落在可输入控件时：所有按键交给文本编辑
     //    （← → ↑ ↓、空白、中英/输入法切换、复制粘贴等组合键），绝不抢去翻页

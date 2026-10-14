@@ -2019,9 +2019,12 @@
     /* 📊 备注子事件完成进度徽章（标签旁「3/6」；全部完成转绿） */
     .ev-sub-progress { display: inline-block; margin-left: 8px; padding: 2px 9px; border-radius: 999px; background: var(--ev-chip-bg, rgba(124,58,237,.12)); border: 1px solid var(--ev-border, #334155); color: var(--ev-text, #e2e8f0); font-size: 11px; line-height: 1.4; font-weight: 600; white-space: nowrap; vertical-align: middle; }
     .ev-sub-progress.all-done { background: rgba(52,199,89,.15); border-color: rgba(52,199,89,.55); color: #34C759; }
+    .ev-span-display-mode { display: inline-flex; align-items: center; justify-content: center; min-width: 18px; box-sizing: border-box; margin-left: 4px; padding: 1px 5px; border: 1px solid #f5c518; border-radius: 999px; color: #f5c518; font-size: 10px; line-height: 1.4; font-weight: 700; vertical-align: middle; }
     /* 📋 列表行「＋☐」：紧挨备注子事件徽章，点击开 CheckBox 小窗（加入后直接存档）；与 .tl-ev-f-mini-btn 同一套 --ev-* 变量 */
-    .ev-addcheck-btn { margin-left: 8px; padding: 1px 7px; font-size: 11px; line-height: 1.6; border: 1px solid var(--ev-border, #334155); border-radius: 6px; background: var(--ev-chip-bg, rgba(124,58,237,.1)); color: var(--ev-text, #e2e8f0); cursor: pointer; vertical-align: middle; white-space: nowrap; }
-    .ev-addcheck-btn:hover { background: var(--ev-accent, #7c3aed); color: #fff; border-color: var(--ev-accent, #7c3aed); }
+    .ev-addcheck-btn { margin-left: 8px; padding: 1px 7px; font-size: 11px; line-height: 1.6; border: 1px solid #f5c518; border-radius: 999px; background: transparent; color: #f5c518; cursor: pointer; vertical-align: middle; white-space: nowrap; }
+    .ev-addcheck-btn:hover { background: rgba(245,197,24,.14); color: #f5c518; border-color: #f5c518; }
+    .ev-undone-filter-btn { margin-left: 4px; padding: 1px 5px; font-size: 12px; line-height: 1.6; border: 1px solid #f5c518; border-radius: 999px; background: transparent; color: #f5c518; cursor: pointer; vertical-align: middle; }
+    .ev-undone-filter-btn:hover, .ev-undone-filter-btn.active { background: rgba(245,197,24,.14); color: #f5c518; border-color: #f5c518; }
     .ev-sticky-flag { flex: 0 0 auto; display: inline-flex; align-items: center; margin: 0 0 0 4px; cursor: default; opacity: .92; }
     .ev-tag-view { display: inline-block; padding: 3px 12px; border-radius: 999px; background: #7C3AED; border: 1px solid #8B5CF6; color: #fff; font-size: 12px; line-height: 1.35; font-weight: 600; white-space: nowrap; }
     .ev-meta { margin-top: 2px; font-size: 12px; color: var(--ev-muted); }
@@ -2101,7 +2104,9 @@
     .ev-year-dot { width: 5px; height: 5px; border-radius: 50%; }
     .ev-year-more { font-size: 8px; color: var(--ev-muted); line-height: 5px; }
     /* 跨天行程：列表項徽章 + 月視圖跨日色條 */
-    .ev-span-badge { margin-left: 6px; font-size: 10px; font-weight: 400; color: var(--ev-primary); border: 1px solid var(--ev-primary); padding: 0 6px; border-radius: 99px; white-space: nowrap; }
+    .ev-span-badge { margin-left: 6px; font-size: 10px; font-weight: 600; color: #f5c518; border: 1px solid #f5c518; padding: 0 6px; border-radius: 99px; white-space: nowrap; }
+    .ev-item .ev-title .ev-sticky-flag { align-items: center; justify-content: center; box-sizing: border-box; min-width: 22px; min-height: 22px; padding: 2px 4px; border: 1px solid #f5c518; border-radius: 999px; }
+    .ev-item .ev-title .ev-link { display: inline-flex; align-items: center; justify-content: center; min-width: 22px; min-height: 22px; box-sizing: border-box; margin-left: 4px; padding: 2px 4px; border: 1px solid #f5c518; border-radius: 999px; color: #f5c518; }
     .ev-item.multi .ev-meta { color: var(--ev-primary); font-weight: 500; }
     /* ## HOLIDAY：日志/列表视图专用，与 EVENT（.ev-item）明显区隔——左侧 type 色条＋类型徽章，无勾选框/编辑删除 */
     .ev-holiday { display: flex; align-items: flex-start; gap: 10px; padding: 8px 12px; margin: 4px 0; border-radius: 8px; background: var(--ev-card, #fff); border: 1px solid var(--ev-border, #e5e7eb); border-left: 4px solid var(--holiday-color, #FF9500); }
@@ -2240,8 +2245,12 @@
     .ev-cb.interactive:hover { outline: 2px solid var(--ev-primary); outline-offset: 1px; }
     .ev-md-edit { display: inline-flex; width: 14px; height: 14px; padding: 0; margin: 0 4px 0 0; align-items: center; justify-content: center; vertical-align: -2px; border: 0; border-radius: 50%; background: var(--ev-primary); color: #fff; font-size: 9px; line-height: 1; cursor: pointer; opacity: .78; }
     .ev-md-edit:hover, .ev-md-edit:focus-visible { opacity: 1; outline: 2px solid var(--ev-primary); outline-offset: 1px; }
+    .ev-notes .ev-md-check { display: block; }
     .ev-md-check.done .ev-cb { background: var(--ev-primary); border-color: var(--ev-primary); }
     .ev-md-check.done .ev-md-check-text { text-decoration: line-through; opacity: 0.75; }
+    .ev-item.only-undone-checks .ev-md-check.done { display: none !important; }
+    .ev-notes .ev-md-check + br,
+    .ev-notes br:has(+ .ev-md-check) { display: none !important; }
     .ev-block.done { opacity: 0.55; }
     /* 🌙 黑夜模式：文字統一白色，設定的顏色只作為事件「外框」（邊框）顏色，背景改用深色面板。
        白天模式不變（顏色＝背景色塊）。跨天色條（.ev-chip.span）同理——顏色經由 --ev-color 傳入。 */
@@ -5109,6 +5118,13 @@
         <label class="tl-ev-f-label">日期<span class="tl-ev-f-dow" id="tlEvFDateDow"></span><span class="tl-ev-f-lunar" id="tlEvFDateLunar" title="農民曆 / 老黃曆" onclick="tlShowAlmanac((document.getElementById('tlEvFDate').value||tlFmtDate(new Date())),this)"></span><input type="date" id="tlEvFDate"></label>
         <label class="tl-ev-f-label">结束日期（留空＝单日）<span class="tl-ev-f-dow" id="tlEvFEndDateDow"></span><span class="tl-ev-f-lunar" id="tlEvFEndDateLunar" title="農民曆 / 老黃曆" onclick="tlShowAlmanac((document.getElementById('tlEvFEndDate').value||tlFmtDate(new Date())),this)"></span><input type="date" id="tlEvFEndDate"></label>
       </div>
+      <label class="tl-ev-f-label">跨天显示方式（仅跨天事件）
+        <select id="tlEvFSpanDisplay">
+          <option value="daily">每天显示</option>
+          <option value="first">仅首天显示</option>
+          <option value="last">仅末天显示</option>
+        </select>
+      </label>
       <div class="tl-ev-f-repeat" id="tlEvFRepeatBox">
         <label class="tl-ev-f-check"><input type="checkbox" id="tlEvFRepeatOn" onchange="tlToggleRepeat()"> 重复</label>
         <div id="tlEvFRepeatFields" style="display:none">
@@ -6869,6 +6885,7 @@
         tlCalEvents = tlAllEvents(document.getElementById('taskText').value);
       }
       const refs = (typeof tlStickyNoteRefs === 'function') ? tlStickyNoteRefs() : [];
+      window.electronAPI.send('sticky-note-sync', { notes: refs });
       if (payload && typeof payload.key === 'string') {
         const key = payload.key, idx = +payload.idx || 0;
         let ref = refs.find(r => r.key === key && r.idx === idx);

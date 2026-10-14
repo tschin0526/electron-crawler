@@ -137,7 +137,8 @@
 //      calendar-editor.js/style.css 改，bump 讓手機重拉
 // v63：「只顯示日記」正文不再截斷——去掉舊的「3 行 / 120 字 + 省略號」上限，改為完整渲染、靠列錶整體滾動條查看
 //      （calDiaryPreview → calDiaryBody）；calendar-editor.js 改，bump 讓手機重拉
-const CACHE_NAME = 'md-editor-lite-v105';
+// v109：Lite 行程列表补充备注 checkbox 数量胶囊与跨天模式字母胶囊；calendar-editor.js/style.css 改，bump 让手机重拉
+const CACHE_NAME = 'md-editor-lite-v109';
 const ASSETS = [
   './',
   './index.html',

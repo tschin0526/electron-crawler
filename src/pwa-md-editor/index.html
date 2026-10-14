@@ -249,6 +249,13 @@
         <label class="ev-f-label">標題<input type="text" id="ev-f-title" maxlength="200" placeholder="行程標題"></label>
         <label class="ev-f-label">日期<span class="ev-f-dow" id="ev-f-date-dow"></span><span class="ev-f-lunar" id="ev-f-date-lunar" title="農民曆 / 老黃曆" onclick="calShowAlmanac((document.getElementById('ev-f-date').value||calendarFmtDate(new Date())), this)"></span><input type="date" id="ev-f-date"></label>
         <label class="ev-f-label">結束日期（留空＝單日）<span class="ev-f-dow" id="ev-f-enddate-dow"></span><span class="ev-f-lunar" id="ev-f-enddate-lunar" title="農民曆 / 老黃曆" onclick="calShowAlmanac((document.getElementById('ev-f-enddate').value||calendarFmtDate(new Date())), this)"></span><input type="date" id="ev-f-enddate"></label>
+        <label class="ev-f-label">跨天显示方式（仅跨天事件）
+          <select id="ev-f-span-display">
+            <option value="daily">每天显示</option>
+            <option value="first">仅首天显示</option>
+            <option value="last">仅末天显示</option>
+          </select>
+        </label>
         <div class="ev-f-repeat" id="ev-f-repeat-box">
           <label class="ev-f-check"><input type="checkbox" id="ev-f-repeat-on" onchange="calToggleRepeat()"> 重複</label>
           <div id="ev-f-repeat-fields" style="display:none">
