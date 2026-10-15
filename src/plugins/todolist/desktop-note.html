@@ -45,6 +45,28 @@
     }
     .note-close-handle.visible { opacity: .5; pointer-events: auto; }
     .note-close-handle:hover { background: rgba(20,24,34,.9); }
+    .note-refresh-handle {
+      position: absolute; bottom: 6px; left: 50%; z-index: 11;
+      display: inline-flex; width: 40px; height: 40px; align-items: center; justify-content: center;
+      box-sizing: border-box; transform: translateX(-50%);
+      border: 1px solid rgba(212,175,55,.8); border-radius: 10px;
+      background: rgba(20,24,34,.9); color: var(--note-fg, #fff); font-size: 20px; line-height: 1;
+      cursor: pointer; opacity: 0; pointer-events: none; transition: opacity .12s ease;
+      -webkit-app-region: no-drag;
+    }
+    .note-refresh-handle.visible { opacity: .5; pointer-events: auto; }
+    .note-refresh-feedback {
+      position: absolute; left: 50%; bottom: 54px; z-index: 25;
+      max-width: calc(100% - 24px); padding: 6px 10px; transform: translate(-50%, 6px);
+      border: 1px solid rgba(212,175,55,.65); border-radius: 8px;
+      background: var(--menu-bg, rgba(32,35,42,.96)); color: var(--note-fg, #fff);
+      box-shadow: 0 8px 20px rgba(0,0,0,.3), inset 0 1px 0 rgba(255,255,255,.2);
+      font-size: 11px; line-height: 1.35; text-align: center;
+      opacity: 0; pointer-events: none; transition: opacity .15s ease, transform .15s ease;
+      -webkit-app-region: no-drag;
+    }
+    .note-refresh-feedback.visible { opacity: 1; transform: translate(-50%, 0); }
+    .note-refresh-feedback.error { border-color: rgba(220,38,38,.7); }
     .meta { padding: 0 12px; font-size: 11px; color: var(--note-fg, #8a8f99); flex: none; }
     /* 子事件进度胶囊「完成/总数」（日期右边；全完成转绿）——与主程式列表行 .ev-sub-progress 同款式 */
     .note-sub-progress { display: inline-block; margin-left: 6px; padding: 1px 8px; border-radius: 999px; font-size: 10px; line-height: 1.5; font-weight: 600; white-space: nowrap; vertical-align: middle; color: var(--note-fg, #33384a); background: rgba(127,127,127,.16); border: 1px solid rgba(127,127,127,.4); }
@@ -140,31 +162,34 @@
       -webkit-app-region: no-drag;
     }
     .note-min-handle.visible { opacity: .5; pointer-events: auto; }
-    /* 🆕 汉堡下拉菜单：收纳全部操作（翻页◀▶ / 刷新 / 打开 / 颜色·透明度 / 最小化 / 关闭），
-       画面只留右上角一个 ☰ 按钮 */
+    /* 下拉菜单收纳便利贴管理、显示模式与颜色等操作；入口为右上角浮动手柄 */
     .menu {
       position: absolute; top: 32px; right: 6px; z-index: 20; display: none;
       min-width: 158px; max-width: 210px; max-height: calc(100% - 40px); overflow-y: auto;
-      background: rgba(255,255,255,.97); border-radius: 10px; padding: 4px;
-      box-shadow: 0 6px 18px rgba(0,0,0,.25); color: #33384a; font-size: 12px;
+      background: var(--menu-bg, rgba(255,255,255,.97)); border: 1px solid rgba(212,175,55,.5);
+      border-radius: 10px; padding: 4px;
+      box-shadow: 0 18px 36px rgba(0,0,0,.36), 0 6px 12px rgba(0,0,0,.2),
+        inset 0 1px 0 rgba(255,255,255,.35), inset 0 -1px 0 rgba(0,0,0,.1);
+      color: var(--note-fg, #33384a); font-size: 12px;
       -webkit-app-region: no-drag;
     }
     .menu.open { display: block; }
     .mi { display: block; width: 100%; text-align: left; background: transparent; border: none; color: inherit;
       padding: 2px 9px; border-radius: 6px; cursor: pointer; font-size: 12px; white-space: nowrap; }
-    .mi:hover { background: rgba(0,0,0,.08); }
+    .mi:hover { background: rgba(127,127,127,.18); }
     .mi:disabled { opacity: .35; cursor: default; }
     .mi:disabled:hover { background: transparent; }
-    .msep { height: 1px; background: rgba(0,0,0,.10); margin: 2px 6px; }
+    .msep { height: 1px; background: var(--menu-divider, rgba(0,0,0,.10)); margin: 2px 6px; }
     .m-sticky-list { display: none; padding: 2px 0; }
     .m-sticky-list.open { display: block; }
-    .m-sticky-list-title { padding: 2px 9px 3px; color: #6b7280; font-size: 10px; }
+    .m-sticky-list-title { padding: 2px 9px 3px; color: var(--menu-muted, #6b7280); font-size: 10px; text-align: center; }
     .m-sticky-list-items { max-height: 120px; overflow-y: auto; }
     .m-sticky-item { display: flex; align-items: center; gap: 4px; }
+    .m-sticky-item-index { flex: none; width: 20px; color: var(--menu-muted, #6b7280); font-size: 11px; text-align: right; font-variant-numeric: tabular-nums; }
     .m-sticky-item-name { flex: 1; min-width: 0; width: auto; overflow: hidden; text-overflow: ellipsis; }
-    .m-sticky-item-state { flex: none; width: auto; min-width: 24px; text-align: right; color: #6b7280; }
-    .m-sticky-item-state.open { color: #15803d; }
-    /* 菜单第一行：4 个纯图标按钮并排等宽居中（说明文字在title tooltip） */
+    .m-sticky-item-state { flex: none; width: auto; min-width: 24px; text-align: right; color: var(--menu-muted, #6b7280); }
+    .m-sticky-item-state.open { color: var(--menu-status-open, #15803d); }
+    /* 菜单第一行：常用图标按钮（说明文字在title tooltip） */
     .m-actions { display: flex; align-items: center; gap: 4px; padding: 1px 2px; }
     .m-actions .m-act {
       flex: 1; width: auto; min-width: 0; height: 24px; padding: 0;
@@ -173,7 +198,7 @@
     }
     .m-nav { display: flex; align-items: center; gap: 6px; padding: 0 2px; }
     .m-nav .mi { width: 28px; text-align: center; flex: none; padding: 2px 0; }
-    .mind { flex: 1; text-align: center; font-size: 11px; color: #5b6170; font-variant-numeric: tabular-nums; }
+    .mind { flex: 1; text-align: center; font-size: 11px; color: var(--menu-muted, #5b6170); font-variant-numeric: tabular-nums; }
     .flip-edge {
       display: none; position: absolute; top: 50%; z-index: 10; width: 36px; height: 64px;
       align-items: center; justify-content: center; transform: translateY(-50%);
@@ -191,14 +216,14 @@
     .m-cfg.open { display: block; }
     /* 菜单内的「显示模式」分段控件（分体 / 翻页） */
     .m-mode { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 2px 8px 4px; }
-    .m-mode-label { font-size: 11px; color: #5b6170; }
-    .m-seg { display: inline-flex; border: 1px solid rgba(0,0,0,.15); border-radius: 6px; overflow: hidden; }
+    .m-mode-label { font-size: 11px; color: var(--menu-muted, #5b6170); }
+    .m-seg { display: inline-flex; border: 1px solid var(--menu-divider, rgba(0,0,0,.15)); border-radius: 6px; overflow: hidden; }
     .m-seg-btn { width: auto; flex: none; text-align: center; padding: 3px 10px; border-radius: 0; }
-    .m-seg-btn + .m-seg-btn { border-left: 1px solid rgba(0,0,0,.15); }
+    .m-seg-btn + .m-seg-btn { border-left: 1px solid var(--menu-divider, rgba(0,0,0,.15)); }
     .m-seg-btn.active { background: #2563EB; color: #fff; }
-    .m-seg-btn:not(.active):hover { background: rgba(0,0,0,.08); }
+    .m-seg-btn:not(.active):hover { background: rgba(127,127,127,.18); }
     /* 颜色/透明度子区（收纳于下拉菜单内） */
-    .plabel { margin: 4px 0 5px; font-size: 11px; color: #6b7280; }
+    .plabel { margin: 4px 0 5px; font-size: 11px; color: var(--menu-muted, #6b7280); }
     .swatches { display: grid; grid-template-columns: repeat(6, 1fr); gap: 5px; margin-bottom: 8px; }
     .swatches .sw { width: 18px; height: 18px; border-radius: 50%; cursor: pointer; border: 1px solid rgba(0,0,0,.15); }
     /* 🎨 自选色（调色盘）：彩虹渐变圆点，内嵌透明 input[type=color]，点开系统调色盘；当前色不在固定色板时高亮蓝圈 */
@@ -209,9 +234,9 @@
     /* 字体颜色选中环 + 字重分段按钮 */
     .swatches .sw.active { box-shadow: 0 0 0 2px #2563EB; }
     .m-weight { display: flex; gap: 4px; }
-    .m-wbtn { width: auto; flex: 1; text-align: center; padding: 3px 0; background: rgba(0,0,0,.05); border-radius: 6px; }
+    .m-wbtn { width: auto; flex: 1; text-align: center; padding: 3px 0; background: rgba(127,127,127,.12); border-radius: 6px; }
     .m-wbtn.active { background: #2563EB; color: #fff; }
-    .m-wbtn:not(.active):hover { background: rgba(0,0,0,.10); }
+    .m-wbtn:not(.active):hover { background: rgba(127,127,127,.2); }
     /* 最小化（收合成小卡）：保留左上还原与右上菜单手柄 */
     #note.minimized .body, #note.minimized .rz, #note.minimized .note-mode-handle { display: none; }
     /* 🆕 编辑模式：textarea 直接改事件原始 Markdown（notes）；渲染模式隐藏正文 */
@@ -238,15 +263,12 @@
     <button type="button" class="note-min-handle" id="noteMinHandle" aria-label="最小化便利贴"></button>
     <button type="button" class="note-menu-handle" id="noteMenuHandle" aria-label="打开便利贴菜单" title="菜单">☰</button>
     <button type="button" class="iconbtn note-close-handle" id="miClose" aria-label="关闭便利贴" title="关闭便利贴"><span class="icon-glyph">×</span></button>
+    <button type="button" class="note-refresh-handle" id="noteRefreshHandle" aria-label="刷新便利贴" title="刷新便利贴">🔄</button>
+    <div class="note-refresh-feedback" id="noteRefreshFeedback" role="status" aria-live="polite"></div>
     <button type="button" class="flip-edge" id="flipPrevEdge" aria-label="上一张便利贴" title="上一张">‹</button>
     <button type="button" class="flip-edge" id="flipNextEdge" aria-label="下一张便利贴" title="下一张">›</button>
     <div class="menu" id="menu">
       <!-- 第 1 行：常用操作图标按钮（说明文字放title tooltip） -->
-      <div class="m-actions">
-        <button class="mi m-act" id="miRefresh" title="刷新内容">🔄</button>
-        <button class="mi m-act" id="miOpen" title="在主程式打开">📂</button>
-      </div>
-      <div class="msep"></div>
       <button class="mi" id="miCalendar" title="开启 Calendar">📅 开启 Calendar</button>
       <div class="m-sticky-list" id="mStickyListWrap">
         <div class="m-sticky-list-title">已设定的便利贴（点击名称显示；点击开 / 关切换）</div>

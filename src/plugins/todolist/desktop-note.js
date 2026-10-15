@@ -38,6 +38,10 @@ const FLIP_KEY = '__flip__', FLIP_IDX = 0;
 let flipOrder = [];   // [{key, idx}]
 let flipIndex = 0;    // 当前页
 let flipTotal = 0;
+let stickyMenuLoadSeq = 0;
+let stickyRefreshSeq = 0;
+let activeStickyRefreshId = '';
+let stickyRefreshFeedbackTimer = null;
 let flipPointerX = null;
 let pointerClientX = null;
 let pointerClientY = null;
@@ -54,6 +58,18 @@ function tint(hex, opacityPct) {
   if (h.length !== 6) h = 'FFF3B0';
   const a = Math.round((Math.max(20, Math.min(100, opacityPct == null ? 100 : opacityPct)) / 100) * 255);
   return '#' + h + a.toString(16).padStart(2, '0');
+}
+function showStickyRefreshFeedback(message, isError = false) {
+  const feedback = document.getElementById('noteRefreshFeedback');
+  if (!feedback) return;
+  if (stickyRefreshFeedbackTimer) clearTimeout(stickyRefreshFeedbackTimer);
+  feedback.textContent = message;
+  feedback.classList.toggle('error', isError);
+  feedback.classList.add('visible');
+  stickyRefreshFeedbackTimer = setTimeout(() => {
+    feedback.classList.remove('visible');
+    stickyRefreshFeedbackTimer = null;
+  }, 3200);
 }
 
 function parseEvents(md) {
@@ -242,6 +258,9 @@ function setupControls() {
     if (menu) menu.classList.toggle('open');
     if (menu && menu.classList.contains('open')) loadStickyMenuNotes();
   };
+  ipcRenderer.on('sticky-note-catalog-updated', () => {
+    if (menu && menu.classList.contains('open')) loadStickyMenuNotes();
+  });
   // 点击菜单与右上角手柄以外任意处（含便利贴本体）关闭菜单
   document.addEventListener('click', (e) => {
     if (!menu || !menu.classList.contains('open')) return;
@@ -254,17 +273,26 @@ function setupControls() {
     if (IS_FLIP) ipcRenderer.invoke('close-sticky-notes');          // 翻页模式：结束整个翻页会话
     else ipcRenderer.invoke('sticky-note-close', { key: KEY, idx: IDX });
   };
-  document.getElementById('miRefresh').onclick = (e) => {
+  const refreshStickyNote = (e) => {
     e.stopPropagation();
     closeMenu();
     const ev = parseEvents(readMd()).find(item => item.key === KEY);
+    activeStickyRefreshId = 'sticky-refresh-' + Date.now() + '-' + (++stickyRefreshSeq);
+    showStickyRefreshFeedback('正在刷新便利贴…');
     ipcRenderer.send('sticky-note-refresh-request', {
+      requestId: activeStickyRefreshId,
       key: KEY, idx: IDX,
       title: (document.getElementById('title').textContent || '').replace(/\s+/g, ' ').trim(),
       date: ev ? ev.date : ''
     });
   };
-  document.getElementById('miOpen').onclick = (e) => { e.stopPropagation(); closeMenu(); ipcRenderer.invoke('wake-main-from-note', { key: KEY }); };
+  document.getElementById('noteRefreshHandle').onclick = refreshStickyNote;
+  ipcRenderer.on('sticky-note-refresh-result', (event, result) => {
+    if (!result || result.requestId !== activeStickyRefreshId) return;
+    showStickyRefreshFeedback(result.message || (result.success
+      ? '便利贴刷新完成，共同步 ' + result.count + ' 项。'
+      : '便利贴刷新失败。'), !result.success);
+  });
   document.getElementById('miCalendar').onclick = (e) => { e.stopPropagation(); closeMenu(); ipcRenderer.invoke('activate-main-window'); };
   const stickyList = document.getElementById('mStickyList');
   if (stickyList) stickyList.onclick = async (e) => {
@@ -420,11 +448,13 @@ function setupControls() {
     const nearTopLeft = leftGap >= 0 && leftGap <= 48 && topGap >= 0 && topGap <= 48;
     const nearTopRight = rightGap >= 0 && rightGap <= 48 && topGap >= 0 && topGap <= 48;
     const nearTopCenter = centerGap <= 48 && topGap >= 0 && topGap <= 48;
+    const nearBottomCenter = centerGap <= 48 && bottomGap >= 0 && bottomGap <= 48;
     document.getElementById('rz').classList.toggle('visible', nearBottomRight || !!rz);
     document.getElementById('noteModeHandle').classList.toggle('visible', nearBottomLeft);
     document.getElementById('noteMinHandle').classList.toggle('visible', nearTopLeft);
     document.getElementById('noteMenuHandle').classList.toggle('visible', nearTopRight);
     document.getElementById('miClose').classList.toggle('visible', nearTopCenter);
+    document.getElementById('noteRefreshHandle').classList.toggle('visible', nearBottomCenter);
   });
   note.addEventListener('pointerleave', () => {
     pointerClientX = null;
@@ -434,6 +464,7 @@ function setupControls() {
     document.getElementById('noteMinHandle').classList.remove('visible');
     document.getElementById('noteMenuHandle').classList.remove('visible');
     document.getElementById('miClose').classList.remove('visible');
+    document.getElementById('noteRefreshHandle').classList.remove('visible');
   });
   if (IS_FLIP) bindFlipNav();
 }
@@ -441,7 +472,7 @@ function setupControls() {
 // 原生拖拽由 OS 处理；只有「按下后未移动、松开＝点击」才会触发此 handler
 // （拖拽过程中 OS 不会派发 click），故可安全用它区分「点一下＝唤起主程式」
 function onNoteClick(e) {
-  if (e.target.closest('.iconbtn, .note-mode-handle, .note-min-handle, .note-menu-handle, .note-addcheck, .flip-edge')) return;  // 按钮各自处理
+  if (e.target.closest('.iconbtn, .note-mode-handle, .note-min-handle, .note-menu-handle, .note-refresh-handle, .note-addcheck, .flip-edge')) return;  // 按钮各自处理
   if (!e.target.closest('.bar, .head, .meta, .tags')) return; // 仅拖拽区点击＝唤起主程式
   ipcRenderer.invoke('wake-main-from-note', { key: KEY });
 }
@@ -685,6 +716,51 @@ function readMd() { try { return fs.readFileSync(FILE, 'utf8'); } catch (e) { re
 // 监听主程式推来的刷新（自动同步）
 ipcRenderer.on('sticky-note-refresh', (e, arg) => applyNoteContent(arg));
 
+function parseHexRgb(hex) {
+  let value = String(hex || '').replace('#', '');
+  if (value.length === 3) value = value.split('').map((c) => c + c).join('');
+  if (!/^[0-9a-fA-F]{6}$/.test(value)) return [255, 243, 176];
+  return [0, 2, 4].map((offset) => parseInt(value.slice(offset, offset + 2), 16));
+}
+function blendRgb(a, b, amount) {
+  return a.map((value, index) => Math.round(value * (1 - amount) + b[index] * amount));
+}
+function rgbCss(rgb) { return 'rgb(' + rgb.join(', ') + ')'; }
+function relativeLuminance(rgb) {
+  const channels = rgb.map((value) => {
+    const s = value / 255;
+    return s <= 0.04045 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4);
+  });
+  return 0.2126 * channels[0] + 0.7152 * channels[1] + 0.0722 * channels[2];
+}
+function contrastRatio(a, b) {
+  const l1 = relativeLuminance(a), l2 = relativeLuminance(b);
+  return (Math.max(l1, l2) + 0.05) / (Math.min(l1, l2) + 0.05);
+}
+function updateMenuTheme() {
+  const menu = document.getElementById('menu');
+  if (!menu) return;
+  const cardBg = parseHexRgb(state.color);
+  const text = parseHexRgb(state.fontColor || STICKY_DEF_FG);
+  const darkSurface = [32, 35, 42], lightSurface = [246, 245, 239];
+  const surfaceTarget = contrastRatio(text, darkSurface) >= contrastRatio(text, lightSurface)
+    ? darkSurface : lightSurface;
+  let low = 0.14, high = 1;
+  if (contrastRatio(text, blendRgb(cardBg, surfaceTarget, low)) < 4.5) {
+    for (let i = 0; i < 12; i += 1) {
+      const mid = (low + high) / 2;
+      if (contrastRatio(text, blendRgb(cardBg, surfaceTarget, mid)) >= 4.5) high = mid;
+      else low = mid;
+    }
+    low = high;
+  }
+  const surface = blendRgb(cardBg, surfaceTarget, low);
+  menu.style.setProperty('--menu-bg', rgbCss(surface));
+  menu.style.setProperty('--menu-muted', rgbCss(blendRgb(text, surface, 0.2)));
+  menu.style.setProperty('--menu-divider', rgbCss(blendRgb(text, surface, 0.72)));
+  menu.style.setProperty('--menu-status-open', relativeLuminance(surface) < 0.25 ? '#4ade80' : '#15803d');
+}
+
 function applyColor() {
   const hex = tint(state.color, state.opacity);
   document.getElementById('note').style.background = hex;
@@ -692,6 +768,7 @@ function applyColor() {
   // ＋☐ 浮层盒与便利贴同背景色（取实色 tint(…,100)，不随透明度变淡，保证浮层可读）；文字色经 --note-fg 继承
   const acBox = document.getElementById('addCheckBox');
   if (acBox) acBox.style.background = tint(state.color, 100);
+  updateMenuTheme();
   syncCustomSwatchActive();
 }
 function syncUndoneChecksFilter() {
@@ -733,6 +810,7 @@ function applyContentFont() {
     note.style.setProperty('--note-fg', fg);
     note.style.setProperty('--tag-bg', contrastTagBg(fg));
   }
+  updateMenuTheme();
   const fontSize = (12 * (state.fontScale || 1)).toFixed(2) + 'px';
   const body = document.getElementById('body');
   if (body) {
@@ -1011,17 +1089,23 @@ async function loadStickyMenuNotes() {
   const wrap = document.getElementById('mStickyListWrap');
   const list = document.getElementById('mStickyList');
   if (!wrap || !list) return;
+  const requestSeq = ++stickyMenuLoadSeq;
   try {
     const result = await ipcRenderer.invoke('sticky-note-order');
+    if (requestSeq !== stickyMenuLoadSeq) return;
     const notes = result && Array.isArray(result.notes)
       ? result.notes
       : (result && Array.isArray(result.order) ? result.order : []);
     list.replaceChildren();
-    notes.forEach((item) => {
+    notes.forEach((item, index) => {
       const row = document.createElement('div');
       row.className = 'm-sticky-item';
       const name = String(item.title || item.key || '未命名便利贴').replace(/\s+/g, ' ').trim();
       const label = (name || '未命名便利贴') + ((+item.idx || 0) > 0 ? ' (' + ((+item.idx || 0) + 1) + ')' : '');
+      const indexEl = document.createElement('span');
+      indexEl.className = 'm-sticky-item-index';
+      indexEl.textContent = String(index + 1) + '.';
+      indexEl.setAttribute('aria-hidden', 'true');
       const nameEl = document.createElement('button');
       nameEl.type = 'button';
       nameEl.className = 'mi m-sticky-item-name';
@@ -1039,11 +1123,12 @@ async function loadStickyMenuNotes() {
       stateEl.textContent = item.isOpen ? '开' : '关';
       stateEl.title = item.isOpen ? '点击关闭该便利贴' : '点击开启该便利贴';
       stateEl.setAttribute('aria-label', item.isOpen ? '关闭该便利贴' : '开启该便利贴');
-      row.append(nameEl, stateEl);
+      row.append(indexEl, nameEl, stateEl);
       list.appendChild(row);
     });
     wrap.classList.toggle('open', notes.length > 0);
   } catch (error) {
+    if (requestSeq !== stickyMenuLoadSeq) return;
     console.error('[StickyNote] 读取便利贴清单失败:', error);
     wrap.classList.remove('open');
   }

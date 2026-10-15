@@ -257,6 +257,7 @@ const pendingStickyEditSaves = new Map();
 let stickyEditSaveSeq = 0;
 const pendingStickyMenuCloses = new Map();
 let stickyMenuCloseSeq = 0;
+const pendingStickyRefreshes = new Map();
 
 function stickyStatePath() {
   return stickyNoteFile ? path.join(path.dirname(stickyNoteFile), 'sticky-notes-state.json') : '';
@@ -513,7 +514,14 @@ ipcMain.handle('open-sticky-notes', (e, arg) => {
 // 返回本次 Calendar 会话中全部已设定的便利贴，以及每张目前是否开启。
 ipcMain.handle('sticky-note-order', () => {
   const flipOpen = stickyNoteFlipWindow && !stickyNoteFlipWindow.isDestroyed();
-  const notes = stickyNoteCatalog.map(note => {
+  const catalog = new Map(stickyNoteCatalog.map(note => [noteWinId(note.key, note.idx), note]));
+  if (stickyNoteMode === 'flip') {
+    stickyNoteOrder.forEach(note => {
+      const id = noteWinId(note.key, note.idx);
+      if (!catalog.has(id)) catalog.set(id, note);
+    });
+  }
+  const notes = Array.from(catalog.values()).map(note => {
     let isOpen;
     if (stickyNoteMode === 'flip') {
       isOpen = !!(flipOpen && stickyNoteOrder.some(active => active.key === note.key && active.idx === note.idx));
@@ -539,7 +547,10 @@ function requestStickyNoteClose(win) {
 ipcMain.handle('toggle-sticky-note', async (event, arg) => {
   if (!arg || typeof arg.key !== 'string') return { success: false };
   const idx = +arg.idx || 0;
-  const note = stickyNoteCatalog.find(item => item.key === arg.key && item.idx === idx);
+  const note = stickyNoteCatalog.find(item => item.key === arg.key && item.idx === idx)
+    || (stickyNoteMode === 'flip'
+      ? stickyNoteOrder.find(item => item.key === arg.key && item.idx === idx)
+      : null);
   if (!note) return { success: false };
 
   if (stickyNoteMode === 'flip') {
@@ -661,14 +672,11 @@ ipcMain.on('sticky-note-sync', (e, arg) => {
     }
   });
 
-  // 保留已开启但刚从设定清单移除的页面，避免刷新时丢失仍在显示的便利贴。
+  // 分体窗口允许已开启的贴纸在设定移除后暂时保留；翻页清单则严格跟随 Calendar 当前设定。
   stickyNoteCatalog.forEach(note => {
     const id = noteWinId(note.key, note.idx);
     if (nextIds.has(id)) return;
-    if (stickyNoteMode === 'flip' && previousOrder.has(id)) {
-      nextCatalog.push(note);
-      nextOrder.push(note);
-    } else if (stickyNoteMode !== 'flip') {
+    if (stickyNoteMode !== 'flip') {
       const win = stickyNoteWindows.get(id);
       if (win && !win.isDestroyed()) nextCatalog.push(note);
     }
@@ -678,14 +686,59 @@ ipcMain.on('sticky-note-sync', (e, arg) => {
   if (stickyNoteMode === 'flip') {
     stickyNoteOrder = nextOrder;
     if (stickyNoteFlipWindow && !stickyNoteFlipWindow.isDestroyed()) {
-      stickyNoteFlipWindow.webContents.send('sticky-note-order-updated', { order: stickyNoteOrder });
+      if (stickyNoteOrder.length) {
+        stickyNoteFlipWindow.webContents.send('sticky-note-order-updated', { order: stickyNoteOrder });
+      } else {
+        const win = stickyNoteFlipWindow;
+        stickyNoteFlipWindow = null;
+        win.close();
+      }
     }
   }
+  const catalogWindows = new Set(stickyNoteWindows.values());
+  catalogWindows.forEach(win => {
+    if (win && !win.isDestroyed()) win.webContents.send('sticky-note-catalog-updated');
+  });
   notifyStickyNoteOpenState();
 });
 // 🆕 便利贴窗点「刷新」按钮 → 中继给主程式窗口，由它重新渲染该张并回推（便利贴窗无法直接渲染 Markdown）
 ipcMain.on('sticky-note-refresh-request', (e, arg) => {
-  if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('sticky-note-refresh-request', arg || {});
+  const requestId = arg && arg.requestId;
+  if (typeof requestId !== 'string' || !requestId) return;
+  if (!mainWindow || mainWindow.isDestroyed() || mainWindow.webContents.isDestroyed()) {
+    e.sender.send('sticky-note-refresh-result', { requestId, success: false, message: 'Calendar 未开启，无法刷新便利贴' });
+    return;
+  }
+  const timer = setTimeout(() => {
+    const pending = pendingStickyRefreshes.get(requestId);
+    if (!pending) return;
+    pendingStickyRefreshes.delete(requestId);
+    if (!pending.webContents.isDestroyed()) {
+      pending.webContents.send('sticky-note-refresh-result', {
+        requestId,
+        success: false,
+        message: '刷新等待超时，请确认 Calendar 已开启后重试'
+      });
+    }
+  }, 30000);
+  pendingStickyRefreshes.set(requestId, { webContents: e.sender, calendarWebContentsId: mainWindow.webContents.id, timer });
+  mainWindow.webContents.send('sticky-note-refresh-request', arg || {});
+});
+ipcMain.handle('sticky-note-refresh-complete', (e, arg) => {
+  const requestId = arg && arg.requestId;
+  const pending = typeof requestId === 'string' ? pendingStickyRefreshes.get(requestId) : null;
+  if (!pending || pending.calendarWebContentsId !== e.sender.id) return { success: false };
+  clearTimeout(pending.timer);
+  pendingStickyRefreshes.delete(requestId);
+  if (!pending.webContents.isDestroyed()) {
+    pending.webContents.send('sticky-note-refresh-result', {
+      requestId,
+      success: !!arg.success,
+      count: Number.isInteger(arg.count) ? arg.count : 0,
+      message: typeof arg.message === 'string' ? arg.message : ''
+    });
+  }
+  return { success: true };
 });
 // 🆕 便利贴「编辑模式」回写：唤醒 Calendar 后，由其渲染进程按既有流程写回 calendar.md
 ipcMain.handle('sticky-note-save-edit', async (e, arg) => {
@@ -788,10 +841,29 @@ ipcMain.on('sticky-note-move', (e, arg) => {
   if (!win || win.isDestroyed()) return;
   if (arg && typeof arg.x === 'number' && typeof arg.y === 'number') win.setPosition(Math.round(arg.x), Math.round(arg.y));
 });
-// 单张便利贴：关闭这一张（仅本次；重新开启会按 ×N 回来）。翻页模式下 × 关闭整窗＝结束翻页会话。
+// 单张便利贴：关闭这一张（仅本次；重新开启会按 ×N 回来）。
 ipcMain.handle('sticky-note-close', (e, arg) => {
-  const win = (stickyNoteMode === 'flip') ? stickyNoteFlipWindow
-                                         : stickyNoteWindows.get(noteWinId(String(arg && arg.key), +arg.idx || 0));
+  if (stickyNoteMode === 'flip') {
+    if (!arg || typeof arg.key !== 'string') return false;
+    const idx = +arg.idx || 0;
+    const activeIndex = stickyNoteOrder.findIndex(note => note.key === arg.key && note.idx === idx);
+    if (activeIndex < 0) return true;
+
+    stickyNoteOrder.splice(activeIndex, 1);
+    const win = stickyNoteFlipWindow;
+    if (win && !win.isDestroyed()) {
+      if (stickyNoteOrder.length) {
+        win.webContents.send('sticky-note-order-updated', { order: stickyNoteOrder });
+      } else {
+        stickyNoteFlipWindow = null;
+        win.close();
+      }
+    }
+    notifyStickyNoteOpenState();
+    return true;
+  }
+
+  const win = stickyNoteWindows.get(noteWinId(String(arg && arg.key), +arg.idx || 0));
   if (win && !win.isDestroyed()) win.close();
   return true;
 });
