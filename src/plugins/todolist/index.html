@@ -2406,6 +2406,7 @@
       padding: 6px 8px; border-radius: 7px;
     }
     .ev-sticky-row:hover { background: var(--ev-hover, rgba(127,127,127,.10)); }
+    .ev-sticky-row-index { flex: 0 0 22px; text-align: right; color: var(--ev-muted); font-size: 11px; font-variant-numeric: tabular-nums; }
     .ev-sticky-row-dot { width: 10px; height: 10px; border-radius: 50%; flex: 0 0 auto; }
     .ev-sticky-row-title { flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .ev-sticky-row-meta { font-size: 10px; color: var(--ev-muted); flex: 0 0 auto; }
@@ -6839,13 +6840,23 @@
         list.innerHTML = '<div class="ev-sticky-empty">还没有事件被设为便利贴<br>（在行程表单里把「桌面便利贴 ×N」设为 ≥1）</div>';
         return;
       }
-      list.innerHTML = events.map(function (ev) {
+      list.innerHTML = events.map(function (ev, index) {
         const color = ev.color || '#7c3aed';
         const n = ev.sticky | 0;
-        const esc = function (s) { return String(s).replace(/[<>&]/g, function (c) { return { '<': '&lt;', '>': '&gt;', '&': '&amp;' }[c]; }); };
-        const title = esc(ev.title || '(无标题)');
+        const rawTitle = ev.title || '(无标题)';
+        const titleHtml = (typeof tlRenderInlineMarkdown === 'function') ? tlRenderInlineMarkdown(rawTitle) : '';
+        const titleNode = document.createElement('div');
+        titleNode.innerHTML = titleHtml;
+        const plainTitle = (titleNode.textContent || titleNode.innerText || rawTitle).replace(/\s+/g, ' ').trim();
+        const esc = function (s) {
+          return String(s).replace(/[&<>"']/g, function (c) {
+            return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+          });
+        };
+        const title = esc(plainTitle || '(无标题)');
         const uid = String(ev.uid || '').replace(/"/g, '');
         return '<div class="ev-sticky-row" data-uid="' + uid + '">'
+          + '<span class="ev-sticky-row-index" aria-hidden="true">' + (index + 1) + '.</span>'
           + '<span class="ev-sticky-row-dot" style="background:' + color + '"></span>'
           + '<span class="ev-sticky-row-title" title="' + title + '">' + title + '</span>'
           + '<span class="ev-sticky-row-meta">' + (ev.date || '') + ' · ×' + n + '</span>'

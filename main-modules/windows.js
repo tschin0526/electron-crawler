@@ -531,7 +531,11 @@ ipcMain.handle('sticky-note-order', () => {
     }
     return Object.assign({}, note, { isOpen });
   });
-  return { order: notes.filter(note => note.isOpen), notes };
+  const notesById = new Map(notes.map(note => [noteWinId(note.key, note.idx), note]));
+  const order = stickyNoteMode === 'flip'
+    ? stickyNoteOrder.map(note => notesById.get(noteWinId(note.key, note.idx))).filter(Boolean)
+    : notes.filter(note => note.isOpen);
+  return { mode: stickyNoteMode, order, notes };
 });
 function requestStickyNoteClose(win) {
   const requestId = 'sticky-menu-close-' + Date.now() + '-' + (++stickyMenuCloseSeq);

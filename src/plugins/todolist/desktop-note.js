@@ -1088,23 +1088,29 @@ async function initFlip() {
 async function loadStickyMenuNotes() {
   const wrap = document.getElementById('mStickyListWrap');
   const list = document.getElementById('mStickyList');
-  if (!wrap || !list) return;
+  const listTitle = document.getElementById('mStickyListTitle');
+  if (!wrap || !list || !listTitle) return;
   const requestSeq = ++stickyMenuLoadSeq;
   try {
     const result = await ipcRenderer.invoke('sticky-note-order');
     if (requestSeq !== stickyMenuLoadSeq) return;
-    const notes = result && Array.isArray(result.notes)
-      ? result.notes
-      : (result && Array.isArray(result.order) ? result.order : []);
+    const mode = result && result.mode;
+    const allNotes = result && Array.isArray(result.notes) ? result.notes : [];
+    const pageNotes = result && Array.isArray(result.order) ? result.order : allNotes.filter(note => note.isOpen);
+    const inactiveNotes = mode === 'flip' ? allNotes.filter(note => !note.isOpen) : [];
+    const notes = mode === 'flip' ? pageNotes : allNotes;
+    listTitle.textContent = mode === 'flip'
+      ? '翻页清单（' + pageNotes.length + ' 项；点击名称显示，点开 / 关切换）'
+      : '已设定的便利贴（点击名称显示；点击开 / 关切换）';
     list.replaceChildren();
-    notes.forEach((item, index) => {
+    const appendNoteRow = (item, index) => {
       const row = document.createElement('div');
       row.className = 'm-sticky-item';
       const name = String(item.title || item.key || '未命名便利贴').replace(/\s+/g, ' ').trim();
       const label = (name || '未命名便利贴') + ((+item.idx || 0) > 0 ? ' (' + ((+item.idx || 0) + 1) + ')' : '');
       const indexEl = document.createElement('span');
       indexEl.className = 'm-sticky-item-index';
-      indexEl.textContent = String(index + 1) + '.';
+      indexEl.textContent = index === null ? '' : String(index + 1) + '.';
       indexEl.setAttribute('aria-hidden', 'true');
       const nameEl = document.createElement('button');
       nameEl.type = 'button';
@@ -1125,8 +1131,16 @@ async function loadStickyMenuNotes() {
       stateEl.setAttribute('aria-label', item.isOpen ? '关闭该便利贴' : '开启该便利贴');
       row.append(indexEl, nameEl, stateEl);
       list.appendChild(row);
-    });
-    wrap.classList.toggle('open', notes.length > 0);
+    };
+    notes.forEach(appendNoteRow);
+    if (inactiveNotes.length) {
+      const inactiveTitle = document.createElement('div');
+      inactiveTitle.className = 'm-sticky-list-inactive-title';
+      inactiveTitle.textContent = '未开启（不计入翻页）';
+      list.appendChild(inactiveTitle);
+      inactiveNotes.forEach(item => appendNoteRow(item, null));
+    }
+    wrap.classList.toggle('open', notes.length > 0 || inactiveNotes.length > 0);
   } catch (error) {
     if (requestSeq !== stickyMenuLoadSeq) return;
     console.error('[StickyNote] 读取便利贴清单失败:', error);

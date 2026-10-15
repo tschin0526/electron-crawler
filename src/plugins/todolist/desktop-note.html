@@ -183,6 +183,7 @@
     .m-sticky-list { display: none; padding: 2px 0; }
     .m-sticky-list.open { display: block; }
     .m-sticky-list-title { padding: 2px 9px 3px; color: var(--menu-muted, #6b7280); font-size: 10px; text-align: center; }
+    .m-sticky-list-inactive-title { margin-top: 4px; padding: 5px 9px 3px; border-top: 1px solid var(--menu-divider, rgba(0,0,0,.10)); color: var(--menu-muted, #6b7280); font-size: 10px; text-align: center; }
     .m-sticky-list-items { max-height: 120px; overflow-y: auto; }
     .m-sticky-item { display: flex; align-items: center; gap: 4px; }
     .m-sticky-item-index { flex: none; width: 20px; color: var(--menu-muted, #6b7280); font-size: 11px; text-align: right; font-variant-numeric: tabular-nums; }
@@ -271,7 +272,7 @@
       <!-- 第 1 行：常用操作图标按钮（说明文字放title tooltip） -->
       <button class="mi" id="miCalendar" title="开启 Calendar">📅 开启 Calendar</button>
       <div class="m-sticky-list" id="mStickyListWrap">
-        <div class="m-sticky-list-title">已设定的便利贴（点击名称显示；点击开 / 关切换）</div>
+        <div class="m-sticky-list-title" id="mStickyListTitle">已设定的便利贴（点击名称显示；点击开 / 关切换）</div>
         <div class="m-sticky-list-items" id="mStickyList"></div>
       </div>
       <button class="mi" id="miUndoneChecks" aria-pressed="false">只显示未完成 checkbox：关</button>
