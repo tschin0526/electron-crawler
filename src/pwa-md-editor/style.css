@@ -434,6 +434,20 @@ body {
 .ev-mode-seg button.active { background: var(--primary); color: #fff; }
 .ev-add-btn { border: 1px solid var(--primary); background: var(--bg-secondary); color: var(--primary); font-size: 13px; padding: 5px 12px; border-radius: 8px; cursor: pointer; }
 .ev-add-btn:active { background: var(--primary); color: #fff; }
+/* 🆕 工具列 combo（曝露/自定義顯示的功能）：移植自桌面 calendar 的 .ev-toolbar-combo-*，變數改用 LITE 主題 tokens */
+.ev-toolbar-combo { position: relative; display: inline-flex; align-items: center; gap: 5px; }
+.ev-toolbar-combo-trigger { border: 1px solid var(--border); background: var(--bg-secondary); color: var(--text); border-radius: 7px; padding: 5px 8px; cursor: pointer; font-size: 12px; line-height: 1; }
+.ev-toolbar-combo-trigger:hover, .ev-toolbar-combo-trigger[aria-expanded="true"] { border-color: var(--primary); color: var(--primary); }
+.ev-toolbar-combo-exposed { display: inline-flex; align-items: center; gap: 5px; }
+.ev-toolbar-combo-item[hidden] { display: none !important; }
+.ev-toolbar-combo-menu { position: absolute; z-index: 10000; top: calc(100% + 5px); left: 0; display: none; min-width: 220px; padding: 6px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-secondary); color: var(--text); box-shadow: 0 8px 24px rgba(0, 0, 0, .24); }
+.ev-toolbar-combo-menu.open { display: block; }
+.ev-toolbar-combo-menu-title { padding: 3px 7px 6px; color: var(--text-secondary); font-size: 11px; }
+.ev-toolbar-combo-option { display: flex; align-items: center; gap: 8px; padding: 4px; border-radius: 5px; }
+.ev-toolbar-combo-option:hover { background: rgba(127, 127, 127, .12); }
+.ev-toolbar-combo-option input { flex: none; margin: 0 3px; accent-color: var(--primary); }
+.ev-toolbar-combo-action { flex: 1; border: 0; border-radius: 4px; padding: 5px 4px; background: transparent; color: inherit; text-align: left; font: inherit; cursor: pointer; }
+.ev-toolbar-combo-action:hover { color: var(--primary); background: rgba(127, 127, 127, .12); }
 
 /* 月視圖導航 */
 .ev-monthnav { display: flex; align-items: center; gap: 10px; padding: 0 0 6px; }
@@ -646,9 +660,28 @@ body {
 .ev-block .notes li { margin: 0.1em 0; }
 .ev-block .loc { font-size: 10px; opacity: 0.9; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 /* 📝 備註 Markdown checkbox：- [ ] / - [x] → ☐/☑（只讀樣式，勾選項加刪除線） */
-.ev-cb { display: inline-block; min-width: 11px; height: 11px; border: 1px solid var(--border); border-radius: 3px; margin-right: 4px; vertical-align: -1px; text-align: center; font-size: 9px; line-height: 11px; color: #fff; }
+.ev-cb { display: inline-block; min-width: 11px; height: 11px; border: 2px solid #fbbf24; border-radius: 3px; margin-right: 4px; vertical-align: -2px; text-align: center; font-size: 9px; line-height: 11px; color: #fff; } /* 框線加粗金黃 #fbbf24（與桌面金黄规范同色）：深色主題下原 var(--border) 太淡看不清 */
 .ev-md-check.done .ev-cb { background: var(--primary); border-color: var(--primary); }
 .ev-md-check.done { text-decoration: line-through; opacity: 0.75; }
+/* 🆕 術語（term）渲染：立體金膠囊(term) ＋ 內嵌小膠囊(領域) ＋ 釋義 tooltip（hover）。
+   固定深字＋金漸層，深淺主題都清晰；領域小膠囊半透明白底嵌於大膠囊內。與桌面 calendar 雙端對齊 */
+.tl-term { display: inline; }
+.tl-term-cap {
+  display: inline-flex; align-items: center; gap: .3em;
+  margin-right: .3em; padding: 0 .55em;
+  border-radius: 999px; line-height: 1.7; font-size: .9em; font-weight: 600;
+  white-space: nowrap; cursor: help;
+  color: #4a3b12;
+  background: linear-gradient(180deg, #f4dc8e 0%, #e6bd52 55%, #d0a23a 100%);
+  border: 1px solid #b8893a;
+  box-shadow: 0 1px 2px rgba(0,0,0,.28), inset 0 1px 0 rgba(255,255,255,.65);
+}
+.tl-term-domain {
+  display: inline-block; margin-left: -.05em; padding: 0 .4em;
+  font-size: .76em; font-weight: 600; line-height: 1.6;
+  border-radius: 999px; color: #4a3b12;
+  background: rgba(255,255,255,.5); border: 1px solid rgba(184,137,58,.65);
+}
 .ev-block.done { opacity: 0.55; }
 /* ⚠️ 對齊修復（同桌面端）：column-gap 4px × 7 會累積 28px 漂移 → 全天行程「卡在兩天中間」。
    gap 歸 0 讓欄位軌道與時間網格完全一致，視覺留白改由 .ev-allday-col 的內距提供。 */

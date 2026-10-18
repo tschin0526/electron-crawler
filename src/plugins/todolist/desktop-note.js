@@ -24,6 +24,14 @@ const DEFAULT_W = 240, DEFAULT_H = 170, MIN_W = 140, MIN_H = 90;
 // 新便利贴默认配色：纸质便利贴淡黄底 + 纯黑字（覆盖事件色继承；#FFF3B0 已在 PALETTE 中，可重新选中高亮）
 const STICKY_DEF_BG = '#FFF3B0';
 const STICKY_DEF_FG = '#000000';
+// 📧 便利贴发邮件：收件人历史走主进程持久化（所有便利贴窗共享）
+// 📧 发邮件链路（与 ToDo 卡片 📧、邮件插件 UI 完全同一函数）：
+
+//   便利贴窗 → ipcRenderer.invoke('sticky-note-send-email') → 主进程二选一：
+//    ① 主程序模式：找到邮件插件 webview → executeJavaScript('window.sendEmailByPlugin(...)')
+//       → 邮件插件 POST http://localhost:5003/send_email（并写邮件插件自己的发送历史）
+//    ② --sticky 独立模式：没有邮件插件 → 主进程按同一 multipart 契约直连 localhost:5003
+//   结果原路回传。两种模式都能发（2026-10-17：用户 --sticky 实测②路径）。
 
 const qs = new URLSearchParams(location.search);
 const FILE = qs.get('file') || '';
@@ -46,6 +54,24 @@ let flipPointerX = null;
 let pointerClientX = null;
 let pointerClientY = null;
 const FLIP_EDGE_TRIGGER_PX = 48;
+// 边框悬浮把手「进入即显、停留 N 秒自动隐藏、离开边框带后再进入才重现」——防止遮挡内容按钮（编辑小圆点 / checkbox）
+const EDGE_HANDLE_AUTOHIDE_MS = 4000;
+let handleHideTimer = null;
+let lastInBand = false;
+function armEdgeHandlesAutoHide() {
+  if (handleHideTimer) clearTimeout(handleHideTimer);
+  handleHideTimer = setTimeout(hideAllEdgeHandles, EDGE_HANDLE_AUTOHIDE_MS);
+}
+function hideAllEdgeHandles() {
+  ['rz', 'noteModeHandle', 'noteMinHandle', 'noteMenuHandle', 'miClose', 'noteRefreshHandle', 'flipPrevEdge', 'flipNextEdge']
+    .forEach((id) => {
+      const el = document.getElementById(id);
+      if (!el) return;
+      if (id === 'rz' && rz) return; // 缩放拖拽中保持把手可见
+      el.classList.remove('visible');
+    });
+  if (handleHideTimer) { clearTimeout(handleHideTimer); handleHideTimer = null; }
+}
 let editMode = false; // 内容模式：false＝渲染（Markdown 预览）/ true＝编辑（直接改原始 notes）
 let editDirty = false;// 编辑后是否有未保存改动（⌘S 才落盘）
 function geomId() { return IS_FLIP ? { key: FLIP_KEY, idx: FLIP_IDX } : { key: KEY, idx: IDX }; }
@@ -72,6 +98,28 @@ function showStickyRefreshFeedback(message, isError = false) {
   }, 3200);
 }
 
+// 从事件块提取 Remark 正文。参考桌面主程式 tlExtractRemark：按围栏长度匹配，支持备注内部再出现 ```。
+// 旧正则 `/```\n([\s\S]*?)\n```/` 是非贪婪，遇到内容里有 ``` 会提前闭合，导致便利贴编辑模式内容消失。
+function extractRemark(block) {
+  const ri = block.indexOf('- Remark:');
+  if (ri < 0) return '';
+  const lines = block.slice(ri + '- Remark:'.length).split('\n');
+  let start = -1, n = 0;
+  for (let i = 0; i < lines.length; i++) {
+    const m = lines[i].match(/^(`{3,})[ \t]*$/);
+    if (m) { start = i; n = m[1].length; break; }
+  }
+  if (start < 0) return '';
+  let end = -1;
+  for (let i = start + 1; i < lines.length; i++) {
+    const m = lines[i].match(/^(`{3,})[ \t]*$/);
+    if (m && m[1].length >= n) { end = i; break; }
+  }
+  const body = (end >= 0 ? lines.slice(start + 1, end) : lines.slice(start + 1)).join('\n');
+  const trimmed = body.replace(/^\n/, '').replace(/\n$/, '');
+  return trimmed.trim() === '' ? '' : trimmed;
+}
+
 function parseEvents(md) {
   if (!md) return [];
   const out = [];
@@ -79,16 +127,16 @@ function parseEvents(md) {
   //    使便利贴 KEY 与主程式一致（改标题/日期不再断开关联）。i 从 0 起，与 tlParseBlock(idx) 对齐。
   const blocks = String(md).split(/^##[ \t]*EVENT(?:\([^)]*\))?[ \t]*$/m);
   blocks.forEach((b, i) => {
-    const cut = b.search(/^##[ \t]*HOLIDAY[ \t]*$/m);
+    // 同步桌面主程式 tlParseEvents：尾部黏着的 ## HOLIDAY / ## DIARY 都要截断，
+    // 否则 ## DIARY 的 - title/-date 可能被误当成事件字段，diary 的代码块也会污染 remark 解析。
+    const cut = b.search(/^##[ \t]*(HOLIDAY|DIARY)[ \t]*$/m);
     const blk = cut >= 0 ? b.slice(0, cut) : b;
     const get = (k) => { const m = blk.match(new RegExp('^- ' + k + ':\\s*`?([^`\\n]*)`?', 'm')); return m ? m[1].trim() : ''; };
     const title = get('title');
     if (!title) return;
     let color = get('color').replace(/^"|"$/g, '');
     let tags = []; try { tags = JSON.parse(get('tags')) || []; } catch (e) { tags = []; }
-    let notes = '';
-    const rm = blk.match(/- Remark:\s*\n```\n([\s\S]*?)\n```/) || blk.match(/```\n([\s\S]*?)\n```/);
-    if (rm) notes = rm[1];
+    const notes = extractRemark(blk);
     const uid = 'evp' + i;
     out.push({
       title, date: get('date'), endDate: get('endDate'), color: color || '#FFCC00',
@@ -237,7 +285,7 @@ function setupControls() {
       return true;
     }
     const message = IS_FLIP
-      ? '确定要关闭便利贴翻页窗口吗？\n\n关闭后将结束当前翻页显示。'
+      ? '确定要关闭 翻页模式的便利贴 窗口吗？\n\n关闭后将结束当前 翻页模式的便利贴 的显示。'
       : '确定要关闭这张便利贴吗？\n\n之后仍可从便利贴菜单重新开启。';
     return window.confirm(message);
   };
@@ -255,6 +303,8 @@ function setupControls() {
   });
   if (menuHandle) menuHandle.onclick = (e) => {
     e.stopPropagation();
+    if (!editMode) rereadStickyNoteTable(); // 按浮动按钮＝重新读表（编辑中有未保存改动时不覆盖）
+    armEdgeHandlesAutoHide(); // 点击后从「此刻」重新计算 4 秒自动隐藏
     if (menu) menu.classList.toggle('open');
     if (menu && menu.classList.contains('open')) loadStickyMenuNotes();
   };
@@ -273,9 +323,8 @@ function setupControls() {
     if (IS_FLIP) ipcRenderer.invoke('close-sticky-notes');          // 翻页模式：结束整个翻页会话
     else ipcRenderer.invoke('sticky-note-close', { key: KEY, idx: IDX });
   };
-  const refreshStickyNote = (e) => {
-    e.stopPropagation();
-    closeMenu();
+  // 重新读表：请求主进程重读 calendar.md 并把最新事件内容经 sticky-note-refresh → applyNoteContent 落渲染
+  function rereadStickyNoteTable() {
     const ev = parseEvents(readMd()).find(item => item.key === KEY);
     activeStickyRefreshId = 'sticky-refresh-' + Date.now() + '-' + (++stickyRefreshSeq);
     showStickyRefreshFeedback('正在刷新便利贴…');
@@ -285,6 +334,12 @@ function setupControls() {
       title: (document.getElementById('title').textContent || '').replace(/\s+/g, ' ').trim(),
       date: ev ? ev.date : ''
     });
+  }
+  const refreshStickyNote = (e) => {
+    e.stopPropagation();
+    closeMenu();
+    rereadStickyNoteTable();
+    armEdgeHandlesAutoHide(); // 点击后从「此刻」重新计算 4 秒自动隐藏
   };
   document.getElementById('noteRefreshHandle').onclick = refreshStickyNote;
   ipcRenderer.on('sticky-note-refresh-result', (event, result) => {
@@ -294,6 +349,10 @@ function setupControls() {
       : '便利贴刷新失败。'), !result.success);
   });
   document.getElementById('miCalendar').onclick = (e) => { e.stopPropagation(); closeMenu(); ipcRenderer.invoke('activate-main-window'); };
+  // 📜 滚动：唤起主程式并滚动定位到该行程（不打开编辑框）
+  document.getElementById('miCalendarScroll').onclick = (e) => { e.stopPropagation(); closeMenu(); ipcRenderer.invoke('wake-main-from-note', { key: KEY, action: 'scroll' }); };
+  // 📧 发邮件：收件人浮层 → 直调本机邮件服务（sendStickyEmail）
+  document.getElementById('miEmail').onclick = (e) => { e.stopPropagation(); closeMenu(); openStickyEmailDialog(); };
   const stickyList = document.getElementById('mStickyList');
   if (stickyList) stickyList.onclick = async (e) => {
     const target = e.target instanceof Element ? e.target : null;
@@ -323,6 +382,8 @@ function setupControls() {
   loadStickyMenuNotes();
   document.getElementById('noteMinHandle').onclick = (e) => {
     e.stopPropagation();
+    if (!editMode) rereadStickyNoteTable(); // 按浮动按钮＝重新读表
+    armEdgeHandlesAutoHide(); // 点击后从「此刻」重新计算 4 秒自动隐藏
     toggleMinimize();
   };
   document.getElementById('miCfg').onclick = (e) => {
@@ -339,7 +400,8 @@ function setupControls() {
   // 内容模式由左下角浮动手柄切换；编辑模式直接改事件原始 Markdown（notes）
   document.getElementById('noteModeHandle').onclick = (e) => {
     e.stopPropagation();
-    setEditMode(!editMode);
+    armEdgeHandlesAutoHide(); // 点击后从「此刻」重新计算 4 秒自动隐藏
+    setEditMode(!editMode); // 左下角把手＝纯模式切换（渲染 ⇄ 编辑），不做重读（避免与刷新按钮混淆、且不打断刚进入的编辑）
   };
   syncEditSeg();
   const editArea = document.getElementById('editArea');
@@ -356,6 +418,13 @@ function setupControls() {
     if (acOv && acOv.classList.contains('show')) {
       if ((e.metaKey || e.ctrlKey) && (e.key === 's' || e.key === 'S')) { e.preventDefault(); e.stopPropagation(); confirmAddCheck(); }
       else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); closeAddCheck(); }
+      return;
+    }
+    // 📧 发邮件浮层打开中：Enter/Esc 已由输入框自身 keydown 处理；此处兜底焦点不在输入框的
+    //    Esc，并挡住翻页 ←/→ 等快捷键（与 addCheckOv 同优先级）
+    const emailOv = document.getElementById('emailOv');
+    if (emailOv && emailOv.classList.contains('show')) {
+      if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); closeStickyEmailDialog(); }
       return;
     }
     if (!editMode) return;
@@ -424,12 +493,39 @@ function setupControls() {
     acInput.addEventListener('keydown', (e) => {
       e.stopPropagation();
       if ((e.metaKey || e.ctrlKey) && (e.key === 's' || e.key === 'S')) { e.preventDefault(); confirmAddCheck(); }
-      else if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); confirmAddCheck(); }
+      // 🆕 回车＝确认加入仅在「加入子事件」模式（快速逐行新增）；「编辑子事件」模式不拦截回车，避免打断输入（保存用 ⌘S／「保存」按钮，关闭用 Esc）
+      else if (e.key === 'Enter' && !e.shiftKey && !noteCheckEditTarget && !noteBlockEditTarget) { e.preventDefault(); confirmAddCheck(); }
       else if (e.key === 'Escape') { e.preventDefault(); closeAddCheck(); }
     });
     acInput.addEventListener('pointerdown', (e) => e.stopPropagation());
   }
+  // 🆕 弹层按钮行「复制｜保存｜关闭」：保存＝⌘S 同路径（confirmAddCheck），关闭＝Esc 同路径（closeAddCheck，加入/编辑两模式通用）
+  const acSave = document.getElementById('saveCheckButton');
+  if (acSave) acSave.onclick = (e) => { e.stopPropagation(); confirmAddCheck(); };
+  const acClose = document.getElementById('closeCheckButton');
+  if (acClose) acClose.onclick = (e) => { e.stopPropagation(); closeAddCheck(); };
   if (ov) ov.addEventListener('pointerdown', (e) => e.stopPropagation());
+  // 🆕 发邮件浮层：发送｜取消、点背罩关闭、Enter 发送 / Esc 取消（焦点在输入框时由其自身处理）
+  const emailSendBtn = document.getElementById('emailSendBtn');
+  if (emailSendBtn) emailSendBtn.onclick = (e) => { e.stopPropagation(); sendStickyEmail(); };
+  const emailCancelBtn = document.getElementById('emailCancelBtn');
+  if (emailCancelBtn) emailCancelBtn.onclick = (e) => { e.stopPropagation(); closeStickyEmailDialog(); };
+  const emailOv = document.getElementById('emailOv');
+  if (emailOv) {
+    emailOv.addEventListener('click', (e) => { if (e.target === emailOv) closeStickyEmailDialog(); });
+    emailOv.addEventListener('pointerdown', (e) => e.stopPropagation());
+  }
+  const emailInput = document.getElementById('emailRecipientInput');
+  if (emailInput) {
+    emailInput.addEventListener('keydown', (e) => {
+      e.stopPropagation();
+      if (e.key === 'Enter') { e.preventDefault(); sendStickyEmail(); }
+      else if (e.key === 'Escape') { e.preventDefault(); closeStickyEmailDialog(); }
+    });
+    emailInput.addEventListener('focus', () => showEmailRecipientDropdown());
+    emailInput.addEventListener('input', () => renderEmailRecipientDropdown());
+    emailInput.addEventListener('blur', () => setTimeout(hideEmailRecipientDropdown, 150));
+  }
   // 拖动交给 OS 原生（CSS -webkit-app-region: drag）；这里只处理「点击（未拖动）唤起主程式」/ 双击跳转
   const note = document.getElementById('note');
   note.addEventListener('click', onNoteClick);
@@ -437,6 +533,7 @@ function setupControls() {
   note.addEventListener('pointermove', (e) => {
     pointerClientX = e.clientX;
     pointerClientY = e.clientY;
+    if (IS_FLIP) flipPointerX = e.clientX;
     const rect = note.getBoundingClientRect();
     const rightGap = rect.right - e.clientX;
     const leftGap = e.clientX - rect.left;
@@ -449,22 +546,33 @@ function setupControls() {
     const nearTopRight = rightGap >= 0 && rightGap <= 48 && topGap >= 0 && topGap <= 48;
     const nearTopCenter = centerGap <= 48 && topGap >= 0 && topGap <= 48;
     const nearBottomCenter = centerGap <= 48 && bottomGap >= 0 && bottomGap <= 48;
-    document.getElementById('rz').classList.toggle('visible', nearBottomRight || !!rz);
-    document.getElementById('noteModeHandle').classList.toggle('visible', nearBottomLeft);
-    document.getElementById('noteMinHandle').classList.toggle('visible', nearTopLeft);
-    document.getElementById('noteMenuHandle').classList.toggle('visible', nearTopRight);
-    document.getElementById('miClose').classList.toggle('visible', nearTopCenter);
-    document.getElementById('noteRefreshHandle').classList.toggle('visible', nearBottomCenter);
+    // 边框带：上下左右 4 边/4 角 与 翻页左右边（翻页模式）
+    const inBand = nearBottomRight || nearBottomLeft || nearTopLeft || nearTopRight || nearTopCenter || nearBottomCenter
+      || (IS_FLIP && flipPointerX !== null
+          && (flipPointerX <= FLIP_EDGE_TRIGGER_PX || note.clientWidth - flipPointerX <= FLIP_EDGE_TRIGGER_PX));
+    if (inBand) {
+      // 仅在「重新进入边框带」瞬间显示把手（避免持续悬停 / 在带内晃动时重复触发），并启动自动隐藏计时
+      if (!lastInBand) {
+        document.getElementById('rz').classList.toggle('visible', nearBottomRight || !!rz);
+        document.getElementById('noteModeHandle').classList.toggle('visible', nearBottomLeft);
+        document.getElementById('noteMinHandle').classList.toggle('visible', nearTopLeft);
+        document.getElementById('noteMenuHandle').classList.toggle('visible', nearTopRight);
+        document.getElementById('miClose').classList.toggle('visible', nearTopCenter);
+        document.getElementById('noteRefreshHandle').classList.toggle('visible', nearBottomCenter);
+        if (IS_FLIP) updateFlipEdgeHandles();
+        armEdgeHandlesAutoHide();
+      }
+    } else {
+      // 离开边框带：立即隐藏并取消防自动隐藏计时
+      hideAllEdgeHandles();
+    }
+    lastInBand = inBand;
   });
   note.addEventListener('pointerleave', () => {
     pointerClientX = null;
     pointerClientY = null;
-    if (!rz) document.getElementById('rz').classList.remove('visible');
-    document.getElementById('noteModeHandle').classList.remove('visible');
-    document.getElementById('noteMinHandle').classList.remove('visible');
-    document.getElementById('noteMenuHandle').classList.remove('visible');
-    document.getElementById('miClose').classList.remove('visible');
-    document.getElementById('noteRefreshHandle').classList.remove('visible');
+    lastInBand = false;
+    hideAllEdgeHandles();
   });
   if (IS_FLIP) bindFlipNav();
 }
@@ -494,9 +602,12 @@ function openAddCheck() {
   const hint = ov && ov.querySelector('.ac-hint');
   const copyButton = document.getElementById('copyNoteCheckButton');
   noteCheckEditTarget = null;
+  noteBlockEditTarget = null;
   if (title) title.textContent = '加入子事件（CheckBox）';
   if (hint) hint.textContent = '⌘S 加入 · Esc 取消';
   if (copyButton) copyButton.style.display = 'none';
+  const fullBtn = document.getElementById('editFullNoteFromCheckButton');
+  if (fullBtn) fullBtn.style.display = 'none';
   if (inp) { inp.value = ''; inp.placeholder = '每行一个子事件，回车直接加入…'; }
   if (ov) ov.classList.add('show');
   if (inp) setTimeout(() => inp.focus(), 0);
@@ -505,11 +616,14 @@ function closeAddCheck() {
   const ov = document.getElementById('addCheckOv');
   if (ov) ov.classList.remove('show');
   noteCheckEditTarget = null;
+  noteBlockEditTarget = null;
 }
 let addCheckSavePending = false;
 let noteCheckEditTarget = null;
+let noteBlockEditTarget = null; // { uid, start, end, type } — 通用「最小 MD 区块」编辑区间
 function closeEditNoteCheck() {
   noteCheckEditTarget = null;
+  noteBlockEditTarget = null;
   closeAddCheck();
 }
 function eventNotesForKey(key) {
@@ -604,14 +718,13 @@ window.tlOpenEditNoteCheckDialog = function (event, uid, line) {
     window.alert('该子事件内容已变化，请刷新便利贴后重试');
     return;
   }
-  const markerPattern = /\[\[(?:dl|cp):\d{4}-\d{2}-\d{2}\]\]|\[\[\d{4}-\d{2}-\d{2}\]\]/g;
-  noteCheckEditTarget = { uid, line, markers: match[3].match(markerPattern) || [] };
+  noteCheckEditTarget = { uid, line };
   const ov = document.getElementById('addCheckOv');
   const inp = document.getElementById('addCheckInput');
   const copyButton = document.getElementById('copyNoteCheckButton');
   if (ov) {
     ov.querySelector('.ac-title').textContent = '编辑子事件（CheckBox）';
-    ov.querySelector('.ac-hint').textContent = '⌘S 保存修改 · Esc 取消；勾选状态与日期标记会保留';
+    ov.querySelector('.ac-hint').textContent = '⌘S 保存（不关闭，可继续编辑）· Esc 关闭；勾选状态会保留，日期标记（[[dl:…]]/[[cp:…]]）以原文显示可直接编辑；清空内容并保存＝删除该子事件（会先确认）';
     ov.classList.add('show');
   }
   if (copyButton) {
@@ -631,20 +744,116 @@ window.tlOpenEditNoteCheckDialog = function (event, uid, line) {
       }
     };
   }
+  const fullBtn = document.getElementById('editFullNoteFromCheckButton');
+  if (fullBtn) {
+    fullBtn.style.display = '';
+    fullBtn.onclick = (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      closeAddCheck();
+      setEditMode(true);
+    };
+  }
   if (inp) {
-    inp.value = match[3].replace(markerPattern, '').replace(/\s{2,}/g, ' ').trim();
+    // 🆕 原文保真：编辑框显示原始文本（含 [[dl:…]]/[[cp:…]] 等 [[]] 符号），不剥离、不折叠空白；保存时直接写回
+    inp.value = match[3];
     inp.placeholder = '输入子事件内容…';
+    setTimeout(() => inp.focus(), 0);
+  }
+};
+function stickyBlockTypeName(type) {
+  return ({ code: '代码块', table: '表格', heading: '标题', hr: '分隔线', quote: '引用', list: '列表', para: '段落' })[type] || '区块';
+}
+// 🆕 通用「最小 MD 区块」编辑（便利贴端）：编辑 notes 中 lines[start..end] 的 Markdown 原文。
+//   区间起止由主窗渲染时嵌入 onclick；⌘S／「保存」＝只落盘不关闭 · Esc 关闭；清空并保存＝删除该区块（需确认）。
+window.tlOpenEditBlockDialog = function (event, uid, start, end, type) {
+  if (event) { event.preventDefault(); event.stopPropagation(); }
+  if (!event || !event.target.closest('.md-unit-edit')) return;
+  if (addCheckSavePending) return;
+  const notes = eventNotesForKey(uid);
+  if (notes == null) { window.alert('找不到该行程，无法编辑区块'); return; }
+  const lines = notes.split('\n');
+  if (!Number.isInteger(start) || !Number.isInteger(end) || start < 0 || end >= lines.length || start > end) {
+    window.alert('该区块内容已变化，请刷新便利贴后重试');
+    return;
+  }
+  const src = lines.slice(start, end + 1).join('\n');
+  noteCheckEditTarget = null;
+  noteBlockEditTarget = { uid, start, end, type };
+  const ov = document.getElementById('addCheckOv');
+  const inp = document.getElementById('addCheckInput');
+  const copyButton = document.getElementById('copyNoteCheckButton');
+  if (ov) {
+    ov.querySelector('.ac-title').textContent = '编辑内容区块（' + stickyBlockTypeName(type) + '）';
+    ov.querySelector('.ac-hint').textContent = '直接编辑此区块的 Markdown 原文；⌘S 保存（不关闭，可继续编辑）· Esc 关闭；清空并保存＝删除该区块（会先确认）';
+    ov.classList.add('show');
+  }
+  if (copyButton) {
+    copyButton.style.display = '';
+    copyButton.onclick = async (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      if (!inp || !inp.value) { window.alert('没有可复制的内容'); return; }
+      try {
+        const result = await ipcRenderer.invoke('write-text-to-clipboard', inp.value);
+        if (!result || result.success !== true) throw new Error((result && result.error) || '写入剪贴板失败');
+        const originalText = copyButton.textContent;
+        copyButton.textContent = '已复制';
+        setTimeout(() => { if (copyButton) copyButton.textContent = originalText; }, 1200);
+      } catch (error) {
+        window.alert('复制失败：' + (error && error.message ? error.message : error));
+      }
+    };
+  }
+  const fullBtn = document.getElementById('editFullNoteFromCheckButton');
+  if (fullBtn) {
+    fullBtn.style.display = '';
+    fullBtn.onclick = (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      closeAddCheck();
+      setEditMode(true);
+    };
+  }
+  if (inp) {
+    inp.value = src;
+    inp.placeholder = '编辑此区块的 Markdown 原文…';
     setTimeout(() => inp.focus(), 0);
   }
 };
 async function confirmAddCheck() {
   const inp = document.getElementById('addCheckInput');
   if (!inp) { closeAddCheck(); return; }
+  if (noteBlockEditTarget) {
+    if (addCheckSavePending) return;
+    const target = noteBlockEditTarget;
+    const blockText = inp.value.replace(/\r\n/g, '\n');
+    const notes = eventNotesForKey(target.uid);
+    if (notes == null) { window.alert('找不到该行程，无法保存区块'); return; }
+    const lines = notes.split('\n');
+    if (target.start < 0 || target.end >= lines.length) {
+      window.alert('该区块内容已变化，请刷新便利贴后重试'); return;
+    }
+    const span = target.end - target.start + 1;
+    if (!blockText.trim()) {
+      if (!window.confirm('区块内容为空＝删除该区块。\n\n确定要删除吗？删除后将直接写回并存档，无法从本窗口恢复（可先按「复制」留存原文）。')) return;
+      lines.splice(target.start, span);
+      if (await saveStickyNoteContent(lines.join('\n'), '删除区块', target.uid)) closeEditNoteCheck();
+      return;
+    }
+    const newLines = blockText.split('\n');
+    lines.splice(target.start, span, ...newLines);
+    // 更新区间为新区块，便于继续 ⌘S 覆写同一段
+    noteBlockEditTarget = { uid: target.uid, start: target.start, end: target.start + newLines.length - 1, type: target.type };
+    if (await saveStickyNoteContent(lines.join('\n'), '保存区块', target.uid)) showStickyRefreshFeedback('已保存（按 Esc 关闭）');
+    return;
+  }
   if (noteCheckEditTarget) {
     if (addCheckSavePending) return;
     const target = noteCheckEditTarget;
     const text = inp.value.replace(/\r\n/g, '\n').replace(/\n/g, ' ').trim();
-    if (!text) { window.alert('子事件内容不可为空'); return; }
+    // 🆕 内容清空＝删除该子事件：必须先经使用者确认（拒绝则留在编辑框，可先「复制」留存原文）
+    if (!text && !window.confirm('子事件内容为空＝删除该子事件。\n\n确定要删除吗？删除后将直接写回并存档，无法从本窗口恢复（可先按「复制」留存原文）。')) return;
     const notes = eventNotesForKey(target.uid);
     if (notes == null) {
       window.alert('找不到该行程，无法保存子事件');
@@ -660,9 +869,16 @@ async function confirmAddCheck() {
       window.alert('该子事件内容已变化，请刷新便利贴后重试');
       return;
     }
-    const suffix = target.markers.length ? ' ' + target.markers.join(' ') : '';
-    lines[target.line] = match[1] + '- [' + match[2] + '] ' + text + suffix;
-    if (await saveStickyNoteContent(lines.join('\n'), '保存子事件', target.uid)) closeEditNoteCheck();
+    if (!text) {
+      // 🆕 空内容＝删除：移除该行后写回并存档（上方 confirm 已获使用者同意）
+      lines.splice(target.line, 1);
+      if (await saveStickyNoteContent(lines.join('\n'), '删除子事件', target.uid)) closeEditNoteCheck();
+      return;
+    }
+    // 🆕 原文保真：编辑框已是完整原文（含 [[]] 标记），保存时直接写回，不再额外补/删标记
+    lines[target.line] = match[1] + '- [' + match[2] + '] ' + text;
+    // 🆕 编辑模式：⌘S／「保存」＝只落盘不离开视窗（离开视窗只用 Esc）
+    if (await saveStickyNoteContent(lines.join('\n'), '保存子事件', target.uid)) showStickyRefreshFeedback('已保存（按 Esc 关闭）');
     return;
   }
   const lines = inp.value.replace(/\r\n/g, '\n').split('\n').map((l) => l.trim()).filter(Boolean);
@@ -676,6 +892,167 @@ async function confirmAddCheck() {
   }
   const notes = (ev.notes ? String(ev.notes).replace(/\s*$/, '') + '\n' : '') + md + '\n';
   if (await saveStickyNoteContent(notes, '保存子事件')) closeAddCheck();
+}
+
+// ===== 🆕 便利贴「发邮件」：菜单 📧 → 收件人浮层 → 主进程转邮件插件 sendEmailByPlugin =====
+// 正文用便利贴当前渲染的 HTML（与画面看到的一致）；主题取行程标题。
+// 分体 / 翻页模式通用：KEY 始终指向「当前这张」（翻页时 renderFlipPage 已重写 KEY）。
+function currentStickyEvent() {
+  return parseEvents(readMd()).find(e => e.key === KEY) || null;
+}
+function buildStickyEmailPayload(ev) {
+  // 标题优先取画面渲染后的纯文本（# 前缀、[[链接]]、<MARK> 等都已处理好），
+  // 拿不到再退回 parseEvents 的原始 title（可能是 '# 如何让[[中信金]]…' 这种 markdown 源码）
+  const titleEl = document.getElementById('title');
+  const renderedTitle = titleEl ? (titleEl.textContent || '').replace(/\s+/g, ' ').trim() : '';
+  const title = renderedTitle
+    || (ev && ev.title ? String(ev.title) : '').replace(/\s+/g, ' ').trim()
+    || '(未命名便利贴)';
+  const metaBits = [];
+  if (ev && ev.date) {
+    metaBits.push('📅 ' + ev.date + (ev.endDate && ev.endDate !== ev.date ? ' – ' + ev.endDate : ''));
+  }
+  if (ev && ev.done) metaBits.push('✅ 已完成');
+  const tagLabels = ((ev && ev.tags) || []).map(tagLabelOf).filter(Boolean);
+  if (tagLabels.length) metaBits.push('🏷️ ' + tagLabels.map(t => '#' + t).join(' '));
+  const header = '<div style="background:#f8fafc;border-left:4px solid #667eea;padding:12px 16px;border-radius:0 8px 8px 0;margin-bottom:16px;">'
+    + '<div style="font-size:14px;font-weight:600;color:#1e293b;margin-bottom:6px;">便利贴</div>'
+    + (metaBits.length
+        ? '<div style="font-size:12px;color:#475569;line-height:1.8;">' + metaBits.map(escapeHtml).join('<br>') + '</div>'
+        : '')
+    + '</div>';
+  // 正文优先取当前渲染结果（含表格 / checkbox / 清单）；拿不到时退回纯文本 notes
+  const bodyEl = document.getElementById('body');
+  let bodyHtml = bodyEl ? bodyEl.innerHTML : '';
+  if (!String(bodyHtml).trim() && ev && ev.notes) {
+    bodyHtml = '<pre style="background:#f8fafc;padding:12px 16px;border-radius:8px;font-size:13px;line-height:1.6;color:#1e293b;white-space:pre-wrap;word-break:break-all;">'
+      + escapeHtml(ev.notes) + '</pre>';
+  }
+  const html = '<div style="font-family:-apple-system,BlinkMacSystemFont,\'Segoe UI\',Roboto,sans-serif;line-height:1.7;color:#1e293b;max-width:760px;">'
+    + header
+    + '<h3 style="margin:0 0 10px;font-size:15px;color:#1e293b;">' + escapeHtml(title) + '</h3>'
+    + bodyHtml
+    + '</div>';
+  return { subject: '[便利贴] ' + title, body: html };
+}
+// 🆕 收件人历史：从主进程读取 / 追加（去重、限制数量、统一小写由主进程维护）
+async function loadStickyEmailRecipients() {
+  try { return await ipcRenderer.invoke('email-recipients-get') || []; } catch (e) { return []; }
+}
+async function addStickyEmailRecipients(recipients) {
+  try { await ipcRenderer.invoke('email-recipients-add', recipients); } catch (e) {}
+}
+// 🆕 收件人下拉：按当前正在输入的 token 过滤历史；点选后替换该 token
+async function renderEmailRecipientDropdown() {
+  const input = document.getElementById('emailRecipientInput');
+  const dropdown = document.getElementById('emailRecipientDropdown');
+  if (!input || !dropdown) return;
+  const all = await loadStickyEmailRecipients();
+  const raw = input.value || '';
+  const parts = raw.split(/[,，;]/);
+  const currentToken = (parts[parts.length - 1] || '').trim().toLowerCase();
+  const matchesToken = (email) => {
+    const e = email.toLowerCase();
+    if (!currentToken) return true;
+    if (e.startsWith(currentToken)) return true;
+    const local = e.split('@')[0] || '';
+    if (local.startsWith(currentToken)) return true;
+    if (currentToken.length >= 2) {
+      const words = e.split(/[@.\-_]+/);
+      if (words.some(w => w.startsWith(currentToken))) return true;
+    }
+    return false;
+  };
+  const items = currentToken ? all.filter(matchesToken) : all.slice();
+  dropdown.innerHTML = '';
+  if (!items.length) {
+    dropdown.innerHTML = '<div class="erd-empty">' + (all.length ? '无匹配收件人' : '暂无历史收件人') + '</div>';
+    return;
+  }
+  items.forEach((email) => {
+    const div = document.createElement('div');
+    div.className = 'erd-item';
+    div.textContent = email;
+    div.addEventListener('mousedown', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      insertEmailRecipient(email);
+      renderEmailRecipientDropdown();
+    });
+    dropdown.appendChild(div);
+  });
+}
+function insertEmailRecipient(email) {
+  const input = document.getElementById('emailRecipientInput');
+  if (!input) return;
+  const parts = (input.value || '').split(/[,，;]/);
+  parts.pop();
+  const kept = parts.map(s => s.trim()).filter(Boolean);
+  kept.push(email);
+  input.value = kept.join(', ');
+  setTimeout(() => { input.focus(); const len = input.value.length; input.setSelectionRange(len, len); }, 0);
+}
+async function showEmailRecipientDropdown() { const d = document.getElementById('emailRecipientDropdown'); if (d) { await renderEmailRecipientDropdown(); d.classList.add('show'); } }
+function hideEmailRecipientDropdown() { const d = document.getElementById('emailRecipientDropdown'); if (d) d.classList.remove('show'); }
+function openStickyEmailDialog() {
+  const ov = document.getElementById('emailOv');
+  const input = document.getElementById('emailRecipientInput');
+  if (!ov || !input) return;
+  const ev = currentStickyEvent();
+  const titleEl = document.getElementById('emailNoteTitle');
+  if (titleEl) {
+    titleEl.textContent = ev && ev.title
+      ? '便利贴：' + String(ev.title).replace(/\s+/g, ' ').trim()
+      : '(找不到该便利贴)';
+  }
+  input.value = '';
+  ov.classList.add('show');
+  input.focus();
+  input.select();
+  showEmailRecipientDropdown();
+}
+function closeStickyEmailDialog() {
+  const ov = document.getElementById('emailOv');
+  if (ov) ov.classList.remove('show');
+  hideEmailRecipientDropdown();
+}
+async function sendStickyEmail() {
+  const input = document.getElementById('emailRecipientInput');
+  if (!input) return;
+  const recipients = String(input.value || '').split(/[,，;]/).map(s => s.trim()).filter(Boolean);
+  if (recipients.length === 0) {
+    showStickyRefreshFeedback('请填写收件人邮箱', true);
+    input.focus();
+    return;
+  }
+  // 与邮件插件 UI 同一格式校验；有不合格项就留在浮层里改，不直接丢给服务端
+  const bad = recipients.filter(r => !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(r));
+  if (bad.length) {
+    showStickyRefreshFeedback('收件人格式不正确：' + bad.join('、'), true);
+    input.focus();
+    return;
+  }
+  const ev = currentStickyEvent();
+  if (!ev) {
+    showStickyRefreshFeedback('找不到该便利贴，无法发送', true);
+    return;
+  }
+  const { subject, body } = buildStickyEmailPayload(ev);
+  closeStickyEmailDialog();
+  showStickyRefreshFeedback('📧 正在发送邮件…');
+  try {
+    // 主进程负责找到邮件插件 webview 并调 window.sendEmailByPlugin（见 windows.js）
+    const result = await ipcRenderer.invoke('sticky-note-send-email', { recipients, subject, body });
+    if (result && result.success) {
+      showStickyRefreshFeedback('📧 邮件已发送给 ' + recipients.join(', '));
+      await addStickyEmailRecipients(recipients);
+    } else {
+      showStickyRefreshFeedback('📧 邮件发送失败：' + ((result && result.message) || '未知错误'), true);
+    }
+  } catch (error) {
+    console.error('[StickyNote] 发送邮件失败:', error);
+    showStickyRefreshFeedback('📧 邮件发送失败：' + ((error && error.message) || error), true);
+  }
 }
 
 // 🆕 刷新内容：接收主程式推来的最新渲染结果（arg.{html,titleHtml}），同步标题/正文/日期/标签
@@ -739,7 +1116,8 @@ function contrastRatio(a, b) {
 }
 function updateMenuTheme() {
   const menu = document.getElementById('menu');
-  if (!menu) return;
+  const note = document.getElementById('note');
+  if (!menu && !note) return;
   const cardBg = parseHexRgb(state.color);
   const text = parseHexRgb(state.fontColor || STICKY_DEF_FG);
   const darkSurface = [32, 35, 42], lightSurface = [246, 245, 239];
@@ -755,10 +1133,16 @@ function updateMenuTheme() {
     low = high;
   }
   const surface = blendRgb(cardBg, surfaceTarget, low);
-  menu.style.setProperty('--menu-bg', rgbCss(surface));
-  menu.style.setProperty('--menu-muted', rgbCss(blendRgb(text, surface, 0.2)));
-  menu.style.setProperty('--menu-divider', rgbCss(blendRgb(text, surface, 0.72)));
-  menu.style.setProperty('--menu-status-open', relativeLuminance(surface) < 0.25 ? '#4ade80' : '#15803d');
+  const surfaceCss = rgbCss(surface);
+  // --menu-bg 同时挂到 #note（#menu 的祖先）：术语胶囊（位于 #body 内）与刷新反馈浮层才能继承到
+  // 这套与便利贴底色协调、且与字色保证 ≥4.5 对比的配色（原本只设在 #menu，胶囊取不到）。
+  if (note) note.style.setProperty('--menu-bg', surfaceCss);
+  if (menu) {
+    menu.style.setProperty('--menu-bg', surfaceCss);
+    menu.style.setProperty('--menu-muted', rgbCss(blendRgb(text, surface, 0.2)));
+    menu.style.setProperty('--menu-divider', rgbCss(blendRgb(text, surface, 0.72)));
+    menu.style.setProperty('--menu-status-open', relativeLuminance(surface) < 0.25 ? '#4ade80' : '#15803d');
+  }
 }
 
 function applyColor() {
@@ -768,6 +1152,9 @@ function applyColor() {
   // ＋☐ 浮层盒与便利贴同背景色（取实色 tint(…,100)，不随透明度变淡，保证浮层可读）；文字色经 --note-fg 继承
   const acBox = document.getElementById('addCheckBox');
   if (acBox) acBox.style.background = tint(state.color, 100);
+  // 📧 发邮件浮层盒同理（与 ＋☐ 浮层共用 addcheck-box 样式）
+  const emailBox = document.getElementById('emailBox');
+  if (emailBox) emailBox.style.background = tint(state.color, 100);
   updateMenuTheme();
   syncCustomSwatchActive();
 }
@@ -820,6 +1207,9 @@ function applyContentFont() {
   }
   const editArea = document.getElementById('editArea');
   if (editArea) editArea.style.fontSize = fontSize;
+  // 🆕 加入/编辑子事件编辑框（.addcheck-box textarea）字号与便利贴正文一致（打开时即同步，缩放时实时跟随）
+  const addCheckInput = document.getElementById('addCheckInput');
+  if (addCheckInput) addCheckInput.style.fontSize = fontSize;
 }
 // 同步「字体颜色 / 字重」选中态（菜单内色板 + 分段按钮）
 function syncTextAppearance() {
@@ -1151,7 +1541,7 @@ async function loadStickyMenuNotes() {
 // 渲染第 i 张：切换 KEY/IDX（内容＋颜色/透明度按该便利贴自身状态），翻页窗几何保持不变
 async function renderFlipPage(i) {
   if (flipTotal === 0) return;
-  i = Math.max(0, Math.min(flipTotal - 1, i));
+  i = ((i % flipTotal) + flipTotal) % flipTotal; // 循环换页：越界自动首尾回绕（首⇄尾）
   flipIndex = i;
   // 翻页：退出编辑模式（每页各自编辑，翻页即切到该页的渲染视图，避免 textarea 内容错位）
   // ⚠️ 有未保存改动时不静默丢弃：先确认（确定＝保存并翻页；取消＝中止本次翻页）
@@ -1163,6 +1553,7 @@ async function renderFlipPage(i) {
   editMode = false;
   editDirty = false;
   syncEditSeg();
+  showFlipPageToast('第 ' + (flipIndex + 1) + ' / ' + flipTotal + ' 张');
   const noteEl0 = document.getElementById('note');
   if (noteEl0) noteEl0.classList.remove('editing');
   const eaEl0 = document.getElementById('editArea');
@@ -1227,12 +1618,25 @@ function updateFlipEdgeHandles() {
   const note = document.getElementById('note');
   const nearLeft = flipPointerX !== null && flipPointerX <= FLIP_EDGE_TRIGGER_PX;
   const nearRight = flipPointerX !== null && note.clientWidth - flipPointerX <= FLIP_EDGE_TRIGGER_PX;
-  const previousPage = flipIndex;
-  const nextPage = flipIndex + 2;
-  prev.title = '上一张 · page ' + previousPage + ' of ' + flipTotal;
-  next.title = '下一张 · page ' + nextPage + ' of ' + flipTotal;
-  prev.classList.toggle('visible', flipIndex > 0 && nearLeft);
-  next.classList.toggle('visible', flipIndex < flipTotal - 1 && nearRight);
+  // 循环换页：首尾相连，左右边把手在「多于 1 张」时始终可点；仅 1 张则不显示
+  const cyclic = flipTotal > 1;
+  const prevPage = cyclic ? ((flipIndex - 1 + flipTotal) % flipTotal) + 1 : 0;
+  const nextPage = cyclic ? ((flipIndex + 1) % flipTotal) + 1 : 0;
+  prev.title = '前一笔 · 第 ' + prevPage + ' / ' + flipTotal + ' 张（循环）';
+  next.title = '后一笔 · 第 ' + nextPage + ' / ' + flipTotal + ' 张（循环）';
+  prev.classList.toggle('visible', cyclic && nearLeft);
+  next.classList.toggle('visible', cyclic && nearRight);
+}
+
+// 翻页页次讯息框：画面正中央、透明度 70%、约 2cm 大字、1 秒自动关闭（连翻时重置计时）
+let flipPageToastTimer = null;
+function showFlipPageToast(text) {
+  const el = document.getElementById('flipPageToast');
+  if (!el) return;
+  el.textContent = text;
+  el.classList.add('show');
+  if (flipPageToastTimer) clearTimeout(flipPageToastTimer);
+  flipPageToastTimer = setTimeout(() => { el.classList.remove('show'); }, 1000);
 }
 
 function bindFlipNav() {
@@ -1240,17 +1644,17 @@ function bindFlipNav() {
   const prevEdge = document.getElementById('flipPrevEdge');
   const nextEdge = document.getElementById('flipNextEdge');
   if (note) {
+    // 翻页左右边的显隐统一交由 setupControls 的「边框带」逻辑驱动（含进入即显 / 自动隐藏），
+    // 这里只同步指针横坐标，避免每次移动都重显而破坏自动隐藏语义
     note.addEventListener('pointermove', (e) => {
       flipPointerX = e.clientX;
-      updateFlipEdgeHandles();
     });
     note.addEventListener('pointerleave', () => {
       flipPointerX = null;
-      updateFlipEdgeHandles();
     });
   }
-  if (prevEdge) prevEdge.onclick = (e) => { e.stopPropagation(); renderFlipPage(flipIndex - 1); };
-  if (nextEdge) nextEdge.onclick = (e) => { e.stopPropagation(); renderFlipPage(flipIndex + 1); };
+  if (prevEdge) prevEdge.onclick = (e) => { e.stopPropagation(); renderFlipPage(flipIndex - 1); armEdgeHandlesAutoHide(); };
+  if (nextEdge) nextEdge.onclick = (e) => { e.stopPropagation(); renderFlipPage(flipIndex + 1); armEdgeHandlesAutoHide(); };
   window.addEventListener('keydown', (e) => {
     // 🆕 编辑模式、或焦点落在可输入控件时：所有按键交给文本编辑
     //    （← → ↑ ↓、空白、中英/输入法切换、复制粘贴等组合键），绝不抢去翻页

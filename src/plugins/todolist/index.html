@@ -2038,10 +2038,15 @@
     .ev-addcheck-btn:hover { background: rgba(245,197,24,.14); color: #f5c518; border-color: #f5c518; }
     .ev-undone-filter-btn { margin-left: 4px; padding: 1px 5px; font-size: 12px; line-height: 1.6; border: 1px solid #f5c518; border-radius: 999px; background: transparent; color: #f5c518; cursor: pointer; vertical-align: middle; }
     .ev-undone-filter-btn:hover, .ev-undone-filter-btn.active { background: rgba(245,197,24,.14); color: #f5c518; border-color: #f5c518; }
-    .ev-sticky-flag { flex: 0 0 auto; display: inline-flex; align-items: center; margin: 0 0 0 4px; cursor: default; opacity: .92; }
+    .ev-sticky-flag { flex: 0 0 auto; display: inline-flex; align-items: center; margin: 0 0 0 4px; cursor: pointer; opacity: .92; background: transparent; border: 1px solid transparent; border-radius: 4px; padding: 1px 3px; color: inherit; line-height: 1; }
+    .ev-sticky-flag:hover { opacity: 1; background: rgba(245,197,24,.14); border-color: #f5c518; }
     .ev-tag-view { display: inline-block; padding: 3px 12px; border-radius: 999px; background: #7C3AED; border: 1px solid #8B5CF6; color: #fff; font-size: 12px; line-height: 1.35; font-weight: 600; white-space: nowrap; }
     .ev-meta { margin-top: 2px; font-size: 12px; color: var(--ev-muted); }
     .ev-notes { margin-top: 4px; font-size: 12px; color: var(--ev-muted); white-space: normal; word-break: break-word; }
+    .ev-notes h1 { font-size: 1.8em; font-weight: 700; margin: .6em 0 .3em; }
+    .ev-notes h2 { font-size: 1.5em; font-weight: 700; margin: .55em 0 .3em; }
+    .ev-notes h3 { font-size: 1.3em; font-weight: 600; margin: .5em 0 .25em; }
+    .ev-notes h4, .ev-notes h5, .ev-notes h6 { font-size: 1.15em; font-weight: 600; margin: .45em 0 .2em; }
     .ev-notes p { margin: 0 0 0.35em 0; }
     .ev-notes p:last-child { margin-bottom: 0; }
     .ev-notes hr, .ev-block .notes hr, .ev-tip-notes hr { border: 0; border-top: 1px solid var(--ev-border); height: 0; margin: .45em 0; }
@@ -2050,6 +2055,25 @@
     .ev-notes pre { margin: 0.35em 0; overflow-x: auto; }
     .ev-notes code { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; background: rgba(127,127,127,0.12); padding: 0.05em 0.3em; border-radius: 4px; font-size: 0.92em; }
     .ev-notes blockquote { margin: 0.35em 0; padding-left: 0.75em; border-left: 3px solid var(--ev-border); color: var(--ev-muted); }
+    /* 🆕 術語（term）渲染：立體金膠囊(term) ＋ 內嵌小膠囊(領域) ＋ 釋義 tooltip（hover）。
+       固定深字＋金漸層，深淺主題都清晰；領域小膠囊半透明白底嵌於大膠囊內 */
+    .tl-term { display: inline; }
+    .tl-term-cap {
+      display: inline-flex; align-items: center; gap: .3em;
+      margin-right: .3em; padding: 0 .55em;
+      border-radius: 999px; line-height: 1.7; font-size: .9em; font-weight: 600;
+      white-space: nowrap; cursor: help;
+      color: #4a3b12;
+      background: linear-gradient(180deg, #f4dc8e 0%, #e6bd52 55%, #d0a23a 100%);
+      border: 1px solid #b8893a;
+      box-shadow: 0 1px 2px rgba(0,0,0,.28), inset 0 1px 0 rgba(255,255,255,.65);
+    }
+    .tl-term-domain {
+      display: inline-block; margin-left: -.05em; padding: 0 .4em;
+      font-size: .76em; font-weight: 600; line-height: 1.6;
+      border-radius: 999px; color: #4a3b12;
+      background: rgba(255,255,255,.5); border: 1px solid rgba(184,137,58,.65);
+    }
     /* 📝 備註表格网格线：備註经 renderMarkdown 可产出 Markdown 表格（如「所有者/工具/账号/用量」），
        但 .ev-notes 此前没有任何表格边框规则 → 线条全无。浅色用 --ev-border；深色与「未勾选 checkbox 框」同款金黄 #fbbf24 */
     .ev-notes table, .ev-block .notes table, .ev-tip-notes table { border-collapse: collapse; margin: .35em 0; }
@@ -2075,6 +2099,10 @@
     .ev-tip .ev-tip-meta { font-size: 13px; color: var(--ev-muted); }
     .ev-tip .ev-tip-tags { margin-top: 4px; display: flex; flex-wrap: wrap; gap: 4px; }
     .ev-tip .ev-tip-notes { margin-top: 6px; font-size: 13px; color: var(--ev-text); white-space: normal; word-break: break-word; max-height: 420px; overflow: hidden; }
+    .ev-tip .ev-tip-notes h1 { font-size: 1.8em; font-weight: 700; margin: .5em 0 .25em; }
+    .ev-tip .ev-tip-notes h2 { font-size: 1.5em; font-weight: 700; margin: .45em 0 .25em; }
+    .ev-tip .ev-tip-notes h3 { font-size: 1.3em; font-weight: 600; margin: .4em 0 .2em; }
+    .ev-tip .ev-tip-notes h4, .ev-tip .ev-tip-notes h5, .ev-tip .ev-tip-notes h6 { font-size: 1.15em; font-weight: 600; margin: .35em 0 .15em; }
     .ev-tip .ev-tip-notes p { margin: 0 0 0.35em 0; }
     .ev-tip .ev-tip-notes p:last-child { margin-bottom: 0; }
     .ev-tip .ev-tip-notes ul, .ev-tip .ev-tip-notes ol { margin: 0.25em 0; padding-left: 1.5em; }
@@ -2248,6 +2276,10 @@
     .ev-block .tm { font-size: 10px; opacity: 0.85; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     /* 備註：只在夠高的方塊裡由 JS 輸出；line-clamp 限 6 行，超過由 .ev-block 的 overflow:hidden 裁掉 */
     .ev-block .notes { margin-top: 2px; font-size: 11px; line-height: 1.35; opacity: 0.95; white-space: normal; word-break: break-word; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 6; -webkit-box-orient: vertical; }
+    .ev-block .notes h1 { font-size: 1.8em; font-weight: 700; margin: .4em 0 .2em; }
+    .ev-block .notes h2 { font-size: 1.5em; font-weight: 700; margin: .35em 0 .2em; }
+    .ev-block .notes h3 { font-size: 1.3em; font-weight: 600; margin: .3em 0 .15em; }
+    .ev-block .notes h4, .ev-block .notes h5, .ev-block .notes h6 { font-size: 1.15em; font-weight: 600; margin: .25em 0 .15em; }
     .ev-block .notes p { margin: 0 0 0.25em 0; }
     .ev-block .notes p:last-child { margin-bottom: 0; }
     .ev-block .notes ul, .ev-block .notes ol { margin: 0.2em 0; padding-left: 1.4em; }
@@ -2265,6 +2297,14 @@
     .ev-item.only-undone-checks .ev-md-check.done { display: none !important; }
     .ev-notes .ev-md-check + br,
     .ev-notes br:has(+ .ev-md-check) { display: none !important; }
+    /* 🆕「最小 MD 表达单元」区块：非 checkbox 内容（表格/段落/标题/引用/代码/列表/分隔线）
+       左侧常驻一个编辑小圆点（✎），点击编辑该区块的 Markdown 原文 */
+    .md-unit { position: relative; padding-left: 20px; margin: 0 0 0.45em 0; }
+    .md-unit:last-child { margin-bottom: 0; }
+    .md-unit > *:first-child { margin-top: 0; }
+    .md-unit > *:last-child { margin-bottom: 0; }
+    .md-unit-edit { position: absolute; left: 0; top: 0.15em; display: inline-flex; width: 14px; height: 14px; padding: 0; align-items: center; justify-content: center; border: 0; border-radius: 50%; background: var(--ev-primary); color: #fff; font-size: 9px; line-height: 1; cursor: pointer; opacity: .78; }
+    .md-unit-edit:hover, .md-unit-edit:focus-visible { opacity: 1; outline: 2px solid var(--ev-primary); outline-offset: 1px; }
     .ev-block.done { opacity: 0.55; }
     /* 🌙 黑夜模式：文字統一白色，設定的顏色只作為事件「外框」（邊框）顏色，背景改用深色面板。
        白天模式不變（顏色＝背景色塊）。跨天色條（.ev-chip.span）同理——顏色經由 --ev-color 傳入。 */
@@ -2426,6 +2466,33 @@
     .tl-include-item .fname { color: var(--ev-text); font-family: 'SF Mono', 'Monaco', 'Consolas', monospace; word-break: break-all; flex: 1 1 auto; }
     .tl-include-item .fsize { color: var(--ev-muted); font-size: 12px; white-space: nowrap; }
     .tl-include-empty { padding: 24px; color: var(--ev-muted); font-size: 13px; text-align: center; }
+    /* ===== 📖 Glossary 术语表弹层：行＝term 胶囊（含領域小胶囊）＋釋義＋出现次数；胶囊复用 .tl-term-cap ===== */
+    .tl-gloss-list { padding: 2px 0; }
+    .tl-gloss-row { display: flex; flex-direction: column; gap: 6px; padding: 8px 10px; border-bottom: 1px solid var(--ev-border, #334155); }
+    .tl-gloss-row:last-child { border-bottom: none; }
+    .tl-gloss-row-head { display: flex; align-items: baseline; gap: 10px; }
+    .tl-gloss-row .tl-term { flex: 0 0 auto; max-width: 46%; }
+    .tl-gloss-row .tl-term-cap { max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+    .tl-gloss-def { color: var(--ev-text); font-size: 13px; line-height: 1.5; flex: 1 1 auto; word-break: break-word; min-width: 0; }
+    .tl-gloss-nodef { color: var(--ev-muted); font-style: italic; }
+    .tl-gloss-count { color: var(--ev-muted); font-size: 11px; white-space: nowrap; flex: 0 0 auto; }
+    .tl-gloss-empty { padding: 24px; color: var(--ev-muted); font-size: 13px; text-align: center; line-height: 1.8; }
+    /* 🆕 来源事件 chips：每个 chip 可跳转到主画面对应事件 */
+    .tl-gloss-srcs { display: flex; flex-wrap: wrap; gap: 6px 8px; align-items: center; padding-left: 2px; }
+    .tl-gloss-srcs-label { color: var(--ev-muted); font-size: 11px; flex: 0 0 auto; }
+    .tl-gloss-src {
+      display: inline-flex; align-items: center; gap: 4px;
+      max-width: 100%; box-sizing: border-box;
+      padding: 2px 8px; border: 1px solid var(--ev-border, #334155); border-radius: 999px;
+      background: var(--ev-chip-bg, rgba(124,58,237,.08)); color: var(--ev-text);
+      font-size: 12px; line-height: 1.5; cursor: pointer; white-space: nowrap;
+      text-overflow: ellipsis; overflow: hidden;
+    }
+    .tl-gloss-src:hover { border-color: var(--primary, #7c3aed); background: var(--ev-chip-bg-hover, rgba(124,58,237,.16)); }
+    .tl-gloss-src-date { color: var(--ev-muted); font-size: 10px; flex: 0 0 auto; }
+    /* 来源事件 chip 内标题走 MD 行内渲染（与主画面事件行同管线）：中性化块级元素，保持胶囊内联观感 */
+    .tl-gloss-src p, .tl-gloss-src h1, .tl-gloss-src h2, .tl-gloss-src h3, .tl-gloss-src h4, .tl-gloss-src h5, .tl-gloss-src h6 { display: inline; margin: 0; padding: 0; font-size: inherit; font-weight: inherit; }
+    .tl-gloss-src a { color: inherit; }
     .tl-stats-summary { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 14px; }
     .tl-stats-card { flex: 1 1 220px; min-width: 200px; border: 1px solid var(--ev-border); border-radius: 10px; padding: 10px 12px; background: var(--ev-chip-bg, rgba(124,58,237,.06)); }
     .tl-stats-card h4 { margin: 0 0 6px; font-size: 13px; font-weight: 600; color: var(--ev-text); }
@@ -4920,6 +4987,7 @@
                 <div class="ev-toolbar-combo-option"><input type="checkbox" data-toolbar-expose="sticky" checked aria-label="曝露便利贴管理按钮"><button type="button" class="ev-toolbar-combo-action" data-toolbar-action="sticky">便利贴管理</button></div>
                 <div class="ev-toolbar-combo-option"><input type="checkbox" data-toolbar-expose="stats" checked aria-label="曝露事件统计按钮"><button type="button" class="ev-toolbar-combo-action" data-toolbar-action="stats">事件统计</button></div>
                 <div class="ev-toolbar-combo-option"><input type="checkbox" data-toolbar-expose="includes" checked aria-label="曝露 Include 加载清单按钮"><button type="button" class="ev-toolbar-combo-action" data-toolbar-action="includes">Include 加载清单</button></div>
+                <div class="ev-toolbar-combo-option"><input type="checkbox" data-toolbar-expose="glossary" checked aria-label="曝露 Glossary 术语表按钮"><button type="button" class="ev-toolbar-combo-action" data-toolbar-action="glossary">Glossary 术语表</button></div>
               </div>
             </div>
             <button type="button" id="tlCalLayoutBtn" class="btn ev-stats-btn" title="切换日历与行程明细的排布：上下 / 左右" onclick="tlToggleCalLayout()">▤</button>
@@ -4941,6 +5009,7 @@
             </span>
             <button type="button" id="tlEvStatsBtn" class="btn ev-stats-btn" title="事件统计：主事件与备注中的子事件，按标签·完成状态统计">📊</button>
             <button type="button" id="tlIncludeListBtn" class="btn ev-stats-btn" title="Include 加载清单：列出同目录被引入的 calendar-*.md 文件及大小" onclick="tlOpenIncludeList()">📄</button>
+            <button type="button" id="tlGlossaryBtn" class="btn ev-stats-btn" title="Glossary 术语表：收集全部行程（标题＋备注）中的 [[term]]，同名只显示最完整的一条，按术语排序" onclick="tlOpenGlossary()">📖</button>
             <span class="ev-toolbar-flex"></span>
             <span class="ev-hint-text">编辑后按「保存」写回 calendar.md</span>
             <button type="button" class="ev-add-btn" id="tlEvAddBtn">＋ 新增行程</button>
@@ -5293,6 +5362,18 @@
       </div>
       <div class="tl-ev-stats-sub">勾选即加载、取消即释放（立即生效并保存到 calendar.md，下次启动按此加载）</div>
       <div id="tlIncludeListBody" class="tl-ev-stats-body tl-include-list"></div>
+    </div>
+  </div>
+
+  <!-- 📖 Glossary 术语表（calendar.md 专用）：收集全部行程中的 [[term]]，同名只取最完整一条，按术语排序 -->
+  <div id="tlGlossaryOverlay" class="tl-ev-form-overlay" style="display:none" onclick="if(event.target===event.currentTarget) tlCloseGlossary()">
+    <div class="tl-ev-form-box tl-ev-stats-box">
+      <div class="tl-ev-stats-header">
+        <div class="tl-ev-stats-title">📖 Glossary 术语表<span class="tl-ev-stats-file" id="tlGlossaryFile"></span></div>
+        <button type="button" class="tl-ev-stats-close" onclick="tlCloseGlossary()" aria-label="关闭">✕</button>
+      </div>
+      <div class="tl-ev-stats-sub">收集全部行程（标题与备注）中的 <code>[[term:釋義:領域]]</code>（釋義與領域可省略）；同名术语只显示最完整的一条，按术语排序，悬停胶囊可看完整釋義</div>
+      <div id="tlGlossaryBody" class="tl-ev-stats-body tl-gloss-list"></div>
     </div>
   </div>
 
@@ -6786,7 +6867,24 @@
       }
     }
 
-    // 🆕 切换显示模式（分体显示 / 翻页显示）：记忆到 localStorage；若正开启则按新模式重开
+    // 🆕 从日程事件行点击便利贴图标 → 跳转到便利贴视窗的对应页面（分体/翻页模式自动适配）
+    async function tlFocusStickyNote(uid) {
+      if (!window.electronAPI || !window.electronAPI.invoke) return;
+      const ev = tlCalEvents.find((e) => e.uid === uid);
+      if (!ev || !ev.sticky) return;
+      const key = ev.uid;
+      const idx = 0;
+      if (!tlStickyNotesOpen) {
+        await tlOpenStickyNotes();
+        if (!tlStickyNotesOpen) return;
+      }
+      try {
+        const r = await window.electronAPI.invoke('focus-sticky-note', { key, idx });
+        if (r && !r.success && typeof showToast === 'function') showToast('未找到对应的便利贴窗口', 'warning');
+      } catch (e) { console.warn('[TodoList] 跳转便利贴失败:', e); }
+    }
+
+    //  切换显示模式（分体显示 / 翻页显示）：记忆到 localStorage；若正开启则按新模式重开
     async function tlSetStickyMode(mode) {
       if (mode !== 'split' && mode !== 'flip') return;
       tlStickyMode = mode;
@@ -6913,6 +7011,51 @@
     }
     if (window.electronAPI && typeof window.electronAPI.onStickyOpenEvent === 'function') {
       window.electronAPI.onStickyOpenEvent(function (p) { tlOnStickyOpenEvent(p); });
+    }
+    // 🆕 便利贴菜单「滚动」：唤起主程式后滚动定位到该行程（不打开编辑框）
+    //    机制同「今天」按钮：游标/选中日/列表锚点设到该行程日期 → 各模式渲染后自动滚到该日期
+    //    （年→该日期所在月份卡片；月→该日期格；列表/明细→该日期分组；日/周→该日网格）；
+    //    渲染落地后再精定位——事件行已渲染（列表/明细，[data-uid]）→ 滚到事件行＋金色闪烁；
+    //    年/月网格无事件行 → 退而闪日期格（滚动已由 pending 标志完成）
+    function tlOnStickyScrollToEvent(payload) {
+      const key = payload && payload.key;
+      if (!key) return;
+      tlCalEvents = (typeof tlAllEvents === 'function')
+        ? tlAllEvents(document.getElementById('taskText').value)
+        : tlCalEvents;
+      const uid = (typeof tlFindEventUidByKey === 'function') ? tlFindEventUidByKey(key) : null;
+      if (!uid) { if (typeof showToast === 'function') showToast('找不到该行程', 'danger'); return; }
+      const ev = tlCalEvents.find(function (x) { return x.uid === uid; });
+      const date = ev ? ((typeof tlEventDisplayDate === 'function') ? tlEventDisplayDate(ev) : (ev.date || '')) : '';
+      if (!date) { if (typeof showToast === 'function') showToast('找不到该行程的日期', 'danger'); return; }
+
+      const d = new Date(date + 'T00:00:00');
+      if (!isNaN(d.getTime())) tlCalCursor = d;
+      tlCalSelected = date;
+      tlListSel = date;
+      if (tlCalMode === 'year') tlYearAutoScrollPending = true;
+      if (tlCalMode === 'month') tlMonthAutoScrollPending = true;
+      if (tlCalMode === 'list') tlListScrollAnchorPending = true;
+      else tlDetailListScrollPending = true;
+      tlRenderEventsContent();
+
+      setTimeout(function () {
+        const row = document.querySelector('[data-uid="' + uid + '"]');
+        if (row && row.offsetParent) {
+          try { if (typeof tlJumpToEventCore === 'function') tlJumpToEventCore(uid); } catch (e) { /* 高亮失败不影响滚动 */ }
+          return;
+        }
+        const cell = document.querySelector('#tlEvYearGrid .ev-year-day[data-date="' + date + '"], #tlEvMonthGrid .ev-cell[data-date="' + date + '"]');
+        if (cell && cell.offsetParent) {
+          cell.classList.remove('tl-jump-flash');
+          void cell.offsetWidth;  // 强制 reflow 重启动画
+          cell.classList.add('tl-jump-flash');
+          setTimeout(function () { cell.classList.remove('tl-jump-flash'); }, 2000);
+        }
+      }, 400);
+    }
+    if (window.electronAPI && typeof window.electronAPI.onStickyScrollToEvent === 'function') {
+      window.electronAPI.onStickyScrollToEvent(function (p) { tlOnStickyScrollToEvent(p); });
     }
     // 🆕 便利贴窗点「刷新」→ 主程式重渲染该张（或所有）便利贴并回推最新内容
     async function tlOnStickyRefreshRequest(payload) {

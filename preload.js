@@ -145,6 +145,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.on('open-sticky-event', (event, payload) => callback(payload));
   },
 
+  // 桌面便利贴「滚动定位」：主进程转发事件 key（只滚动定位，不打开编辑框）
+  onStickyScrollToEvent: (callback) => {
+    ipcRenderer.on('scroll-sticky-event', (event, payload) => callback(payload));
+  },
+
   // 桌面便利贴「手动刷新」：便利贴窗请求主程式重新渲染该张并推送最新内容
   onStickyRefreshRequest: (callback) => {
     ipcRenderer.on('sticky-note-refresh-request', (event, payload) => callback(payload));

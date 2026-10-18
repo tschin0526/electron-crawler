@@ -23,8 +23,8 @@ console.log('');
 
 const { app, BrowserWindow, ipcMain, dialog, globalShortcut } = require('electron');
 const path = require('path');
-const fs = require('fs');
 const http = require('http');
+const fs = require('fs');
 const https = require('https');
 const url = require('url');
 const zlib = require('zlib');
@@ -211,40 +211,51 @@ const {
 
 async function sendEmailViaSMTP(to, subject, content) {
   return new Promise((resolve, reject) => {
-    try {
-      const nodemailer = require('nodemailer');
+    const payload = JSON.stringify({
+      receiver_email: to,
+      subject: subject,
+      body: content
+    });
 
-      const transporter = nodemailer.createTransport({
-        host: 'smtp.mail.me.com',
-        port: 587,
-        secure: false,
-        auth: {
-          user: 'tschin0526@me.com',
-          pass: 'nkls-dqgj-rled-knab'
-        }
-      });
-
-      const mailOptions = {
-        from: '"Chin Charles" <tschin0526@me.com>',
-        to: to,
-        subject: subject,
-        text: content
-      };
-
-      console.log('[Main] 通过 SMTP 发送邮件到:', to);
-      transporter.sendMail(mailOptions, (error, info) => {
-        if (error) {
-          console.error('[Main] SMTP 发送邮件失败:', error.message);
-          reject(error);
+    const req = http.request({
+      hostname: 'localhost',
+      port: 5003,
+      path: '/send_email',
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(payload)
+      }
+    }, (res) => {
+      let raw = '';
+      res.setEncoding('utf8');
+      res.on('data', (chunk) => { raw += chunk; });
+      res.on('end', () => {
+        let result = null;
+        try { result = JSON.parse(raw); } catch (e) { result = null; }
+        if (result && result.status === 'success') {
+          console.log('[Main] 通过邮件服务发送成功:', to);
+          resolve({ success: true, message: result.message || '邮件发送成功' });
         } else {
-          console.log('[Main] 邮件发送成功, MessageID:', info.messageId);
-          resolve({ success: true, message: '邮件发送成功', messageId: info.messageId });
+          const msg = (result && result.message) ? result.message : ('邮件服务返回异常（HTTP ' + res.statusCode + '）');
+          console.error('[Main] 通过邮件服务发送失败:', msg);
+          reject(new Error(msg));
         }
       });
-    } catch (error) {
-      console.error('[Main] 发送邮件失败:', error.message);
+    });
+
+    req.setTimeout(60000, () => {
+      req.destroy();
+      reject(new Error('邮件服务无响应（http://localhost:5003/send_email）'));
+    });
+
+    req.on('error', (error) => {
+      console.error('[Main] 无法连接邮件服务:', error.message);
       reject(error);
-    }
+    });
+
+    req.write(payload);
+    req.end();
   });
 }
 

@@ -24,6 +24,7 @@ async function sendEmailAfterReply(bookmarkName, message, answer) {
       const emailMsg = `📧 邮件已通过插件发送给 ${recipientList.join(', ')}`;
       showStatus(emailMsg, 'success', undefined, true);
       addFloatHistoryEntry({ source: '系统', type: 'success', message: emailMsg, recipients: recipientList.join(', ') });
+      addEmailRecipients(recipientList);
     } else {
       const emailMsg = `📧 邮件发送失败：${result.message}`;
       showStatus(emailMsg, 'error', undefined, true);
@@ -102,6 +103,28 @@ async function sendEmailViaPlugin(recipients, subject, body) {
 }
 
 //  自定义弹窗替代 prompt（Electron 中 prompt 可能不工作）
+// 🆕 收件人历史：主进程单一存储（email-recipients.json），便利贴 / 邮件插件 / 本弹窗共用
+async function loadEmailRecipients() {
+  try { return (window.electronAPI && await window.electronAPI.invoke('email-recipients-get')) || []; } catch (e) { return []; }
+}
+async function addEmailRecipients(list) {
+  try {
+    if (window.electronAPI) await window.electronAPI.invoke('email-recipients-add', Array.isArray(list) ? list : [list]);
+  } catch (e) { /* 历史记录失败不影响发送结果 */ }
+}
+// 与便利贴下拉一致的过滤策略：整邮址前缀 → @前本地前缀 → token≥2 时任意 @.-_ 分割词前缀
+function emailRecipientMatches(email, token) {
+  const e = String(email).toLowerCase();
+  if (!token) return true;
+  if (e.startsWith(token)) return true;
+  const local = e.split('@')[0] || '';
+  if (local.startsWith(token)) return true;
+  if (token.length >= 2) {
+    const words = e.split(/[@.\-_]+/);
+    if (words.some(w => w.startsWith(token))) return true;
+  }
+  return false;
+}
 function showEmailRecipientDialog(defaultValue) {
   return new Promise((resolve) => {
     const overlay = document.createElement('div');
@@ -118,8 +141,12 @@ function showEmailRecipientDialog(defaultValue) {
     dialog.innerHTML = `
       <div style="font-size: 15px; font-weight: 600; margin-bottom: 16px; color: #1e293b;">📧 发出邮件</div>
       <div style="font-size: 13px; color: #64748b; margin-bottom: 8px;">请输入收件人邮箱（多个用逗号分隔）：</div>
-      <input type="text" id="_email_recipient_input" value="${defaultValue || ''}" placeholder="例如: user@example.com, user2@example.com"
-        style="width: 100%; padding: 10px 12px; border: 1px solid #cbd5e1; border-radius: 8px; font-size: 14px; box-sizing: border-box; outline: none;" />
+      <div style="position: relative;">
+        <input type="text" id="_email_recipient_input" value="${defaultValue || ''}" placeholder="例如: user@example.com, user2@example.com"
+          style="width: 100%; padding: 10px 12px; border: 1px solid #cbd5e1; border-radius: 8px; font-size: 14px; box-sizing: border-box; outline: none;" />
+        <div id="_email_recipient_dropdown" style="display: none; position: absolute; left: 0; right: 0; top: 100%; margin-top: 4px; max-height: 180px; overflow-y: auto; background: white; border: 1px solid #e2e8f0; border-radius: 8px; box-shadow: 0 8px 24px rgba(0,0,0,.12); z-index: 10;"></div>
+      </div>
+      <div style="font-size: 11px; color: #94a3b8; margin-top: 6px;">下拉显示历史收件人 · Enter 发送 · Esc 取消</div>
       <div style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px;">
         <button id="_email_cancel_btn" style="padding: 8px 20px; border: 1px solid #cbd5e1; border-radius: 8px; background: white; cursor: pointer; font-size: 13px;">取消</button>
         <button id="_email_send_btn" style="padding: 8px 20px; border: none; border-radius: 8px; background: #667eea; color: white; cursor: pointer; font-size: 13px;">发送</button>
@@ -129,8 +156,56 @@ function showEmailRecipientDialog(defaultValue) {
     document.body.appendChild(overlay);
 
     const input = document.getElementById('_email_recipient_input');
+    const dropdown = document.getElementById('_email_recipient_dropdown');
     input.focus();
     input.select();
+
+    // 🆕 历史收件人下拉：按当前 token（最后一个逗号后的内容）过滤，点选替换该 token
+    let recipientHistory = [];
+    const currentToken = () => {
+      const parts = (input.value || '').split(/[,，;]/);
+      return (parts[parts.length - 1] || '').trim().toLowerCase();
+    };
+    const renderDropdown = () => {
+      const token = currentToken();
+      const items = token ? recipientHistory.filter(e => emailRecipientMatches(e, token)) : recipientHistory.slice();
+      if (!items.length) {
+        dropdown.innerHTML = '<div style="padding: 10px 12px; font-size: 12px; color: #94a3b8; text-align: center;">' + (recipientHistory.length ? '无匹配收件人' : '暂无历史收件人') + '</div>';
+      } else {
+        dropdown.innerHTML = items.map(e =>
+          '<div class="_email_recipient_item" data-email="' + String(e).replace(/&/g, '&amp;').replace(/"/g, '&quot;') + '" style="padding: 8px 12px; font-size: 13px; color: #1e293b; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">' + String(e).replace(/&/g, '&amp;').replace(/</g, '&lt;') + '</div>'
+        ).join('');
+        dropdown.querySelectorAll('._email_recipient_item').forEach(el => {
+          el.addEventListener('mouseenter', () => { el.style.background = '#f0f4ff'; });
+          el.addEventListener('mouseleave', () => { el.style.background = ''; });
+          el.addEventListener('mousedown', (ev) => {
+            ev.preventDefault();
+            ev.stopPropagation();
+            const email = el.getAttribute('data-email');
+            const parts = (input.value || '').split(/[,，;]/);
+            parts.pop();
+            const kept = parts.map(s => s.trim()).filter(Boolean);
+            kept.push(email);
+            input.value = kept.join(', ');
+            renderDropdown();
+            input.focus();
+            const len = input.value.length;
+            input.setSelectionRange(len, len);
+          });
+        });
+      }
+      dropdown.style.display = 'block';
+    };
+    const hideDropdown = () => { dropdown.style.display = 'none'; };
+    input.addEventListener('focus', renderDropdown);
+    input.addEventListener('input', renderDropdown);
+    input.addEventListener('blur', () => setTimeout(hideDropdown, 150));
+    overlay.addEventListener('mousedown', (e) => { if (e.target === overlay) close(null); });
+    // 异步拉取历史（不阻塞弹窗打开；到达时若输入框仍聚焦则补渲染）
+    loadEmailRecipients().then(list => {
+      recipientHistory = list || [];
+      if (document.activeElement === input) renderDropdown();
+    });
 
     const close = (value) => {
       overlay.remove();
@@ -140,8 +215,8 @@ function showEmailRecipientDialog(defaultValue) {
     document.getElementById('_email_cancel_btn').addEventListener('click', () => close(null));
     document.getElementById('_email_send_btn').addEventListener('click', () => close(input.value.trim()));
     input.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') close(input.value.trim());
-      if (e.key === 'Escape') close(null);
+      if (e.key === 'Enter') { e.preventDefault(); close(input.value.trim()); }
+      else if (e.key === 'Escape') { e.preventDefault(); close(null); }
     });
   });
 }
@@ -296,12 +371,13 @@ ${queryText ? `<p style="margin: 4px 0;"><strong>【查询】</strong>${queryTex
 ${contentHtml}
 </div>`;
 
-  const result = await sendEmailViaPlugin(recipientList, subject, body);
-  if (result.success) {
-    const statusMsg = `📧 邮件已通过插件发送给 ${recipientList.join(', ')} (${charCount} 字符)`;
-    showStatus(statusMsg, 'success', undefined, true);
-    addFloatHistoryEntry({ source: '系统', type: 'success', message: statusMsg, recipients: recipientList.join(', ') });
-  } else {
+    const result = await sendEmailViaPlugin(recipientList, subject, body);
+    if (result.success) {
+      const statusMsg = `📧 邮件已通过插件发送给 ${recipientList.join(', ')} (${charCount} 字符)`;
+      showStatus(statusMsg, 'success', undefined, true);
+      addFloatHistoryEntry({ source: '系统', type: 'success', message: statusMsg, recipients: recipientList.join(', ') });
+      addEmailRecipients(recipientList);
+    } else {
     const statusMsg = `📧 邮件发送失败：${result.message}`;
     showStatus(statusMsg, 'error', undefined, true);
     addFloatHistoryEntry({ source: '系统', type: 'error', message: statusMsg, recipients: recipientList.join(', ') });
@@ -316,6 +392,8 @@ window.sendEmailViaPlugin = sendEmailViaPlugin;
 window.markdownToHtml = markdownToHtml;
 window.sendUnifiedEmail = sendUnifiedEmail;
 window.showEmailRecipientDialog = showEmailRecipientDialog;
+window.loadEmailRecipients = loadEmailRecipients;
+window.addEmailRecipients = addEmailRecipients;
 
 // ========== 与 ToDoList <webview> 插件通信：Electron sendToHost / ipc-message 邮件通道 ==========
 // ToDoList 插件运行在 Electron <webview>（独立渲染进程）中，没有 window.parent，无法直接访问主窗口函数

@@ -137,8 +137,13 @@
 //      calendar-editor.js/style.css 改，bump 讓手機重拉
 // v63：「只顯示日記」正文不再截斷——去掉舊的「3 行 / 120 字 + 省略號」上限，改為完整渲染、靠列錶整體滾動條查看
 //      （calDiaryPreview → calDiaryBody）；calendar-editor.js 改，bump 讓手機重拉
+// v111：子事件 checkbox 框線加粗金黃（1px var(--border) → 2px #fbbf24），深色主題下清晰可見；style.css 改，bump 讓手機重拉
+// v110：術語（term）渲染移植到 Lite —— calRenderInlineMarkdown（標題）＋ calRenderNotes（備註）接入 calRenderTermDefs
+//      （[[term]]／[[term:釋義]]／[[term:釋義:領域]] 立體金膠囊＋tooltip＋內嵌領域小膠囊；dl/cp/裸日期排除、跳代碼圍欄）；
+//      style.css 新增 .tl-term-cap/.tl-term-domain。calendar-editor.js/style.css/sw.js 改，bump 讓手機重拉
 // v109：Lite 行程列表补充备注 checkbox 数量胶囊与跨天模式字母胶囊；calendar-editor.js/style.css 改，bump 让手机重拉
-const CACHE_NAME = 'md-editor-lite-v109';
+// v113：修復 ## DIARY 被誤解析為行程事件（帶勾選框）的問題——parseCalendarEvents/parseCalendarHolidays 切塊時一併在 ## DIARY 處截斷，與 parseCalendarDiaries 已在 ## EVENT/## HOLIDAY 處截斷對齊；calendar-editor.js 改，bump 讓手機重拉
+const CACHE_NAME = 'md-editor-lite-v113';
 const ASSETS = [
   './',
   './index.html',

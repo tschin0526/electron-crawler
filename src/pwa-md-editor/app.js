@@ -272,6 +272,7 @@ function setupEventListeners() {
   if (elements.evModeYear) elements.evModeYear.addEventListener('click', () => setCalMode('year'));
   if (elements.evAddBtn) elements.evAddBtn.addEventListener('click', () => openEventForm(null));
   if (elements.evStatsBtn) elements.evStatsBtn.addEventListener('click', () => calOpenStats());
+  if (typeof calInitCalendarToolbarCombo === 'function') calInitCalendarToolbarCombo();
   // ‹ › 依當前模式步進：月→月、週→週、日→日
   if (elements.evPrevMonth) elements.evPrevMonth.addEventListener('click', () => { if (state.calMode === 'list') calListNavDay(-1); else calStepCursor(-1); });
   if (elements.evNextMonth) elements.evNextMonth.addEventListener('click', () => { if (state.calMode === 'list') calListNavDay(1); else calStepCursor(1); });

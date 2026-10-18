@@ -259,6 +259,98 @@
       const fileEl = document.getElementById('tlIncludeListFile');
       if (fileEl) fileEl.textContent = '已加载 ' + list.filter((it) => it.on).length + ' / 共 ' + list.length + ' 个文件';
     }
+
+    // ========== 📖 Glossary 术语表：收集全部行程（标题＋备注）中的 [[term]]，排序去重展示 ==========
+    // 同名 term 只保留「最完整」的一条：term+釋義+領域 > term+釋義 > term；完整度并列时以先出现者为准。
+    // 跳过代码围栏（与渲染约定一致）；解析规则共用 tlParseTermToken（dl/cp/裸日期排除）。
+    function tlTermCompleteness(t) {
+      return (t.domain ? 2 : 0) + (t.def ? 1 : 0);
+    }
+    function tlCollectTerms() {
+      const map = new Map();   // 小写 term 为 key（大小写不同视为同一 term）→ { term, def, domain, count, srcs }
+      const add = (text, ev) => {
+        if (!text) return;
+        let inFence = false;
+        String(text).split('\n').forEach((line) => {
+          if (/^\s*```/.test(line)) { inFence = !inFence; return; }
+          if (inFence) return;
+          String(line).replace(/\[\[([^\]\n]+)\]\]/g, (m, inner) => {
+            const t = tlParseTermToken(inner);
+            if (t) {
+              const key = t.term.toLowerCase();   // 🆕 大小写不同 → 同一 term
+              let rec = map.get(key);
+              if (!rec) {
+                rec = { term: t.term, def: t.def, domain: t.domain, count: 0, srcs: [] };
+                map.set(key, rec);
+              }
+              rec.count += 1;   // 出现次数＝标题＋备注命中之和（同一事件标题与备注都命中也各计 1）
+              if (tlTermCompleteness(t) > tlTermCompleteness(rec)) { rec.def = t.def; rec.domain = t.domain; }
+              // 标签沿用「先出现者」的大小写（稳定可预测），仅合并释义/领域/计数
+              // 🆕 收集使用该 term 的「来源日程事件」（按 uid 去重），供术语表逐一跳转
+              if (ev && ev.uid && !rec.srcs.some((s) => s.uid === ev.uid)) {
+                rec.srcs.push({ uid: ev.uid, title: ev.title || '', date: ev.date || '' });
+              }
+            }
+            return m;
+          });
+        });
+      };
+      (tlCalEvents || []).forEach((ev) => { add(ev.title, ev); add(ev.notes, ev); });
+      // 排序：英文/数字开头的术语在前（en 排序），其余按中文拼音（zh-Hans-CN）；ICU 默认会把拉丁字母排在汉字之后，显式分桶修正
+      const isAscii = (s) => /^[0-9A-Za-z]/.test(s);
+      return Array.from(map.values()).sort((a, b) => {
+        const ab = isAscii(a.term), bb = isAscii(b.term);
+        if (ab !== bb) return ab ? -1 : 1;
+        return a.term.localeCompare(b.term, ab ? 'en' : 'zh-Hans-CN');
+      });
+    }
+    // 胶囊 HTML（与事件渲染同款标记：.tl-term-cap 金胶囊＋内嵌 .tl-term-domain 小胶囊＋釋義 tooltip）
+    function tlGlossCapHtml(t) {
+      const defMap = tlGetTermDefMap();
+      const allDefs = [];
+      if (t.def) allDefs.push(t.def);
+      const globalDefs = defMap.get(t.term.toLowerCase());
+      if (globalDefs) globalDefs.forEach((d) => { if (!allDefs.includes(d)) allDefs.push(d); });
+      const tooltip = allDefs.join(' --- ');
+      return '<span class="tl-term"><span class="tl-term-cap"' +
+        (tooltip ? ' title="' + tlEscapeHtml(tooltip) + '"' : '') + '>' +
+        tlEscapeHtml(t.term) +
+        (t.domain ? '<span class="tl-term-domain">' + tlEscapeHtml(t.domain) + '</span>' : '') +
+        '</span></span>';
+    }
+    function tlOpenGlossary() {
+      const body = document.getElementById('tlGlossaryBody');
+      if (!body) return;
+      const fileEl = document.getElementById('tlGlossaryFile');
+      const terms = tlCollectTerms();
+      if (fileEl) fileEl.textContent = '共 ' + terms.length + ' 个术语';
+      if (!terms.length) {
+        body.innerHTML = '<div class="tl-gloss-empty">目前没有任何 [[term]] 术语。<br>语法：<code>[[term:釋義:領域]]</code>（釋義與領域皆可省略）</div>';
+      } else {
+        body.innerHTML = terms.map((t) => {
+          // 🆕 来源事件 chips：每个 chip 跳转到主画面对应事件（关弹层 → scrollIntoView 居中 → 金色描边闪 2s）
+          const srcHtml = (t.srcs && t.srcs.length)
+            ? '<div class="tl-gloss-srcs"><span class="tl-gloss-srcs-label">来源事件：</span>' + t.srcs.map((s) =>
+                '<button type="button" class="tl-gloss-src" title="跳转：' + tlEscapeHtml(s.title || '') + (s.date ? '（' + tlEscapeHtml(s.date) + '）' : '') + '" onclick="tlGlossJumpToEvent(\'' + tlEscapeHtml(s.uid) + '\')">' +
+                tlRenderInlineMarkdown(s.title || '(无标题)') +
+                (s.date ? ' <span class="tl-gloss-src-date">' + tlEscapeHtml(s.date) + '</span>' : '') +
+                '</button>'
+              ).join('') + '</div>'
+            : '';
+          return '<div class="tl-gloss-row">' +
+            '<div class="tl-gloss-row-head">' + tlGlossCapHtml(t) +
+            '<span class="tl-gloss-def">' + (t.def ? tlEscapeHtml(t.def) : '<span class="tl-gloss-nodef">（无释义）</span>') + '</span>' +
+            '<span class="tl-gloss-count" title="出现次数">×' + t.count + '</span>' +
+            '</div>' + srcHtml + '</div>';
+        }).join('');
+      }
+      const ov = document.getElementById('tlGlossaryOverlay');
+      if (ov) ov.style.display = 'flex';
+    }
+    function tlCloseGlossary() {
+      const ov = document.getElementById('tlGlossaryOverlay');
+      if (ov) ov.style.display = 'none';
+    }
     function tlCloseIncludeList() {
       const ov = document.getElementById('tlIncludeListOverlay');
       if (ov) ov.style.display = 'none';
@@ -522,9 +614,10 @@
       const out = [];
       const blocks = String(md).split(/^##[ \t]*EVENT(?:\([^)]*\))?[ \t]*$/m);
       for (let i = 0; i < blocks.length; i++) {
-        // ⚠️ 切块只按 ## EVENT → 本块尾巴会粘着紧随其后的 ## HOLIDAY 块。
-        //    必须先在该标记处截断，否则 remark / holidayType / region 等会被后面的假日块污染（2026-09-19 用户反馈）
-        const cut = blocks[i].search(/^##[ \t]*HOLIDAY[ \t]*$/m);
+        // ⚠️ 切块只按 ## EVENT → 本块尾巴会粘着紧随其后的 ## HOLIDAY / ## DIARY 块。
+        //    必须先在该标记处截断，否则 remark / holidayType / region 等会被后面的块污染；
+        //    更重要的是：## DIARY 含 - title / - date，会被 tlParseBlock 误当成行程事件（带勾选框）参与渲染（2026-10-17 修复）
+        const cut = blocks[i].search(/^##[ \t]*(HOLIDAY|DIARY)[ \t]*$/m);
         const ev = tlParseBlock(cut >= 0 ? blocks[i].slice(0, cut) : blocks[i], i);
         if (ev) out.push(ev);
       }
@@ -538,8 +631,9 @@
       const out = [];
       const blocks = String(md).split(/^##[ \t]*HOLIDAY[ \t]*$/m);
       for (let i = 1; i < blocks.length; i++) {
-        // 同理：假日块尾巴可能粘着后面的 ## EVENT（含 (REPEAT)）块 → 先在该标记处截断
-        const cut = blocks[i].search(/^##[ \t]*EVENT(?:\([^)]*\))?[ \t]*$/m);
+        // 同理：假日块尾巴可能粘着后面的 ## EVENT（含 (REPEAT)）/ ## DIARY 块 → 先在该标记处截断
+        //    （## DIARY 含 - title / - date，不截断会被误当成假日渲染）
+        const cut = blocks[i].search(/^##[ \t]*(EVENT(?:\([^)]*\))?|DIARY)[ \t]*$/m);
         const h = tlParseBlock(cut >= 0 ? blocks[i].slice(0, cut) : blocks[i], i);
         if (h) out.push(h);
       }
@@ -824,6 +918,15 @@
       if (mode === 'last') return occurrences.filter((o) => o.pos === 'end');
       return occurrences;
     }
+    // 取事件在当前 span 显示模式下的「代表显示日」：daily/first → start date；last → end date
+    //   用于便利贴「滚动」等需要「跳到事件实际被渲染的那一天」的场景
+    function tlEventDisplayDate(ev) {
+      if (!ev) return '';
+      if (!tlIsMultiDay(ev)) return ev.date || '';
+      const mode = (ev.spanDisplay === 'first' || ev.spanDisplay === 'last') ? ev.spanDisplay : 'daily';
+      if (mode === 'last' && ev.endDate) return ev.endDate;
+      return ev.date || '';
+    }
     // 重複展開視窗：各視圖渲染前用 tlSetRepeatWindow 設定，避免 never 模式無限展開
     let tlRepeatFrom = '2000-01-01', tlRepeatTo = '2100-01-01';
     function tlSetRepeatWindow(from, to) { tlRepeatFrom = from || '2000-01-01'; tlRepeatTo = to || '2100-01-01'; }
@@ -905,7 +1008,8 @@
     // 標題行內使用：若 marked 只產出單個 <p>，去掉 <p> 包裝，避免在 .ev-title 裡產生多餘段間距。
     function tlRenderInlineMarkdown(text) {
       if (!text) return '';
-      const html = renderMarkdown(String(text).trim());
+      // 🆕 標題也支援術語渲染：[[term:釋義]]／[[term]] → 膠囊＋虛線底線（dl/cp/裸日期排除，見 tlRenderTermDefs）
+      const html = renderMarkdown(tlRenderTermDefs(String(text).trim()));
       const trimmed = html.trim();
       if (/^<p>/i.test(trimmed) && /<\/p>$/i.test(trimmed)) {
         const inner = trimmed.slice(3, -4);
@@ -913,11 +1017,98 @@
       }
       return html;
     }
-    // 備註：先處理 checkbox 與子事件編輯按鈕，再整段 renderMarkdown；uid 為 null 時只顯示、不交互。
+    // 備註渲染：uid 可編輯時依「最小 MD 表達單元」分塊，每塊非 checkbox 類型注入編輯小圓點；
+    //   uid 為 null（節日 / tooltip）或唯讀事件 → 整段渲染，行為完全不變。
     function tlRenderNotes(notes, uid) {
       if (!notes) return '';
-      const withChecks = tlNotesWithChecks(String(notes), uid);
-      return renderMarkdown(withChecks);
+      const raw = String(notes);
+      const event = uid ? tlCalEvents.find((x) => x.uid === uid) : null;
+      const canEdit = !!(uid && event && !event.ro);
+      if (!canEdit) {
+        const withChecks = tlNotesWithChecks(raw, uid);
+        return renderMarkdown(tlRenderTermDefs(withChecks));
+      }
+      const lines = raw.replace(/\r\n/g, '\n').split('\n');
+      const blocks = tlSplitMdBlocks(raw);
+      const uidAttr = tlEscapeHtml(uid);
+      let out = '';
+      blocks.forEach((b) => {
+        if (b.type === 'task') {
+          // checkbox 行：保留既有「行內編輯小圓點」（編輯子事件），不加外層區塊圓點
+          out += tlRenderTermDefs(tlTaskLineHtml(lines[b.start], uid, b.start)) + '\n';
+          return;
+        }
+        const chunk = lines.slice(b.start, b.end + 1).join('\n');
+        const inner = renderMarkdown(tlRenderTermDefs(chunk));
+        out += '<div class="md-unit"><button type="button" class="md-unit-edit" title="编辑此内容区块" ' +
+          'onclick="tlOpenEditBlockDialog(event,\'' + uidAttr + '\',' + b.start + ',' + b.end + ',\'' + b.type + '\')">\u270e</button>' +
+          inner + '</div>';
+      });
+      return out;
+    }
+    // 🆕「最小的 MD 表達單元」切分：回傳 [{start,end,type}]（行索引含頭尾）。
+    //   type：code 代碼圍欄（整塊原子）/ table 表格（表頭+分隔行+連續 | 行）/ heading 標題 /
+    //   hr 分隔線 / quote 引用（連續 > 行）/ task 勾選行（逐行獨立，沿用子事件編輯）/
+    //   list 普通列表（連續整段一塊）/ para 段落（連續非空、非上述起始行）。
+    //   空行僅作分隔，不屬於任何區塊。
+    function tlSplitMdBlocks(text) {
+      const lines = String(text == null ? '' : text).replace(/\r\n/g, '\n').split('\n');
+      const isBlank = (l) => /^\s*$/.test(l);
+      const isFence = (l) => /^\s*(```|~~~)/.test(l);
+      const isHeading = (l) => /^#{1,6}(\s|$)/.test(l);
+      const isHr = (l) => /^\s{0,3}([-*_])(\s*\1){2,}\s*$/.test(l);
+      const isQuote = (l) => /^\s{0,3}>/.test(l);
+      const isTask = (l) => /^\s*[-*+]\s+\[[ xX]\]/.test(l);
+      const isBullet = (l) => /^\s*[-*+]\s+\S/.test(l); // 必须有非空白内容
+      const isOrdered = (l) => /^\s*\d{1,9}[.)]\s+\S/.test(l); // 必须有非空白内容
+      const isList = (l) => !isTask(l) && !isFence(l) && (isBullet(l) || isOrdered(l));
+      // 空列表项（- / * / + / 1. 后面只有空白）→ 视作分隔符，不归属任何区块
+      const isEmptyListItem = (l) => /^\s*[-*+]\s*$/.test(l) || /^\s*\d{1,9}[.)]\s*$/.test(l);
+      const isTableRow = (l) => !isBlank(l) && l.includes('|');
+      const isTableDelim = (l) => /^[\s|:-]+$/.test(l) && l.includes('-') && l.includes('|');
+      const isTableStart = (j) => j + 1 < lines.length && isTableRow(lines[j]) && isTableDelim(lines[j + 1]);
+      const blocks = [];
+      let i = 0;
+      while (i < lines.length) {
+        const line = lines[i];
+        if (isBlank(line) || isEmptyListItem(line)) { i++; continue; }
+        if (isFence(line)) {
+          const marker = line.trim().slice(0, 3);
+          let j = i + 1;
+          while (j < lines.length && !(isFence(lines[j]) && lines[j].trim().slice(0, 3) === marker)) j++;
+          blocks.push({ start: i, end: Math.min(j, lines.length - 1), type: 'code' });
+          i = j + 1; continue;
+        }
+        if (isHeading(line)) { blocks.push({ start: i, end: i, type: 'heading' }); i++; continue; }
+        if (isHr(line)) { blocks.push({ start: i, end: i, type: 'hr' }); i++; continue; }
+        if (isQuote(line)) { let j = i; while (j < lines.length && isQuote(lines[j])) j++; blocks.push({ start: i, end: j - 1, type: 'quote' }); i = j; continue; }
+        if (isTableStart(i)) { let j = i + 2; while (j < lines.length && isTableRow(lines[j]) && !isBlank(lines[j])) j++; blocks.push({ start: i, end: j - 1, type: 'table' }); i = j; continue; }
+        if (isTask(line)) { blocks.push({ start: i, end: i, type: 'task' }); i++; continue; }
+        if (isList(line)) {
+          // 普通列表块：允许中间有空行或空列表项（- / * / + / 1. 后无内容），直到遇到非列表、非空行、非空列表项才断开
+          let j = i + 1;
+          while (j < lines.length) {
+            if (isBlank(lines[j]) || isEmptyListItem(lines[j])) {
+              // 空行或空列表项：往后看是否有更多列表项，有则继续，无则断开
+              let k = j + 1;
+              while (k < lines.length && (isBlank(lines[k]) || isEmptyListItem(lines[k]))) k++;
+              if (k < lines.length && isList(lines[k])) { j = k; continue; }
+              break;
+            }
+            if (isList(lines[j])) { j++; continue; }
+            break;
+          }
+          blocks.push({ start: i, end: j - 1, type: 'list' });
+          i = j; continue;
+        }
+        { let j = i;
+          while (j < lines.length && !isBlank(lines[j]) && !isFence(lines[j]) && !isHeading(lines[j]) && !isHr(lines[j]) &&
+                 !isQuote(lines[j]) && !isTask(lines[j]) && !isList(lines[j]) && !isTableStart(j)) j++;
+          if (j === i) j = i + 1;
+          blocks.push({ start: i, end: j - 1, type: 'para' }); i = j; continue;
+        }
+      }
+      return blocks;
     }
     // 備註 checkbox 行內的 deadline / completed 標記（顯示層轉換，不改寫源）：裸日期與 [[dl:...]] → 📅、[[cp:...]] → ✅
     function tlRenderNoteMarkers(text) {
@@ -925,29 +1116,118 @@
         .replace(/\[\[(?:dl:)?(\d{4}-\d{2}-\d{2})\]\]/g, '📅 $1')
         .replace(/\[\[cp:(\d{4}-\d{2}-\d{2})\]\]/g, '✅ $1');
     }
+    // 🆕 術語記號解析（單一可信來源：渲染 tlRenderTermDefs 與 Glossary 術語表 tlCollectTerms 共用）：
+    //   [[term]] / [[term:釋義]] / [[term:釋義:領域]] → { term, def, domain }
+    //   領域＝最末一個冒號之後；釋義＝首冒號之後、末冒號之前（釋義可含冒號）。
+    //   dl / cp 前綴（日期標記）與裸日期 [[YYYY-MM-DD]] 不屬於術語 → 返回 null（留給 📅/✅ 機制）。
+    function tlParseTermToken(inner) {
+      const full = String(inner == null ? '' : inner).trim();
+      if (!full) return null;
+      const firstColon = full.indexOf(':');
+      let term, rest;
+      if (firstColon === -1) {
+        term = full; rest = '';
+        if (term === 'dl' || term === 'cp') return null;                     // 日期標記名稱
+        if (/^\d{4}-\d{2}-\d{2}$/.test(term)) return null;                   // 裸日期 → dl 機制
+      } else {
+        term = full.slice(0, firstColon).trim();
+        rest = full.slice(firstColon + 1);
+        if (term === 'dl' || term === 'cp') return null;                     // 日期標記（dl:/cp: 後接日期）
+      }
+      if (!term) return null;
+      const lastColon = rest.lastIndexOf(':');
+      const def = lastColon === -1 ? rest.trim() : rest.slice(0, lastColon).trim();
+      const domain = lastColon === -1 ? '' : rest.slice(lastColon + 1).trim();
+      return { term: term, def: def, domain: domain };
+    }
+    // 🆕 全局術語釋義映射（緩存，tlCalEvents 引用變更時自動失效）：
+    //   掃描所有事件 title + notes 中的 [[term:釋義]] 記號，彙整每個 term 的全部釋義。
+    //   渲染膠囊時查此表，讓未寫釋義的 [[term]] 也能 tooltip 顯示同名術語的釋義。
+    let _tlTermDefMap = null;
+    let _tlTermDefMapSource = null;
+    function tlGetTermDefMap() {
+      if (_tlTermDefMap && _tlTermDefMapSource === tlCalEvents) return _tlTermDefMap;
+      const map = new Map();
+      const scan = (text) => {
+        if (!text) return;
+        let inFence = false;
+        String(text).split('\n').forEach((line) => {
+          if (/^\s*```/.test(line)) { inFence = !inFence; return; }
+          if (inFence) return;
+          String(line).replace(/\[\[([^\]\n]+)\]\]/g, (m, inner) => {
+            const t = tlParseTermToken(inner);
+            if (t && t.def) {
+              const key = t.term.toLowerCase();
+              if (!map.has(key)) map.set(key, []);
+              const arr = map.get(key);
+              if (!arr.includes(t.def)) arr.push(t.def);
+            }
+            return m;
+          });
+        });
+      };
+      (tlCalEvents || []).forEach((ev) => { scan(ev.title); scan(ev.notes); });
+      _tlTermDefMap = map;
+      _tlTermDefMapSource = tlCalEvents;
+      return map;
+    }
+    // 🆕 術語（term）渲染（立體膠囊＋tooltip 顯示釋義）：
+    //   [[term]]                → 立體膠囊（term）＋ 若全局 Glossary 有釋義則 tooltip 顯示
+    //   [[term:釋義]]            → 立體膠囊(term) ＋ 釋義以 tooltip 呈現（hover）
+    //   [[term:釋義:領域]]       → 立體膠囊(term) ＋ 領域為內嵌小膠囊 ＋ 釋義 tooltip
+    //   同名術語的多個釋義以 --- 分隔全部顯示。
+    //   逐行處理並跳過代碼圍欄，避免代碼塊內 [[…]] 被誤轉。解析規則見 tlParseTermToken。
+    function tlRenderTermDefs(text) {
+      const defMap = tlGetTermDefMap();
+      let inFence = false;
+      return String(text).split('\n').map(function (line) {
+        if (/^\s*```/.test(line)) { inFence = !inFence; return line; }
+        if (inFence) return line;
+        return line.replace(/\[\[([^\]\n]+)\]\]/g, function (m, inner) {
+          const t = tlParseTermToken(inner);
+          if (!t) return m;
+          const allDefs = [];
+          if (t.def) allDefs.push(t.def);
+          const globalDefs = defMap.get(t.term.toLowerCase());
+          if (globalDefs) globalDefs.forEach((d) => { if (!allDefs.includes(d)) allDefs.push(d); });
+          const tooltip = allDefs.join(' --- ');
+          const termHtml = '<span class="tl-term-cap"' +
+            (tooltip ? ' title="' + tlEscapeHtml(tooltip) + '"' : '') + '>' +
+            tlEscapeHtml(t.term) +
+            (t.domain ? '<span class="tl-term-domain">' + tlEscapeHtml(t.domain) + '</span>' : '') +
+            '</span>';
+          return '<span class="tl-term">' + termHtml + '</span>';
+        });
+      }).join('\n');
+    }
+    // 單行 checkbox → 帶編輯小圓點 + 可交互勾選框的 HTML；非 task 行原樣回傳。
+    //   i 為「整段 notes 的全域行索引」（保存回寫以此為準）。
+    function tlTaskLineHtml(line, uid, i) {
+      const m = line.match(/^(\s*)-\s+\[([ xX])\]\s?(.*)$/);
+      if (!m) return line;
+      const done = m[2] !== ' ';
+      const event = uid && tlCalEvents.find((item) => item.uid === uid);
+      const editButton = uid && event && !event.ro
+        ? '<button type="button" class="ev-md-edit" title="编辑子事件" onclick="tlOpenEditNoteCheckDialog(event,\'' +
+          tlEscapeHtml(uid) + '\',' + i + ')">\u270e</button>'
+        : '';
+      const cbAttr = uid
+        ? ' class="ev-cb interactive" data-uid="' + tlEscapeHtml(uid) + '" data-line="' + i + '"' +
+          ' onclick="tlToggleNoteCheck(event,\'' + tlEscapeHtml(uid) + '\',' + i + ')"' +
+          ' onkeydown="tlCalCheckKey(event,\'' + tlEscapeHtml(uid) + '\',' + i + ')"' +
+          ' role="checkbox" aria-checked="' + (done ? 'true' : 'false') + '" tabindex="0"'
+        : ' class="ev-cb"';
+      return m[1] + '<span class="ev-md-check' + (done ? ' done' : '') + '">' +
+        editButton +
+        '<span' + cbAttr + '>' + (done ? '\u2713' : '') + '</span>' +
+        '<span class="ev-md-check-text">' + tlRenderInlineMarkdown(tlRenderNoteMarkers(m[3])) + '</span></span>';
+    }
     function tlNotesWithChecks(text, uid) {
       let inFence = false;
       return text.split('\n').map((line, i) => {
-        if (/^\s*```/.test(line)) { inFence = !inFence; return line; }
+        if (/^\s*(```|~~~)/.test(line)) { inFence = !inFence; return line; }
         if (inFence) return line;
-        const m = line.match(/^(\s*)-\s+\[([ xX])\]\s?(.*)$/);
-        if (!m) return line;
-        const done = m[2] !== ' ';
-        const event = uid && tlCalEvents.find((item) => item.uid === uid);
-        const editButton = uid && event && !event.ro
-          ? '<button type="button" class="ev-md-edit" title="编辑子事件" onclick="tlOpenEditNoteCheckDialog(event,\'' +
-            tlEscapeHtml(uid) + '\',' + i + ')">\u270e</button>'
-          : '';
-        const cbAttr = uid
-          ? ' class="ev-cb interactive" data-uid="' + tlEscapeHtml(uid) + '" data-line="' + i + '"' +
-            ' onclick="tlToggleNoteCheck(event,\'' + tlEscapeHtml(uid) + '\',' + i + ')"' +
-            ' onkeydown="tlCalCheckKey(event,\'' + tlEscapeHtml(uid) + '\',' + i + ')"' +
-            ' role="checkbox" aria-checked="' + (done ? 'true' : 'false') + '" tabindex="0"'
-          : ' class="ev-cb"';
-        return m[1] + '<span class="ev-md-check' + (done ? ' done' : '') + '">' +
-          editButton +
-          '<span' + cbAttr + '>' + (done ? '\u2713' : '') + '</span>' +
-          '<span class="ev-md-check-text">' + tlRenderInlineMarkdown(tlRenderNoteMarkers(m[3])) + '</span></span>';
+        return tlTaskLineHtml(line, uid, i);
       }).join('\n');
     }
     // 🔁 重复事件小图标（## EVENT(REPEAT)）：双箭头环形，随文色（灰），用于月格 chip / 时间网格 / 列表行 / 悬停提示
@@ -1433,6 +1713,15 @@
     // 关闭统计弹层并滚动定位到事件在主画面的渲染位置（子事件＝跳到其所属主事件）
     function tlJumpToEvent(uid) {
       tlCloseStats();
+      tlJumpToEventCore(uid);
+    }
+    // 🆕 Glossary 术语表跳转：与事件统计同款（关弹层 → scrollIntoView 居中 → 金色描边闪 2s）
+    function tlGlossJumpToEvent(uid) {
+      tlCloseGlossary();
+      tlJumpToEventCore(uid);
+    }
+    // 跳转核心：定位主画面 [data-uid] 元素 → 平滑滚动居中 → .tl-jump-flash 金色描边闪 2s
+    function tlJumpToEventCore(uid) {
       const el = document.querySelector('[data-uid="' + uid + '"]');
       if (!el || !el.offsetParent) { showToast('当前视图未显示该事件，请切换到包含它的视图后再试', 'danger'); return; }
       el.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -2105,9 +2394,11 @@
         tlScrollYearToCurrentMonth();
       }
     }
-    // 年视图：若当前月份卡片未完整显示在滚动区内，则平滑滚动到可视区中央
+    // 年视图：若「选中日所在月份」卡片未完整显示在滚动区内，则平滑滚动到可视区中央
+    //   （tlCalSelected 为今天时即原「当前月份」行为；便利贴「滚动」会预先把选中日设到目标行程日期）
     function tlScrollYearToCurrentMonth(_n) {
-      const cur = document.querySelector('#tlEvYearGrid .ev-year-month.cur-month');
+      const selCell = tlCalSelected ? document.querySelector('#tlEvYearGrid .ev-year-day[data-date="' + tlCalSelected + '"]') : null;
+      const cur = (selCell && selCell.closest('.ev-year-month')) || document.querySelector('#tlEvYearGrid .ev-year-month.cur-month');
       const scroller = document.querySelector('#tlEvYearWrap .ev-month-scroll');
       if (!cur || !scroller) return;
       // 📎 容器尚未布局（rect 全 0）时，误判为「已完整显示」会跳过滚动；未布局则延后一帧重试（上限 60）
@@ -2300,7 +2591,7 @@
         (ev.tags && ev.tags.length ? '<span class="ev-tags">' + ev.tags.map((t) => '<span class="ev-tag-view" data-tag="' + tlEscapeHtml(tlTagName(t)) + '">' + tlEscapeHtml(tlTagLabel(t)) + '</span>').join('') + '</span>' : '') +
         tlSubProgressBadge(ev) +
         tlSpanDisplayModeBadge(ev) +
-        (ev.sticky > 0 ? '<span class="ev-sticky-flag" title="该事件已设为便利贴（桌面可见）">' + TL_STICKY_IC_SVG + '</span>' : '') +
+        (ev.sticky > 0 ? '<button type="button" class="ev-sticky-flag" title="点击跳转到便利贴视窗" onclick="tlFocusStickyNote(\'' + tlEscapeHtml(ev.uid) + '\')">' + TL_STICKY_IC_SVG + '</button>' : '') +
         // 📋 列表行「＋☐」：与编辑表单备注旁同一入口（开 CheckBox 小窗）；列表模式按「加入备注」直接存档
         (ev.ro ? '' : '<button type="button" class="ev-addcheck-btn" title="在备注末尾加入 CheckBox（加入后直接存档）" onclick="tlOpenAddCheckDialog(\'' + tlEscapeHtml(ev.uid) + '\')">＋☐</button>') +
         '<button type="button" class="ev-undone-filter-btn' + (tlEventUndoneChecksOnly(ev.uid) ? ' active' : '') + '" data-uid="' + tlEscapeHtml(ev.uid) + '" aria-pressed="' + (tlEventUndoneChecksOnly(ev.uid) ? 'true' : 'false') + '" title="' + (tlEventUndoneChecksOnly(ev.uid) ? '仅显示该事件未完成的 checkbox 子事件（点击显示全部）' : '只显示该事件未完成的 checkbox 子事件') + '">' + (tlEventUndoneChecksOnly(ev.uid) ? '☑' : '☐') + '</button>' +
@@ -2907,7 +3198,7 @@
       tlApplyCalLayout();
     }
 
-    const TL_TOOLBAR_EXPOSE_KEY = 'tlCalToolbarExposed';
+    const TL_TOOLBAR_EXPOSE_KEY = 'tlCalToolbarExposed.v2';  // .v2：新增 glossary 时升版，旧偏好重置为全选（新功能首次可见）
     function tlInitCalendarToolbarCombo() {
       const combo = document.getElementById('tlEvToolbarCombo');
       const exposed = document.getElementById('tlEvToolbarExposed');
@@ -2920,7 +3211,8 @@
         { key: 'layout', id: 'tlCalLayoutBtn' },
         { key: 'sticky', id: 'tlStickyWrap' },
         { key: 'stats', id: 'tlEvStatsBtn' },
-        { key: 'includes', id: 'tlIncludeListBtn' }
+        { key: 'includes', id: 'tlIncludeListBtn' },
+        { key: 'glossary', id: 'tlGlossaryBtn' }
       ];
       const controls = new Map();
       let selected = definitions.map(item => item.key);
@@ -3049,18 +3341,20 @@
       }
     }
 
-    // 月视图：若「今天」日期格未完整显示在滚动区内，则平滑滚动到可视区中央
+    // 月视图：若「选中日」日期格未完整显示在滚动区内，则平滑滚动到可视区中央
+    //   （tlCalSelected 为今天时即原「今天」行为；便利贴「滚动」会预先把选中日设到目标行程日期）
     function tlScrollMonthToToday(_n) {
-      const todayCell = document.querySelector('#tlEvMonthGrid .ev-cell.today');
+      const target = (tlCalSelected && document.querySelector('#tlEvMonthGrid .ev-cell[data-date="' + tlCalSelected + '"]'))
+        || document.querySelector('#tlEvMonthGrid .ev-cell.today');
       const scroller = document.querySelector('#tlEvMonthWrap .ev-month-scroll');
-      if (!todayCell || !scroller) return;
+      if (!target || !scroller) return;
       // 📎 容器尚未布局（rect 全 0）时误判已显示而跳过；未布局则延后一帧重试（上限 60）
       if (!scroller.offsetHeight) { if ((_n || 0) < 60) requestAnimationFrame(() => tlScrollMonthToToday((_n || 0) + 1)); return; }
       const sr = scroller.getBoundingClientRect();
-      const cr = todayCell.getBoundingClientRect();
+      const cr = target.getBoundingClientRect();
       // 已完整显示：无需滚动
       if (cr.top >= sr.top && cr.bottom <= sr.bottom) return;
-      todayCell.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'center' });
+      target.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'center' });
     }
 
     // 月格單擊＝選日；400ms 內連點同一天＝快速新增。
@@ -3331,9 +3625,14 @@
     //          非空＝列表模式（追加到该事件备注后**直接存档**：写缓冲＋落盘 calendar.md，2026-10-10 用户需求）
     let tlAddCheckTargetUid = null;
     let tlEditNoteCheckTarget = null;
+    let tlEditBlockTarget = null; // { uid, start, end, type } — 通用「最小 MD 区块」编辑区间
+    function tlBlockTypeName(type) {
+      return ({ code: '代码块', table: '表格', heading: '标题', hr: '分隔线', quote: '引用', list: '列表', para: '段落' })[type] || '区块';
+    }
     function tlOpenAddCheckDialog(uid) {
       tlAddCheckTargetUid = uid || null;
       tlEditNoteCheckTarget = null;
+      tlEditBlockTarget = null;
       const ov = document.getElementById('tlAddCheckOverlay');
       const inp = document.getElementById('tlAddCheckInput');
       const copyButton = document.getElementById('tlCopyNoteCheckButton');
@@ -3358,15 +3657,13 @@
       const match = lines[line].match(/^(\s*)-\s+\[([ xX])\]\s?(.*)$/);
       if (!match) { showToast('该子事件已被修改，请刷新后重试', 'danger'); return; }
 
-      const markerPattern = /\[\[(?:dl|cp):\d{4}-\d{2}-\d{2}\]\]|\[\[\d{4}-\d{2}-\d{2}\]\]/g;
-      const markers = match[3].match(markerPattern) || [];
       tlAddCheckTargetUid = null;
-      tlEditNoteCheckTarget = { uid, line, markers };
+      tlEditNoteCheckTarget = { uid, line };
       const ov = document.getElementById('tlAddCheckOverlay');
       const inp = document.getElementById('tlAddCheckInput');
       const copyButton = document.getElementById('tlCopyNoteCheckButton');
       document.querySelector('#tlAddCheckOverlay .tl-ev-form-title').textContent = '编辑 CheckBox 子事件';
-      document.querySelector('#tlAddCheckOverlay .tl-ev-form-hint').textContent = '只修改子事件文字；勾选状态与日期标记会保留';
+      document.querySelector('#tlAddCheckOverlay .tl-ev-form-hint').textContent = '只修改子事件文字；勾选状态会保留，日期标记（[[dl:…]]/[[cp:…]]）以原文显示可直接编辑；清空内容并保存＝删除该子事件（会先确认）';
       document.querySelector('#tlAddCheckOverlay .btn-primary').textContent = '保存修改';
       if (copyButton) copyButton.style.display = '';
       if (ov) ov.onkeydown = (e) => {
@@ -3377,9 +3674,41 @@
         }
       };
       if (inp) {
-        inp.value = match[3].replace(markerPattern, '').replace(/\s{2,}/g, ' ').trim();
+        // 🆕 原文保真：编辑框显示原始文本（含 [[dl:…]]/[[cp:…]] 等 [[]] 符号），不剥离、不折叠空白；保存时直接写回
+        inp.value = match[3];
         inp.rows = 2;
       }
+      if (ov) ov.style.display = 'flex';
+      if (inp) setTimeout(() => inp.focus(), 0);
+    }
+    // 🆕 通用「最小 MD 区块」编辑对话框：编辑 notes 中 lines[start..end] 的 Markdown 原文。
+    //   ⌘S 保存（不关闭，可继续编辑）· Esc 关闭；清空并保存＝删除该区块（需确认）。
+    function tlOpenEditBlockDialog(event, uid, start, end, type) {
+      if (event) { event.preventDefault(); event.stopPropagation(); }
+      tlCalEvents = tlAllEvents(document.getElementById('taskText').value);
+      const ev = tlCalEvents.find((x) => x.uid === uid);
+      if (!ev) { showToast('找不到该条行程（内容可能已被修改）', 'danger'); return; }
+      if (ev.ro) { showToast('此行程来自被包含的只读文件，不可修改', 'danger'); return; }
+      const lines = String(ev.notes || '').split('\n');
+      if (!(start >= 0 && end < lines.length && start <= end)) { showToast('该区块已被修改，请刷新后重试', 'danger'); return; }
+      const src = lines.slice(start, end + 1).join('\n');
+
+      tlAddCheckTargetUid = null;
+      tlEditNoteCheckTarget = null;
+      tlEditBlockTarget = { uid, start, end, type };
+      const ov = document.getElementById('tlAddCheckOverlay');
+      const inp = document.getElementById('tlAddCheckInput');
+      const copyButton = document.getElementById('tlCopyNoteCheckButton');
+      document.querySelector('#tlAddCheckOverlay .tl-ev-form-title').textContent = '编辑内容区块（' + tlBlockTypeName(type) + '）';
+      document.querySelector('#tlAddCheckOverlay .tl-ev-form-hint').textContent = '直接编辑此区块的 Markdown 原文；⌘S 保存（不关闭，可继续编辑）· Esc 关闭；清空并保存＝删除该区块（会先确认）';
+      document.querySelector('#tlAddCheckOverlay .btn-primary').textContent = '保存修改';
+      if (copyButton) copyButton.style.display = '';
+      if (ov) ov.onkeydown = (e) => {
+        if ((e.metaKey || e.ctrlKey) && !e.altKey && (e.key === 's' || e.key === 'S')) {
+          e.preventDefault(); e.stopPropagation(); tlSaveAddCheckDialog();
+        }
+      };
+      if (inp) { inp.value = src; inp.rows = Math.min(18, Math.max(4, (end - start + 1) + 1)); }
       if (ov) ov.style.display = 'flex';
       if (inp) setTimeout(() => inp.focus(), 0);
     }
@@ -3402,14 +3731,48 @@
       if (ov) ov.style.display = 'none';
       tlAddCheckTargetUid = null;
       tlEditNoteCheckTarget = null;
+      tlEditBlockTarget = null;
     }
     async function tlSaveAddCheckDialog() {
       const inp = document.getElementById('tlAddCheckInput');
       if (!inp) return;
+      if (tlEditBlockTarget) {
+        const target = tlEditBlockTarget;
+        const blockText = inp.value.replace(/\r\n/g, '\n');
+        tlCalEvents = tlAllEvents(document.getElementById('taskText').value);
+        const ev = tlCalEvents.find((x) => x.uid === target.uid);
+        if (!ev) { tlCloseAddCheckDialog(); showToast('找不到该条行程（内容可能已被修改）', 'danger'); return; }
+        if (ev.ro) { tlCloseAddCheckDialog(); showToast('此行程来自被包含的只读文件，不可修改', 'danger'); return; }
+        const lines = String(ev.notes || '').split('\n');
+        if (!(target.start >= 0 && target.end < lines.length)) {
+          tlCloseAddCheckDialog(); showToast('该区块已被修改，请重新打开后编辑', 'danger'); return;
+        }
+        const span = target.end - target.start + 1;
+        if (!blockText.trim()) {
+          if (!window.confirm('区块内容为空＝删除该区块。\n\n确定要删除吗？删除后将直接写回并存档，无法从本窗口恢复（可先按「复制」留存原文）。')) return;
+          lines.splice(target.start, span);
+          ev.notes = lines.join('\n');
+          tlCloseAddCheckDialog();
+          tlApplyEventsToBuffer();
+          const savedDel = typeof saveTask === 'function' ? await saveTask(false) : false;
+          showToast(savedDel ? '区块已删除并存档' : '区块已删除到行程缓冲，但尚未确认存档成功', savedDel ? 'success' : 'danger');
+          return;
+        }
+        const newLines = blockText.split('\n');
+        lines.splice(target.start, span, ...newLines);
+        ev.notes = lines.join('\n');
+        // 更新区间为新写入的区块，便于继续 ⌘S 覆写同一段
+        tlEditBlockTarget = { uid: target.uid, start: target.start, end: target.start + newLines.length - 1, type: target.type };
+        tlApplyEventsToBuffer();
+        const saved = typeof saveTask === 'function' ? await saveTask(false) : false;
+        showToast(saved ? '区块已保存并存档' : '区块已写入行程缓冲，但尚未确认存档成功', saved ? 'success' : 'danger');
+        return;
+      }
       if (tlEditNoteCheckTarget) {
         const target = tlEditNoteCheckTarget;
         const text = inp.value.replace(/\r\n/g, '\n').replace(/\n/g, ' ').trim();
-        if (!text) { showToast('子事件内容不可为空', 'danger'); return; }
+        // 🆕 内容清空＝删除该子事件：必须先经使用者确认（拒绝则留在编辑框，可先「复制」留存原文）
+        if (!text && !window.confirm('子事件内容为空＝删除该子事件。\n\n确定要删除吗？删除后将直接写回并存档，无法从本窗口恢复（可先按「复制」留存原文）。')) return;
         tlCalEvents = tlAllEvents(document.getElementById('taskText').value);
         const ev = tlCalEvents.find((item) => item.uid === target.uid);
         if (!ev) { tlCloseAddCheckDialog(); showToast('找不到该条行程（内容可能已被修改）', 'danger'); return; }
@@ -3426,8 +3789,18 @@
           showToast('该子事件已被修改，请重新打开后编辑', 'danger');
           return;
         }
-        const suffix = target.markers.length ? ' ' + target.markers.join(' ') : '';
-        lines[target.line] = match[1] + '- [' + match[2] + '] ' + text + suffix;
+        if (!text) {
+          // 🆕 空内容＝删除：移除该行后写回并存档（上方 confirm 已获使用者同意）
+          lines.splice(target.line, 1);
+          ev.notes = lines.join('\n');
+          tlCloseAddCheckDialog();
+          tlApplyEventsToBuffer();
+          const saved = typeof saveTask === 'function' ? await saveTask(false) : false;
+          showToast(saved ? '子事件已删除并存档' : '子事件已删除到行程缓冲，但尚未确认存档成功', saved ? 'success' : 'danger');
+          return;
+        }
+        // 🆕 原文保真：编辑框已是完整原文（含 [[]] 标记），保存时直接写回，不再额外补/删标记
+        lines[target.line] = match[1] + '- [' + match[2] + '] ' + text;
         ev.notes = lines.join('\n');
         tlCloseAddCheckDialog();
         tlApplyEventsToBuffer();

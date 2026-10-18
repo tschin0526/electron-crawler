@@ -195,6 +195,14 @@
             <button type="button" id="ev-mode-year">年</button>
           </div>
           <button type="button" id="ev-stats-btn" class="btn ev-stats-btn" title="事件統計：主事件與備註中的子事件，按標籤·完成狀態統計">📊 統計</button>
+          <div class="ev-toolbar-combo" id="calToolbarCombo">
+            <button type="button" class="ev-toolbar-combo-trigger" id="calToolbarComboTrigger" aria-expanded="false" aria-label="日历功能菜单">☷ ▾</button>
+            <div class="ev-toolbar-combo-exposed" id="calToolbarExposed"></div>
+            <div class="ev-toolbar-combo-menu" id="calToolbarComboMenu" role="group" aria-label="选择曝露的日历功能">
+              <div class="ev-toolbar-combo-menu-title">勾选要显示在工具列的功能</div>
+              <div class="ev-toolbar-combo-option"><input type="checkbox" data-toolbar-expose="stats" checked aria-label="曝露事件統計按鈕"><button type="button" class="ev-toolbar-combo-action" data-toolbar-action="stats">事件統計</button></div>
+            </div>
+          </div>
           <span class="ev-toolbar-flex"></span>
           <button type="button" class="ev-add-btn" id="ev-add-btn">＋ 新增行程</button>
         </div>

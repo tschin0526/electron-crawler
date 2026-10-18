@@ -2,10 +2,11 @@
  * 窗口管理与 UI IPC 模组
  * 从 main.js 拆分而来
  */
-const { BrowserWindow, ipcMain, clipboard, nativeImage, app, dialog, screen } = require('electron');
+const { BrowserWindow, ipcMain, clipboard, nativeImage, app, dialog, screen, webContents } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
+const http = require('http');
 
 // 应用根目录（本模组位于 main-modules/ 子目录，回退一级即 electron-crawler 根）
 const APP_ROOT = path.join(__dirname, '..');
@@ -638,6 +639,44 @@ ipcMain.handle('sticky-note-html', (e, arg) => {
   const id = noteWinId(String(arg && arg.key), +arg.idx || 0);
   return { html: stickyNoteHtml.get(id) || '', titleHtml: stickyNoteTitleHtml.get(id) || '' };
 });
+
+// 🆕 邮件收件人历史：主进程单一存储，便利贴 / 主窗口 / 邮件插件三端共用
+//    （便利贴窗是 file:// 不同 query 的独立 origin，renderer localStorage 不共享，故统一走 IPC）
+const EMAIL_RECIPIENTS_FILE = 'email-recipients.json';
+const EMAIL_RECIPIENTS_MAX = 50;
+function emailRecipientsPath() {
+  return PLUGINS_DATA_DIR ? path.join(PLUGINS_DATA_DIR, EMAIL_RECIPIENTS_FILE) : '';
+}
+function readEmailRecipients() {
+  const p = emailRecipientsPath();
+  if (!p) return [];
+  try {
+    const raw = fs.readFileSync(p, 'utf8');
+    const list = JSON.parse(raw);
+    return Array.isArray(list) ? list.filter(r => typeof r === 'string' && r.trim()) : [];
+  } catch (e) { return []; }
+}
+function writeEmailRecipients(list) {
+  const p = emailRecipientsPath();
+  if (!p) return;
+  try {
+    const set = new Set(list.filter(r => typeof r === 'string' && r.trim()).map(r => r.trim().toLowerCase()));
+    const cleaned = Array.from(set).slice(-EMAIL_RECIPIENTS_MAX);
+    fs.writeFileSync(p, JSON.stringify(cleaned, null, 2), 'utf8');
+  } catch (e) {}
+}
+function appendEmailRecipients(recipients) {
+  if (!recipients || !recipients.length) return;
+  const existing = readEmailRecipients();
+  const merged = existing.concat(recipients.map(r => String(r).trim().toLowerCase()).filter(Boolean));
+  writeEmailRecipients(merged);
+}
+ipcMain.handle('email-recipients-get', () => readEmailRecipients());
+ipcMain.handle('email-recipients-add', (event, recipients) => {
+  appendEmailRecipients(recipients);
+  return readEmailRecipients();
+});
+
 // 🆕 便利贴内容刷新：渲染端（主程式）把某张便利贴最新渲染结果推过来 → 中转给对应便利贴窗并刷新缓存
 ipcMain.on('sticky-note-refresh', (e, arg) => {
   if (!arg || typeof arg.key !== 'string') return;
@@ -811,6 +850,122 @@ ipcMain.handle('sticky-calendar-ready', (event) => {
   });
   return { success: true };
 });
+// 🆕 便利贴「发邮件」：便利贴窗 → 本进程 → 找到邮件插件 webview → 调 window.sendEmailByPlugin
+//   （与主窗口 renderer.js 的 sendEmailViaPlugin 同一函数：FormData POST localhost:5003/send_email，
+//     并写邮件插件自己的发送历史）。收件人/主题/正文由便利贴窗的浮层收集后传来。
+//   两条路径，按邮件插件是否加载自动分流：
+//     ① 主程序模式：邮件插件以 webview 跑在某个工作区页签 → sendEmailByPlugin（写邮件插件历史）
+//     ② --sticky 独立模式：根本没有邮件插件 → 主进程按同一契约直连邮件服务（见下方兜底函数）
+// 📧 邮件服务直连兜底：multipart/form-data POST 到 localhost:5003/send_email。
+// 发件人账号/密码统一由 emailService/email-config.json 维护，客户端（便利贴/邮件插件）不再写死。
+const STICKY_EMAIL_SERVICE_URL = 'http://localhost:5003/send_email';
+// 主进程按邮件插件同一契约直连邮件服务：multipart/form-data POST，字段
+// receiver_email / subject / body；返回 JSON { status, message }。
+// 用手写 multipart + http 模块（不依赖 Node 全局 fetch/FormData 的实验性 API）。
+function postStickyEmailViaService(recipients, subject, body) {
+  return new Promise((resolve) => {
+    const boundary = '----StickyNoteEmail' + Date.now().toString(16) + Math.random().toString(16).slice(2);
+    const fields = [
+      ['receiver_email', recipients.join(',')],
+      ['subject', subject],
+      ['body', body]
+    ];
+    const chunks = [];
+    fields.forEach((field) => {
+      chunks.push(Buffer.from(
+        '--' + boundary + '\r\n' +
+        'Content-Disposition: form-data; name="' + field[0] + '"\r\n\r\n' +
+        String(field[1]) + '\r\n', 'utf8'));
+    });
+    chunks.push(Buffer.from('--' + boundary + '--\r\n', 'utf8'));
+    const payload = Buffer.concat(chunks);
+
+    let target;
+    try {
+      target = new URL(STICKY_EMAIL_SERVICE_URL);
+    } catch (error) {
+      resolve({ success: false, message: '邮件服务地址无效' });
+      return;
+    }
+    const req = http.request({
+      hostname: target.hostname,
+      port: target.port || 80,
+      path: (target.pathname || '/') + (target.search || ''),
+      method: 'POST',
+      headers: {
+        'Content-Type': 'multipart/form-data; boundary=' + boundary,
+        'Content-Length': payload.length
+      }
+    }, (res) => {
+      let raw = '';
+      res.setEncoding('utf8');
+      res.on('data', (chunk) => { raw += chunk; });
+      res.on('end', () => {
+        let result = null;
+        try { result = JSON.parse(raw); } catch (error) { result = null; }
+        if (result && result.status === 'success') {
+          resolve({ success: true, message: result.message || '邮件发送成功' });
+        } else {
+          resolve({
+            success: false,
+            message: (result && result.message) ? result.message : ('邮件服务返回异常（HTTP ' + res.statusCode + '）')
+          });
+        }
+      });
+    });
+    req.setTimeout(30000, () => {
+      req.destroy();
+      resolve({ success: false, message: '邮件服务无响应（' + STICKY_EMAIL_SERVICE_URL + '）' });
+    });
+    req.on('error', (error) => {
+      resolve({ success: false, message: '无法连接邮件服务（' + STICKY_EMAIL_SERVICE_URL + '）：' + error.message });
+    });
+    req.end(payload);
+  });
+}
+ipcMain.handle('sticky-note-send-email', async (event, arg) => {
+  try {
+    const recipients = (arg && Array.isArray(arg.recipients))
+      ? arg.recipients.filter((r) => typeof r === 'string' && r.trim())
+      : [];
+    if (recipients.length === 0) return { success: false, message: '收件人为空' };
+    const subject = (arg && typeof arg.subject === 'string') ? arg.subject : '';
+    const body = (arg && typeof arg.body === 'string') ? arg.body : '';
+    if (!subject.trim()) return { success: false, message: '主题不能为空' };
+
+    // 邮件插件以 <webview> 形式跑在某个工作区页签里：枚举全部 webContents（含 webview guest）找它。
+    // ⚠️ 必须精确匹配 index.html——邮件详情窗加载的是同目录的 email-detail.html，不能误判。
+    const emailWc = webContents.getAllWebContents().find((wc) => {
+      try { return /plugins[\\/]email[\\/]index\.html/.test(wc.getURL() || ''); } catch (err) { return false; }
+    });
+    // ② 没有邮件插件（--sticky 独立模式）：主进程按同一契约直连邮件服务
+    if (!emailWc) {
+      console.log('[Main] 便利贴发邮件：未找到邮件插件 webview，改由主进程直连邮件服务（' + STICKY_EMAIL_SERVICE_URL + '）');
+      return await postStickyEmailViaService(recipients, subject, body);
+    }
+
+    const sendResult = emailWc.executeJavaScript(`
+      (async () => {
+        try {
+          const result = await window.sendEmailByPlugin(${JSON.stringify(recipients)}, ${JSON.stringify(subject)}, ${JSON.stringify(body)});
+          return JSON.stringify(result || { success: false, message: '邮件插件无响应' });
+        } catch (err) {
+          return JSON.stringify({ success: false, message: (err && err.message) ? err.message : String(err) });
+        }
+      })()
+    `).then((json) => {
+      try { return JSON.parse(json); } catch (err) { return { success: false, message: '邮件插件返回无法解析' }; }
+    }).catch((err) => ({ success: false, message: (err && err.message) ? err.message : String(err) }));
+    // 兜底超时（邮件服务无响应时别让便利贴一直转圈）
+    const timeout = new Promise((resolve) => {
+      setTimeout(() => resolve({ success: false, message: '邮件发送超时，请重试' }), 60000);
+    });
+    return await Promise.race([sendResult, timeout]);
+  } catch (error) {
+    console.error('[Main] 便利贴发送邮件失败:', error);
+    return { success: false, message: (error && error.message) ? error.message : String(error) };
+  }
+});
 ipcMain.handle('sticky-notes-count', () => ({ count: stickyNoteWindows.size }));
 
 // 单张便利贴：读取自身状态（位置/尺寸/颜色/透明度）
@@ -872,13 +1027,15 @@ ipcMain.handle('sticky-note-close', (e, arg) => {
   return true;
 });
 // 单张便利贴：唤起主程式（显示/聚焦主窗口，并让 TodoList 打开该事件）
+// action='edit'（缺省）→ 打开行程编辑框；action='scroll' → 只滚动定位到该行程（不打开编辑框）
 ipcMain.handle('wake-main-from-note', (e, arg) => {
   const win = showMainWindow();
-  const openStickyEvent = () => {
-    if (!win.isDestroyed()) win.webContents.send('open-sticky-event', { key: (arg && arg.key) || '' });
+  const channel = (arg && arg.action === 'scroll') ? 'scroll-sticky-event' : 'open-sticky-event';
+  const notifySticky = () => {
+    if (!win.isDestroyed()) win.webContents.send(channel, { key: (arg && arg.key) || '' });
   };
-  if (win.webContents.isLoading()) win.webContents.once('did-finish-load', openStickyEvent);
-  else openStickyEvent();
+  if (win.webContents.isLoading()) win.webContents.once('did-finish-load', notifySticky);
+  else notifySticky();
   return true;
 });
 

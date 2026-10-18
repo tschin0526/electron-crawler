@@ -164,9 +164,10 @@ function parseCalendarEvents(md) {
   const events = [];
   const blocks = String(md).split(/^##[ \t]*EVENT(?:\([^)]*\))?[ \t]*$/m);
   for (let i = 0; i < blocks.length; i++) {
-    // ⚠️ 切塊只按 ## EVENT → 本塊尾巴會黏著緊隨其後的 ## HOLIDAY 塊。
-    //    必須先在該標記處截斷，否則 remark / holidayType / region 等會被後面的假日塊污染（2026-09-19 用戶反饋）
-    const cut = blocks[i].search(/^##[ \t]*HOLIDAY[ \t]*$/m);
+    // ⚠️ 切塊只按 ## EVENT → 本塊尾巴會黏著緊隨其後的 ## HOLIDAY / ## DIARY 塊。
+    //    必須先在該標記處截斷，否則 remark / holidayType / region 等會被後面的塊污染；
+    //    更重要的是：## DIARY 含 - title / - date，會被 parseCalendarEventBlock 誤當成行程事件（帶勾選框）參與渲染（2026-10-17 修復）
+    const cut = blocks[i].search(/^##[ \t]*(HOLIDAY|DIARY)[ \t]*$/m);
     const ev = parseCalendarEventBlock(cut >= 0 ? blocks[i].slice(0, cut) : blocks[i], i);
     if (ev) events.push(ev);
   }
@@ -185,8 +186,9 @@ function parseCalendarHolidays(md) {
   const out = [];
   const blocks = String(md).split(/^##[ \t]*HOLIDAY[ \t]*$/m);
   for (let i = 1; i < blocks.length; i++) {
-    // 同理：假日塊尾巴可能黏著後面的 ## EVENT（含 (REPEAT)）塊 → 先在該標記處截斷
-    const cut = blocks[i].search(/^##[ \t]*EVENT(?:\([^)]*\))?[ \t]*$/m);
+    // 同理：假日塊尾巴可能黏著後面的 ## EVENT（含 (REPEAT)）/ ## DIARY 塊 → 先在該標記處截斷
+    //    （## DIARY 含 - title / - date，不截斷會被誤當成假日渲染）
+    const cut = blocks[i].search(/^##[ \t]*(EVENT(?:\([^)]*\))?|DIARY)[ \t]*$/m);
     const h = parseCalendarEventBlock(cut >= 0 ? blocks[i].slice(0, cut) : blocks[i], i);
     if (h) out.push(h);
   }
@@ -440,11 +442,49 @@ function calSpanDaySuffix(item, occDate) {
 // 📝 備註裡的 Markdown checkbox（- [ ] / - [x]）渲染成 ☐/☑ 樣式，且可點擊勾選/取消（寫回 notes 原文）。
 //    入參必須是「已 escape」的文本；支援任意縮進的 `- [ ]` / `- [x]` / `- [X]`。
 //    uid 為所屬行程（點擊時定位用）；fenced code block 內的行不當成 checkbox，避免誤判代碼。
+// 🆕 術語（term）渲染（立體膠囊＋tooltip 顯示釋義；與桌面 calendar 雙端對齊）：
+//   [[term]]                → 立體膠囊（term）
+//   [[term:釋義]]            → 立體膠囊(term) ＋ 釋義以 tooltip 呈現（hover）
+//   [[term:釋義:領域]]       → 立體膠囊(term) ＋ 領域為內嵌小膠囊 ＋ 釋義 tooltip
+//   領域＝最末一個冒號之後；釋義＝首冒號之後、末冒號之前（釋義可含冒號）。dl / cp 前綴（日期標記）與裸日期
+//   [[YYYY-MM-DD]] 排除（留給 📅/✅ 機制）。逐行處理並跳過代碼圍欄，避免代碼塊內 [[…]] 被誤轉。
+function calRenderTermDefs(text) {
+  let inFence = false;
+  return String(text).split('\n').map(function (line) {
+    if (/^\s*```/.test(line)) { inFence = !inFence; return line; }
+    if (inFence) return line;
+    return line.replace(/\[\[([^\]\n]+)\]\]/g, function (m, inner) {
+      const full = inner.trim();
+      if (!full) return m;
+      const firstColon = full.indexOf(':');
+      let term, rest;
+      if (firstColon === -1) {
+        term = full; rest = '';
+        if (term === 'dl' || term === 'cp') return m;                       // 日期標記名稱
+        if (/^\d{4}-\d{2}-\d{2}$/.test(term)) return m;                     // 裸日期 → dl 機制
+      } else {
+        term = full.slice(0, firstColon).trim();
+        rest = full.slice(firstColon + 1);
+        if (term === 'dl' || term === 'cp') return m;                       // 日期標記（dl:/cp: 後接日期）
+      }
+      const lastColon = rest.lastIndexOf(':');
+      const def = lastColon === -1 ? rest.trim() : rest.slice(0, lastColon).trim();
+      const domain = lastColon === -1 ? '' : rest.slice(lastColon + 1).trim();
+      const termHtml = '<span class="tl-term-cap"' +
+        (def ? ' title="' + escapeHtml(def) + '"' : '') + '>' +
+        escapeHtml(term) +
+        (domain ? '<span class="tl-term-domain">' + escapeHtml(domain) + '</span>' : '') +
+        '</span>';
+      return '<span class="tl-term">' + termHtml + '</span>';
+    });
+  }).join('\n');
+}
 // 基礎 Markdown 渲染（標題/備註共用）。
 // 標題行內使用：若 marked 只產出單個 <p>，去掉 <p> 包裝，避免在 .ev-title 裡產生多餘段間距。
 function calRenderInlineMarkdown(text) {
   if (!text) return '';
-  const html = renderMarkdown(String(text).trim());
+  // 🆕 標題也支援術語渲染（見 calRenderTermDefs）：先轉 term 膠囊再 renderMarkdown
+  const html = renderMarkdown(calRenderTermDefs(String(text).trim()));
   const trimmed = html.trim();
   if (/^<p>/i.test(trimmed) && /<\/p>$/i.test(trimmed)) {
     const inner = trimmed.slice(3, -4);
@@ -456,7 +496,8 @@ function calRenderInlineMarkdown(text) {
 function calRenderNotes(notes, uid) {
   if (!notes) return '';
   const withChecks = calNotesWithChecks(String(notes), uid);
-  return renderMarkdown(withChecks);
+  // 🆕 術語 [[term:釋義:領域]] → 膠囊＋tooltip（dl/cp 日期標記已先行轉 📅/✅，不在此處理）
+  return renderMarkdown(calRenderTermDefs(withChecks));
 }
 // 備註 checkbox 行內的 deadline / completed 標記（顯示層轉換，不改寫源）：裸日期與 [[dl:...]] → 📅、[[cp:...]] → ✅
 function calRenderNoteMarkers(text) {
@@ -1196,6 +1237,70 @@ function calOpenStats() {
 function calCloseStats() {
   const overlay = document.getElementById('ev-stats-overlay');
   if (overlay) overlay.style.display = 'none';
+}
+// 🆕 工具列 combo（曝露/自定義顯示的功能）：移植自桌面 calendar 的 tlInitCalendarToolbarCombo
+//   當前 LITE 僅掛「事件統計」一項（LITE 無便利贴/Include/左右布局；術語表彈層未移植）。勾選／取消→顯隱對應按鈕並存 localStorage。
+const CAL_TOOLBAR_EXPOSE_KEY = 'calToolbarExposed';
+function calInitCalendarToolbarCombo() {
+  const combo = document.getElementById('calToolbarCombo');
+  const exposed = document.getElementById('calToolbarExposed');
+  const trigger = document.getElementById('calToolbarComboTrigger');
+  const menu = document.getElementById('calToolbarComboMenu');
+  if (!combo || !exposed || !trigger || !menu || combo.dataset.initialized === '1') return;
+  combo.dataset.initialized = '1';
+  const definitions = [{ key: 'stats', id: 'ev-stats-btn' }];
+  const controls = new Map();
+  let selected = definitions.map((item) => item.key);
+  try {
+    const stored = JSON.parse(localStorage.getItem(CAL_TOOLBAR_EXPOSE_KEY) || 'null');
+    if (Array.isArray(stored)) selected = stored.filter((key) => definitions.some((item) => item.key === key));
+  } catch (e) { console.warn('[LITE] 讀取日曆工具列偏好失敗:', e); }
+  const items = new Map();
+  definitions.forEach((item) => {
+    const control = document.getElementById(item.id);
+    if (!control) return;
+    controls.set(item.key, control);
+    const wrapper = document.createElement('span');
+    wrapper.className = 'ev-toolbar-combo-item';
+    wrapper.dataset.toolbarItem = item.key;
+    const parent = control.parentElement;
+    if (parent && parent !== combo) parent.removeChild(control);
+    wrapper.appendChild(control);
+    exposed.appendChild(wrapper);
+    items.set(item.key, wrapper);
+  });
+  const checkboxes = Array.from(menu.querySelectorAll('input[data-toolbar-expose]'));
+  const apply = () => {
+    checkboxes.forEach((input) => {
+      const key = input.getAttribute('data-toolbar-expose');
+      const wrapper = items.get(key);
+      input.checked = selected.includes(key);
+      if (wrapper) wrapper.hidden = !input.checked;
+    });
+  };
+  const closeMenu = () => { menu.classList.remove('open'); trigger.setAttribute('aria-expanded', 'false'); };
+  apply();
+  trigger.addEventListener('click', (event) => {
+    event.stopPropagation();
+    const open = !menu.classList.contains('open');
+    menu.classList.toggle('open', open);
+    trigger.setAttribute('aria-expanded', String(open));
+  });
+  menu.addEventListener('click', (event) => event.stopPropagation());
+  menu.querySelectorAll('button[data-toolbar-action]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const control = controls.get(button.getAttribute('data-toolbar-action'));
+      closeMenu();
+      if (control) control.click();
+    });
+  });
+  checkboxes.forEach((input) => input.addEventListener('change', () => {
+    const key = input.getAttribute('data-toolbar-expose');
+    selected = input.checked ? Array.from(new Set(selected.concat(key))) : selected.filter((item) => item !== key);
+    apply();
+    try { localStorage.setItem(CAL_TOOLBAR_EXPOSE_KEY, JSON.stringify(selected)); } catch (e) { console.warn('[LITE] 儲存日曆工具列偏好失敗:', e); }
+  }));
+  document.addEventListener('click', (event) => { if (!combo.contains(event.target)) closeMenu(); });
 }
 // UTF-8 字節長度（純 JS，無依賴）：用於估算當前加載的 calendar.md 內容大小
 function calUtf8Len(s) {

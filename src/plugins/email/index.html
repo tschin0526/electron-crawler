@@ -881,7 +881,7 @@
         <!-- 黑夜模式由主程式统一控制，不单独显示按钮 -->
         <div class="sender-info">
           <span>✉️</span>
-          <span>tschin0526@me.com</span>
+          <span>邮件服务默认发件人</span>
         </div>
         <button class="btn btn-secondary" onclick="clearForm()" title="清空表单">🗑️</button>
         <button class="btn btn-success" onclick="sendEmail()" title="发送邮件">✉️</button>
@@ -982,7 +982,7 @@
   <script>
     const STORAGE_KEY = 'electron-email-history';
     const PLUGIN_NAME = 'email';
-    const SENDER_EMAIL = 'tschin0526@me.com';
+    // 发件人账号/密码统一由 emailService/email-config.json 维护，插件只负责内容和收件人。
 
     let emailHistory = [];
     let selectedRecipients = [];
@@ -1013,8 +1013,21 @@
     }
 
     // --- Recipient dropdown ---
+    // 🆕 共享收件人历史（主进程 email-recipients.json，便利贴 / 主窗口 / 本插件共用）
+    let sharedRecipients = [];
+    async function loadSharedRecipients() {
+      try {
+        if (window.electronAPI) sharedRecipients = (await window.electronAPI.invoke('email-recipients-get')) || [];
+      } catch (e) { sharedRecipients = []; }
+    }
+    async function addSharedRecipients(list) {
+      try {
+        if (window.electronAPI && list && list.length) await window.electronAPI.invoke('email-recipients-add', list);
+      } catch (e) { /* 历史记录失败不影响发送 */ }
+    }
     function getUniqueContacts() {
-      return [...new Set(emailHistory.map(item => item.to).flat())];
+      const fromHistory = emailHistory.map(item => item.to).flat();
+      return [...new Set([...fromHistory, ...sharedRecipients])];
     }
 
     function showRecipientDropdown() {
@@ -1591,8 +1604,6 @@
 
       try {
         const formData = new FormData();
-        formData.append('sender_email', SENDER_EMAIL);
-        formData.append('sender_password', 'nklsdqgjrledknab');
         formData.append('receiver_email', recipients.join(','));
         formData.append('subject', subject);
         formData.append('body', body);
@@ -1620,6 +1631,7 @@
           emailHistory.unshift(historyItem);
           if (emailHistory.length > 20) emailHistory = emailHistory.slice(0, 20);
           saveHistory();
+          addSharedRecipients(recipients);
 
           showStatus('邮件发送成功！', 'success');
           clearForm();
@@ -1648,6 +1660,7 @@
 
     async function init() {
       await loadHistory();
+      await loadSharedRecipients();
       renderHistory();
       await loadDraft();
       renderRecipientTags();
@@ -1676,8 +1689,6 @@
 
       try {
         const formData = new FormData();
-        formData.append('sender_email', SENDER_EMAIL);
-        formData.append('sender_password', 'nklsdqgjrledknab');
         formData.append('receiver_email', recipientList.join(','));
         formData.append('subject', subject);
         formData.append('body', body);
@@ -1700,6 +1711,7 @@
           emailHistory.unshift(historyItem);
           if (emailHistory.length > 20) emailHistory = emailHistory.slice(0, 20);
           await saveHistory();
+          await addSharedRecipients(recipientList);
 
           return { success: true, message: '邮件发送成功' };
         } else {

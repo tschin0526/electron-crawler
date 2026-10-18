@@ -82,18 +82,47 @@
     .addcheck-box textarea { width: 100%; box-sizing: border-box; height: max(36vh, 54px); resize: none; border: 1px solid #D4AF37; border-radius: 6px; padding: 6px; font: inherit; font-size: 12px; color: var(--note-fg, #33384a); background: rgba(127,127,127,.08); -webkit-app-region: no-drag; }
     .addcheck-box textarea:focus { outline: none; box-shadow: 0 0 0 1px #D4AF37; }
     .addcheck-box .ac-hint { margin-top: 6px; font-size: 10px; opacity: .65; }
+    /* 🆕 发邮件浮层：便利贴标题行 + 收件人输入框（复用 addcheck-box 外观） */
+    .addcheck-box .ac-note { margin-bottom: 6px; font-size: 11px; font-weight: 600; word-break: break-all; }
+    .addcheck-box input[type="text"] { width: 100%; box-sizing: border-box; border: 1px solid #D4AF37; border-radius: 6px; padding: 6px; font: inherit; font-size: 12px; color: var(--note-fg, #33384a); background: rgba(127,127,127,.08); -webkit-app-region: no-drag; }
+    .addcheck-box input[type="text"]:focus { outline: none; box-shadow: 0 0 0 1px #D4AF37; }
     .addcheck-box .ac-copy { margin-top: 8px; padding: 4px 12px; border: 1px solid rgba(127,127,127,.45); border-radius: 6px; background: rgba(127,127,127,.12); color: var(--note-fg, #33384a); font: inherit; cursor: pointer; -webkit-app-region: no-drag; }
     .addcheck-box .ac-copy:hover { background: rgba(127,127,127,.24); }
+    /* 🆕 弹层按钮行：复制｜保存｜关闭（保存用金色主按钮，与便利贴描边同色系） */
+    .addcheck-box .ac-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; margin-top: 8px; }
+    .addcheck-box .ac-actions .ac-copy { margin-top: 0; padding: 4px 10px; }
+    .addcheck-box .ac-primary { background: rgba(212,175,55,.28); border-color: #D4AF37; font-weight: 600; }
+    .addcheck-box .ac-primary:hover { background: rgba(212,175,55,.45); }
+    /* 🆕 收件人历史下拉（复用菜单配色 --menu-bg/--note-fg，保证深浅主题可读） */
+    .email-input-wrap { position: relative; }
+    .email-recipient-dropdown {
+      position: absolute; left: 0; right: 0; top: 100%; margin-top: 2px;
+      max-height: 180px; overflow-y: auto; display: none;
+      background: var(--menu-bg, rgba(255,255,255,.98));
+      border: 1px solid #D4AF37; border-radius: 6px;
+      box-shadow: 0 8px 20px rgba(0,0,0,.35);
+      color: var(--note-fg, #33384a); font-size: 12px; z-index: 40;
+    }
+    .email-recipient-dropdown.show { display: block; }
+    .email-recipient-dropdown .erd-item {
+      padding: 6px 8px; cursor: pointer;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .email-recipient-dropdown .erd-item:hover,
+    .email-recipient-dropdown .erd-item.active { background: rgba(212,175,55,.25); }
+    .email-recipient-dropdown .erd-empty {
+      padding: 8px; opacity: .55; font-size: 11px; text-align: center;
+    }
     .tags { margin: 6px 12px 0; padding: 0; list-style: none; display: flex; flex-wrap: wrap; gap: 4px; flex: none; }
     /* 标签：文字跟随字体颜色；底色由 JS 按字体色亮度自动取反色（浅字→深底 / 深字→浅底）；外框固定金色描边 */
     .tags li { background: var(--tag-bg, rgba(0,0,0,.06)); border: 1px solid #D4AF37; border-radius: 99px; padding: 1px 8px; font-size: 10px; color: var(--note-fg, #5b6170); box-sizing: border-box; }
     .body { padding: 6px 12px 10px; font-size: 12px; color: var(--note-fg, #33384a); overflow: auto; flex: 1; line-height: 1.5; -webkit-app-region: no-drag; }
     .body > *:first-child { margin-top: 0; }
     .body > *:last-child { margin-bottom: 0; }
-    .body h1 { font-size: 1.35em; font-weight: 700; margin: .6em 0 .3em; }
-    .body h2 { font-size: 1.2em; font-weight: 700; margin: .55em 0 .3em; }
-    .body h3 { font-size: 1.08em; font-weight: 600; margin: .5em 0 .25em; }
-    .body h4, .body h5, .body h6 { font-size: 1em; font-weight: 600; margin: .45em 0 .2em; }
+    .body h1 { font-size: 1.8em; font-weight: 700; margin: .6em 0 .3em; }
+    .body h2 { font-size: 1.5em; font-weight: 700; margin: .55em 0 .3em; }
+    .body h3 { font-size: 1.3em; font-weight: 600; margin: .5em 0 .25em; }
+    .body h4, .body h5, .body h6 { font-size: 1.15em; font-weight: 600; margin: .45em 0 .2em; }
     .body p { margin: .35em 0; }
     .body strong { font-weight: 700; }
     .body em { font-style: italic; }
@@ -103,12 +132,12 @@
     .body ul li { list-style: disc; } .body ol li { list-style: decimal; }
     .body ul li input[type=checkbox], .body ol li input[type=checkbox] { margin-right: 4px; vertical-align: -1px; }
     .body blockquote { margin: .4em 0; padding: .2em 0 .2em .8em; border-left: 3px solid rgba(0,0,0,.16); color: #5b6170; }
-    .body hr { border: none; border-top: 1px solid rgba(0,0,0,.12); margin: .6em 0; }
+    .body hr { border: none; border-top: 1px solid rgba(255,255,255,.35); margin: .6em 0; }
     .body a { color: #2563EB; text-decoration: underline; }
     .body img { max-width: 100%; height: auto; border-radius: 6px; margin: .2em 0; }
-    .body table { border-collapse: collapse; margin: .4em 0; font-size: 11px; width: 100%; }
-    .body th, .body td { border: 1px solid rgba(0,0,0,.14); padding: 3px 6px; text-align: left; }
-    .body th { background: rgba(0,0,0,.05); font-weight: 600; }
+    .body table { border-collapse: collapse; margin: .4em 0; font-size: 11px; width: 100%; border: 1px solid rgba(212,175,55,.6); }
+    .body th, .body td { border: 1px solid rgba(212,175,55,.45); padding: 3px 6px; text-align: left; }
+    .body th { background: rgba(212,175,55,.18); font-weight: 600; }
     .body code { background: rgba(0,0,0,.06); padding: 0 3px; border-radius: 3px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .95em; }
     .body pre { background: rgba(0,0,0,.06); padding: 8px; border-radius: 6px; overflow: auto; }
     .body pre code { background: none; padding: 0; }
@@ -130,7 +159,33 @@
     #body .ev-md-check + br,
     #body br:has(+ .ev-md-check) { display: none !important; }
     .ev-md-check { display: block; cursor: default; }
-    .body h1, .body h2, .body h3 { font-size: 13px; margin: .4em 0 .2em; }
+    /* 🆕「最小 MD 表达单元」区块：非 checkbox 内容（表格/段落/标题/引用/代码/列表）
+       左侧常驻一个编辑小圆点（✎）。便利贴为可拖拽窗体，圆点必须 no-drag 才能点击 */
+    #body .md-unit { position: relative; padding-left: 18px; margin: 0 0 .45em 0; }
+    #body .md-unit:last-child { margin-bottom: 0; }
+    #body .md-unit > *:first-child { margin-top: 0; }
+    #body .md-unit > *:last-child { margin-bottom: 0; }
+    #body .md-unit-edit { position: absolute; left: 0; top: .15em; display: inline-flex; width: 13px; height: 13px; padding: 0; align-items: center; justify-content: center; border: 0; border-radius: 50%; background: var(--ev-primary, #d4af37); color: #fff; font-size: 9px; line-height: 1; cursor: pointer; opacity: .8; -webkit-app-region: no-drag; }
+    #body .md-unit-edit:hover, #body .md-unit-edit:focus-visible { opacity: 1; outline: 2px solid var(--ev-primary, #d4af37); outline-offset: 1px; }
+    /* 🆕 術語（term）渲染：金色半透明底色与便利贴表面拉开层次，字色＝--note-fg，
+       金色描边呼应菜单；高度压窄。領域小膠囊為中性半透明，嵌於大膠囊內 */
+    .tl-term { display: inline; }
+    .tl-term-cap {
+      display: inline-flex; align-items: center; gap: .3em;
+      margin-right: .3em; padding: 0 .5em;
+      border-radius: 999px; line-height: 1.3; font-size: .9em; font-weight: 600;
+      white-space: nowrap; cursor: help;
+      color: var(--note-fg, #33384a);
+      background: rgba(212,175,55,.42);
+      border: 1px solid rgba(212,175,55,.8);
+      box-shadow: 0 1px 2px rgba(0,0,0,.18);
+    }
+    .tl-term-domain {
+      display: inline-block; margin-left: -.05em; padding: 0 .35em;
+      font-size: .72em; font-weight: 600; line-height: 1.3;
+      border-radius: 999px; color: var(--note-fg, #33384a);
+      background: rgba(0,0,0,.25); border: 1px solid rgba(212,175,55,.55);
+    }
     .body p { margin: .3em 0; }
     .body code { background: rgba(0,0,0,.06); padding: 0 3px; border-radius: 3px; }
     .body pre { background: rgba(0,0,0,.06); padding: 6px; border-radius: 6px; overflow: auto; }
@@ -180,6 +235,8 @@
     .mi:disabled { opacity: .35; cursor: default; }
     .mi:disabled:hover { background: transparent; }
     .msep { height: 1px; background: var(--menu-divider, rgba(0,0,0,.10)); margin: 2px 6px; }
+    .m-row { display: flex; gap: 4px; padding: 1px 0; }
+    .m-row > .mi { flex: 1; width: auto; text-align: center; }
     .m-sticky-list { display: none; padding: 2px 0; }
     .m-sticky-list.open { display: block; }
     .m-sticky-list-title { padding: 2px 9px 3px; color: var(--menu-muted, #6b7280); font-size: 10px; text-align: center; }
@@ -212,6 +269,20 @@
     #flipNextEdge { right: 6px; }
     #note.flip .flip-edge { display: inline-flex; }
     #note.flip .flip-edge.visible { opacity: .5; pointer-events: auto; }
+    /* 翻页页次讯息框：画面正中央、透明度 70%、约 2 公分大字、1 秒自动关闭 */
+    .flip-page-toast {
+      position: absolute; left: 50%; top: 50%; z-index: 30;
+      transform: translate(-50%, -50%);
+      display: flex; align-items: center; justify-content: center;
+      padding: .35em 1.1em; border-radius: 16px;
+      background: rgba(18,22,30,.94); color: #fff;
+      font-size: 1cm; font-weight: 700; line-height: 1.1; letter-spacing: .02em;
+      white-space: nowrap; opacity: 0; pointer-events: none;
+      box-shadow: 0 12px 34px rgba(0,0,0,.4);
+      transition: opacity .2s ease;
+      -webkit-app-region: no-drag;
+    }
+    .flip-page-toast.show { opacity: .5; }
     /* 菜单内的「背景色 / 透明度」子区（点 🎨 菜单项展开/收起） */
     .m-cfg { display: none; padding: 2px 6px 6px; }
     .m-cfg.open { display: block; }
@@ -268,9 +339,15 @@
     <div class="note-refresh-feedback" id="noteRefreshFeedback" role="status" aria-live="polite"></div>
     <button type="button" class="flip-edge" id="flipPrevEdge" aria-label="上一张便利贴" title="上一张">‹</button>
     <button type="button" class="flip-edge" id="flipNextEdge" aria-label="下一张便利贴" title="下一张">›</button>
+    <div class="flip-page-toast" id="flipPageToast" role="status" aria-live="polite"></div>
     <div class="menu" id="menu">
-      <!-- 第 1 行：常用操作图标按钮（说明文字放title tooltip） -->
-      <button class="mi" id="miCalendar" title="开启 Calendar">📅 开启 Calendar</button>
+      <!-- 第 1 行：Calendar 操作并排（开启 / 滚动） -->
+      <div class="m-row">
+        <button class="mi" id="miCalendar" title="开启 Calendar（只开窗口，不导航）">📅 开启 Calendar</button>
+        <button class="mi" id="miCalendarScroll" title="开启 Calendar 并滚动定位到该行程位置">📜 滚动</button>
+      </div>
+      <!-- 📧 发邮件：把当前这张便利贴的内容经本机邮件服务发出（收件人在浮层里输入） -->
+      <button class="mi" id="miEmail" title="把这张便利贴的内容发送邮件">📧 发邮件</button>
       <div class="m-sticky-list" id="mStickyListWrap">
         <div class="m-sticky-list-title" id="mStickyListTitle">已设定的便利贴（点击名称显示；点击开 / 关切换）</div>
         <div class="m-sticky-list-items" id="mStickyList"></div>
@@ -315,7 +392,28 @@
         <div class="ac-title">加入子事件（CheckBox）</div>
         <textarea id="addCheckInput" placeholder="每行一个子事件，回车直接加入…"></textarea>
         <div class="ac-hint">⌘S 加入 · Esc 取消</div>
-        <button type="button" class="ac-copy" id="copyNoteCheckButton" style="display:none">复制</button>
+        <div class="ac-actions">
+          <button type="button" class="ac-copy" id="copyNoteCheckButton" style="display:none">复制</button>
+          <button type="button" class="ac-copy" id="editFullNoteFromCheckButton" style="display:none">编辑完整备注</button>
+          <button type="button" class="ac-copy ac-primary" id="saveCheckButton">保存</button>
+          <button type="button" class="ac-copy" id="closeCheckButton">关闭</button>
+        </div>
+      </div>
+    </div>
+    <!-- 🆕 发邮件浮层（菜单 📧 触发）：填收件人 → 主进程转邮件插件 sendEmailByPlugin；Enter 发送 · Esc 取消 -->
+    <div class="addcheck-ov" id="emailOv">
+      <div class="addcheck-box" id="emailBox">
+        <div class="ac-title">📧 发邮件</div>
+        <div class="ac-note" id="emailNoteTitle"></div>
+        <div class="email-input-wrap">
+          <input type="text" id="emailRecipientInput" placeholder="收件人邮箱（多个用逗号分隔）…" spellcheck="false" />
+          <div class="email-recipient-dropdown" id="emailRecipientDropdown"></div>
+        </div>
+        <div class="ac-hint">Enter 发送 · Esc 取消</div>
+        <div class="ac-actions">
+          <button type="button" class="ac-copy ac-primary" id="emailSendBtn">发送</button>
+          <button type="button" class="ac-copy" id="emailCancelBtn">取消</button>
+        </div>
       </div>
     </div>
     <div class="rz" id="rz"></div>
