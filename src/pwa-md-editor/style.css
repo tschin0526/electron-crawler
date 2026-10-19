@@ -402,6 +402,14 @@ body {
 .ev-sub-progress.all-done { background: rgba(52,199,89,.15); border-color: rgba(52,199,89,.55); color: #34C759; }
 .ev-span-display-mode { display: inline-flex; align-items: center; justify-content: center; min-width: 18px; box-sizing: border-box; margin-left: 4px; padding: 1px 5px; border: 1px solid #f5c518; border-radius: 999px; color: #f5c518; font-size: 10px; line-height: 1.4; font-weight: 700; vertical-align: middle; }
 .ev-item .ev-title .ev-link { display: inline-flex; align-items: center; justify-content: center; min-width: 22px; min-height: 22px; box-sizing: border-box; margin-left: 4px; padding: 2px 4px; border: 1px solid #f5c518; border-radius: 999px; color: #f5c518; }
+/* ☐ 每事件「只显示未完成 checkbox 子事件」开关（与桌面 index.html 同款金色胶囊） */
+.ev-undone-filter-btn { margin-left: 4px; padding: 1px 5px; font-size: 12px; line-height: 1.6; border: 1px solid #f5c518; border-radius: 999px; background: transparent; color: #f5c518; cursor: pointer; vertical-align: middle; }
+.ev-undone-filter-btn:hover, .ev-undone-filter-btn.active { background: rgba(245,197,24,.14); color: #f5c518; border-color: #f5c518; }
+.ev-item.only-undone-checks .ev-md-check.done { display: none !important; }
+/* 過濾中：勾選行改為「一行一個區塊」並收掉行間 <br>（LITE 備註由 breaks:true 產出 br，
+   若只藏掉完成的 span，會殘留空白行；桌面端 .ev-md-check 本就是 block，此處靠過濾態對齊同一視覺） */
+.ev-item.only-undone-checks .ev-md-check { display: block; }
+.ev-item.only-undone-checks .ev-md-check + br { display: none; }
 .ev-tags { display: inline-flex; flex-wrap: wrap; gap: 4px; margin-left: 8px; vertical-align: middle; }
 .ev-tag-view { display: inline-block; padding: 3px 12px; border-radius: 999px; background: #7C3AED; border: 1px solid #8B5CF6; color: #fff; font-size: 12px; line-height: 1.35; font-weight: 600; white-space: nowrap; }
 .ev-meta { margin-top: 2px; font-size: 12px; color: var(--text-secondary); }
@@ -409,6 +417,12 @@ body {
 .ev-notes p { margin: 0 0 0.35em 0; }
 .ev-notes p:last-child { margin-bottom: 0; }
 .ev-notes hr, .ev-block .notes hr, .ev-tip-notes hr { border: 0; border-top: 1px solid var(--border); height: 0; margin: .45em 0; }
+/* 帶文字的分割線：整行「--- 文字 ---」（桌面端同一套私有語法）
+   橫線由兩個偽元素各佔一半畫出、文字浮在正中，不需要背景色遮罩 → 深淺主題皆適用 */
+.hr-text { display: flex; align-items: center; gap: .7em; width: 100%; margin: .8em 0; font-size: .95em; line-height: 1.4; }
+.hr-text::before, .hr-text::after { content: ""; flex: 1 1 0; min-width: 1.2em; border-top: 1px solid color-mix(in srgb, currentColor 38%, transparent); }
+.hr-text-label { flex: 0 1 auto; text-align: center; }
+.ev-notes .hr-text, .ev-block .notes .hr-text, .ev-tip-notes .hr-text { margin: .45em 0; }
 .ev-notes ul, .ev-notes ol { margin: 0.25em 0; padding-left: 1.5em; }
 .ev-notes li { margin: 0.15em 0; }
 .ev-notes pre { margin: 0.35em 0; overflow-x: auto; }

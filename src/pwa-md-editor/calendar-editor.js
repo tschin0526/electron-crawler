@@ -366,6 +366,32 @@ function calSpanDisplayModeBadge(ev) {
   const label = mode === 'first' ? '首天显示' : mode === 'last' ? '末天显示' : '每天显示';
   return '<span class="ev-span-display-mode" title="跨天模式：' + label + '">' + letter + '</span>';
 }
+// ☐「只顯示該事件未完成的 checkbox 子事件」：每事件一個開關（純 UI 偏好 → localStorage，絕不改寫 calendar.md）
+const CAL_UNDONE_CHECKS_KEY = 'calUndoneChecksByEvent';
+let calUndoneChecksByEvent = (function () {
+  try {
+    const saved = JSON.parse(localStorage.getItem(CAL_UNDONE_CHECKS_KEY) || '{}');
+    if (saved && typeof saved === 'object' && !Array.isArray(saved)) return saved;
+    console.warn('[LITE] 忽略無效的每事件 checkbox 篩選設定');
+  } catch (e) { console.warn('[LITE] 讀取每事件 checkbox 篩選設定失敗', e); }
+  return {};
+})();
+function calEventUndoneChecksOnly(uid) { return calUndoneChecksByEvent[uid] === true; }
+function calToggleEventUndoneChecks(uid, button) {
+  if (!uid) return;
+  const next = !calEventUndoneChecksOnly(uid);
+  if (next) calUndoneChecksByEvent[uid] = true; else delete calUndoneChecksByEvent[uid];
+  try { localStorage.setItem(CAL_UNDONE_CHECKS_KEY, JSON.stringify(calUndoneChecksByEvent)); }
+  catch (e) { showToast('無法保存該事件的 checkbox 顯示設定：' + ((e && e.message) || e), 'error'); }
+  const item = button && button.closest('.ev-item');
+  if (item) item.classList.toggle('only-undone-checks', next);
+  if (button) {
+    button.classList.toggle('active', next);
+    button.textContent = next ? '☑' : '☐';
+    button.setAttribute('aria-pressed', next ? 'true' : 'false');
+    button.title = next ? '仅显示该事件未完成的 checkbox 子事件（点击显示全部）' : '只显示该事件未完成的 checkbox 子事件';
+  }
+}
 // 重複展開視窗：各視圖渲染前用 calSetRepeatWindow 設定，避免 never 模式無限展開
 let calRepeatFrom = '2000-01-01', calRepeatTo = '2100-01-01';
 function calSetRepeatWindow(from, to) { calRepeatFrom = from || '2000-01-01'; calRepeatTo = to || '2100-01-01'; }
@@ -2552,7 +2578,7 @@ function evItemHtml(ev, today, occDate) {
     time = ev.allDay ? '全天' : ((ev.startTime || '') + (ev.endTime ? '-' + ev.endTime : ''));
   }
   const spanBadge = multi ? '<span class="ev-span-badge" title="跨天行程">⤢ 跨' + calSpanDays(ev.date, ev.endDate) + '天</span>' : '';
-  return '<div class="ev-item' + (past ? ' past' : '') + (ev.done ? ' done' : '') + (multi ? ' multi' : '') + '" data-ev-edit="' + escapeHtml(ev.uid) + '" data-occ-date="' + escapeHtml(occDate || ev.date) + '">' +
+  return '<div class="ev-item' + (past ? ' past' : '') + (ev.done ? ' done' : '') + (multi ? ' multi' : '') + (calEventUndoneChecksOnly(ev.uid) ? ' only-undone-checks' : '') + '" data-ev-edit="' + escapeHtml(ev.uid) + '" data-occ-date="' + escapeHtml(occDate || ev.date) + '">' +
     '<input type="checkbox" class="ev-check" data-ev-done="' + escapeHtml(ev.uid) + '"' +
     (ev.done ? ' checked' : '') + ' title="勾選＝已完成">' +
     '<span class="ev-swatch" style="background:' + escapeHtml(ev.color) + '"></span>' +
@@ -2562,6 +2588,10 @@ function evItemHtml(ev, today, occDate) {
     (ev.tags && ev.tags.length ? '<span class="ev-tags">' + ev.tags.map(t => '<span class="ev-tag-view" data-tag="' + escapeHtml(calTagName(t)) + '">' + escapeHtml(calTagLabel(t)) + '</span>').join('') + '</span>' : '') +
     calSubProgressBadge(ev) +
     calSpanDisplayModeBadge(ev) +
+    '<button type="button" class="ev-undone-filter-btn' + (calEventUndoneChecksOnly(ev.uid) ? ' active' : '') + '"' +
+    ' data-ev-undone-filter="' + escapeHtml(ev.uid) + '" aria-pressed="' + (calEventUndoneChecksOnly(ev.uid) ? 'true' : 'false') + '"' +
+    ' title="' + (calEventUndoneChecksOnly(ev.uid) ? '仅显示该事件未完成的 checkbox 子事件（点击显示全部）' : '只显示该事件未完成的 checkbox 子事件') + '">' +
+    (calEventUndoneChecksOnly(ev.uid) ? '☑' : '☐') + '</button>' +
     calEventTodoLinks(ev) +
     '</div>' +
     '<div class="ev-meta">' + escapeHtml(time) + (ev.location ? ' · 📍' + escapeHtml(ev.location) : '') + '</div>' +
@@ -2916,6 +2946,9 @@ function onEvListClick(e) {
   // 完成勾選框：切換 done → 寫回編輯緩衝（按頂欄「保存」才落盤）
   const doneChk = e.target.closest('[data-ev-done]');
   if (doneChk) { toggleEventDone(doneChk.getAttribute('data-ev-done'), doneChk.checked); return; }
+  // ☐ 每事件「只顯示未完成 checkbox」開關：必須排在 data-ev-edit 之前，否則整列點選會先開編輯選單
+  const ufBtn = e.target.closest('[data-ev-undone-filter]');
+  if (ufBtn) { e.preventDefault(); e.stopPropagation(); calToggleEventUndoneChecks(ufBtn.getAttribute('data-ev-undone-filter'), ufBtn); return; }
   const editBtn = e.target.closest('[data-ev-edit]');
   if (editBtn) {
     const uid = editBtn.getAttribute('data-ev-edit');

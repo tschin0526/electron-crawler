@@ -1267,6 +1267,11 @@
     }
     .todo-text .img-row .file-embed pre, .md-preview .img-row .file-embed pre { max-height: 240px; }
     .todo-text hr, .md-preview hr { border: none; border-top: 1px solid var(--border-color); margin: 1em 0; }
+    /* 🆕 带文字的分割线：整行「--- 文字 ---」（星号、下划线三种记号同，首尾须同款）。本项目的私有语法，
+       横线由两个伪元素各占一半画出、文字浮在正中，故不需要背景色遮罩 —— 便利贴任意纸色都适用。 */
+    .hr-text { display: flex; align-items: center; gap: .7em; width: 100%; margin: .8em 0; font-size: .95em; line-height: 1.4; }
+    .hr-text::before, .hr-text::after { content: ""; flex: 1 1 0; min-width: 1.2em; border-top: 1px solid color-mix(in srgb, currentColor 38%, transparent); }
+    .hr-text-label { flex: 0 1 auto; text-align: center; }
     .todo-text del, .md-preview del { color: var(--text-secondary); }
 
     /* 黑夜模式下忽略自定义卡片背景色，使用默认深色卡片背景 */
@@ -2050,6 +2055,7 @@
     .ev-notes p { margin: 0 0 0.35em 0; }
     .ev-notes p:last-child { margin-bottom: 0; }
     .ev-notes hr, .ev-block .notes hr, .ev-tip-notes hr { border: 0; border-top: 1px solid var(--ev-border); height: 0; margin: .45em 0; }
+    .ev-notes .hr-text, .ev-block .notes .hr-text, .ev-tip-notes .hr-text { margin: .45em 0; }
     .ev-notes ul, .ev-notes ol { margin: 0.25em 0; padding-left: 1.5em; }
     .ev-notes li { margin: 0.15em 0; }
     .ev-notes pre { margin: 0.35em 0; overflow-x: auto; }
@@ -4188,12 +4194,23 @@
       margin-top: 4px;
       max-height: 260px;
       overflow-y: auto;
+      overscroll-behavior: contain;   /* 滚到下边界不再连锁滚动父容器（编辑器 / 页面） */
       background: #1e293b;
       border: 1px solid #334155;
       border-radius: 6px;
       box-shadow: 0 6px 18px rgba(0,0,0,0.35);
       z-index: 100;
       padding: 4px 0;
+    }
+    /* 编辑 modal 的搜索历史下拉：改用 fixed 并改由 JS 定位（见 positionSearchHistoryDropdown），
+       以避开 .md-toolbar 的 overflow-x:auto —— 该 overflow 会强制 overflow-y 变 auto，
+       把绝对定位的下拉裁切掉（实测 dropdown 整块被裁、光标实际命中的是后方 textarea），
+       于是滚轮「滚搜索框」变成「滚编辑器」。fixed 脱离该裁剪上下文，下拉完整可见且滚轮只滚自身。 */
+    #searchHistoryDropdown {
+      position: fixed;
+      top: auto; left: auto; right: auto;
+      margin-top: 0;
+      z-index: 2000;
     }
     .search-history-item {
       padding: 6px 12px;
@@ -4300,8 +4317,8 @@
       </div>
       <div class="search-wrapper" data-page-node-id="lpsvAbEpZ8FVZnprD6mZJI">
         <span class="search-box-wrap">
-          <input type="text" class="search-box" id="searchInput" placeholder="搜索任务..." oninput="handleSearch();onGallerySearchInputChange()" onfocus="showGallerySearchHistory()" onblur="setTimeout(hideGallerySearchHistory,150)" onkeydown="if(event.key==='Enter'){event.preventDefault();hideGallerySearchHistory();const v=document.getElementById('searchInput').value.trim();if(v){addSearchHistory(v);handleSearch();}}else if(event.key==='Escape'){hideGallerySearchHistory();}" data-page-node-id="ilsn0X5Tzrc4nmwC6RfPD7">
-          <div id="gallerySearchHistoryDropdown" class="search-history-dropdown" style="display:none;"></div>
+          <input type="text" class="search-box" id="searchInput" placeholder="搜索任务..." oninput="handleSearch();onGallerySearchInputChange()" onfocus="showGallerySearchHistory()" onblur="setTimeout(hideGallerySearchHistory,150)" onkeydown="if(event.key==='Enter'){event.preventDefault();hideGallerySearchHistory();const v=document.getElementById('searchInput').value.trim();if(v){addSearchHistory(v);handleSearch();}}else if(event.key==='Escape'){hideGallerySearchHistory();}" onwheel="event.stopPropagation()" data-page-node-id="ilsn0X5Tzrc4nmwC6RfPD7">
+          <div id="gallerySearchHistoryDropdown" class="search-history-dropdown" style="display:none;" onwheel="event.stopPropagation()"></div>
         </span>
         <div class="search-nav" id="searchNav" style="display: none;" data-page-node-id="XOiqCmPp9d3TVjJoPmpGq2">
           <span class="search-count" id="searchResultCount" data-page-node-id="NNkTKERhBQ4PMixQDvFsWE">0/0</span>
@@ -5020,8 +5037,8 @@
 
           <span style="flex:1" data-page-node-id="rYQS1EpVAsBLVKB3hOouqm"></span>
           <span class="search-box-wrap">
-            <input type="text" id="editSearchInput" placeholder="搜索内容..." style="width:120px;padding:4px 8px;border:1px solid #334155;border-radius:4px;background:#1e293b;color:#e2e8f0;font-size:12px;outline:none;margin-right:4px;" oninput="doSearch();onSearchInputChange()" onfocus="showSearchHistory()" onblur="setTimeout(hideSearchHistory,150)" onkeydown="if(event.key==='Enter'){if(event.isComposing||window.__imeComposing)return;event.preventDefault();doSearchEnter();}else if(event.key==='Escape'){hideSearchHistory();}" data-page-node-id="MwJBrn8xQaEsuPzX3O86Es">
-            <div id="searchHistoryDropdown" class="search-history-dropdown" style="display:none;"></div>
+            <input type="text" id="editSearchInput" placeholder="搜索内容..." style="width:120px;padding:4px 8px;border:1px solid #334155;border-radius:4px;background:#1e293b;color:#e2e8f0;font-size:12px;outline:none;margin-right:4px;" oninput="doSearch();onSearchInputChange()" onfocus="showSearchHistory()" onblur="setTimeout(hideSearchHistory,150)" onkeydown="if(event.key==='Enter'){if(event.isComposing||window.__imeComposing)return;event.preventDefault();doSearchEnter();}else if(event.key==='Escape'){hideSearchHistory();}" onwheel="event.stopPropagation()" data-page-node-id="MwJBrn8xQaEsuPzX3O86Es">
+            <div id="searchHistoryDropdown" class="search-history-dropdown" style="display:none;" onwheel="event.stopPropagation()"></div>
           </span>
           <span id="searchCount" style="font-size:11px;color:#94a3b8;margin-right:4px;min-width:50px;display:inline-block;" data-page-node-id="kI5XzGl9ya480PNfujtSML"></span>
           <button id="searchPrevBtn" onmouseover="this.style.background='#334155';this.style.color='#e2e8f0'" onmouseout="this.style.background='#1e293b';this.style.color='#94a3b8'" onclick="findPrev()" title="上一笔" style="display:none;padding:2px 6px;border:1px solid #334155;border-radius:4px;background:#1e293b;color:#94a3b8;font-size:11px;cursor:pointer;margin-right:2px;" data-page-node-id="kCNTdS1TWqAQIFpYxD6Bvc">◀</button>
@@ -8048,6 +8065,39 @@
       ).join('');
     }
 
+    // 把搜索历史下拉定位到输入框正下方（position:fixed，避开 .md-toolbar 的 overflow 裁剪）
+    function positionSearchHistoryDropdown(input, dd) {
+      if (!input || !dd) return;
+      const r = input.getBoundingClientRect();
+      dd.style.left = Math.round(r.left) + 'px';
+      dd.style.top = Math.round(r.bottom + 4) + 'px';
+      dd.style.width = Math.max(Math.round(r.width), 220) + 'px';
+      // 若下拉会超出视窗底部，则翻到输入框上方显示（下拉最大高度 260 + 间距）
+      const estH = Math.min(260, dd.scrollHeight || 260) + 8;
+      if (r.bottom + 4 + estH > window.innerHeight && r.top - 4 - estH > 0) {
+        dd.style.top = Math.round(r.top - 4 - estH) + 'px';
+      }
+    }
+
+    // 下拉开启期间，视窗缩放 / 任意滚动时重新贴回输入框（fixed 不再随父容器滚动）
+    let __searchHistRepositionHandler = null;
+    function attachSearchHistReposition(dd) {
+      detachSearchHistReposition();
+      __searchHistRepositionHandler = function () {
+        const input = document.getElementById('editSearchInput');
+        if (dd.style.display !== 'none' && input) positionSearchHistoryDropdown(input, dd);
+      };
+      window.addEventListener('resize', __searchHistRepositionHandler);
+      window.addEventListener('scroll', __searchHistRepositionHandler, true);
+    }
+    function detachSearchHistReposition() {
+      if (__searchHistRepositionHandler) {
+        window.removeEventListener('resize', __searchHistRepositionHandler);
+        window.removeEventListener('scroll', __searchHistRepositionHandler, true);
+        __searchHistRepositionHandler = null;
+      }
+    }
+
     // 显示下拉：仅当编辑 modal 处于打开态；有历史才显示
     function showSearchHistory() {
       const input = document.getElementById('editSearchInput');
@@ -8056,12 +8106,17 @@
       const overlay = document.getElementById('modalOverlay');
       if (!overlay || overlay.style.display !== 'flex') return;
       renderSearchHistoryDropdown();
-      if (searchHistory.length > 0) dd.style.display = 'block';
+      if (searchHistory.length > 0) {
+        dd.style.display = 'block';
+        positionSearchHistoryDropdown(input, dd);
+        attachSearchHistReposition(dd);
+      }
     }
 
     function hideSearchHistory() {
       const dd = document.getElementById('searchHistoryDropdown');
       if (dd) dd.style.display = 'none';
+      detachSearchHistReposition();
     }
 
     // 点选历史项：填入输入框并触发搜索（doSearchEnter 会去重写入历史）
@@ -10254,6 +10309,22 @@
         return `%%MATHBLOCK_${idx}%%`;
       });
 
+      // 🆕 带文字的分割线：整行「--- 文字 ---」（*、_ 三种记号同，首尾须同款）→ 占位符，marked 之后还原。
+      //   逐行处理并跳过代码围栏（``` / ~~~ 之内不算分割线），并在占位符前后补空行，
+      //   使还原出的 .hr-text 必定独占一个段落、不会挤进上下文 <p> 里造成排版断裂。
+      const hrTextLabels = [];
+      {
+        let inFence = false;
+        processed = processed.split('\n').map(function (ln) {
+          if (/^\s*(```|~~~)/.test(ln)) { inFence = !inFence; return ln; }
+          if (inFence) return ln;
+          const m = ln.match(/^[ \t]{0,3}(-{3,}|\*{3,}|_{3,})[ \t]+(.+?)[ \t]+\1[ \t]*$/);
+          if (!m) return ln;
+          hrTextLabels.push(m[2]);
+          return '\n%%HRTEXT_' + (hrTextLabels.length - 1) + '%%\n';
+        }).join('\n');
+      }
+
       // GFM 修复：仅对已知内联标签（BIG/SMALL/span/mark 等）做空行折叠，
       //   不再匹配所有 HTML 标签，避免干扰 GFM raw HTML 块（<details>、<div> 等）的正常解析。
       //   原始正则 <[a-zA-Z][^>\/]*> 会匹配所有 HTML 标签，
@@ -10353,6 +10424,21 @@
             }
           }
           return `<code>${escapeHtml(formula)}</code>`;
+        });
+      }
+
+      // 🆕 带文字的分割线：还原成 .hr-text（标签再过一次 parseInline，故 **粗体** / `代码` 仍可用）
+      if (hrTextLabels.length > 0) {
+        html = html.replace(/%%HRTEXT_(\d+)%%/g, (_, idx) => {
+          const label = hrTextLabels[parseInt(idx)] || '';
+          let inner;
+          try {
+            inner = (typeof marked !== 'undefined' && typeof marked.parseInline === 'function')
+              ? marked.parseInline(label) : escapeHtml(label);
+          } catch (e) {
+            inner = escapeHtml(label);
+          }
+          return '<span class="hr-text"><span class="hr-text-label">' + inner + '</span></span>';
         });
       }
 

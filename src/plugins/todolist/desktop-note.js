@@ -1307,6 +1307,7 @@ async function setEditMode(edit) {
   if (editMode) {
     if (ea) { ea.value = getEventNotes(); applyContentFont(); ea.scrollTop = 0; ea.style.boxShadow = ''; }
     if (note) note.classList.add('editing');
+    startGutterLoop();
   } else {
     if (note) note.classList.remove('editing');
     editDirty = false;
@@ -1353,6 +1354,117 @@ function markEditDirty(on) {
     ea.title = '已保存到 calendar.md';
     ea.style.boxShadow = 'inset 0 0 0 1px rgba(34,197,94,.5)';
     dirtyTimer = setTimeout(() => { if (ea) ea.style.boxShadow = ''; dirtyTimer = null; }, 1600);
+  }
+}
+
+// 🆕 编辑模式：左侧「只读」行号边条（做法参考 todo 编辑器的 #taskText 边条）
+//  · 行号只显示、不可编辑（pointer-events:none），只反映「内容行数」。
+//  · 用离屏 mirror（与 editArea 同排版）量出每个逻辑行的纵向起点，故折行后行号仍精确对齐。
+//  · rAF 轮询仅在编辑模式可见时运行：捕获一切值变化（输入/插入/撤销/JS 改值）与滚动，无需逐处挂钩。
+function isEditAreaVisible() {
+  const note = document.getElementById('note');
+  const ea = document.getElementById('editArea');
+  if (!note || !ea) return false;
+  return note.classList.contains('editing') && ea.offsetParent !== null;
+}
+function refreshLineGutter() {
+  const ta = document.getElementById('editArea');
+  const gutter = document.getElementById('editAreaGutter');
+  const inner = document.getElementById('editAreaGutterInner');
+  if (!ta || !gutter || !inner) return;
+  if (!isEditAreaVisible()) return;
+
+  const cs = getComputedStyle(ta);
+  const lineHeightPx = (function () {
+    const lh = cs.lineHeight;
+    if (!lh || lh === 'normal') return parseFloat(cs.fontSize) * 1.2;
+    if (lh.indexOf('px') >= 0) return parseFloat(lh);
+    return parseFloat(lh) * parseFloat(cs.fontSize);
+  })();
+
+  const lines = ta.value.replace(/\r/g, '').split('\n');
+
+  // 先按行号位数定宽，避免改宽后 textarea 重排造成折行漂移
+  // 注意：宽度用 ch 单位（按边条自己的 10px 字号），textarea 的留白必须换成边条的实际像素宽度，
+  //       否则 textarea 的 ch（按正文 12px 字号）与边条宽度不一致，两者会错开约 2px。
+  const targetWidth = 'calc(' + (String(lines.length).length + 1) + 'ch + 10px)';
+  if (gutter.style.width !== targetWidth) gutter.style.width = targetWidth;
+  const gutterPx = gutter.offsetWidth + 'px';
+  if (ta.style.marginLeft !== gutterPx) {
+    ta.style.marginLeft = gutterPx;
+    // 改宽后 textarea 会重排，用最终宽度再测一次（最多 2 趟，防无限）
+    if (!refreshLineGutter._settling) {
+      refreshLineGutter._settling = true;
+      requestAnimationFrame(function () { refreshLineGutter._settling = false; refreshLineGutter(); });
+      return;
+    }
+  }
+
+  // 镜像：与 textarea 完全相同排版（含 padding），逐逻辑行包成 div，读 offsetTop 即得各逻辑行起点
+  const mirror = document.createElement('div');
+  mirror.style.cssText = [
+    'position:absolute', 'left:-9999px', 'top:0', 'visibility:hidden',
+    'width:' + Math.max(1, ta.clientWidth) + 'px',
+    'box-sizing:border-box',
+    'padding-top:' + cs.paddingTop, 'padding-right:' + cs.paddingRight,
+    'padding-bottom:' + cs.paddingBottom, 'padding-left:' + cs.paddingLeft,
+    'border:0', 'margin:0',
+    'font-family:' + cs.fontFamily, 'font-size:' + cs.fontSize, 'font-weight:' + cs.fontWeight,
+    'letter-spacing:' + cs.letterSpacing, 'line-height:' + cs.lineHeight,
+    'white-space:pre-wrap', 'word-break:break-word', 'overflow-wrap:break-word',
+    'tab-size:' + (cs.tabSize || '8')
+  ].join(';');
+  const mlEls = [];
+  for (let i = 0; i < lines.length; i++) {
+    const d = document.createElement('div');
+    d.textContent = lines[i] === '' ? '\n' : lines[i];
+    mirror.appendChild(d);
+    mlEls.push(d);
+  }
+  document.body.appendChild(mirror);
+  inner.innerHTML = '';
+  for (let i = 0; i < mlEls.length; i++) {
+    const num = document.createElement('div');
+    num.className = 'gutter-num';
+    num.style.top = mlEls[i].offsetTop + 'px';
+    num.style.height = lineHeightPx + 'px';
+    num.style.lineHeight = lineHeightPx + 'px';
+    num.textContent = String(i + 1);
+    inner.appendChild(num);
+  }
+  document.body.removeChild(mirror);
+
+  inner.style.transform = 'translateY(' + (-ta.scrollTop) + 'px)';
+}
+function syncGutterScroll() {
+  const ta = document.getElementById('editArea');
+  const inner = document.getElementById('editAreaGutterInner');
+  if (!ta || !inner) return;
+  inner.style.transform = 'translateY(' + (-ta.scrollTop) + 'px)';
+}
+let gutterRAF = null;
+let lastGutterValue = null;
+let lastGutterScrollTop = null;
+function gutterTick() {
+  const ta = document.getElementById('editArea');
+  if (!ta || !isEditAreaVisible()) { gutterRAF = null; return; }  // 离开编辑模式 → 自动停轮询
+  // 版签＝内容 + 尺寸 + 字号：便利贴可拖拽改尺寸、字号可缩放，任一变化都要重建行号（值没变也一样）
+  const sig = ta.value + '\0' + ta.clientWidth + 'x' + ta.clientHeight + 'x' + getComputedStyle(ta).fontSize;
+  if (sig !== lastGutterValue) {
+    lastGutterValue = sig;
+    lastGutterScrollTop = ta.scrollTop;
+    refreshLineGutter();
+  } else if (ta.scrollTop !== lastGutterScrollTop) {
+    lastGutterScrollTop = ta.scrollTop;
+    syncGutterScroll();
+  }
+  gutterRAF = requestAnimationFrame(gutterTick);
+}
+function startGutterLoop() {
+  if (gutterRAF == null) {
+    lastGutterValue = null;
+    lastGutterScrollTop = null;
+    gutterRAF = requestAnimationFrame(gutterTick);
   }
 }
 

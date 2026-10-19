@@ -203,6 +203,22 @@ function renderMarkdown(text, opts) {
     return '%%MATHBLOCK_' + idx + '%%';
   });
 
+  // 帶文字的分割線：整行「--- 文字 ---」（星號、下劃線三種記號同，首尾須同款）→ 佔位符，marked 之後還原。
+  //   逐行處理並跳過代碼圍欄（``` / ~~~ 之內不算分割線），並在佔位符前後補空行，
+  //   使還原出的 .hr-text 必定獨佔一個段落、不會擠進上下文 <p> 裡造成排版斷裂。
+  const hrTextLabels = [];
+  {
+    let inFence = false;
+    processed = processed.split('\n').map(function (ln) {
+      if (/^\s*(```|~~~)/.test(ln)) { inFence = !inFence; return ln; }
+      if (inFence) return ln;
+      var m = ln.match(/^[ \t]{0,3}(-{3,}|\*{3,}|_{3,})[ \t]+(.+?)[ \t]+\1[ \t]*$/);
+      if (!m) return ln;
+      hrTextLabels.push(m[2]);
+      return '\n%%HRTEXT_' + (hrTextLabels.length - 1) + '%%\n';
+    }).join('\n');
+  }
+
   // GFM 修復：內聯標籤後的空行折疊
   var _inlineOpen = '(?:<(?:big|small|span|mark|sub|sup|u|s|del|ins|b|i|em|strong)\\b[^>]*>)';
   var _inlineClose = '(?:<\\/(?:big|small|span|mark|sub|sup|u|s|del|ins|b|i|em|strong)>)';
@@ -270,6 +286,21 @@ function renderMarkdown(text, opts) {
         }
       }
       return '<code>' + escapeHtml(item.formula) + '</code>';
+    });
+  }
+
+  // 帶文字的分割線：還原成 .hr-text（標籤再過一次 parseInline，故 **粗體** / `代碼` 仍可用）
+  if (hrTextLabels.length > 0) {
+    html = html.replace(/%%HRTEXT_(\d+)%%/g, function (_, idx) {
+      var label = hrTextLabels[parseInt(idx, 10)] || '';
+      var inner;
+      try {
+        inner = (typeof marked !== 'undefined' && typeof marked.parseInline === 'function')
+          ? marked.parseInline(label) : escapeHtml(label);
+      } catch (e) {
+        inner = escapeHtml(label);
+      }
+      return '<span class="hr-text"><span class="hr-text-label">' + inner + '</span></span>';
     });
   }
 

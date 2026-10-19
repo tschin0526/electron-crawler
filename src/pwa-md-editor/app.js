@@ -8,7 +8,7 @@ const VIEWS = ['edit', 'preview', 'split', 'events'];
 
 // 📌 應用版本號（單一可信來源）。
 // 每次改動都要 +1，方便在手機上確認跑的是不是最新版（狀態列左下角會顯示）。
-const APP_VERSION = '0.7.24';
+const APP_VERSION = '0.7.26';
 
 // 可處理的文字檔副檔名白名單（對齊 todo 編輯器 TEXT_EXTS，取常用子集）
 const TEXT_EXTS = [

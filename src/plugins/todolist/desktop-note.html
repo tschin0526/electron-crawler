@@ -132,7 +132,11 @@
     .body ul li { list-style: disc; } .body ol li { list-style: decimal; }
     .body ul li input[type=checkbox], .body ol li input[type=checkbox] { margin-right: 4px; vertical-align: -1px; }
     .body blockquote { margin: .4em 0; padding: .2em 0 .2em .8em; border-left: 3px solid rgba(0,0,0,.16); color: #5b6170; }
-    .body hr { border: none; border-top: 1px solid rgba(255,255,255,.35); margin: .6em 0; }
+    .body hr { border: none; border-top: 1px solid color-mix(in srgb, currentColor 50%, transparent); margin: .6em 0; }
+    /* 🆕 带文字的分割线：整行「--- 文字 ---」→ 由主窗口渲染成 .hr-text（横线用伪元素各占一半，无需背景遮罩） */
+    .body .hr-text { display: flex; align-items: center; gap: .7em; width: 100%; margin: .6em 0; font-size: .95em; line-height: 1.4; }
+    .body .hr-text::before, .body .hr-text::after { content: ""; flex: 1 1 0; min-width: 1.2em; border-top: 1px solid color-mix(in srgb, currentColor 38%, transparent); }
+    .body .hr-text-label { flex: 0 1 auto; text-align: center; }
     .body a { color: #2563EB; text-decoration: underline; }
     .body img { max-width: 100%; height: auto; border-radius: 6px; margin: .2em 0; }
     .body table { border-collapse: collapse; margin: .4em 0; font-size: 11px; width: 100%; border: 1px solid rgba(212,175,55,.6); }
@@ -319,6 +323,35 @@
     }
     #note.editing .body { display: none; }
     #note.editing .editArea { display: block; }
+    /* ── 编辑模式：左侧「只读」行号边条（做法参考 todo 编辑器 #taskText 边条）───────
+       边条绝对定位于 wrap，绝不挤占 textarea 宽度；textarea 的 margin-left 由 JS 按边条宽预留。 */
+    .tl-text-gutter-wrap {
+      display: none; position: relative; box-sizing: border-box;
+      flex: 1 1 auto; min-width: 0; min-height: 0; overflow: hidden;
+      -webkit-app-region: no-drag; user-select: text;
+    }
+    #note.editing .tl-text-gutter-wrap { display: flex; flex-direction: column; }
+    .tl-text-gutter-wrap > .editArea {
+      flex: 1 1 auto; width: auto; min-width: 0; min-height: 0;
+      border-top-left-radius: 0; border-bottom-left-radius: 0;
+    }
+    .tl-line-gutter {
+      position: absolute; left: 0; top: 0; bottom: 0; overflow: hidden; box-sizing: border-box;
+      width: calc(4ch + 10px);                    /* JS 会按行号位数重算 */
+      border: none;
+      border-left: 1px solid rgba(212,175,55,.75);   /* 外框左缘（金） */
+      border-bottom: 1px solid rgba(212,175,55,.5);  /* 外框下缘（金） */
+      border-right: 1px solid color-mix(in srgb, var(--note-fg, #33384a) 30%, transparent);
+      background: transparent; color: var(--note-fg, #33384a);
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 10px; text-align: right; opacity: .55;
+      user-select: none; pointer-events: none;      /* 纯显示，不抢焦点/不拦选区拖拽 */
+    }
+    .tl-line-gutter-inner { position: absolute; top: 0; left: 0; right: 0; will-change: transform; }
+    .gutter-num {
+      position: absolute; left: 0; right: 0; box-sizing: border-box;
+      padding-right: 6px; text-align: right; color: inherit;
+    }
   </style>
 </head>
 <body>
@@ -330,7 +363,10 @@
     <div class="meta" id="meta"></div>
     <ul class="tags" id="tags"></ul>
     <div class="body" id="body"></div>
-    <textarea class="editArea" id="editArea" spellcheck="false" placeholder="在此直接编辑事件内容（Markdown）…"></textarea>
+    <div class="tl-text-gutter-wrap" id="editAreaGutterWrap">
+      <div class="tl-line-gutter" id="editAreaGutter"><div class="tl-line-gutter-inner" id="editAreaGutterInner"></div></div>
+      <textarea class="editArea" id="editArea" spellcheck="false" placeholder="在此直接编辑事件内容（Markdown）…"></textarea>
+    </div>
     <button type="button" class="note-mode-handle" id="noteModeHandle" aria-label="切换内容模式"></button>
     <button type="button" class="note-min-handle" id="noteMinHandle" aria-label="最小化便利贴"></button>
     <button type="button" class="note-menu-handle" id="noteMenuHandle" aria-label="打开便利贴菜单" title="菜单">☰</button>

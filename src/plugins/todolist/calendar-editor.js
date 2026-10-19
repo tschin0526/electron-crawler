@@ -1056,7 +1056,8 @@
       const isBlank = (l) => /^\s*$/.test(l);
       const isFence = (l) => /^\s*(```|~~~)/.test(l);
       const isHeading = (l) => /^#{1,6}(\s|$)/.test(l);
-      const isHr = (l) => /^\s{0,3}([-*_])(\s*\1){2,}\s*$/.test(l);
+      const isHrText = (l) => /^[ \t]{0,3}(-{3,}|\*{3,}|_{3,})[ \t]+(.+?)[ \t]+\1[ \t]*$/.test(l); // 「--- 文字 ---」＝带文字的分割线
+      const isHr = (l) => /^\s{0,3}([-*_])(\s*\1){2,}\s*$/.test(l) || isHrText(l);
       const isQuote = (l) => /^\s{0,3}>/.test(l);
       const isTask = (l) => /^\s*[-*+]\s+\[[ xX]\]/.test(l);
       const isBullet = (l) => /^\s*[-*+]\s+\S/.test(l); // 必须有非空白内容
