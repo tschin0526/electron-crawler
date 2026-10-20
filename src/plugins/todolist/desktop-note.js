@@ -194,11 +194,19 @@ function metaDateText(ev) {
   if (d && e) return d + ' – ' + e + ' · 共' + spanDays(d, e) + '天';
   return d || e || '';
 }
-// meta 行统一渲染：日期（跨天含结束日期与总天数 ·已完成）在前，右侧接「完成/总数」胶囊与「＋☐」加入子事件按钮
+// meta 行统一渲染：日期（跨天含结束日期与总天数 ·已完成）在前，右侧接「完成/总数」胶囊、「＋☐」加入子事件与「☐/☑」只看未完成筛选按钮
+function undoneFilterChipHtml() {
+  const on = !!state.undoneChecksOnly;
+  return '<button type="button" class="note-undone-filter' + (on ? ' active' : '') + '"' +
+    ' aria-pressed="' + (on ? 'true' : 'false') + '"' +
+    ' title="' + (on ? '仅显示未完成的 checkbox 子事件（点击显示全部）' : '只显示未完成的 checkbox 子事件') + '">' +
+    (on ? '☑' : '☐') + '</button>';
+}
 function renderMeta(ev) {
   const dateText = escapeHtml(metaDateText(ev) + (ev.done ? ' · 已完成' : ''));
   document.getElementById('meta').innerHTML = dateText + subProgressBadge(ev) +
-    '<button type="button" class="note-addcheck" title="加入子事件（在备注末尾加 CheckBox，直接存档）">＋☐</button>';
+    '<button type="button" class="note-addcheck" title="加入子事件（在备注末尾加 CheckBox，直接存档）">＋☐</button>' +
+    undoneFilterChipHtml();
 }
 // 标签列表统一渲染：显示「名·子标签」
 function renderTags(ev) {
@@ -273,9 +281,7 @@ function setupControls() {
   const undoneChecksButton = document.getElementById('miUndoneChecks');
   if (undoneChecksButton) undoneChecksButton.onclick = (e) => {
     e.stopPropagation();
-    state.undoneChecksOnly = !state.undoneChecksOnly;
-    syncUndoneChecksFilter();
-    persist();
+    toggleUndoneChecksFilter();
   };
   const confirmClose = async () => {
     if (editMode && editDirty) {
@@ -417,7 +423,13 @@ function setupControls() {
     const acOv = document.getElementById('addCheckOv');
     if (acOv && acOv.classList.contains('show')) {
       if ((e.metaKey || e.ctrlKey) && (e.key === 's' || e.key === 'S')) { e.preventDefault(); e.stopPropagation(); confirmAddCheck(); }
-      else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); closeAddCheck(); }
+      else if (e.key === 'Escape') {
+        e.preventDefault(); e.stopPropagation();
+        // 决策条已显示 → Esc＝安全默认（收回提问、留在编辑），不再重复追问
+        const bar = document.getElementById('addCheckUnsavedBar');
+        if (bar && bar.style.display !== 'none') { hideAddCheckUnsavedBar(); focusAddCheckInput(); }
+        else requestCloseAddCheck();
+      }
       return;
     }
     // 📧 发邮件浮层打开中：Enter/Esc 已由输入框自身 keydown 处理；此处兜底焦点不在输入框的
@@ -486,8 +498,11 @@ function setupControls() {
   // 🆕 ＋☐ 加入子事件：meta 内按钮用事件委托（innerHTML 每次重绘），浮层 Enter/⌘S 确认、Esc 取消
   const ov = document.getElementById('addCheckOv');
   const metaEl = document.getElementById('meta');
-  if (metaEl) metaEl.addEventListener('click', (e) => { if (e.target.closest('.note-addcheck')) openAddCheck(); });
-  if (ov) ov.addEventListener('click', (e) => { if (e.target === ov) closeAddCheck(); });
+  if (metaEl) metaEl.addEventListener('click', (e) => {
+    if (e.target.closest('.note-undone-filter')) { e.stopPropagation(); toggleUndoneChecksFilter(); return; }
+    if (e.target.closest('.note-addcheck')) openAddCheck();
+  });
+  if (ov) ov.addEventListener('click', (e) => { if (e.target === ov) requestCloseAddCheck(); });
   const acInput = document.getElementById('addCheckInput');
   if (acInput) {
     acInput.addEventListener('keydown', (e) => {
@@ -495,15 +510,26 @@ function setupControls() {
       if ((e.metaKey || e.ctrlKey) && (e.key === 's' || e.key === 'S')) { e.preventDefault(); confirmAddCheck(); }
       // 🆕 回车＝确认加入仅在「加入子事件」模式（快速逐行新增）；「编辑子事件」模式不拦截回车，避免打断输入（保存用 ⌘S／「保存」按钮，关闭用 Esc）
       else if (e.key === 'Enter' && !e.shiftKey && !noteCheckEditTarget && !noteBlockEditTarget) { e.preventDefault(); confirmAddCheck(); }
-      else if (e.key === 'Escape') { e.preventDefault(); closeAddCheck(); }
+      else if (e.key === 'Escape') { e.preventDefault(); requestCloseAddCheck(); }
     });
     acInput.addEventListener('pointerdown', (e) => e.stopPropagation());
   }
-  // 🆕 弹层按钮行「复制｜保存｜关闭」：保存＝⌘S 同路径（confirmAddCheck），关闭＝Esc 同路径（closeAddCheck，加入/编辑两模式通用）
+  // 🆕 弹层按钮行「复制｜保存｜关闭」：保存＝⌘S 同路径（confirmAddCheck），关闭＝Esc 同路径（requestCloseAddCheck，有改动会先问）
   const acSave = document.getElementById('saveCheckButton');
   if (acSave) acSave.onclick = (e) => { e.stopPropagation(); confirmAddCheck(); };
   const acClose = document.getElementById('closeCheckButton');
-  if (acClose) acClose.onclick = (e) => { e.stopPropagation(); closeAddCheck(); };
+  if (acClose) acClose.onclick = (e) => { e.stopPropagation(); requestCloseAddCheck(); };
+  // 🆕「未保存改动」决策条：三选一（继续编辑＝安全默认 · 不保存关闭＝丢弃 · 保存并关闭＝先落盘成功才关）
+  const acKeep = document.getElementById('addCheckKeepEditingButton');
+  if (acKeep) acKeep.onclick = (e) => { e.stopPropagation(); hideAddCheckUnsavedBar(); focusAddCheckInput(); };
+  const acDiscard = document.getElementById('addCheckDiscardButton');
+  if (acDiscard) acDiscard.onclick = (e) => { e.stopPropagation(); closeAddCheck(); };
+  const acSaveClose = document.getElementById('addCheckSaveCloseButton');
+  if (acSaveClose) acSaveClose.onclick = async (e) => {
+    e.stopPropagation();
+    hideAddCheckUnsavedBar();
+    if (await confirmAddCheck()) closeAddCheck();
+  };
   if (ov) ov.addEventListener('pointerdown', (e) => e.stopPropagation());
   // 🆕 发邮件浮层：发送｜取消、点背罩关闭、Enter 发送 / Esc 取消（焦点在输入框时由其自身处理）
   const emailSendBtn = document.getElementById('emailSendBtn');
@@ -526,6 +552,60 @@ function setupControls() {
     emailInput.addEventListener('input', () => renderEmailRecipientDropdown());
     emailInput.addEventListener('blur', () => setTimeout(hideEmailRecipientDropdown, 150));
   }
+  // 🆕 链接点击：本窗体没挂 preload → 没有 window.electronAPI，且主窗体那份委托监听住在这里收不到，
+  //   必须自己接一份（项目规则：每个窗体各自复刻 handler）。分四种：
+  //     exec:  → 主窗体渲染成 <a class="card-exec-link" data-exec-url>（刻意没有 href）→ shell.openExternal
+  //     http(s)→ 主窗体走 openWebPreview 开 1400x900 独立预览窗；本窗体若不管，
+  //              原生默认行为会「把便利贴自己导航到该网址」，页面挤在贴纸宽度里
+  //              （2026-10-20 用户回馈：点〔执行mcpTest〕后画面没有完整展开）。
+  //     a.card-cur-link（[文字](cur:URL)）例外：语义是「在本窗体就地开启」，与主窗体一致直接放行，
+  //              主进程的护栏（guardStickyNoteNavigation）也为此放行 http/file 协议。
+  //     file://图片 → 'open-image-window'（与主窗体同）；其它 file:// → 交系统默认程式，
+  //              因为本窗体没有 renderMarkdown（正文是主窗体渲染好再传进来的 HTML），
+  //              做不出主窗体那份「文档窗体」，只能退给系统开。
+  //     #锚点  → 不拦，留给窗内原生片段滚动。
+  const bodyClickEl = document.getElementById('body');
+  if (bodyClickEl) bodyClickEl.addEventListener('click', (e) => {
+    const execLink = e.target.closest && e.target.closest('a.card-exec-link');
+    if (execLink) {
+      e.preventDefault();
+      e.stopPropagation();
+      const url = execLink.getAttribute('data-exec-url') || '';
+      if (!url) { showStickyRefreshFeedback('该链接没有可执行的地址', true); return; }
+      ipcRenderer.invoke('openExternalBrowser', url)
+        .then((result) => {
+          if (result && result.success === false) showStickyRefreshFeedback('执行失败：' + (result.error || '未知错误'), true);
+        })
+        .catch((error) => showStickyRefreshFeedback('执行失败：' + (error && error.message ? error.message : error), true));
+      return;
+    }
+    const link = e.target.closest && e.target.closest('a[href]');
+    if (!link) return;
+    if (link.classList && link.classList.contains('card-cur-link')) return; // cur:＝就地导航，与主窗体一致
+    const href = (link.getAttribute('href') || '').trim();
+    if (/^https?:\/\//i.test(href)) {
+      e.preventDefault();
+      e.stopPropagation();
+      ipcRenderer.invoke('open-web-preview', href)
+        .catch((error) => showStickyRefreshFeedback('开启网页预览失败：' + (error && error.message ? error.message : error), true));
+      return;
+    }
+    if (/^file:\/\//i.test(href)) {
+      e.preventDefault();
+      e.stopPropagation();
+      const label = (link.textContent || '').trim();
+      if (/\.(png|jpe?g|gif|webp|bmp|svg|ico|avif)(?:[?#].*)?$/i.test(href)) {
+        ipcRenderer.invoke('open-image-window', { src: href, title: label ? ('图片：' + label) : '图片' })
+          .catch((error) => showStickyRefreshFeedback('开启图片失败：' + (error && error.message ? error.message : error), true));
+      } else {
+        ipcRenderer.invoke('openExternalBrowser', href)
+          .then((result) => {
+            if (result && result.success === false) showStickyRefreshFeedback('开启失败：' + (result.error || '未知错误'), true);
+          })
+          .catch((error) => showStickyRefreshFeedback('开启失败：' + (error && error.message ? error.message : error), true));
+      }
+    }
+  });
   // 拖动交给 OS 原生（CSS -webkit-app-region: drag）；这里只处理「点击（未拖动）唤起主程式」/ 双击跳转
   const note = document.getElementById('note');
   note.addEventListener('click', onNoteClick);
@@ -580,7 +660,7 @@ function setupControls() {
 // 原生拖拽由 OS 处理；只有「按下后未移动、松开＝点击」才会触发此 handler
 // （拖拽过程中 OS 不会派发 click），故可安全用它区分「点一下＝唤起主程式」
 function onNoteClick(e) {
-  if (e.target.closest('.iconbtn, .note-mode-handle, .note-min-handle, .note-menu-handle, .note-refresh-handle, .note-addcheck, .flip-edge')) return;  // 按钮各自处理
+  if (e.target.closest('.iconbtn, .note-mode-handle, .note-min-handle, .note-menu-handle, .note-refresh-handle, .note-addcheck, .note-undone-filter, .flip-edge')) return;  // 按钮各自处理
   if (!e.target.closest('.bar, .head, .meta, .tags')) return; // 仅拖拽区点击＝唤起主程式
   ipcRenderer.invoke('wake-main-from-note', { key: KEY });
 }
@@ -588,7 +668,7 @@ function onNoteClick(e) {
 // 双击便利贴（标题栏或正文）：唤起主程式并打开该事件表单
 // 正文区是 -webkit-app-region: no-drag，双击不会触发拖动，故可安全复用「唤起+打开事件」管线
 function onNoteDblClick(e) {
-  if (e.target.closest('.iconbtn, .menu, .rz, .note-addcheck, .flip-edge, .ev-md-edit, .ev-cb')) return; // 菜单/☰按钮/翻页把手/缩放把手/checkbox 控件各自处理
+  if (e.target.closest('.iconbtn, .menu, .rz, .note-addcheck, .note-undone-filter, .flip-edge, .ev-md-edit, .ev-cb')) return; // 菜单/☰按钮/翻页把手/缩放把手/checkbox 控件各自处理
   ipcRenderer.invoke('wake-main-from-note', { key: KEY });
 }
 
@@ -600,15 +680,15 @@ function openAddCheck() {
   const ov = document.getElementById('addCheckOv');
   const title = ov && ov.querySelector('.ac-title');
   const hint = ov && ov.querySelector('.ac-hint');
-  const copyButton = document.getElementById('copyNoteCheckButton');
   noteCheckEditTarget = null;
   noteBlockEditTarget = null;
   if (title) title.textContent = '加入子事件（CheckBox）';
-  if (hint) hint.textContent = '⌘S 加入 · Esc 取消';
-  if (copyButton) copyButton.style.display = 'none';
-  const fullBtn = document.getElementById('editFullNoteFromCheckButton');
-  if (fullBtn) fullBtn.style.display = 'none';
+  // 🆕 与「编辑小圆点」入口同一套按钮／快捷键口径：⌘S（或 Enter）加入后不关窗可继续输入，Esc 关闭前若草稿未加入会先问
+  if (hint) hint.textContent = 'Enter 或 ⌘S 加入（加入后不关闭，可继续输入下一批）· Esc 关闭（草稿未加入会先问是否保存）';
+  bindAddCheckTools('加入');
   if (inp) { inp.value = ''; inp.placeholder = '每行一个子事件，回车直接加入…'; }
+  addCheckBaseline = '';
+  hideAddCheckUnsavedBar();
   if (ov) ov.classList.add('show');
   if (inp) setTimeout(() => inp.focus(), 0);
 }
@@ -617,6 +697,8 @@ function closeAddCheck() {
   if (ov) ov.classList.remove('show');
   noteCheckEditTarget = null;
   noteBlockEditTarget = null;
+  addCheckBaseline = '';
+  hideAddCheckUnsavedBar();
 }
 let addCheckSavePending = false;
 let noteCheckEditTarget = null;
@@ -625,6 +707,84 @@ function closeEditNoteCheck() {
   noteCheckEditTarget = null;
   noteBlockEditTarget = null;
   closeAddCheck();
+}
+// ── 🆕 关闭拦截：浮层内容有改动时（编辑＝与开框原文不同；新增＝草稿尚未加入），
+//    Esc／「关闭」／点背罩都必须先让使用者决定；按钮与快捷键两条入口口径一致。
+//  · 基线＝开框时的内容，⌘S／「保存」成功后刷新（保存过就不再算脏）。
+//  · 决策条给三个出口，默认焦点「继续编辑」＝不丢改动的安全默认；「不保存，直接关闭」才会丢弃（不落盘、不动存档）。
+let addCheckBaseline = '';
+function markAddCheckBaseline() {
+  const inp = document.getElementById('addCheckInput');
+  addCheckBaseline = inp ? inp.value : '';
+  hideAddCheckUnsavedBar();
+}
+function addCheckEditing() {
+  return !!noteCheckEditTarget || !!noteBlockEditTarget;
+}
+function addCheckDirty() {
+  const inp = document.getElementById('addCheckInput');
+  return !!inp && inp.value !== addCheckBaseline;
+}
+function showAddCheckUnsavedBar() {
+  const bar = document.getElementById('addCheckUnsavedBar');
+  if (!bar) { closeAddCheck(); return; }   // 决策条不在 markup 里 → 退化成直接关闭，别把使用者卡住
+  const tip = bar.querySelector('.ac-unsaved-tip');
+  if (tip) tip.textContent = addCheckEditing()
+    ? '内容有改动，尚未保存。关闭前请决定：'
+    : '草稿尚未加入。关闭前请决定：';
+  const saveClose = document.getElementById('addCheckSaveCloseButton');
+  if (saveClose) saveClose.textContent = addCheckEditing() ? '保存并关闭' : '加入并关闭';
+  bar.style.display = '';
+  const keep = document.getElementById('addCheckKeepEditingButton');
+  if (keep) keep.focus();
+}
+function hideAddCheckUnsavedBar() {
+  const bar = document.getElementById('addCheckUnsavedBar');
+  if (bar) bar.style.display = 'none';
+}
+function focusAddCheckInput() {
+  const inp = document.getElementById('addCheckInput');
+  if (inp) inp.focus();
+}
+// 返回 true＝浮层已关闭；false＝有改动、已把决定权交给使用者（浮层仍开着）
+function requestCloseAddCheck() {
+  if (!addCheckDirty()) { closeAddCheck(); return true; }
+  showAddCheckUnsavedBar();
+  return false;
+}
+// ── 🆕 浮层工具按钮（三个入口共用：＋☐ 新增／子事件编辑／区块编辑）：复制 ｜ 编辑完整备注 ｜ 主按钮
+//    「编辑完整备注」也是离开本浮层，所以同样要先过「未保存改动」这道问。
+function bindAddCheckTools(saveLabel) {
+  const inp = document.getElementById('addCheckInput');
+  const saveButton = document.getElementById('saveCheckButton');
+  if (saveButton) saveButton.textContent = saveLabel || '保存';
+  const copyButton = document.getElementById('copyNoteCheckButton');
+  if (copyButton) {
+    copyButton.style.display = '';
+    copyButton.onclick = async (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      if (!inp || !inp.value) { window.alert('没有可复制的内容'); return; }
+      try {
+        const result = await ipcRenderer.invoke('write-text-to-clipboard', inp.value);
+        if (!result || result.success !== true) throw new Error((result && result.error) || '写入剪贴板失败');
+        const originalText = copyButton.textContent;
+        copyButton.textContent = '已复制';
+        setTimeout(() => { if (copyButton) copyButton.textContent = originalText; }, 1200);
+      } catch (error) {
+        window.alert('复制失败：' + (error && error.message ? error.message : error));
+      }
+    };
+  }
+  const fullBtn = document.getElementById('editFullNoteFromCheckButton');
+  if (fullBtn) {
+    fullBtn.style.display = '';
+    fullBtn.onclick = (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      if (requestCloseAddCheck()) setEditMode(true);  // 有改动 → 先问，决定完才切到整篇编辑
+    };
+  }
 }
 function eventNotesForKey(key) {
   const ev = parseEvents(readMd()).find(item => item.key === key);
@@ -721,43 +881,17 @@ window.tlOpenEditNoteCheckDialog = function (event, uid, line) {
   noteCheckEditTarget = { uid, line };
   const ov = document.getElementById('addCheckOv');
   const inp = document.getElementById('addCheckInput');
-  const copyButton = document.getElementById('copyNoteCheckButton');
   if (ov) {
     ov.querySelector('.ac-title').textContent = '编辑子事件（CheckBox）';
-    ov.querySelector('.ac-hint').textContent = '⌘S 保存（不关闭，可继续编辑）· Esc 关闭；勾选状态会保留，日期标记（[[dl:…]]/[[cp:…]]）以原文显示可直接编辑；清空内容并保存＝删除该子事件（会先确认）';
+    ov.querySelector('.ac-hint').textContent = '⌘S 保存（不关闭，可继续编辑）· Esc 关闭（有改动会先问是否保存）；勾选状态会保留，日期标记（[[dl:…]]/[[cp:…]]）以原文显示可直接编辑；清空内容并保存＝删除该子事件（会先确认）';
     ov.classList.add('show');
   }
-  if (copyButton) {
-    copyButton.style.display = '';
-    copyButton.onclick = async (event) => {
-      event.preventDefault();
-      event.stopPropagation();
-      if (!inp || !inp.value) { window.alert('没有可复制的子事件内容'); return; }
-      try {
-        const result = await ipcRenderer.invoke('write-text-to-clipboard', inp.value);
-        if (!result || result.success !== true) throw new Error((result && result.error) || '写入剪贴板失败');
-        const originalText = copyButton.textContent;
-        copyButton.textContent = '已复制';
-        setTimeout(() => { if (copyButton) copyButton.textContent = originalText; }, 1200);
-      } catch (error) {
-        window.alert('复制子事件失败：' + (error && error.message ? error.message : error));
-      }
-    };
-  }
-  const fullBtn = document.getElementById('editFullNoteFromCheckButton');
-  if (fullBtn) {
-    fullBtn.style.display = '';
-    fullBtn.onclick = (event) => {
-      event.preventDefault();
-      event.stopPropagation();
-      closeAddCheck();
-      setEditMode(true);
-    };
-  }
+  bindAddCheckTools();
   if (inp) {
     // 🆕 原文保真：编辑框显示原始文本（含 [[dl:…]]/[[cp:…]] 等 [[]] 符号），不剥离、不折叠空白；保存时直接写回
     inp.value = match[3];
     inp.placeholder = '输入子事件内容…';
+    markAddCheckBaseline();   // 🆕 基线＝开框原文，之后有任何差异都会在关闭前询问
     setTimeout(() => inp.focus(), 0);
   }
 };
@@ -782,116 +916,99 @@ window.tlOpenEditBlockDialog = function (event, uid, start, end, type) {
   noteBlockEditTarget = { uid, start, end, type };
   const ov = document.getElementById('addCheckOv');
   const inp = document.getElementById('addCheckInput');
-  const copyButton = document.getElementById('copyNoteCheckButton');
   if (ov) {
     ov.querySelector('.ac-title').textContent = '编辑内容区块（' + stickyBlockTypeName(type) + '）';
-    ov.querySelector('.ac-hint').textContent = '直接编辑此区块的 Markdown 原文；⌘S 保存（不关闭，可继续编辑）· Esc 关闭；清空并保存＝删除该区块（会先确认）';
+    ov.querySelector('.ac-hint').textContent = '直接编辑此区块的 Markdown 原文；⌘S 保存（不关闭，可继续编辑）· Esc 关闭（有改动会先问是否保存）；清空并保存＝删除该区块（会先确认）';
     ov.classList.add('show');
   }
-  if (copyButton) {
-    copyButton.style.display = '';
-    copyButton.onclick = async (event) => {
-      event.preventDefault();
-      event.stopPropagation();
-      if (!inp || !inp.value) { window.alert('没有可复制的内容'); return; }
-      try {
-        const result = await ipcRenderer.invoke('write-text-to-clipboard', inp.value);
-        if (!result || result.success !== true) throw new Error((result && result.error) || '写入剪贴板失败');
-        const originalText = copyButton.textContent;
-        copyButton.textContent = '已复制';
-        setTimeout(() => { if (copyButton) copyButton.textContent = originalText; }, 1200);
-      } catch (error) {
-        window.alert('复制失败：' + (error && error.message ? error.message : error));
-      }
-    };
-  }
-  const fullBtn = document.getElementById('editFullNoteFromCheckButton');
-  if (fullBtn) {
-    fullBtn.style.display = '';
-    fullBtn.onclick = (event) => {
-      event.preventDefault();
-      event.stopPropagation();
-      closeAddCheck();
-      setEditMode(true);
-    };
-  }
+  bindAddCheckTools();
   if (inp) {
     inp.value = src;
     inp.placeholder = '编辑此区块的 Markdown 原文…';
+    markAddCheckBaseline();   // 🆕 基线＝开框原文，之后有任何差异都会在关闭前询问
     setTimeout(() => inp.focus(), 0);
   }
 };
+// 返回 true＝内容已落盘（或已按使用者同意删除并关闭）；false＝未保存（校验失败／使用者拒绝／正在保存）。
+// 「保存并关闭」按这个返回值决定要不要关窗：只有真的写成功才关，避免保存失败把改动丢掉。
 async function confirmAddCheck() {
   const inp = document.getElementById('addCheckInput');
-  if (!inp) { closeAddCheck(); return; }
+  if (!inp) { closeAddCheck(); return false; }
   if (noteBlockEditTarget) {
-    if (addCheckSavePending) return;
+    if (addCheckSavePending) return false;
     const target = noteBlockEditTarget;
     const blockText = inp.value.replace(/\r\n/g, '\n');
     const notes = eventNotesForKey(target.uid);
-    if (notes == null) { window.alert('找不到该行程，无法保存区块'); return; }
+    if (notes == null) { window.alert('找不到该行程，无法保存区块'); return false; }
     const lines = notes.split('\n');
     if (target.start < 0 || target.end >= lines.length) {
-      window.alert('该区块内容已变化，请刷新便利贴后重试'); return;
+      window.alert('该区块内容已变化，请刷新便利贴后重试'); return false;
     }
     const span = target.end - target.start + 1;
     if (!blockText.trim()) {
-      if (!window.confirm('区块内容为空＝删除该区块。\n\n确定要删除吗？删除后将直接写回并存档，无法从本窗口恢复（可先按「复制」留存原文）。')) return;
+      if (!window.confirm('区块内容为空＝删除该区块。\n\n确定要删除吗？删除后将直接写回并存档，无法从本窗口恢复（可先按「复制」留存原文）。')) return false;
       lines.splice(target.start, span);
-      if (await saveStickyNoteContent(lines.join('\n'), '删除区块', target.uid)) closeEditNoteCheck();
-      return;
+      if (await saveStickyNoteContent(lines.join('\n'), '删除区块', target.uid)) { closeEditNoteCheck(); return true; }
+      return false;
     }
     const newLines = blockText.split('\n');
     lines.splice(target.start, span, ...newLines);
     // 更新区间为新区块，便于继续 ⌘S 覆写同一段
     noteBlockEditTarget = { uid: target.uid, start: target.start, end: target.start + newLines.length - 1, type: target.type };
-    if (await saveStickyNoteContent(lines.join('\n'), '保存区块', target.uid)) showStickyRefreshFeedback('已保存（按 Esc 关闭）');
-    return;
+    if (await saveStickyNoteContent(lines.join('\n'), '保存区块', target.uid)) { markAddCheckBaseline(); showStickyRefreshFeedback('已保存（按 Esc 关闭）'); return true; }
+    return false;
   }
   if (noteCheckEditTarget) {
-    if (addCheckSavePending) return;
+    if (addCheckSavePending) return false;
     const target = noteCheckEditTarget;
     const text = inp.value.replace(/\r\n/g, '\n').replace(/\n/g, ' ').trim();
     // 🆕 内容清空＝删除该子事件：必须先经使用者确认（拒绝则留在编辑框，可先「复制」留存原文）
-    if (!text && !window.confirm('子事件内容为空＝删除该子事件。\n\n确定要删除吗？删除后将直接写回并存档，无法从本窗口恢复（可先按「复制」留存原文）。')) return;
+    if (!text && !window.confirm('子事件内容为空＝删除该子事件。\n\n确定要删除吗？删除后将直接写回并存档，无法从本窗口恢复（可先按「复制」留存原文）。')) return false;
     const notes = eventNotesForKey(target.uid);
     if (notes == null) {
       window.alert('找不到该行程，无法保存子事件');
-      return;
+      return false;
     }
     const lines = notes.split('\n');
     if (target.line < 0 || target.line >= lines.length) {
       window.alert('该子事件内容已变化，请刷新便利贴后重试');
-      return;
+      return false;
     }
     const match = lines[target.line].match(/^(\s*)-\s+\[([ xX])\]\s?(.*)$/);
     if (!match) {
       window.alert('该子事件内容已变化，请刷新便利贴后重试');
-      return;
+      return false;
     }
     if (!text) {
       // 🆕 空内容＝删除：移除该行后写回并存档（上方 confirm 已获使用者同意）
       lines.splice(target.line, 1);
-      if (await saveStickyNoteContent(lines.join('\n'), '删除子事件', target.uid)) closeEditNoteCheck();
-      return;
+      if (await saveStickyNoteContent(lines.join('\n'), '删除子事件', target.uid)) { closeEditNoteCheck(); return true; }
+      return false;
     }
     // 🆕 原文保真：编辑框已是完整原文（含 [[]] 标记），保存时直接写回，不再额外补/删标记
     lines[target.line] = match[1] + '- [' + match[2] + '] ' + text;
-    // 🆕 编辑模式：⌘S／「保存」＝只落盘不离开视窗（离开视窗只用 Esc）
-    if (await saveStickyNoteContent(lines.join('\n'), '保存子事件', target.uid)) showStickyRefreshFeedback('已保存（按 Esc 关闭）');
-    return;
+    // 🆕 编辑模式：⌘S／「保存」＝只落盘不离开视窗（离开视窗要过「未保存改动」这道问）
+    if (await saveStickyNoteContent(lines.join('\n'), '保存子事件', target.uid)) { markAddCheckBaseline(); showStickyRefreshFeedback('已保存（按 Esc 关闭）'); return true; }
+    return false;
   }
+  // 🆕 新增模式与编辑模式同一口径：加入＝落盘但**不关窗**，清空输入框并刷新基线，可立刻继续输入下一批
+  if (addCheckSavePending) return false;
   const lines = inp.value.replace(/\r\n/g, '\n').split('\n').map((l) => l.trim()).filter(Boolean);
-  if (!lines.length) return;
-  if (addCheckSavePending) return;
+  if (!lines.length) { showStickyRefreshFeedback('没有可加入的内容'); return false; }
   const md = lines.map((l) => '- [ ] ' + l).join('\n');
   const ev = parseEvents(readMd()).find((x) => x.key === KEY);
   if (!ev) {
     window.alert('找不到该行程，无法保存子事件');
-    return;
+    return false;
   }
   const notes = (ev.notes ? String(ev.notes).replace(/\s*$/, '') + '\n' : '') + md + '\n';
-  if (await saveStickyNoteContent(notes, '保存子事件')) closeAddCheck();
+  if (await saveStickyNoteContent(notes, '保存子事件')) {
+    inp.value = '';
+    markAddCheckBaseline();
+    showStickyRefreshFeedback('已加入 ' + lines.length + ' 项（可继续输入，按 Esc 关闭）');
+    return true;
+  }
+  return false;
 }
 
 // ===== 🆕 便利贴「发邮件」：菜单 📧 → 收件人浮层 → 主进程转邮件插件 sendEmailByPlugin =====
@@ -1166,6 +1283,14 @@ function syncUndoneChecksFilter() {
     button.textContent = '只显示未完成 checkbox：' + (state.undoneChecksOnly ? '开' : '关');
     button.setAttribute('aria-pressed', state.undoneChecksOnly ? 'true' : 'false');
   }
+  // meta 行的「☐/☑」快捷按钮与菜单项共用同一状态；renderMeta 与这里的调用顺序不定，故重绘成同一份标记
+  const chip = document.querySelector('#meta .note-undone-filter');
+  if (chip) chip.outerHTML = undoneFilterChipHtml();
+}
+function toggleUndoneChecksFilter() {
+  state.undoneChecksOnly = !state.undoneChecksOnly;
+  syncUndoneChecksFilter();
+  persist();
 }
 function persist() {
   if (IS_FLIP) {
@@ -1358,7 +1483,7 @@ function markEditDirty(on) {
 }
 
 // 🆕 编辑模式：左侧「只读」行号边条（做法参考 todo 编辑器的 #taskText 边条）
-//  · 行号只显示、不可编辑（pointer-events:none），只反映「内容行数」。
+//  · 行号只显示、不可编辑（pointer-events:none），是编辑器的固有装饰（空文档也算 1 行）。
 //  · 用离屏 mirror（与 editArea 同排版）量出每个逻辑行的纵向起点，故折行后行号仍精确对齐。
 //  · rAF 轮询仅在编辑模式可见时运行：捕获一切值变化（输入/插入/撤销/JS 改值）与滚动，无需逐处挂钩。
 function isEditAreaVisible() {
@@ -1367,106 +1492,173 @@ function isEditAreaVisible() {
   if (!note || !ea) return false;
   return note.classList.contains('editing') && ea.offsetParent !== null;
 }
-function refreshLineGutter() {
-  const ta = document.getElementById('editArea');
-  const gutter = document.getElementById('editAreaGutter');
-  const inner = document.getElementById('editAreaGutterInner');
-  if (!ta || !gutter || !inner) return;
-  if (!isEditAreaVisible()) return;
+// ── 行号边条工厂（本窗体与主窗体各持一份同名实现，算法一致）───────────────────────
+//  · 行号是编辑器的固有装饰，不是内容的附属：文档为空时 ''.split('\n') 得到 [''] → 恒有第 1 行。
+//  · 离屏 mirror 常驻 DOM（不再每次 append/remove）＋ 镜像行与行号节点池化：
+//    一次调用里「写」全在前、「读」集中在 offsetTop 那一批 → 每帧只强制排版一次，
+//    打字延迟随行数线性而非平方增长。
+//  · 改边条宽 → textarea 重排后，clientWidth 是同一趟读到的新值，mirror 立刻按新宽量测，
+//    故不需要旧的 _settling 二次 rAF 复检（那趟复检会让行号滞后一帧、旧行号残留可见）。
+function createLineGutter(cfg) {
+  function els() {
+    return {
+      ta: document.getElementById(cfg.taId),
+      gutter: document.getElementById(cfg.gutterId),
+      inner: document.getElementById(cfg.innerId),
+    };
+  }
+  let mirror = null;
+  const mirrorLines = [];
+  const mirrorTexts = [];
+  const nums = [];
+  let layoutKey = '';
+  let lhApplied = '';
+  let raf = null;
+  let lastSig = null;
+  let lastScrollTop = null;
 
-  const cs = getComputedStyle(ta);
-  const lineHeightPx = (function () {
+  function lineHeightPx(cs) {
     const lh = cs.lineHeight;
-    if (!lh || lh === 'normal') return parseFloat(cs.fontSize) * 1.2;
+    const fs = parseFloat(cs.fontSize) || 12;
+    if (!lh || lh === 'normal') return fs * 1.2;
     if (lh.indexOf('px') >= 0) return parseFloat(lh);
-    return parseFloat(lh) * parseFloat(cs.fontSize);
-  })();
+    return parseFloat(lh) * fs; // 无量纲数值（如 1.5）→ ×字号
+  }
+  function ensureMirror() {
+    if (mirror) return mirror;
+    const m = document.createElement('div');
+    m.setAttribute('aria-hidden', 'true');
+    // height:0 ＋ overflow:hidden → 常驻离屏量测盒，绝不把文档撑出滚动条
+    m.style.cssText = 'position:absolute;left:-99999px;top:0;visibility:hidden;pointer-events:none;height:0;overflow:hidden';
+    document.body.appendChild(m);
+    mirror = m;
+    return m;
+  }
+  function syncScroll(ta, inner) {
+    inner.style.transform = 'translateY(' + (-ta.scrollTop) + 'px)';
+  }
 
-  const lines = ta.value.replace(/\r/g, '').split('\n');
+  function refresh() {
+    const e = els();
+    if (!e.ta || !e.gutter || !e.inner) return;
+    if (!cfg.visible(e)) return;
+    const ta = e.ta, gutter = e.gutter, inner = e.inner, m = ensureMirror();
+    const cs = getComputedStyle(ta);
+    const lhStr = lineHeightPx(cs) + 'px';
+    const lines = ta.value.replace(/\r/g, '').split('\n');
 
-  // 先按行号位数定宽，避免改宽后 textarea 重排造成折行漂移
-  // 注意：宽度用 ch 单位（按边条自己的 10px 字号），textarea 的留白必须换成边条的实际像素宽度，
-  //       否则 textarea 的 ch（按正文 12px 字号）与边条宽度不一致，两者会错开约 2px。
-  const targetWidth = 'calc(' + (String(lines.length).length + 1) + 'ch + 10px)';
-  if (gutter.style.width !== targetWidth) gutter.style.width = targetWidth;
-  const gutterPx = gutter.offsetWidth + 'px';
-  if (ta.style.marginLeft !== gutterPx) {
-    ta.style.marginLeft = gutterPx;
-    // 改宽后 textarea 会重排，用最终宽度再测一次（最多 2 趟，防无限）
-    if (!refreshLineGutter._settling) {
-      refreshLineGutter._settling = true;
-      requestAnimationFrame(function () { refreshLineGutter._settling = false; refreshLineGutter(); });
-      return;
+    // 边条宽度用 ch（按边条自己的小字号）；textarea 的留白必须换成边条的实际像素宽，
+    // 否则同一个 'calc(Nch + Mpx)' 字符串按正文大号字重新解析，两者会错开约 2px。
+    const targetWidth = 'calc(' + (String(lines.length).length + 1) + 'ch + ' + cfg.chrome + 'px)';
+    if (gutter.style.width !== targetWidth) gutter.style.width = targetWidth;
+    const marginPx = gutter.offsetWidth + 'px';
+    if (ta.style.marginLeft !== marginPx) ta.style.marginLeft = marginPx;
+
+    // mirror 与 textarea 同排版（含 padding），只在版签变化时重写 cssText，避免每帧改样式引发重排。
+    // 镜像宽度取 textarea 内部宽度（clientWidth，box-sizing:border-box）→ 折行起点逐像素对齐。
+    const cw = Math.max(1, ta.clientWidth);
+    const key = [cw, cs.fontFamily, cs.fontSize, cs.fontWeight, cs.letterSpacing, cs.lineHeight,
+      cs.paddingTop, cs.paddingRight, cs.paddingBottom, cs.paddingLeft, cs.tabSize || '8'].join('|');
+    if (key !== layoutKey) {
+      layoutKey = key;
+      m.style.cssText = 'position:absolute;left:-99999px;top:0;visibility:hidden;pointer-events:none;' +
+        'height:0;overflow:hidden;box-sizing:border-box;margin:0;border:0;' +
+        'white-space:pre-wrap;word-break:break-word;overflow-wrap:break-word;' +
+        'width:' + cw + 'px;' +
+        'padding-top:' + cs.paddingTop + ';padding-right:' + cs.paddingRight +
+        ';padding-bottom:' + cs.paddingBottom + ';padding-left:' + cs.paddingLeft + ';' +
+        'font-family:' + cs.fontFamily + ';font-size:' + cs.fontSize + ';font-weight:' + cs.fontWeight +
+        ';letter-spacing:' + cs.letterSpacing + ';line-height:' + cs.lineHeight +
+        ';tab-size:' + (cs.tabSize || '8');
     }
+
+    // 写阶段①：镜像行数增删 ＋ 只替换内容真的变了的行
+    while (mirrorLines.length > lines.length) { mirrorTexts.pop(); m.removeChild(mirrorLines.pop()); }
+    while (mirrorLines.length < lines.length) {
+      const d = document.createElement('div');
+      m.appendChild(d);
+      mirrorLines.push(d);
+      mirrorTexts.push(null);
+    }
+    for (let i = 0; i < lines.length; i++) {
+      if (mirrorTexts[i] !== lines[i]) {
+        mirrorTexts[i] = lines[i];
+        // 空行必须占 1 行高：完全没有文字的行盒高度为 0，补一个换行符才有行高
+        mirrorLines[i].textContent = lines[i] === '' ? '\n' : lines[i];
+      }
+    }
+
+    // 读阶段：上面全是写，第一次 offsetTop 才强制排版，之后是纯读 → 每次调用只排版一次
+    const tops = new Array(lines.length);
+    for (let i = 0; i < lines.length; i++) tops[i] = mirrorLines[i].offsetTop;
+
+    // 写阶段②：行号节点池化复用（inner 若被外部重建过，池里的引用已失效 → 连容器一起清空重来，
+    //           只丢引用会让旧行号变成留在边条里的孤儿节点、行数越滚越多）
+    if (nums.length && nums[0].parentNode !== inner) { inner.textContent = ''; nums.length = 0; }
+    while (nums.length > lines.length) inner.removeChild(nums.pop());
+    while (nums.length < lines.length) {
+      const n = document.createElement('div');
+      n.className = 'gutter-num';
+      inner.appendChild(n);
+      nums.push(n);
+    }
+    const lhChanged = lhStr !== lhApplied;
+    if (lhChanged) lhApplied = lhStr;
+    for (let i = 0; i < nums.length; i++) {
+      const n = nums[i];
+      const top = tops[i] + 'px';
+      if (n._top !== top) { n._top = top; n.style.top = top; }
+      if (lhChanged) { n.style.height = lhStr; n.style.lineHeight = lhStr; }
+      const label = String(i + 1);
+      if (n._label !== label) { n._label = label; n.textContent = label; }
+    }
+
+    syncScroll(ta, inner);
   }
 
-  // 镜像：与 textarea 完全相同排版（含 padding），逐逻辑行包成 div，读 offsetTop 即得各逻辑行起点
-  const mirror = document.createElement('div');
-  mirror.style.cssText = [
-    'position:absolute', 'left:-9999px', 'top:0', 'visibility:hidden',
-    'width:' + Math.max(1, ta.clientWidth) + 'px',
-    'box-sizing:border-box',
-    'padding-top:' + cs.paddingTop, 'padding-right:' + cs.paddingRight,
-    'padding-bottom:' + cs.paddingBottom, 'padding-left:' + cs.paddingLeft,
-    'border:0', 'margin:0',
-    'font-family:' + cs.fontFamily, 'font-size:' + cs.fontSize, 'font-weight:' + cs.fontWeight,
-    'letter-spacing:' + cs.letterSpacing, 'line-height:' + cs.lineHeight,
-    'white-space:pre-wrap', 'word-break:break-word', 'overflow-wrap:break-word',
-    'tab-size:' + (cs.tabSize || '8')
-  ].join(';');
-  const mlEls = [];
-  for (let i = 0; i < lines.length; i++) {
-    const d = document.createElement('div');
-    d.textContent = lines[i] === '' ? '\n' : lines[i];
-    mirror.appendChild(d);
-    mlEls.push(d);
+  // 版签＝内容 + 尺寸 + 字号/行高/内边距：拖拽改窗体尺寸、菜单缩放字号、换主题都可能改排版，
+  // 值没变也一样要重建（否则边条会按旧折行结果排版）。
+  function signature(ta) {
+    const cs = getComputedStyle(ta);
+    return ta.value + '\0' + ta.clientWidth + 'x' + ta.clientHeight + 'x' +
+      cs.fontSize + '/' + cs.lineHeight + '/' + cs.paddingLeft + '/' + cs.paddingTop;
   }
-  document.body.appendChild(mirror);
-  inner.innerHTML = '';
-  for (let i = 0; i < mlEls.length; i++) {
-    const num = document.createElement('div');
-    num.className = 'gutter-num';
-    num.style.top = mlEls[i].offsetTop + 'px';
-    num.style.height = lineHeightPx + 'px';
-    num.style.lineHeight = lineHeightPx + 'px';
-    num.textContent = String(i + 1);
-    inner.appendChild(num);
+  function tick() {
+    const e = els();
+    if (!e.ta || !cfg.visible(e)) { raf = null; return; }  // 离开编辑模式 → 自动停轮询
+    const sig = signature(e.ta);
+    if (sig !== lastSig) {
+      lastSig = sig;
+      lastScrollTop = e.ta.scrollTop;
+      refresh();
+    } else if (e.ta.scrollTop !== lastScrollTop) {
+      lastScrollTop = e.ta.scrollTop;
+      syncScroll(e.ta, e.inner);
+    }
+    raf = requestAnimationFrame(tick);
   }
-  document.body.removeChild(mirror);
 
-  inner.style.transform = 'translateY(' + (-ta.scrollTop) + 'px)';
+  return {
+    refresh: refresh,
+    start: function () {
+      if (raf == null) {
+        lastSig = null;
+        lastScrollTop = null;
+        raf = requestAnimationFrame(tick);
+      }
+    },
+    invalidate: function () { lastSig = null; },
+  };
 }
-function syncGutterScroll() {
-  const ta = document.getElementById('editArea');
-  const inner = document.getElementById('editAreaGutterInner');
-  if (!ta || !inner) return;
-  inner.style.transform = 'translateY(' + (-ta.scrollTop) + 'px)';
-}
-let gutterRAF = null;
-let lastGutterValue = null;
-let lastGutterScrollTop = null;
-function gutterTick() {
-  const ta = document.getElementById('editArea');
-  if (!ta || !isEditAreaVisible()) { gutterRAF = null; return; }  // 离开编辑模式 → 自动停轮询
-  // 版签＝内容 + 尺寸 + 字号：便利贴可拖拽改尺寸、字号可缩放，任一变化都要重建行号（值没变也一样）
-  const sig = ta.value + '\0' + ta.clientWidth + 'x' + ta.clientHeight + 'x' + getComputedStyle(ta).fontSize;
-  if (sig !== lastGutterValue) {
-    lastGutterValue = sig;
-    lastGutterScrollTop = ta.scrollTop;
-    refreshLineGutter();
-  } else if (ta.scrollTop !== lastGutterScrollTop) {
-    lastGutterScrollTop = ta.scrollTop;
-    syncGutterScroll();
-  }
-  gutterRAF = requestAnimationFrame(gutterTick);
-}
-function startGutterLoop() {
-  if (gutterRAF == null) {
-    lastGutterValue = null;
-    lastGutterScrollTop = null;
-    gutterRAF = requestAnimationFrame(gutterTick);
-  }
-}
+const editAreaGutter = createLineGutter({
+  taId: 'editArea',
+  gutterId: 'editAreaGutter',
+  innerId: 'editAreaGutterInner',
+  chrome: 10,
+  visible: function () { return isEditAreaVisible(); },
+});
+function refreshLineGutter() { editAreaGutter.refresh(); }
+function startGutterLoop() { editAreaGutter.start(); }
 
 // 🆕 最小化：收合成小卡（标题＋日期＋标签）。状态随便利贴一并持久化，重新开启时还原
 // ⚠️ sticky-note-bounds 的宽/高是成对判定（缺 width 则 setBounds 不执行），所以这里必须同时传 width+height

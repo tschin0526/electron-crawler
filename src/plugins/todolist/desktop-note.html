@@ -74,6 +74,10 @@
     /* 日期右侧「＋☐」加入子事件按钮（与 calendar 列表行 .ev-addcheck-btn 同功能；置于拖拽区内故需 no-drag） */
     .note-addcheck { display: inline-flex; align-items: center; justify-content: center; margin-left: 6px; width: auto; padding: 0 5px; height: 16px; border-radius: 999px; border: 1px solid rgba(127,127,127,.4); background: rgba(127,127,127,.12); color: var(--note-fg, #4b5160); font-size: 11px; line-height: 1; cursor: pointer; vertical-align: middle; white-space: nowrap; -webkit-app-region: no-drag; }
     .note-addcheck:hover { background: rgba(127,127,127,.26); }
+    /* 🆕「只显示未完成的 checkbox 子事件」快捷按钮（紧接 ＋☐，与菜单项 miUndoneChecks 共用同一状态；开启＝金色实心） */
+    .note-undone-filter { display: inline-flex; align-items: center; justify-content: center; margin-left: 4px; min-width: 18px; padding: 0 5px; height: 16px; border-radius: 999px; border: 1px solid rgba(127,127,127,.4); background: rgba(127,127,127,.12); color: var(--note-fg, #4b5160); font-size: 11px; line-height: 1; cursor: pointer; vertical-align: middle; -webkit-app-region: no-drag; }
+    .note-undone-filter:hover { background: rgba(127,127,127,.26); }
+    .note-undone-filter.active { border-color: #D4AF37; background: rgba(212,175,55,.38); }
     /* 🆕 加入子事件浮层（复用 sticky-note-edit 落盘链路；盒底色由 JS 套用与便利贴同色 tint(state.color,100)，文字用 --note-fg） */
     .addcheck-ov { position: absolute; inset: 0; z-index: 30; display: none; align-items: center; justify-content: center; padding: 10px; background: rgba(0,0,0,.2); -webkit-app-region: no-drag; }
     .addcheck-ov.show { display: flex; }
@@ -93,6 +97,13 @@
     .addcheck-box .ac-actions .ac-copy { margin-top: 0; padding: 4px 10px; }
     .addcheck-box .ac-primary { background: rgba(212,175,55,.28); border-color: #D4AF37; font-weight: 600; }
     .addcheck-box .ac-primary:hover { background: rgba(212,175,55,.45); }
+    /* 🆕 关闭前的「未保存改动」决策条（盒底同为亮色浮层，沿用金色边框语汇；ac-danger＝放弃改动，用红提示不可恢复） */
+    .ac-unsaved { margin-top: 8px; padding: 8px; border: 1.5px solid #D4AF37; border-radius: 8px; background: rgba(212,175,55,.12); color: var(--note-fg, #33384a); -webkit-app-region: no-drag; }
+    .ac-unsaved .ac-unsaved-tip { font-weight: 600; margin-bottom: 6px; }
+    .ac-unsaved .ac-unsaved-btns { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; }
+    .ac-unsaved .ac-copy { margin-top: 0; padding: 4px 10px; }
+    .ac-unsaved .ac-danger { border-color: rgba(220,38,38,.6); background: rgba(220,38,38,.12); }
+    .ac-unsaved .ac-danger:hover { background: rgba(220,38,38,.24); }
     /* 🆕 收件人历史下拉（复用菜单配色 --menu-bg/--note-fg，保证深浅主题可读） */
     .email-input-wrap { position: relative; }
     .email-recipient-dropdown {
@@ -138,6 +149,8 @@
     .body .hr-text::before, .body .hr-text::after { content: ""; flex: 1 1 0; min-width: 1.2em; border-top: 1px solid color-mix(in srgb, currentColor 38%, transparent); }
     .body .hr-text-label { flex: 0 1 auto; text-align: center; }
     .body a { color: #2563EB; text-decoration: underline; }
+    /* exec: 链接没有 href（点击靠 desktop-note 的委托监听 → 主进程 shell.openExternal），浏览器不会自动给 pointer */
+    .body a.card-exec-link { cursor: pointer; }
     .body img { max-width: 100%; height: auto; border-radius: 6px; margin: .2em 0; }
     .body table { border-collapse: collapse; margin: .4em 0; font-size: 11px; width: 100%; border: 1px solid rgba(212,175,55,.6); }
     .body th, .body td { border: 1px solid rgba(212,175,55,.45); padding: 3px 6px; text-align: left; }
@@ -422,17 +435,26 @@
         <button class="mi" id="miZoomIn" title="放大内容字体（A＋）">A＋</button>
       </div>
     </div>
-    <!-- 🆕 加入子事件浮层（＋☐ 触发；⌘S=加入 / Esc=取消） -->
+    <!-- 🆕 加入子事件浮层（＋☐ 触发）：与「编辑小圆点」浮层同一套按钮／快捷键口径 → Enter 或 ⌘S＝加入（不关窗）· Esc＝关闭（有草稿先问） -->
     <div class="addcheck-ov" id="addCheckOv">
       <div class="addcheck-box" id="addCheckBox">
         <div class="ac-title">加入子事件（CheckBox）</div>
         <textarea id="addCheckInput" placeholder="每行一个子事件，回车直接加入…"></textarea>
-        <div class="ac-hint">⌘S 加入 · Esc 取消</div>
+        <div class="ac-hint">Enter 或 ⌘S 加入（加入后不关闭，可继续输入下一批）· Esc 关闭（草稿未加入会先问是否保存）</div>
         <div class="ac-actions">
-          <button type="button" class="ac-copy" id="copyNoteCheckButton" style="display:none">复制</button>
-          <button type="button" class="ac-copy" id="editFullNoteFromCheckButton" style="display:none">编辑完整备注</button>
+          <button type="button" class="ac-copy" id="copyNoteCheckButton">复制</button>
+          <button type="button" class="ac-copy" id="editFullNoteFromCheckButton">编辑完整备注</button>
           <button type="button" class="ac-copy ac-primary" id="saveCheckButton">保存</button>
           <button type="button" class="ac-copy" id="closeCheckButton">关闭</button>
+        </div>
+        <!-- 🆕 关闭拦截条：新增／编辑子事件／区块都适用——按 Esc／「关闭」／点背罩时若有改动或草稿未加入，就在这里三选一（默认焦点＝继续编辑，不丢内容） -->
+        <div class="ac-unsaved" id="addCheckUnsavedBar" role="alertdialog" aria-live="polite" style="display:none">
+          <div class="ac-unsaved-tip">内容有改动，尚未保存。关闭前请决定：</div>
+          <div class="ac-unsaved-btns">
+            <button type="button" class="ac-copy" id="addCheckKeepEditingButton">继续编辑</button>
+            <button type="button" class="ac-copy ac-danger" id="addCheckDiscardButton">不保存，直接关闭</button>
+            <button type="button" class="ac-copy ac-primary" id="addCheckSaveCloseButton">保存并关闭</button>
+          </div>
         </div>
       </div>
     </div>

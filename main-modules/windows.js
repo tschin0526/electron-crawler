@@ -260,23 +260,144 @@ const pendingStickyMenuCloses = new Map();
 let stickyMenuCloseSeq = 0;
 const pendingStickyRefreshes = new Map();
 
+let stickyNoteFile = '';            // 当前 Calendar 档案绝对路径（便利贴存档写在同目录）
+let stickyNoteState = null;         // null＝本次会话还没成功读到存档 → 绝不允许落盘（见 saveStickyNoteState）
+
 function stickyStatePath() {
   return stickyNoteFile ? path.join(path.dirname(stickyNoteFile), 'sticky-notes-state.json') : '';
 }
-function loadStickyNoteState() {
+function stickyStateBadName(p) {
+  const d = new Date();
+  const pad = (n) => String(n).padStart(2, '0');
+  return p + '.corrupt-' + d.getFullYear() + pad(d.getMonth() + 1) + pad(d.getDate())
+    + '-' + pad(d.getHours()) + pad(d.getMinutes()) + pad(d.getSeconds()) + '.json';
+}
+// ⚠️ 存档读不到／解析失败时，绝不可当成「没有设定」继续运作：
+//    之前是 catch 后回传 {} → 之后任何一次存盘都会用 {} 覆盖整份档案，
+//    使用者所有便利贴的颜色／字号／尺寸就这样被静默清空（2026-10-20 用户回馈）。
+//    现在：先把原始字节改名保留成 .corrupt-* 副本（不是删，是留档），再弹讯息告知使用者。
+//    同一路径只提醒一次，避免每次存盘都跳同一个视窗。
+const stickyStateWarnedPaths = new Set();
+function stickyStateUnreadable(p, raw, why) {
+  if (stickyStateWarnedPaths.has(p)) return;
+  stickyStateWarnedPaths.add(p);
+  let kept = '';
   try {
-    const p = stickyStatePath();
-    if (p && fs.existsSync(p)) return JSON.parse(fs.readFileSync(p, 'utf8') || '{}');
-  } catch (e) { /* 状态损坏则从默认开始 */ }
-  return {};
+    if (typeof raw === 'string' && raw.trim()) {
+      kept = stickyStateBadName(p);
+      fs.writeFileSync(kept, raw, 'utf8');
+    }
+  } catch (e) { kept = ''; }
+  console.warn('[Main] ⚠️ 便利贴存档读不到（' + why + '）:', p);
+  try {
+    dialog.showMessageBox({
+      type: 'warning',
+      title: '便利贴设定档无法读取',
+      message: '便利贴的设定存档（sticky-notes-state.json）' + why + '。',
+      detail: (kept ? '原始内容已原样保留为：\n' + kept + '\n' : '原始档案里没有内容，没有可保留的字节。\n')
+        + '程式会以空白设定继续运行；若你之前设定过颜色／字号／尺寸，请到上述副本档案确认还能不能捞回来。',
+      buttons: ['我了解了'],
+      defaultId: 0, noLink: true
+    }).catch(() => {});
+  } catch (e) { /* 弹不出来也不能阻塞开档 */ }
+}
+function parseStickyState(raw) {
+  const j = JSON.parse(raw);
+  if (!j || typeof j !== 'object' || Array.isArray(j)) throw new Error('内容不是设定对象');
+  return j;
+}
+// canWrite：读不到档案时还能不能安全地重建它。
+//   读档本身失败（权限／档案被系统移走）→ 里面可能还有资料，绝不覆写；
+//   档案是空的／是解析不了的乱码 → 字节已保留副本（或本来就没字节），覆写不会额外弄丢任何东西。
+function readStickyStateFile(p) {
+  if (!p || !fs.existsSync(p)) return { ok: true, state: {}, text: '', canWrite: true };
+  let raw = '';
+  try { raw = fs.readFileSync(p, 'utf8'); }
+  catch (e) { stickyStateUnreadable(p, '', '读取失败（' + e.message + '）'); return { ok: false, state: {}, text: '', canWrite: false }; }
+  if (!raw || !raw.trim()) { stickyStateUnreadable(p, raw, '是空的'); return { ok: false, state: {}, text: '', canWrite: true }; }
+  try { return { ok: true, state: parseStickyState(raw), text: raw, canWrite: true }; }
+  catch (e) { stickyStateUnreadable(p, raw, '内容解析失败（' + e.message + '）'); return { ok: false, state: {}, text: '', canWrite: true }; }
+}
+function loadStickyNoteState() {
+  return readStickyStateFile(stickyStatePath()).state;
+}
+// 磁盘 ∪ 内存（内存优先，逐字段合并）：内存里没提到的 key／idx 一律保留，
+// 所以哪怕本次会话只开了一张贴纸，存盘也不会把其他张贴纸的设定抹掉。
+function mergeStickyState(disk, mem) {
+  const cloneEntry = (it) => (it && typeof it === 'object') ? Object.assign({}, it) : it;
+  const out = {};
+  Object.keys(disk || {}).forEach((k) => {
+    out[k] = Array.isArray(disk[k]) ? disk[k].map(cloneEntry) : disk[k];
+  });
+  Object.keys(mem || {}).forEach((k) => {
+    if (!Array.isArray(mem[k])) { out[k] = mem[k]; return; }
+    const base = Array.isArray(out[k]) ? out[k] : [];
+    const arr = base.slice();
+    mem[k].forEach((m, i) => { arr[i] = Object.assign({}, cloneEntry(arr[i]) || {}, cloneEntry(m) || {}); });
+    out[k] = arr;
+  });
+  return out;
+}
+// 先写同档名 .tmp 再 rename 换过去：直接 writeFileSync 会先 truncate，
+// 写入途中被强行退出／iCloud 档案同步插队 → 留下一份 0 字节的空档（设定等于被删）。
+function writeStickyStateFile(p, text) {
+  const tmp = p + '.tmp';
+  fs.writeFileSync(tmp, text, 'utf8');
+  try { fs.renameSync(tmp, p); }
+  catch (e) { fs.writeFileSync(p, text, 'utf8'); try { fs.unlinkSync(tmp); } catch (e2) {} }
 }
 function saveStickyNoteState() {
   try {
     const p = stickyStatePath();
-    if (p) fs.writeFileSync(p, JSON.stringify(stickyNoteState || {}, null, 2), 'utf8');
-  } catch (e) { /* 只影响下次布局，不阻塞 */ }
+    if (!p || !stickyNoteState) return;            // 还没读到存档 → 不写（宁可不存，也不覆盖）
+    const disk = readStickyStateFile(p);
+    if (!disk.canWrite) return;                    // 档案现在读不到且里面可能还有资料 → 冻存
+    const merged = mergeStickyState(disk.state, stickyNoteState);
+    const text = JSON.stringify(merged, null, 2);
+    if (disk.ok && disk.text === text) { stickyNoteState = merged; return; }   // 内容没变就不重写档案（iCloud 目录里少一次无谓同步）
+    writeStickyStateFile(p, text);
+    stickyNoteState = merged;
+  } catch (e) { console.warn('[Main] 便利贴存档写入失败（本次不覆盖旧档）:', e); }
 }
 function noteWinId(key, idx) { return key + '#' + idx; }
+
+// 便利贴设定以前绑在 'evp{序号}' 这种「按 calendar.md 位置临时生成」的 key 上；
+// Calendar 存盘会把 EVENT 按日期重排 → 同一张贴纸换了 key，颜色／字号／尺寸全部查不到
+// （用户回馈「跑一次 --todolist 便利贴设定就被重置」就是这个）。
+// 修法：每张贴纸在存档里带一个 _id（标题|日期），开贴时若新 key 查无设定，
+// 就按 _id 把旧条目「复制」过去（旧条目只标记 migratedTo，不删，无损）。
+function stickyIdentityOf(ref) {
+  return String((ref && ref.title) || '') + '|' + String((ref && ref.date) || '');
+}
+function adoptStickyState(refs) {
+  if (!stickyNoteState) stickyNoteState = loadStickyNoteState();
+  const list = (refs || []).filter((r) => r && typeof r.key === 'string');
+  const live = new Set(list.map((r) => noteWinId(r.key, r.idx)));
+  const donors = new Map();
+  Object.keys(stickyNoteState).forEach((k) => {
+    const arr = stickyNoteState[k];
+    if (!Array.isArray(arr)) return;
+    arr.forEach((it, i) => {
+      if (!it || !it._id || it.migratedTo) return;
+      if (live.has(noteWinId(k, i))) return;
+      if (!donors.has(it._id)) donors.set(it._id, { key: k, idx: i });
+    });
+  });
+  list.forEach((r) => {
+    const it = noteInst(r.key, r.idx);
+    const id = stickyIdentityOf(r);
+    if (!Object.keys(it).length) {
+      const old = donors.get(id);
+      if (old) {
+        const src = stickyNoteState[old.key][old.idx];
+        Object.keys(src).forEach((f) => { it[f] = src[f]; });
+        src.migratedTo = noteWinId(r.key, r.idx);
+        donors.delete(id);
+      }
+    }
+    if (id !== '|' && !it._id) it._id = id;
+  });
+}
 
 // 🆕 把某张便利贴窗口「当前实时 bounds」直接写回存档（不依赖 'moved' 事件／400ms 去抖）。
 //    ⚠️ 背景：曾经只靠 win.on('moved')→内存＋400ms 去抖落盘，退出前最后一程拖动若没赶上
@@ -337,6 +458,25 @@ app.on('before-quit', () => {
   } catch (e) {}
 });
 
+// 🆕 便利贴窗体导航护栏：贴纸里的链接一律先由渲染端拦截，再交主进程开「预览窗／图片窗／系统浏览器」，
+//    所以「页面挤在贴纸宽度里、没有完整展开」（2026-10-20 用户回馈：点〔执行mcpTest〕）不该再发生。
+//    这里只兜「渲染端漏接的协议」：javascript: / data: 等一律拦掉，避免贴纸被脚本导航走。
+//    http(s) 与 file 仍放行 —— [文字](cur:URL) 的语义就是「在本窗体就地开启」，主窗体也是放行它，
+//    便利贴跟着主窗体走（要完整画面请用普通链接，会开 1400x900 预览窗）。窗体复刻清单同 index.html 主窗体委托。
+function guardStickyNoteNavigation(win) {
+  win.webContents.on('will-navigate', (event, url) => {
+    if (!/^(?:https?|file):\/\//i.test(url)) {
+      console.warn('[Main] 便利贴窗体试图以非 http/file 协议导航，已拦截:', url);
+      event.preventDefault();
+    }
+  });
+  // 便利贴从不主动开窗（要开都由主进程建预览／图片窗），弹出一律 deny
+  win.webContents.setWindowOpenHandler(({ url }) => {
+    console.warn('[Main] 便利贴窗体试图弹出新窗口，已拦截:', url);
+    return { action: 'deny' };
+  });
+}
+
 function createStickyNoteWindow(key, idx) {
   const id = noteWinId(key, idx);
   const exist = stickyNoteWindows.get(id);
@@ -382,6 +522,7 @@ function createStickyNoteWindow(key, idx) {
   const search = '?file=' + encodeURIComponent(stickyNoteFile) +
                  '&key=' + encodeURIComponent(key) +
                  '&idx=' + encodeURIComponent(String(idx));
+  guardStickyNoteNavigation(win);   // 必须在 loadFile 前挂好，首帧导航也归护栏管
   win.loadFile('src/plugins/todolist/desktop-note.html', { search });
   // 图层层级＝一般视窗：不常驻最上层；点选这张便利贴时由 OS 自动提到最前，行为与普通视窗一致
   win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
@@ -437,6 +578,7 @@ function createFlipStickyWindow() {
   // ⚠️ 同分体窗：macOS 会无视构造 x，建窗后 setPosition 钉回存档位置（详见 createStickyNoteWindow 注释）
   win.setPosition(x, y);
   const search = '?mode=flip&file=' + encodeURIComponent(stickyNoteFile);
+  guardStickyNoteNavigation(win);   // 必须在 loadFile 前挂好，首帧导航也归护栏管
   win.loadFile('src/plugins/todolist/desktop-note.html', { search });
   // 图层层级＝一般视窗：不常驻最上层；点选时由 OS 自动提到最前
   win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
@@ -495,6 +637,7 @@ ipcMain.handle('open-sticky-notes', (e, arg) => {
       notes: typeof n.notes === 'string' ? n.notes : ''
     }));
     stickyNoteCatalog = stickyNoteOrder.slice();
+    adoptStickyState(stickyNoteOrder);
     const mode = (arg && arg.mode === 'flip') ? 'flip' : 'split';
     stickyNoteMode = mode;
     let count = 0;
@@ -694,6 +837,9 @@ ipcMain.on('sticky-note-sync', (e, arg) => {
   const nextCatalog = [];
   const nextOrder = [];
   const nextIds = new Set();
+  // 事件重排后 key 会变（evpN 是按 calendar.md 位置的临时 id）→ 先按 _id 把旧设定搬过来再建窗
+  adoptStickyState(refs.filter(r => r && typeof r.key === 'string')
+    .map(r => ({ key: r.key, idx: +r.idx || 0, title: r.title, date: r.date })));
 
   refs.forEach(note => {
     if (!note || typeof note.key !== 'string') return;

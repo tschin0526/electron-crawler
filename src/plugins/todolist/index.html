@@ -11913,126 +11913,184 @@
     }
 
     // ── 文本编辑模式：左侧「只读」行号边条（与 textarea 逐字对齐，含折行）──────────────
-    // 设计要点：
-    //  · 行号只显示、不可编辑（pointer-events:none），仅反映「内容行数」。
-    //  · 用离屏 mirror（与 textarea 同排版）量出每个逻辑行的纵向起点，故折行后行号仍精确对齐。
+    //  · 行号只显示、不可编辑（pointer-events:none），是编辑器的固有装饰（空文档也算 1 行）。
     //  · rAF 轮询仅在 taskText 可见时运行：捕获一切值变化（输入/插入/撤销/格式化/JS 改值）与滚动，
     //    无需在数十处插入/撤销/格式化函数里逐个挂钩。
-    function refreshLineGutter() {
-      const ta = document.getElementById('taskText');
-      const wrap = document.getElementById('taskTextGutterWrap');
-      const gutter = document.getElementById('taskTextGutter');
-      const inner = document.getElementById('taskTextGutterInner');
-      if (!ta || !wrap || !gutter || !inner) return;
-      if (ta.style.display === 'none' || wrap.style.display === 'none') return;
+    // ── 行号边条工厂（与便利贴窗体 desktop-note.js 同源同义，算法一致）─────────────────
+    //  · 行号是编辑器的固有装饰，不是内容的附属：文档为空时 ''.split('\n') 得到 [''] → 恒有第 1 行。
+    //  · 离屏 mirror 常驻 DOM（不再每次 append/remove）＋ 镜像行与行号节点池化：
+    //    一次调用里「写」全在前、「读」集中在 offsetTop 那一批 → 每帧只强制排版一次，
+    //    打字延迟随行数线性而非平方增长。
+    //  · 改边条宽 → textarea 重排后，clientWidth 是同一趟读到的新值，mirror 立刻按新宽量测，
+    //    故不需要旧的 _settling 二次 rAF 复检（那趟复检会让行号滞后一帧、旧行号残留可见）。
+    function createLineGutter(cfg) {
+      function els() {
+        return {
+          ta: document.getElementById(cfg.taId),
+          wrap: cfg.wrapId ? document.getElementById(cfg.wrapId) : null,
+          gutter: document.getElementById(cfg.gutterId),
+          inner: document.getElementById(cfg.innerId),
+        };
+      }
+      let mirror = null;
+      const mirrorLines = [];
+      const mirrorTexts = [];
+      const nums = [];
+      let layoutKey = '';
+      let lhApplied = '';
+      let raf = null;
+      let lastSig = null;
+      let lastScrollTop = null;
 
-      const cs = getComputedStyle(ta);
-      const padL = parseFloat(cs.paddingLeft) || 0;
-      const padR = parseFloat(cs.paddingRight) || 0;
-      // 行高可能是无量纲数值（如 1.6）或 normal，须解析成 px 才能用于边条数字盒
-      const lineHeightPx = (function () {
+      function lineHeightPx(cs) {
         const lh = cs.lineHeight;
-        if (!lh || lh === 'normal') return parseFloat(cs.fontSize) * 1.2;
+        const fs = parseFloat(cs.fontSize) || 13;
+        // 行高可能是无量纲数值（如 1.6）或 normal，须解析成 px 才能用于边条数字盒
+        if (!lh || lh === 'normal') return fs * 1.2;
         if (lh.indexOf('px') >= 0) return parseFloat(lh);
-        return parseFloat(lh) * parseFloat(cs.fontSize); // 无量纲数值（如 1.6）→ ×字号
-      })();
+        return parseFloat(lh) * fs;
+      }
+      function ensureMirror() {
+        if (mirror) return mirror;
+        const m = document.createElement('div');
+        m.setAttribute('aria-hidden', 'true');
+        // height:0 ＋ overflow:hidden → 常驻离屏量测盒，绝不把文档撑出滚动条
+        m.style.cssText = 'position:absolute;left:-99999px;top:0;visibility:hidden;pointer-events:none;height:0;overflow:hidden';
+        document.body.appendChild(m);
+        mirror = m;
+        return m;
+      }
+      function syncScroll(ta, inner) {
+        inner.style.transform = 'translateY(' + (-ta.scrollTop) + 'px)';
+      }
 
-      const text = ta.value.replace(/\r/g, '');
-      const lines = text.split('\n');
+      function refresh() {
+        const e = els();
+        if (!e.ta || !e.gutter || !e.inner) return;
+        if (!cfg.visible(e)) return;
+        const ta = e.ta, gutter = e.gutter, inner = e.inner, m = ensureMirror();
+        const cs = getComputedStyle(ta);
+        const lhStr = lineHeightPx(cs) + 'px';
+        const lines = ta.value.replace(/\r/g, '').split('\n');
 
-      // 先按行号位数定宽，避免后续改宽导致 textarea 重排、wrapping 漂移对不齐
-      const digits = String(lines.length).length;
-      const targetWidth = 'calc(' + (digits + 1) + 'ch + 12px)';
-      // 边条改为绝对定位，但仍需让 textarea 预留同样宽度，避免文字压在边条底下
-      ta.style.marginLeft = targetWidth;
-      if (gutter.style.width !== targetWidth) {
-        gutter.style.width = targetWidth;
-        // 改宽后 textarea 会重排，用最终宽度再测一次（最多 2 趟，防无限）
-        if (!refreshLineGutter._settling) {
-          refreshLineGutter._settling = true;
-          requestAnimationFrame(function () { refreshLineGutter._settling = false; refreshLineGutter(); });
-          return;
+        // 边条宽度用 ch（按边条自己的小字号）；textarea 的留白必须换成边条的实际像素宽，
+        // 否则同一个 'calc(Nch + Mpx)' 字符串按正文 13px 字号重新解析，两者会错开约 2px。
+        const targetWidth = 'calc(' + (String(lines.length).length + 1) + 'ch + ' + cfg.chrome + 'px)';
+        if (gutter.style.width !== targetWidth) gutter.style.width = targetWidth;
+        const marginPx = gutter.offsetWidth + 'px';
+        if (ta.style.marginLeft !== marginPx) ta.style.marginLeft = marginPx;
+
+        // mirror 与 textarea 完全相同排版（含 padding），逐逻辑行包成 div，读 offsetTop 即得各逻辑行起点；
+        // 只在版签变化时重写 cssText，避免每帧改样式引发重排。
+        // 镜像宽度取 textarea 内部宽度（clientWidth，box-sizing:border-box）→ 折行起点与文字逐像素对齐，
+        // offsetTop 亦含 textarea 的 padding-top。
+        const cw = Math.max(1, ta.clientWidth);
+        const key = [cw, cs.fontFamily, cs.fontSize, cs.fontWeight, cs.letterSpacing, cs.lineHeight,
+          cs.paddingTop, cs.paddingRight, cs.paddingBottom, cs.paddingLeft, cs.tabSize || '8'].join('|');
+        if (key !== layoutKey) {
+          layoutKey = key;
+          m.style.cssText = 'position:absolute;left:-99999px;top:0;visibility:hidden;pointer-events:none;' +
+            'height:0;overflow:hidden;box-sizing:border-box;margin:0;border:0;' +
+            'white-space:pre-wrap;word-break:break-word;overflow-wrap:break-word;' +
+            'width:' + cw + 'px;' +
+            'padding-top:' + cs.paddingTop + ';padding-right:' + cs.paddingRight +
+            ';padding-bottom:' + cs.paddingBottom + ';padding-left:' + cs.paddingLeft + ';' +
+            'font-family:' + cs.fontFamily + ';font-size:' + cs.fontSize + ';font-weight:' + cs.fontWeight +
+            ';letter-spacing:' + cs.letterSpacing + ';line-height:' + cs.lineHeight +
+            ';tab-size:' + (cs.tabSize || '8');
         }
+
+        // 写阶段①：镜像行数增删 ＋ 只替换内容真的变了的行
+        while (mirrorLines.length > lines.length) { mirrorTexts.pop(); m.removeChild(mirrorLines.pop()); }
+        while (mirrorLines.length < lines.length) {
+          const d = document.createElement('div');
+          m.appendChild(d);
+          mirrorLines.push(d);
+          mirrorTexts.push(null);
+        }
+        for (let i = 0; i < lines.length; i++) {
+          if (mirrorTexts[i] !== lines[i]) {
+            mirrorTexts[i] = lines[i];
+            // 空行必须占 1 行高：完全没有文字的行盒高度为 0，补一个换行符才有行高
+            mirrorLines[i].textContent = lines[i] === '' ? '\n' : lines[i];
+          }
+        }
+
+        // 读阶段：上面全是写，第一次 offsetTop 才强制排版，之后是纯读 → 每次调用只排版一次
+        const tops = new Array(lines.length);
+        for (let i = 0; i < lines.length; i++) tops[i] = mirrorLines[i].offsetTop;
+
+        // 写阶段②：行号节点池化复用（inner 若被外部重建过，池里的引用已失效 → 连容器一起清空重来，
+        //            只丢引用会让旧行号变成留在边条里的孤儿节点、行数越滚越多）
+        if (nums.length && nums[0].parentNode !== inner) { inner.textContent = ''; nums.length = 0; }
+        while (nums.length > lines.length) inner.removeChild(nums.pop());
+        while (nums.length < lines.length) {
+          const n = document.createElement('div');
+          n.className = 'gutter-num';
+          inner.appendChild(n);
+          nums.push(n);
+        }
+        const lhChanged = lhStr !== lhApplied;
+        if (lhChanged) lhApplied = lhStr;
+        for (let i = 0; i < nums.length; i++) {
+          const n = nums[i];
+          const top = tops[i] + 'px';
+          if (n._top !== top) { n._top = top; n.style.top = top; }
+          if (lhChanged) { n.style.height = lhStr; n.style.lineHeight = lhStr; }
+          const label = String(i + 1);
+          if (n._label !== label) { n._label = label; n.textContent = label; }
+        }
+
+        syncScroll(ta, inner);
       }
 
-      // 镜像：与 textarea 完全相同排版（含 padding），逐逻辑行包成 div，读 offsetTop 即得各逻辑行起点。
-      // 镜像宽度取 textarea 内部宽度（clientWidth，box-sizing:border-box），padding 与 textarea 一致
-      // → 折行起点与文字位置逐像素对齐，offsetTop 亦含 textarea 的 padding-top。
-      const mirror = document.createElement('div');
-      mirror.style.cssText = [
-        'position:absolute', 'left:-9999px', 'top:0', 'visibility:hidden',
-        'width:' + Math.max(1, ta.clientWidth) + 'px',
-        'box-sizing:border-box',
-        'padding-top:' + cs.paddingTop, 'padding-right:' + cs.paddingRight,
-        'padding-bottom:' + cs.paddingBottom, 'padding-left:' + cs.paddingLeft,
-        'border:0', 'margin:0',
-        'font-family:' + cs.fontFamily, 'font-size:' + cs.fontSize, 'font-weight:' + cs.fontWeight,
-        'letter-spacing:' + cs.letterSpacing,
-        'line-height:' + cs.lineHeight,
-        'white-space:pre-wrap', 'word-break:break-word', 'overflow-wrap:break-word',
-        'tab-size:' + (cs.tabSize || '8')
-      ].join(';');
-      const frag = document.createDocumentFragment();
-      const mlEls = [];
-      for (let i = 0; i < lines.length; i++) {
-        const d = document.createElement('div');
-        d.textContent = lines[i] === '' ? '\n' : lines[i];
-        frag.appendChild(d);
-        mlEls.push(d);
+      // 版签＝内容 + 尺寸 + 字号/行高/内边距：拖窗改尺寸、菜单改字号、换主题都可能改排版，
+      // 值没变也一样要重建（否则边条按旧折行结果排版）。
+      function signature(ta) {
+        const cs = getComputedStyle(ta);
+        return ta.value + '\0' + ta.clientWidth + 'x' + ta.clientHeight + 'x' +
+          cs.fontSize + '/' + cs.lineHeight + '/' + cs.paddingLeft + '/' + cs.paddingTop;
       }
-      mirror.appendChild(frag);
-      document.body.appendChild(mirror);
-
-      inner.innerHTML = '';
-      for (let i = 0; i < mlEls.length; i++) {
-        const num = document.createElement('div');
-        num.className = 'gutter-num';
-        num.style.top = mlEls[i].offsetTop + 'px';
-        num.style.height = lineHeightPx + 'px';
-        num.style.lineHeight = lineHeightPx + 'px';
-        num.textContent = (i + 1);
-        inner.appendChild(num);
+      function tick() {
+        const e = els();
+        if (!e.ta || !cfg.visible(e)) { raf = null; return; }
+        const sig = signature(e.ta);
+        if (sig !== lastSig) {
+          lastSig = sig;
+          lastScrollTop = e.ta.scrollTop;
+          refresh();
+        } else if (e.ta.scrollTop !== lastScrollTop) {
+          lastScrollTop = e.ta.scrollTop;
+          syncScroll(e.ta, e.inner);
+        }
+        raf = requestAnimationFrame(tick);
       }
-      document.body.removeChild(mirror);
 
-      // 同步当前滚动位置
-      inner.style.transform = 'translateY(' + (-ta.scrollTop) + 'px)';
+      return {
+        refresh: refresh,
+        start: function () {
+          if (raf == null) {
+            lastSig = null;
+            lastScrollTop = null;
+            raf = requestAnimationFrame(tick);
+          }
+        },
+        invalidate: function () { lastSig = null; },
+      };
     }
+    const taskTextGutter = createLineGutter({
+      taId: 'taskText',
+      wrapId: 'taskTextGutterWrap',
+      gutterId: 'taskTextGutter',
+      innerId: 'taskTextGutterInner',
+      chrome: 12,
+      visible: function (e) {
+        return e.ta.style.display !== 'none' && (!e.wrap || e.wrap.style.display !== 'none');
+      },
+    });
 
-    function syncGutterScroll() {
-      const ta = document.getElementById('taskText');
-      const inner = document.getElementById('taskTextGutterInner');
-      if (!ta || !inner) return;
-      inner.style.transform = 'translateY(' + (-ta.scrollTop) + 'px)';
-    }
-
-    let gutterRAF = null;
-    let lastGutterValue = null;
-    let lastGutterScrollTop = null;
-    function gutterTick() {
-      const ta = document.getElementById('taskText');
-      const wrap = document.getElementById('taskTextGutterWrap');
-      if (!ta || !wrap || ta.style.display === 'none' || wrap.style.display === 'none') {
-        gutterRAF = null;
-        return;
-      }
-      if (ta.value !== lastGutterValue) {
-        lastGutterValue = ta.value;
-        lastGutterScrollTop = ta.scrollTop;
-        refreshLineGutter();
-      } else if (ta.scrollTop !== lastGutterScrollTop) {
-        lastGutterScrollTop = ta.scrollTop;
-        syncGutterScroll();
-      }
-      gutterRAF = requestAnimationFrame(gutterTick);
-    }
-    function startGutterLoop() {
-      if (gutterRAF == null) {
-        lastGutterValue = null;
-        lastGutterScrollTop = null;
-        gutterRAF = requestAnimationFrame(gutterTick);
-      }
-    }
+    function refreshLineGutter() { taskTextGutter.refresh(); }
+    function startGutterLoop() { taskTextGutter.start(); }
     function maybeStartGutter() {
       const ta = document.getElementById('taskText');
       const wrap = document.getElementById('taskTextGutterWrap');
@@ -12063,7 +12121,7 @@
         oObs.observe(overlay, { attributes: true, attributeFilter: ['style'] });
       }
       // 窗口/侧栏尺寸变化 → 重排 wrapping → 强制下一帧重建（值不变也会重建）
-      window.addEventListener('resize', function () { lastGutterValue = null; });
+      window.addEventListener('resize', function () { taskTextGutter.invalidate(); });
       maybeStartGutter();
     })();
 
