@@ -1040,7 +1040,7 @@
         }
         const chunk = lines.slice(b.start, b.end + 1).join('\n');
         const inner = renderMarkdown(tlRenderTermDefs(chunk));
-        out += '<div class="md-unit"><button type="button" class="md-unit-edit" title="编辑此内容区块" ' +
+        out += '<div class="md-unit"><button type="button" class="md-unit-edit" title="' + tlEditUnitTip(b.type) + '" ' +
           'onclick="tlOpenEditBlockDialog(event,\'' + uidAttr + '\',' + b.start + ',' + b.end + ',\'' + b.type + '\')">\u270e</button>' +
           inner + '</div>';
       });
@@ -1209,7 +1209,7 @@
       const done = m[2] !== ' ';
       const event = uid && tlCalEvents.find((item) => item.uid === uid);
       const editButton = uid && event && !event.ro
-        ? '<button type="button" class="ev-md-edit" title="编辑子事件" onclick="tlOpenEditNoteCheckDialog(event,\'' +
+        ? '<button type="button" class="ev-md-edit" title="编辑 checkbox 子事件" onclick="tlOpenEditNoteCheckDialog(event,\'' +
           tlEscapeHtml(uid) + '\',' + i + ')">\u270e</button>'
         : '';
       const cbAttr = uid
@@ -3630,10 +3630,20 @@
     function tlBlockTypeName(type) {
       return ({ code: '代码块', table: '表格', heading: '标题', hr: '分隔线', quote: '引用', list: '列表', para: '段落' })[type] || '区块';
     }
+    // 🆕 编辑小圆点的悬停提示：只说「这一颗编辑的是哪一类内容」，不显示内容本身。
+    //    文案是给使用者看的口径（2026-10-20 指定）：文本内容／表格内容／分隔线／checkbox 子事件…
+    //    渲染只发生在这里一次，主窗体卡片与便利贴共用同一份 HTML，故双端自动一致。
+    function tlEditUnitTip(type) {
+      return ({
+        para: '编辑文本内容', list: '编辑列表内容', table: '编辑表格内容',
+        code: '编辑代码块', heading: '编辑标题', hr: '编辑分隔线', quote: '编辑引用内容'
+      })[type] || '编辑内容区块';
+    }
     function tlOpenAddCheckDialog(uid) {
       tlAddCheckTargetUid = uid || null;
       tlEditNoteCheckTarget = null;
       tlEditBlockTarget = null;
+      tlExitTableMode();   // 同一个浮层也用来做表格网格，进一般模式前一定复位
       const ov = document.getElementById('tlAddCheckOverlay');
       const inp = document.getElementById('tlAddCheckInput');
       const copyButton = document.getElementById('tlCopyNoteCheckButton');
@@ -3660,11 +3670,12 @@
 
       tlAddCheckTargetUid = null;
       tlEditNoteCheckTarget = { uid, line };
+      tlExitTableMode();   // 同上：子事件入口一律不用网格
       const ov = document.getElementById('tlAddCheckOverlay');
       const inp = document.getElementById('tlAddCheckInput');
       const copyButton = document.getElementById('tlCopyNoteCheckButton');
       document.querySelector('#tlAddCheckOverlay .tl-ev-form-title').textContent = '编辑 CheckBox 子事件';
-      document.querySelector('#tlAddCheckOverlay .tl-ev-form-hint').textContent = '只修改子事件文字；勾选状态会保留，日期标记（[[dl:…]]/[[cp:…]]）以原文显示可直接编辑；清空内容并保存＝删除该子事件（会先确认）';
+      document.querySelector('#tlAddCheckOverlay .tl-ev-form-hint').textContent = '只修改子事件文字；勾选状态会保留，日期标记（[[dl:…]]/[[cp:…]]）以原文显示可直接编辑；换行（shift+enter）＝拆成多个子事件（第一行保留本条的勾选状态）；清空内容并保存＝删除该子事件（会先确认）';
       document.querySelector('#tlAddCheckOverlay .btn-primary').textContent = '保存修改';
       if (copyButton) copyButton.style.display = '';
       if (ov) ov.onkeydown = (e) => {
@@ -3681,6 +3692,172 @@
       }
       if (ov) ov.style.display = 'flex';
       if (inp) setTimeout(() => inp.focus(), 0);
+    }
+    // ── 🆕 表格网格编辑器（桌面版；区块圆点 type==='table' 时启用）───────────────────
+    //  设计：网格只是那块 textarea 的「另一个视图」。任何结构性操作或单元格编辑都立刻
+    //  tlSyncTableTextarea() 把模型序列化回 #tlAddCheckInput，于是 ⌘S 存档、复制、脏判定、
+    //  「清空＝删除」全部沿用既有区块路径，不新增第二条落盘分支。
+    //  往返不变量（/tmp/table-grid-harness.js 钉死）：serialize(parse(x)) 再 parse 得同一模型，
+    //  且 tlSplitMdBlocks 仍把整块认成「一个 table」——否则存一次表格就散成段落。
+    let tlTableModel = null;      // null＝非表格模式
+    let tlTableRawView = false;   // 表格模式内：true＝看 Markdown 原文，false＝看网格
+
+    // 拆一行表格：去掉首尾的 |，按「未转义的 |」切格并解开 \|。不用 lookbehind（正则回扫更稳）。
+    function tlSplitTableCells(line) {
+      let s = String(line == null ? '' : line).trim();
+      if (s.charAt(0) === '|') s = s.slice(1);
+      if (s.length && s.charAt(s.length - 1) === '|' && s.charAt(s.length - 2) !== '\\') s = s.slice(0, -1);
+      const cells = [];
+      let cur = '';
+      for (let i = 0; i < s.length; i++) {
+        const c = s.charAt(i);
+        if (c === '\\' && s.charAt(i + 1) === '|') { cur += '|'; i++; continue; }
+        if (c === '|') { cells.push(cur.trim()); cur = ''; continue; }
+        cur += c;
+      }
+      cells.push(cur.trim());
+      return cells;
+    }
+    // 认不出表格就回传 null（让上层退回原文视图，绝不硬猜）
+    function tlParseMdTable(text) {
+      const lines = String(text == null ? '' : text).replace(/\r\n/g, '\n').split('\n')
+        .map((l) => l.trim()).filter((l) => l.length);
+      if (lines.length < 2) return null;
+      if (lines[0].indexOf('|') < 0) return null;
+      const d = lines[1];
+      if (!/^[\s|:-]+$/.test(d) || d.indexOf('-') < 0 || d.indexOf('|') < 0) return null;
+      const alignRaw = tlSplitTableCells(d);
+      const cols = Math.max(tlSplitTableCells(lines[0]).length, alignRaw.length);
+      if (!cols) return null;
+      const padTo = (arr) => { const a = arr.slice(); while (a.length < cols) a.push(''); return a.slice(0, cols); };
+      const aligns = [];
+      for (let i = 0; i < cols; i++) {
+        const c = alignRaw[i] || '';
+        const left = c.charAt(0) === ':';
+        const right = c.length > 1 && c.charAt(c.length - 1) === ':';
+        aligns.push(left && right ? 'center' : right ? 'right' : left ? 'left' : 'none');
+      }
+      return { aligns, header: padTo(tlSplitTableCells(lines[0])), rows: lines.slice(2).map((l) => padTo(tlSplitTableCells(l))) };
+    }
+    function tlSerializeMdTable(m) {
+      const cell = (v) => {
+        const t = String(v == null ? '' : v).replace(/[\r\n]+/g, ' ').replace(/\|/g, '\\|').trim();
+        return t || ' ';
+      };
+      const row = (arr) => '| ' + arr.map(cell).join(' | ') + ' |';
+      const dash = (a) => (a === 'center' ? ':---:' : a === 'right' ? '---:' : a === 'left' ? ':---' : '---');
+      return [row(m.header), '| ' + m.aligns.map(dash).join(' | ') + ' |'].concat(m.rows.map(row)).join('\n');
+    }
+    function tlNewTableModel(rows, cols) {
+      const n = Math.max(1, Math.min(12, cols | 0));
+      const m = Math.max(0, Math.min(50, rows | 0));
+      return {
+        aligns: Array.apply(null, Array(n)).map(() => 'none'),
+        header: Array.apply(null, Array(n)).map(() => ''),
+        rows: Array.apply(null, Array(m)).map(() => Array.apply(null, Array(n)).map(() => ''))
+      };
+    }
+    function tlTableTextarea() { return document.getElementById('tlAddCheckInput'); }
+    function tlSyncTableTextarea() {
+      const inp = tlTableTextarea();
+      if (inp && tlTableModel) inp.value = tlSerializeMdTable(tlTableModel);
+    }
+    function tlRenderTableGrid() {
+      const host = document.getElementById('tlTableGridScroll');
+      if (!host || !tlTableModel) return;
+      const m = tlTableModel;
+      const th = m.header.map((v, c) => '<th><input type="text" class="tl-tg-cell tl-tg-head" data-r="-1" data-c="' + c + '" value="' + tlEscapeHtml(v) + '" placeholder="列名"></th>').join('');
+      const body = m.rows.map((r, ri) => '<tr>' + r.map((v, c) =>
+        '<td><input type="text" class="tl-tg-cell" data-r="' + ri + '" data-c="' + c + '" value="' + tlEscapeHtml(v) + '"></td>').join('') + '</tr>').join('');
+      host.innerHTML = '<table class="tl-tg-table"><thead><tr>' + th + '</tr></thead><tbody>' + body + '</tbody></table>';
+      if (!host._bound) {
+        host._bound = true;
+        // 单元格改动只更新模型＋同步 textarea，绝不重绘（重绘会抢走焦点、打断输入）
+        host.addEventListener('input', (e) => {
+          const el = e.target;
+          if (!el || !el.classList || !el.classList.contains('tl-tg-cell')) return;
+          const r = parseInt(el.dataset.r, 10), c = parseInt(el.dataset.c, 10);
+          if (!tlTableModel || isNaN(r) || isNaN(c)) return;
+          if (r < 0) tlTableModel.header[c] = el.value; else if (tlTableModel.rows[r]) tlTableModel.rows[r][c] = el.value;
+          tlSyncTableTextarea();
+        });
+      }
+    }
+    function tlTableGridVisible(on) {
+      const grid = document.getElementById('tlTableGrid');
+      if (grid) grid.style.display = on ? '' : 'none';
+      const inp = tlTableTextarea();
+      if (inp) inp.style.display = on ? 'none' : '';
+      const tgl = document.getElementById('tlTableViewText');
+      if (tgl) tgl.textContent = on ? '改 Markdown 原文' : '回到网格';
+    }
+    function tlEnterTableMode(src) {
+      const m = tlParseMdTable(src);
+      if (!m) { tlTableModel = null; tlTableRawView = false; tlTableGridVisible(false); return false; }
+      tlTableModel = m;
+      tlTableRawView = false;
+      tlTableGridVisible(true);
+      tlRenderTableGrid();
+      const box = document.querySelector('#tlAddCheckOverlay .tl-ev-form-box');
+      if (box) box.style.maxWidth = '860px';   // 默认 440px 装不下宽表
+      return true;
+    }
+    function tlExitTableMode() {
+      tlTableModel = null;
+      tlTableRawView = false;
+      tlTableGridVisible(false);
+      const box = document.querySelector('#tlAddCheckOverlay .tl-ev-form-box');
+      if (box) box.style.maxWidth = '440px';
+    }
+    function tlTableStruct(fn) {
+      if (!tlTableModel) return;
+      fn(tlTableModel);
+      tlSyncTableTextarea();
+      tlRenderTableGrid();
+    }
+    function tlBindTableButtons() {
+      const byId = (id) => document.getElementById(id);
+      const build = byId('tlTableBuild');
+      if (!build || !byId('tlTableAddRow') || !byId('tlTableViewText')) return;   // markup 不在 → 静默放弃，表格模式退化成原文编辑
+      if (build._bound) return;
+      build._bound = true;
+      build.onclick = () => {
+        const r = parseInt(byId('tlTableRows').value, 10), c = parseInt(byId('tlTableCols').value, 10);
+        tlTableModel = tlNewTableModel(isNaN(r) ? 3 : r, isNaN(c) ? 3 : c);
+        tlTableRawView = false;
+        tlTableGridVisible(true);
+        tlRenderTableGrid();
+        tlSyncTableTextarea();
+      };
+      byId('tlTableAddRow').onclick = () => tlTableStruct((m) => {
+        if (m.rows.length >= 50) return;
+        m.rows.push(m.aligns.map(() => ''));
+      });
+      byId('tlTableDelRow').onclick = () => tlTableStruct((m) => { m.rows.pop(); });
+      byId('tlTableAddCol').onclick = () => tlTableStruct((m) => {
+        if (m.aligns.length >= 12) return;
+        m.aligns.push('none'); m.header.push(''); m.rows.forEach((r) => r.push(''));
+      });
+      byId('tlTableDelCol').onclick = () => tlTableStruct((m) => {
+        if (m.aligns.length <= 1) return;
+        m.aligns.pop(); m.header.pop(); m.rows.forEach((r) => r.pop());
+      });
+      byId('tlTableViewText').onclick = () => {
+        if (!tlTableModel) return;
+        if (tlTableRawView) {
+          // 从原文切回网格：重新解析使用者手改的 markdown，解析失败就留在原文并说明
+          const m = tlParseMdTable(tlTableTextarea() ? tlTableTextarea().value : '');
+          if (!m) { showToast('这段 Markdown 不是合法表格（需要表头行＋分隔行），请先修正', 'danger'); return; }
+          tlTableModel = m;
+          tlTableRawView = false;
+          tlTableGridVisible(true);
+          tlRenderTableGrid();
+        } else {
+          tlSyncTableTextarea();
+          tlTableRawView = true;
+          tlTableGridVisible(false);
+        }
+      };
     }
     // 🆕 通用「最小 MD 区块」编辑对话框：编辑 notes 中 lines[start..end] 的 Markdown 原文。
     //   ⌘S 保存（不关闭，可继续编辑）· Esc 关闭；清空并保存＝删除该区块（需确认）。
@@ -3710,8 +3887,17 @@
         }
       };
       if (inp) { inp.value = src; inp.rows = Math.min(18, Math.max(4, (end - start + 1) + 1)); }
+      // 🆕 表格区块 → 进网格模式（解析失败仍留原文模式，不挡路）
+      tlExitTableMode();
+      let tableMode = false;
+      if (type === 'table') { tlBindTableButtons(); tableMode = tlEnterTableMode(src); }
+      if (tableMode) {
+        document.querySelector('#tlAddCheckOverlay .tl-ev-form-title').textContent = '编辑表格内容';
+        document.querySelector('#tlAddCheckOverlay .tl-ev-form-hint').textContent = '在格子里填内容即可；「＋行／＋列」增删，或填「行×列」按「建立空白表」重画一张；⌘S 保存（不关闭，可继续编辑）· Esc 关闭；需要手写 Markdown 时按「改 Markdown 原文」切换';
+      }
       if (ov) ov.style.display = 'flex';
-      if (inp) setTimeout(() => inp.focus(), 0);
+      if (inp && !tableMode) setTimeout(() => inp.focus(), 0);
+      else { const first = document.querySelector('#tlTableGridScroll input'); if (first) setTimeout(() => first.focus(), 0); }
     }
     async function tlCopyNoteCheckText() {
       const inp = document.getElementById('tlAddCheckInput');
@@ -3733,6 +3919,7 @@
       tlAddCheckTargetUid = null;
       tlEditNoteCheckTarget = null;
       tlEditBlockTarget = null;
+      tlExitTableMode();   // 🆕 收掉网格模式，下次开一般对话框别残留
     }
     async function tlSaveAddCheckDialog() {
       const inp = document.getElementById('tlAddCheckInput');
@@ -3771,9 +3958,11 @@
       }
       if (tlEditNoteCheckTarget) {
         const target = tlEditNoteCheckTarget;
-        const text = inp.value.replace(/\r\n/g, '\n').replace(/\n/g, ' ').trim();
+        // 🆕 多行＝拆成多个子事件（与 ＋☐ 新增、便利贴端同一口径）：第一行继承原条目的勾选状态，
+        //    其余每行成为同缩进的未完成子事件紧接其后；单行输入行为不变。
+        const rows = inp.value.replace(/\r\n/g, '\n').split('\n').map((l) => l.trim()).filter(Boolean);
         // 🆕 内容清空＝删除该子事件：必须先经使用者确认（拒绝则留在编辑框，可先「复制」留存原文）
-        if (!text && !window.confirm('子事件内容为空＝删除该子事件。\n\n确定要删除吗？删除后将直接写回并存档，无法从本窗口恢复（可先按「复制」留存原文）。')) return;
+        if (!rows.length && !window.confirm('子事件内容为空＝删除该子事件。\n\n确定要删除吗？删除后将直接写回并存档，无法从本窗口恢复（可先按「复制」留存原文）。')) return;
         tlCalEvents = tlAllEvents(document.getElementById('taskText').value);
         const ev = tlCalEvents.find((item) => item.uid === target.uid);
         if (!ev) { tlCloseAddCheckDialog(); showToast('找不到该条行程（内容可能已被修改）', 'danger'); return; }
@@ -3790,7 +3979,7 @@
           showToast('该子事件已被修改，请重新打开后编辑', 'danger');
           return;
         }
-        if (!text) {
+        if (!rows.length) {
           // 🆕 空内容＝删除：移除该行后写回并存档（上方 confirm 已获使用者同意）
           lines.splice(target.line, 1);
           ev.notes = lines.join('\n');
@@ -3801,12 +3990,14 @@
           return;
         }
         // 🆕 原文保真：编辑框已是完整原文（含 [[]] 标记），保存时直接写回，不再额外补/删标记
-        lines[target.line] = match[1] + '- [' + match[2] + '] ' + text;
+        const newLines = rows.map((l, i) => match[1] + '- [' + (i === 0 ? match[2] : ' ') + '] ' + l);
+        lines.splice(target.line, 1, ...newLines);
         ev.notes = lines.join('\n');
         tlCloseAddCheckDialog();
         tlApplyEventsToBuffer();
         const saved = typeof saveTask === 'function' ? await saveTask(false) : false;
-        showToast(saved ? '子事件已修改并存档' : '子事件已修改到行程缓冲，但尚未确认存档成功', saved ? 'success' : 'danger');
+        const doneMsg = rows.length > 1 ? ('已拆成 ' + rows.length + ' 项子事件并存档') : '子事件已修改并存档';
+        showToast(saved ? doneMsg : '子事件已修改到行程缓冲，但尚未确认存档成功', saved ? 'success' : 'danger');
         return;
       }
       const lines = inp.value.replace(/\r\n/g, '\n').split('\n').map((l) => l.trim()).filter((l) => l.length);

@@ -878,12 +878,12 @@ window.tlOpenEditNoteCheckDialog = function (event, uid, line) {
     window.alert('该子事件内容已变化，请刷新便利贴后重试');
     return;
   }
-  noteCheckEditTarget = { uid, line };
+  noteCheckEditTarget = { uid, line, count: 1 };
   const ov = document.getElementById('addCheckOv');
   const inp = document.getElementById('addCheckInput');
   if (ov) {
     ov.querySelector('.ac-title').textContent = '编辑子事件（CheckBox）';
-    ov.querySelector('.ac-hint').textContent = '⌘S 保存（不关闭，可继续编辑）· Esc 关闭（有改动会先问是否保存）；勾选状态会保留，日期标记（[[dl:…]]/[[cp:…]]）以原文显示可直接编辑；清空内容并保存＝删除该子事件（会先确认）';
+    ov.querySelector('.ac-hint').textContent = '⌘S 保存（不关闭，可继续编辑）· Esc 关闭（有改动会先问是否保存）；勾选状态会保留，日期标记（[[dl:…]]/[[cp:…]]）以原文显示可直接编辑；换行（shift+enter）＝拆成多个子事件（第一行保留本条的勾选状态）；清空内容并保存＝删除该子事件（会先确认）';
     ov.classList.add('show');
   }
   bindAddCheckTools();
@@ -961,9 +961,13 @@ async function confirmAddCheck() {
   if (noteCheckEditTarget) {
     if (addCheckSavePending) return false;
     const target = noteCheckEditTarget;
-    const text = inp.value.replace(/\r\n/g, '\n').replace(/\n/g, ' ').trim();
+    // 🆕 多行＝拆成多个子事件（与 ＋☐ 新增同一口径）：第一行继承原条目的勾选状态（含使用者自己写的
+    //    [[dl:…]]/[[cp:…]] 标记），其余每行成为同缩进的未完成子事件紧接其后。
+    //    旧版这里把 \n 一律压成空格（为了守「一行＝一个 checkbox」），结果用 shift+enter 折的
+    //    行存完又被合并回一行（2026-10-20 用户回馈）；单行输入的行为保持不变。
+    const rows = inp.value.replace(/\r\n/g, '\n').split('\n').map((l) => l.trim()).filter(Boolean);
     // 🆕 内容清空＝删除该子事件：必须先经使用者确认（拒绝则留在编辑框，可先「复制」留存原文）
-    if (!text && !window.confirm('子事件内容为空＝删除该子事件。\n\n确定要删除吗？删除后将直接写回并存档，无法从本窗口恢复（可先按「复制」留存原文）。')) return false;
+    if (!rows.length && !window.confirm('子事件内容为空＝删除该子事件。\n\n确定要删除吗？删除后将直接写回并存档，无法从本窗口恢复（可先按「复制」留存原文）。')) return false;
     const notes = eventNotesForKey(target.uid);
     if (notes == null) {
       window.alert('找不到该行程，无法保存子事件');
@@ -979,16 +983,24 @@ async function confirmAddCheck() {
       window.alert('该子事件内容已变化，请刷新便利贴后重试');
       return false;
     }
-    if (!text) {
+    // 本条子事件目前实际占用的行数：上一次保存若已拆成多项，这次要整段覆写而不是再插一段
+    const span = Math.max(1, target.count || 1);
+    if (!rows.length) {
       // 🆕 空内容＝删除：移除该行后写回并存档（上方 confirm 已获使用者同意）
-      lines.splice(target.line, 1);
+      lines.splice(target.line, span);
       if (await saveStickyNoteContent(lines.join('\n'), '删除子事件', target.uid)) { closeEditNoteCheck(); return true; }
       return false;
     }
     // 🆕 原文保真：编辑框已是完整原文（含 [[]] 标记），保存时直接写回，不再额外补/删标记
-    lines[target.line] = match[1] + '- [' + match[2] + '] ' + text;
+    const newLines = rows.map((l, i) => match[1] + '- [' + (i === 0 ? match[2] : ' ') + '] ' + l);
+    lines.splice(target.line, span, ...newLines);
+    noteCheckEditTarget = { uid: target.uid, line: target.line, count: newLines.length };
     // 🆕 编辑模式：⌘S／「保存」＝只落盘不离开视窗（离开视窗要过「未保存改动」这道问）
-    if (await saveStickyNoteContent(lines.join('\n'), '保存子事件', target.uid)) { markAddCheckBaseline(); showStickyRefreshFeedback('已保存（按 Esc 关闭）'); return true; }
+    if (await saveStickyNoteContent(lines.join('\n'), '保存子事件', target.uid)) {
+      markAddCheckBaseline();
+      showStickyRefreshFeedback((rows.length > 1 ? ('已拆成 ' + rows.length + ' 项子事件') : '已保存') + '（按 Esc 关闭）');
+      return true;
+    }
     return false;
   }
   // 🆕 新增模式与编辑模式同一口径：加入＝落盘但**不关窗**，清空输入框并刷新基线，可立刻继续输入下一批

@@ -2569,6 +2569,25 @@
     }
     .tl-ev-form-hint { margin-top: 10px; font-size: 11px; line-height: 1.5; color: var(--ev-muted); }
 
+    /* 🆕 表格网格编辑器（区块圆点 type=table 时启用）。配色一律走 --ev-* 变量：
+       #tlAddCheckOverlay 已在 --ev-* 作用域清单里（见上方那条 ⚠️ 注释），亮／暗两套自动跟随。 */
+    .tl-table-grid { margin-top: 10px; }
+    .tl-table-grid-bar { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+    /* 全局 .btn 是 36px 圆形图标钮 → 工具列里这些文字按钮必须覆盖，否则「建立空白表」会撑破 */
+    #tlAddCheckOverlay .tl-table-grid-bar .btn.tl-tg-btn {
+      width: auto; height: 28px; padding: 0 10px; border-radius: 7px; font-size: 12px; font-weight: 500; white-space: nowrap;
+    }
+    .tl-tg-size { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; color: var(--ev-muted); }
+    .tl-tg-size input { width: 46px; height: 26px; padding: 0 6px; border: 1px solid var(--ev-border); border-radius: 6px; background: var(--ev-bg); color: var(--ev-text); font-size: 12px; }
+    .tl-tg-sep { width: 1px; height: 18px; background: var(--ev-border); margin: 0 2px; }
+    .tl-table-grid-scroll { max-height: 46vh; overflow: auto; border: 1px solid var(--ev-border); border-radius: 8px; background: var(--ev-card); }
+    table.tl-tg-table { width: 100%; border-collapse: collapse; }
+    .tl-tg-table th, .tl-tg-table td { border: 1px solid var(--ev-border); padding: 0; }
+    .tl-tg-table th { background: rgba(148, 163, 184, .14); }
+    .tl-tg-cell { width: 100%; min-width: 92px; height: 30px; padding: 4px 8px; border: 0; background: transparent; color: var(--ev-text); font-size: 13px; font-family: inherit; box-sizing: border-box; }
+    .tl-tg-cell:focus { outline: 2px solid var(--ev-primary); outline-offset: -2px; }
+    .tl-tg-head { font-weight: 600; }
+
     .modal {
       background-color: var(--card-bg);
       border-radius: 0;
@@ -5389,6 +5408,23 @@
       <div class="tl-ev-form-title">建立 CheckBox 项目</div>
       <div class="tl-ev-form-hint">每行一个项目，保存后以 <code>- [ ] …</code> 形式追加到「备注」末尾</div>
       <textarea id="tlAddCheckInput" rows="4" placeholder="例如：&#10;准备会议资料&#10;发送邀请函"></textarea>
+      <!-- 🆕 表格模式（区块圆点 type=table）：网格是 textarea 的另一个视图，改动即时序列化回上面那块 textarea，
+           所以 ⌘S 存档／复制／清空＝删除 全部沿用既有区块路径 -->
+      <div class="tl-table-grid" id="tlTableGrid" style="display:none">
+        <div class="tl-table-grid-bar">
+          <label class="tl-tg-size">行 <input type="number" id="tlTableRows" min="0" max="50" value="3"></label>
+          <label class="tl-tg-size">列 <input type="number" id="tlTableCols" min="1" max="12" value="3"></label>
+          <button type="button" class="btn btn-secondary tl-tg-btn" id="tlTableBuild">建立空白表</button>
+          <span class="tl-tg-sep"></span>
+          <button type="button" class="btn btn-secondary tl-tg-btn" id="tlTableAddRow">＋行</button>
+          <button type="button" class="btn btn-secondary tl-tg-btn" id="tlTableDelRow">－行</button>
+          <button type="button" class="btn btn-secondary tl-tg-btn" id="tlTableAddCol">＋列</button>
+          <button type="button" class="btn btn-secondary tl-tg-btn" id="tlTableDelCol">－列</button>
+          <span class="tl-tg-sep"></span>
+          <button type="button" class="btn btn-secondary tl-tg-btn" id="tlTableViewText">改 Markdown 原文</button>
+        </div>
+        <div class="tl-table-grid-scroll" id="tlTableGridScroll"></div>
+      </div>
       <div class="tl-ev-form-actions">
         <button type="button" class="btn btn-secondary" onclick="tlCloseAddCheckDialog()">取消</button>
         <button type="button" class="btn btn-secondary" id="tlCopyNoteCheckButton" style="display:none" onclick="tlCopyNoteCheckText()">复制</button>
