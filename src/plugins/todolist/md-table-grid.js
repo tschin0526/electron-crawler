@@ -1,5 +1,8 @@
 // 🆕 Markdown 表格「网格编辑器」共用引擎（主窗体 #tlAddCheckOverlay 与便利贴 #addCheckOv 都吃这一份）
 //
+// ⚠️ LITE（src/pwa-md-editor/md-table-grid.js）是逐字镜像：PWA 独立部署、不能跨目录加载，
+//    改动这里的解析／序列化／结构性操作后必须同步过去（两边只差文件头这段说明）。
+//
 // 为什么抽成共用档：两个窗体各自的浮层 markup／配色不同，但表格的解析、序列化、增删行列与
 // 「什么该重绘」的口径必须完全一致，否则会出现「桌面改好、便利贴还是旧的」这种双端不同步。
 //
@@ -86,6 +89,9 @@
   function createGrid(opts) {
     const o = opts || {};
     const ctl = o.controls || {};
+    const labels = o.labels || {};
+    const labelToRaw = labels.toRaw || '改 Markdown 原文';
+    const labelToGrid = labels.toGrid || '回到网格';
     let model = null;
     let rawView = false;
     let bound = false;
@@ -94,7 +100,7 @@
     const showGrid = (on) => {
       if (o.grid) o.grid.style.display = on ? '' : 'none';
       if (o.textarea) o.textarea.style.display = on ? 'none' : '';
-      if (ctl.toggle) ctl.toggle.textContent = on ? '改 Markdown 原文' : '回到网格';
+      if (ctl.toggle) ctl.toggle.textContent = on ? labelToRaw : labelToGrid;
     };
     // 契约 2：只有结构性操作会走到这里重绘
     const render = () => {
@@ -139,7 +145,7 @@
         if (rawView) {
           // 从原文切回网格：重新解析使用者手改的 markdown，解析失败就留在原文并说明
           const m = parseMd(o.textarea ? o.textarea.value : '');
-          if (!m) { if (o.toast) o.toast('这段 Markdown 不是合法表格（需要表头行＋分隔行），请先修正', 'danger'); return; }
+          if (!m) { if (o.toast) o.toast(labels.invalidTable || '这段 Markdown 不是合法表格（需要表头行＋分隔行），请先修正', 'danger'); return; }
           model = m;
           rawView = false;
           showGrid(true);

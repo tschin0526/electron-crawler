@@ -61,7 +61,10 @@ function calStickyLoadStore() {
   calStickyStoreCache = {
     notes,
     hidden,
-    lastId: (data && typeof data.lastId === 'string') ? data.lastId : ''
+    lastId: (data && typeof data.lastId === 'string') ? data.lastId : '',
+    // 頁次兜底：標題／日期被改（身分失效）時，至少回到上次停留的位置
+    lastIdx: (data && typeof data.lastIdx === 'number' && isFinite(data.lastIdx))
+      ? Math.max(0, Math.trunc(data.lastIdx)) : 0
   };
   calStickyStoreKeyCache = key;
   return calStickyStoreCache;
@@ -202,11 +205,12 @@ function calStickyProgressHtml(note) {
   return '<span class="cal-sticky-progress' + (all ? ' all-done' : '') +
     '" title="子事件：' + done + ' / ' + subs.length + ' 已完成">' + done + '/' + subs.length + '</span>';
 }
-// meta 行右側兩個操作（與桌面便利貼同口徑）：＋☐ 加入子事件、☐/☑ 只看未完成
+// meta 行右側兩個操作（與桌面便利貼同口徑）：＋☐▾ 加入（三模式下拉）、☐/☑ 只看未完成
 function calStickyMetaActionsHtml(prefs) {
   const on = !!(prefs && prefs.undoneChecksOnly);
   return '<span class="cal-sticky-meta-actions">' +
-    '<button type="button" class="cal-sticky-meta-btn cal-sticky-addcheck" title="在備註末尾加入 checkbox 子事件" onclick="calStickyOpenAddCheck()">＋☐</button>' +
+    '<button type="button" class="cal-sticky-meta-btn cal-sticky-addcheck" aria-haspopup="menu"' +
+    ' title="加入內容（checkbox 子事件／MD 表格／自由編輯）" onclick="calStickyToggleAddCheckMenu(event)">＋☐▾</button>' +
     '<button type="button" class="cal-sticky-meta-btn cal-sticky-undone-toggle' + (on ? ' active' : '') + '"' +
     ' aria-pressed="' + (on ? 'true' : 'false') + '"' +
     ' title="' + (on ? '僅顯示未完成的 checkbox 子事件（點擊顯示全部）' : '只顯示未完成的 checkbox 子事件') + '"' +
@@ -222,9 +226,40 @@ function calStickySyncMetaActions(prefs) {
   btn.setAttribute('aria-pressed', String(on));
   btn.title = on ? '僅顯示未完成的 checkbox 子事件（點擊顯示全部）' : '只顯示未完成的 checkbox 子事件';
 }
-function calStickyOpenAddCheck() {
+// ===== 🆕 ＋☐▾ 下拉選單（對齊桌面便利貼：checkbox 子事件／MD 表格／自由編輯）=====
+function calStickyAddCheckMenuEl() { return calStickyEl('calStickyAddCheckMenu'); }
+function calStickyAddCheckMenuOpen() {
+  const menu = calStickyAddCheckMenuEl();
+  return !!menu && menu.classList.contains('open');
+}
+function calStickyCloseAddCheckMenu() {
+  const menu = calStickyAddCheckMenuEl();
+  if (menu) menu.classList.remove('open');
+}
+function calStickyOpenAddCheckMenu() {
+  const menu = calStickyAddCheckMenuEl();
+  const stage = calStickyEl('calStickyStage');
+  const meta = calStickyEl('calStickyMeta');
+  const chip = meta ? meta.querySelector('.cal-sticky-addcheck') : null;
+  if (!menu || !stage || !chip) return;
+  menu.classList.add('open');
+  const sr = stage.getBoundingClientRect();
+  const cr = chip.getBoundingClientRect();
+  menu.style.left = Math.max(6, Math.min(cr.left - sr.left, sr.width - menu.offsetWidth - 6)) + 'px';
+  const below = cr.bottom - sr.top + 6;
+  // 剩餘空間不足時往上開，避免選單被 stage 下緣裁掉
+  menu.style.top = (below + menu.offsetHeight > sr.height - 6
+    ? Math.max(4, cr.top - sr.top - menu.offsetHeight - 6) : below) + 'px';
+}
+function calStickyToggleAddCheckMenu(event) {
+  if (event) { event.preventDefault(); event.stopPropagation(); }
+  if (calStickyAddCheckMenuOpen()) { calStickyCloseAddCheckMenu(); return; }
+  calStickyOpenAddCheckMenu();
+}
+function calStickyPickAddMode(act) {
+  calStickyCloseAddCheckMenu();
   if (!calStickyCurrentUid || typeof calOpenAddCheckDialog !== 'function') return;
-  calOpenAddCheckDialog(calStickyCurrentUid);
+  calOpenAddCheckDialog(calStickyCurrentUid, act);
 }
 
 // ===== 渲染一頁（循環）=====
@@ -237,12 +272,6 @@ function calStickyUpdateIndicator(current, total) {
   const foot = calStickyEl('calStickyFoot');
   if (foot) foot.style.display = total ? 'flex' : 'none';
   const multi = total > 1;
-  const noteEl = calStickyEl('calStickyNote');
-  if (noteEl) noteEl.classList.toggle('cal-sticky-multi', multi); // 讓正文左右留出翻頁鈕的位置
-  const edgePrev = calStickyEl('calStickyPrev');
-  const edgeNext = calStickyEl('calStickyNext');
-  if (edgePrev) edgePrev.style.display = multi ? 'flex' : 'none';
-  if (edgeNext) edgeNext.style.display = multi ? 'flex' : 'none';
   const prevBtn = calStickyEl('calStickyPrevBtn');
   const nextBtn = calStickyEl('calStickyNextBtn');
   if (prevBtn) prevBtn.disabled = !multi;
@@ -253,6 +282,7 @@ function calStickyUpdateIndicator(current, total) {
 
 function calStickyRenderPage(target, options) {
   options = options || {};
+  calStickyCloseAddCheckMenu();   // 換頁＝＋☐ 的位置與所屬行程都變了，選單先收合
   calStickyRebuild();
   const total = calStickyPages.length;
   const noteEl = calStickyEl('calStickyNote');
@@ -284,8 +314,9 @@ function calStickyRenderPage(target, options) {
   calStickyCurrentId = note.identity;
   calStickyCurrentUid = note.uid;
   const store = calStickyLoadStore();
-  if (store.lastId !== note.identity) {
+  if (store.lastId !== note.identity || store.lastIdx !== i) {
     store.lastId = note.identity;
+    store.lastIdx = i;
     calStickySaveStore();
   }
   const prefs = calStickyNotePrefs(note.identity);
@@ -545,9 +576,11 @@ function calStickyOpen() {
   overlay.style.display = 'flex';
   calStickyCloseSheet();
   calStickyRebuild();
-  // 還原上次顯示的那張：以「標題|日期|序號」認領；檔案改過認不到就回第 1 張
-  const lastId = calStickyLoadStore().lastId;
+  // 還原上次顯示的那張：以「標題|日期|序號」認領；認不到（標題／日期被改過）就退回上次停留的頁次
+  const store = calStickyLoadStore();
+  const lastId = store.lastId;
   let idx = lastId ? calStickyPages.findIndex((n) => n.identity === lastId) : -1;
+  if (idx < 0 && calStickyPages.length) idx = Math.min(store.lastIdx, calStickyPages.length - 1);
   if (idx < 0) idx = 0;
   calStickyRenderPage(idx, { toast: false });
 }
@@ -556,6 +589,7 @@ function calStickyClose() {
   calStickyPendingRename = null;
   const overlay = calStickyEl('calStickyOverlay');
   if (overlay) overlay.style.display = 'none';
+  calStickyCloseAddCheckMenu();
   calStickyCloseSheet();
 }
 
@@ -621,26 +655,43 @@ function calStickyOnFileChange() {
 }
 
 // ===== 觸控 / 鍵盤 =====
+// 手指在畫面上左右滑＝翻頁；縱向仍交給正文滾動。綁在整個彈層上，
+// 所以卡片兩側留白、標題區也能滑（不必精準落在正文）。
 function calStickyBindTouch() {
-  const note = calStickyEl('calStickyNote');
-  if (!note) return;
-  note.addEventListener('touchstart', (e) => {
-    if (e.touches.length !== 1 || e.target.closest('button, a, input, select, textarea, .ev-md-check')) {
-      calStickyTouchStart = null;
-      return;
-    }
-    calStickyTouchStart = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+  const overlay = calStickyEl('calStickyOverlay');
+  if (!overlay) return;
+  const IGNORE = 'button, a, input, select, textarea, label, .ev-md-check, .md-unit-edit, .cal-sticky-sheet, .cal-sticky-foot, .cal-sticky-top, .cal-sticky-addcheck-menu';
+  overlay.addEventListener('touchstart', (e) => {
+    calStickyTouchStart = null;
+    if (e.touches.length !== 1 || calStickyPages.length <= 1) return;
+    if (calStickySheetOpen()) return;
+    if (typeof calMdEditIsOpen === 'function' && calMdEditIsOpen()) return;
+    if (e.target.closest && e.target.closest(IGNORE)) return;
+    calStickyTouchStart = { x: e.touches[0].clientX, y: e.touches[0].clientY, axis: null };
   }, { passive: true });
-  note.addEventListener('touchend', (e) => {
+  overlay.addEventListener('touchmove', (e) => {
+    const start = calStickyTouchStart;
+    if (!start || e.touches.length !== 1) return;
+    const dx = e.touches[0].clientX - start.x;
+    const dy = e.touches[0].clientY - start.y;
+    if (!start.axis) {
+      if (Math.abs(dx) < 12 && Math.abs(dy) < 12) return;
+      start.axis = Math.abs(dx) > Math.abs(dy) * 1.2 ? 'x' : 'y';
+    }
+    // 已判定為橫滑：阻止瀏覽器把它當成頁面前後導覽或縱向拖曳
+    if (start.axis === 'x' && e.cancelable) e.preventDefault();
+  }, { passive: false });
+  overlay.addEventListener('touchend', (e) => {
     const start = calStickyTouchStart;
     calStickyTouchStart = null;
-    if (!start || !e.changedTouches || !e.changedTouches.length) return;
+    if (!start || start.axis !== 'x' || !e.changedTouches || !e.changedTouches.length) return;
     const dx = e.changedTouches[0].clientX - start.x;
     const dy = e.changedTouches[0].clientY - start.y;
     // 橫向位移要明顯大於縱向，避免與正文上下滾動打架
-    if (Math.abs(dx) < 40 || Math.abs(dx) < Math.abs(dy) * 1.4) return;
+    if (Math.abs(dx) < 48 || Math.abs(dx) < Math.abs(dy) * 1.4) return;
     calStickyStep(dx < 0 ? 1 : -1);
   }, { passive: true });
+  overlay.addEventListener('touchcancel', () => { calStickyTouchStart = null; }, { passive: true });
 }
 function calStickyOnKeyDown(e) {
   if (!calStickyIsOpen) return;
@@ -650,7 +701,8 @@ function calStickyOnKeyDown(e) {
   if (form && form.style.display && form.style.display !== 'none') return;
   if (e.key === 'Escape') {
     e.preventDefault();
-    if (calStickySheetOpen()) calStickyCloseSheet();
+    if (calStickyAddCheckMenuOpen()) calStickyCloseAddCheckMenu();
+    else if (calStickySheetOpen()) calStickyCloseSheet();
     else calStickyClose();
     return;
   }
@@ -669,8 +721,6 @@ function calStickyInit() {
   on('calStickyMenuBtn', 'click', calStickyOpenSheet);
   on('calStickySheetClose', 'click', calStickyCloseSheet);
   on('calStickyEditBtn', 'click', calStickyEditCurrent);
-  on('calStickyPrev', 'click', () => calStickyStep(-1));
-  on('calStickyNext', 'click', () => calStickyStep(1));
   on('calStickyPrevBtn', 'click', () => calStickyStep(-1));
   on('calStickyNextBtn', 'click', () => calStickyStep(1));
   on('calStickyUndone', 'click', calStickyToggleUndone);
@@ -695,6 +745,12 @@ function calStickyInit() {
     else calStickyClose();
   });
   calStickyBindTouch();
+  // 點選單以外任何地方＝收合。用 capture 只讀不阻斷，別的功能的事件委托照常跑。
+  document.addEventListener('click', (e) => {
+    if (!calStickyAddCheckMenuOpen()) return;
+    if (e.target.closest && e.target.closest('#calStickyAddCheckMenu, .cal-sticky-addcheck')) return;
+    calStickyCloseAddCheckMenu();
+  }, true);
   document.addEventListener('keydown', calStickyOnKeyDown);
   // 初次先渲染空狀態 / 設定色板，讓清單一打開就有內容（尚未開啟時不顯示任何東西）
   calStickySyncControls(null);

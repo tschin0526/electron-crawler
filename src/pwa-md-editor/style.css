@@ -1403,6 +1403,7 @@ p[data-cols-marker="true"] { display: none; }
   background: #FFF3B0; color: #000;
   border: 1px solid #D4AF37; border-radius: 12px; overflow: hidden;
   box-shadow: 0 10px 28px rgba(0, 0, 0, .35), 0 1px 3px rgba(0, 0, 0, .18);
+  touch-action: pan-y; /* 橫向手勢留給翻頁，縱向仍是正文滾動 */
 }
 .cal-sticky-head { flex: none; padding: 12px 14px 0; }
 .cal-sticky-title { font-size: 17px; font-weight: 700; line-height: 1.4; word-break: break-word; color: var(--cal-sticky-fg, #000); }
@@ -1418,6 +1419,21 @@ p[data-cols-marker="true"] { display: none; }
 }
 .cal-sticky-meta-btn:active { background: rgba(127, 127, 127, .3); }
 .cal-sticky-undone-toggle.active { background: rgba(212, 175, 55, .4); border-color: #D4AF37; }
+/* 🆕 ＋☐▾ 下拉選單：掛在 .cal-sticky-stage（卡片外），否則會被 .cal-sticky-note 的 overflow:hidden 裁掉。
+   配色與 ☰ 清單抽屜同套（--bg-secondary ＋ 金框），深浅色都靠既有變數自動跟隨。 */
+.cal-sticky-addcheck-menu {
+  position: absolute; z-index: 20; display: none; min-width: 190px; max-width: calc(100% - 12px);
+  padding: 5px; border: 1px solid var(--gold); border-radius: 12px;
+  background: var(--bg-secondary); color: var(--text); font-size: 14px;
+  box-shadow: 0 12px 26px rgba(0, 0, 0, .34);
+}
+.cal-sticky-addcheck-menu.open { display: block; }
+.cal-sticky-addcheck-menu .casm-item {
+  display: block; width: 100%; box-sizing: border-box; padding: 11px 12px;
+  border: none; border-radius: 8px; background: transparent; color: inherit; font: inherit;
+  text-align: left; line-height: 1.35; cursor: pointer;
+}
+.cal-sticky-addcheck-menu .casm-item:active { background: var(--gold-wash); }
 .cal-sticky-progress { display: inline-block; padding: 0 7px; border: 1px solid currentColor; border-radius: 999px; font-size: 11px; line-height: 1.6; opacity: .9; }
 .cal-sticky-progress.all-done { color: #15803d; }
 .cal-sticky-tags { display: flex; flex-wrap: wrap; gap: 4px; margin: 6px 0 0; padding: 0; list-style: none; }
@@ -1458,21 +1474,7 @@ p[data-cols-marker="true"] { display: none; }
 .cal-sticky-body .ev-md-check + br, .cal-sticky-body br:has(+ .ev-md-check) { display: none !important; }
 /* 「只顯示未完成 checkbox」：整行隱藏完成的子事件（與列表 .only-undone-checks 同一口徑） */
 .cal-sticky-body.cal-sticky-only-undone .ev-md-check.done { display: none !important; }
-/* 多張時左右翻頁鈕常駐在卡片兩側中段：正文與標題區左右各讓出鈕寬，避免文字被 ‹ › 壓住、且維持同一左緣 */
-.cal-sticky-note.cal-sticky-multi .cal-sticky-body,
-.cal-sticky-note.cal-sticky-multi .cal-sticky-head { padding-left: 44px; padding-right: 44px; }
 .cal-sticky-empty { flex: 1; display: flex; align-items: center; justify-content: center; padding: 24px; text-align: center; color: #f8fafc; opacity: .88; font-size: 14px; line-height: 1.9; }
-.cal-sticky-nav {
-  position: absolute; top: 50%; transform: translateY(-50%); z-index: 5;
-  width: 40px; height: 56px; padding: 0;
-  display: flex; align-items: center; justify-content: center;
-  border: 1px solid rgba(212, 175, 55, .8); border-radius: 10px;
-  background: rgba(20, 24, 34, .55); color: #f8fafc; font-size: 26px; line-height: 1; cursor: pointer;
-}
-.cal-sticky-nav-prev { left: 2px; }
-.cal-sticky-nav-next { right: 2px; }
-.cal-sticky-nav:active { background: rgba(212, 175, 55, .3); }
-.cal-sticky-nav:disabled { opacity: .25; pointer-events: none; }
 .cal-sticky-toast {
   position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: 6;
   padding: .35em 1.1em; border-radius: 16px; background: rgba(18, 22, 30, .94); color: #fff;
@@ -1552,6 +1554,23 @@ p[data-cols-marker="true"] { display: none; }
   resize: none;
 }
 #calMdEditInput:focus { outline: none; border-color: var(--gold); }
+/* 🆕 表格網格模式（區塊圓點 type=table）：引擎＝md-table-grid.js。
+   .md-tg-* 三個類別由引擎產生（與桌面 md-table-grid.js 同一份鏡像）→ 改類別名要兩端 CSS 一起改。
+   格線／表頭沿用本視窗的金色語彙；格子底色透明，深淺主題都靠 --bg／--text 自適應。 */
+.cal-table-grid { flex: 1 1 auto; min-height: 0; margin: 8px 12px; display: flex; flex-direction: column; }
+.cal-table-grid-bar { flex: none; display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+.cal-tg-size { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; color: var(--text-secondary); }
+.cal-tg-size input { width: 48px; height: 30px; padding: 0 6px; border: 1px solid var(--border); border-radius: 7px; background: var(--bg); color: var(--text); font-size: 13px; }
+.cal-tg-btn { min-height: 32px; padding: 0 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); color: var(--text); font-size: 12px; line-height: 1.2; white-space: nowrap; cursor: pointer; }
+.cal-tg-btn:active { border-color: var(--gold); background: var(--gold-wash); }
+.cal-tg-sep { width: 1px; height: 20px; margin: 0 2px; background: var(--border); }
+.cal-table-grid-scroll { flex: 1 1 auto; min-height: 120px; overflow: auto; border: 1px solid var(--gold); border-radius: 10px; background: var(--bg); -webkit-overflow-scrolling: touch; }
+table.md-tg-table { width: 100%; border-collapse: collapse; }
+.md-tg-table th, .md-tg-table td { border: 1px solid var(--border); padding: 0; }
+.md-tg-table th { background: var(--gold-wash); }
+.md-tg-cell { width: 100%; min-width: 84px; height: 38px; padding: 6px 8px; border: 0; border-radius: 0; background: transparent; color: var(--text); font: inherit; font-size: 13px; box-sizing: border-box; }
+.md-tg-cell:focus { outline: 2px solid var(--gold); outline-offset: -2px; }
+.md-tg-head { font-weight: 600; }
 .cal-md-edit-actions { display: flex; gap: 8px; padding: 0 12px 12px; }
 .cal-md-edit-actions button { flex: 1 1 0; min-height: 42px; border: 1px solid var(--border); border-radius: 10px; background: transparent; color: var(--text); font-size: 14px; cursor: pointer; }
 .cal-md-edit-actions button.primary { border-color: var(--gold); background: var(--gold); color: #1f2937; font-weight: 700; }

@@ -403,7 +403,7 @@
           <button type="button" class="cal-sticky-top-btn" id="calStickyEditBtn" title="編輯目前這張便利貼所屬行程">✎ 編輯</button>
           <button type="button" class="cal-sticky-top-btn cal-sticky-close" id="calStickyCloseBtn" aria-label="關閉便利貼" title="關閉">✕</button>
         </div>
-        <div class="cal-sticky-stage">
+        <div class="cal-sticky-stage" id="calStickyStage">
           <div class="cal-sticky-note" id="calStickyNote">
             <div class="cal-sticky-head">
               <div class="cal-sticky-title" id="calStickyTitle"></div>
@@ -413,9 +413,15 @@
             <div class="cal-sticky-body" id="calStickyBody"></div>
           </div>
           <div class="cal-sticky-empty" id="calStickyEmpty" style="display:none"></div>
-          <button type="button" class="cal-sticky-nav cal-sticky-nav-prev" id="calStickyPrev" aria-label="上一張便利貼">‹</button>
-          <button type="button" class="cal-sticky-nav cal-sticky-nav-next" id="calStickyNext" aria-label="下一張便利貼">›</button>
           <div class="cal-sticky-toast" id="calStickyToast" role="status" aria-live="polite"></div>
+          <!-- 🆕 ＋☐ 下拉选单（與桌面便利貼同一組三模式）：掛在 stage 而不是 meta 裡，
+               因為 #calStickyMeta 每次翻頁都用 innerHTML 重繪，選單會跟著被抹掉；
+               .cal-sticky-note 有 overflow:hidden，放在卡片外才不會被裁。 -->
+          <div class="cal-sticky-addcheck-menu" id="calStickyAddCheckMenu" role="menu" aria-label="加入內容">
+            <button type="button" class="casm-item" data-act="check" role="menuitem" onclick="calStickyPickAddMode('check')">☐ 加入 checkbox 子事件</button>
+            <button type="button" class="casm-item" data-act="table" role="menuitem" onclick="calStickyPickAddMode('table')">▦ 加入 MD 表格</button>
+            <button type="button" class="casm-item" data-act="text" role="menuitem" onclick="calStickyPickAddMode('text')">✎ 自由編輯（任意文本）</button>
+          </div>
         </div>
         <div class="cal-sticky-foot" id="calStickyFoot">
           <button type="button" id="calStickyPrevBtn">‹ 上一張</button>
@@ -453,7 +459,7 @@
                 <button type="button" id="calStickyZoomIn" title="放大字體">A＋</button>
               </div>
             </div>
-            <div class="cal-sticky-hint">在行程編輯表單把「便利貼張數」設為 1 以上，該行程就會出現在這裡。開關狀態與樣式只存在本機瀏覽器，不會改寫 calendar.md。</div>
+            <div class="cal-sticky-hint">在行程編輯表單把「便利貼張數」設為 1 以上，該行程就會出現在這裡。開關狀態、樣式與上次停留的頁次會自動記住（存在本機瀏覽器），下次開啟便利貼時原樣還原，不會改寫 calendar.md。</div>
           </div>
         </div>
       </div>
@@ -467,6 +473,23 @@
         </div>
         <div class="cal-md-edit-hint" id="calMdEditHint"></div>
         <textarea id="calMdEditInput" rows="8" spellcheck="false" autocapitalize="off" autocomplete="off"></textarea>
+        <!-- 🆕 表格網格模式（區塊圓點 type=table 才顯示）：引擎＝md-table-grid.js（與桌面同一份的鏡像）。
+             格子內容即時寫回上面的 textarea，所以「保存」沿用既有的區塊區間回寫路徑。 -->
+        <div class="cal-table-grid" id="calTableGrid" style="display:none">
+          <div class="cal-table-grid-bar">
+            <label class="cal-tg-size">行<input type="number" id="calTableRows" min="0" max="50" value="3" inputmode="numeric"></label>
+            <label class="cal-tg-size">列<input type="number" id="calTableCols" min="1" max="12" value="3" inputmode="numeric"></label>
+            <button type="button" class="cal-tg-btn" id="calTableBuild">建立空白表</button>
+            <span class="cal-tg-sep"></span>
+            <button type="button" class="cal-tg-btn" id="calTableAddRow">＋行</button>
+            <button type="button" class="cal-tg-btn" id="calTableDelRow">－行</button>
+            <button type="button" class="cal-tg-btn" id="calTableAddCol">＋列</button>
+            <button type="button" class="cal-tg-btn" id="calTableDelCol">－列</button>
+            <span class="cal-tg-sep"></span>
+            <button type="button" class="cal-tg-btn" id="calTableViewText">改 Markdown 原文</button>
+          </div>
+          <div class="cal-table-grid-scroll" id="calTableGridScroll"></div>
+        </div>
         <div class="cal-md-edit-actions">
           <button type="button" id="calMdEditCancel">取消</button>
           <button type="button" class="primary" id="calMdEditSave">保存</button>
@@ -480,6 +503,8 @@
   <!-- Markdown 渲染管線（從 todo 編輯器移植的擴展語法支援），必須在 app.js 之前載入 -->
   <script src="md-renderer.js"></script>
   <script src="app.js"></script>
+  <!-- 🆕 Markdown 表格網格編輯器引擎（暴露 window.MdTableGrid；與桌面 md-table-grid.js 同一份的鏡像） -->
+  <script src="md-table-grid.js"></script>
   <!-- 📅 Calendar 特性編輯器（資料感知編輯器 #1）：依賴 app.js 的 state/elements，必須在其後載入 -->
   <script src="calendar-editor.js"></script>
   <!-- 🗒 便利貼（翻頁模式）：依賴 calendar-editor.js 的解析/渲染/表單，必須在其後載入 -->

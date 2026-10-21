@@ -153,7 +153,22 @@
 //      底部彈層可編輯區塊原文／子事件（多行＝拆分，第一行保留勾選狀態）／＋☐ 加入子事件；清空保存＝刪除（先確認）。
 //      便利貼 meta 補＋☐ 與逐張 ☐/☑「只看未完成」，列表行補＋☐；時間格因只顯示前 400 字，維持唯讀避免截斷回寫。
 //      calendar-editor.js/sticky-notes.js/index.html/style.css/app.js/sw.js 改，bump 讓手機重拉
-const CACHE_NAME = 'md-editor-lite-v117';
+// v118：LITE 便利貼翻頁手勢——整個彈層支援手指左右滑（touchmove 軸鎖定＋橫滑 preventDefault），
+//      移除卡片兩側 ‹ › 常駐按鈕與其 44px 預留內距，正文恢復全寬；底部翻頁鈕與鍵盤方向鍵保留。
+//      index.html/style.css/sticky-notes.js 改，bump 讓手機重拉
+// v119：LITE 便利貼設定持久化補強——除 lastId（標題|日期|序號）外另存 lastIdx，標題／日期被改導致身分認不到時
+//      退回上次停留的頁次而非一律回第 1 張；設定面板提示改為明示「開關/樣式/上次頁次會自動記住」。
+//      sticky-notes.js/index.html/sw.js 改，bump 讓手機重拉
+// v120：修復便利貼備註在正文含 ``` 處被截斷——Remark/content 解析改為 CommonMark 圍欄規則（整行 3+ 反引號、
+//      閉合長度 ≥ 開啟），寫入時圍欄長度動態取 max(3, 正文最長反引號串+1)，與桌面 calendar 插件一致；
+//      桌面已寫出的 4 反引號 Remark 內含行內 ``` 時不再吞掉後續內容。calendar-editor.js 改，bump 讓手機重拉
+// v121：LITE 便利貼／行程備註的表格區塊支援「MD 表格網格編輯器」——點表格區塊的 ✎ 圓點直接開格子網格
+//      （＋行／列、建立空白表、改 Markdown 原文），格子改動即時寫回區塊 textarea，保存仍走既有區間回寫；
+//      新增 md-table-grid.js（桌面引擎的鏡像），index.html/style.css/calendar-editor.js/sw.js 改，bump 讓手機重拉
+// v122：LITE 便利貼「＋☐」改成三模式下拉（＋☐▾ → checkbox 子事件／MD 表格／自由編輯），
+//      對齊桌面便利貼；表格入口從零建空白網格、加入後不關窗可連續建立。
+//      index.html/style.css/sticky-notes.js/calendar-editor.js 改，bump 讓手機重拉
+const CACHE_NAME = 'md-editor-lite-v122';
 const ASSETS = [
   './',
   './index.html',
@@ -162,6 +177,7 @@ const ASSETS = [
   './almanac-s2t.js',
   './app.js',
   './md-renderer.js',
+  './md-table-grid.js',
   './calendar-editor.js',
   './sticky-notes.js',
   './manifest.json',

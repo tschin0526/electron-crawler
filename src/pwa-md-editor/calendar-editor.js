@@ -100,6 +100,35 @@ function calSetTagParent(name, parent) {
 let calEvTagEditIndex = -1;   // 正在内联编辑分類的选中標籤下标（-1＝无）
 let calEvTagEditLevel = 'cat';
 
+// Remark / content 的圍欄：正文本身可能含 ``` 代碼圍欄 → 依 CommonMark 規則處理
+//   寫入：圍欄長度取 max(3, 正文最長反引號串 + 1)，正文的 ``` 不可能閉合外層
+//   讀取：開啟＝首個整行 3+ 反引號；閉合＝其後首個長度 ≥ 開啟長度的整行反引號
+function calMdFence(text) {
+  const runs = String(text || '').match(/`+/g) || [];
+  let longest = 0;
+  runs.forEach((r) => { if (r.length > longest) longest = r.length; });
+  return '`'.repeat(Math.max(3, longest + 1));
+}
+// 回傳 { found, body, endAbs }：endAbs＝閉合圍欄末端在 rest 內的索引（找不到閉合為 -1）
+function calExtractFenced(rest) {
+  const text = String(rest || '');
+  const re = /^(`{3,})[ \t]*\r?$/gm;
+  let open = null;
+  let m;
+  while ((m = re.exec(text))) {
+    if (!open) {
+      open = { len: m[1].length, bodyStart: re.lastIndex };
+      continue;
+    }
+    if (m[1].length >= open.len) {
+      const body = text.slice(open.bodyStart, m.index).replace(/^\r?\n/, '').replace(/\r?\n$/, '');
+      return { found: true, body: body.trim() === '' ? '' : body, endAbs: re.lastIndex };
+    }
+  }
+  if (!open) return { found: false, body: '', endAbs: -1 };
+  const body = text.slice(open.bodyStart).replace(/^\r?\n/, '');
+  return { found: true, body: body.trim() === '' ? '' : body, endAbs: -1 };
+}
 function parseCalendarEventBlock(block, idx) {
   // 先把 Remark 代碼塊與字段頭部切開，避免備注內容干擾字段解析（與 calendar 插件一致）
   let remark = '';
@@ -107,13 +136,9 @@ function parseCalendarEventBlock(block, idx) {
   const ri = block.indexOf('- Remark:');
   if (ri >= 0) {
     head = block.slice(0, ri);
-    const after = block.slice(ri + '- Remark:'.length);
-    // ⚠️ 必須非貪婪：曾用 /```([\s\S]*)```/ 貪婪匹配到塊尾最後一個 ``` → 備注會吞掉緊隨其後的 ## HOLIDAY 原文
-    const m = after.match(/```([\s\S]*?)```/);
-    if (m) {
-      remark = m[1].replace(/^\n/, '').replace(/\n$/, '');
-      if (remark.trim() === '') remark = '';
-    }
+    // ⚠️ 不能用非貪婪 /```([\s\S]*?)```/：備注正文含 ```（例如表格儲存格裡寫 ``` 或 ~~~）時
+    //    會在正文首個 ``` 處提前閉合，後面整段被吞掉（2026-10-21 手機端回報；桌面 2026-09-30 已修）
+    remark = calExtractFenced(block.slice(ri + '- Remark:'.length)).body;
   }
   const get = (name) => {
     const m = head.match(new RegExp('- ' + name + ': `([^`]*)`'));
@@ -203,7 +228,7 @@ function parseCalendarHolidays(md) {
 // - mood: `平穩`
 // - tags: `["投資","自我總結"]`
 // - weather: `多雲`
-// - content:        ← 多行正文走代碼塊（與 Remark 同約定：非貪婪截取，避免吞掉後續 ## 塊）
+// - content:        ← 多行正文走代碼塊（與 Remark 同約定：按整行圍欄長度截取，正文含 ``` 也不會提前閉合）
 // ```
 // 今天大盤震盪，持倉觀察。
 // ```
@@ -213,15 +238,13 @@ function parseCalendarDiaryBlock(block, idx) {
   let head = block;
   const ci = block.indexOf('- content:');
   if (ci >= 0) {
-    const after = block.slice(ci + '- content:'.length);
-    // ⚠️ 必須非貪婪：與 Remark 同一坑（曾用貪婪版會吞掉緊隨其後的 ## EVENT/## HOLIDAY 原文）
-    const m = after.match(/```([\s\S]*?)```/);
-    if (m) {
-      content = m[1].replace(/^\n/, '').replace(/\n$/, '');
-      if (content.trim() === '') content = '';
-      // ⚠️ 只摘掉整段 content 區（含 - content: 與首尾 ```），讓 remark 等「位於 content 之後」的欄位不被它隔斷而丟失
-      const regionEnd = ci + '- content:'.length + m.index + m[0].length;
-      head = block.slice(0, ci) + block.slice(regionEnd);
+    const base = ci + '- content:'.length;
+    // 與 Remark 同一個坑：正文含 ``` 時不能在首個 ``` 處提前閉合
+    const f = calExtractFenced(block.slice(base));
+    if (f.found) {
+      content = f.body;
+      // ⚠️ 只摘掉整段 content 區（含 - content: 與首尾圍欄），讓 remark 等「位於 content 之後」的欄位不被它隔斷而丟失
+      if (f.endAbs >= 0) head = block.slice(0, ci) + block.slice(base + f.endAbs);
     }
   }
   const get = (name) => {
@@ -263,7 +286,8 @@ function calDiaryToMarkdown(d) {
   s += '- mood: `' + calMdEscape(d.mood || '') + '`\n';
   s += '- tags: `' + tagsJson + '`\n';
   s += '- weather: `' + calMdEscape(d.weather || '') + '`\n';
-  s += '- content:\n```\n' + String(d.content || '') + '\n```\n';
+  const contentFence = calMdFence(d.content);
+  s += '- content:\n' + contentFence + '\n' + String(d.content || '') + '\n' + contentFence + '\n';
   s += '- remark: `' + calMdEscape(d.remark || '') + '`\n';
   return s;
 }
@@ -2743,7 +2767,8 @@ function calEventToMarkdown(ev) {
         s += '- repeatEndValue: `' + String(ev.repeatEndValue || '') + '`\n';
         s += '- repeatExcludeDates: `' + JSON.stringify(Array.isArray(ev.repeatExcludeDates) ? ev.repeatExcludeDates : []) + '`\n';
       }
-      s += '- Remark:\n```\n' + String(ev.notes || '') + '\n```\n';
+      const remarkFence = calMdFence(ev.notes);
+      s += '- Remark:\n' + remarkFence + '\n' + String(ev.notes || '') + '\n' + remarkFence + '\n';
       return s;
 }
 // ## HOLIDAY 序列化：字段順序與用戶實際寫法對齊（todoIds 後多 holidayType，再 Remark），保證保存後 diff 乾淨
@@ -2765,7 +2790,8 @@ function calHolidayToMarkdown(h) {
       s += '- todoIds: `' + todoJson + '`\n';
       s += '- holidayType: `' + calMdEscape(h.holidayType || '') + '`\n';
       s += '- region: `' + calMdEscape(h.region || 'cn') + '`\n';
-      s += '- Remark:\n```\n' + String(h.notes || '') + '\n```\n';
+      const holidayFence = calMdFence(h.notes);
+      s += '- Remark:\n' + holidayFence + '\n' + String(h.notes || '') + '\n' + holidayFence + '\n';
   return s;
 }
 // 整份 calendar.md 序列化：events + holidays + diaries 都保留（保存任一類時若只寫該類會把用戶手寫的其它類整體覆蓋掉）
@@ -3475,10 +3501,48 @@ function calLoadEventsForNotes() {
   state.calEvents = parseCalendarEvents(elements.editor.value);
   return state.calEvents;
 }
+// ── 🆕 表格網格編輯器（區塊圓點 type==='table' 時啟用）──────────────────────────────
+// 引擎住在 md-table-grid.js（與桌面 md-table-grid.js 同一份鏡像），這裡只接本視窗的節點；
+// 網格只是 #calMdEditInput 的另一層視圖：格子改動即時序列化回 textarea，
+// 保存仍走 calMdEditSave 的「按區塊 start..end 區間回寫備註」，沒有第二條存檔分支。
+let calTableGrid = null;
+function calTableGridInstance() {
+  if (calTableGrid) return calTableGrid;
+  if (!window.MdTableGrid || !calMdEditEl('calTableGrid')) return null;
+  const byId = (id) => calMdEditEl(id);
+  calTableGrid = window.MdTableGrid.createGrid({
+    textarea: byId('calMdEditInput'),
+    grid: byId('calTableGrid'),
+    scroll: byId('calTableGridScroll'),
+    controls: {
+      rows: byId('calTableRows'), cols: byId('calTableCols'), build: byId('calTableBuild'),
+      addRow: byId('calTableAddRow'), delRow: byId('calTableDelRow'),
+      addCol: byId('calTableAddCol'), delCol: byId('calTableDelCol'), toggle: byId('calTableViewText')
+    },
+    toast: showToast,
+    // 引擎預設文字是桌面端的簡體；LITE 介面一律繁體，這裡只換字不換行為
+    labels: {
+      toRaw: '改 Markdown 原文',
+      toGrid: '回到網格',
+      invalidTable: '這段 Markdown 不是合法表格（需要表頭行＋分隔行），請先修正'
+    },
+    onSave: calMdEditSave,
+    onClose: calMdEditRequestClose
+  });
+  return calTableGrid;
+}
+function calEnterTableMode(src) {
+  const g = calTableGridInstance();
+  if (!g) return false;
+  g.bind();
+  return g.enter(src);
+}
+function calExitTableMode() { if (calTableGrid) calTableGrid.exit(); }
 function calShowMdEditDialog(title, hint, value, target) {
   const ov = calMdEditEl('calMdEditOverlay');
   const inp = calMdEditEl('calMdEditInput');
   if (!ov || !inp) return;
+  calExitTableMode();   // 同一個彈層也用來做表格網格，進一般模式前一定復位
   calMdEditTarget = target;
   const titleEl = calMdEditEl('calMdEditTitle');
   const hintEl = calMdEditEl('calMdEditHint');
@@ -3500,12 +3564,23 @@ function calOpenEditBlockDialog(event, uid, start, end, type) {
     showToast('該區塊內容已變化，請關閉後重新開啟', 'error');
     return;
   }
+  const src = lines.slice(start, end + 1).join('\n');
   calShowMdEditDialog(
     '編輯內容區塊（' + calMdUnitTypeName(type) + '）',
     '直接編輯此區塊的 Markdown 原文。保存後寫入編輯內容，按頂欄「保存」才存回文件；清空並保存＝刪除該區塊（會先確認）。',
-    lines.slice(start, end + 1).join('\n'),
+    src,
     { mode: 'block', uid: uid, start: start, end: end, type: type }
   );
+  // 🆕 表格區塊 → 進網格模式；認不出合法表格（缺表頭＋分隔行）就留在原文模式，不擋路
+  if (type !== 'table' || !calEnterTableMode(src)) return;
+  const titleEl = calMdEditEl('calMdEditTitle');
+  const hintEl = calMdEditEl('calMdEditHint');
+  if (titleEl) titleEl.textContent = '編輯表格內容';
+  if (hintEl) hintEl.textContent = '在格子裡填內容即可；「＋行／＋列」增刪，或填「行×列」按「建立空白表」重畫一張；需要手寫 Markdown 時按「改 Markdown 原文」。保存後寫入編輯內容，按頂欄「保存」才存回文件。';
+  if (calTableGrid && !calTableGrid.focusFirstCell()) {
+    const inp = calMdEditEl('calMdEditInput');
+    if (inp) setTimeout(() => inp.focus(), 0);
+  }
 }
 function calOpenEditNoteCheckDialog(event, uid, line) {
   if (event) { event.preventDefault(); event.stopPropagation(); }
@@ -3521,15 +3596,49 @@ function calOpenEditNoteCheckDialog(event, uid, line) {
     { mode: 'task', uid: uid, line: line }
   );
 }
-function calOpenAddCheckDialog(uid) {
+// ＋☐ 的三種加入模式（與桌面便利貼選單同口徑）：
+//   check＝逐行包成 - [ ]／table＝空白網格從零建 MD 表格／text＝原樣追加任意文本。
+// 不帶 addKind 的舊入口（行程清單行的 ＋☐）一律走 check，行為不變。
+function calOpenAddCheckDialog(uid, addKind) {
+  const kind = (addKind === 'table' || addKind === 'text') ? addKind : 'check';
   const ev = calLoadEventsForNotes().find((x) => x.uid === uid);
   if (!ev) { showToast('找不到該條行程（內容可能已被修改）', 'error'); return; }
+  if (kind === 'table') {
+    if (!calTableGridInstance()) { showToast('表格編輯器未載入', 'error'); return; }
+    calShowMdEditDialog(
+      '加入表格（MD）',
+      '在格子裡填內容，可用「＋行／＋列」增刪；「加入」＝整張表追加到備註末尾，不關窗可連續建立。全空的表格不會寫入。',
+      '',
+      { mode: 'add', uid: uid, add: 'table' }
+    );
+    const g = calTableGridInstance();
+    const rowsEl = calMdEditEl('calTableRows');
+    const colsEl = calMdEditEl('calTableCols');
+    g.bind();   // ⚠️ 這是「第一次用網格」的入口：沒先 bind 的話格子 input 委托與工具列都不會生效
+    g.enterBlank(parseInt(rowsEl && rowsEl.value, 10), parseInt(colsEl && colsEl.value, 10));
+    calMdEditBaseline = String(calMdEditEl('calMdEditInput').value);   // 剛建的空白表＝還沒開始編輯，關窗不必被問
+    g.focusFirstCell();
+    return;
+  }
+  if (kind === 'text') {
+    calShowMdEditDialog(
+      '自由編輯（純文本）',
+      '直接輸入任意文本／Markdown，原樣追加到備註末尾（不會包成「- [ ]」子事件）。加入後按頂欄「保存」才存回文件。',
+      '',
+      { mode: 'add', uid: uid, add: 'text' }
+    );
+    const inp = calMdEditEl('calMdEditInput');
+    if (inp) inp.placeholder = '任意輸入文本，Enter 換行（原樣保存，不會變成子事件）…';
+    return;
+  }
   calShowMdEditDialog(
     '加入 checkbox 子事件',
     '一行一項：每個非空行都會變成一個「- [ ]」子事件，加在備註末尾。加入後按頂欄「保存」才存回文件。',
     '',
-    { mode: 'add', uid: uid }
+    { mode: 'add', uid: uid, add: 'check' }
   );
+  const inp = calMdEditEl('calMdEditInput');
+  if (inp) inp.placeholder = '每行一個子事件…';
 }
 function calMdEditRequestClose() {
   if (!calMdEditIsOpen()) return;
@@ -3541,6 +3650,7 @@ function calMdEditClose() {
   if (ov) ov.style.display = 'none';
   calMdEditTarget = null;
   calMdEditBaseline = '';
+  calExitTableMode();   // 收掉網格模式，下次開一般對話框別殘留
 }
 function calMdEditSave() {
   const target = calMdEditTarget;
@@ -3601,14 +3711,46 @@ function calMdEditSave() {
     return;
   }
   if (target.mode === 'add') {
-    const items = text.split('\n').map((l) => l.trim()).filter(Boolean);
-    if (!items.length) { showToast('沒有可加入的內容', 'error'); return; }
-    const block = items.map((l) => '- [ ] ' + l).join('\n');
+    // 與桌面同口徑：「加入」＝寫入緩衝但**不關窗**，清乾淨讓使用者直接繼續輸入下一批
+    const kind = target.add || 'check';
     const prev = notes.replace(/\s+$/, '');
-    ev.notes = (prev ? prev + '\n' : '') + block + '\n';
+    if (kind === 'check') {
+      const items = text.split('\n').map((l) => l.trim()).filter(Boolean);
+      if (!items.length) { showToast('沒有可加入的內容', 'error'); return; }
+      ev.notes = (prev ? prev + '\n' : '') + items.map((l) => '- [ ] ' + l).join('\n') + '\n';
+      applyEventsToEditor();
+      inp.value = '';
+      calMdEditBaseline = '';
+      showToast('已加入 ' + items.length + ' 項子事件（可繼續輸入，按「取消」關閉）', 'success');
+      return;
+    }
+    const block = text.replace(/^\s*\n+/, '').replace(/\s+$/, '');
+    if (!block) { showToast('沒有可加入的內容', 'error'); return; }
+    if (kind === 'table') {
+      const parsed = window.MdTableGrid && window.MdTableGrid.parseMd(block);
+      if (!parsed) { showToast('表格內容不完整（需要表頭行＋分隔行）', 'error'); return; }
+      const filled = [parsed.header].concat(parsed.rows).some((row) => row.some((cell) => String(cell).trim()));
+      if (!filled) { showToast('請先在格子裡填內容', 'error'); return; }
+    }
+    // 空一行隔開，切塊器才會把它當成獨立的 table／para 區塊，而不是併進上一段
+    ev.notes = (prev ? prev + '\n\n' : '') + block + '\n';
     applyEventsToEditor();
-    calMdEditClose();
-    showToast('已加入 ' + items.length + ' 項子事件，按「保存」存回文件', 'success');
+    if (kind === 'table') {
+      const g = calTableGridInstance();
+      const rowsEl = calMdEditEl('calTableRows');
+      const colsEl = calMdEditEl('calTableCols');
+      if (g) {
+        g.bind();
+        g.enterBlank(parseInt(rowsEl && rowsEl.value, 10), parseInt(colsEl && colsEl.value, 10));
+        calMdEditBaseline = String(inp.value);
+        g.focusFirstCell();
+      }
+      showToast('已加入表格（可繼續建立下一張，按「取消」關閉）', 'success');
+    } else {
+      inp.value = '';
+      calMdEditBaseline = '';
+      showToast('已追加文本（原樣保存，未轉成子事件；可繼續輸入，按「取消」關閉）', 'success');
+    }
   }
 }
 function calInitMdEditDialog() {
