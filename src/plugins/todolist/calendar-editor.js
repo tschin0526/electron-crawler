@@ -542,22 +542,28 @@
       return '`'.repeat(Math.max(3, longest + 1));
     }
     // 读取：开启围栏＝首个仅由 3+ 反引号组成的行；闭合围栏＝其后首个长度 ≥ 开启长度的反引号行（CommonMark：闭合围栏须 ≥ 开启长度）
+    // 回传 { found, body, endAbs }：endAbs＝闭合围栏末端在 rest 内的索引（找不到闭合为 -1）
+    function tlExtractFenced(rest) {
+      const text = String(rest || '');
+      const re = /^(`{3,})[ \t]*\r?$/gm;
+      let open = null;
+      let m;
+      while ((m = re.exec(text))) {
+        if (!open) {
+          open = { len: m[1].length, bodyStart: re.lastIndex };
+          continue;
+        }
+        if (m[1].length >= open.len) {
+          const body = text.slice(open.bodyStart, m.index).replace(/^\r?\n/, '').replace(/\r?\n$/, '');
+          return { found: true, body: body.trim() === '' ? '' : body, endAbs: re.lastIndex };
+        }
+      }
+      if (!open) return { found: false, body: '', endAbs: -1 };
+      const body = text.slice(open.bodyStart).replace(/^\r?\n/, '');
+      return { found: true, body: body.trim() === '' ? '' : body, endAbs: -1 };
+    }
     function tlExtractRemark(rest) {
-      const lines = String(rest || '').split('\n');
-      let start = -1, n = 0;
-      for (let i = 0; i < lines.length; i++) {
-        const m = lines[i].match(/^(`{3,})[ \t]*$/);
-        if (m) { start = i; n = m[1].length; break; }
-      }
-      if (start < 0) return '';
-      let end = -1;
-      for (let i = start + 1; i < lines.length; i++) {
-        const m = lines[i].match(/^(`{3,})[ \t]*$/);
-        if (m && m[1].length >= n) { end = i; break; }
-      }
-      const body = (end >= 0 ? lines.slice(start + 1, end) : lines.slice(start + 1)).join('\n');
-      const trimmed = body.replace(/^\n/, '').replace(/\n$/, '');
-      return trimmed.trim() === '' ? '' : trimmed;
+      return tlExtractFenced(rest).body;
     }
     function tlParseBlock(block, idx) {
       let remark = '';
@@ -658,15 +664,13 @@
       let head = block;
       const ci = block.indexOf('- content:');
       if (ci >= 0) {
-        const after = block.slice(ci + '- content:'.length);
-        // ⚠️ 必须非贪婪：与 Remark 同一坑（曾用贪婪版会吞掉紧随其后的 ## EVENT/## HOLIDAY 原文）
-        const m = after.match(/```([\s\S]*?)```/);
-        if (m) {
-          content = m[1].replace(/^\n/, '').replace(/\n$/, '');
-          if (content.trim() === '') content = '';
-          // ⚠️ 只摘掉整段 content 區（含 - content: 與首尾 ```），讓 remark 等「位於 content 之後」的欄位不被它隔斷而丟失
-          const regionEnd = ci + '- content:'.length + m.index + m[0].length;
-          head = block.slice(0, ci) + block.slice(regionEnd);
+        const base = ci + '- content:'.length;
+        // 与 Remark 同一个坑：正文含 ``` 时不能在首个 ``` 处提前闭合
+        const f = tlExtractFenced(block.slice(base));
+        if (f.found) {
+          content = f.body;
+          // ⚠️ 只摘掉整段 content 區（含 - content: 與首尾圍欄），讓 remark 等「位於 content 之後」的欄位不被它隔斷而丟失
+          if (f.endAbs >= 0) head = block.slice(0, ci) + block.slice(base + f.endAbs);
         }
       }
       const get = (name) => {
@@ -708,7 +712,8 @@
       s += '- mood: `' + tlMdEscape(d.mood || '') + '`\n';
       s += '- tags: `' + tagsJson + '`\n';
       s += '- weather: `' + tlMdEscape(d.weather || '') + '`\n';
-      s += '- content:\n```\n' + String(d.content || '') + '\n```\n';
+      const contentFence = tlRemarkFence(d.content);
+      s += '- content:\n' + contentFence + '\n' + String(d.content || '') + '\n' + contentFence + '\n';
       s += '- remark: `' + tlMdEscape(d.remark || '') + '`\n';
       return s;
     }

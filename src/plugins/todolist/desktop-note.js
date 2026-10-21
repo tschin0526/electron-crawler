@@ -2206,6 +2206,7 @@ function bindFlipNav() {
     note.addEventListener('pointerleave', () => {
       flipPointerX = null;
     });
+    bindFlipSwipe(note);
   }
   if (prevEdge) prevEdge.onclick = (e) => { e.stopPropagation(); renderFlipPage(flipIndex - 1); armEdgeHandlesAutoHide(); };
   if (nextEdge) nextEdge.onclick = (e) => { e.stopPropagation(); renderFlipPage(flipIndex + 1); armEdgeHandlesAutoHide(); };
@@ -2219,6 +2220,49 @@ function bindFlipNav() {
     if (e.key === 'ArrowLeft') { e.preventDefault(); renderFlipPage(flipIndex - 1); }
     else if (e.key === 'ArrowRight') { e.preventDefault(); renderFlipPage(flipIndex + 1); }
   });
+}
+
+// 🆕 鼠标左右拖拽（正文区）/ 触控板横向滚动＝翻页。
+//    正文是 -webkit-app-region:no-drag，可安全接管；标题/边框仍是 OS 拖窗区，不抢。
+const FLIP_SWIPE_IGNORE = 'button, a, input, textarea, select, label, pre, .flip-edge, .ev-md-check, .ev-md-edit, .md-unit-edit, .note-addcheck-menu, .addcheck-ov, .menu';
+function bindFlipSwipe(note) {
+  const blocked = () => editMode || !!document.querySelector('.addcheck-ov.show, .menu.open');
+  let drag = null;
+  let wheelAcc = 0;
+  let wheelAt = 0;
+  note.addEventListener('pointerdown', (e) => {
+    drag = null;
+    if (flipTotal < 2 || blocked() || e.button !== 0) return;
+    if (!e.target.closest || !e.target.closest('.body')) return;
+    if (e.target.closest(FLIP_SWIPE_IGNORE)) return;
+    drag = { x: e.clientX, y: e.clientY, t: Date.now(), id: e.pointerId };
+  });
+  window.addEventListener('pointerup', (e) => {
+    const d = drag;
+    drag = null;
+    if (!d || e.pointerId !== d.id) return;
+    const dx = e.clientX - d.x;
+    const dy = e.clientY - d.y;
+    if (Date.now() - d.t > 900) return;
+    if (Math.abs(dx) < 56 || Math.abs(dx) < Math.abs(dy) * 1.5) return;
+    const sel = window.getSelection();
+    if (sel && !sel.isCollapsed) sel.removeAllRanges();
+    renderFlipPage(flipIndex + (dx < 0 ? 1 : -1));
+  });
+  window.addEventListener('blur', () => { drag = null; });
+  note.addEventListener('wheel', (e) => {
+    if (flipTotal < 2 || blocked() || e.ctrlKey) return;
+    if (!e.target.closest || e.target.closest(FLIP_SWIPE_IGNORE)) return;
+    if (Math.abs(e.deltaX) <= Math.abs(e.deltaY)) return;
+    const now = Date.now();
+    if (now - wheelAt > 500) wheelAcc = 0;
+    wheelAcc += e.deltaX;
+    wheelAt = now;
+    if (Math.abs(wheelAcc) < 72) return;
+    const dir = wheelAcc > 0 ? 1 : -1;
+    wheelAcc = 0;
+    renderFlipPage(flipIndex + dir);
+  }, { passive: true });
 }
 
 init();
