@@ -145,7 +145,15 @@
 // v113：修復 ## DIARY 被誤解析為行程事件（帶勾選框）的問題——parseCalendarEvents/parseCalendarHolidays 切塊時一併在 ## DIARY 處截斷，與 parseCalendarDiaries 已在 ## EVENT/## HOLIDAY 處截斷對齊；calendar-editor.js 改，bump 讓手機重拉
 // v114：帶文字的分割線（與桌面端同一套私有語法）——整行「--- 文字 ---」（星號／下劃線三種記號同、首尾須同款）在 marked 前提成 %%HRTEXT_n%% 佔位符（跳代碼圍欄、前後補空行確保獨佔一段），渲染後還原成 span.hr-text＋標籤過 parseInline；style.css 加 .hr-text（橫線左右各半由偽元素畫、顏色取 currentColor 混色，不依賴背景遮罩）。md-renderer.js/style.css 改，bump 讓手機重拉
 // v115：每事件「只顯示該事件未完成的 checkbox 子事件」開關（與桌面對齊）——列表/日/週/月共用列的標題尾加金色膠囊 ☐/☑（.ev-undone-filter-btn），點擊在該列 toggle .only-undone-checks，CSS 讓 .ev-md-check.done 整行隐藏；偏好存 localStorage（calUndoneChecksByEvent，以 uid 為鍵，只影響顯示、絕不改寫 calendar.md）；委派分支必須排在 data-ev-edit 前否則被整列選單吃掉；calendar-editor.js/style.css 改，bump 讓手機重拉
-const CACHE_NAME = 'md-editor-lite-v115';
+// v116：LITE 便利貼（翻頁模式，calendar.md 專用）——combo 菜單新增「🗒 便利貼（翻頁）」動作項，平時不顯示、按下才開；
+//      資料源＝行程的 `- sticky: \`N\``（N>0 展開 N 張）；翻頁/清單開關/每張背景色·透明度·字色·字重·字級/只顯示未完成 checkbox/
+//      上次頁次全部存 localStorage（每份 calendar.md 各自一份），只讀不寫 calendar.md（checkbox 仍走編輯緩衝→保存）；
+//      行程表單補「便利貼張數」欄位（載入＋存檔保留）；新增 sticky-notes.js，index.html/style.css/app.js/calendar-editor.js/sw.js 改，bump 讓手機重拉
+// v117：LITE 備註可編輯化（與桌面同口徑）——非 checkbox 的「最小 MD 區塊」注入 ✎ 圓點、checkbox 行加行內 ✎；
+//      底部彈層可編輯區塊原文／子事件（多行＝拆分，第一行保留勾選狀態）／＋☐ 加入子事件；清空保存＝刪除（先確認）。
+//      便利貼 meta 補＋☐ 與逐張 ☐/☑「只看未完成」，列表行補＋☐；時間格因只顯示前 400 字，維持唯讀避免截斷回寫。
+//      calendar-editor.js/sticky-notes.js/index.html/style.css/app.js/sw.js 改，bump 讓手機重拉
+const CACHE_NAME = 'md-editor-lite-v117';
 const ASSETS = [
   './',
   './index.html',
@@ -155,6 +163,7 @@ const ASSETS = [
   './app.js',
   './md-renderer.js',
   './calendar-editor.js',
+  './sticky-notes.js',
   './manifest.json',
   './icon.svg',
   './icon-180.png',

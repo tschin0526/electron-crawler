@@ -201,6 +201,9 @@
             <div class="ev-toolbar-combo-menu" id="calToolbarComboMenu" role="group" aria-label="选择曝露的日历功能">
               <div class="ev-toolbar-combo-menu-title">勾选要显示在工具列的功能</div>
               <div class="ev-toolbar-combo-option"><input type="checkbox" data-toolbar-expose="stats" checked aria-label="曝露事件統計按鈕"><button type="button" class="ev-toolbar-combo-action" data-toolbar-action="stats">事件統計</button></div>
+              <div class="ev-toolbar-combo-sep"></div>
+              <!-- 🗒 便利貼：動作型項目（不曝露成工具列常駐按鈕）→ 按下才以全屏翻頁檢視，平時完全不佔畫面 -->
+              <div class="ev-toolbar-combo-option ev-toolbar-combo-action-row"><button type="button" class="ev-toolbar-combo-action" data-toolbar-action="sticky" title="以翻頁模式檢視所有便利貼事件（不自動顯示）">🗒 便利貼（翻頁）</button></div>
             </div>
           </div>
           <span class="ev-toolbar-flex"></span>
@@ -306,6 +309,8 @@
           <label class="ev-f-label">結束<input type="time" id="ev-f-end"></label>
         </div>
         <label class="ev-f-label">地點<input type="text" id="ev-f-location" maxlength="200" placeholder="可留空"></label>
+        <!-- 🗒 便利貼張數：與桌面便利貼共用 calendar.md 的 - sticky 欄位；0＝不顯示，>0＝便利貼（翻頁）清單中的張數 -->
+        <label class="ev-f-label">便利貼張數（0＝不顯示）<input type="number" id="ev-f-sticky" min="0" max="9" step="1" value="0" inputmode="numeric" placeholder="0 = 不顯示；1 以上＝便利貼張數" title="在「🗒 便利貼（翻頁）」清單中顯示的張數；與桌面便利貼共用 sticky 欄位"></label>
         <div class="ev-f-label">顏色<div id="ev-f-colors" class="ev-f-colors"></div></div>
         <div class="ev-f-label">標籤
           <div class="ev-tag-picker" id="ev-tag-picker">
@@ -386,9 +391,89 @@
         <div id="ev-stats-body" class="ev-stats-body"></div>
       </div>
     </div>
-  </div>
 
-  <!-- 📅 農民曆 / 老黃曆：lunar-javascript（壽星天文曆，1900–2100+），以 <script> 方式載入，暴露 window.Solar / window.Lunar 全域 -->
+    <!-- 🗒 便利貼（翻頁模式；calendar.md 專用）：由工具列 combo 的「🗒 便利貼（翻頁）」主動開啟，
+         平時完全不顯示。資料源＝行程的便利貼張數（- sticky: N，N>0），與桌面便利貼共用同一份欄位。 -->
+    <div id="calStickyOverlay" class="cal-sticky-overlay" style="display:none">
+      <div class="cal-sticky-shell">
+        <div class="cal-sticky-top">
+          <button type="button" class="cal-sticky-top-btn" id="calStickyMenuBtn" aria-label="便利貼清單與設定" aria-expanded="false" title="清單 / 設定">☰</button>
+          <span class="cal-sticky-page-ind" id="calStickyPageInd"></span>
+          <span class="cal-sticky-top-flex"></span>
+          <button type="button" class="cal-sticky-top-btn" id="calStickyEditBtn" title="編輯目前這張便利貼所屬行程">✎ 編輯</button>
+          <button type="button" class="cal-sticky-top-btn cal-sticky-close" id="calStickyCloseBtn" aria-label="關閉便利貼" title="關閉">✕</button>
+        </div>
+        <div class="cal-sticky-stage">
+          <div class="cal-sticky-note" id="calStickyNote">
+            <div class="cal-sticky-head">
+              <div class="cal-sticky-title" id="calStickyTitle"></div>
+              <div class="cal-sticky-meta" id="calStickyMeta"></div>
+              <ul class="cal-sticky-tags" id="calStickyTags"></ul>
+            </div>
+            <div class="cal-sticky-body" id="calStickyBody"></div>
+          </div>
+          <div class="cal-sticky-empty" id="calStickyEmpty" style="display:none"></div>
+          <button type="button" class="cal-sticky-nav cal-sticky-nav-prev" id="calStickyPrev" aria-label="上一張便利貼">‹</button>
+          <button type="button" class="cal-sticky-nav cal-sticky-nav-next" id="calStickyNext" aria-label="下一張便利貼">›</button>
+          <div class="cal-sticky-toast" id="calStickyToast" role="status" aria-live="polite"></div>
+        </div>
+        <div class="cal-sticky-foot" id="calStickyFoot">
+          <button type="button" id="calStickyPrevBtn">‹ 上一張</button>
+          <span id="calStickyFootInd"></span>
+          <button type="button" id="calStickyNextBtn">下一張 ›</button>
+        </div>
+      </div>
+      <!-- ☰ 清單 / 設定（bottom sheet）：翻頁清單（開 / 關）＋每張便利貼的背景色·透明度·字色·字重·字級 -->
+      <div class="cal-sticky-sheet" id="calStickySheet" style="display:none">
+        <div class="cal-sticky-sheet-box">
+          <div class="cal-sticky-sheet-head">
+            <span>🗒 便利貼清單 / 設定</span>
+            <button type="button" class="cal-sticky-top-btn" id="calStickySheetClose" aria-label="關閉清單與設定">✕</button>
+          </div>
+          <div class="cal-sticky-sheet-body">
+            <div class="cal-sticky-list-title" id="calStickyListTitle"></div>
+            <div class="cal-sticky-list" id="calStickyList"></div>
+            <button type="button" class="cal-sticky-toggle" id="calStickyUndone" aria-pressed="false">只顯示未完成 checkbox：關</button>
+            <div class="cal-sticky-sec">
+              <div class="cal-sticky-sec-title">背景色</div>
+              <div class="cal-sticky-swatches" id="calStickyBgSwatches"></div>
+              <div class="cal-sticky-sec-title">透明度 <span class="cal-sticky-sec-val" id="calStickyOpacityVal">100%</span></div>
+              <input type="range" class="cal-sticky-range" id="calStickyOpacity" min="20" max="100" step="5" value="100">
+              <div class="cal-sticky-sec-title">字體顏色</div>
+              <div class="cal-sticky-swatches" id="calStickyFgSwatches"></div>
+              <div class="cal-sticky-sec-title">字重</div>
+              <div class="cal-sticky-weights" id="calStickyWeights">
+                <button type="button" data-w="400">常規</button>
+                <button type="button" data-w="600">半粗</button>
+                <button type="button" data-w="700">粗體</button>
+              </div>
+              <div class="cal-sticky-sec-title">字體大小 <span class="cal-sticky-sec-val" id="calStickyZoomInd">100%</span></div>
+              <div class="cal-sticky-zoom">
+                <button type="button" id="calStickyZoomOut" title="縮小字體">A−</button>
+                <button type="button" id="calStickyZoomIn" title="放大字體">A＋</button>
+              </div>
+            </div>
+            <div class="cal-sticky-hint">在行程編輯表單把「便利貼張數」設為 1 以上，該行程就會出現在這裡。開關狀態與樣式只存在本機瀏覽器，不會改寫 calendar.md。</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <!-- 📝 備註區塊 / 子事件編輯（bottom sheet）：由 ✎ 圓點或「＋☐」開啟，寫回編輯緩衝 -->
+    <div id="calMdEditOverlay" class="cal-md-edit-overlay" style="display:none">
+      <div class="cal-md-edit-box" role="dialog" aria-modal="true" aria-labelledby="calMdEditTitle">
+        <div class="cal-md-edit-head">
+          <span id="calMdEditTitle">編輯內容</span>
+          <button type="button" class="cal-md-edit-close" id="calMdEditClose" aria-label="關閉">✕</button>
+        </div>
+        <div class="cal-md-edit-hint" id="calMdEditHint"></div>
+        <textarea id="calMdEditInput" rows="8" spellcheck="false" autocapitalize="off" autocomplete="off"></textarea>
+        <div class="cal-md-edit-actions">
+          <button type="button" id="calMdEditCancel">取消</button>
+          <button type="button" class="primary" id="calMdEditSave">保存</button>
+        </div>
+      </div>
+    </div>
+  </div>
   <script src="lunar.js"></script>
   <!-- 農民曆簡→繁術語對照表（暴露全域 almanacToTrad），供 calendar-editor.js 轉換簡體宜忌/彭祖等 -->
   <script src="almanac-s2t.js"></script>
@@ -397,5 +482,7 @@
   <script src="app.js"></script>
   <!-- 📅 Calendar 特性編輯器（資料感知編輯器 #1）：依賴 app.js 的 state/elements，必須在其後載入 -->
   <script src="calendar-editor.js"></script>
+  <!-- 🗒 便利貼（翻頁模式）：依賴 calendar-editor.js 的解析/渲染/表單，必須在其後載入 -->
+  <script src="sticky-notes.js"></script>
 </body>
 </html>

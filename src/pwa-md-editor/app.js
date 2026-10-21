@@ -8,7 +8,7 @@ const VIEWS = ['edit', 'preview', 'split', 'events'];
 
 // 📌 應用版本號（單一可信來源）。
 // 每次改動都要 +1，方便在手機上確認跑的是不是最新版（狀態列左下角會顯示）。
-const APP_VERSION = '0.7.26';
+const APP_VERSION = '0.7.28';
 
 // 可處理的文字檔副檔名白名單（對齊 todo 編輯器 TEXT_EXTS，取常用子集）
 const TEXT_EXTS = [
@@ -154,6 +154,7 @@ const elements = {
   evFStart: document.getElementById('ev-f-start'),
   evFEnd: document.getElementById('ev-f-end'),
   evFLocation: document.getElementById('ev-f-location'),
+  evFSticky: document.getElementById('ev-f-sticky'),
   evFColors: document.getElementById('ev-f-colors'),
   evFTags: document.getElementById('ev-f-tags'),
   evFTodoPanel: document.getElementById('ev-f-todo-panel'),
@@ -273,6 +274,7 @@ function setupEventListeners() {
   if (elements.evAddBtn) elements.evAddBtn.addEventListener('click', () => openEventForm(null));
   if (elements.evStatsBtn) elements.evStatsBtn.addEventListener('click', () => calOpenStats());
   if (typeof calInitCalendarToolbarCombo === 'function') calInitCalendarToolbarCombo();
+  if (typeof calInitMdEditDialog === 'function') calInitMdEditDialog();
   // ‹ › 依當前模式步進：月→月、週→週、日→日
   if (elements.evPrevMonth) elements.evPrevMonth.addEventListener('click', () => { if (state.calMode === 'list') calListNavDay(-1); else calStepCursor(-1); });
   if (elements.evNextMonth) elements.evNextMonth.addEventListener('click', () => { if (state.calMode === 'list') calListNavDay(1); else calStepCursor(1); });
@@ -999,6 +1001,8 @@ function downloadFile(content, filename) {
 // 📅 资料感知编辑器分派：文件成为「当前」时，若有专属编辑器（calendar.md → 行程视图）优先启用；
 // 否则回退默认编辑器（照旧）。集中此处，未来新增特性编辑器只需在此加一个分支。
 function dispatchDataAwareEditor() {
+  // 切換檔案：便利貼彈層關閉，並改用該檔的偏好命名空間（calendar.md 之間各自獨立）
+  if (typeof calStickyOnFileChange === 'function') calStickyOnFileChange();
   updateEventsTabVisibility();
   if (isCalendarMd()) {
     setView('events');

@@ -518,12 +518,92 @@ function calRenderInlineMarkdown(text) {
   }
   return html;
 }
-// 備註：先處理可點擊 checkbox，再整段 renderMarkdown；uid 為 null 時 checkbox 只顯示、不交互。
+// 備註：可編輯（uid 有值）時依「最小 MD 表達單元」分塊，非 checkbox 區塊注入 ✎ 圓點；
+//   唯讀（uid=null，節日／tooltip）維持整段渲染，行為與外觀不變。
 function calRenderNotes(notes, uid) {
   if (!notes) return '';
-  const withChecks = calNotesWithChecks(String(notes), uid);
-  // 🆕 術語 [[term:釋義:領域]] → 膠囊＋tooltip（dl/cp 日期標記已先行轉 📅/✅，不在此處理）
-  return renderMarkdown(calRenderTermDefs(withChecks));
+  const raw = String(notes).replace(/\r\n/g, '\n');
+  if (!uid) {
+    return renderMarkdown(calRenderTermDefs(calNotesWithChecks(raw, uid)));
+  }
+  const lines = raw.split('\n');
+  let out = '';
+  calSplitMdBlocks(raw).forEach((b) => {
+    if (b.type === 'task') {
+      // checkbox 行逐行獨立：一律沿用行內「編輯子事件」小圓點，不加外層區塊圓點
+      out += calNoteCheckLineHtml(lines[b.start], uid, b.start) + '\n';
+      return;
+    }
+    const chunk = lines.slice(b.start, b.end + 1).join('\n');
+    out += '<div class="md-unit"><button type="button" class="md-unit-edit" title="編輯' +
+      calMdUnitTypeName(b.type) + '" onclick="calOpenEditBlockDialog(event,\'' + escapeHtml(uid) +
+      '\',' + b.start + ',' + b.end + ',\'' + b.type + '\')">✎</button>' +
+      renderMarkdown(calRenderTermDefs(chunk)) + '</div>';
+  });
+  return out;
+}
+// 最小 MD 表達單元切分（與桌面 tlSplitMdBlocks 同演算法）：回傳 [{start,end,type}]（行索引含頭尾，end 不是開區間）。
+//   code 代碼圍欄整塊原子 / table 表格 / heading 標題 / hr 分隔線 / quote 引用 / task 勾選行（逐行）/
+//   list 普通列表（連續整段）/ para 段落。空行與空列表項只作分隔，不屬於任何區塊。
+function calSplitMdBlocks(text) {
+  const lines = String(text == null ? '' : text).replace(/\r\n/g, '\n').split('\n');
+  const isBlank = (l) => /^\s*$/.test(l);
+  const isFence = (l) => /^\s*(```|~~~)/.test(l);
+  const isHeading = (l) => /^#{1,6}(\s|$)/.test(l);
+  const isHrText = (l) => /^[ \t]{0,3}(-{3,}|\*{3,}|_{3,})[ \t]+(.+?)[ \t]+\1[ \t]*$/.test(l); // 「--- 文字 ---」＝帶文字分割線
+  const isHr = (l) => /^\s{0,3}([-*_])(\s*\1){2,}\s*$/.test(l) || isHrText(l);
+  const isQuote = (l) => /^\s{0,3}>/.test(l);
+  const isTask = (l) => /^\s*[-*+]\s+\[[ xX]\]/.test(l);
+  const isBullet = (l) => /^\s*[-*+]\s+\S/.test(l);
+  const isOrdered = (l) => /^\s*\d{1,9}[.)]\s+\S/.test(l);
+  const isList = (l) => !isTask(l) && !isFence(l) && (isBullet(l) || isOrdered(l));
+  const isEmptyListItem = (l) => /^\s*[-*+]\s*$/.test(l) || /^\s*\d{1,9}[.)]\s*$/.test(l);
+  const isTableRow = (l) => !isBlank(l) && l.includes('|');
+  const isTableDelim = (l) => /^[\s|:-]+$/.test(l) && l.includes('-') && l.includes('|');
+  const isTableStart = (j) => j + 1 < lines.length && isTableRow(lines[j]) && isTableDelim(lines[j + 1]);
+  const blocks = [];
+  let i = 0;
+  while (i < lines.length) {
+    const line = lines[i];
+    if (isBlank(line) || isEmptyListItem(line)) { i++; continue; }
+    if (isFence(line)) {
+      const marker = line.trim().slice(0, 3);
+      let j = i + 1;
+      while (j < lines.length && !(isFence(lines[j]) && lines[j].trim().slice(0, 3) === marker)) j++;
+      blocks.push({ start: i, end: Math.min(j, lines.length - 1), type: 'code' });
+      i = j + 1; continue;
+    }
+    if (isHeading(line)) { blocks.push({ start: i, end: i, type: 'heading' }); i++; continue; }
+    if (isHr(line)) { blocks.push({ start: i, end: i, type: 'hr' }); i++; continue; }
+    if (isQuote(line)) { let j = i; while (j < lines.length && isQuote(lines[j])) j++; blocks.push({ start: i, end: j - 1, type: 'quote' }); i = j; continue; }
+    if (isTableStart(i)) { let j = i + 2; while (j < lines.length && isTableRow(lines[j]) && !isBlank(lines[j])) j++; blocks.push({ start: i, end: j - 1, type: 'table' }); i = j; continue; }
+    if (isTask(line)) { blocks.push({ start: i, end: i, type: 'task' }); i++; continue; }
+    if (isList(line)) {
+      let j = i + 1;
+      while (j < lines.length) {
+        if (isBlank(lines[j]) || isEmptyListItem(lines[j])) {
+          let k = j + 1;
+          while (k < lines.length && (isBlank(lines[k]) || isEmptyListItem(lines[k]))) k++;
+          if (k < lines.length && isList(lines[k])) { j = k; continue; }
+          break;
+        }
+        if (isList(lines[j])) { j++; continue; }
+        break;
+      }
+      blocks.push({ start: i, end: j - 1, type: 'list' });
+      i = j; continue;
+    }
+    { let j = i;
+      while (j < lines.length && !isBlank(lines[j]) && !isFence(lines[j]) && !isHeading(lines[j]) && !isHr(lines[j]) &&
+             !isQuote(lines[j]) && !isTask(lines[j]) && !isList(lines[j]) && !isTableStart(j)) j++;
+      if (j === i) j = i + 1;
+      blocks.push({ start: i, end: j - 1, type: 'para' }); i = j; continue;
+    }
+  }
+  return blocks;
+}
+function calMdUnitTypeName(type) {
+  return ({ code: '代碼塊', table: '表格', heading: '標題', hr: '分隔線', quote: '引用', list: '列表', para: '段落' })[type] || '區塊';
 }
 // 備註 checkbox 行內的 deadline / completed 標記（顯示層轉換，不改寫源）：裸日期與 [[dl:...]] → 📅、[[cp:...]] → ✅
 function calRenderNoteMarkers(text) {
@@ -531,22 +611,30 @@ function calRenderNoteMarkers(text) {
     .replace(/\[\[(?:dl:)?(\d{4}-\d{2}-\d{2})\]\]/g, '📅 $1')
     .replace(/\[\[cp:(\d{4}-\d{2}-\d{2})\]\]/g, '✅ $1');
 }
+function calNoteCheckLineHtml(line, uid, i) {
+  const m = line.match(/^(\s*)-\s+\[([ xX])\]\s?(.*)$/);
+  if (!m) return line;
+  const done = m[2] !== ' ';
+  const editButton = uid
+    ? '<button type="button" class="ev-md-edit" title="編輯 checkbox 子事件" onclick="calOpenEditNoteCheckDialog(event,\'' +
+      escapeHtml(uid) + '\',' + i + ')">✎</button>'
+    : '';
+  const cbAttr = uid
+    ? ' data-uid="' + escapeHtml(uid) + '" data-line="' + i + '"' +
+      ' onclick="calToggleNoteCheck(event,\'' + escapeHtml(uid) + '\',' + i + ')"' +
+      ' onkeydown="calCalCheckKey(event,\'' + escapeHtml(uid) + '\',' + i + ')"'
+    : '';
+  return m[1] + '<span class="ev-md-check' + (done ? ' done' : '') + '"' + cbAttr +
+    ' role="checkbox" aria-checked="' + (done ? 'true' : 'false') + '" tabindex="0">' + editButton +
+    '<span class="ev-cb">' + (done ? '✓' : '') + '</span>' +
+    '<span class="ev-md-check-text">' + calRenderInlineMarkdown(calRenderNoteMarkers(m[3])) + '</span></span>';
+}
 function calNotesWithChecks(text, uid) {
   let inFence = false;
   return text.split('\n').map((line, i) => {
     if (/^\s*```/.test(line)) { inFence = !inFence; return line; }
     if (inFence) return line;
-    const m = line.match(/^(\s*)-\s+\[([ xX])\]\s?(.*)$/);
-    if (!m) return line;
-    const done = m[2] !== ' ';
-    const cbAttr = uid
-      ? ' data-uid="' + escapeHtml(uid) + '" data-line="' + i + '"' +
-        ' onclick="calToggleNoteCheck(event,\'' + escapeHtml(uid) + '\',' + i + ')"' +
-        ' onkeydown="calCalCheckKey(event,\'' + escapeHtml(uid) + '\',' + i + ')"'
-      : '';
-    return m[1] + '<span class="ev-md-check' + (done ? ' done' : '') + '"' + cbAttr +
-      ' role="checkbox" aria-checked="' + (done ? 'true' : 'false') + '" tabindex="0">' +
-      '<span class="ev-cb">' + (done ? '✓' : '') + '</span>' + calRenderInlineMarkdown(calRenderNoteMarkers(m[3])) + '</span>';
+    return calNoteCheckLineHtml(line, uid, i);
   }).join('\n');
 }
 // 🖱 日/週時間網格雙擊空白處快速新增：15 分鐘取整，默認時長 1 小時；全天條＝日期(全天)
@@ -1313,11 +1401,17 @@ function calInitCalendarToolbarCombo() {
     trigger.setAttribute('aria-expanded', String(open));
   });
   menu.addEventListener('click', (event) => event.stopPropagation());
+  // 動作型項目：不曝露成工具列常駐按鈕，按下直接執行（便利貼平時完全不佔畫面，只從這裡開）
+  const actionHandlers = {
+    sticky: () => { if (typeof calStickyOpen === 'function') calStickyOpen(); }
+  };
   menu.querySelectorAll('button[data-toolbar-action]').forEach((button) => {
     button.addEventListener('click', () => {
-      const control = controls.get(button.getAttribute('data-toolbar-action'));
+      const key = button.getAttribute('data-toolbar-action');
+      const control = controls.get(key);
       closeMenu();
       if (control) control.click();
+      else if (actionHandlers[key]) actionHandlers[key]();
     });
   });
   checkboxes.forEach((input) => input.addEventListener('change', () => {
@@ -1561,7 +1655,8 @@ function renderCalTimeGrid(dayDates, preserveScroll = true) {
         '<div class="t">' + (e.done ? '✓ ' : '') + calRepeatIcon(e) + calRenderInlineMarkdown(e.title) + calSpanDaySuffix(e, calendarFmtDate(d)) + calEventTodoLinks(e) + '</div>' +
         (tm ? '<div class="tm">' + escapeHtml(tm) + '</div>' : '') +
         (e.location ? '<div class="loc">' + escapeHtml('📍 ' + e.location) + '</div>' : '') +
-        (notes ? '<div class="notes">' + calRenderNotes(notes, e.uid) + '</div>' : '') +
+        // 時間格只顯示前 400 字（可能截斷區塊）→ 傳 null 走唯讀渲染，避免用截斷後的區間回寫原文
+        (notes ? '<div class="notes">' + calRenderNotes(notes, null) + '</div>' : '') +
         '</div>';
     });
     html += '</div>';
@@ -2588,6 +2683,8 @@ function evItemHtml(ev, today, occDate) {
     (ev.tags && ev.tags.length ? '<span class="ev-tags">' + ev.tags.map(t => '<span class="ev-tag-view" data-tag="' + escapeHtml(calTagName(t)) + '">' + escapeHtml(calTagLabel(t)) + '</span>').join('') + '</span>' : '') +
     calSubProgressBadge(ev) +
     calSpanDisplayModeBadge(ev) +
+    // ＋☐：在備註末尾加入 checkbox 子事件（與便利貼 meta 同一入口）
+    '<button type="button" class="ev-addcheck-btn" data-ev-addcheck="' + escapeHtml(ev.uid) + '" title="在備註末尾加入 checkbox 子事件">＋☐</button>' +
     '<button type="button" class="ev-undone-filter-btn' + (calEventUndoneChecksOnly(ev.uid) ? ' active' : '') + '"' +
     ' data-ev-undone-filter="' + escapeHtml(ev.uid) + '" aria-pressed="' + (calEventUndoneChecksOnly(ev.uid) ? 'true' : 'false') + '"' +
     ' title="' + (calEventUndoneChecksOnly(ev.uid) ? '仅显示该事件未完成的 checkbox 子事件（点击显示全部）' : '只显示该事件未完成的 checkbox 子事件') + '">' +
@@ -2946,6 +3043,9 @@ function onEvListClick(e) {
   // 完成勾選框：切換 done → 寫回編輯緩衝（按頂欄「保存」才落盤）
   const doneChk = e.target.closest('[data-ev-done]');
   if (doneChk) { toggleEventDone(doneChk.getAttribute('data-ev-done'), doneChk.checked); return; }
+  // ＋☐ 加入子事件：必須排在 data-ev-edit 之前，否則整列點選會先開編輯選單
+  const acBtn = e.target.closest('[data-ev-addcheck]');
+  if (acBtn) { e.preventDefault(); e.stopPropagation(); calOpenAddCheckDialog(acBtn.getAttribute('data-ev-addcheck')); return; }
   // ☐ 每事件「只顯示未完成 checkbox」開關：必須排在 data-ev-edit 之前，否則整列點選會先開編輯選單
   const ufBtn = e.target.closest('[data-ev-undone-filter]');
   if (ufBtn) { e.preventDefault(); e.stopPropagation(); calToggleEventUndoneChecks(ufBtn.getAttribute('data-ev-undone-filter'), ufBtn); return; }
@@ -3028,6 +3128,8 @@ function openEventForm(uid, defaultDate, pre) {
   elements.evFStart.disabled = elements.evFAllday.checked;
   elements.evFEnd.disabled = elements.evFAllday.checked;
   elements.evFLocation.value = ev ? ev.location : '';
+  // 🗒 便利貼張數（0＝不顯示）：與桌面共用同一 `- sticky` 欄位
+  if (elements.evFSticky) elements.evFSticky.value = String(ev ? (Math.max(0, parseInt(ev.sticky, 10) || 0)) : 0);
   state.evFormColor = ev ? ev.color : CAL_COLORS[0];
   state.evFormTags = calNormalizeTags(ev && ev.tags ? ev.tags : []);
   elements.evFTags.value = '';
@@ -3146,6 +3248,8 @@ function saveEventForm(closeAfterSave = true) {
     startTime: allDay ? '' : elements.evFStart.value,
     endTime: allDay ? '' : elements.evFEnd.value,
     location: elements.evFLocation.value.trim(),
+    // 🗒 便利貼張數：不設上限，避免把檔案中既有的 >9 張在存檔時靜默截斷（表單 UI 仍以 9 為輸入上限）
+    sticky: elements.evFSticky ? Math.max(0, parseInt(elements.evFSticky.value, 10) || 0) : 0,
     color: state.evFormColor || CAL_COLORS[0],
     tags: state.evFormTags.slice(),
     // 🔗 修復：此前漏寫 todoIds → 每次編輯存檔都會把桌面端建立的關聯卡片清空
@@ -3340,16 +3444,195 @@ function calToggleNoteCheck(e, uid, line) {
   const m = lines[line].match(/^(\s*)-\s+\[([ xX])\]\s?(.*)$/);
   if (!m) return; // 該行已被用戶改得不再是 checkbox，跳過以免破壞原文
   const wasDone = m[2] !== ' ';
-  lines[line] = calNoteCheckTransform(lines[line], !wasDone, calendarFmtDate(new Date()));
+  const nextDone = !wasDone;
+  lines[line] = calNoteCheckTransform(lines[line], nextDone, calendarFmtDate(new Date()));
   ev.notes = lines.join('\n');
-  applyEventsToEditor(); // 序列化 + 標髒 + 重繪（多天事件多列自動同步）
-  showToast(done ? '已取消勾選，按「保存」存回文件' : '已勾選，按「保存」存回文件', 'success');
+  applyEventsToEditor(); // 序列化 + 標髒 + 重繪（多天事件多列＋便利貼同步）
+  showToast(nextDone ? '已勾選，按「保存」存回文件' : '已取消勾選，按「保存」存回文件', 'success');
 }
 function calCalCheckKey(e, uid, line) {
+  if (e && e.target && e.target.closest && e.target.closest('button')) return; // 圓點按鈕的 Space/Enter 不該順帶勾選
   if (e && (e.key === ' ' || e.key === 'Spacebar' || e.key === 'Enter')) {
     e.preventDefault();
     calToggleNoteCheck(e, uid, line);
   }
+}
+
+// ===== 📝 備註「最小 MD 區塊 / 子事件」編輯對話框（手機底部彈層；桌面端同名機制的 LITE 移植）=====
+//   uid 一律用「當下編輯緩衝重新解析」定位：evpN 是位置型 uid，重排後可能漂移，不能拿舊快取。
+let calMdEditTarget = null;
+let calMdEditBaseline = '';
+function calMdEditEl(id) { return document.getElementById(id); }
+function calMdEditIsOpen() {
+  const ov = calMdEditEl('calMdEditOverlay');
+  return !!ov && ov.style.display !== 'none';
+}
+function calMdEditDirty() {
+  const inp = calMdEditEl('calMdEditInput');
+  return !!inp && inp.value !== calMdEditBaseline;
+}
+function calLoadEventsForNotes() {
+  state.calEvents = parseCalendarEvents(elements.editor.value);
+  return state.calEvents;
+}
+function calShowMdEditDialog(title, hint, value, target) {
+  const ov = calMdEditEl('calMdEditOverlay');
+  const inp = calMdEditEl('calMdEditInput');
+  if (!ov || !inp) return;
+  calMdEditTarget = target;
+  const titleEl = calMdEditEl('calMdEditTitle');
+  const hintEl = calMdEditEl('calMdEditHint');
+  const saveBtn = calMdEditEl('calMdEditSave');
+  if (titleEl) titleEl.textContent = title;
+  if (hintEl) hintEl.textContent = hint;
+  if (saveBtn) saveBtn.textContent = target && target.mode === 'add' ? '加入' : '保存';
+  inp.value = value;
+  calMdEditBaseline = value;
+  ov.style.display = 'flex';
+  setTimeout(() => inp.focus(), 0);
+}
+function calOpenEditBlockDialog(event, uid, start, end, type) {
+  if (event) { event.preventDefault(); event.stopPropagation(); }
+  const ev = calLoadEventsForNotes().find((x) => x.uid === uid);
+  if (!ev) { showToast('找不到該條行程（內容可能已被修改）', 'error'); return; }
+  const lines = String(ev.notes || '').replace(/\r\n/g, '\n').split('\n');
+  if (!Number.isInteger(start) || !Number.isInteger(end) || start < 0 || end >= lines.length || start > end) {
+    showToast('該區塊內容已變化，請關閉後重新開啟', 'error');
+    return;
+  }
+  calShowMdEditDialog(
+    '編輯內容區塊（' + calMdUnitTypeName(type) + '）',
+    '直接編輯此區塊的 Markdown 原文。保存後寫入編輯內容，按頂欄「保存」才存回文件；清空並保存＝刪除該區塊（會先確認）。',
+    lines.slice(start, end + 1).join('\n'),
+    { mode: 'block', uid: uid, start: start, end: end, type: type }
+  );
+}
+function calOpenEditNoteCheckDialog(event, uid, line) {
+  if (event) { event.preventDefault(); event.stopPropagation(); }
+  const ev = calLoadEventsForNotes().find((x) => x.uid === uid);
+  if (!ev) { showToast('找不到該條行程（內容可能已被修改）', 'error'); return; }
+  const lines = String(ev.notes || '').replace(/\r\n/g, '\n').split('\n');
+  const m = (line >= 0 && line < lines.length) ? lines[line].match(/^(\s*)-\s+\[([ xX])\]\s?(.*)$/) : null;
+  if (!m) { showToast('該子事件內容已變化，請關閉後重新開啟', 'error'); return; }
+  calShowMdEditDialog(
+    '編輯子事件（CheckBox）',
+    '勾選狀態會保留。換行＝拆成多個子事件（第一行保留原勾選狀態，其餘為未完成）；清空並保存＝刪除（會先確認）。',
+    m[3] || '',
+    { mode: 'task', uid: uid, line: line }
+  );
+}
+function calOpenAddCheckDialog(uid) {
+  const ev = calLoadEventsForNotes().find((x) => x.uid === uid);
+  if (!ev) { showToast('找不到該條行程（內容可能已被修改）', 'error'); return; }
+  calShowMdEditDialog(
+    '加入 checkbox 子事件',
+    '一行一項：每個非空行都會變成一個「- [ ]」子事件，加在備註末尾。加入後按頂欄「保存」才存回文件。',
+    '',
+    { mode: 'add', uid: uid }
+  );
+}
+function calMdEditRequestClose() {
+  if (!calMdEditIsOpen()) return;
+  if (calMdEditDirty() && !window.confirm('內容尚未保存，確定關閉嗎？')) return;
+  calMdEditClose();
+}
+function calMdEditClose() {
+  const ov = calMdEditEl('calMdEditOverlay');
+  if (ov) ov.style.display = 'none';
+  calMdEditTarget = null;
+  calMdEditBaseline = '';
+}
+function calMdEditSave() {
+  const target = calMdEditTarget;
+  const inp = calMdEditEl('calMdEditInput');
+  if (!target || !inp) return;
+  const text = String(inp.value).replace(/\r\n/g, '\n');
+  const ev = calLoadEventsForNotes().find((x) => x.uid === target.uid);
+  if (!ev) { showToast('找不到該條行程（內容可能已被修改）', 'error'); calMdEditClose(); return; }
+  const notes = String(ev.notes || '').replace(/\r\n/g, '\n');
+  const lines = notes ? notes.split('\n') : [];
+  if (target.mode === 'block') {
+    if (!Number.isInteger(target.start) || !Number.isInteger(target.end) ||
+        target.start < 0 || target.end >= lines.length || target.start > target.end) {
+      showToast('該區塊內容已變化，請關閉後重新開啟', 'error'); calMdEditClose(); return;
+    }
+    const span = target.end - target.start + 1;
+    if (!text.trim()) {
+      if (!window.confirm('區塊內容為空＝刪除該區塊。\n\n確定要刪除嗎？')) return;
+      lines.splice(target.start, span);
+      ev.notes = lines.join('\n');
+      applyEventsToEditor();
+      calMdEditClose();
+      showToast('已刪除區塊，按「保存」存回文件', 'success');
+      return;
+    }
+    const newLines = text.split('\n');
+    lines.splice(target.start, span, ...newLines);
+    ev.notes = lines.join('\n');
+    applyEventsToEditor();
+    calMdEditClose();
+    showToast('已保存區塊，按「保存」存回文件', 'success');
+    return;
+  }
+  if (target.mode === 'task') {
+    const line = target.line;
+    const m = (Number.isInteger(line) && line >= 0 && line < lines.length)
+      ? lines[line].match(/^(\s*)-\s+\[([ xX])\]\s?(.*)$/) : null;
+    if (!m) { showToast('該子事件內容已變化，請關閉後重新開啟', 'error'); calMdEditClose(); return; }
+    const rows = text.split('\n').map((l) => l.trim()).filter(Boolean);
+    if (!rows.length) {
+      if (!window.confirm('子事件內容為空＝刪除該子事件。\n\n確定要刪除嗎？')) return;
+      lines.splice(line, 1);
+      ev.notes = lines.join('\n');
+      applyEventsToEditor();
+      calMdEditClose();
+      showToast('已刪除子事件，按「保存」存回文件', 'success');
+      return;
+    }
+    // 一行＝一個子事件：第一行繼承原勾選狀態（含使用者自己寫的 dl/cp 標記），其餘同縮進、未完成
+    const newLines = rows.map((l, i) => m[1] + '- [' + (i === 0 ? m[2] : ' ') + '] ' + l);
+    lines.splice(line, 1, ...newLines);
+    ev.notes = lines.join('\n');
+    applyEventsToEditor();
+    calMdEditClose();
+    showToast(rows.length > 1
+      ? '已拆成 ' + rows.length + ' 項子事件，按「保存」存回文件'
+      : '已保存子事件，按「保存」存回文件', 'success');
+    return;
+  }
+  if (target.mode === 'add') {
+    const items = text.split('\n').map((l) => l.trim()).filter(Boolean);
+    if (!items.length) { showToast('沒有可加入的內容', 'error'); return; }
+    const block = items.map((l) => '- [ ] ' + l).join('\n');
+    const prev = notes.replace(/\s+$/, '');
+    ev.notes = (prev ? prev + '\n' : '') + block + '\n';
+    applyEventsToEditor();
+    calMdEditClose();
+    showToast('已加入 ' + items.length + ' 項子事件，按「保存」存回文件', 'success');
+  }
+}
+function calInitMdEditDialog() {
+  const ov = calMdEditEl('calMdEditOverlay');
+  if (!ov || ov.dataset.initialized === '1') return;
+  ov.dataset.initialized = '1';
+  ov.addEventListener('click', (e) => { if (e.target === ov) calMdEditRequestClose(); });
+  const closeBtn = calMdEditEl('calMdEditClose');
+  const cancelBtn = calMdEditEl('calMdEditCancel');
+  const saveBtn = calMdEditEl('calMdEditSave');
+  if (closeBtn) closeBtn.addEventListener('click', calMdEditRequestClose);
+  if (cancelBtn) cancelBtn.addEventListener('click', calMdEditRequestClose);
+  if (saveBtn) saveBtn.addEventListener('click', calMdEditSave);
+  const inp = calMdEditEl('calMdEditInput');
+  if (inp) {
+    inp.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); calMdEditSave(); }
+    });
+  }
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape' || !calMdEditIsOpen()) return;
+    e.preventDefault();
+    calMdEditRequestClose();
+  });
 }
 
 // 把工作副本序列化為 calendar.md 全文寫回編輯器緩衝；
@@ -3365,4 +3648,6 @@ function applyEventsToEditor() {
   updateStatus();
   updateWordCount();
   updatePreview(); // 重新渲染行程列表 / 月曆
+  // 便利貼彈層開著時同步重繪：勾 checkbox / 表單存檔後，張數、內容與子事件進度立即更新
+  if (typeof calStickyRefreshIfOpen === 'function') calStickyRefreshIfOpen();
 }

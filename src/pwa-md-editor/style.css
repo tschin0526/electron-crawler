@@ -676,7 +676,30 @@ body {
 /* 📝 備註 Markdown checkbox：- [ ] / - [x] → ☐/☑（只讀樣式，勾選項加刪除線） */
 .ev-cb { display: inline-block; min-width: 11px; height: 11px; border: 2px solid #fbbf24; border-radius: 3px; margin-right: 4px; vertical-align: -2px; text-align: center; font-size: 9px; line-height: 11px; color: #fff; } /* 框線加粗金黃 #fbbf24（與桌面金黄规范同色）：深色主題下原 var(--border) 太淡看不清 */
 .ev-md-check.done .ev-cb { background: var(--primary); border-color: var(--primary); }
-.ev-md-check.done { text-decoration: line-through; opacity: 0.75; }
+.ev-md-check.done .ev-md-check-text { text-decoration: line-through; opacity: 0.75; }
+/* 可編輯備註：每行 checkbox 自成一行（舊版靠 marked 的 <br> 分行，改成分塊渲染後由這裡保證） */
+.ev-notes .ev-md-check, .cal-sticky-body .ev-md-check { display: block; }
+.ev-notes .ev-md-check + br, .ev-notes br:has(+ .ev-md-check) { display: none !important; }
+/* ✎ 最小 MD 區塊 / checkbox 子事件的編輯圓點：以 em 縮放，便利貼放大字級時仍可點 */
+.md-unit { position: relative; padding-left: 1.7em; margin: 0 0 .45em 0; }
+.md-unit:last-child { margin-bottom: 0; }
+.md-unit > *:first-child { margin-top: 0; }
+.md-unit > *:last-child { margin-bottom: 0; }
+.md-unit-edit, .ev-md-edit {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 1.35em; height: 1.35em; min-width: 17px; min-height: 17px; padding: 0;
+  border: 1px solid rgba(0, 0, 0, .18); border-radius: 50%;
+  background: var(--gold, #c9a227); color: #1f2937;
+  font-size: .7em; line-height: 1; cursor: pointer;
+  opacity: .82; flex: none; vertical-align: -.2em;
+}
+.ev-md-edit { margin: 0 .4em 0 0; }
+.md-unit-edit { position: absolute; left: 0; top: .1em; }
+.md-unit-edit:active, .ev-md-edit:active { opacity: 1; }
+.md-unit-edit:focus-visible, .ev-md-edit:focus-visible { opacity: 1; outline: 2px solid var(--gold); outline-offset: 2px; }
+/* ＋☐ 列表行入口（與 ☐/☑ 同款金色膠囊） */
+.ev-addcheck-btn { margin-left: 4px; padding: 1px 5px; font-size: 12px; line-height: 1.6; border: 1px solid #f5c518; border-radius: 999px; background: transparent; color: #f5c518; cursor: pointer; vertical-align: middle; }
+.ev-addcheck-btn:hover, .ev-addcheck-btn:active { background: rgba(245,197,24,.14); }
 /* 🆕 術語（term）渲染：立體金膠囊(term) ＋ 內嵌小膠囊(領域) ＋ 釋義 tooltip（hover）。
    固定深字＋金漸層，深淺主題都清晰；領域小膠囊半透明白底嵌於大膠囊內。與桌面 calendar 雙端對齊 */
 .tl-term { display: inline; }
@@ -1350,3 +1373,188 @@ p[data-cols-marker="true"] { display: none; }
 
 /* KaTeX 暗色模式：數學式隨主題配色 */
 .dark-mode .preview .katex { color: var(--text); }
+
+/* ============================================================
+ * 🗒 便利貼（翻頁模式；calendar.md 專用）
+ * 由工具列 combo 主動開啟，平時 display:none；一次只顯示一張，‹ ›／滑動翻頁。
+ * 紙張配色由 JS 依「該張便利貼」的偏好寫入行內樣式（--cal-sticky-fg / --cal-sticky-tag-bg）。
+ * ============================================================ */
+.cal-sticky-overlay {
+  position: fixed; inset: 0; z-index: 2500;
+  display: flex; flex-direction: column;
+  padding: max(8px, env(safe-area-inset-top)) max(8px, env(safe-area-inset-right))
+           max(8px, env(safe-area-inset-bottom)) max(8px, env(safe-area-inset-left));
+  /* 近不透明：翻頁檢視是獨立焦點畫面，避免下層工具列／狀態列的字從半透明底色透出來與頂欄打架 */
+  background: rgba(6, 10, 18, .98);
+}
+.cal-sticky-shell { flex: 1; min-height: 0; width: 100%; max-width: 560px; margin: 0 auto; display: flex; flex-direction: column; gap: 8px; }
+.cal-sticky-top { flex: none; display: flex; align-items: center; gap: 8px; color: #f8fafc; }
+.cal-sticky-top-flex { flex: 1; }
+.cal-sticky-page-ind { font-size: 13px; color: #f8fafc; opacity: .9; white-space: nowrap; }
+.cal-sticky-top-btn {
+  border: 1px solid rgba(212, 175, 55, .8); background: rgba(20, 24, 34, .55); color: #f8fafc;
+  border-radius: 8px; padding: 6px 10px; font-size: 14px; line-height: 1; cursor: pointer;
+}
+.cal-sticky-top-btn:active { background: rgba(212, 175, 55, .28); }
+.cal-sticky-top-btn:disabled { opacity: .35; cursor: default; }
+.cal-sticky-stage { position: relative; flex: 1; min-height: 0; display: flex; align-items: stretch; justify-content: center; }
+.cal-sticky-note {
+  position: relative; flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column;
+  background: #FFF3B0; color: #000;
+  border: 1px solid #D4AF37; border-radius: 12px; overflow: hidden;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, .35), 0 1px 3px rgba(0, 0, 0, .18);
+}
+.cal-sticky-head { flex: none; padding: 12px 14px 0; }
+.cal-sticky-title { font-size: 17px; font-weight: 700; line-height: 1.4; word-break: break-word; color: var(--cal-sticky-fg, #000); }
+.cal-sticky-meta { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-top: 4px; font-size: 12px; line-height: 1.5; color: var(--cal-sticky-fg, #000); opacity: .8; }
+/* meta 行操作（＋☐ / ☐·☑）：手機要可點，用 24px 高膠囊；顏色跟便利貼字色，開啟態用金底 */
+.cal-sticky-meta-actions { display: inline-flex; align-items: center; gap: 6px; margin-left: auto; }
+.cal-sticky-meta-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-height: 24px; padding: 0 8px; box-sizing: border-box;
+  border: 1px solid currentColor; border-radius: 999px;
+  background: rgba(127, 127, 127, .12); color: inherit;
+  font-size: 12px; line-height: 1; white-space: nowrap; cursor: pointer;
+}
+.cal-sticky-meta-btn:active { background: rgba(127, 127, 127, .3); }
+.cal-sticky-undone-toggle.active { background: rgba(212, 175, 55, .4); border-color: #D4AF37; }
+.cal-sticky-progress { display: inline-block; padding: 0 7px; border: 1px solid currentColor; border-radius: 999px; font-size: 11px; line-height: 1.6; opacity: .9; }
+.cal-sticky-progress.all-done { color: #15803d; }
+.cal-sticky-tags { display: flex; flex-wrap: wrap; gap: 4px; margin: 6px 0 0; padding: 0; list-style: none; }
+.cal-sticky-tags li {
+  background: var(--cal-sticky-tag-bg, rgba(0, 0, 0, .07)); border: 1px solid #D4AF37; border-radius: 999px;
+  padding: 1px 8px; font-size: 11px; line-height: 1.6; color: var(--cal-sticky-fg, #000);
+}
+.cal-sticky-body {
+  flex: 1; min-height: 0; overflow: auto; padding: 10px 14px 14px;
+  line-height: 1.6; word-break: break-word; color: var(--cal-sticky-fg, #000);
+  -webkit-overflow-scrolling: touch; overscroll-behavior: contain;
+}
+.cal-sticky-body > *:first-child { margin-top: 0; }
+.cal-sticky-body > *:last-child { margin-bottom: 0; }
+.cal-sticky-body p { margin: .4em 0; }
+.cal-sticky-body h1 { font-size: 1.8em; font-weight: 700; margin: .6em 0 .3em; }
+.cal-sticky-body h2 { font-size: 1.5em; font-weight: 700; margin: .55em 0 .3em; }
+.cal-sticky-body h3 { font-size: 1.3em; font-weight: 600; margin: .5em 0 .25em; }
+.cal-sticky-body h4, .cal-sticky-body h5, .cal-sticky-body h6 { font-size: 1.15em; font-weight: 600; margin: .45em 0 .2em; }
+.cal-sticky-body ul, .cal-sticky-body ol { margin: .3em 0; padding-left: 1.4em; }
+.cal-sticky-body li { margin: .15em 0; }
+.cal-sticky-body ul li { list-style: disc; }
+.cal-sticky-body ol li { list-style: decimal; }
+.cal-sticky-body blockquote { margin: .4em 0; padding: .2em 0 .2em .8em; border-left: 3px solid currentColor; opacity: .82; }
+.cal-sticky-body hr { border: none; border-top: 1px solid currentColor; opacity: .38; margin: .7em 0; }
+.cal-sticky-body .hr-text { display: flex; align-items: center; gap: .7em; margin: .65em 0; opacity: .82; }
+.cal-sticky-body .hr-text::before, .cal-sticky-body .hr-text::after { content: ""; flex: 1 1 0; min-width: 1.2em; border-top: 1px solid currentColor; opacity: .55; }
+.cal-sticky-body a { color: #1d4ed8; text-decoration: underline; }
+.cal-sticky-body img { max-width: 100%; height: auto; border-radius: 6px; }
+.cal-sticky-body table { border-collapse: collapse; width: 100%; margin: .5em 0; font-size: .92em; }
+.cal-sticky-body th, .cal-sticky-body td { border: 1px solid rgba(212, 175, 55, .62); padding: 3px 6px; text-align: left; vertical-align: top; }
+.cal-sticky-body th { background: rgba(212, 175, 55, .18); font-weight: 600; }
+.cal-sticky-body code { background: rgba(0, 0, 0, .07); padding: 0 3px; border-radius: 3px; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size: .95em; }
+.cal-sticky-body pre { background: rgba(0, 0, 0, .07); padding: 8px; border-radius: 6px; overflow: auto; }
+.cal-sticky-body pre code { background: none; padding: 0; }
+.cal-sticky-body .ev-md-check { display: block; cursor: pointer; }
+.cal-sticky-body .ev-md-check.done .ev-md-check-text { text-decoration: line-through; opacity: .75; }
+.cal-sticky-body .ev-md-check + br, .cal-sticky-body br:has(+ .ev-md-check) { display: none !important; }
+/* 「只顯示未完成 checkbox」：整行隱藏完成的子事件（與列表 .only-undone-checks 同一口徑） */
+.cal-sticky-body.cal-sticky-only-undone .ev-md-check.done { display: none !important; }
+/* 多張時左右翻頁鈕常駐在卡片兩側中段：正文與標題區左右各讓出鈕寬，避免文字被 ‹ › 壓住、且維持同一左緣 */
+.cal-sticky-note.cal-sticky-multi .cal-sticky-body,
+.cal-sticky-note.cal-sticky-multi .cal-sticky-head { padding-left: 44px; padding-right: 44px; }
+.cal-sticky-empty { flex: 1; display: flex; align-items: center; justify-content: center; padding: 24px; text-align: center; color: #f8fafc; opacity: .88; font-size: 14px; line-height: 1.9; }
+.cal-sticky-nav {
+  position: absolute; top: 50%; transform: translateY(-50%); z-index: 5;
+  width: 40px; height: 56px; padding: 0;
+  display: flex; align-items: center; justify-content: center;
+  border: 1px solid rgba(212, 175, 55, .8); border-radius: 10px;
+  background: rgba(20, 24, 34, .55); color: #f8fafc; font-size: 26px; line-height: 1; cursor: pointer;
+}
+.cal-sticky-nav-prev { left: 2px; }
+.cal-sticky-nav-next { right: 2px; }
+.cal-sticky-nav:active { background: rgba(212, 175, 55, .3); }
+.cal-sticky-nav:disabled { opacity: .25; pointer-events: none; }
+.cal-sticky-toast {
+  position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: 6;
+  padding: .35em 1.1em; border-radius: 16px; background: rgba(18, 22, 30, .94); color: #fff;
+  font-size: 24px; font-weight: 700; line-height: 1.15; letter-spacing: .02em; white-space: nowrap;
+  opacity: 0; pointer-events: none; box-shadow: 0 12px 34px rgba(0, 0, 0, .4); transition: opacity .2s ease;
+}
+.cal-sticky-toast.show { opacity: .55; }
+.cal-sticky-foot { flex: none; display: flex; align-items: center; justify-content: center; gap: 14px; color: #f8fafc; font-size: 13px; }
+.cal-sticky-foot button {
+  border: 1px solid rgba(212, 175, 55, .8); background: rgba(20, 24, 34, .55); color: #f8fafc;
+  border-radius: 8px; padding: 7px 14px; font-size: 13px; cursor: pointer;
+}
+.cal-sticky-foot button:disabled { opacity: .35; cursor: default; }
+#calStickyFootInd { min-width: 6em; text-align: center; opacity: .9; }
+/* ☰ 清單 / 設定：手機用 bottom sheet（可捲動），不遮住上方卡片太久 */
+.cal-sticky-sheet { position: absolute; inset: 0; z-index: 20; display: flex; align-items: flex-end; justify-content: center; background: rgba(0, 0, 0, .45); }
+.cal-sticky-sheet-box {
+  width: 100%; max-width: 560px; max-height: 86%; display: flex; flex-direction: column;
+  background: var(--bg-secondary); color: var(--text); border: 1px solid var(--gold);
+  border-radius: 14px 14px 0 0; box-shadow: 0 -10px 30px rgba(0, 0, 0, .35);
+}
+.cal-sticky-sheet-head { flex: none; display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 12px 14px; border-bottom: 1px solid var(--border); font-size: 15px; font-weight: 600; }
+.cal-sticky-sheet-head .cal-sticky-top-btn { color: var(--text); background: var(--bg); }
+.cal-sticky-sheet-body { flex: 1; min-height: 0; overflow: auto; padding: 0 14px max(14px, env(safe-area-inset-bottom)); -webkit-overflow-scrolling: touch; overscroll-behavior: contain; }
+.cal-sticky-list-title { padding: 10px 0 6px; font-size: 12px; line-height: 1.6; color: var(--text-secondary); }
+.cal-sticky-list { display: flex; flex-direction: column; gap: 2px; }
+.cal-sticky-list-item { display: flex; align-items: center; gap: 8px; padding: 3px 2px; border-bottom: 1px dashed var(--border); }
+.cal-sticky-list-no { flex: none; width: 20px; text-align: right; font-size: 12px; color: var(--text-secondary); }
+.cal-sticky-list-name { flex: 1; min-width: 0; padding: 6px 2px; border: 0; background: transparent; color: var(--text); text-align: left; font: inherit; font-size: 13px; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cal-sticky-list-name:active { color: var(--primary); }
+.cal-sticky-list-state { flex: none; width: 38px; padding: 3px 0; border: 1px solid var(--border); border-radius: 999px; background: transparent; color: var(--text-secondary); font-size: 12px; cursor: pointer; }
+.cal-sticky-list-state.open { border-color: var(--success); color: var(--success); }
+.cal-sticky-list-inactive-title { margin-top: 10px; padding: 9px 0 5px; border-top: 1px solid var(--border); font-size: 12px; color: var(--text-secondary); }
+.cal-sticky-sec { margin: 10px 0 4px; padding-top: 10px; border-top: 1px solid var(--border); }
+.cal-sticky-sec-title { margin: 10px 0 6px; font-size: 12px; color: var(--text-secondary); }
+.cal-sticky-sec-title:first-child { margin-top: 0; }
+.cal-sticky-sec-val { float: right; color: var(--text); }
+.cal-sticky-swatches { display: grid; grid-template-columns: repeat(auto-fill, minmax(26px, 1fr)); gap: 6px; }
+.cal-sticky-sw { position: relative; width: 100%; aspect-ratio: 1; padding: 0; border: 1px solid rgba(0, 0, 0, .22); border-radius: 50%; cursor: pointer; }
+.cal-sticky-sw.active { box-shadow: 0 0 0 2px var(--primary); }
+.cal-sticky-sw-custom { background: conic-gradient(#ff3b30, #ffcc00, #34c759, #5ac8fa, #007aff, #af52de, #ff3b30); overflow: hidden; }
+.cal-sticky-sw-custom input[type=color] { position: absolute; inset: -2px; width: calc(100% + 4px); height: calc(100% + 4px); opacity: 0; border: none; padding: 0; cursor: pointer; }
+.cal-sticky-range { width: 100%; accent-color: var(--primary); }
+.cal-sticky-weights { display: flex; gap: 6px; }
+.cal-sticky-weights button { flex: 1; padding: 7px 0; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); color: var(--text); font-size: 13px; cursor: pointer; }
+.cal-sticky-weights button.active { background: var(--primary); border-color: var(--primary); color: #fff; }
+.cal-sticky-zoom { display: flex; gap: 8px; }
+.cal-sticky-zoom button { flex: 1; padding: 8px 0; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); color: var(--text); font-size: 15px; cursor: pointer; }
+.cal-sticky-toggle { display: block; width: 100%; margin: 10px 0 0; padding: 9px 12px; border: 1px solid var(--gold); border-radius: 8px; background: var(--bg); color: var(--text); font-size: 13px; text-align: left; cursor: pointer; }
+.cal-sticky-toggle.active { background: var(--gold-wash); }
+.cal-sticky-toggle:disabled { opacity: .4; cursor: default; }
+.cal-sticky-hint { margin: 12px 0 0; font-size: 11px; line-height: 1.7; color: var(--text-secondary); }
+/* combo 菜單分隔線與「動作型」項目（便利貼：只有動作，沒有曝露勾選框） */
+/* 📝 備註區塊 / 子事件編輯 bottom sheet（z-index：便利貼 2500 < 本層 2600 < 行程表單 3000） */
+.cal-md-edit-overlay {
+  position: fixed; inset: 0; z-index: 2600;
+  display: flex; align-items: flex-end; justify-content: center;
+  padding: max(8px, env(safe-area-inset-top)) 8px max(8px, env(safe-area-inset-bottom));
+  background: rgba(6, 10, 18, .62);
+}
+.cal-md-edit-box {
+  width: 100%; max-width: 720px; max-height: 92%;
+  display: flex; flex-direction: column;
+  background: var(--bg-secondary); color: var(--text);
+  border: 1px solid var(--gold); border-radius: 14px;
+  box-shadow: 0 -10px 30px rgba(0, 0, 0, .4); overflow: hidden;
+}
+.cal-md-edit-head { display: flex; align-items: center; gap: 8px; padding: 10px 12px; border-bottom: 1px solid var(--border); font-size: 15px; font-weight: 600; }
+.cal-md-edit-head span { flex: 1; min-width: 0; }
+.cal-md-edit-close { width: 32px; height: 32px; padding: 0; border: 1px solid var(--border); border-radius: 8px; background: transparent; color: var(--text); font-size: 15px; line-height: 1; cursor: pointer; }
+.cal-md-edit-hint { padding: 8px 12px 0; font-size: 12px; line-height: 1.65; color: var(--text-secondary); }
+#calMdEditInput {
+  flex: 1 1 auto; min-height: 150px; margin: 8px 12px; padding: 10px;
+  border: 1px solid var(--border); border-radius: 10px;
+  background: var(--bg); color: var(--text);
+  font: 13px/1.65 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  resize: none;
+}
+#calMdEditInput:focus { outline: none; border-color: var(--gold); }
+.cal-md-edit-actions { display: flex; gap: 8px; padding: 0 12px 12px; }
+.cal-md-edit-actions button { flex: 1 1 0; min-height: 42px; border: 1px solid var(--border); border-radius: 10px; background: transparent; color: var(--text); font-size: 14px; cursor: pointer; }
+.cal-md-edit-actions button.primary { border-color: var(--gold); background: var(--gold); color: #1f2937; font-weight: 700; }
+
+.ev-toolbar-combo-sep { height: 1px; margin: 5px 2px; background: var(--border); }
+.ev-toolbar-combo-action-row { padding: 2px; }
