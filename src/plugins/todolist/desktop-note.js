@@ -205,7 +205,7 @@ function undoneFilterChipHtml() {
 function renderMeta(ev) {
   const dateText = escapeHtml(metaDateText(ev) + (ev.done ? ' · 已完成' : ''));
   document.getElementById('meta').innerHTML = dateText + subProgressBadge(ev) +
-    '<button type="button" class="note-addcheck" title="加入子事件（在备注末尾加 CheckBox，直接存档）">＋☐</button>' +
+    '<button type="button" class="note-addcheck" title="加入…（checkbox 子事件／MD 表格／自由编辑）" aria-haspopup="menu">＋☐▾</button>' +
     undoneFilterChipHtml();
 }
 // 标签列表统一渲染：显示「名·子标签」
@@ -357,6 +357,10 @@ function setupControls() {
   document.getElementById('miCalendar').onclick = (e) => { e.stopPropagation(); closeMenu(); ipcRenderer.invoke('activate-main-window'); };
   // 📜 滚动：唤起主程式并滚动定位到该行程（不打开编辑框）
   document.getElementById('miCalendarScroll').onclick = (e) => { e.stopPropagation(); closeMenu(); ipcRenderer.invoke('wake-main-from-note', { key: KEY, action: 'scroll' }); };
+  // 📝 唤起 TodoList（Gallery 独立模式，等同 ./start.sh --todolist）：主窗切到 todolist 并显示
+  document.getElementById('miOpenTodolist').onclick = (e) => { e.stopPropagation(); closeMenu(); ipcRenderer.invoke('open-todolist-from-note'); };
+  // 🤖 唤起 AI 智能控制台（主程序，等同 ./start.sh）：主窗切到 crawler-window 并显示
+  document.getElementById('miOpenAiConsole').onclick = (e) => { e.stopPropagation(); closeMenu(); ipcRenderer.invoke('open-ai-console-from-note'); };
   // 📧 发邮件：收件人浮层 → 直调本机邮件服务（sendStickyEmail）
   document.getElementById('miEmail').onclick = (e) => { e.stopPropagation(); closeMenu(); openStickyEmailDialog(); };
   const stickyList = document.getElementById('mStickyList');
@@ -420,6 +424,10 @@ function setupControls() {
   }
   // ⌘S / Ctrl+S 手动保存（编辑模式）；＋☐ 浮层打开时＝确认加入（焦点在 textarea 时由其自身 keydown 处理，这里兜底焦点在浮层外的情况）；本窗口无应用菜单，不会被系统抢走
   window.addEventListener('keydown', (e) => {
+    const acMenu = document.getElementById('noteAddCheckMenu');
+    if (acMenu && acMenu.classList.contains('open') && e.key === 'Escape') {
+      e.preventDefault(); e.stopPropagation(); closeAddCheckMenu(); return;
+    }
     const acOv = document.getElementById('addCheckOv');
     if (acOv && acOv.classList.contains('show')) {
       if ((e.metaKey || e.ctrlKey) && (e.key === 's' || e.key === 'S')) { e.preventDefault(); e.stopPropagation(); confirmAddCheck(); }
@@ -500,16 +508,36 @@ function setupControls() {
   const metaEl = document.getElementById('meta');
   if (metaEl) metaEl.addEventListener('click', (e) => {
     if (e.target.closest('.note-undone-filter')) { e.stopPropagation(); toggleUndoneChecksFilter(); return; }
-    if (e.target.closest('.note-addcheck')) openAddCheck();
+    if (e.target.closest('.note-addcheck')) { e.stopPropagation(); toggleAddCheckMenu(); }
   });
+  // 🆕 ＋☐ 下拉选单：三个项目分别开子事件／表格／自由文本；点选单外任意处或 Esc 收起
+  const addCheckMenu = document.getElementById('noteAddCheckMenu');
+  if (addCheckMenu) {
+    addCheckMenu.addEventListener('click', (e) => {
+      const item = e.target.closest('.nami');
+      if (!item) return;
+      e.stopPropagation();
+      const act = item.getAttribute('data-act');
+      closeAddCheckMenu();
+      if (act === 'table') openAddTable();
+      else if (act === 'text') openAddFreeText();
+      else openAddCheck();
+    });
+    addCheckMenu.addEventListener('pointerdown', (e) => e.stopPropagation());
+    addCheckMenu.addEventListener('dblclick', (e) => e.stopPropagation());
+  }
+  document.addEventListener('click', (e) => {
+    if (e.target.closest && e.target.closest('#noteAddCheckMenu, .note-addcheck')) return;
+    closeAddCheckMenu();
+  }, true);
   if (ov) ov.addEventListener('click', (e) => { if (e.target === ov) requestCloseAddCheck(); });
   const acInput = document.getElementById('addCheckInput');
   if (acInput) {
     acInput.addEventListener('keydown', (e) => {
       e.stopPropagation();
       if ((e.metaKey || e.ctrlKey) && (e.key === 's' || e.key === 'S')) { e.preventDefault(); confirmAddCheck(); }
-      // 🆕 回车＝确认加入仅在「加入子事件」模式（快速逐行新增）；「编辑子事件」模式不拦截回车，避免打断输入（保存用 ⌘S／「保存」按钮，关闭用 Esc）
-      else if (e.key === 'Enter' && !e.shiftKey && !noteCheckEditTarget && !noteBlockEditTarget) { e.preventDefault(); confirmAddCheck(); }
+      // 🆕 回车＝确认加入仅在「加入子事件」模式（快速逐行新增）；表格／自由文本模式回车是换行，编辑模式不拦截
+      else if (e.key === 'Enter' && !e.shiftKey && noteAddMode === 'check' && !noteCheckEditTarget && !noteBlockEditTarget) { e.preventDefault(); confirmAddCheck(); }
       else if (e.key === 'Escape') { e.preventDefault(); requestCloseAddCheck(); }
     });
     acInput.addEventListener('pointerdown', (e) => e.stopPropagation());
@@ -530,7 +558,11 @@ function setupControls() {
     hideAddCheckUnsavedBar();
     if (await confirmAddCheck()) closeAddCheck();
   };
-  if (ov) ov.addEventListener('pointerdown', (e) => e.stopPropagation());
+  if (ov) {
+    ov.addEventListener('pointerdown', (e) => e.stopPropagation());
+    // 浮层内双击选字（尤其表格网格的格子）不该把主窗体拉起来，与 editArea 同口径
+    ov.addEventListener('dblclick', (e) => e.stopPropagation());
+  }
   // 🆕 发邮件浮层：发送｜取消、点背罩关闭、Enter 发送 / Esc 取消（焦点在输入框时由其自身处理）
   const emailSendBtn = document.getElementById('emailSendBtn');
   if (emailSendBtn) emailSendBtn.onclick = (e) => { e.stopPropagation(); sendStickyEmail(); };
@@ -540,6 +572,7 @@ function setupControls() {
   if (emailOv) {
     emailOv.addEventListener('click', (e) => { if (e.target === emailOv) closeStickyEmailDialog(); });
     emailOv.addEventListener('pointerdown', (e) => e.stopPropagation());
+    emailOv.addEventListener('dblclick', (e) => e.stopPropagation());
   }
   const emailInput = document.getElementById('emailRecipientInput');
   if (emailInput) {
@@ -660,7 +693,7 @@ function setupControls() {
 // 原生拖拽由 OS 处理；只有「按下后未移动、松开＝点击」才会触发此 handler
 // （拖拽过程中 OS 不会派发 click），故可安全用它区分「点一下＝唤起主程式」
 function onNoteClick(e) {
-  if (e.target.closest('.iconbtn, .note-mode-handle, .note-min-handle, .note-menu-handle, .note-refresh-handle, .note-addcheck, .note-undone-filter, .flip-edge')) return;  // 按钮各自处理
+  if (e.target.closest('.iconbtn, .note-mode-handle, .note-min-handle, .note-menu-handle, .note-refresh-handle, .note-addcheck, .note-addcheck-menu, .note-undone-filter, .flip-edge')) return;  // 按钮各自处理
   if (!e.target.closest('.bar, .head, .meta, .tags')) return; // 仅拖拽区点击＝唤起主程式
   ipcRenderer.invoke('wake-main-from-note', { key: KEY });
 }
@@ -668,10 +701,38 @@ function onNoteClick(e) {
 // 双击便利贴（标题栏或正文）：唤起主程式并打开该事件表单
 // 正文区是 -webkit-app-region: no-drag，双击不会触发拖动，故可安全复用「唤起+打开事件」管线
 function onNoteDblClick(e) {
-  if (e.target.closest('.iconbtn, .menu, .rz, .note-addcheck, .note-undone-filter, .flip-edge, .ev-md-edit, .ev-cb')) return; // 菜单/☰按钮/翻页把手/缩放把手/checkbox 控件各自处理
+  if (e.target.closest('.iconbtn, .menu, .rz, .note-addcheck, .note-addcheck-menu, .note-undone-filter, .flip-edge, .ev-md-edit, .ev-cb')) return; // 菜单/☰按钮/翻页把手/缩放把手/checkbox 控件各自处理
   ipcRenderer.invoke('wake-main-from-note', { key: KEY });
 }
 
+// ===== 🆕 「＋☐」下拉选单：子事件／MD 表格／自由编辑 =====
+// 三个入口共用 #addCheckOv；noteAddMode 只决定「加入」时怎么回写：
+//   check＝逐行包 - [ ]（原功能）｜table／text＝把 textarea 内容当原始 MD 区块追加（不包 checkbox）
+let noteAddMode = 'check';
+function closeAddCheckMenu() {
+  const menu = document.getElementById('noteAddCheckMenu');
+  if (menu) menu.classList.remove('open');
+}
+function openAddCheckMenu() {
+  const menu = document.getElementById('noteAddCheckMenu');
+  const note = document.getElementById('note');
+  const chip = document.querySelector('#meta .note-addcheck');
+  if (!menu || !note || !chip) return;
+  menu.classList.add('open');
+  const nr = note.getBoundingClientRect();
+  const cr = chip.getBoundingClientRect();
+  const left = cr.left - nr.left;
+  menu.style.left = Math.max(6, Math.min(left, nr.width - menu.offsetWidth - 6)) + 'px';
+  const below = cr.bottom - nr.top + 4;
+  // 贴纸太矮时向上展开，避免被 #note 的 overflow:hidden 裁掉
+  menu.style.top = (below + menu.offsetHeight > nr.height - 4
+    ? Math.max(4, cr.top - nr.top - menu.offsetHeight - 4) : below) + 'px';
+}
+function toggleAddCheckMenu() {
+  const menu = document.getElementById('noteAddCheckMenu');
+  if (menu && menu.classList.contains('open')) closeAddCheckMenu();
+  else openAddCheckMenu();
+}
 // ===== 🆕 便利贴「＋☐」加入子事件：对齐 calendar 列表行 tlOpenAddCheckDialog =====
 // 逐行输入 → 每行列成「- [ ] 行」追加到事件备注末尾；Calendar 关闭时由主进程唤醒并交由其保存。
 // 只读包含文件（ev.ro）由主程式拦截并 toast，这里无需额外判断。
@@ -682,6 +743,8 @@ function openAddCheck() {
   const hint = ov && ov.querySelector('.ac-hint');
   noteCheckEditTarget = null;
   noteBlockEditTarget = null;
+  noteAddMode = 'check';
+  noteExitTableMode();   // 🆕 ＋☐ 新增子事件一律用不上网格，先把上一个表格会话的状态收干净
   if (title) title.textContent = '加入子事件（CheckBox）';
   // 🆕 与「编辑小圆点」入口同一套按钮／快捷键口径：⌘S（或 Enter）加入后不关窗可继续输入，Esc 关闭前若草稿未加入会先问
   if (hint) hint.textContent = 'Enter 或 ⌘S 加入（加入后不关闭，可继续输入下一批）· Esc 关闭（草稿未加入会先问是否保存）';
@@ -692,17 +755,94 @@ function openAddCheck() {
   if (ov) ov.classList.add('show');
   if (inp) setTimeout(() => inp.focus(), 0);
 }
+// 🆕 选单第 2 项：从零建一张空白表（尺寸取工具列的「行×列」），格子即时生成 MD 写回 textarea
+function openAddTable() {
+  const inp = document.getElementById('addCheckInput');
+  const ov = document.getElementById('addCheckOv');
+  const g = noteTableGridInstance();
+  if (!g) { showStickyRefreshFeedback('表格编辑器未加载', true); return; }
+  noteCheckEditTarget = null;
+  noteBlockEditTarget = null;
+  noteAddMode = 'table';
+  noteExitTableMode();
+  if (ov) {
+    ov.classList.add('show');
+    ov.querySelector('.ac-title').textContent = '加入表格（MD）';
+    ov.querySelector('.ac-hint').textContent = '在格子里填内容（可「＋行／＋列」增删）；⌘S 或「加入」＝追加到备注末尾（不关窗）· Esc 关闭（有改动会先问）';
+  }
+  bindAddCheckTools('加入');
+  if (inp) { inp.value = ''; inp.placeholder = ''; }
+  hideAddCheckUnsavedBar();
+  g.bind();
+  const rowsEl = document.getElementById('noteTableRows');
+  const colsEl = document.getElementById('noteTableCols');
+  g.enterBlank(parseInt(rowsEl && rowsEl.value, 10), parseInt(colsEl && colsEl.value, 10));
+  markAddCheckBaseline();   // 刚打开的空白表＝还没开始编辑，关窗不必被问
+  g.focusFirstCell();
+}
+// 🆕 选单第 3 项：任意文本／Markdown，原样追加到备注末尾
+function openAddFreeText() {
+  const inp = document.getElementById('addCheckInput');
+  const ov = document.getElementById('addCheckOv');
+  noteCheckEditTarget = null;
+  noteBlockEditTarget = null;
+  noteAddMode = 'text';
+  noteExitTableMode();
+  if (ov) {
+    ov.classList.add('show');
+    ov.querySelector('.ac-title').textContent = '自由编辑（纯文本）';
+    ov.querySelector('.ac-hint').textContent = '直接输入任意文本／Markdown；Enter 换行；⌘S 或「加入文本」＝原样追加到备注末尾（不会包成 - [ ] 子事件，不关窗）· Esc 关闭（草稿未加入会先问）';
+  }
+  bindAddCheckTools('加入文本');
+  if (inp) { inp.value = ''; inp.placeholder = '任意输入文本，Enter 换行（原样保存，不会变成子事件）…'; }
+  addCheckBaseline = '';
+  hideAddCheckUnsavedBar();
+  if (inp) setTimeout(() => inp.focus(), 0);
+}
 function closeAddCheck() {
   const ov = document.getElementById('addCheckOv');
   if (ov) ov.classList.remove('show');
   noteCheckEditTarget = null;
   noteBlockEditTarget = null;
+  noteAddMode = 'check';
   addCheckBaseline = '';
+  noteExitTableMode();   // 🆕 收掉表格网格，下次开一般浮层别残留
   hideAddCheckUnsavedBar();
 }
 let addCheckSavePending = false;
 let noteCheckEditTarget = null;
 let noteBlockEditTarget = null; // { uid, start, end, type } — 通用「最小 MD 区块」编辑区间
+// ── 🆕 表格网格编辑器（引擎＝md-table-grid.js，与主窗体共用同一份；这里只接便利贴的节点与配色）
+//  网格只把内容即时写回 #addCheckInput，落盘仍走 confirmAddCheck() 的区块区间回写；
+//  便利贴的 ⌘S／Esc 原本只绑在那颗 textarea 上，焦点在格子里时接不到 → 由 onSave／onClose 补上。
+let noteTableGrid = null;
+function noteTableGridInstance() {
+  if (noteTableGrid) return noteTableGrid;
+  if (!window.MdTableGrid || !document.getElementById('noteTableGrid')) return null;
+  const byId = (id) => document.getElementById(id);
+  const box = document.getElementById('addCheckBox');
+  noteTableGrid = window.MdTableGrid.createGrid({
+    textarea: byId('addCheckInput'),
+    grid: byId('noteTableGrid'),
+    scroll: byId('noteTableGridScroll'),
+    controls: {
+      rows: byId('noteTableRows'), cols: byId('noteTableCols'), build: byId('noteTableBuild'),
+      addRow: byId('noteTableAddRow'), delRow: byId('noteTableDelRow'),
+      addCol: byId('noteTableAddCol'), delCol: byId('noteTableDelCol'), toggle: byId('noteTableViewText')
+    },
+    // 便利贴窗体本身可能只有两三百宽：宽度扣掉浮层内边距，再以 720px 封顶
+    setWide: (on) => {
+      if (!box) return;
+      box.style.width = on ? 'calc(100vw - 24px)' : '';
+      box.style.maxWidth = on ? '720px' : '';
+    },
+    toast: (m) => showStickyRefreshFeedback(m, true),
+    onSave: () => { confirmAddCheck(); },
+    onClose: () => { requestCloseAddCheck(); }
+  });
+  return noteTableGrid;
+}
+function noteExitTableMode() { if (noteTableGrid) noteTableGrid.exit(); }
 function closeEditNoteCheck() {
   noteCheckEditTarget = null;
   noteBlockEditTarget = null;
@@ -743,6 +883,8 @@ function hideAddCheckUnsavedBar() {
   if (bar) bar.style.display = 'none';
 }
 function focusAddCheckInput() {
+  // 网格里打字时点「继续编辑」，焦点要落回格子（那颗 textarea 在表格模式下是隐藏的，focus 它等于把焦点丢掉）
+  if (noteTableGrid && noteTableGrid.isGridVisible() && noteTableGrid.focusFirstCell()) return;
   const inp = document.getElementById('addCheckInput');
   if (inp) inp.focus();
 }
@@ -879,6 +1021,9 @@ window.tlOpenEditNoteCheckDialog = function (event, uid, line) {
     return;
   }
   noteCheckEditTarget = { uid, line, count: 1 };
+  noteBlockEditTarget = null;
+  noteAddMode = 'check';
+  noteExitTableMode();   // 🆕 子事件入口一律用不上网格
   const ov = document.getElementById('addCheckOv');
   const inp = document.getElementById('addCheckInput');
   if (ov) {
@@ -914,6 +1059,7 @@ window.tlOpenEditBlockDialog = function (event, uid, start, end, type) {
   const src = lines.slice(start, end + 1).join('\n');
   noteCheckEditTarget = null;
   noteBlockEditTarget = { uid, start, end, type };
+  noteAddMode = 'check';
   const ov = document.getElementById('addCheckOv');
   const inp = document.getElementById('addCheckInput');
   if (ov) {
@@ -926,8 +1072,22 @@ window.tlOpenEditBlockDialog = function (event, uid, start, end, type) {
     inp.value = src;
     inp.placeholder = '编辑此区块的 Markdown 原文…';
     markAddCheckBaseline();   // 🆕 基线＝开框原文，之后有任何差异都会在关闭前询问
-    setTimeout(() => inp.focus(), 0);
   }
+  // 🆕 表格区块 → 进网格模式：必须先写好 textarea 与基线再进模式（引擎不碰没编辑过的原文），
+  //   认不出合法表格（缺表头＋分隔行）就退回原文模式，不挡路。
+  noteExitTableMode();
+  let tableMode = false;
+  if (type === 'table') {
+    const g = noteTableGridInstance();
+    if (g) { g.bind(); tableMode = g.enter(src); }
+  }
+  if (tableMode) {
+    if (ov) {
+      ov.querySelector('.ac-title').textContent = '编辑表格内容';
+      ov.querySelector('.ac-hint').textContent = '在格子里填内容；「＋行／＋列」增删，或填「行×列」按「建立空白表」重画一张；⌘S 保存（不关闭，可继续编辑）· Esc 关闭（有改动会先问是否保存）；需要手写 Markdown 时按「改 Markdown 原文」切换';
+    }
+    if (!noteTableGrid.focusFirstCell() && inp) setTimeout(() => inp.focus(), 0);
+  } else if (inp) setTimeout(() => inp.focus(), 0);
 };
 // 返回 true＝内容已落盘（或已按使用者同意删除并关闭）；false＝未保存（校验失败／使用者拒绝／正在保存）。
 // 「保存并关闭」按这个返回值决定要不要关窗：只有真的写成功才关，避免保存失败把改动丢掉。
@@ -999,6 +1159,41 @@ async function confirmAddCheck() {
     if (await saveStickyNoteContent(lines.join('\n'), '保存子事件', target.uid)) {
       markAddCheckBaseline();
       showStickyRefreshFeedback((rows.length > 1 ? ('已拆成 ' + rows.length + ' 项子事件') : '已保存') + '（按 Esc 关闭）');
+      return true;
+    }
+    return false;
+  }
+  // 🆕 表格／自由文本模式：把整段内容当一个 MD 区块原样追加（不逐行包 - [ ]），
+  //   与前文空一行隔开，保证切块器把它认成独立的 table／para（否则表格会被并进上一段）。
+  if (noteAddMode === 'table' || noteAddMode === 'text') {
+    if (addCheckSavePending) return false;
+    const block = inp.value.replace(/\r\n/g, '\n').replace(/^\s*\n+/, '').replace(/\s+$/, '');
+    if (!block) { showStickyRefreshFeedback('没有可加入的内容'); return false; }
+    if (noteAddMode === 'table') {
+      const parsed = window.MdTableGrid && window.MdTableGrid.parseMd(block);
+      const filled = parsed && [parsed.header].concat(parsed.rows).some((row) => row.some((cell) => String(cell).trim()));
+      if (!parsed) { showStickyRefreshFeedback('表格内容不完整（需要表头行＋分隔行）', true); return false; }
+      if (!filled) { showStickyRefreshFeedback('请先在格子里填内容'); return false; }
+    }
+    const ev = parseEvents(readMd()).find((x) => x.key === KEY);
+    if (!ev) { window.alert('找不到该行程，无法加入内容'); return false; }
+    const prev = ev.notes ? String(ev.notes).replace(/\s+$/, '') : '';
+    const notes = (prev ? prev + '\n\n' : '') + block + '\n';
+    if (await saveStickyNoteContent(notes, noteAddMode === 'table' ? '加入表格' : '加入文本')) {
+      if (noteAddMode === 'table') {
+        const g = noteTableGridInstance();
+        if (g) {
+          // 加完再给一张同尺寸空白表，可连续建立
+          const rowsEl = document.getElementById('noteTableRows');
+          const colsEl = document.getElementById('noteTableCols');
+          g.enterBlank(parseInt(rowsEl && rowsEl.value, 10), parseInt(colsEl && colsEl.value, 10));
+          g.focusFirstCell();
+        }
+      } else {
+        inp.value = '';
+      }
+      markAddCheckBaseline();
+      showStickyRefreshFeedback(noteAddMode === 'table' ? '已加入表格（可继续建立下一张，按 Esc 关闭）' : '已追加文本（原样保存，未转成子事件；可继续输入，按 Esc 关闭）');
       return true;
     }
     return false;
@@ -1746,7 +1941,7 @@ function endResize() {
   document.getElementById('rz').classList.toggle('visible', nearBottomRight);
 }
 
-// 🆕 翻页模式入口：拉取顺序、建翻页窗、渲染第 0 张，并绑定 ◀ ▶ 与 ← → 翻页
+// 🆕 翻页模式入口：拉取顺序、建翻页窗、渲染「上次停留的那张」，并绑定 ◀ ▶ 与 ← → 翻页
 async function initFlip() {
   flipOrder = ((await ipcRenderer.invoke('sticky-note-order')) || {}).order || [];
   flipTotal = flipOrder.length;
@@ -1766,11 +1961,17 @@ async function initFlip() {
     const current = flipOrder[flipIndex];
     const currentKey = current && current.key;
     const currentIdx = current && (+current.idx || 0);
+    const currentId = current ? stickyFlipIdentity(current) : '';
     flipOrder = payload && Array.isArray(payload.order) ? payload.order : [];
     flipTotal = flipOrder.length;
-    const currentIndex = flipOrder.findIndex(note => note.key === currentKey && (+note.idx || 0) === currentIdx);
+    // 优先按「标题|日期|idx」找当前这张（Calendar 重排会换掉 evpN key，按 key 找会指到别张）；
+    // 没有身份可认时才退回 key+idx。
+    let currentIndex = -1;
+    if (currentId) currentIndex = flipOrder.findIndex(note => stickyFlipIdentity(note) === currentId);
+    else if (currentKey) currentIndex = flipOrder.findIndex(note => note.key === currentKey && (+note.idx || 0) === currentIdx);
     const targetIndex = currentIndex >= 0 ? currentIndex : Math.min(flipIndex, Math.max(0, flipTotal - 1));
     updateFlipInd();
+    // 必须重绘：sync 只发这一条事件，当前页的新内容／新 key 都靠这次重取
     if (flipTotal) renderFlipPage(targetIndex);
   });
   if (flipTotal === 0) {
@@ -1788,7 +1989,42 @@ async function initFlip() {
     if (ch > 0) ipcRenderer.invoke('sticky-note-bounds', { key: FLIP_KEY, idx: FLIP_IDX, width: state.w, height: ch });
   }
   updateMinHandle();
-  await renderFlipPage(0);
+  // 🆕 下次开窗定位到「上一次结束前显示的那张」：key 是按 calendar.md 位置生成的，
+  //    存档重排后会指到别的贴纸，所以先用「标题|日期|idx」认领，认不到才退回 key+idx，再不行回第 1 张。
+  const startIndex = flipStartIndex(
+    typeof geom.lastKey === 'string' ? geom.lastKey : '',
+    Number.isFinite(+geom.lastIdx) ? +geom.lastIdx : 0,
+    typeof geom.lastId === 'string' ? geom.lastId : ''
+  );
+  await renderFlipPage(startIndex);
+}
+function stickyFlipIdentity(note) {
+  const title = String((note && note.title) || '');
+  const date = String((note && note.date) || '');
+  if (!title && !date) return '';
+  return title + '|' + date + '|' + (+((note && note.idx) || 0));
+}
+function flipStartIndex(lastKey, lastIdx, lastId) {
+  if (!flipTotal) return 0;
+  if (lastId) {
+    const same = flipOrder.findIndex((note) => stickyFlipIdentity(note) === lastId);
+    if (same >= 0) return same;
+  }
+  if (lastKey) {
+    const exact = flipOrder.findIndex((note) => note.key === lastKey && (+note.idx || 0) === lastIdx);
+    if (exact >= 0) return exact;
+  }
+  return 0;
+}
+// 只发 IPC 更新内存，落盘由主进程去抖（关窗时会立即 flush）
+function persistFlipPosition() {
+  const current = flipOrder[flipIndex];
+  if (!current) return;
+  ipcRenderer.send('sticky-note-flip-position', {
+    lastKey: KEY,
+    lastIdx: IDX,
+    lastId: stickyFlipIdentity(current)
+  });
 }
 
 async function loadStickyMenuNotes() {
@@ -1806,7 +2042,7 @@ async function loadStickyMenuNotes() {
     const inactiveNotes = mode === 'flip' ? allNotes.filter(note => !note.isOpen) : [];
     const notes = mode === 'flip' ? pageNotes : allNotes;
     listTitle.textContent = mode === 'flip'
-      ? '翻页清单（' + pageNotes.length + ' 项；点击名称显示，点开 / 关切换）'
+      ? '翻页清单（' + pageNotes.length + ' 项；点击名称显示，点开 / 关切换；关掉的状态会记住）'
       : '已设定的便利贴（点击名称显示；点击开 / 关切换）';
     list.replaceChildren();
     const appendNoteRow = (item, index) => {
@@ -1844,7 +2080,8 @@ async function loadStickyMenuNotes() {
       inactiveTitle.className = 'm-sticky-list-inactive-title';
       inactiveTitle.textContent = '未开启（不计入翻页）';
       list.appendChild(inactiveTitle);
-      inactiveNotes.forEach(item => appendNoteRow(item, null));
+      // 未开启项独立编号（从 1 开始），与上方开启项各成一套
+      inactiveNotes.forEach((item, i) => appendNoteRow(item, i));
     }
     wrap.classList.toggle('open', notes.length > 0 || inactiveNotes.length > 0);
   } catch (error) {
@@ -1877,6 +2114,7 @@ async function renderFlipPage(i) {
   KEY = flipOrder[i].key;
   IDX = +flipOrder[i].idx || 0;
   const listed = flipOrder[i];
+  persistFlipPosition();   // 每次切页都记下「当前这张」，关窗/退出前至少已更新到内存
   const parsedEvent = parseEvents(readMd()).find(e => e.key === KEY);
   const ev = listed ? Object.assign({}, parsedEvent || {}, listed, { key: KEY, uid: KEY }) : parsedEvent;
   if (!ev) {

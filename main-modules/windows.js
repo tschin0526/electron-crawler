@@ -254,6 +254,7 @@ let stickyNoteCatalog = [];        // 本次 Calendar 会话中全部已设定�
 let stickyNoteMode = 'split';       // 'split'（分体显示：每张一个独立小窗）/ 'flip'（翻页显示：单窗循环）
 let stickyNoteFlipWindow = null;    // 翻页模式唯一的窗口
 const FLIP_KEY = '__flip__', FLIP_IDX = 0; // 翻页窗几何专用 id（位置/尺寸独立，与「当前显示哪张」无关）
+let stickyStateSaveTimer = null;    // 翻页状态（最后停留那张／清单开关）落盘去抖（与几何 persistPos 同节奏）
 const pendingStickyEditSaves = new Map();
 let stickyEditSaveSeq = 0;
 const pendingStickyMenuCloses = new Map();
@@ -369,6 +370,32 @@ function noteWinId(key, idx) { return key + '#' + idx; }
 function stickyIdentityOf(ref) {
   return String((ref && ref.title) || '') + '|' + String((ref && ref.date) || '');
 }
+// 🆕 翻页清单的「关」：按 标题|日期|idx 记身份（key 会被 Calendar 重排换掉，_id 也这样处理）。
+//    存在翻页窗自己的条目（__flip__#0.flipHidden），下次开窗照这份名单过滤。
+function flipNoteIdentity(note) {
+  return stickyIdentityOf(note) + '|' + (+note.idx || 0);
+}
+function flipHiddenSet() {
+  const it = stickyNoteState && Array.isArray(stickyNoteState[FLIP_KEY]) ? stickyNoteState[FLIP_KEY][FLIP_IDX] : null;
+  const arr = it && Array.isArray(it.flipHidden) ? it.flipHidden : [];
+  return new Set(arr.filter((x) => typeof x === 'string'));
+}
+function setFlipHidden(note, hidden) {
+  if (stickyIdentityOf(note) === '|') return;   // 没标题也没日期 → 无法区分，只维持本次会话
+  const id = flipNoteIdentity(note);
+  const it = noteInst(FLIP_KEY, FLIP_IDX);
+  const arr = Array.isArray(it.flipHidden) ? it.flipHidden.slice() : [];
+  const at = arr.indexOf(id);
+  if (hidden && at < 0) arr.push(id);
+  else if (!hidden && at >= 0) arr.splice(at, 1);
+  else return;
+  it.flipHidden = arr;
+  scheduleStickyStateSave();
+}
+function scheduleStickyStateSave() {
+  if (stickyStateSaveTimer) clearTimeout(stickyStateSaveTimer);
+  stickyStateSaveTimer = setTimeout(() => { stickyStateSaveTimer = null; saveStickyNoteState(); }, 400);
+}
 function adoptStickyState(refs) {
   if (!stickyNoteState) stickyNoteState = loadStickyNoteState();
   const list = (refs || []).filter((r) => r && typeof r.key === 'string');
@@ -421,7 +448,7 @@ function noteInst(key, idx) {
   return stickyNoteState[key][idx];
 }
 function stickyNotesAreOpen() {
-  if (stickyNoteMode === 'flip') return !!(stickyNoteFlipWindow && !stickyNoteFlipWindow.isDestroyed() && stickyNoteOrder.length);
+  if (stickyNoteMode === 'flip') return !!(stickyNoteFlipWindow && !stickyNoteFlipWindow.isDestroyed());
   return Array.from(stickyNoteWindows.values()).some(win => win && !win.isDestroyed());
 }
 function notifyStickyNoteOpenState() {
@@ -593,7 +620,10 @@ function createFlipStickyWindow() {
   };
   win.on('moved', persistPos);
   // close（销毁前）快照最终位置（同分体窗：'closed' 读不到 bounds）
-  win.on('close', () => captureStickyBoundsById(id, win));
+  win.on('close', () => {
+    captureStickyBoundsById(id, win);
+    if (stickyStateSaveTimer) { clearTimeout(stickyStateSaveTimer); stickyStateSaveTimer = null; saveStickyNoteState(); }
+  });
   win.on('closed', () => {
     if (posSaveTimer) clearTimeout(posSaveTimer);
     saveStickyNoteState();
@@ -642,14 +672,18 @@ ipcMain.handle('open-sticky-notes', (e, arg) => {
     stickyNoteMode = mode;
     let count = 0;
     if (mode === 'flip') {
+      // 上次在翻页清单里关掉的，这次照样关着（key 重排过也认得出来）
+      const hidden = flipHiddenSet();
+      if (hidden.size) stickyNoteOrder = stickyNoteOrder.filter(note => !hidden.has(flipNoteIdentity(note)));
       stickyNoteFlipWindow = null;
-      if (stickyNoteOrder.length > 0) { createFlipStickyWindow(); count = stickyNoteFlipWindow ? 1 : 0; }
+      // 全部被关掉时也开窗：窗口菜单里的「未开启」清单是唯一能把它们再打开的入口
+      if (stickyNoteCatalog.length > 0) { createFlipStickyWindow(); count = stickyNoteFlipWindow ? 1 : 0; }
     } else {
       notes.forEach(n => { if (n && typeof n.key === 'string') createStickyNoteWindow(n.key, +n.idx || 0); });
       count = stickyNoteWindows.size;
     }
     notifyStickyNoteOpenState();
-    return { ok: true, count, mode };
+    return { ok: true, count, mode, pages: mode === 'flip' ? stickyNoteOrder.length : count };
   } catch (err) {
     console.warn('[Main] 开启桌面便利贴失败:', err);
     return { ok: false, error: String(err && err.message || err) };
@@ -704,14 +738,25 @@ ipcMain.handle('toggle-sticky-note', async (event, arg) => {
   if (stickyNoteMode === 'flip') {
     const activeIndex = stickyNoteOrder.findIndex(item => item.key === arg.key && item.idx === idx);
     const currentWindow = stickyNoteFlipWindow;
-    if (currentWindow && !currentWindow.isDestroyed() && !await requestStickyNoteClose(currentWindow)) {
-      return { success: false, isOpen: activeIndex >= 0 };
+    const closingLast = activeIndex >= 0 && stickyNoteOrder.length === 1;
+    // 只有「关到没有东西可翻、窗口必须关掉」时才走关窗确认（内含未存改动先保存）；
+    // 其余情况只更新清单，窗口保留，菜单不会因为切换一张就消失。
+    if (closingLast && currentWindow && !currentWindow.isDestroyed() && !await requestStickyNoteClose(currentWindow)) {
+      return { success: false, isOpen: true };
     }
     if (activeIndex >= 0) stickyNoteOrder.splice(activeIndex, 1);
     else stickyNoteOrder.push(note);
-    if (currentWindow && !currentWindow.isDestroyed()) currentWindow.close();
-    stickyNoteFlipWindow = null;
-    if (stickyNoteOrder.length) createFlipStickyWindow();
+    setFlipHidden(note, activeIndex >= 0);
+    if (closingLast) {
+      if (currentWindow && !currentWindow.isDestroyed()) currentWindow.close();
+      stickyNoteFlipWindow = null;
+    } else if (stickyNoteOrder.length) {
+      if (currentWindow && !currentWindow.isDestroyed()) {
+        currentWindow.webContents.send('sticky-note-order-updated', { order: stickyNoteOrder });
+      } else {
+        createFlipStickyWindow();
+      }
+    }
     notifyStickyNoteOpenState();
     return { success: true, isOpen: activeIndex < 0 };
   }
@@ -837,6 +882,7 @@ ipcMain.on('sticky-note-sync', (e, arg) => {
   const nextCatalog = [];
   const nextOrder = [];
   const nextIds = new Set();
+  const flipHidden = stickyNoteMode === 'flip' ? flipHiddenSet() : null;
   // 事件重排后 key 会变（evpN 是按 calendar.md 位置的临时 id）→ 先按 _id 把旧设定搬过来再建窗
   adoptStickyState(refs.filter(r => r && typeof r.key === 'string')
     .map(r => ({ key: r.key, idx: +r.idx || 0, title: r.title, date: r.date })));
@@ -852,7 +898,9 @@ ipcMain.on('sticky-note-sync', (e, arg) => {
     if (typeof note.titleHtml === 'string') stickyNoteTitleHtml.set(id, note.titleHtml);
 
     if (stickyNoteMode === 'flip') {
-      if (previousCatalog.has(id) ? previousOrder.has(id) : true) nextOrder.push(normalized);
+      // 本会话见过的沿用当前开关；新出现的看持久化名单，关掉的不会被同步又打开
+      const keep = previousCatalog.has(id) ? previousOrder.has(id) : !flipHidden.has(flipNoteIdentity(normalized));
+      if (keep) nextOrder.push(normalized);
     } else if (!previousCatalog.has(id)) {
       createStickyNoteWindow(note.key, idx);
     } else {
@@ -1146,6 +1194,17 @@ ipcMain.on('sticky-note-move', (e, arg) => {
   if (!win || win.isDestroyed()) return;
   if (arg && typeof arg.x === 'number' && typeof arg.y === 'number') win.setPosition(Math.round(arg.x), Math.round(arg.y));
 });
+// 🆕 翻页模式：记住最后停留的那张（存在翻页窗自己的设定条目里，与几何同一份存档）。
+//   只更新内存＋去抖落盘：翻页本身很频繁，不必每翻一张就写一次 iCloud 目录；
+//   关窗／退出时由 close 处理立即 flush（见 createFlipStickyWindow）。
+ipcMain.on('sticky-note-flip-position', (e, arg) => {
+  if (!arg || typeof arg.lastKey !== 'string') return;
+  const it = noteInst(FLIP_KEY, FLIP_IDX);
+  it.lastKey = arg.lastKey;
+  it.lastIdx = +arg.lastIdx || 0;
+  if (arg && typeof arg.lastId === 'string') it.lastId = arg.lastId;
+  scheduleStickyStateSave();
+});
 // 单张便利贴：关闭这一张（仅本次；重新开启会按 ×N 回来）。
 ipcMain.handle('sticky-note-close', (e, arg) => {
   if (stickyNoteMode === 'flip') {
@@ -1184,6 +1243,34 @@ ipcMain.handle('wake-main-from-note', (e, arg) => {
   else notifySticky();
   return true;
 });
+
+// 🆕 便利贴：从便利贴菜单唤起指定主程序视图（仅开便利贴 --sticky 时主窗只驻 Dock，不显示）。
+//   target='todolist' → 主窗切到 TodoList 独立模式（等同 ./start.sh --todolist）并显示/聚焦。
+//   target='ai'       → 主窗切到 AI 智能控制台（等同 ./start.sh）并显示/聚焦。
+// 若主窗已存在：当前就是目标视图则直接 show+focus（不重载、不丢状态）；否则 loadFile 到目标再显示。
+// 若主窗已被销毁：先建一个隐藏窗（避免闪现错误内容），再 loadFile 到目标并 show。
+function openMainViewFromNote(target) {
+  let win = mainWindow;
+  if (!win || win.isDestroyed()) {
+    createWindow({ show: false, skipStickyRestore: true });
+    win = mainWindow;
+  }
+  const url = win.webContents.getURL();
+  if (target === 'todolist') {
+    const isTarget = url.includes('todolist/index.html') && url.includes('standalone=1');
+    if (!isTarget) win.loadFile('src/plugins/todolist/index.html', { search: '?standalone=1&cal=1' });
+  } else { // 'ai'：AI 智能控制台（主程序默认入口）
+    const isTarget = url.includes('crawler-window.html') && !url.includes('standalone=1');
+    if (!isTarget) win.loadFile('src/crawler-window.html');
+  }
+  if (win.isMinimized()) win.restore();
+  win.show();
+  win.focus();
+  return true;
+}
+
+ipcMain.handle('open-todolist-from-note', () => openMainViewFromNote('todolist'));
+ipcMain.handle('open-ai-console-from-note', () => openMainViewFromNote('ai'));
 
 function init(shared) {
   // shared.app — Electron app 实例（本模组已自行 require，保留以兼容旧接口）

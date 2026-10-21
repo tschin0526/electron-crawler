@@ -2581,12 +2581,13 @@
     .tl-tg-size input { width: 46px; height: 26px; padding: 0 6px; border: 1px solid var(--ev-border); border-radius: 6px; background: var(--ev-bg); color: var(--ev-text); font-size: 12px; }
     .tl-tg-sep { width: 1px; height: 18px; background: var(--ev-border); margin: 0 2px; }
     .tl-table-grid-scroll { max-height: 46vh; overflow: auto; border: 1px solid var(--ev-border); border-radius: 8px; background: var(--ev-card); }
-    table.tl-tg-table { width: 100%; border-collapse: collapse; }
-    .tl-tg-table th, .tl-tg-table td { border: 1px solid var(--ev-border); padding: 0; }
-    .tl-tg-table th { background: rgba(148, 163, 184, .14); }
-    .tl-tg-cell { width: 100%; min-width: 92px; height: 30px; padding: 4px 8px; border: 0; background: transparent; color: var(--ev-text); font-size: 13px; font-family: inherit; box-sizing: border-box; }
-    .tl-tg-cell:focus { outline: 2px solid var(--ev-primary); outline-offset: -2px; }
-    .tl-tg-head { font-weight: 600; }
+    /* 下面 md-tg-* 三个类别是 md-table-grid.js 生成的格子表格（便利贴那份 CSS 同名），改类别名要两端一起改 */
+    table.md-tg-table { width: 100%; border-collapse: collapse; }
+    .md-tg-table th, .md-tg-table td { border: 1px solid var(--ev-border); padding: 0; }
+    .md-tg-table th { background: rgba(148, 163, 184, .14); }
+    .md-tg-cell { width: 100%; min-width: 92px; height: 30px; padding: 4px 8px; border: 0; background: transparent; color: var(--ev-text); font-size: 13px; font-family: inherit; box-sizing: border-box; }
+    .md-tg-cell:focus { outline: 2px solid var(--ev-primary); outline-offset: -2px; }
+    .md-tg-head { font-weight: 600; }
 
     .modal {
       background-color: var(--card-bg);
@@ -7032,8 +7033,12 @@
       tlUpdateStickyBadge();
       if (typeof showToast === 'function') {
         if (r && r.count) {
-          if (tlStickyMode === 'flip') showToast('已开启翻页便利贴（' + r.count + ' 张，◀ ▶ 翻页）');
-          else showToast('已开启 ' + r.count + ' 张桌面便利贴');
+          if (tlStickyMode === 'flip') {
+            const pages = (typeof r.pages === 'number') ? r.pages : r.count;
+            showToast(pages
+              ? '已开启翻页便利贴（' + pages + ' 张，◀ ▶ 翻页）'
+              : '翻页清单里的便利贴都关着；点便利贴窗口的 ☰ 菜单可重新打开');
+          } else showToast('已开启 ' + r.count + ' 张桌面便利贴');
         } else showToast('没有标记为便利贴的事件（把「便利贴 ×N」设为 ≥1）');
       }
     }
@@ -12166,6 +12171,8 @@
   <script src="vendor/lunar.js"></script>
   <!-- 農民曆簡→繁術語對照表（暴露全域 almanacToTrad），供 calendar-editor.js 轉換簡體宜忌/彭祖等 -->
   <script src="vendor/almanac-s2t.js"></script>
+  <!-- 🆕 Markdown 表格網格編輯器引擎（暴露 window.MdTableGrid）：主窗體與便利貼共用同一份，必須在 calendar-editor.js 之前載入 -->
+  <script src="md-table-grid.js"></script>
   <script src="calendar-editor.js"></script>
   <script>
 

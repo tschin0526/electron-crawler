@@ -3683,7 +3683,10 @@
           e.preventDefault();
           e.stopPropagation();
           tlSaveAddCheckDialog();
+          return;
         }
+        // 提示文案一直写着「Esc 关闭」，但这里原本只绑了 ⌘S → 便利贴有 Esc、主窗体没有（两端口径不齐）
+        if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); tlCloseAddCheckDialog(); }
       };
       if (inp) {
         // 🆕 原文保真：编辑框显示原始文本（含 [[dl:…]]/[[cp:…]] 等 [[]] 符号），不剥离、不折叠空白；保存时直接写回
@@ -3693,172 +3696,35 @@
       if (ov) ov.style.display = 'flex';
       if (inp) setTimeout(() => inp.focus(), 0);
     }
-    // ── 🆕 表格网格编辑器（桌面版；区块圆点 type==='table' 时启用）───────────────────
-    //  设计：网格只是那块 textarea 的「另一个视图」。任何结构性操作或单元格编辑都立刻
-    //  tlSyncTableTextarea() 把模型序列化回 #tlAddCheckInput，于是 ⌘S 存档、复制、脏判定、
-    //  「清空＝删除」全部沿用既有区块路径，不新增第二条落盘分支。
-    //  往返不变量（/tmp/table-grid-harness.js 钉死）：serialize(parse(x)) 再 parse 得同一模型，
-    //  且 tlSplitMdBlocks 仍把整块认成「一个 table」——否则存一次表格就散成段落。
-    let tlTableModel = null;      // null＝非表格模式
-    let tlTableRawView = false;   // 表格模式内：true＝看 Markdown 原文，false＝看网格
-
-    // 拆一行表格：去掉首尾的 |，按「未转义的 |」切格并解开 \|。不用 lookbehind（正则回扫更稳）。
-    function tlSplitTableCells(line) {
-      let s = String(line == null ? '' : line).trim();
-      if (s.charAt(0) === '|') s = s.slice(1);
-      if (s.length && s.charAt(s.length - 1) === '|' && s.charAt(s.length - 2) !== '\\') s = s.slice(0, -1);
-      const cells = [];
-      let cur = '';
-      for (let i = 0; i < s.length; i++) {
-        const c = s.charAt(i);
-        if (c === '\\' && s.charAt(i + 1) === '|') { cur += '|'; i++; continue; }
-        if (c === '|') { cells.push(cur.trim()); cur = ''; continue; }
-        cur += c;
-      }
-      cells.push(cur.trim());
-      return cells;
-    }
-    // 认不出表格就回传 null（让上层退回原文视图，绝不硬猜）
-    function tlParseMdTable(text) {
-      const lines = String(text == null ? '' : text).replace(/\r\n/g, '\n').split('\n')
-        .map((l) => l.trim()).filter((l) => l.length);
-      if (lines.length < 2) return null;
-      if (lines[0].indexOf('|') < 0) return null;
-      const d = lines[1];
-      if (!/^[\s|:-]+$/.test(d) || d.indexOf('-') < 0 || d.indexOf('|') < 0) return null;
-      const alignRaw = tlSplitTableCells(d);
-      const cols = Math.max(tlSplitTableCells(lines[0]).length, alignRaw.length);
-      if (!cols) return null;
-      const padTo = (arr) => { const a = arr.slice(); while (a.length < cols) a.push(''); return a.slice(0, cols); };
-      const aligns = [];
-      for (let i = 0; i < cols; i++) {
-        const c = alignRaw[i] || '';
-        const left = c.charAt(0) === ':';
-        const right = c.length > 1 && c.charAt(c.length - 1) === ':';
-        aligns.push(left && right ? 'center' : right ? 'right' : left ? 'left' : 'none');
-      }
-      return { aligns, header: padTo(tlSplitTableCells(lines[0])), rows: lines.slice(2).map((l) => padTo(tlSplitTableCells(l))) };
-    }
-    function tlSerializeMdTable(m) {
-      const cell = (v) => {
-        const t = String(v == null ? '' : v).replace(/[\r\n]+/g, ' ').replace(/\|/g, '\\|').trim();
-        return t || ' ';
-      };
-      const row = (arr) => '| ' + arr.map(cell).join(' | ') + ' |';
-      const dash = (a) => (a === 'center' ? ':---:' : a === 'right' ? '---:' : a === 'left' ? ':---' : '---');
-      return [row(m.header), '| ' + m.aligns.map(dash).join(' | ') + ' |'].concat(m.rows.map(row)).join('\n');
-    }
-    function tlNewTableModel(rows, cols) {
-      const n = Math.max(1, Math.min(12, cols | 0));
-      const m = Math.max(0, Math.min(50, rows | 0));
-      return {
-        aligns: Array.apply(null, Array(n)).map(() => 'none'),
-        header: Array.apply(null, Array(n)).map(() => ''),
-        rows: Array.apply(null, Array(m)).map(() => Array.apply(null, Array(n)).map(() => ''))
-      };
-    }
-    function tlTableTextarea() { return document.getElementById('tlAddCheckInput'); }
-    function tlSyncTableTextarea() {
-      const inp = tlTableTextarea();
-      if (inp && tlTableModel) inp.value = tlSerializeMdTable(tlTableModel);
-    }
-    function tlRenderTableGrid() {
-      const host = document.getElementById('tlTableGridScroll');
-      if (!host || !tlTableModel) return;
-      const m = tlTableModel;
-      const th = m.header.map((v, c) => '<th><input type="text" class="tl-tg-cell tl-tg-head" data-r="-1" data-c="' + c + '" value="' + tlEscapeHtml(v) + '" placeholder="列名"></th>').join('');
-      const body = m.rows.map((r, ri) => '<tr>' + r.map((v, c) =>
-        '<td><input type="text" class="tl-tg-cell" data-r="' + ri + '" data-c="' + c + '" value="' + tlEscapeHtml(v) + '"></td>').join('') + '</tr>').join('');
-      host.innerHTML = '<table class="tl-tg-table"><thead><tr>' + th + '</tr></thead><tbody>' + body + '</tbody></table>';
-      if (!host._bound) {
-        host._bound = true;
-        // 单元格改动只更新模型＋同步 textarea，绝不重绘（重绘会抢走焦点、打断输入）
-        host.addEventListener('input', (e) => {
-          const el = e.target;
-          if (!el || !el.classList || !el.classList.contains('tl-tg-cell')) return;
-          const r = parseInt(el.dataset.r, 10), c = parseInt(el.dataset.c, 10);
-          if (!tlTableModel || isNaN(r) || isNaN(c)) return;
-          if (r < 0) tlTableModel.header[c] = el.value; else if (tlTableModel.rows[r]) tlTableModel.rows[r][c] = el.value;
-          tlSyncTableTextarea();
-        });
-      }
-    }
-    function tlTableGridVisible(on) {
-      const grid = document.getElementById('tlTableGrid');
-      if (grid) grid.style.display = on ? '' : 'none';
-      const inp = tlTableTextarea();
-      if (inp) inp.style.display = on ? 'none' : '';
-      const tgl = document.getElementById('tlTableViewText');
-      if (tgl) tgl.textContent = on ? '改 Markdown 原文' : '回到网格';
-    }
-    function tlEnterTableMode(src) {
-      const m = tlParseMdTable(src);
-      if (!m) { tlTableModel = null; tlTableRawView = false; tlTableGridVisible(false); return false; }
-      tlTableModel = m;
-      tlTableRawView = false;
-      tlTableGridVisible(true);
-      tlRenderTableGrid();
-      const box = document.querySelector('#tlAddCheckOverlay .tl-ev-form-box');
-      if (box) box.style.maxWidth = '860px';   // 默认 440px 装不下宽表
-      return true;
-    }
-    function tlExitTableMode() {
-      tlTableModel = null;
-      tlTableRawView = false;
-      tlTableGridVisible(false);
-      const box = document.querySelector('#tlAddCheckOverlay .tl-ev-form-box');
-      if (box) box.style.maxWidth = '440px';
-    }
-    function tlTableStruct(fn) {
-      if (!tlTableModel) return;
-      fn(tlTableModel);
-      tlSyncTableTextarea();
-      tlRenderTableGrid();
-    }
-    function tlBindTableButtons() {
+    // ── 🆕 表格网格编辑器（区块圆点 type==='table' 时启用）───────────────────────────
+    //  引擎住在 md-table-grid.js（主窗体与便利贴共用同一份），这里只接「本窗体的节点＋配色」；
+    //  改表格行为请改共用档，别在这里写第二套。
+    //  网格只是 #tlAddCheckInput 的另一层视图：格子改动即时序列化回 textarea，
+    //  落盘仍走 tlSaveAddCheckDialog 的「按区块 start..end 区间回写备注」，没有第二条存档分支。
+    let tlTableGrid = null;
+    function tlTableGridInstance() {
+      if (tlTableGrid) return tlTableGrid;
+      if (!window.MdTableGrid || !document.getElementById('tlTableGrid')) return null;
       const byId = (id) => document.getElementById(id);
-      const build = byId('tlTableBuild');
-      if (!build || !byId('tlTableAddRow') || !byId('tlTableViewText')) return;   // markup 不在 → 静默放弃，表格模式退化成原文编辑
-      if (build._bound) return;
-      build._bound = true;
-      build.onclick = () => {
-        const r = parseInt(byId('tlTableRows').value, 10), c = parseInt(byId('tlTableCols').value, 10);
-        tlTableModel = tlNewTableModel(isNaN(r) ? 3 : r, isNaN(c) ? 3 : c);
-        tlTableRawView = false;
-        tlTableGridVisible(true);
-        tlRenderTableGrid();
-        tlSyncTableTextarea();
-      };
-      byId('tlTableAddRow').onclick = () => tlTableStruct((m) => {
-        if (m.rows.length >= 50) return;
-        m.rows.push(m.aligns.map(() => ''));
+      const box = document.querySelector('#tlAddCheckOverlay .tl-ev-form-box');
+      tlTableGrid = window.MdTableGrid.createGrid({
+        textarea: byId('tlAddCheckInput'),
+        grid: byId('tlTableGrid'),
+        scroll: byId('tlTableGridScroll'),
+        controls: {
+          rows: byId('tlTableRows'), cols: byId('tlTableCols'), build: byId('tlTableBuild'),
+          addRow: byId('tlTableAddRow'), delRow: byId('tlTableDelRow'),
+          addCol: byId('tlTableAddCol'), delCol: byId('tlTableDelCol'), toggle: byId('tlTableViewText')
+        },
+        setWide: (on) => { if (box) box.style.maxWidth = on ? '860px' : '440px'; },   // 440px 装不下宽表
+        toast: showToast
+        // ⌘S／Esc 这里不接：本浮层的快捷键已由 #tlAddCheckOverlay 的 onkeydown 统一处理
       });
-      byId('tlTableDelRow').onclick = () => tlTableStruct((m) => { m.rows.pop(); });
-      byId('tlTableAddCol').onclick = () => tlTableStruct((m) => {
-        if (m.aligns.length >= 12) return;
-        m.aligns.push('none'); m.header.push(''); m.rows.forEach((r) => r.push(''));
-      });
-      byId('tlTableDelCol').onclick = () => tlTableStruct((m) => {
-        if (m.aligns.length <= 1) return;
-        m.aligns.pop(); m.header.pop(); m.rows.forEach((r) => r.pop());
-      });
-      byId('tlTableViewText').onclick = () => {
-        if (!tlTableModel) return;
-        if (tlTableRawView) {
-          // 从原文切回网格：重新解析使用者手改的 markdown，解析失败就留在原文并说明
-          const m = tlParseMdTable(tlTableTextarea() ? tlTableTextarea().value : '');
-          if (!m) { showToast('这段 Markdown 不是合法表格（需要表头行＋分隔行），请先修正', 'danger'); return; }
-          tlTableModel = m;
-          tlTableRawView = false;
-          tlTableGridVisible(true);
-          tlRenderTableGrid();
-        } else {
-          tlSyncTableTextarea();
-          tlTableRawView = true;
-          tlTableGridVisible(false);
-        }
-      };
+      return tlTableGrid;
     }
+    function tlBindTableButtons() { const g = tlTableGridInstance(); if (g) g.bind(); }
+    function tlEnterTableMode(src) { const g = tlTableGridInstance(); if (!g) return false; g.bind(); return g.enter(src); }
+    function tlExitTableMode() { if (tlTableGrid) tlTableGrid.exit(); }
     // 🆕 通用「最小 MD 区块」编辑对话框：编辑 notes 中 lines[start..end] 的 Markdown 原文。
     //   ⌘S 保存（不关闭，可继续编辑）· Esc 关闭；清空并保存＝删除该区块（需确认）。
     function tlOpenEditBlockDialog(event, uid, start, end, type) {
@@ -3883,8 +3749,9 @@
       if (copyButton) copyButton.style.display = '';
       if (ov) ov.onkeydown = (e) => {
         if ((e.metaKey || e.ctrlKey) && !e.altKey && (e.key === 's' || e.key === 'S')) {
-          e.preventDefault(); e.stopPropagation(); tlSaveAddCheckDialog();
+          e.preventDefault(); e.stopPropagation(); tlSaveAddCheckDialog(); return;
         }
+        if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); tlCloseAddCheckDialog(); }
       };
       if (inp) { inp.value = src; inp.rows = Math.min(18, Math.max(4, (end - start + 1) + 1)); }
       // 🆕 表格区块 → 进网格模式（解析失败仍留原文模式，不挡路）

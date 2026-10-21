@@ -74,14 +74,20 @@
     /* 日期右侧「＋☐」加入子事件按钮（与 calendar 列表行 .ev-addcheck-btn 同功能；置于拖拽区内故需 no-drag） */
     .note-addcheck { display: inline-flex; align-items: center; justify-content: center; margin-left: 6px; width: auto; padding: 0 5px; height: 16px; border-radius: 999px; border: 1px solid rgba(127,127,127,.4); background: rgba(127,127,127,.12); color: var(--note-fg, #4b5160); font-size: 11px; line-height: 1; cursor: pointer; vertical-align: middle; white-space: nowrap; -webkit-app-region: no-drag; }
     .note-addcheck:hover { background: rgba(127,127,127,.26); }
+    /* 🆕 ＋☐ 下拉选单（子事件／MD 表格／自由编辑）：表面沿用主菜单（--menu-bg 随底色自适应），挂在 #note 上避免 meta 重绘冲掉 */
+    .note-addcheck-menu { position: absolute; z-index: 24; display: none; min-width: 168px; max-width: calc(100% - 12px); padding: 4px; border: 1px solid rgba(212,175,55,.5); border-radius: 10px; background: var(--menu-bg, rgba(255,255,255,.97)); color: var(--note-fg, #33384a); font-size: 12px; box-shadow: 0 12px 26px rgba(0,0,0,.32), 0 4px 8px rgba(0,0,0,.18), inset 0 1px 0 rgba(255,255,255,.35); -webkit-app-region: no-drag; }
+    .note-addcheck-menu.open { display: block; }
+    .note-addcheck-menu .nami { display: block; width: 100%; box-sizing: border-box; padding: 5px 9px; border: none; border-radius: 6px; background: transparent; color: inherit; font: inherit; font-size: 12px; text-align: left; line-height: 1.35; cursor: pointer; }
+    .note-addcheck-menu .nami:hover { background: rgba(127,127,127,.18); }
     /* 🆕「只显示未完成的 checkbox 子事件」快捷按钮（紧接 ＋☐，与菜单项 miUndoneChecks 共用同一状态；开启＝金色实心） */
     .note-undone-filter { display: inline-flex; align-items: center; justify-content: center; margin-left: 4px; min-width: 18px; padding: 0 5px; height: 16px; border-radius: 999px; border: 1px solid rgba(127,127,127,.4); background: rgba(127,127,127,.12); color: var(--note-fg, #4b5160); font-size: 11px; line-height: 1; cursor: pointer; vertical-align: middle; -webkit-app-region: no-drag; }
     .note-undone-filter:hover { background: rgba(127,127,127,.26); }
     .note-undone-filter.active { border-color: #D4AF37; background: rgba(212,175,55,.38); }
     /* 🆕 加入子事件浮层（复用 sticky-note-edit 落盘链路；盒底色由 JS 套用与便利贴同色 tint(state.color,100)，文字用 --note-fg） */
-    .addcheck-ov { position: absolute; inset: 0; z-index: 30; display: none; align-items: center; justify-content: center; padding: 10px; background: rgba(0,0,0,.2); -webkit-app-region: no-drag; }
+    .addcheck-ov { position: absolute; inset: 0; z-index: 30; display: none; align-items: center; justify-content: center; padding: 10px; background: rgba(0,0,0,.2); -webkit-app-region: no-drag; overflow: auto; }
     .addcheck-ov.show { display: flex; }
-    .addcheck-box { width: min(88vw, 440px); background: rgba(255,255,255,.98); border: 1.5px solid #D4AF37; border-radius: 10px; padding: 10px; box-shadow: 0 12px 30px rgba(0,0,0,.45), 0 3px 8px rgba(0,0,0,.28); color: var(--note-fg, #33384a); font-size: 12px; }
+    /* margin:auto（而非只靠 flex 居中）：内容比小贴纸还高时才能从顶端开始滚动，不会被裁掉 */
+    .addcheck-box { flex: none; margin: auto; min-width: 0; box-sizing: border-box; width: min(88vw, 440px); background: rgba(255,255,255,.98); border: 1.5px solid #D4AF37; border-radius: 10px; padding: 10px; box-shadow: 0 12px 30px rgba(0,0,0,.45), 0 3px 8px rgba(0,0,0,.28); color: var(--note-fg, #33384a); font-size: 12px; }
     .addcheck-box .ac-title { font-weight: 600; margin-bottom: 6px; }
     .addcheck-box textarea { width: 100%; box-sizing: border-box; height: max(36vh, 54px); resize: none; border: 1px solid #D4AF37; border-radius: 6px; padding: 6px; font: inherit; font-size: 12px; color: var(--note-fg, #33384a); background: rgba(127,127,127,.08); -webkit-app-region: no-drag; }
     .addcheck-box textarea:focus { outline: none; box-shadow: 0 0 0 1px #D4AF37; }
@@ -97,6 +103,24 @@
     .addcheck-box .ac-actions .ac-copy { margin-top: 0; padding: 4px 10px; }
     .addcheck-box .ac-primary { background: rgba(212,175,55,.28); border-color: #D4AF37; font-weight: 600; }
     .addcheck-box .ac-primary:hover { background: rgba(212,175,55,.45); }
+    /* 🆕 表格网格模式（引擎＝md-table-grid.js，主窗体与便利贴共用一份）。
+       .md-tg-* 那三个类别由共用引擎生成，名字两端一致 → 改类别名要两端 CSS 一起改。
+       配色沿用本窗体的语汇：金框 #D4AF37 ＋ --note-fg ＋ 半透明灰（浅／深两套都靠 JS 套 tint 底色，不写死黑白）。
+       ⚠️ 必须排在 .addcheck-box input[type="text"] 之后：那颗 input 的通则 specificity (0,2,1)，
+          这里用 .addcheck-box input.md-tg-cell 同 specificity，靠来源顺序压过它，否则格子会长成大输入框。 */
+    .note-table-grid { margin-top: 8px; }
+    .addcheck-box .ntg-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin-bottom: 6px; }
+    .addcheck-box .ntg-bar .ac-copy { margin-top: 0; padding: 3px 8px; font-size: 11px; }
+    .addcheck-box .ntg-size { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; opacity: .8; }
+    .addcheck-box input[type="text"].ntg-num { width: 40px; padding: 3px 4px; text-align: center; font-size: 11px; }
+    .addcheck-box .ntg-sep { width: 1px; height: 16px; background: rgba(127,127,127,.45); }
+    .ntg-scroll { max-height: 44vh; overflow: auto; border: 1px solid #D4AF37; border-radius: 8px; }
+    table.md-tg-table { width: 100%; border-collapse: collapse; }
+    .md-tg-table th, .md-tg-table td { border: 1px solid rgba(127,127,127,.45); padding: 0; }
+    .md-tg-table th { background: rgba(127,127,127,.14); }
+    .addcheck-box input.md-tg-cell { width: 100%; min-width: 78px; height: 26px; padding: 2px 6px; border: 0; border-radius: 0; background: transparent; color: var(--note-fg, #33384a); font-size: 11px; box-sizing: border-box; }
+    .addcheck-box input.md-tg-cell:focus { box-shadow: inset 0 0 0 1.5px #D4AF37; }
+    .md-tg-head { font-weight: 700; }
     /* 🆕 关闭前的「未保存改动」决策条（盒底同为亮色浮层，沿用金色边框语汇；ac-danger＝放弃改动，用红提示不可恢复） */
     .ac-unsaved { margin-top: 8px; padding: 8px; border: 1.5px solid #D4AF37; border-radius: 8px; background: rgba(212,175,55,.12); color: var(--note-fg, #33384a); -webkit-app-region: no-drag; }
     .ac-unsaved .ac-unsaved-tip { font-weight: 600; margin-bottom: 6px; }
@@ -375,6 +399,13 @@
     </div>
     <div class="meta" id="meta"></div>
     <ul class="tags" id="tags"></ul>
+    <!-- 🆕 ＋☐ 下拉选单：子事件（原功能）／用表格网格建立 MD 表格／自由编辑任意文本。
+         放在 #note 下而非 #meta 内：meta 每次刷新都会 innerHTML 重绘，选单挂在里面会被冲掉。 -->
+    <div class="note-addcheck-menu" id="noteAddCheckMenu" role="menu">
+      <button type="button" class="nami" data-act="check" role="menuitem">☐ 加入 checkbox 子事件</button>
+      <button type="button" class="nami" data-act="table" role="menuitem">▦ 加入 MD 表格</button>
+      <button type="button" class="nami" data-act="text" role="menuitem">✎ 自由编辑（任意文本）</button>
+    </div>
     <div class="body" id="body"></div>
     <div class="tl-text-gutter-wrap" id="editAreaGutterWrap">
       <div class="tl-line-gutter" id="editAreaGutter"><div class="tl-line-gutter-inner" id="editAreaGutterInner"></div></div>
@@ -395,6 +426,10 @@
         <button class="mi" id="miCalendar" title="开启 Calendar（只开窗口，不导航）">📅 开启 Calendar</button>
         <button class="mi" id="miCalendarScroll" title="开启 Calendar 并滚动定位到该行程位置">📜 滚动</button>
       </div>
+      <!-- 🆕 从便利贴唤起：TodoList（Gallery 独立模式）／ AI 智能控制台（主程序）。
+           仅开便利贴（./start.sh --sticky）时主窗只驻 Dock；这两个按钮把主窗切到对应模式并显示。 -->
+      <button class="mi" id="miOpenTodolist" title="唤起 TodoList（Gallery 独立模式，等同 ./start.sh --todolist）">📝 唤起 TodoList</button>
+      <button class="mi" id="miOpenAiConsole" title="唤起 AI 智能控制台（主程序，等同 ./start.sh）">🤖 唤起 AI 智控台</button>
       <!-- 📧 发邮件：把当前这张便利贴的内容经本机邮件服务发出（收件人在浮层里输入） -->
       <button class="mi" id="miEmail" title="把这张便利贴的内容发送邮件">📧 发邮件</button>
       <div class="m-sticky-list" id="mStickyListWrap">
@@ -435,11 +470,27 @@
         <button class="mi" id="miZoomIn" title="放大内容字体（A＋）">A＋</button>
       </div>
     </div>
-    <!-- 🆕 加入子事件浮层（＋☐ 触发）：与「编辑小圆点」浮层同一套按钮／快捷键口径 → Enter 或 ⌘S＝加入（不关窗）· Esc＝关闭（有草稿先问） -->
+    <!-- 🆕 加入内容浮层（＋☐ 选单／编辑小圆点共用）：子事件＝Enter 或 ⌘S 加入（不关窗）· Esc＝关闭（有草稿先问） -->
     <div class="addcheck-ov" id="addCheckOv">
       <div class="addcheck-box" id="addCheckBox">
         <div class="ac-title">加入子事件（CheckBox）</div>
         <textarea id="addCheckInput" placeholder="每行一个子事件，回车直接加入…"></textarea>
+        <!-- 🆕 表格模式（区块圆点 type=table 才显示）：引擎＝md-table-grid.js（与主窗体同一份）。
+             格子内容即时写回上面那颗 textarea，所以 ⌘S／复制／「有改动先问」／清空＝删除 全沿用既有链路。 -->
+        <div class="note-table-grid" id="noteTableGrid" style="display:none">
+          <div class="ntg-bar">
+            <span class="ntg-size">行<input type="text" class="ntg-num" id="noteTableRows" value="3" inputmode="numeric">列<input type="text" class="ntg-num" id="noteTableCols" value="3" inputmode="numeric"></span>
+            <button type="button" class="ac-copy ntg-btn" id="noteTableBuild">建立空白表</button>
+            <span class="ntg-sep"></span>
+            <button type="button" class="ac-copy ntg-btn" id="noteTableAddRow">＋行</button>
+            <button type="button" class="ac-copy ntg-btn" id="noteTableDelRow">－行</button>
+            <button type="button" class="ac-copy ntg-btn" id="noteTableAddCol">＋列</button>
+            <button type="button" class="ac-copy ntg-btn" id="noteTableDelCol">－列</button>
+            <span class="ntg-sep"></span>
+            <button type="button" class="ac-copy ntg-btn" id="noteTableViewText">改 Markdown 原文</button>
+          </div>
+          <div class="ntg-scroll" id="noteTableGridScroll"></div>
+        </div>
         <div class="ac-hint">Enter 或 ⌘S 加入（加入后不关闭，可继续输入下一批）· Esc 关闭（草稿未加入会先问是否保存）</div>
         <div class="ac-actions">
           <button type="button" class="ac-copy" id="copyNoteCheckButton">复制</button>
@@ -476,6 +527,8 @@
     </div>
     <div class="rz" id="rz"></div>
   </div>
+  <!-- 🆕 Markdown 表格網格編輯器引擎（暴露 window.MdTableGrid，與主窗體共用同一份），必須在 desktop-note.js 之前 -->
+  <script src="md-table-grid.js"></script>
   <script src="desktop-note.js"></script>
 </body>
 </html>
