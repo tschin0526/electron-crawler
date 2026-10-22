@@ -106,6 +106,16 @@
     .addcheck-box .ac-note { margin-bottom: 6px; font-size: 11px; font-weight: 600; word-break: break-all; }
     .addcheck-box input[type="text"] { width: 100%; box-sizing: border-box; border: 1px solid #D4AF37; border-radius: 6px; padding: 6px; font: inherit; font-size: 12px; color: var(--note-fg, #33384a); background: rgba(127,127,127,.08); -webkit-app-region: no-drag; }
     .addcheck-box input[type="text"]:focus { outline: none; box-shadow: 0 0 0 1px #D4AF37; }
+    /* 🆕 新建便利贴浮层：文件下拉 + 标题输入（字段说明在上、控件在下，与主程式表单同一读法） */
+    .addcheck-box .nn-label { display: block; margin-bottom: 8px; font-size: 11px; opacity: .8; }
+    .addcheck-box select { display: block; width: 100%; box-sizing: border-box; margin-top: 3px; border: 1px solid #D4AF37;
+      border-radius: 6px; padding: 5px 6px; font: inherit; font-size: 12px; color: var(--note-fg, #33384a);
+      background: rgba(127,127,127,.08); -webkit-app-region: no-drag; cursor: pointer; }
+    .addcheck-box select:focus { outline: none; box-shadow: 0 0 0 1px #D4AF37; }
+    .addcheck-box .nn-label input[type="text"] { margin-top: 3px; }
+    .addcheck-box .nc-row { display: flex; align-items: center; gap: 4px; margin-top: 4px; }
+    .addcheck-box .nc-fix { flex: none; font-size: 12px; opacity: .72; white-space: nowrap; }
+    .addcheck-box .nc-row input[type="text"] { flex: 1 1 auto; width: auto; margin-top: 0; }
     .addcheck-box .ac-copy { margin-top: 8px; padding: 4px 12px; border: 1px solid rgba(127,127,127,.45); border-radius: 6px; background: rgba(127,127,127,.12); color: var(--note-fg, #33384a); font: inherit; cursor: pointer; -webkit-app-region: no-drag; }
     .addcheck-box .ac-copy:hover { background: rgba(127,127,127,.24); }
     /* 🆕 弹层按钮行：复制｜保存｜关闭（保存用金色主按钮，与便利贴描边同色系） */
@@ -288,9 +298,13 @@
     .msep { height: 1px; background: var(--menu-divider, rgba(0,0,0,.10)); margin: 2px 6px; }
     .m-row { display: flex; gap: 4px; padding: 1px 0; }
     .m-row > .mi { flex: 1; width: auto; text-align: center; }
-    .m-sticky-list { display: none; padding: 2px 0; }
+    .m-sticky-list { display: none; padding: 2px 6px; margin: 2px 6px;
+      /* 🆕 翻页清单外框细线：用 currentColor（＝菜单文字颜色）一笔描出，明暗主题自动跟随 */
+      border: 1px solid currentColor; border-radius: 7px; }
     .m-sticky-list.open { display: block; }
-    .m-sticky-list-title { padding: 2px 9px 3px; color: var(--menu-muted, #6b7280); font-size: 10px; text-align: center; }
+    /* 🆕 标题一行化：宽了自动省略号，完整说明放 title tooltip（省纵向空间） */
+    .m-sticky-list-title { padding: 2px 9px 3px; color: var(--menu-muted, #6b7280); font-size: 10px; text-align: center;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .m-sticky-list-inactive-title { margin-top: 4px; padding: 5px 9px 3px; border-top: 1px solid var(--menu-divider, rgba(0,0,0,.10)); color: var(--menu-muted, #6b7280); font-size: 10px; text-align: center; }
     .m-sticky-list-items { max-height: 120px; overflow-y: auto; }
     .m-sticky-item { display: flex; align-items: center; gap: 4px; }
@@ -443,10 +457,18 @@
            仅开便利贴（./start.sh --sticky）时主窗只驻 Dock；这两个按钮把主窗切到对应模式并显示。 -->
       <button class="mi" id="miOpenTodolist" title="唤起 TodoList（Gallery 独立模式，等同 ./start.sh --todolist）">📝 唤起 TodoList</button>
       <button class="mi" id="miOpenAiConsole" title="唤起 AI 智能控制台（主程序，等同 ./start.sh）">🤖 唤起 AI 智控台</button>
+      <!-- 🆕 新建 / 删除 并排：左「＋ 新建」写进 include 档；右「🗑 删除」把当前这张从来源档移除。
+           两者都只针对「当前这张便利贴对应的行程」，删除前会 confirm 确认。 -->
+      <div class="m-row">
+        <button class="mi" id="miNewNote" title="新建一张便利贴，直接写进被 include 的外部文件（如 calendar-event-draft.md）">＋ 新建</button>
+        <button class="mi" id="miDeleteNote" title="删除当前这张便利贴：把它对应的行程从来源文件（include 档或 calendar.md）中移除，删除后不可恢复">🗑 删除</button>
+      </div>
+      <!-- 🆕 建立新 calendar 档案：输入后缀 → 在当前 calendar 同目录生成 calendar-<后缀>.md，供 Calendar 独立打开、分档案管理便利贴 -->
+      <button class="mi" id="miNewCalendar" title="建立一个新的 calendar 档案（calendar-*.md）：输入后缀，在当前 calendar 同目录生成文件，可在 Calendar 中独立打开以分档案管理便利贴">＋ 建立 calendar 档案</button>
       <!-- 📧 发邮件：把当前这张便利贴的内容经本机邮件服务发出（收件人在浮层里输入） -->
       <button class="mi" id="miEmail" title="把这张便利贴的内容发送邮件">📧 发邮件</button>
       <div class="m-sticky-list" id="mStickyListWrap">
-        <div class="m-sticky-list-title" id="mStickyListTitle">已设定的便利贴（点击名称显示；点击开 / 关切换）</div>
+        <div class="m-sticky-list-title" id="mStickyListTitle" title="已设定的便利贴（点击名称显示；点击开 / 关切换）">已设定的便利贴</div>
         <div class="m-sticky-list-items" id="mStickyList"></div>
       </div>
       <button class="mi" id="miUndoneChecks" aria-pressed="false">只显示未完成 checkbox：关</button>
@@ -483,11 +505,11 @@
         <button class="mi" id="miZoomIn" title="放大内容字体（A＋）">A＋</button>
       </div>
     </div>
-    <!-- 🆕 加入内容浮层（＋☐ 选单／编辑小圆点共用）：子事件＝Enter 或 ⌘S 加入（不关窗）· Esc＝关闭（有草稿先问） -->
+    <!-- 🆕 加入内容浮层（＋☐ 选单／编辑小圆点共用）：Enter＝换行 · ⌘S／「保存」＝加入（不关窗）· Esc＝关闭（有草稿先问） -->
     <div class="addcheck-ov" id="addCheckOv">
       <div class="addcheck-box" id="addCheckBox">
         <div class="ac-title">加入子事件（CheckBox）</div>
-        <textarea id="addCheckInput" placeholder="每行一个子事件，回车直接加入…"></textarea>
+        <textarea id="addCheckInput" placeholder="每行一个子事件；Enter 换行，⌘S 或「保存」加入…"></textarea>
         <!-- 🆕 表格模式（区块圆点 type=table 才显示）：引擎＝md-table-grid.js（与主窗体同一份）。
              格子内容即时写回上面那颗 textarea，所以 ⌘S／复制／「有改动先问」／清空＝删除 全沿用既有链路。 -->
         <div class="note-table-grid" id="noteTableGrid" style="display:none">
@@ -504,7 +526,7 @@
           </div>
           <div class="ntg-scroll" id="noteTableGridScroll"></div>
         </div>
-        <div class="ac-hint">Enter 或 ⌘S 加入（加入后不关闭，可继续输入下一批）· Esc 关闭（草稿未加入会先问是否保存）</div>
+        <div class="ac-hint">Enter 换行（与「编辑小圆点」手感一致）· ⌘S 或「保存」加入（加入后不关闭，可继续输入下一批）· Esc 关闭（草稿未加入会先问是否保存）</div>
         <div class="ac-actions">
           <button type="button" class="ac-copy" id="copyNoteCheckButton">复制</button>
           <button type="button" class="ac-copy" id="editFullNoteFromCheckButton">编辑完整备注</button>
@@ -535,6 +557,41 @@
         <div class="ac-actions">
           <button type="button" class="ac-copy ac-primary" id="emailSendBtn">发送</button>
           <button type="button" class="ac-copy" id="emailCancelBtn">取消</button>
+        </div>
+      </div>
+    </div>
+    <!-- 🆕 新建便利贴浮层（菜单「＋ 新建便利贴」）：选 include 档 + 填标题 → 直接写进该档，不经过 Calendar 表单。
+         其余字段（日期＝今天、全天、sticky:1、颜色、Remark 围栏…）由 Calendar 的 tlEventToMarkdown 自动补成完整框架。 -->
+    <div class="addcheck-ov" id="newNoteOv">
+      <div class="addcheck-box" id="newNoteBox">
+        <div class="ac-title">＋ 新建便利贴</div>
+        <label class="nn-label">写入哪个文件（include 进来的 calendar-*.md）
+          <select id="nnFile"></select>
+        </label>
+        <label class="nn-label">便利贴标题
+          <input type="text" id="nnTitle" maxlength="200" placeholder="例如：十二月第一天测试" spellcheck="false" autocomplete="off">
+        </label>
+        <div class="ac-hint" id="nnHint">Enter 建立 · Esc 取消；建好后会立刻出现在便利贴里，可继续编辑内容</div>
+        <div class="ac-actions">
+          <button type="button" class="ac-copy ac-primary" id="nnCreateBtn">建立</button>
+          <button type="button" class="ac-copy" id="nnCancelBtn">取消</button>
+        </div>
+      </div>
+    </div>
+    <!-- 🆕 建立 calendar 档案浮层（菜单「＋ 建立 calendar 档案」）：前缀固定 calendar-，输入后缀 → 生成 calendar-<后缀>.md -->
+    <div class="addcheck-ov" id="newCalOv">
+      <div class="addcheck-box" id="newCalBox">
+        <div class="ac-title">＋ 建立 calendar 档案</div>
+        <div class="nn-label">档案名（前缀固定 calendar-，后缀由你输入，自动加 .md）</div>
+        <div class="nc-row">
+          <span class="nc-fix">calendar-</span>
+          <input type="text" id="ncSuffix" maxlength="60" placeholder="输入后缀，例如 work / 工作" spellcheck="false" autocomplete="off">
+          <span class="nc-fix">.md</span>
+        </div>
+        <div class="ac-hint" id="ncHint">Enter 建立 · Esc 取消；文件建立在当前 calendar 同目录，可在 Calendar 中独立打开</div>
+        <div class="ac-actions">
+          <button type="button" class="ac-copy ac-primary" id="ncCreateBtn">建立</button>
+          <button type="button" class="ac-copy" id="ncCancelBtn">取消</button>
         </div>
       </div>
     </div>

@@ -150,6 +150,21 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.on('scroll-sticky-event', (event, payload) => callback(payload));
   },
 
+  // 🆕 桌面便利贴「新建便利贴」：Calendar 渲染端接收新建请求（浮层在便利贴窗内，这里只负责收/回）
+  onNewStickyNoteRequest: (callback) => {
+    ipcRenderer.on('new-sticky-note-request', (event, payload) => callback(payload));
+  },
+
+  // 🆕 桌面便利贴「建立 calendar 档案」：Calendar 渲染端接收「自动勾选 include」请求（新建档落盘后，由主进程转发来这里写回 ## INCLUDE 区块）
+  onNewCalendarIncludeRequest: (callback) => {
+    ipcRenderer.on('new-calendar-include-request', (event, payload) => callback(payload));
+  },
+
+  // 🗑 桌面便利贴「删除便利贴」：Calendar 渲染端接收删除请求（删块在 Calendar 这一处统一处理）
+  onDeleteStickyNoteRequest: (callback) => {
+    ipcRenderer.on('delete-sticky-note-request', (event, payload) => callback(payload));
+  },
+
   // 桌面便利贴「手动刷新」：便利贴窗请求主程式重新渲染该张并推送最新内容
   onStickyRefreshRequest: (callback) => {
     ipcRenderer.on('sticky-note-refresh-request', (event, payload) => callback(payload));

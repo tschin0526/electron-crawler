@@ -81,6 +81,9 @@
     let tlEvFormUid = null;
     let tlEvFormColor = null;
     let tlEvFormSticky = 0;   // 🆕 桌面便利贴 instance 数（表单临时值，不污染存档对象）
+    // 🆕 新增行程的「写入目标」：'' = calendar.md（主文件，走缓冲）；否则 = 来源 include 档文件名（直接追加落盘）。
+    //    只在「新增」时有意义；编辑既有行程时恒为 ''（编辑 include 行程仍未开放，见 tlOpenEventForm 的 ev.ro 拦截）。
+    let tlEvFormTarget = '';
 
     // 表单内「＋ CheckBox」按钮旁的便利贴小图标：sticky>0 才显示（开表单时载入 + sticky 字段改动时实时同步）
     function tlSyncStickyFlag() {
@@ -97,12 +100,14 @@
     let tlEvTagEditLevel = 'cat';
     const TL_CAL_COLORS = ['#FF3B30', '#FF9500', '#FFCC00', '#34C759', '#5AC8FA', '#007AFF', '#5856D6', '#AF52DE', '#FF2D55', '#A2845E', '#8E8E93'];
 
-    // 当前编辑器打开的文件是不是 calendar.md（行程应用数据文件）
+    // 当前编辑器打开的文件是不是 calendar*.md（行程应用数据文件；calendar.md 正式档或 calendar-<后缀>.md 档案）
     function isCalendarMdDoc() {
       const t = currentFileTarget();
       if (!t) return false;
       const name = String(t.name || '').toLowerCase();
-      if (name !== 'calendar.md') return false;
+      // 🆕 放开为 calendar*.md 前缀匹配：让「建立 calendar 档案」生成的 calendar-<后缀>.md 也能独立作为行事历打开，
+      //    与 LITE 版（/^calendar.*\.md$/）对齐；其余判定（md / 外部 .md）不变。
+      if (!/^calendar.*\.md$/.test(name)) return false;
       return t.kind === 'md' || (t.kind === 'ext' && /\.md$/i.test(name));
     }
 
@@ -363,6 +368,185 @@
       return { ok: true, file: name };
     }
 
+    // ===== 🆕 在 INCLUDE 来源档中「新建行程」=====
+    //   与上面的 Remark 回写同一套路径（tlIncludeFileTarget），差别只在**只追加、不重写**：
+    //     ① 追加不需要「按块序号定位」，因此不受「缺 title 的 EVENT 块」影响（那类安全阀只服务于整块替换）；
+    //     ② 绝不重画整份文件 → 用户手写的未知字段、段落顺序、缩进全部原样保留；
+    //     ③ 插入点＝最后一个 EVENT 块的结尾（＝下一个 ## 级标题之前），没有 EVENT 块时插在 ## TAGS / ## INCLUDE /
+    //        ## HOLIDAY / ## DIARY 这些 meta 块之前——直接 append 到文件末尾会掉进 meta 区块里。
+    function tlInsertEventBlockText(content, blockText) {
+      const text = String(content == null ? '' : content).replace(/\r\n/g, '\n');
+      const block = String(blockText || '').replace(/\n+$/, '') + '\n';
+      const re = /^##[ \t]*EVENT(?:\([^)]*\))?[ \t]*$/gm;
+      let last = -1, m;
+      while ((m = re.exec(text))) last = m.index;
+      // 统一收口：head 保留原文（去掉尾部空白）＋ 空行 ＋ block ＋ tail（保持与原文件之间的分隔）
+      const join = (head, tail) => {
+        const h = head.replace(/\s*$/, '');
+        const t = tail.replace(/^\s*/, '');
+        return (h ? h + '\n\n' : '') + block + (t ? '\n' + t : '');
+      };
+      if (last < 0) {
+        // 没有任何 EVENT 块：插到 meta 块之前；连 meta 块都没有 → 追加到文件末尾
+        const cut = text.search(/^##[ \t]*(TAGS|INCLUDE|HOLIDAY|DIARY)[ \t]*$/m);
+        if (cut < 0) return join(text, '');
+        return join(text.slice(0, cut), text.slice(cut));
+      }
+      const nextRel = text.slice(last + 1).search(/^##[ \t]/m);
+      const end = nextRel >= 0 ? last + 1 + nextRel : text.length;
+      return join(text.slice(0, end), text.slice(end));
+    }
+    // 把一个行程块追加进指定 include 档（立即落盘）。返回 { ok, error?, file? }
+    async function tlAppendEventToIncludeFile(name, ev) {
+      const fileName = String(name || '').trim();
+      if (!fileName) return { ok: false, error: '未指定写入文件' };
+      const io = await tlIncludeFileTarget(fileName);
+      if (!io) return { ok: false, error: '无法定位所在目录（请确认 Calendar 已打开）' };
+      let content = null;
+      try { content = await io.read(); } catch (e) { return { ok: false, error: '读取 ' + fileName + ' 失败：' + (e.message || e) }; }
+      // 读不到（文件不存在／刚被外部删除）→ 当成空档新建，但不覆写任何已存在的内容
+      if (content == null) content = '';
+      const next = tlInsertEventBlockText(content, tlEventToMarkdown(ev));
+      if (next === content) return { ok: true, file: fileName, unchanged: true };
+      try { await io.write(next); } catch (err) { return { ok: false, error: '写入 ' + fileName + ' 失败：' + (err.message || err) }; }
+      return { ok: true, file: fileName };
+    }
+    // ===== 🗑 从 md 内容里「外科手术式」删除一个行程块（新建的逆操作）=====
+    //   设计原则与 tlInsertEventBlockText 一致：只摘掉目标块，其余内容（含未知字段、
+    //   段落顺序、缩进）逐字节保留；绝不用「整份重新序列化」的方式删。
+    //   块定位＝与解析器同一真相：对每个 ## EVENT 块跑 tlParseEvents，比 title+date。
+    //   多条同名同日 → 删最后一个（与「新建追加在末尾」互为镜像）。
+    //   返回删除后的全文；找不到匹配块返回 null（调用方据此报错，不静默）。
+    function tlRemoveEventBlockText(content, ev) {
+      const text = String(content == null ? '' : content).replace(/\r\n/g, '\n');
+      const title = String((ev && ev.title) || '');
+      const date = String((ev && ev.date) || '');
+      // 收集所有 EVENT 块头位置（含 EVENT(REPEAT)），块尾＝下一个 ## 级标题
+      const heads = [];
+      const re = /^##[ \t]*EVENT(?:\([^)]*\))?[ \t]*$/gm;
+      let m;
+      while ((m = re.exec(text))) heads.push(m.index);
+      let hitStart = -1, hitEnd = -1;
+      for (let i = heads.length - 1; i >= 0; i--) {
+        const start = heads[i];
+        const nextRel = text.slice(start + 1).search(/^##[ \t]/m);
+        const end = nextRel >= 0 ? start + 1 + nextRel : text.length;
+        const parsed = tlParseEvents(text.slice(start, end)) || [];
+        const strict = parsed.filter((p) => String(p.title || '') === title && String(p.date || '') === date);
+        const loose = parsed.filter((p) => String(p.title || '') === title);
+        if ((strict.length ? strict : loose).length) { hitStart = start; hitEnd = end; break; }
+      }
+      if (hitStart < 0) return null;
+      const head = text.slice(0, hitStart).replace(/\s*$/, '');
+      const tail = text.slice(hitEnd).replace(/^\s*/, '');
+      // 拼接规则与 tlInsertEventBlockText 的 join 镜像：head／tail 之间恰好一个空行；
+      // 块是最后一块时收掉多余空行（非空结果保留恰好一个结尾换行）
+      const out = (head ? head + '\n\n' : '') + tail;
+      return out ? out.replace(/\s*$/, '\n') : out;
+    }
+    // 从指定 include 档删除一个行程块（立即落盘）。返回 { ok, error?, file? }
+    async function tlRemoveEventFromIncludeFile(name, ev) {
+      const fileName = String(name || '').trim();
+      if (!fileName) return { ok: false, error: '未指定要删除的来源文件' };
+      const io = await tlIncludeFileTarget(fileName);
+      if (!io) return { ok: false, error: '无法定位所在目录（请确认 Calendar 已打开）' };
+      let content = null;
+      try { content = await io.read(); } catch (e) { return { ok: false, error: '读取 ' + fileName + ' 失败：' + (e.message || e) }; }
+      if (content == null) return { ok: false, error: '读取 ' + fileName + ' 失败：文件不存在' };
+      const next = tlRemoveEventBlockText(content, ev);
+      if (next === null) return { ok: false, error: '在 ' + fileName + ' 中没有找到可删除的行程块' };
+      try { await io.write(next); } catch (err) { return { ok: false, error: '写入 ' + fileName + ' 失败：' + (err.message || err) }; }
+      return { ok: true, file: fileName };
+    }
+    // 刷新后 uid 由文件位置重建（ro-<文件序>-<块序>-evpN），只能按 来源档+标题+日期 反查刚写入的那条。
+    //   多个同名同日 → 取最后一个（刚追加在文件末尾，序号最大）
+    //   ⚠️ 两级匹配：先「来源档＋标题＋日期」（同名同日取最后一条 ＝ 刚追加的那条），
+    //      匹配不到再退「来源档＋标题」——序列化/解析对日期的规范化一旦不一致（空日期、补零差异），
+    //      严格匹配会返回 '' → 便利贴建出来了但翻页跳不到（症状：新建没反应、页面不动）。
+    function tlFindIncludedEventKey(src, title, date) {
+      const bySrc = (tlIncludedEvents || []).filter((e) => e.src === src &&
+        String(e.title || '') === String(title || ''));
+      const strict = bySrc.filter((e) => String(e.date || '') === String(date || ''));
+      const hit = (strict.length ? strict : bySrc).pop();
+      return hit ? hit.uid : '';
+    }
+    // 写入后把刚落盘的那条「定位一下」。
+    // 与 tlJumpToEventCore 的区别：当前视图没显示这条时**静默跳过**（不是错误，不要弹 toast 打断）。
+    function tlFlashIncludedEvent(target, ev) {
+      try {
+        const uid = tlFindIncludedEventKey(target, ev.title, ev.date);
+        if (!uid) return;
+        const el = document.querySelector('[data-uid="' + uid + '"]');
+        if (!el || !el.offsetParent) return;
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        el.classList.remove('tl-jump-flash');
+        void el.offsetWidth;
+        el.classList.add('tl-jump-flash');
+        setTimeout(() => el.classList.remove('tl-jump-flash'), 2000);
+      } catch (e) { /* 定位失败不影响写入结果 */ }
+    }
+
+    // 写入目标下拉：'' = 主文件；其余 = 同目录 calendar-*.md（含未勾选的：写进去后勾选即可见）
+    function tlEvTargetOptions() {
+      const names = (tlIncludedFiles || []).map((f) => f.name).filter(Boolean);
+      return [''].concat(names);
+    }
+    // 某个 include 档是否已进入清单（宿主 index.html 用它决定「先补一次刷新」；避免外部直接读 tlIncludedFiles 的 TDZ 风险）
+    function tlHasIncludeFile(name) {
+      const n = String(name || '');
+      return !!n && (tlIncludedFiles || []).some((f) => f.name === n);
+    }
+    function tlRenderEvTargetSelect(selected) {
+      const sel = document.getElementById('tlEvFTarget');
+      if (!sel) return;
+      const names = tlEvTargetOptions();
+      // 目标是 include 档时，即使它本次不在目录清单里（文件刚被外部删/改名）也要保留这一项，避免选项消失后静默改写到主文件
+      const cur = String(selected || '');
+      if (cur && names.indexOf(cur) < 0) names.push(cur);
+      sel.innerHTML = names.map((n) =>
+        '<option value="' + tlEscapeHtml(n) + '">' + (n ? tlEscapeHtml(n) : 'calendar.md（主文件）') + '</option>'
+      ).join('');
+      sel.value = cur;
+      tlSyncEvTargetHint();
+    }
+    function tlSyncEvTargetHint() {
+      const sel = document.getElementById('tlEvFTarget');
+      const hint = document.getElementById('tlEvFTargetHint');
+      if (!sel || !hint) return;
+      const v = String(sel.value || '');
+      // 变量与下拉保持同步（保存路径以变量为准；编辑既有行程时行已隐藏、恒为 ''）
+      tlEvFormTarget = tlEvFormUid ? '' : v;
+      const titleEl = document.getElementById('tlEvFormTitle');
+      if (titleEl && !tlEvFormUid) titleEl.textContent = v ? ('新增行程 → ' + v) : '新增行程';
+      if (!v) {
+        hint.textContent = '写入主文件 calendar.md：点「写入编辑内容」先进编辑器缓冲，再按编辑器「保存」才落盘';
+        return;
+      }
+      const loaded = (tlIncludedFiles || []).some((f) => f.name === v);
+      const selNames = [];
+      try {
+        const list = (tlIncludedFiles || []).map((f) => f.name);
+        tlParseIncludeSel(document.getElementById('taskText').value, list).forEach((n) => selNames.push(n));
+      } catch (e) { /* 解析失败就不提示勾选状态 */ }
+      const checked = selNames.indexOf(v) >= 0;
+      hint.textContent = '直接追加写入 ' + v + '（点「写入编辑内容」即刻落盘，不经过编辑器缓冲、无需再按「保存」）'
+        + (loaded && !checked ? '；该档当前未勾选，勾选后才会显示在行程列表里' : '');
+    }
+    // 从「📄 Include 清单」某一行发起新建：以该档预填打开新增表单（未勾选则顺手勾上，否则写进去也看不见）
+    function tlNewEventInInclude(name) {
+      const fileName = String(name || '').trim();
+      if (!fileName) return;
+      let checked = false;
+      try {
+        const list = (tlIncludedFiles || []).map((f) => f.name);
+        checked = tlParseIncludeSel(document.getElementById('taskText').value, list).has(fileName);
+      } catch (e) { checked = false; }
+      if (!checked) tlSetInclude(fileName, true);
+      const ov = document.getElementById('tlIncludeListOverlay');
+      if (ov) ov.style.display = 'none';
+      tlOpenEventForm(null, null, { target: fileName });
+    }
+
     // 📂 Include 加载清单：列出同目录被 include 的 calendar-*.md 及其大小
     function tlFormatSize(bytes) {
       const n = Number(bytes) || 0;
@@ -382,10 +566,16 @@
       } else {
         body.innerHTML = list.map((f) => {
           const on = sel.has(f.name);
-          return '<label class="tl-include-item">' +
+          // 🆕 行尾「＋」：直接在该档新建行程（写入位置＝该档，追加落盘）。
+          //    结构：div 行 → label（勾选框＋文件名，点名字即切换）＋ 大小 ＋ 独立 button，
+          //    避免把 <button> 塞进 <label>（HTML 规范不允许 label 内含其它交互控件，实测虽能跑但键盘/朗读会串）。
+          return '<div class="tl-include-item">' +
+            '<label class="tl-include-main">' +
             '<input type="checkbox" class="tl-include-check" data-name="' + tlEscapeHtml(f.name) + '"' + (on ? ' checked' : '') + '>' +
-            '<span class="fname">' + tlEscapeHtml(f.name) + '</span>' +
-            '<span class="fsize">' + tlFormatSize(f.size) + '</span></label>';
+            '<span class="fname">' + tlEscapeHtml(f.name) + '</span></label>' +
+            '<span class="fsize">' + tlFormatSize(f.size) + '</span>' +
+            '<button type="button" class="tl-include-add" data-name="' + tlEscapeHtml(f.name) + '" title="在此文件中新建行程（新建便利贴）">＋</button>' +
+            '</div>';
         }).join('');
       }
       // 📎 绑定一次：行内 checkbox 勾选变化 → 立即写入 calendar.md 并动态重新加载
@@ -394,6 +584,13 @@
           const cb = e.target.closest('.tl-include-check');
           if (!cb) return;
           tlSetInclude(cb.getAttribute('data-name'), cb.checked);
+        });
+        body.addEventListener('click', (e) => {
+          const btn = e.target.closest('.tl-include-add');
+          if (!btn) return;
+          e.preventDefault();
+          e.stopPropagation();
+          tlNewEventInInclude(btn.getAttribute('data-name'));
         });
         tlIncludeListBound = true;
       }
@@ -985,9 +1182,9 @@
     //    evpN 是当前 Markdown 分块位置生成的临时 key，重排事件后可能变化；刷新时由标题/日期回退定位旧便利贴。
     //    html 复用主程式 tlRenderNotes/renderMarkdown 管线（含 [[cp:]]→✅、[[dl:]]→📅、checkbox），
     //    渲染好的 HTML 交给便利贴窗口显示 → 单一可信来源，两处渲染永不漂移。
-    function tlStickyNoteRefs() {
+    function tlStickyNoteRefs(events) {
       const out = [];
-      tlCalEvents.forEach((ev) => {
+      (Array.isArray(events) ? events : tlCalEvents).forEach((ev) => {
         const n = parseInt(ev && ev.sticky, 10) || 0;
         if (n > 0) {
           const key = ev.uid || ((ev.title || '') + '|' + (ev.date || ''));
@@ -1015,15 +1212,29 @@
     //      事后新增／减少的便利贴永远进不了翻页清单（症状：翻页窗「第 9 / 9 张」，
     //      而 ☰ 清单现场查询已经 12 张；点清单第 12 项才把整份重开、数字才对上）。
     let tlLastStickySet = '';   // 上次推过的便利贴集合指纹（有序 key#idx）
-    function tlPushStickyRefreshes() {
+    // 便利贴清单要用「实时」事件全集：行程视图没重绘过时 tlCalEvents 可能是旧快照
+    //   （例如刚在 include 档里新建完，calEventsView 已关 → tlRenderEventsContent 没跑），
+    //   那样 refs 里就没有新贴、指纹不变 → 主进程收不到 sync → 翻页清单永远少一张。
+    //   ⚠️ 只有当前文件确实是 calendar.md 才重新解析：否则 taskText 装的是别的文件，会把清单洗成空。
+    function tlLiveCalEvents() {
+      try {
+        if (typeof isCalendarMdDoc === 'function' && isCalendarMdDoc()) {
+          const ta = document.getElementById('taskText');
+          if (ta && typeof ta.value === 'string') return tlAllEvents(ta.value);
+        }
+      } catch (e) { /* 解析失败就用现有快照 */ }
+      return tlCalEvents;
+    }
+    function tlPushStickyRefreshes(force) {
       if (typeof tlStickyNotesOpen !== 'undefined' && !tlStickyNotesOpen) return;
       if (!window.electronAPI || !window.electronAPI.send) return;
-      const refs = tlStickyNoteRefs();
+      const refs = tlStickyNoteRefs(tlLiveCalEvents());
       const setSig = refs.map((ref) => ref.key + '#' + (+ref.idx || 0)).join(',');
       const prevSig = tlLastStickySet;
       tlLastStickySet = setSig;
       // 本会话第一次推：主进程刚由 open-sticky-notes 播种，只记指纹、不重复整份同步
-      if (prevSig && setSig !== prevSig) {
+      // force：调用方刚确定集合变了（新建便利贴）→ 无论指纹都要整份同步一次
+      if (force || (prevSig && setSig !== prevSig)) {
         // 集合变了（张数增减 / 换行程）→ 整份同步，主进程才知道翻页清单多了或少了哪几张；
         // sync 本身会按分量刷新已存在的窗并补建新窗，不必再逐张发 refresh
         try { window.electronAPI.send('sticky-note-sync', { notes: refs }); } catch (err) {}
@@ -2762,8 +2973,13 @@
       }
       const spanBadge = multi ? '<span class="ev-span-badge" title="\u8de8\u5929\u884c\u7a0b">\u2922 \u8de8' + tlSpanDays(ev.date, ev.endDate) + '\u5929</span>' : '';
       return '<div class="ev-item' + (past ? ' past' : '') + (ev.done ? ' done' : '') + (multi ? ' multi' : '') + (tlEventUndoneChecksOnly(ev.uid) ? ' only-undone-checks' : '') + '" data-uid="' + tlEscapeHtml(ev.uid) + '" data-occ-date="' + tlEscapeHtml(occDate || ev.date) + '">' +
-        '<input type="checkbox" class="ev-check" onchange="tlToggleDone(\'' + ev.uid + '\', this.checked)"' +
-        (ev.done ? ' checked' : '') + ' title="\u52fe\u9009=\u5df2\u5b8c\u6210\uff0c\u53d6\u6d88\u52fe\u9009=\u672a\u5b8c\u6210">' +
+        // 📎 只读（INCLUDE 进来的外部档）行程：完成状态同样不可改 → 直接 disabled。
+        //    以前只靠 tlToggleDone 里的 ro 拦阻，但浏览器已先把勾选框翻过去、又不重绘 →
+        //    看起来像「改成功了」，实际丢弃（2026-10-22 用户回馈「为什么这个禁止徽标的事件还能勾选」）。
+        '<input type="checkbox" class="ev-check"' +
+        (ev.ro ? ' disabled' : ' onchange="tlToggleDone(\'' + ev.uid + '\', this.checked, this)"') +
+        (ev.done ? ' checked' : '') +
+        ' title="' + (ev.ro ? '\u6765\u81ea\u88ab\u5305\u542b\u7684\u53ea\u8bfb\u6587\u4ef6\uff0c\u4e0d\u53ef\u4fee\u6539\u5b8c\u6210\u72b6\u6001' : '\u52fe\u9009=\u5df2\u5b8c\u6210\uff0c\u53d6\u6d88\u52fe\u9009=\u672a\u5b8c\u6210') + '">' +
         (ev.ro ? '<span class="ev-ro-icon" title="来自被包含的只读文件，不可编辑">\u26d4</span>' : '') +
         '<span class="ev-swatch" style="background:' + tlEscapeHtml(ev.color) + '"></span>' +
         '<div class="ev-body">' +
@@ -3651,9 +3867,16 @@
         if (ev.ro) { showToast('此行程来自被包含的只读文件，不可编辑', 'danger'); return; }
         tlEvFormUid = uid;
       }
-      const p = pre || {}; // 🖱 雙擊空白快速新增時的預填：{ allDay, startTime, endTime }
+      const p = pre || {}; // 🖱 雙擊空白快速新增時的預填：{ allDay, startTime, endTime }；📄 Include 清单「＋」另带 { target: 文件名 }
       const today = tlFmtDate(new Date());
       document.getElementById('tlEvFormTitle').textContent = uid ? '编辑行程' : '新增行程';
+      // 🆕 写入目标：只有「新增」才可换档；编辑既有行程恒为主文件（include 行程的编辑仍未开放）。
+      //    下拉渲染完会回调 tlSyncEvTargetHint()：由它统一维护「标题 → 新增行程 / 新增行程 → xxx.md」与下方说明，
+      //    因此这里不再重复写 #tlEvFormTitle（单一可信来源）。
+      tlEvFormTarget = uid ? '' : String(p.target || '').trim();
+      tlRenderEvTargetSelect(tlEvFormTarget);
+      const targetRow = document.getElementById('tlEvFTargetRow');
+      if (targetRow) targetRow.style.display = uid ? 'none' : '';
       document.getElementById('tlEvFTitle').value = ev ? ev.title : '';
       document.getElementById('tlEvFDate').value = ev ? ev.date : (defaultDate || (tlCalMode === 'month' ? tlCalSelected : today) || today);
       document.getElementById('tlEvFEndDate').value = ev ? (ev.endDate || '') : '';
@@ -3799,6 +4022,7 @@
       if (ov) ov.style.display = 'none';
       tlEvFormUid = null;
       tlEvFormColor = null;
+      tlEvFormTarget = '';
     }
 
     // 📋 备注「＋ CheckBox」：开小窗输入，保存后以 `- [ ] 内容` 追加到备注末尾（多行＝每行一个 checkbox）
@@ -4072,7 +4296,7 @@
       tlCloseAddCheckDialog();
     }
 
-    function tlSaveEventForm(closeAfterSave = true) {
+    async function tlSaveEventForm(closeAfterSave = true) {
       const title = document.getElementById('tlEvFTitle').value.trim();
       let date = document.getElementById('tlEvFDate').value;
       let endDate = document.getElementById('tlEvFEndDate').value;
@@ -4135,6 +4359,26 @@
         ev.repeatEndType = 'never';
         ev.repeatEndValue = '';
         ev.repeatExcludeDates = [];
+      }
+      // 🆕 写入目标＝INCLUDE 来源档：直接追加落盘，**绝不进缓冲**（缓冲代表的就是 calendar.md）。
+      //    必须放在下面 `tlCalEvents = tlAllEvents(...)` upsert 之前 return，否则新事件会被顺手写进主文件。
+      if (!tlEvFormUid && tlEvFormTarget) {
+        const target = tlEvFormTarget;
+        let r = null;
+        try {
+          r = await tlAppendEventToIncludeFile(target, ev);
+        } catch (err) {
+          // 本函数已改成 async：任何漏网的异常都必须在这里收口，否则变成 unhandled rejection、表单停在半开半关
+          showToast('写入 ' + target + ' 失败：' + ((err && err.message) || err), 'danger');
+          return;
+        }
+        if (!r || !r.ok) { showToast((r && r.error) || '写入 ' + target + ' 失败', 'danger'); return; }
+        // 立即重载 INCLUDE（合并新行程 → 重绘 + 重算便利贴集合）：新便利贴会经 sticky-note-sync 自动出现
+        await tlKickIncludeRefresh();
+        if (closeAfterSave) tlCloseEventForm();
+        tlFlashIncludedEvent(target, ev);
+        showToast('已新建行程到 ' + target + '（直接落盘，无需再按「保存」）', 'success');
+        return;
       }
       // 以当前编辑内容为准重新解析（保留用户手改过的其它条目），再 upsert
       tlCalEvents = tlAllEvents(document.getElementById('taskText').value);
@@ -4299,11 +4543,13 @@
     }
 
     // 清单上的「完成」勾选框：切换 done → 序列化写回 taskText 缓冲（按「保存」才落盘）
-    function tlToggleDone(uid, done) {
+    //   el＝触发本次变更的勾选框（只读/找不到时要把 DOM 状态拨回去，否则画面会「假装」勾上了）
+    function tlToggleDone(uid, done, el) {
       tlCalEvents = tlAllEvents(document.getElementById('taskText').value);
       const ev = tlCalEvents.find((x) => x.uid === uid);
-      if (!ev) { showToast('找不到该条行程（内容可能已被修改）', 'danger'); return; }
-      if (ev.ro) { showToast('此行程来自被包含的只读文件，不可修改完成状态', 'danger'); return; }
+      if (!ev) { if (el) el.checked = false; showToast('找不到该条行程（内容可能已被修改）', 'danger'); return; }
+      // 📎 只读（INCLUDE 外部档）行程：不该改完成状态（只读档渲染时已 disabled，这里再兜一层）
+      if (ev.ro) { if (el) el.checked = !!ev.done; showToast('此行程来自被包含的只读文件，不可修改完成状态', 'danger'); return; }
       ev.done = !!done;
       tlApplyEventsToBuffer(); // 内部会重绘行程视图
       showToast(ev.done ? '已标记完成，按「保存」写回 calendar.md' : '已取消完成，按「保存」写回 calendar.md', 'success');

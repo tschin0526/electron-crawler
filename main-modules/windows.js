@@ -811,29 +811,46 @@ ipcMain.handle('sticky-note-menu-close-result', (event, payload) => {
   pending.resolve(!!payload.accepted);
   return { success: true };
 });
-ipcMain.handle('focus-sticky-note', (event, arg) => {
-  if (!arg || typeof arg.key !== 'string') return { success: false };
-  const idx = +arg.idx || 0;
+// 把某张便利贴显示到最前：翻页模式→让它跳到该页；分体模式→显示对应窗口。返回是否成功。
+//   「下拉清单点名称」「新建便利贴后跳到新贴」共用这一处（唯一入口，避免两套显示逻辑漂移）
+function showStickyNoteAt(key, idx) {
+  const i = +idx || 0;
+  if (typeof key !== 'string' || !key) return false;
   let win;
   if (stickyNoteMode === 'flip') {
     win = stickyNoteFlipWindow;
-    const pageIndex = stickyNoteOrder.findIndex(note => note.key === arg.key && note.idx === idx);
-    if (!win || win.isDestroyed() || pageIndex < 0) return { success: false };
+    const pageIndex = stickyNoteOrder.findIndex(note => note.key === key && note.idx === i);
+    if (!win || win.isDestroyed() || pageIndex < 0) return false;
     // 带上完整顺序＋key/idx：翻页窗的清单可能还停在开窗快照上（页次数字对不上），
     // 让它先对齐主进程的权威顺序再按 key+idx 定位，index 只作兜底
     win.webContents.send('sticky-note-show-page', {
-      key: arg.key, idx, index: pageIndex, order: stickyNoteOrder
+      key, idx: i, index: pageIndex, order: stickyNoteOrder
     });
   } else {
-    win = stickyNoteWindows.get(noteWinId(arg.key, idx));
-    if (!win || win.isDestroyed()) return { success: false };
+    win = stickyNoteWindows.get(noteWinId(key, i));
+    if (!win || win.isDestroyed()) return false;
   }
   if (win.isMinimized()) win.restore();
   win.show();
   win.moveTop();
   win.focus();
-  return { success: true };
+  return true;
+}
+ipcMain.handle('focus-sticky-note', (event, arg) => {
+  if (!arg || typeof arg.key !== 'string') return { success: false };
+  return { success: showStickyNoteAt(arg.key, +arg.idx || 0) };
 });
+// 建完便利贴立刻「翻到那一页」：sync（更新 stickyNoteOrder）与 create-result（回包）是两条 IPC，
+//   同一渲染端保序，理论上 sync 先到；但翻页窗的重绘是异步的，且清单偶尔还在路上 →
+//   第一次找不到就隔 80ms 再看，最多重试 6 次（≈0.5s）。仍找不到就放弃，不干扰用户后续操作。
+function showStickyNoteAtRetry(key, idx, tries) {
+  if (typeof key !== 'string' || !key) return false;
+  if (showStickyNoteAt(key, idx)) return true;
+  const left = typeof tries === 'number' ? tries : 6;
+  if (left <= 0) return false;
+  setTimeout(() => { showStickyNoteAtRetry(key, idx, left - 1); }, 80);
+  return false;
+}
 // 🆕 便利贴窗查询当前显示模式（split / flip），用于下拉菜单高亮
 ipcMain.handle('sticky-note-mode', () => ({ mode: stickyNoteMode }));
 // 🆕 便利贴窗请求切换显示模式：转交主程式渲染端执行（模式记忆/重开逻辑集中在主程式 tlSetStickyMode）
@@ -1085,8 +1102,246 @@ ipcMain.handle('sticky-calendar-ready', (event) => {
   pendingStickyEditSaves.forEach((pending) => {
     if (pending.webContentsId === event.sender.id && !pending.sent && pending.send) pending.send();
   });
+  pendingStickyIncludeAdds.forEach((pending) => {
+    if (pending.win.webContents.id === event.sender.id && !pending.sent && pending.send) pending.send();
+  });
   return { success: true };
 });
+
+// ============================================================
+// 🆕 便利贴工具内「新建便利贴」——直接写进被 include 的外部档（如 calendar-event-draft.md）
+//   为什么不在这里自己拼 ## EVENT 块：序列化（tlEventToMarkdown）唯一可信来源在 calendar-editor.js，
+//   主进程再抄一份必然漂移。所以：文件清单由主进程直接列目录（只需文件名，不解析），
+//   真正落盘交给 Calendar 渲染端的 tlAppendEventToIncludeFile（只追加、不重写，已有测试覆盖）。
+// ============================================================
+const STICKY_INCLUDE_RE = /^calendar-.+\.md$/i;   // 与 calendar-editor 的 include 规则一致（排除 calendar.md）
+let stickyCreateSeq = 0;
+const pendingStickyCreates = new Map();           // requestId -> { resolve, timer, webContentsId, sent, send }
+
+// 列出 calendar.md 同目录里可写入的 include 档（只要文件名＋大小，不读内容）
+ipcMain.handle('sticky-note-create-files', () => {
+  try {
+    if (!stickyNoteFile) return { ok: false, error: 'Calendar 文件路径不可用', files: [] };
+    const dir = path.dirname(stickyNoteFile);
+    const files = fs.readdirSync(dir)
+      .filter(name => STICKY_INCLUDE_RE.test(name) && name.toLowerCase() !== 'calendar.md')
+      .sort((a, b) => a.localeCompare(b))
+      .map((name) => {
+        let size = 0;
+        try { size = fs.statSync(path.join(dir, name)).size; } catch (e) { size = 0; }
+        return { name, size };
+      });
+    return { ok: true, dir, files };
+  } catch (error) {
+    return { ok: false, error: error.message, files: [] };
+  }
+});
+// 新建：校验 → 交给 Calendar 渲染端写盘（带 requestId 往返）→ 成功后把新便利贴显示到发起者旁边
+ipcMain.handle('sticky-note-create', async (e, arg) => {
+  try {
+    const title = String((arg && arg.title) || '').trim();
+    const src = String((arg && arg.src) || '').trim();
+    if (!title) throw new Error('请先填写便利贴标题');
+    if (title.length > 200) throw new Error('标题最多 200 个字');
+    // 只接受「同目录的 calendar-*.md」：既是规则一致，也是防目录穿越（src 会被拼进路径）
+    if (!STICKY_INCLUDE_RE.test(src) || src.toLowerCase() === 'calendar.md' || /[\\/]/.test(src)) {
+      throw new Error('请选择一个 include 进来的 calendar-*.md 文件');
+    }
+    if (!stickyNoteFile) throw new Error('Calendar 文件路径不可用');
+    const win = ensureMainWindowForBackgroundSave();
+    // 主窗若停在 AI 控制台／别的页面，就没有 Calendar 监听者：立刻给明确错误，不要让它干等 30 秒超时
+    const url = win.webContents.getURL() || '';
+    if (!url.includes('todolist/index.html')) {
+      throw new Error('Calendar 当前未打开（主窗口不在 TodoList），请先打开 calendar.md 再试');
+    }
+    const requestId = 'sticky-create-' + Date.now() + '-' + (++stickyCreateSeq);
+    const result = await new Promise((resolve) => {
+      const timer = setTimeout(() => {
+        pendingStickyCreates.delete(requestId);
+        resolve({ ok: false, error: 'Calendar 响应超时，请确认 Calendar 已打开后重试' });
+      }, 30000);
+      const pending = { resolve, timer, webContentsId: win.webContents.id, sent: false, send: null };
+      pendingStickyCreates.set(requestId, pending);
+      const send = () => {
+        const p = pendingStickyCreates.get(requestId);
+        if (!p || p.sent) return;
+        if (win.isDestroyed() || win.webContents.isDestroyed()) {
+          clearTimeout(p.timer);
+          pendingStickyCreates.delete(requestId);
+          resolve({ ok: false, error: 'Calendar 窗口已关闭，未能新建便利贴' });
+          return;
+        }
+        p.sent = true;
+        win.webContents.send('new-sticky-note-request', { requestId, src, title, file: stickyNoteFile });
+      };
+      pending.send = send;
+      // Calendar 已就绪就直接发；否则等它 sticky-calendar-ready（与保存同一套就绪门）
+      if (stickyCalendarReadyWindowId === win.webContents.id) send();
+    });
+    if (result && result.ok) {
+      // 新贴默认落在 (60,60)：分体模式下会与已有贴纸重叠 → 相对「发起新建的那张」错开一点再置前
+      if (stickyNoteMode !== 'flip' && result.key) cascadeNewStickyWindow(result.key, +result.idx || 0, e.sender);
+      // 建完就翻到这一页（用户明确要求）。第一次可能因为清单还没到而落空 → 短暂重试几次。
+      showStickyNoteAtRetry(result.key, +result.idx || 0);
+    }
+    return result;
+  } catch (error) {
+    console.error('[Main] 新建便利贴失败:', error);
+    return { ok: false, error: error.message };
+  }
+});
+// 🆕 建立 calendar 档案成功后：转发给 Calendar 渲染端，把新建档自动勾选（＋）进 ## INCLUDE 区块。
+//   为什么走渲染端：## INCLUDE 写在 calendar.md 缓冲里，落盘由渲染端 saveTask 统一负责（主进程不该直写缓冲，避免覆盖未保存改动）。
+//   就绪门与「新建便利贴」同一套：Calendar 没就绪就等 sticky-calendar-ready 再发。
+let stickyIncludeSeq = 0;
+const pendingStickyIncludeAdds = new Map();   // id -> { win, name, file, sent, send }
+function sendNewCalendarInclude(name, file) {
+  try {
+    const win = ensureMainWindowForBackgroundSave();
+    const url = win.webContents.getURL() || '';
+    if (!url.includes('todolist/index.html')) return; // 主窗不在 Todolist（Calendar）模式则跳过，用户可手动勾选
+    const id = 'sticky-include-' + Date.now() + '-' + (++stickyIncludeSeq);
+    const send = () => {
+      const p = pendingStickyIncludeAdds.get(id);
+      if (!p || p.sent) return;
+      if (win.isDestroyed() || win.webContents.isDestroyed()) { pendingStickyIncludeAdds.delete(id); return; }
+      p.sent = true;
+      win.webContents.send('new-calendar-include-request', { name, file });
+    };
+    pendingStickyIncludeAdds.set(id, { win, name, file, sent: false, send });
+    if (stickyCalendarReadyWindowId === win.webContents.id) send();
+  } catch (e) {
+    console.error('[Main] 转发自动勾选 include 失败:', e);
+  }
+}
+// 🆕 建立新 calendar 档案（calendar-*.md）：便利贴菜单「＋ 建立 calendar 档案」→ 在当前 calendar 同目录生成骨架文件。
+//   前缀固定 calendar-，后缀由用户给定；落盘后可在 Calendar 中独立打开，实现分档案管理便利贴。
+ipcMain.handle('sticky-note-create-calendar', (e, arg) => {
+  try {
+    if (!stickyNoteFile) throw new Error('Calendar 文件路径不可用（请先打开 calendar.md 再试）');
+    const suffixRaw = String((arg && arg.suffix) || '').trim();
+    if (!suffixRaw) throw new Error('请先输入档案后缀');
+    if (suffixRaw.length > 60) throw new Error('后缀最多 60 个字');
+    // 防目录穿越 / 非法文件名：禁止路径分隔符与控制字符（其余可见字符允许，含中文）
+    if (/[\\/:*?"<>|\x00-\x1f]/.test(suffixRaw)) throw new Error('后缀含非法字符（不能包含 \\ / : * ? " < > | 等）');
+    const name = 'calendar-' + suffixRaw + '.md';
+    const dir = path.dirname(stickyNoteFile);
+    const full = path.join(dir, name);
+    // 最终防线：规范化后必须仍落在原目录内（dir + 固定前缀 + 后缀 + .md，已禁分隔符故必然成立，这里再断言一次）
+    if (path.dirname(full) !== dir) throw new Error('档案名不合法');
+    if (fs.existsSync(full)) throw new Error('档案已存在：' + name);
+    // 骨架：与 tlCalendarToMarkdown 同构（EVENT / HOLIDAY / DIARY / TAGS），已含说明注释；首存会按序列化重排但注释无害
+    const skeleton = [
+      '> 此 calendar 档案由便利贴菜单「＋ 建立 calendar 档案」生成。',
+      '> 可在 Calendar 中独立打开，便利贴按本档案分别管理（分档案管理）。',
+      '',
+      '## EVENT',
+      '',
+      '## HOLIDAY',
+      '',
+      '## DIARY',
+      '',
+      '## TAGS',
+      ''
+    ].join('\n');
+    fs.writeFileSync(full, skeleton, 'utf-8');
+    // 🆕 建完即把新建档自动勾选（＋）进 ## INCLUDE 区块：转发给 Calendar 渲染端写回缓冲并落盘（就绪门同「新建便利贴」）
+    sendNewCalendarInclude(name, full);
+    return { ok: true, file: full, name };
+  } catch (error) {
+    console.error('[Main] 建立 calendar 档案失败:', error);
+    return { ok: false, error: error.message };
+  }
+});
+ipcMain.handle('sticky-note-create-result', (event, payload) => {
+  const requestId = payload && payload.requestId;
+  const pending = typeof requestId === 'string' ? pendingStickyCreates.get(requestId) : null;
+  if (!pending || pending.webContentsId !== event.sender.id) return { success: false };
+  clearTimeout(pending.timer);
+  pendingStickyCreates.delete(requestId);
+  pending.resolve(payload.result || { ok: false, error: 'Calendar 未返回新建结果' });
+  return { success: true };
+});
+// 🗑 便利贴「删除」：与「新建」同一套就绪门与安全性校验。
+//   便利贴窗给的是 title/date/src（来源档由 src 决定：空＝calendar.md 正式档，非空＝include 档），
+//   真正删块交给 Calendar 渲染端的 tlRemoveEventFromIncludeFile（include 档，外科手术式落盘）
+//   或缓冲移除＋saveMdFile（calendar.md 正式档）。渲染端删完会发 sticky-note-sync 刷新清单，
+//   翻页窗的 order-updated 会自动把当前页 clamp 到相邻张；分体窗由便利贴窗自行 close。
+const STICKY_DELETE_RE = /^calendar-.+\.md$/i;   // 与 include 规则一致（排除 calendar.md）
+let stickyDeleteSeq = 0;
+const pendingStickyDeletes = new Map();          // requestId -> { resolve, timer, webContentsId, sent, send }
+ipcMain.handle('sticky-note-delete', async (e, arg) => {
+  try {
+    const ev = (arg && arg.ev) || {};
+    const title = String(ev.title || '').trim();
+    const src = String(ev.src || '').trim();
+    if (!title) throw new Error('缺少便利贴标题，无法定位要删除的行程');
+    // 来源档校验：空＝calendar.md 正式档（允许删，因为是删当前这张正式档便利贴）；
+    //   非空必须仍是「同目录的 calendar-*.md」，既是规则一致也防目录穿越。
+    if (src && (!STICKY_DELETE_RE.test(src) || src.toLowerCase() === 'calendar.md' || /[\\/]/.test(src))) {
+      throw new Error('来源文件无效，无法删除');
+    }
+    if (!stickyNoteFile) throw new Error('Calendar 文件路径不可用');
+    const win = ensureMainWindowForBackgroundSave();
+    const url = win.webContents.getURL() || '';
+    if (!url.includes('todolist/index.html')) {
+      throw new Error('Calendar 当前未打开（主窗口不在 TodoList），请先打开 calendar.md 再试');
+    }
+    const requestId = 'sticky-delete-' + Date.now() + '-' + (++stickyDeleteSeq);
+    const result = await new Promise((resolve) => {
+      const timer = setTimeout(() => {
+        pendingStickyDeletes.delete(requestId);
+        resolve({ ok: false, error: 'Calendar 响应超时，请确认 Calendar 已打开后重试' });
+      }, 30000);
+      const pending = { resolve, timer, webContentsId: win.webContents.id, sent: false, send: null };
+      pendingStickyDeletes.set(requestId, pending);
+      const send = () => {
+        const p = pendingStickyDeletes.get(requestId);
+        if (!p || p.sent) return;
+        if (win.isDestroyed() || win.webContents.isDestroyed()) {
+          clearTimeout(p.timer);
+          pendingStickyDeletes.delete(requestId);
+          resolve({ ok: false, error: 'Calendar 窗口已关闭，未能删除便利贴' });
+          return;
+        }
+        p.sent = true;
+        win.webContents.send('delete-sticky-note-request', { requestId, src, title, date: ev.date || '', file: stickyNoteFile });
+      };
+      pending.send = send;
+      // Calendar 已就绪就直接发；否则等它 sticky-calendar-ready（与保存同一套就绪门）
+      if (stickyCalendarReadyWindowId === win.webContents.id) send();
+    });
+    return result;
+  } catch (error) {
+    console.error('[Main] 删除便利贴失败:', error);
+    return { ok: false, error: error.message };
+  }
+});
+ipcMain.handle('sticky-note-delete-result', (event, payload) => {
+  const requestId = payload && payload.requestId;
+  const pending = typeof requestId === 'string' ? pendingStickyDeletes.get(requestId) : null;
+  if (!pending || pending.webContentsId !== event.sender.id) return { success: false };
+  clearTimeout(pending.timer);
+  pendingStickyDeletes.delete(requestId);
+  pending.resolve(payload.result || { ok: false, error: 'Calendar 未返回删除结果' });
+  return { success: true };
+});
+// 把新建出来的便利贴窗口错开到发起者右下方（避免与旧贴完全重叠，让用户一眼看见它出现了）
+function cascadeNewStickyWindow(key, idx, senderWebContents) {
+  try {
+    const win = stickyNoteWindows.get(noteWinId(key, idx));
+    if (!win || win.isDestroyed()) return;
+    const from = senderWebContents ? BrowserWindow.fromWebContents(senderWebContents) : null;
+    const base = (from && !from.isDestroyed()) ? from.getBounds() : null;
+    const b = win.getBounds();
+    const pos = clampToVisible(
+      (base ? base.x : b.x) + 26,
+      (base ? base.y : b.y) + 26,
+      b.width, b.height
+    );
+    win.setPosition(pos.x, pos.y);
+  } catch (error) { /* 摆放失败不影响新建结果 */ }
+}
 // 🆕 便利贴「发邮件」：便利贴窗 → 本进程 → 找到邮件插件 webview → 调 window.sendEmailByPlugin
 //   （与主窗口 renderer.js 的 sendEmailViaPlugin 同一函数：FormData POST localhost:5003/send_email，
 //     并写邮件插件自己的发送历史）。收件人/主题/正文由便利贴窗的浮层收集后传来。
@@ -1275,7 +1530,11 @@ ipcMain.handle('sticky-note-close', (e, arg) => {
   return true;
 });
 // 单张便利贴：唤起主程式（显示/聚焦主窗口，并让 TodoList 打开该事件）
+// action='edit'（缺省）→ 打开行程编辑框；action='scroll' → 只滚动定位到该行程（不打开编辑框）；
+// action='new' → 打开「新增行程」表单（预填 sticky=1 + 写入当前便利贴的来源档），用于在 include 档里新建便利贴
+// 单张便利贴：唤起主程式（显示/聚焦主窗口，并让 TodoList 打开该事件）
 // action='edit'（缺省）→ 打开行程编辑框；action='scroll' → 只滚动定位到该行程（不打开编辑框）
+// ⚠️ 「新建便利贴」不走这里：它在便利贴窗内自己开浮层 → sticky-note-create（不必把用户带到 Calendar 表单）。
 ipcMain.handle('wake-main-from-note', (e, arg) => {
   const win = showMainWindow();
   const channel = (arg && arg.action === 'scroll') ? 'scroll-sticky-event' : 'open-sticky-event';

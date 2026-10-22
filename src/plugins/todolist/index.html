@@ -2020,6 +2020,8 @@
     .ev-item.past { opacity: 0.55; }
     /* 完成状态勾选框（清单上直接切换完成 / 未完成） */
     .ev-check { flex: 0 0 auto; width: 16px; height: 16px; margin: 3px 0 0; accent-color: var(--ev-primary); cursor: pointer; }
+    /* 📎 只读（被 include 的外部档）行程：完成状态不可改 → 勾选框灰掉、光标不显可点 */
+    .ev-item .ev-check:disabled { cursor: default; opacity: 0.5; }
     .ev-item.done .ev-title { text-decoration: line-through; color: var(--ev-muted); font-weight: 400; }
     .ev-item.done .ev-meta, .ev-item.done .ev-notes { opacity: 0.7; }
     .ev-chip.done { text-decoration: line-through; opacity: 0.6; }
@@ -2466,12 +2468,19 @@
     .tl-ev-stats-body { font-size: 13px; color: var(--ev-text); flex: 1; overflow: auto; min-height: 0; }
     /* 📂 include 加载清单：文件行（勾选框 + 文件名 + 大小） */
     .tl-include-list { padding: 2px 0; }
-    .tl-include-item { display: flex; align-items: center; gap: 10px; padding: 9px 10px; border-bottom: 1px solid var(--ev-border, #334155); cursor: pointer; }
+    .tl-include-item { display: flex; align-items: center; gap: 10px; padding: 9px 10px; border-bottom: 1px solid var(--ev-border, #334155); }
     .tl-include-item:last-child { border-bottom: none; }
+    /* 行主体（勾选框＋文件名）＝ label：点文件名即切换勾选；「＋」按钮在 label 之外，互不干扰 */
+    .tl-include-item .tl-include-main { display: flex; align-items: center; gap: 10px; flex: 1 1 auto; min-width: 0; cursor: pointer; }
     .tl-include-item .tl-include-check { width: 16px; height: 16px; accent-color: var(--ev-accent, #7c3aed); flex: 0 0 auto; cursor: pointer; }
     .tl-include-item .fname { color: var(--ev-text); font-family: 'SF Mono', 'Monaco', 'Consolas', monospace; word-break: break-all; flex: 1 1 auto; }
     .tl-include-item .fsize { color: var(--ev-muted); font-size: 12px; white-space: nowrap; }
     .tl-include-empty { padding: 24px; color: var(--ev-muted); font-size: 13px; text-align: center; }
+    /* 🆕 行尾「＋」：在该档新建行程（按钮独立于 .tl-include-main 的 label，点它不会切换勾选） */
+    .tl-include-item .tl-include-add { flex: 0 0 auto; width: 26px; height: 26px; padding: 0; line-height: 1;
+      border: 1px solid var(--ev-border, #334155); border-radius: 6px; background: transparent;
+      color: var(--ev-text); font-size: 15px; cursor: pointer; }
+    .tl-include-item .tl-include-add:hover { background: var(--ev-accent, #7c3aed); border-color: var(--ev-accent, #7c3aed); color: #fff; }
     /* ===== 📖 Glossary 术语表弹层：行＝term 胶囊（含領域小胶囊）＋釋義＋出现次数；胶囊复用 .tl-term-cap ===== */
     .tl-gloss-list { padding: 2px 0; }
     .tl-gloss-row { display: flex; flex-direction: column; gap: 6px; padding: 8px 10px; border-bottom: 1px solid var(--ev-border, #334155); }
@@ -2538,6 +2547,9 @@
       background: var(--ev-bg); color: var(--ev-text); font-size: 14px; font-family: inherit;
     }
     .tl-ev-f-label select { cursor: pointer; }
+    /* 🆕 新建行程的「写入文件」区块：下拉 + 一句后果说明（主文件＝进缓冲；include 档＝直接落盘） */
+    .tl-ev-f-target .tl-ev-f-label { margin-bottom: 4px; }
+    .tl-ev-f-target-hint { font-size: 11.5px; line-height: 1.5; color: var(--ev-muted); margin: -2px 0 10px; }
     #tlEvFNotes { resize: vertical; min-height: 84px; }
     /* 📋 备注旁的「＋ CheckBox」小按钮 */
     .tl-ev-f-mini-btn { margin-left: 8px; padding: 2px 8px; font-size: 11px; line-height: 1.6; border: 1px solid var(--ev-border, #334155); border-radius: 6px; background: var(--ev-chip-bg, rgba(124,58,237,.1)); color: var(--ev-text); cursor: pointer; }
@@ -5323,6 +5335,13 @@
     <div class="tl-ev-form-box">
       <div class="tl-ev-form-title" id="tlEvFormTitle">新增行程</div>
       <label class="tl-ev-f-label">标题<input type="text" id="tlEvFTitle" maxlength="200" placeholder="行程标题"></label>
+      <!-- 🆕 写入文件：新增时可选写入主文件或某个被 include 的同目录 calendar-*.md（追加落盘、不进缓冲） -->
+      <div class="tl-ev-f-target" id="tlEvFTargetRow">
+        <label class="tl-ev-f-label">写入文件
+          <select id="tlEvFTarget" onchange="tlSyncEvTargetHint()"></select>
+        </label>
+        <div class="tl-ev-f-target-hint" id="tlEvFTargetHint"></div>
+      </div>
       <div class="tl-ev-f-row">
         <label class="tl-ev-f-label">日期<span class="tl-ev-f-dow" id="tlEvFDateDow"></span><span class="tl-ev-f-lunar" id="tlEvFDateLunar" title="農民曆 / 老黃曆" onclick="tlShowAlmanac((document.getElementById('tlEvFDate').value||tlFmtDate(new Date())),this)"></span><input type="date" id="tlEvFDate"></label>
         <label class="tl-ev-f-label">结束日期（留空＝单日）<span class="tl-ev-f-dow" id="tlEvFEndDateDow"></span><span class="tl-ev-f-lunar" id="tlEvFEndDateLunar" title="農民曆 / 老黃曆" onclick="tlShowAlmanac((document.getElementById('tlEvFEndDate').value||tlFmtDate(new Date())),this)"></span><input type="date" id="tlEvFEndDate"></label>
@@ -5491,7 +5510,7 @@
         <div class="tl-ev-stats-title">📄 Include 加载清单<span class="tl-ev-stats-file" id="tlIncludeListFile"></span></div>
         <button type="button" class="tl-ev-stats-close" onclick="tlCloseIncludeList()" aria-label="关闭">✕</button>
       </div>
-      <div class="tl-ev-stats-sub">勾选即加载、取消即释放（立即生效并保存到 calendar.md，下次启动按此加载）</div>
+      <div class="tl-ev-stats-sub">勾选即加载、取消即释放（立即生效并保存到 calendar.md，下次启动按此加载）；行尾「＋」＝在该文件里新建行程（新建便利贴）</div>
       <div id="tlIncludeListBody" class="tl-ev-stats-body tl-include-list"></div>
     </div>
   </div>
@@ -7238,6 +7257,154 @@
     }
     if (window.electronAPI && typeof window.electronAPI.onStickyScrollToEvent === 'function') {
       window.electronAPI.onStickyScrollToEvent(function (p) { tlOnStickyScrollToEvent(p); });
+    }
+    // 🆕 便利贴工具「新建便利贴」：便利贴窗收标题＋目标 include 档 → 这里负责真正建出完整 ## EVENT 块并追加落盘。
+    //    便利贴窗没有解析/序列化能力（也不该有第二份），所以写盘统一回到 Calendar 这一处：
+    //    tlEventToMarkdown（完整字段框架）+ tlAppendEventToIncludeFile（只追加、不重写来源档）。
+    //    建完立刻重载 INCLUDE：集合指纹变化 → sticky-note-sync → 新便利贴自动出现（翻页 +1 页 / 分体开新窗）。
+    async function tlOnNewStickyNoteRequest(payload) {
+      const requestId = payload && payload.requestId;
+      const reply = async (result) => {
+        if (!requestId || !window.electronAPI || !window.electronAPI.invoke) return;
+        try { await window.electronAPI.invoke('sticky-note-create-result', { requestId, result }); } catch (e) {}
+      };
+      try {
+        const src = String((payload && payload.src) || '').trim();
+        const title = String((payload && payload.title) || '').trim();
+        if (!src) throw new Error('未指定写入文件');
+        if (!title) throw new Error('请先填写便利贴标题');
+        if (!window.electronAPI || !window.electronAPI.invoke) throw new Error('Calendar 接口不可用');
+        if (typeof tlAppendEventToIncludeFile !== 'function') throw new Error('新建便利贴功能不可用');
+        if (!(typeof isCalendarMdDoc === 'function' && isCalendarMdDoc())) {
+          throw new Error('Calendar 当前没有打开 calendar.md');
+        }
+        // 目标档必须先被 include 勾选：否则写进去也不会被合并 → 便利贴不会出现（用户会以为没建成）
+        if (typeof tlSetInclude === 'function' && typeof tlHasIncludeFile === 'function' && tlHasIncludeFile(src)) {
+          let on = true;
+          try {
+            const names = (tlIncludedFiles || []).map(function (f) { return f.name; });
+            on = tlParseIncludeSel(document.getElementById('taskText').value, names).has(src);
+          } catch (e) { on = true; }
+          if (!on) tlSetInclude(src, true);
+        }
+        // 「完整资料框架」：其余字段取默认值，sticky:1 让它立刻成为一张桌面便利贴；日期＝今天，可之后在便利贴里改
+        const ev = {
+          uid: (typeof tlGenId === 'function') ? tlGenId() : ('ev-new-' + Date.now()),
+          title: title,
+          date: (typeof tlFmtDate === 'function') ? tlFmtDate(new Date()) : '',
+          endDate: '',
+          spanDisplay: 'daily',
+          allDay: true,
+          done: false,
+          startTime: '',
+          endTime: '',
+          location: '',
+          color: (typeof TL_CAL_COLORS !== 'undefined' && TL_CAL_COLORS.length) ? TL_CAL_COLORS[0] : '#FF3B30',
+          sticky: 1,
+          tags: [],
+          todoIds: [],
+          notes: '',
+          repeatMode: '', repeatInterval: '', repeatWeekDay: [], repeatMonthDay: '',
+          repeatYearMonthDay: '', repeatEndType: 'never', repeatEndValue: '', repeatExcludeDates: []
+        };
+        const r = await tlAppendEventToIncludeFile(src, ev);
+        if (!r || !r.ok) throw new Error((r && r.error) || ('写入 ' + src + ' 失败'));
+        if (typeof tlKickIncludeRefresh === 'function') { try { await tlKickIncludeRefresh(); } catch (e) {} }
+        // 刷新后 uid 由文件位置重建（ro-<文件序>-<块序>-evpN）→ 按 来源档+标题+日期 反查新 key
+        const newKey = (typeof tlFindIncludedEventKey === 'function')
+          ? tlFindIncludedEventKey(src, title, ev.date) : '';
+        // 🆕 集合已变（多了一张）→ 强制整份同步：主进程据此重算 stickyNoteOrder，
+        //    紧接着的 showStickyNoteAt(newKey) 才找得到这一页（只发逐张 refresh 不会更新翻页清单）。
+        //    ⚠️ 必须在 reply 之前发：同一渲染端的 IPC 保序，sync 先到 → 主进程清单里已有这张。
+        if (typeof tlPushStickyRefreshes === 'function') {
+          try { tlPushStickyRefreshes(true); } catch (e) {}
+        }
+        if (typeof showToast === 'function') showToast('已在 ' + src + ' 新建便利贴「' + title + '」', 'success');
+        await reply({ ok: true, key: newKey, idx: 0, src: src, title: title, date: ev.date });
+      } catch (error) {
+        console.error('[TodoList] 新建便利贴失败:', error);
+        if (typeof showToast === 'function') showToast('新建便利贴失败：' + (error.message || error), 'danger');
+        await reply({ ok: false, error: error.message || String(error) });
+      }
+    }
+    if (window.electronAPI && typeof window.electronAPI.onNewStickyNoteRequest === 'function') {
+      window.electronAPI.onNewStickyNoteRequest(function (p) { tlOnNewStickyNoteRequest(p); });
+    }
+    // 🆕 便利贴工具「建立 calendar 档案」：主进程落盘后转发来此，把新建档自动勾选（＋）进 ## INCLUDE 区块，
+    //    让它在 Include 加载清单里默认勾选——否则写进去也不会被合并，便利贴不会出现（与「新建便利贴」先确保目标档勾选同一逻辑）。
+    async function tlOnNewCalendarIncludeRequest(payload) {
+      try {
+        const name = payload && payload.name;
+        if (!name) return;
+        if (!(typeof isCalendarMdDoc === 'function' && isCalendarMdDoc())) {
+          console.warn('[TodoList] 自动勾选 include 跳过：当前未打开 calendar 档案');
+          return;
+        }
+        // 先重载 include 目录清单，让新建档进入 tlIncludedFiles（tlSetInclude 要求已在清单内才动作）
+        if (typeof tlKickIncludeRefresh === 'function') { try { await tlKickIncludeRefresh(); } catch (e) {} }
+        if (typeof tlSetInclude === 'function') tlSetInclude(name, true);
+        if (typeof showToast === 'function') showToast('已自动勾选 include：' + name, 'success');
+      } catch (e) {
+        console.error('[TodoList] 自动勾选 include 失败:', e);
+      }
+    }
+    if (window.electronAPI && typeof window.electronAPI.onNewCalendarIncludeRequest === 'function') {
+      window.electronAPI.onNewCalendarIncludeRequest(function (p) { tlOnNewCalendarIncludeRequest(p); });
+    }
+    // 🗑 便利贴「删除」：与「新建」对称——写盘也统一回到 Calendar 这一处，绝不便利贴窗自拼。
+    //   来源档判定：src 非空＝include 档（外科手术式落盘，不进缓冲）；src 空＝calendar.md 正式档
+    //   （从缓冲移除该事件后直接 saveMdFile 写回）。删完都发 sticky-note-sync 让清单/翻页刷新。
+    async function tlOnDeleteStickyNoteRequest(payload) {
+      const requestId = payload && payload.requestId;
+      const reply = async (result) => {
+        if (!requestId || !window.electronAPI || !window.electronAPI.invoke) return;
+        try { await window.electronAPI.invoke('sticky-note-delete-result', { requestId, result }); } catch (e) {}
+      };
+      try {
+        const src = String((payload && payload.src) || '').trim();
+        const title = String((payload && payload.title) || '').trim();
+        const date = String((payload && payload.date) || '').trim();
+        if (!title) throw new Error('缺少便利贴标题，无法定位要删除的行程');
+        if (!window.electronAPI || !window.electronAPI.invoke) throw new Error('Calendar 接口不可用');
+        if (!(typeof isCalendarMdDoc === 'function' && isCalendarMdDoc())) {
+          throw new Error('Calendar 当前没有打开 calendar.md');
+        }
+        if (src) {
+          // include 档：外科手术式删除（逐字节保留其余内容，只摘目标块）
+          if (typeof tlRemoveEventFromIncludeFile !== 'function') throw new Error('删除便利贴功能不可用');
+          const r = await tlRemoveEventFromIncludeFile(src, { title: title, date: date });
+          if (!r || !r.ok) throw new Error((r && r.error) || ('从 ' + src + ' 删除失败'));
+          if (typeof tlKickIncludeRefresh === 'function') { try { await tlKickIncludeRefresh(); } catch (e) {} }
+        } else {
+          // calendar.md 正式档：从缓冲移除该事件（按 title+date 定位，排除只读 include 事件），再直接落盘
+          if (typeof tlCalEvents === 'undefined' || !Array.isArray(tlCalEvents)) throw new Error('Calendar 事件未就绪');
+          tlCalEvents = tlAllEvents(document.getElementById('taskText').value);
+          const ev = (tlCalEvents || []).find((x) => String(x.title || '') === title && String(x.date || '') === date && !x.ro);
+          if (!ev) throw new Error('在 calendar.md 中找不到可删除的行程（可能已被删除）');
+          tlCalEvents = (tlCalEvents || []).filter((x) => x.uid !== ev.uid);
+          if (typeof tlApplyEventsToBuffer !== 'function') throw new Error('Calendar 缓冲不可用');
+          tlApplyEventsToBuffer();
+          const api = window.electronAPI || {};
+          const t = (typeof currentFileTarget === 'function') ? currentFileTarget() : null;
+          const mdId = (t && t.id) ? t.id : (typeof currentMdId !== 'undefined' ? currentMdId : 'calendar');
+          if (!api.saveMdFile) throw new Error('缺少写入 MD 文件的接口');
+          const ta = document.getElementById('taskText');
+          const sr = await api.saveMdFile(mdId, ta.value);
+          if (sr && sr.success === false) throw new Error(sr.error || '写回 calendar.md 失败');
+          if (typeof tlKickIncludeRefresh === 'function') { try { await tlKickIncludeRefresh(); } catch (e) {} }
+        }
+        // 集合已变（少了一张）→ 强制整份同步：清单重算后该张不再出现；翻页窗 order-updated 会把当前页 clamp 到相邻张。
+        if (typeof tlPushStickyRefreshes === 'function') { try { tlPushStickyRefreshes(true); } catch (e) {} }
+        if (typeof showToast === 'function') showToast('已删除便利贴「' + title + '」' + (src ? ('（' + src + '）') : '（calendar.md）'), 'success');
+        await reply({ ok: true, key: payload.key, idx: payload.idx, src: src, title: title, date: date });
+      } catch (error) {
+        console.error('[TodoList] 删除便利贴失败:', error);
+        if (typeof showToast === 'function') showToast('删除便利贴失败：' + (error.message || error), 'danger');
+        await reply({ ok: false, error: error.message || String(error) });
+      }
+    }
+    if (window.electronAPI && typeof window.electronAPI.onDeleteStickyNoteRequest === 'function') {
+      window.electronAPI.onDeleteStickyNoteRequest(function (p) { tlOnDeleteStickyNoteRequest(p); });
     }
     // 🆕 便利贴窗点「刷新」→ 主程式重渲染该张（或所有）便利贴并回推最新内容
     async function tlOnStickyRefreshRequest(payload) {

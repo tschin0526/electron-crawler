@@ -358,6 +358,94 @@ function setupControls() {
   document.getElementById('miCalendar').onclick = (e) => { e.stopPropagation(); closeMenu(); ipcRenderer.invoke('activate-main-window'); };
   // 📜 滚动：唤起主程式并滚动定位到该行程（不打开编辑框）
   document.getElementById('miCalendarScroll').onclick = (e) => { e.stopPropagation(); closeMenu(); ipcRenderer.invoke('wake-main-from-note', { key: KEY, action: 'scroll' }); };
+  // 🆕 ＋ 新建便利贴：在便利贴窗内直接开浮层（选 include 档 + 填标题）→ sticky-note-create 写盘。
+  //    不走 Calendar 表单：用户的要求是「不要我自己再去 Calendar 建一遍」，字段框架由 Calendar 那边算。
+  document.getElementById('miNewNote').onclick = (e) => {
+    e.stopPropagation();
+    closeMenu();
+    openNewNoteDialog();
+  };
+  // 🆕 ＋ 建立 calendar 档案：开浮层（前缀固定 calendar-，输入后缀）→ sticky-note-create-calendar 落盘
+  document.getElementById('miNewCalendar').onclick = (e) => {
+    e.stopPropagation();
+    closeMenu();
+    openNewCalDialog();
+  };
+  // 🗑 删除便利贴：把当前这张对应的行程从来源档（include 档或 calendar.md）移除。
+  //   删除是破坏性的、不可恢复 → 先 confirm；参数带 title/date/src 让渲染端精确定位要删的块。
+  //   来源档判定靠 refMeta（主程式推来的元数据缓存）：src 空＝calendar.md 正式档，非空＝include 档。
+  document.getElementById('miDeleteNote').onclick = (e) => {
+    e.stopPropagation();
+    closeMenu();
+    const meta = refMeta.get(KEY) || {};
+    const src = String(meta.src || '');
+    const title = String(meta.title || '');
+    const date = String(meta.date || '');
+    const srcLabel = src ? ('（来源：' + src + '）') : '（来源：calendar.md）';
+    const name = title || KEY;
+    if (typeof window.confirm !== 'function' || !window.confirm('确定删除便利贴「' + name + '」' + srcLabel + ' 吗？\n\n删除后该行程将从来源文件中移除，不可恢复。')) return;
+    ipcRenderer.invoke('sticky-note-delete', {
+      key: KEY, idx: IDX,
+      ev: { title: title, date: date, src: src }
+    }).then((r) => {
+      if (r && r.ok) {
+        showStickyRefreshFeedback('已删除便利贴「' + name + '」', false);
+        // 翻页模式：翻页窗是整段会话，不关窗；order-updated 会自动把当前页 clamp 到相邻张。
+        // 分体模式：直接关掉这张（它对应的行程已不在来源档，留着是幽灵）。
+        if (!IS_FLIP) ipcRenderer.invoke('sticky-note-close', { key: KEY, idx: IDX });
+      } else {
+        showStickyRefreshFeedback('删除失败：' + ((r && r.error) || '未知错误'), true);
+      }
+    }).catch((err) => {
+      showStickyRefreshFeedback('删除失败：' + (err && err.message ? err.message : err), true);
+    });
+  };
+  // 浮层交互：Enter 建立 · Esc 取消 · 点背罩取消（与「发邮件」浮层同一手感）
+  {
+    const nnCreate = document.getElementById('nnCreateBtn');
+    const nnCancel = document.getElementById('nnCancelBtn');
+    const nnOv = document.getElementById('newNoteOv');
+    const nnTitle = document.getElementById('nnTitle');
+    if (nnCreate) nnCreate.onclick = (e) => { e.stopPropagation(); submitNewNote(); };
+    if (nnCancel) nnCancel.onclick = (e) => { e.stopPropagation(); closeNewNoteDialog(); };
+    if (nnOv) {
+      nnOv.onclick = (e) => { if (e.target === nnOv) closeNewNoteDialog(); };
+      nnOv.addEventListener('keydown', (e) => {
+        if (e.isComposing || e.keyCode === 229) return;   // IME 组字中不拦
+        if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); closeNewNoteDialog(); return; }
+        if (e.key === 'Enter') {
+          const t = e.target;
+          if (t && t.id === 'nnFile') return;              // 下拉里的 Enter 不当作建立
+          e.preventDefault();
+          e.stopPropagation();
+          submitNewNote();
+        }
+      }, true);
+    }
+    if (nnTitle) nnTitle.addEventListener('input', () => setNewNoteHint('Enter 建立 · Esc 取消；建好后会立刻出现在便利贴里，可继续编辑内容', false));
+  }
+  // 🆕 建立 calendar 档案浮层交互：Enter 建立 · Esc 取消 · 点背罩取消（与「新建便利贴」浮层同一手感）
+  {
+    const ncCreate = document.getElementById('ncCreateBtn');
+    const ncCancel = document.getElementById('ncCancelBtn');
+    const ncOv = document.getElementById('newCalOv');
+    const ncSuffix = document.getElementById('ncSuffix');
+    if (ncCreate) ncCreate.onclick = (e) => { e.stopPropagation(); submitNewCal(); };
+    if (ncCancel) ncCancel.onclick = (e) => { e.stopPropagation(); closeNewCalDialog(); };
+    if (ncOv) {
+      ncOv.onclick = (e) => { if (e.target === ncOv) closeNewCalDialog(); };
+      ncOv.addEventListener('keydown', (e) => {
+        if (e.isComposing || e.keyCode === 229) return;   // IME 组字中不拦
+        if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); closeNewCalDialog(); return; }
+        if (e.key === 'Enter' && e.target && e.target.id === 'ncSuffix') {
+          e.preventDefault();
+          e.stopPropagation();
+          submitNewCal();
+        }
+      }, true);
+    }
+    if (ncSuffix) ncSuffix.addEventListener('input', () => setNewCalHint('Enter 建立 · Esc 取消；文件建立在当前 calendar 同目录，可在 Calendar 中独立打开', false));
+  }
   // 📝 唤起 TodoList（Gallery 独立模式，等同 ./start.sh --todolist）：主窗切到 todolist 并显示
   document.getElementById('miOpenTodolist').onclick = (e) => { e.stopPropagation(); closeMenu(); ipcRenderer.invoke('open-todolist-from-note'); };
   // 🤖 唤起 AI 智能控制台（主程序，等同 ./start.sh）：主窗切到 crawler-window 并显示
@@ -504,7 +592,7 @@ function setupControls() {
   syncTextAppearance();
   document.getElementById('menu').addEventListener('pointerdown', e => e.stopPropagation());
   document.getElementById('rz').addEventListener('pointerdown', startResize);
-  // 🆕 ＋☐ 加入子事件：meta 内按钮用事件委托（innerHTML 每次重绘），浮层 Enter/⌘S 确认、Esc 取消
+  // 🆕 ＋☐ 加入子事件：meta 内按钮用事件委托（innerHTML 每次重绘），浮层 ⌘S 加入、Esc 取消（Enter＝换行）
   const ov = document.getElementById('addCheckOv');
   const metaEl = document.getElementById('meta');
   if (metaEl) metaEl.addEventListener('click', (e) => {
@@ -536,9 +624,12 @@ function setupControls() {
   if (acInput) {
     acInput.addEventListener('keydown', (e) => {
       e.stopPropagation();
+      // 🆕 IME 铁律：输入法组字时的 Enter（选用候选字）绝不能当成「加入」/确认
+      if (e.isComposing || e.keyCode === 229) return;
       if ((e.metaKey || e.ctrlKey) && (e.key === 's' || e.key === 'S')) { e.preventDefault(); confirmAddCheck(); }
-      // 🆕 回车＝确认加入仅在「加入子事件」模式（快速逐行新增）；表格／自由文本模式回车是换行，编辑模式不拦截
-      else if (e.key === 'Enter' && !e.shiftKey && noteAddMode === 'check' && !noteCheckEditTarget && !noteBlockEditTarget) { e.preventDefault(); confirmAddCheck(); }
+      // ⚠️ 回车＝换行，不再「回车直接加入」：与「编辑小圆点」打开的是同一个浮层，必须同一手感。
+      //    以前回车会立刻加入并清空输入框（多行被打断、输入法选字也被截断），2026-10-22 用户回馈。
+      //    加入改由 ⌘S／「保存」按钮触发（两条路径都不会关窗，可继续输入）。
       else if (e.key === 'Escape') { e.preventDefault(); requestCloseAddCheck(); }
     });
     acInput.addEventListener('pointerdown', (e) => e.stopPropagation());
@@ -747,10 +838,10 @@ function openAddCheck() {
   noteAddMode = 'check';
   noteExitTableMode();   // 🆕 ＋☐ 新增子事件一律用不上网格，先把上一个表格会话的状态收干净
   if (title) title.textContent = '加入子事件（CheckBox）';
-  // 🆕 与「编辑小圆点」入口同一套按钮／快捷键口径：⌘S（或 Enter）加入后不关窗可继续输入，Esc 关闭前若草稿未加入会先问
-  if (hint) hint.textContent = 'Enter 或 ⌘S 加入（加入后不关闭，可继续输入下一批）· Esc 关闭（草稿未加入会先问是否保存）';
+  // 🆕 与「编辑小圆点」入口同一套按钮／快捷键口径：Enter 换行、⌘S 加入后不关窗可继续编辑，Esc 关闭前若草稿未加入会先问
+  if (hint) hint.textContent = 'Enter 换行 · ⌘S 加入（加入后不关闭，内容留在框里可继续编辑）· Esc 关闭（草稿未加入会先问是否保存）';
   bindAddCheckTools('加入');
-  if (inp) { inp.value = ''; inp.placeholder = '每行一个子事件，回车直接加入…'; }
+  if (inp) { inp.value = ''; inp.placeholder = '每行一个子事件；Enter 换行，⌘S 或「保存」加入…'; }
   addCheckBaseline = '';
   hideAddCheckUnsavedBar();
   if (ov) ov.classList.add('show');
@@ -799,6 +890,18 @@ function openAddFreeText() {
   addCheckBaseline = '';
   hideAddCheckUnsavedBar();
   if (inp) setTimeout(() => inp.focus(), 0);
+}
+// 🆕 「加入」成功后把浮层就地切成「编辑刚加入的这一段」：与「编辑小圆点」同一个状态——
+//    内容留在框里可继续改、⌘S 变成覆写同一段（不会重复追加）、Esc 才关窗。
+//    这样两个入口（＋☐ 新增 / 编辑小圆点）手感完全一致（2026-10-22 用户要求）。
+function applyAddCheckEditUi(titleText, hintText) {
+  const ov = document.getElementById('addCheckOv');
+  if (!ov) return;
+  const titleEl = ov.querySelector('.ac-title');
+  const hintEl = ov.querySelector('.ac-hint');
+  if (titleEl && titleText) titleEl.textContent = titleText;
+  if (hintEl && hintText) hintEl.textContent = hintText;
+  bindAddCheckTools();   // 主按钮文字：「加入」→「保存」
 }
 function closeAddCheck() {
   const ov = document.getElementById('addCheckOv');
@@ -1194,15 +1297,25 @@ async function confirmAddCheck() {
           g.focusFirstCell();
         }
       } else {
-        inp.value = '';
+        // 🆕 自由文本：内容留在框里，改成「编辑刚加入的这一段」——⌘S 覆写同一块，不再重复追加
+        noteCheckEditTarget = null;
+        noteBlockEditTarget = {
+          uid: KEY,
+          start: prev ? prev.split('\n').length + 1 : 0,
+          end: (prev ? prev.split('\n').length + 1 : 0) + block.split('\n').length - 1,
+          type: 'para'
+        };
+        applyAddCheckEditUi('自由编辑（纯文本）',
+          '⌘S 保存（不关闭，覆写刚加入的这一段，不会重复追加）· Esc 关闭（有改动会先问是否保存）');
       }
       markAddCheckBaseline();
-      showStickyRefreshFeedback(noteAddMode === 'table' ? '已加入表格（可继续建立下一张，按 Esc 关闭）' : '已追加文本（原样保存，未转成子事件；可继续输入，按 Esc 关闭）');
+      showStickyRefreshFeedback(noteAddMode === 'table' ? '已加入表格（可继续建立下一张，按 Esc 关闭）' : '已加入文本（内容留在框里，⌘S 覆写这一段 · 按 Esc 关闭）');
       return true;
     }
     return false;
   }
-  // 🆕 新增模式与编辑模式同一口径：加入＝落盘但**不关窗**，清空输入框并刷新基线，可立刻继续输入下一批
+  // 🆕 新增模式与编辑模式同一口径：加入＝落盘但**不关窗、不清空**，随后自动切成「编辑刚加入的这一段」
+  //    （⌘S 再按＝覆写同一段，不会重复追加；内容留在框里可继续改）——与「编辑小圆点」完全同手感
   if (addCheckSavePending) return false;
   const lines = inp.value.replace(/\r\n/g, '\n').split('\n').map((l) => l.trim()).filter(Boolean);
   if (!lines.length) { showStickyRefreshFeedback('没有可加入的内容'); return false; }
@@ -1212,11 +1325,17 @@ async function confirmAddCheck() {
     window.alert('找不到该行程，无法保存子事件');
     return false;
   }
-  const notes = (ev.notes ? String(ev.notes).replace(/\s*$/, '') + '\n' : '') + md + '\n';
+  const prev = ev.notes ? String(ev.notes).replace(/\s*$/, '') : '';
+  const notes = (prev ? prev + '\n' : '') + md + '\n';
   if (await saveStickyNoteContent(notes, '保存子事件')) {
-    inp.value = '';
+    // 这一批在备注里的行区间：prev 有内容时从 prev 的行数开始，否则从第 0 行
+    const startLine = prev ? prev.split('\n').length : 0;
+    noteCheckEditTarget = { uid: KEY, line: startLine, count: lines.length };
+    noteBlockEditTarget = null;
+    applyAddCheckEditUi('编辑子事件（CheckBox）',
+      '⌘S 保存（不关闭，覆写刚加入的这一段，不会重复追加）· Esc 关闭（有改动会先问是否保存）；换行＝拆成多个子事件；清空内容并保存＝删除这一段（会先确认）');
     markAddCheckBaseline();
-    showStickyRefreshFeedback('已加入 ' + lines.length + ' 项（可继续输入，按 Esc 关闭）');
+    showStickyRefreshFeedback('已加入 ' + lines.length + ' 项（内容留在框里，⌘S 覆写这一段 · 按 Esc 关闭）');
     return true;
   }
   return false;
@@ -1343,6 +1462,130 @@ function closeStickyEmailDialog() {
   const ov = document.getElementById('emailOv');
   if (ov) ov.classList.remove('show');
   hideEmailRecipientDropdown();
+}
+
+// ===== 🆕 新建便利贴（写进 include 进来的 calendar-*.md，如 calendar-event-draft.md）=====
+//   只问两件：写入哪个档、叫什么名字。其余字段（日期＝今天／全天／sticky:1／颜色／Remark 围栏）
+//   由 Calendar 渲染端的 tlEventToMarkdown 补成完整 ## EVENT 框架 —— 那边是序列化唯一可信来源，
+//   便利贴窗不重抄一份模板，否则字段一改就漂移。落盘也由它做（tlAppendEventToIncludeFile：只追加、不重写）。
+let newNoteBusy = false;
+function nnAttr(s) { return escapeHtml(s).replace(/"/g, '&quot;'); }
+function syncNewNoteButtons() {
+  const b = document.getElementById('nnCreateBtn');
+  if (b) { b.disabled = newNoteBusy; b.textContent = newNoteBusy ? '建立中…' : '建立'; }
+}
+function setNewNoteHint(text, isError) {
+  const h = document.getElementById('nnHint');
+  if (!h) return;
+  h.textContent = text;
+  h.style.opacity = isError ? '1' : '';
+  h.style.color = isError ? '#c0392b' : '';
+}
+function closeNewNoteDialog() {
+  const ov = document.getElementById('newNoteOv');
+  if (ov) ov.classList.remove('show');
+  newNoteBusy = false;
+  syncNewNoteButtons();
+}
+async function openNewNoteDialog() {
+  const ov = document.getElementById('newNoteOv');
+  const sel = document.getElementById('nnFile');
+  const inp = document.getElementById('nnTitle');
+  if (!ov || !sel || !inp) return;
+  let res = null;
+  try { res = await ipcRenderer.invoke('sticky-note-create-files'); } catch (e) { res = { ok: false, error: e.message }; }
+  if (!res || !res.ok) {
+    showStickyRefreshFeedback('无法读取文件清单：' + ((res && res.error) || '未知错误'), true);
+    return;
+  }
+  const files = Array.isArray(res.files) ? res.files : [];
+  if (!files.length) {
+    showStickyRefreshFeedback('同目录没有 include 档（calendar-*.md），无法新建', true);
+    return;
+  }
+  sel.innerHTML = files.map(f => '<option value="' + nnAttr(f.name) + '">' + escapeHtml(f.name) + '</option>').join('');
+  // 默认选中「当前这张便利贴的来源档」——多半就是要继续往那支草稿档里加
+  if (SRC_FILE && files.some(f => f.name === SRC_FILE)) sel.value = SRC_FILE;
+  inp.value = '';
+  setNewNoteHint('Enter 建立 · Esc 取消；建好后会立刻出现在便利贴里，可继续编辑内容', false);
+  newNoteBusy = false;
+  syncNewNoteButtons();
+  ov.classList.add('show');
+  setTimeout(() => inp.focus(), 0);
+}
+async function submitNewNote() {
+  if (newNoteBusy) return;
+  const sel = document.getElementById('nnFile');
+  const inp = document.getElementById('nnTitle');
+  const title = String((inp && inp.value) || '').trim();
+  const src = String((sel && sel.value) || '').trim();
+  if (!title) { setNewNoteHint('请先填写便利贴标题', true); if (inp) inp.focus(); return; }
+  if (!src) { setNewNoteHint('请选择要写入的文件', true); return; }
+  newNoteBusy = true;
+  syncNewNoteButtons();
+  setNewNoteHint('正在建立…', false);
+  let r = null;
+  try { r = await ipcRenderer.invoke('sticky-note-create', { src, title }); } catch (e) { r = { ok: false, error: e.message }; }
+  newNoteBusy = false;
+  syncNewNoteButtons();
+  if (!r || !r.ok) {
+    setNewNoteHint('新建失败：' + ((r && r.error) || '未知错误'), true);
+    showStickyRefreshFeedback('新建便利贴失败：' + ((r && r.error) || '未知错误'), true);
+    return;
+  }
+  closeNewNoteDialog();
+  showStickyRefreshFeedback('已新建「' + title + '」→ ' + src);
+}
+// 🆕 建立新 calendar 档案：前缀固定 calendar-，后缀由用户输入 → calendar-<后缀>.md（骨架文件）。
+//   落盘由主进程做（路径安全、防目录穿越、重名检测都在那边），便利贴窗只传后缀。
+let newCalBusy = false;
+function syncNewCalButtons() {
+  const b = document.getElementById('ncCreateBtn');
+  if (b) { b.disabled = newCalBusy; b.textContent = newCalBusy ? '建立中…' : '建立'; }
+}
+function setNewCalHint(text, isError) {
+  const h = document.getElementById('ncHint');
+  if (!h) return;
+  h.textContent = text;
+  h.style.opacity = isError ? '1' : '';
+  h.style.color = isError ? '#c0392b' : '';
+}
+function closeNewCalDialog() {
+  const ov = document.getElementById('newCalOv');
+  if (ov) ov.classList.remove('show');
+  newCalBusy = false;
+  syncNewCalButtons();
+}
+async function openNewCalDialog() {
+  const ov = document.getElementById('newCalOv');
+  const inp = document.getElementById('ncSuffix');
+  if (!ov || !inp) return;
+  inp.value = '';
+  setNewCalHint('Enter 建立 · Esc 取消；文件建立在当前 calendar 同目录，可在 Calendar 中独立打开', false);
+  newCalBusy = false;
+  syncNewCalButtons();
+  ov.classList.add('show');
+  setTimeout(() => inp.focus(), 0);
+}
+async function submitNewCal() {
+  if (newCalBusy) return;
+  const inp = document.getElementById('ncSuffix');
+  const suffix = String((inp && inp.value) || '').trim();
+  if (!suffix) { setNewCalHint('请先输入档案后缀（例如 work / 工作）', true); if (inp) inp.focus(); return; }
+  newCalBusy = true;
+  syncNewCalButtons();
+  setNewCalHint('正在建立…', false);
+  let r = null;
+  try { r = await ipcRenderer.invoke('sticky-note-create-calendar', { suffix }); } catch (e) { r = { ok: false, error: e.message }; }
+  newCalBusy = false;
+  syncNewCalButtons();
+  if (!r || !r.ok) {
+    setNewCalHint('建立失败：' + ((r && r.error) || '未知错误'), true);
+    showStickyRefreshFeedback('建立 calendar 档案失败：' + ((r && r.error) || '未知错误'), true);
+    return;
+  }
+  closeNewCalDialog();
+  showStickyRefreshFeedback('已建立 ' + (r.name || ('calendar-' + suffix + '.md')) + '（可在 Calendar 中独立打开）');
 }
 async function sendStickyEmail() {
   const input = document.getElementById('emailRecipientInput');
@@ -1536,6 +1779,11 @@ function applyColor() {
   // 📧 发邮件浮层盒同理（与 ＋☐ 浮层共用 addcheck-box 样式）
   const emailBox = document.getElementById('emailBox');
   if (emailBox) emailBox.style.background = tint(state.color, 100);
+  // 🆕 新建便利贴 / 建立 calendar 档案 浮层盒：同样取便利贴实色背景，避免白底 + --note-fg 在深色便利贴上「白字白底」看不清
+  const newNoteBox = document.getElementById('newNoteBox');
+  if (newNoteBox) newNoteBox.style.background = tint(state.color, 100);
+  const newCalBox = document.getElementById('newCalBox');
+  if (newCalBox) newCalBox.style.background = tint(state.color, 100);
   updateMenuTheme();
   syncCustomSwatchActive();
 }
@@ -2169,11 +2417,16 @@ async function loadStickyMenuNotes() {
       applyFlipOrder(result.order);
     }
     // 标题写清算术：翻页张数 / 未开启张数 分开讲，避免把「未开启」的行数也算成页数
+    // 🆕 一行化（省纵向空间）：可见文案只留「翻页清单 N 张（另有 M 张未开启）」，超出宽度自动省略号；
+    //    完整说明（怎么操作、未开启为何不计入）放 title tooltip。分体模式同一套处理。
+    const flipFull = '翻页清单 ' + pageNotes.length + ' 张'
+      + (inactiveNotes.length ? '（另有 ' + inactiveNotes.length + ' 张未开启，不计入翻页）' : '')
+      + '：点击名称显示，点开 / 关切换';
     listTitle.textContent = mode === 'flip'
       ? '翻页清单 ' + pageNotes.length + ' 张'
-        + (inactiveNotes.length ? '（另有 ' + inactiveNotes.length + ' 张未开启，不计入翻页）' : '')
-        + '：点击名称显示，点开 / 关切换'
-      : '已设定的便利贴（点击名称显示；点击开 / 关切换）';
+        + (inactiveNotes.length ? '（另有 ' + inactiveNotes.length + ' 张未开启）' : '')
+      : '已设定的便利贴';
+    listTitle.title = mode === 'flip' ? flipFull : '已设定的便利贴（点击名称显示；点击开 / 关切换）';
     list.replaceChildren();
     const appendNoteRow = (item, index) => {
       const row = document.createElement('div');
