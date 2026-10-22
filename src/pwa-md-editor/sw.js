@@ -168,7 +168,14 @@
 // v122：LITE 便利貼「＋☐」改成三模式下拉（＋☐▾ → checkbox 子事件／MD 表格／自由編輯），
 //      對齊桌面便利貼；表格入口從零建空白網格、加入後不關窗可連續建立。
 //      index.html/style.css/sticky-notes.js/calendar-editor.js 改，bump 讓手機重拉
-const CACHE_NAME = 'md-editor-lite-v122';
+// v123：手機 LITE 認 calendar 檔改為「檔名 calendar*.md 前綴匹配」（原本只認 calendar.md）——
+//      calendar-event-draft.md 等草稿/分包檔可直接以行程方式開啟編輯；並補上「重畫整份文件時
+//      保留 ## TAGS / ## INCLUDE 元區塊」（原本會被整段清掉）。calendar-editor.js/sticky-notes.js/
+//      index.html/sw.js 改，bump 讓手機重拉
+// v124：行程行新增「便利貼徽標」（該行程設了 - sticky: N（N>0）才顯示，與桌面 calendar 清單行同一位置＋同一圖示）；
+//      點徽標＝開便利貼並跳到該行程的第一張（原本只會回到上次停留的那張）。
+//      calendar-editor.js/style.css/sticky-notes.js/sw.js 改，bump 讓手機重拉
+const CACHE_NAME = 'md-editor-lite-v124';
 const ASSETS = [
   './',
   './index.html',

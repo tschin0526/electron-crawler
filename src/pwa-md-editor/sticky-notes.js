@@ -1,9 +1,9 @@
 /* ============================================================
- * 🗒 LITE 便利貼（翻頁模式；calendar.md 專用）
+ * 🗒 LITE 便利貼（翻頁模式；calendar 檔專用＝檔名 calendar*.md）
  * ------------------------------------------------------------
- * 資料源與桌面便利貼一致：calendar.md 中 `- sticky: \`N\``（N>0）的行程
+ * 資料源與桌面便利貼一致：calendar 檔中 `- sticky: \`N\``（N>0）的行程
  * 會展開成 N 張便利貼；本檔案只負責「顯示 / 翻頁 / 顯示偏好」，
- * 絕不改寫 calendar.md。備註 checkbox 仍走 calToggleNoteCheck →
+ * 絕不改寫 calendar 檔。備註 checkbox 仍走 calToggleNoteCheck →
  * 編輯緩衝 → 頂欄「保存」，與行程列表同一條寫回路徑。
  * 由組合菜單「🗒 便利貼（翻頁）」主動開啟，平時不佔畫面。
  * ============================================================ */
@@ -27,7 +27,7 @@ const CAL_STICKY_DEF_BG = '#FFF3B0';
 const CAL_STICKY_DEF_FG = '#000000';
 // 手機版以 14px 為正文基準（桌面窗較小用 12px），字級倍率與桌面同一範圍 0.5–2.5
 const CAL_STICKY_BASE_FONT = 14;
-// localStorage 命名空間：每份 calendar.md 各自一份顯示偏好（只存在本機）
+// localStorage 命名空間：每個 calendar 檔各自一份顯示偏好（只存在本機）
 const CAL_STICKY_STORE_PREFIX = 'calStickyState:';
 
 let calStickyIsOpen = false;
@@ -297,7 +297,7 @@ function calStickyRenderPage(target, options) {
       // 分兩種空狀態：全部被關掉 vs 這份文件根本沒有便利貼
       emptyEl.innerHTML = calStickyCatalog.length
         ? '所有便利貼都已關閉。<br>點左上角 ☰ 開啟清單。'
-        : '此 calendar.md 目前沒有便利貼。<br><br>在行程編輯表單把「便利貼張數」設為 1 以上，<br>即可在這裡以翻頁方式查看。';
+        : '此 calendar 檔目前沒有便利貼。<br><br>在行程編輯表單把「便利貼張數」設為 1 以上，<br>即可在這裡以翻頁方式查看。';
     }
     calStickyUpdateIndicator(0, 0);
     calStickyRenderSheetList();
@@ -563,9 +563,10 @@ function calStickyZoom(delta) {
 }
 
 // ===== 開啟 / 關閉 / 外部資料變更 =====
-function calStickyOpen() {
+// ev（可選）＝從清單行的便利貼徽標進來：開在該行程的第一張，而不是上次停留的那張
+function calStickyOpen(ev) {
   if (typeof isCalendarMd !== 'function' || !isCalendarMd()) {
-    if (typeof showToast === 'function') showToast('便利貼僅適用於 calendar.md', 'error');
+    if (typeof showToast === 'function') showToast('便利貼僅適用於 calendar 檔（檔名 calendar*.md）', 'error');
     return;
   }
   const overlay = calStickyEl('calStickyOverlay');
@@ -576,12 +577,21 @@ function calStickyOpen() {
   overlay.style.display = 'flex';
   calStickyCloseSheet();
   calStickyRebuild();
-  // 還原上次顯示的那張：以「標題|日期|序號」認領；認不到（標題／日期被改過）就退回上次停留的頁次
-  const store = calStickyLoadStore();
-  const lastId = store.lastId;
-  let idx = lastId ? calStickyPages.findIndex((n) => n.identity === lastId) : -1;
-  if (idx < 0 && calStickyPages.length) idx = Math.min(store.lastIdx, calStickyPages.length - 1);
-  if (idx < 0) idx = 0;
+  // 指定行程：以「標題|日期|0」認領它的第一張（身分口徑同 calStickyIdentityOf）
+  let idx = -1;
+  if (ev) idx = calStickyPages.findIndex((n) => n.identity === calStickyIdentityOf(ev, 0));
+  // 認不到又有其他便利貼 → 說明是被關掉了（☰ 清單可重新開啟），再退回上次頁次
+  if (ev && idx < 0 && calStickyPages.length) {
+    calStickyShowToast('此行程的便利貼目前關閉中，可在 ☰ 清單重新開啟');
+  }
+  // 沒指定 / 認不到：還原上次顯示的那張（以「標題|日期|序號」認領），再退上次頁次
+  if (idx < 0) {
+    const store = calStickyLoadStore();
+    const lastId = store.lastId;
+    idx = lastId ? calStickyPages.findIndex((n) => n.identity === lastId) : -1;
+    if (idx < 0 && calStickyPages.length) idx = Math.min(store.lastIdx, calStickyPages.length - 1);
+    if (idx < 0) idx = 0;
+  }
   calStickyRenderPage(idx, { toast: false });
 }
 function calStickyClose() {

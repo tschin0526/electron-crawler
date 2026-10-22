@@ -700,6 +700,18 @@ body {
 /* ＋☐ 列表行入口（與 ☐/☑ 同款金色膠囊） */
 .ev-addcheck-btn { margin-left: 4px; padding: 1px 5px; font-size: 12px; line-height: 1.6; border: 1px solid #f5c518; border-radius: 999px; background: transparent; color: #f5c518; cursor: pointer; vertical-align: middle; }
 .ev-addcheck-btn:hover, .ev-addcheck-btn:active { background: rgba(245,197,24,.14); }
+/* 🗒 便利貼徽標（列表/月/年/週明細行內，僅 sticky>0 顯示）：與桌面 calendar 清單行同一位置與同一圖示。
+   圖示自帶黃紙配色（不依賴主題色），膠囊框沿用金色系；點擊＝開便利貼並跳到該行程 */
+.ev-sticky-flag {
+  display: inline-flex; align-items: center; justify-content: center;
+  box-sizing: border-box; min-width: 22px; min-height: 22px;
+  margin-left: 4px; padding: 2px 5px; line-height: 1; vertical-align: middle;
+  border: 1px solid #f5c518; border-radius: 999px; background: transparent;
+  cursor: pointer; -webkit-tap-highlight-color: transparent;
+}
+.ev-sticky-flag:hover, .ev-sticky-flag:active { background: rgba(245,197,24,.18); }
+.ev-sticky-flag:focus-visible { outline: 2px solid var(--gold, #c9a227); outline-offset: 1px; }
+.ev-sticky-flag .ev-sticky-ic { display: block; width: 13px; height: 13px; }
 /* 🆕 術語（term）渲染：立體金膠囊(term) ＋ 內嵌小膠囊(領域) ＋ 釋義 tooltip（hover）。
    固定深字＋金漸層，深淺主題都清晰；領域小膠囊半透明白底嵌於大膠囊內。與桌面 calendar 雙端對齊 */
 .tl-term { display: inline; }

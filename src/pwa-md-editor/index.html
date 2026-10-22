@@ -57,8 +57,8 @@
       <button class="tab" data-view="split" title="分屏：邊寫邊看" data-page-node-id="kqNKtPHbp2uSksgG3ilsNF">
         <span class="icon" data-page-node-id="FU5YVZKGkneBx5SubgYXjE">▥</span><span class="label" data-page-node-id="OIBzKhvy3A0sXsCqiWKr0j">分屏</span>
       </button>
-      <!-- 📅 行程視圖：僅當開啟的是 calendar.md（行程應用的數據文件）時顯示，只讀查看行程列表 -->
-      <button class="tab" data-view="events" id="tab-events" title="行程視圖（僅 calendar.md）" style="display:none">
+      <!-- 📅 行程視圖：開啟 calendar*.md（檔名以 calendar 開頭 .md：calendar.md 正式檔、calendar-event-draft.md 草稿…）時顯示 -->
+      <button class="tab" data-view="events" id="tab-events" title="行程視圖（calendar*.md）" style="display:none">
         <span class="icon">📅</span><span class="label">行程</span>
       </button>
     </nav>
@@ -337,7 +337,7 @@
           <button type="button" class="btn btn-secondary" id="ev-form-cancel">取消</button>
           <button type="button" class="btn btn-primary" id="ev-form-save">寫入編輯內容</button>
         </div>
-        <div class="ev-form-hint">寫入後按頂欄「保存」，在分享面板選「儲存到檔案」→ 覆蓋原 calendar.md</div>
+        <div class="ev-form-hint">寫入後按頂欄「保存」，在分享面板選「儲存到檔案」→ 覆蓋原檔</div>
       </div>
     </div>
 
@@ -375,7 +375,7 @@
           <button type="button" class="btn btn-secondary" id="ev-diary-cancel">取消</button>
           <button type="button" class="btn btn-primary" id="ev-diary-save">寫入編輯內容</button>
         </div>
-        <div class="ev-form-hint">寫入後按頂欄「保存」，在分享面板選「儲存到檔案」→ 覆蓋原 calendar.md</div>
+        <div class="ev-form-hint">寫入後按頂欄「保存」，在分享面板選「儲存到檔案」→ 覆蓋原檔</div>
       </div>
     </div>
 

@@ -8,15 +8,29 @@
  * 約定：本文件只含 calendar 邏輯；未來新增其它特性編輯器時各自一個
  * xxx-editor.js，互不干擾。
  * ============================================================ */
-// ===== 📅 行程視圖（calendar.md 專用，只讀查看） =====
-// calendar.md 是行程應用（桌面版 calendar 插件）的數據文件：以 `## EVENT` 分隔的塊 + 反引號字段 + Remark 代碼塊。
-// 解析邏輯與 calendar 插件的 parseMarkdownEvents 對齊（單向解析，本視圖不寫回）。
-
+// ===== 📅 行程視圖（calendar 檔專用） =====
+// calendar 檔＝行程應用（桌面版 calendar 插件）的數據文件：以 `## EVENT` 分隔的塊 + 反引號字段 + Remark 代碼塊。
+// 解析邏輯與 calendar 插件的 parseMarkdownEvents 對齊。
+//
+// 🆕 「哪些檔案算 calendar 檔」：檔名以 calendar 開頭、副檔名 .md 的都算
+//    —— calendar.md（正式檔）、calendar-event-draft.md（草稿）、calendar-2026.md（分包）…
+//    全部自動以行程方式開啟/編輯，不必再改名成 calendar.md。
 function isCalendarMd() {
-  return !!(state.currentFile && String(state.currentFile.name || '').toLowerCase() === 'calendar.md');
+  const name = String((state.currentFile && state.currentFile.name) || '').toLowerCase();
+  return /^calendar.*\.md$/.test(name);
 }
 
-// 顯示/隱藏「行程」頁簽；文件不是 calendar.md 時若停在行程視圖則退回分屏
+// 當前 calendar 檔名（統計表頭 / 空狀態文案用；拿不到就退回通用說法）
+function calDocName() {
+  const name = String((typeof state !== 'undefined' && state.currentFile && state.currentFile.name) || '');
+  return name || 'calendar.md';
+}
+
+// 🗒 便利貼圖示（與桌面 calendar 清單行 .ev-sticky-flag 內用的 SVG 同一份，13×13 自帶黃紙配色，
+//    深淺主題都不用另調色）：行程有 `- sticky: N`（N>0）時才在行內顯示，點它開便利貼並跳到該行程。
+const CAL_STICKY_IC_SVG = '<svg class="ev-sticky-ic" viewBox="0 0 24 24" width="13" height="13" aria-hidden="true"><rect x="2.8" y="2.8" width="18.4" height="18.4" rx="2.2" fill="#FCEFA4"/><path d="M3 18.4c0 1.5 1.2 2.8 2.8 2.8h14.4v-2.8H3Z" fill="#F7E694"/><path d="M21.2 14.8v3.6c0 1.5-1.2 2.8-2.8 2.8h-3.6l6.4-6.4Z" fill="#FDF6C8"/><path d="M21.2 14.8 14.8 21.2" stroke="#E8CE7C" stroke-width=".7" stroke-linecap="round" fill="none"/><rect x="8.6" y="6.1" width="6.8" height="1.9" rx=".95" fill="#F0C860"/><rect x="9.1" y="6.5" width="5.8" height=".8" rx=".4" fill="#FFF3C0"/><path d="M6.6 11.4h10.8M6.6 14.2h7.6" stroke="#EBD88F" stroke-width=".9" stroke-linecap="round" fill="none"/></svg>';
+
+// 顯示/隱藏「行程」頁簽；文件不是 calendar 檔時若停在行程視圖則退回分屏
 function updateEventsTabVisibility() {
   if (!elements.tabEvents) return;
   const show = isCalendarMd();
@@ -1358,7 +1372,7 @@ function calRenderStatsBody() {
   const body = document.getElementById('ev-stats-body');
   if (!body) return;
   const s = calBuildStats(calStatsFilter);
-  const emptyMsg = (state.calEvents.length === 0) ? 'calendar.md 中還沒有任何行程事件' : '沒有符合篩選條件的事件';
+  const emptyMsg = (state.calEvents.length === 0) ? calDocName() + ' 中還沒有任何行程事件' : '沒有符合篩選條件的事件';
   body.innerHTML = (s.mainT || s.subT)
     ? calStatsSummaryHtml(s) + calStatsTableHtml(s)
     : '<div class="ev-stats-empty">' + emptyMsg + '</div>';
@@ -1459,13 +1473,13 @@ function calUtf8Len(s) {
   }
   return n;
 }
-// 統計彈層表頭：展示「calendar.md · 內容大小」（大小取當前編輯器緩衝，即正在統計的數據）
+// 統計彈層表頭：展示「當前檔名 · 內容大小」（大小取當前編輯器緩衝，即正在統計的數據）
 function calFileSizeLabel() {
   const ta = (typeof elements !== 'undefined' && elements.editor) ? elements.editor : null;
   const text = ta && ta.value ? ta.value : '';
   const bytes = calUtf8Len(text);
   const sizeStr = bytes.toLocaleString('en-US') + ' Bytes'; // 固定 byte 顯示＋千分位逗號（不走 formatFileSizeShort 的 KB 縮寫）
-  return 'calendar.md · ' + sizeStr;
+  return calDocName() + ' · ' + sizeStr;
 }
 
 // 地區圖例：列出當前 calendar.md 出現過的地區（去重），無假日則隱藏。顏色/圖標與渲染一致，零學習成本。
@@ -2707,6 +2721,9 @@ function evItemHtml(ev, today, occDate) {
     (ev.tags && ev.tags.length ? '<span class="ev-tags">' + ev.tags.map(t => '<span class="ev-tag-view" data-tag="' + escapeHtml(calTagName(t)) + '">' + escapeHtml(calTagLabel(t)) + '</span>').join('') + '</span>' : '') +
     calSubProgressBadge(ev) +
     calSpanDisplayModeBadge(ev) +
+    // 🗒 便利貼徽標：該行程設了「便利貼張數 ≥1」才顯示（與桌面清單行同一位置/同一圖示）；
+    //    點它＝開便利貼並跳到該行程的第一張
+    (ev.sticky > 0 ? '<button type="button" class="ev-sticky-flag" data-ev-sticky="' + escapeHtml(ev.uid) + '" title="開啟便利貼（' + (parseInt(ev.sticky, 10) || 0) + ' 張）">' + CAL_STICKY_IC_SVG + '</button>' : '') +
     // ＋☐：在備註末尾加入 checkbox 子事件（與便利貼 meta 同一入口）
     '<button type="button" class="ev-addcheck-btn" data-ev-addcheck="' + escapeHtml(ev.uid) + '" title="在備註末尾加入 checkbox 子事件">＋☐</button>' +
     '<button type="button" class="ev-undone-filter-btn' + (calEventUndoneChecksOnly(ev.uid) ? ' active' : '') + '"' +
@@ -3062,6 +3079,14 @@ function renderCalDayList() {
 }
 
 // 條目操作（事件委派）：編輯 / 刪除 / 月視圖「此日新增」
+// 🗒 清單行的便利貼徽標（data-ev-sticky）→ 開便利貼並跳到該行程的第一張
+function calOpenStickyForEvent(uid) {
+  if (typeof calStickyOpen !== 'function') return;
+  const ev = calLoadEventsForNotes().find((x) => x.uid === uid) || null;
+  if (!ev) { showToast('找不到該條行程（內容可能已被修改）', 'error'); return; }
+  if (!((parseInt(ev.sticky, 10) || 0) > 0)) { showToast('此行程沒有設定便利貼', 'error'); return; }
+  calStickyOpen(ev);
+}
 function onEvListClick(e) {
   // 📅 點列表標題的農曆文字 → 開老黃曆詳情
   const alm = e.target.closest('[data-ev-almanac]');
@@ -3072,6 +3097,9 @@ function onEvListClick(e) {
   // ＋☐ 加入子事件：必須排在 data-ev-edit 之前，否則整列點選會先開編輯選單
   const acBtn = e.target.closest('[data-ev-addcheck]');
   if (acBtn) { e.preventDefault(); e.stopPropagation(); calOpenAddCheckDialog(acBtn.getAttribute('data-ev-addcheck')); return; }
+  // 🗒 便利貼徽標：開便利貼並跳到該行程（同樣必須排在 data-ev-edit 之前）
+  const stBtn = e.target.closest('[data-ev-sticky]');
+  if (stBtn) { e.preventDefault(); e.stopPropagation(); calOpenStickyForEvent(stBtn.getAttribute('data-ev-sticky')); return; }
   // ☐ 每事件「只顯示未完成 checkbox」開關：必須排在 data-ev-edit 之前，否則整列點選會先開編輯選單
   const ufBtn = e.target.closest('[data-ev-undone-filter]');
   if (ufBtn) { e.preventDefault(); e.stopPropagation(); calToggleEventUndoneChecks(ufBtn.getAttribute('data-ev-undone-filter'), ufBtn); return; }
@@ -3426,7 +3454,8 @@ function applyDiariesToEditor() {
   const holidays = parseCalendarHolidays(elements.editor.value);
   state.calEvents = events;
   calHolidays = holidays;
-  elements.editor.value = calCalendarToMarkdown(events, holidays, calDiaries);
+  // 📎 同 applyEventsToEditor：保留 ## TAGS / ## INCLUDE，別讓日記存檔把元區塊清掉
+  elements.editor.value = calPreserveMetaBlocks(elements.editor.value, calCalendarToMarkdown(events, holidays, calDiaries));
   state.isDirty = elements.editor.value !== state.lastContent;
   updateStatus();
   updateWordCount();
@@ -3777,7 +3806,24 @@ function calInitMdEditDialog() {
   });
 }
 
-// 把工作副本序列化為 calendar.md 全文寫回編輯器緩衝；
+// 🆕 重画后保留「非行程」元区块（## TAGS / ## INCLUDE）：序列化器只认识 EVENT/HOLIDAY/DIARY，
+//   整份重画会把用户手写的标签父阶、Include 勾选清单清掉（与桌面 tlPreserveMetaBlocks 同一做法）
+function calPreserveMetaBlocks(original, newMd) {
+  const src = String(original || '');
+  const kept = [];
+  ['TAGS', 'INCLUDE'].forEach((name) => {
+    const idx = src.search(new RegExp('^##[ \\t]*' + name + '[ \\t]*$', 'm'));
+    if (idx < 0) return;
+    const after = src.slice(idx);
+    const next = after.search(/\n##[ \t]/m);
+    const end = next >= 0 ? idx + next : src.length;
+    kept.push(src.slice(idx, end).replace(/\s+$/, ''));
+  });
+  if (!kept.length) return newMd;
+  return String(newMd).replace(/\s*$/, '') + '\n\n' + kept.join('\n\n') + '\n';
+}
+
+// 把工作副本序列化為 calendar 檔全文寫回編輯器緩衝；
 // lastContent 不動 → isDirty = true → 頂欄「保存」亮起，由用戶決定何時落盤
 function applyEventsToEditor() {
   // ⚠️ 從當前緩衝重新解析 holiday / diary，避免保存事件時把用戶手寫的 ## HOLIDAY / ## DIARY 整體覆蓋掉（事件序列化器會重畫整份文件）
@@ -3785,7 +3831,8 @@ function applyEventsToEditor() {
   const diaries = parseCalendarDiaries(elements.editor.value);
   calHolidays = holidays;
   calDiaries = diaries;
-  elements.editor.value = calCalendarToMarkdown(state.calEvents, holidays, diaries);
+  // 📎 重畫後保留 ## TAGS / ## INCLUDE（避免父階標籤、Include 勾選被清掉）
+  elements.editor.value = calPreserveMetaBlocks(elements.editor.value, calCalendarToMarkdown(state.calEvents, holidays, diaries));
   state.isDirty = elements.editor.value !== state.lastContent;
   updateStatus();
   updateWordCount();
