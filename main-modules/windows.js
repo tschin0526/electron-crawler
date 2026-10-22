@@ -247,6 +247,10 @@ function ensureMainWindowForBackgroundSave() {
 // ============================================================
 const stickyNoteHtml = new Map();     // 'noteKey#idx' -> 主窗口渲染好的 Markdown HTML
 const stickyNoteTitleHtml = new Map(); // 'noteKey#idx' -> 主窗口渲染好的标题 HTML（与列表行同一 tlRenderInlineMarkdown 管线）
+// 🆕 便利贴来源元数据：'noteKey#idx' -> { notes, src, title, date, done, tags }
+//   src＝该行程来自哪个 INCLUDE 外部文件（空＝calendar.md 正式档）；便利贴窗据此显示文档名徽标，
+//   并在编辑时上报 src，让主窗口把结果写回对应文件而不是 calendar.md。
+const stickyNoteMeta = new Map();
 
 // 🆕 翻页显示模式：single window 循环多张便利贴
 let stickyNoteOrder = [];          // 翻页顺序 [{key, idx}]（与 split 模式并行存在）
@@ -361,6 +365,21 @@ function saveStickyNoteState() {
   } catch (e) { console.warn('[Main] 便利贴存档写入失败（本次不覆盖旧档）:', e); }
 }
 function noteWinId(key, idx) { return key + '#' + idx; }
+// 记录/更新一张便利贴的来源元数据（notes＝原始 Markdown 备注，src＝INCLUDE 来源文件名，空＝calendar.md）
+function rememberStickyMeta(note) {
+  if (!note || typeof note.key !== 'string') return;
+  const idx = +note.idx || 0;
+  stickyNoteMeta.set(noteWinId(note.key, idx), {
+    notes: (typeof note.notes === 'string') ? note.notes : '',
+    src: (typeof note.src === 'string') ? note.src : '',
+    title: (typeof note.title === 'string') ? note.title : '',
+    date: (typeof note.date === 'string') ? note.date : '',
+    endDate: (typeof note.endDate === 'string') ? note.endDate : '',
+    color: (typeof note.color === 'string') ? note.color : '',
+    done: !!note.done,
+    tags: Array.isArray(note.tags) ? note.tags : []
+  });
+}
 
 // 便利贴设定以前绑在 'evp{序号}' 这种「按 calendar.md 位置临时生成」的 key 上；
 // Calendar 存盘会把 EVENT 按日期重排 → 同一张贴纸换了 key，颜色／字号／尺寸全部查不到
@@ -651,10 +670,12 @@ ipcMain.handle('open-sticky-notes', (e, arg) => {
     const notes = (arg && Array.isArray(arg.notes)) ? arg.notes : [];
     stickyNoteHtml.clear();
     stickyNoteTitleHtml.clear();
+    stickyNoteMeta.clear();
     notes.forEach(n => {
       if (n && typeof n.key === 'string') {
         stickyNoteHtml.set(noteWinId(n.key, +n.idx || 0), typeof n.html === 'string' ? n.html : '');
         stickyNoteTitleHtml.set(noteWinId(n.key, +n.idx || 0), typeof n.titleHtml === 'string' ? n.titleHtml : '');
+        rememberStickyMeta(n);
       }
     });
     stickyNoteOrder = notes.filter(n => n && typeof n.key === 'string').map(n => ({
@@ -664,6 +685,8 @@ ipcMain.handle('open-sticky-notes', (e, arg) => {
       color: typeof n.color === 'string' ? n.color : '',
       done: !!n.done,
       tags: Array.isArray(n.tags) ? n.tags : [],
+      // 🆕 外部 INCLUDE 来源文件名（草稿便利贴等）：空＝calendar.md 正式档
+      src: typeof n.src === 'string' ? n.src : '',
       notes: typeof n.notes === 'string' ? n.notes : ''
     }));
     stickyNoteCatalog = stickyNoteOrder.slice();
@@ -796,7 +819,11 @@ ipcMain.handle('focus-sticky-note', (event, arg) => {
     win = stickyNoteFlipWindow;
     const pageIndex = stickyNoteOrder.findIndex(note => note.key === arg.key && note.idx === idx);
     if (!win || win.isDestroyed() || pageIndex < 0) return { success: false };
-    win.webContents.send('sticky-note-show-page', { index: pageIndex });
+    // 带上完整顺序＋key/idx：翻页窗的清单可能还停在开窗快照上（页次数字对不上），
+    // 让它先对齐主进程的权威顺序再按 key+idx 定位，index 只作兜底
+    win.webContents.send('sticky-note-show-page', {
+      key: arg.key, idx, index: pageIndex, order: stickyNoteOrder
+    });
   } else {
     win = stickyNoteWindows.get(noteWinId(arg.key, idx));
     if (!win || win.isDestroyed()) return { success: false };
@@ -817,15 +844,29 @@ ipcMain.handle('request-sticky-display-mode', (e, arg) => {
 });
 ipcMain.handle('close-sticky-notes', () => {
   closeAllStickyNoteWindows();
-  stickyNoteHtml.clear(); stickyNoteTitleHtml.clear();
+  stickyNoteHtml.clear(); stickyNoteTitleHtml.clear(); stickyNoteMeta.clear();
   stickyNoteFlipWindow = null; stickyNoteMode = 'split'; stickyNoteOrder = []; stickyNoteCatalog = [];
   notifyStickyNoteOpenState();
   return { ok: true };
 });
 // 单张便利贴：取主窗口渲染好的 Markdown HTML＋标题 HTML（避免便利贴自己复制一套 marked 管线）
+//   同时回传来源元数据（notes/src/…）：外部 include 文件（如草稿文件）里的行程在便利贴窗本地解析不到，
+//   编辑时必须靠这里的 notes 作权威内容，并靠 src 决定写回哪个文件。
 ipcMain.handle('sticky-note-html', (e, arg) => {
   const id = noteWinId(String(arg && arg.key), +arg.idx || 0);
-  return { html: stickyNoteHtml.get(id) || '', titleHtml: stickyNoteTitleHtml.get(id) || '' };
+  const meta = stickyNoteMeta.get(id) || null;
+  return {
+    html: stickyNoteHtml.get(id) || '',
+    titleHtml: stickyNoteTitleHtml.get(id) || '',
+    notes: (meta && typeof meta.notes === 'string') ? meta.notes : null,
+    src: (meta && typeof meta.src === 'string') ? meta.src : '',
+    title: (meta && typeof meta.title === 'string') ? meta.title : '',
+    date: (meta && typeof meta.date === 'string') ? meta.date : '',
+    endDate: (meta && typeof meta.endDate === 'string') ? meta.endDate : '',
+    color: (meta && typeof meta.color === 'string') ? meta.color : '',
+    done: !!(meta && meta.done),
+    tags: (meta && Array.isArray(meta.tags)) ? meta.tags : []
+  };
 });
 
 // 🆕 邮件收件人历史：主进程单一存储，便利贴 / 主窗口 / 邮件插件三端共用
@@ -869,6 +910,7 @@ ipcMain.handle('email-recipients-add', (event, recipients) => {
 ipcMain.on('sticky-note-refresh', (e, arg) => {
   if (!arg || typeof arg.key !== 'string') return;
   const id = noteWinId(arg.key, +arg.idx || 0);
+  rememberStickyMeta(arg);
   if (typeof arg.html === 'string') stickyNoteHtml.set(id, arg.html);
   if (typeof arg.titleHtml === 'string') stickyNoteTitleHtml.set(id, arg.titleHtml);
   // 翻页模式：唯一窗口即翻页窗（注册在 '__flip__#0'），与该刷新针对哪张便利贴无关
@@ -894,6 +936,7 @@ ipcMain.on('sticky-note-sync', (e, arg) => {
     const normalized = Object.assign({}, note, { idx });
     nextIds.add(id);
     nextCatalog.push(normalized);
+    rememberStickyMeta(normalized);
     if (typeof note.html === 'string') stickyNoteHtml.set(id, note.html);
     if (typeof note.titleHtml === 'string') stickyNoteTitleHtml.set(id, note.titleHtml);
 

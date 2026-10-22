@@ -19,6 +19,16 @@
     /* 拖拽区＝色条/标题栏/日期/标签：手型光标提示「这里就是拖动把手」 */
     .bar, .head, .meta, .tags { -webkit-app-region: drag; cursor: grab; }
     .title { font-weight: 700; font-size: 14px; color: var(--note-fg, #1f2430); flex: 1; word-break: break-word; line-height: 1.35; }
+    /* 🆕 文档名徽标（外部 include 来源）：金色虚线胶囊，与标签胶囊区分；过长省略，完整名在 title 属性里 */
+    .doc-badge {
+      display: none; flex: none; max-width: 60%; box-sizing: border-box;
+      padding: 1px 7px; border-radius: 999px;
+      border: 1px dashed #D4AF37; background: rgba(212,175,55,.16);
+      color: var(--note-fg, #5b6170); font-size: 10px; font-weight: 600;
+      line-height: 1.5; letter-spacing: .2px;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .doc-badge.show { display: inline-block; }
     .iconbtn {
       flex: none; width: 22px; height: 22px; border-radius: 6px; border: none; cursor: pointer;
       background: rgba(0,0,0,.06); color: #4b5160; font-size: 12px; line-height: 1; display: inline-flex;
@@ -396,6 +406,9 @@
     <div class="bar" id="bar"></div>
     <div class="head">
       <div class="title" id="title"></div>
+      <!-- 🆕 文档名徽标：内容来自哪个外部 INCLUDE 文件（如 calendar-event-draft.md）；
+           只在来源不是 calendar.md 正式档时显示，用于一眼认出「草稿便利贴」 -->
+      <span class="doc-badge" id="docBadge" role="note"></span>
     </div>
     <div class="meta" id="meta"></div>
     <ul class="tags" id="tags"></ul>

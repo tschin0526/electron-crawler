@@ -232,21 +232,22 @@ async function init() {
     undoneChecksOnly: !!inst.undoneChecksOnly
   });
 
-  let md = '';
-  try { md = fs.readFileSync(FILE, 'utf8'); } catch (e) {}
-  const ev = parseEvents(md).find(e => e.key === KEY);
-  if (!ev) { document.getElementById('title').textContent = '(找不到该便利贴)'; applyColor(); return; }
-
-  renderMeta(ev);
-  renderTags(ev);
   // 正文/标题都用主窗口渲染好的 HTML（同一套 renderMarkdown/tlRenderNotes/tlRenderInlineMarkdown 管线：
   //    正文含 [[cp:]]→✅、[[dl:]]→📅、checkbox、GFM 表格/清单/代码块等；标题含 <BIG> 等行内标签），此处只负责显示。
+  //    同时把 ref 元数据（notes/src/…）缓存下来：来自外部 INCLUDE 文件的行程（草稿便利贴）本地解析不到，
+  //    编辑/徽标/写回全靠这份 ref。
   let html = '', titleHtml = '';
   try {
     const res = (await ipcRenderer.invoke('sticky-note-html', { key: KEY, idx: IDX })) || {};
     html = (typeof res.html === 'string') ? res.html : '';
     titleHtml = (typeof res.titleHtml === 'string') ? res.titleHtml : '';
+    rememberRefMeta(Object.assign({ key: KEY }, res));
   } catch (e) { html = ''; titleHtml = ''; }
+  const ev = sourceEvent(KEY);
+  if (!ev) { document.getElementById('title').textContent = '(找不到该便利贴)'; applyColor(); return; }
+
+  renderMeta(ev);
+  renderTags(ev);
   // 🆕 标题：优先用主窗口渲染好的 HTML（与列表行一致）；拿不到时退回纯文本（避免显示原始标签）
   const titleEl = document.getElementById('title');
   if (titleHtml) { titleEl.innerHTML = titleHtml; } else { titleEl.textContent = ev.title; }
@@ -331,7 +332,7 @@ function setupControls() {
   };
   // 重新读表：请求主进程重读 calendar.md 并把最新事件内容经 sticky-note-refresh → applyNoteContent 落渲染
   function rereadStickyNoteTable() {
-    const ev = parseEvents(readMd()).find(item => item.key === KEY);
+    const ev = sourceEvent(KEY);
     activeStickyRefreshId = 'sticky-refresh-' + Date.now() + '-' + (++stickyRefreshSeq);
     showStickyRefreshFeedback('正在刷新便利贴…');
     ipcRenderer.send('sticky-note-refresh-request', {
@@ -929,7 +930,7 @@ function bindAddCheckTools(saveLabel) {
   }
 }
 function eventNotesForKey(key) {
-  const ev = parseEvents(readMd()).find(item => item.key === key);
+  const ev = sourceEvent(key);
   return ev ? ev.notes || '' : null;
 }
 function localDateString(date = new Date()) {
@@ -957,12 +958,15 @@ async function saveStickyNoteContent(notes, errorLabel, eventKey) {
   addCheckSavePending = true;
   try {
     const targetKey = eventKey || KEY;
-    const result = await ipcRenderer.invoke('sticky-note-save-edit', { key: targetKey, idx: IDX, notes });
+    const result = await ipcRenderer.invoke('sticky-note-save-edit', { key: targetKey, idx: IDX, notes, src: SRC_FILE });
     if (!result || !result.success) {
       window.alert(errorLabel + '失败：' + ((result && result.error) || '主进程未确认保存'));
       return false;
     }
-    const savedEvent = parseEvents(readMd()).find(item => item.key === targetKey);
+    // 本地缓存同步（外部 include 文件的内容只存在于 refMeta，不走本地 calendar.md）
+    const cached = refMeta.get(targetKey);
+    if (cached) cached.notes = notes;
+    const savedEvent = sourceEvent(targetKey);
     ipcRenderer.send('sticky-note-refresh-request', {
       key: KEY,
       idx: IDX,
@@ -1175,7 +1179,7 @@ async function confirmAddCheck() {
       if (!parsed) { showStickyRefreshFeedback('表格内容不完整（需要表头行＋分隔行）', true); return false; }
       if (!filled) { showStickyRefreshFeedback('请先在格子里填内容'); return false; }
     }
-    const ev = parseEvents(readMd()).find((x) => x.key === KEY);
+    const ev = sourceEvent(KEY);
     if (!ev) { window.alert('找不到该行程，无法加入内容'); return false; }
     const prev = ev.notes ? String(ev.notes).replace(/\s+$/, '') : '';
     const notes = (prev ? prev + '\n\n' : '') + block + '\n';
@@ -1203,7 +1207,7 @@ async function confirmAddCheck() {
   const lines = inp.value.replace(/\r\n/g, '\n').split('\n').map((l) => l.trim()).filter(Boolean);
   if (!lines.length) { showStickyRefreshFeedback('没有可加入的内容'); return false; }
   const md = lines.map((l) => '- [ ] ' + l).join('\n');
-  const ev = parseEvents(readMd()).find((x) => x.key === KEY);
+  const ev = sourceEvent(KEY);
   if (!ev) {
     window.alert('找不到该行程，无法保存子事件');
     return false;
@@ -1222,7 +1226,7 @@ async function confirmAddCheck() {
 // 正文用便利贴当前渲染的 HTML（与画面看到的一致）；主题取行程标题。
 // 分体 / 翻页模式通用：KEY 始终指向「当前这张」（翻页时 renderFlipPage 已重写 KEY）。
 function currentStickyEvent() {
-  return parseEvents(readMd()).find(e => e.key === KEY) || null;
+  return sourceEvent(KEY) || null;
 }
 function buildStickyEmailPayload(ev) {
   // 标题优先取画面渲染后的纯文本（# 前缀、[[链接]]、<MARK> 等都已处理好），
@@ -1384,20 +1388,21 @@ async function sendStickyEmail() {
 function applyNoteContent(arg) {
   // 翻页模式：仅当刷新的是「当前页」才重绘；其余只更新缓存（翻到该页时生效）
   if (IS_FLIP && (!arg || arg.key !== KEY || +arg.idx !== IDX)) return;
+  rememberRefMeta(arg);
   const titleEl = document.getElementById('title');
   if (arg && arg.titleHtml) {
     titleEl.innerHTML = arg.titleHtml;
   } else {
-    const ev0 = parseEvents(readMd()).find(e => e.key === KEY);
+    const ev0 = sourceEvent(KEY);
     titleEl.textContent = ev0 ? ev0.title : '';
   }
   let html = (arg && typeof arg.html === 'string') ? arg.html : '';
   if (!html) {
-    const ev0 = parseEvents(readMd()).find(e => e.key === KEY);
+    const ev0 = sourceEvent(KEY);
     if (ev0 && ev0.notes) html = '<p>' + escapeHtml(ev0.notes).replace(/\n/g, '<br>') + '</p>';
   }
   document.getElementById('body').innerHTML = html;
-  const ev = parseEvents(readMd()).find(e => e.key === KEY);
+  const ev = sourceEvent(KEY);
   if (ev || arg) {
     renderMeta(Object.assign({}, ev || {}, {
       date: arg && typeof arg.date === 'string' ? arg.date : (ev && ev.date),
@@ -1414,6 +1419,58 @@ function applyNoteContent(arg) {
 }
 // 读取 calendar.md（便利贴窗始终持有 FILE 路径）
 function readMd() { try { return fs.readFileSync(FILE, 'utf8'); } catch (e) { return ''; } }
+
+// ===== 🆕 来源文件（INCLUDE 外部文件，如 calendar-event-draft.md）支持 =====
+//   便利贴窗只持有 calendar.md 的 FILE；草稿便利贴这类「来自 INCLUDE 的行程」在本地这份文本里
+//   根本不存在（主程式解析时才把外部文件合并进来）。因此这类便利贴：
+//     ① 内容/元数据以主程式推来的 ref 为准（refMeta 缓存，含 notes 原文）；
+//     ② 画面上显示文档名徽标，一眼认出它不是正式档的便利贴；
+//     ③ 保存时把 src 一并上报，由主程式写回该来源文件（绝不写 calendar.md）。
+let SRC_FILE = '';                       // 当前便利贴的来源文件名（空＝calendar.md 正式档）
+const refMeta = new Map();               // key -> {notes, src, title, date, endDate, color, done, tags}
+function rememberRefMeta(arg) {
+  if (!arg || typeof arg.key !== 'string') return;
+  const next = Object.assign({}, refMeta.get(arg.key) || {});
+  ['notes', 'src', 'title', 'date', 'endDate', 'color', 'tags'].forEach((k) => {
+    if (arg[k] !== undefined && arg[k] !== null) next[k] = arg[k];
+  });
+  if (typeof arg.done === 'boolean') next.done = arg.done;
+  refMeta.set(arg.key, next);
+  if (arg.key === KEY) syncSourceFile();
+}
+function syncSourceFile() {
+  const meta = refMeta.get(KEY) || {};
+  SRC_FILE = String(meta.src || '');
+  applyDocBadge();
+}
+// 文档名徽标：只在来源不是 calendar.md 正式档时出现
+function applyDocBadge() {
+  const el = document.getElementById('docBadge');
+  if (!el) return;
+  if (SRC_FILE) {
+    el.textContent = '📄 ' + SRC_FILE;
+    el.title = '内容来源：' + SRC_FILE + '\n（编辑结果会写回该文件）';
+    el.classList.add('show');
+  } else {
+    el.textContent = '';
+    el.removeAttribute('title');
+    el.classList.remove('show');
+  }
+}
+// 当前事件对象：优先本地解析（calendar.md 正式档）；本地没有则用主程式推来的 ref
+//   ⚠️ 只有「外部 include 来源」(meta.src 非空) 才回退到 ref：正式档的事件若被删掉，
+//      继续沿用旧 ref 会一直显示幽灵内容，不如照旧提示「找不到该便利贴」。
+function sourceEvent(key) {
+  const local = parseEvents(readMd()).find((x) => x.key === key);
+  if (local) return local;
+  const meta = refMeta.get(key);
+  if (!meta || !meta.src) return null;
+  return {
+    title: meta.title || '', date: meta.date || '', endDate: meta.endDate || '',
+    color: meta.color || '#FFCC00', tags: Array.isArray(meta.tags) ? meta.tags : [],
+    notes: meta.notes || '', done: !!meta.done, uid: key, key
+  };
+}
 // 监听主程式推来的刷新（自动同步）
 ipcRenderer.on('sticky-note-refresh', (e, arg) => applyNoteContent(arg));
 
@@ -1593,14 +1650,14 @@ function syncEditSeg() {
   }
 }
 
-// 读取当前事件（KEY/IDX）的原始 notes（直接回读 calendar.md，保证权威）
+// 读取当前事件（KEY/IDX）的原始 notes（正式档直接回读 calendar.md；外部 include 文件用主程式推来的 ref）
 function getEventNotes() {
-  const ev = parseEvents(readMd()).find(x => x.key === KEY);
+  const ev = sourceEvent(KEY);
   return ev ? (ev.notes || '') : '';
 }
 // 统一重渲染正文/标题/日期/标签（用主窗口渲染好的 HTML）：编辑→渲染切换时复用
 async function renderNoteContent() {
-  const ev = parseEvents(readMd()).find(x => x.key === KEY);
+  const ev = sourceEvent(KEY);
   const titleEl = document.getElementById('title');
   if (!ev) {
     titleEl.textContent = '(找不到该便利贴)';
@@ -1614,6 +1671,7 @@ async function renderNoteContent() {
     const res = (await ipcRenderer.invoke('sticky-note-html', { key: KEY, idx: IDX })) || {};
     html = (typeof res.html === 'string') ? res.html : '';
     titleHtml = (typeof res.titleHtml === 'string') ? res.titleHtml : '';
+    rememberRefMeta(Object.assign({ key: KEY }, res));
   } catch (e) {}
   if (titleHtml) titleEl.innerHTML = titleHtml; else titleEl.textContent = ev.title;
   if (!html && ev.notes) html = '<p>' + escapeHtml(ev.notes).replace(/\n/g, '<br>') + '</p>';
@@ -1649,7 +1707,7 @@ async function setEditMode(edit) {
   syncEditSeg();
 }
 
-// 🆕 手动保存（⌘S）：把 textarea 内容回写到 calendar.md；Calendar 关闭时由主进程直接写文件。
+// 🆕 手动保存（⌘S）：把 textarea 内容回写；正式档 → calendar.md，外部 include 文件 → 该来源文件
 let editSavePending = false;
 async function saveNoteEdit() {
   const ea = document.getElementById('editArea');
@@ -1657,7 +1715,7 @@ async function saveNoteEdit() {
   editSavePending = true;
   let result;
   try {
-    result = await ipcRenderer.invoke('sticky-note-save-edit', { key: KEY, idx: IDX, notes: ea.value });
+    result = await ipcRenderer.invoke('sticky-note-save-edit', { key: KEY, idx: IDX, notes: ea.value, src: SRC_FILE });
   } catch (error) {
     window.alert('保存便利贴失败：' + (error && error.message ? error.message : error));
     editSavePending = false;
@@ -1668,6 +1726,9 @@ async function saveNoteEdit() {
     window.alert('保存便利贴失败：' + ((result && result.error) || '主进程未确认保存'));
     return false;
   }
+  // 本地缓存同步（外部 include 文件不走本地 calendar.md，重进编辑要能读回刚写的内容）
+  const cached = refMeta.get(KEY);
+  if (cached) cached.notes = ea.value;
   editDirty = false;
   markEditDirty(false);
   return true;
@@ -1683,7 +1744,7 @@ function markEditDirty(on) {
     ea.title = '有未保存的改动 —— 按 ⌘S（Windows 为 Ctrl+S）保存';
     ea.style.boxShadow = 'inset 0 0 0 1px rgba(220,38,38,.55)';
   } else {
-    ea.title = '已保存到 calendar.md';
+    ea.title = '已保存到 ' + (SRC_FILE || 'calendar.md');
     ea.style.boxShadow = 'inset 0 0 0 1px rgba(34,197,94,.5)';
     dirtyTimer = setTimeout(() => { if (ea) ea.style.boxShadow = ''; dirtyTimer = null; }, 1600);
   }
@@ -1941,39 +2002,97 @@ function endResize() {
   document.getElementById('rz').classList.toggle('visible', nearBottomRight);
 }
 
-// 🆕 翻页模式入口：拉取顺序、建翻页窗、渲染「上次停留的那张」，并绑定 ◀ ▶ 与 ← → 翻页
-async function initFlip() {
-  flipOrder = ((await ipcRenderer.invoke('sticky-note-order')) || {}).order || [];
+// 🆕 顺序版本号：initFlip 的「拉取」与主进程的「推送」可能交错，晚到的拉取结果不得覆盖更新的推送
+let flipOrderSeq = 0;
+// 🆕 静默重绘：后台对齐清单导致的第 N/T 张讯息框不弹（避免开窗/翻着看时突然闪一下）
+let flipRenderQuiet = false;
+
+function sameFlipOrder(a, b) {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    if (a[i].key !== b[i].key) return false;
+    if ((+a[i].idx || 0) !== (+b[i].idx || 0)) return false;
+  }
+  return true;
+}
+
+// 🆕 唯一的「采用主进程顺序」入口：只换清单／页次，重绘由调用方决定。
+//    当前这张优先按「标题|日期|idx」认领（Calendar 重排会换掉 evpN key，按 key 找会指到别张），
+//    认不到才退 key+idx，最后退回原位置。
+function applyFlipOrder(order) {
+  const prevOrder = flipOrder;
+  const prevIndex = flipIndex;
+  const current = prevOrder[prevIndex];
+  const currentId = current ? stickyFlipIdentity(current) : '';
+  const currentKey = current ? String(current.key || '') : '';
+  const currentIdx = current ? (+current.idx || 0) : 0;
+  flipOrder = (Array.isArray(order) ? order : []).filter(note => note && typeof note.key === 'string');
   flipTotal = flipOrder.length;
-  const geom = (await ipcRenderer.invoke('sticky-note-get', { key: FLIP_KEY, idx: FLIP_IDX })) || {};
+  let target = -1;
+  if (currentId) target = flipOrder.findIndex(note => stickyFlipIdentity(note) === currentId);
+  if (target < 0 && currentKey) target = flipOrder.findIndex(note => note.key === currentKey && (+note.idx || 0) === currentIdx);
+  if (target < 0) target = Math.min(Math.max(0, prevIndex), Math.max(0, flipTotal - 1));
+  flipIndex = target;
+  const changed = !sameFlipOrder(prevOrder, flipOrder);
+  updateFlipInd();
+  return { changed, index: target };
+}
+
+// 🆕 后台对齐：窗口脚本开始运行之前主进程推的「顺序更新」会整条丢掉（webContents 还没挂监听），
+//    这里再主动查两次把启动瞬间错过的顺序补回来（拉取不会丢）；只在清单真的变了才重绘。
+async function resyncFlipOrder() {
+  let res = null;
+  try { res = await ipcRenderer.invoke('sticky-note-order'); } catch (e) { return; }
+  if (!res || !Array.isArray(res.order)) return;
+  const r = applyFlipOrder(res.order);
+  if (!r.changed || !flipTotal) return;
+  // 编辑中绝不抢画面（未保存改动会被 renderFlipPage 的确认框打断）：只更新页数，等下次翻页再取内容
+  if (editMode) return;
+  flipRenderQuiet = true;
+  try { await renderFlipPage(flipIndex); } finally { flipRenderQuiet = false; }
+}
+
+// 🆕 翻页模式入口：拉取顺序、建翻页窗、渲染「上次停留的那张」，并绑定 ◀ ▶ 与 ← → 翻页
+// ⚠️ 所有 IPC 监听必须在任何 await 之前挂好：窗口刚建好时主进程可能立刻推「顺序更新」，
+//    以前要等两次 invoke 往返后才挂监听，那段时间的推送会整条丢掉 →
+//    症状：翻页窗写「第 9 / 9 张」，而 ☰ 清单现场查询已经是 12 项（点第 12 项才补回来）。
+async function initFlip() {
+  document.getElementById('note').classList.add('flip');
+  // ① 顺序更新（切开关 / Calendar 同步都会来这一条）：采纳新清单后必须重绘，
+  //    因为 sync 只发这一条事件，当前页的新内容／新 key 都靠这次重取
+  ipcRenderer.on('sticky-note-order-updated', (e, payload) => {
+    flipOrderSeq++;
+    applyFlipOrder(payload && payload.order);
+    if (!flipTotal) return;
+    if (editMode) return; // 编辑中不抢画面（页数已更新，内容等翻页再取）
+    renderFlipPage(flipIndex);
+  });
+  // ② 指定显示某一张：payload 带主进程的权威顺序 → 先对齐清单，再按 key+idx 定位（index 只作兜底）
+  ipcRenderer.on('sticky-note-show-page', (e, payload) => {
+    if (!payload) return;
+    if (Array.isArray(payload.order)) { flipOrderSeq++; applyFlipOrder(payload.order); }
+    let target = -1;
+    if (typeof payload.key === 'string' && payload.key) {
+      target = flipOrder.findIndex(note => note.key === payload.key && (+note.idx || 0) === (+payload.idx || 0));
+    }
+    if (target < 0 && Number.isInteger(payload.index)) target = payload.index;
+    if (target >= 0 && flipTotal) renderFlipPage(target);
+  });
+  const seq0 = flipOrderSeq;
+  const [orderRes, geomRes] = await Promise.all([
+    ipcRenderer.invoke('sticky-note-order').catch(() => null),
+    ipcRenderer.invoke('sticky-note-get', { key: FLIP_KEY, idx: FLIP_IDX }).catch(() => null)
+  ]);
+  const geom = geomRes || {};
   Object.assign(state, {
     w: (typeof geom.w === 'number' && geom.w > MIN_W) ? geom.w : DEFAULT_W,
     h: (typeof geom.h === 'number' && geom.h > MIN_H) ? geom.h : DEFAULT_H,
     minimized: !!geom.minimized,
     minH: (typeof geom.minH === 'number' && geom.minH > 20) ? geom.minH : 0
   });
-  document.getElementById('note').classList.add('flip');
   setupControls();
-  ipcRenderer.on('sticky-note-show-page', (e, payload) => {
-    if (payload && Number.isInteger(payload.index)) renderFlipPage(payload.index);
-  });
-  ipcRenderer.on('sticky-note-order-updated', (e, payload) => {
-    const current = flipOrder[flipIndex];
-    const currentKey = current && current.key;
-    const currentIdx = current && (+current.idx || 0);
-    const currentId = current ? stickyFlipIdentity(current) : '';
-    flipOrder = payload && Array.isArray(payload.order) ? payload.order : [];
-    flipTotal = flipOrder.length;
-    // 优先按「标题|日期|idx」找当前这张（Calendar 重排会换掉 evpN key，按 key 找会指到别张）；
-    // 没有身份可认时才退回 key+idx。
-    let currentIndex = -1;
-    if (currentId) currentIndex = flipOrder.findIndex(note => stickyFlipIdentity(note) === currentId);
-    else if (currentKey) currentIndex = flipOrder.findIndex(note => note.key === currentKey && (+note.idx || 0) === currentIdx);
-    const targetIndex = currentIndex >= 0 ? currentIndex : Math.min(flipIndex, Math.max(0, flipTotal - 1));
-    updateFlipInd();
-    // 必须重绘：sync 只发这一条事件，当前页的新内容／新 key 都靠这次重取
-    if (flipTotal) renderFlipPage(targetIndex);
-  });
+  // 拉取回来之前若有推送到达（seq 变了）→ 以推送为准，丢掉这份可能更旧的快照
+  if (flipOrderSeq === seq0) applyFlipOrder(orderRes && orderRes.order);
   if (flipTotal === 0) {
     document.getElementById('title').textContent = '(没有可翻页的便利贴)';
     document.getElementById('meta').textContent = '';
@@ -1997,6 +2116,8 @@ async function initFlip() {
     typeof geom.lastId === 'string' ? geom.lastId : ''
   );
   await renderFlipPage(startIndex);
+  // 启动兜底：补回「脚本还没挂监听时被丢掉」的顺序更新（两次足够覆盖 Calendar 载入/同步的时间差）
+  [800, 2400].forEach((delay) => { setTimeout(resyncFlipOrder, delay); });
 }
 function stickyFlipIdentity(note) {
   const title = String((note && note.title) || '');
@@ -2041,8 +2162,17 @@ async function loadStickyMenuNotes() {
     const pageNotes = result && Array.isArray(result.order) ? result.order : allNotes.filter(note => note.isOpen);
     const inactiveNotes = mode === 'flip' ? allNotes.filter(note => !note.isOpen) : [];
     const notes = mode === 'flip' ? pageNotes : allNotes;
+    // 🆕 这份清单是「现场查询」的结果，而翻页窗的 flipOrder 只是开窗那一刻的快照；
+    //    这里顺手对齐，让「第 N / T 张」与这份清单永远同一来源（只换清单与页次，不动画面内容）
+    if (IS_FLIP && mode === 'flip' && Array.isArray(result.order)) {
+      flipOrderSeq++;
+      applyFlipOrder(result.order);
+    }
+    // 标题写清算术：翻页张数 / 未开启张数 分开讲，避免把「未开启」的行数也算成页数
     listTitle.textContent = mode === 'flip'
-      ? '翻页清单（' + pageNotes.length + ' 项；点击名称显示，点开 / 关切换；关掉的状态会记住）'
+      ? '翻页清单 ' + pageNotes.length + ' 张'
+        + (inactiveNotes.length ? '（另有 ' + inactiveNotes.length + ' 张未开启，不计入翻页）' : '')
+        + '：点击名称显示，点开 / 关切换'
       : '已设定的便利贴（点击名称显示；点击开 / 关切换）';
     list.replaceChildren();
     const appendNoteRow = (item, index) => {
@@ -2078,10 +2208,11 @@ async function loadStickyMenuNotes() {
     if (inactiveNotes.length) {
       const inactiveTitle = document.createElement('div');
       inactiveTitle.className = 'm-sticky-list-inactive-title';
-      inactiveTitle.textContent = '未开启（不计入翻页）';
+      inactiveTitle.textContent = '未开启（不计入翻页 · 点「开」才加入）';
       list.appendChild(inactiveTitle);
-      // 未开启项独立编号（从 1 开始），与上方开启项各成一套
-      inactiveNotes.forEach((item, i) => appendNoteRow(item, i));
+      // ⚠️ 未开启项「不编号」：以前从 1 再数一遍，视觉上会和上方页次连成一片，
+      //    让人误以为总页数是「已开启 + 未开启」（例：9 页 + 3 张未开启 = 看成 12 张）
+      inactiveNotes.forEach((item) => appendNoteRow(item, null));
     }
     wrap.classList.toggle('open', notes.length > 0 || inactiveNotes.length > 0);
   } catch (error) {
@@ -2115,7 +2246,8 @@ async function renderFlipPage(i) {
   IDX = +flipOrder[i].idx || 0;
   const listed = flipOrder[i];
   persistFlipPosition();   // 每次切页都记下「当前这张」，关窗/退出前至少已更新到内存
-  const parsedEvent = parseEvents(readMd()).find(e => e.key === KEY);
+  rememberRefMeta(listed); // 翻页清单本身就带 notes/src（外部 include 文件的行程本地解析不到）
+  const parsedEvent = sourceEvent(KEY);
   const ev = listed ? Object.assign({}, parsedEvent || {}, listed, { key: KEY, uid: KEY }) : parsedEvent;
   if (!ev) {
     document.getElementById('title').textContent = '(无法载入该便利贴)';
@@ -2187,6 +2319,7 @@ let flipPageToastTimer = null;
 function showFlipPageToast(text) {
   const el = document.getElementById('flipPageToast');
   if (!el) return;
+  if (flipRenderQuiet) return; // 后台对齐清单的静默重绘不弹页次
   el.textContent = text;
   el.classList.add('show');
   if (flipPageToastTimer) clearTimeout(flipPageToastTimer);

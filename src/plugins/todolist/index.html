@@ -7026,6 +7026,10 @@
     async function tlOpenStickyNotes() {
       if (!window.electronAPI || !window.electronAPI.invoke) return;
       if (!externalFilePath) { if (typeof showToast === 'function') showToast('请先打开 calendar.md', 'danger'); return; }
+      // ⚠️ 必须先等 include 外部档（calendar-*.md，如 calendar-event-draft.md）合并完再数便利贴：
+      //    tlRefreshIncludedEvents 是异步「发射后不管」，草稿档的行程往往在开窗之后才到 →
+      //    翻页页次就少算（实测 9 张 vs 实际 12 张，差的正是草稿档那 3 张）。
+      if (typeof tlEnsureIncludesLoaded === 'function') { try { await tlEnsureIncludesLoaded(); } catch (e) {} }
       const refs = (typeof tlStickyNoteRefs === 'function') ? tlStickyNoteRefs() : [];
       const r = await window.electronAPI.invoke('open-sticky-notes', { file: externalFilePath, notes: refs, mode: tlStickyMode });
       tlStickyNotesOpen = !!(r && r.ok);
@@ -7035,8 +7039,10 @@
         if (r && r.count) {
           if (tlStickyMode === 'flip') {
             const pages = (typeof r.pages === 'number') ? r.pages : r.count;
+            // 被「翻页清单里关掉」的张数（持久化记忆）：明说清楚，避免「怎么只有 9 张」的困惑
+            const closed = Math.max(0, refs.length - pages);
             showToast(pages
-              ? '已开启翻页便利贴（' + pages + ' 张，◀ ▶ 翻页）'
+              ? '已开启翻页便利贴 ' + pages + ' 张' + (closed ? '（另有 ' + closed + ' 张在清单里关着，点 ☰ 打开）' : '') + '，◀ ▶ 翻页'
               : '翻页清单里的便利贴都关着；点便利贴窗口的 ☰ 菜单可重新打开');
           } else showToast('已开启 ' + r.count + ' 张桌面便利贴');
         } else showToast('没有标记为便利贴的事件（把「便利贴 ×N」设为 ≥1）');
@@ -7320,8 +7326,20 @@
           : tlCalEvents;
         const uid = (typeof tlFindEventUidByKey === 'function') ? tlFindEventUidByKey(payload.key) : null;
         const ev = tlCalEvents.find(function (x) { return x.uid === uid; });
+
+        // 📎 来自 INCLUDE 外部文件（草稿便利贴等）的行程：编辑结果写回「来源文件」，绝不写 calendar.md
+        //    —— 走 calendar-editor 的 tlSaveIncludedEventNotes（按区块只替换 Remark，保留其它字段）
+        const includeSrc = String((payload && payload.src) || (ev && ev.src) || '').trim();
+        if (includeSrc && (!ev || ev.ro)) {
+          if (typeof tlSaveIncludedEventNotes !== 'function') throw new Error('包含文件回写功能不可用');
+          const r = await tlSaveIncludedEventNotes(payload.key, (payload.notes != null) ? String(payload.notes) : '', includeSrc);
+          if (!r || !r.ok) throw new Error((r && r.error) || ('写入 ' + includeSrc + ' 失败'));
+          if (typeof showToast === 'function') showToast('便利贴内容已保存到 ' + (r.file || includeSrc), 'success');
+          await reply({ success: true, file: r.file || includeSrc });
+          return;
+        }
+
         if (!ev) throw new Error('找不到该行程（内容可能已被修改）');
-        if (ev.ro) throw new Error('此行程来自只读包含文件，不可更改');
 
         ev.notes = (payload.notes != null) ? String(payload.notes) : '';
         tlApplyEventsToBuffer();
@@ -15011,6 +15029,8 @@
         if (window.__todoOpenSticky && externalFilePath) {
           try {
             if (window.electronAPI && window.electronAPI.invoke) {
+              // ⚠️ 先等 include 外部档合并完，否则草稿档的便利贴会被漏算（页次少几张）
+              if (typeof tlEnsureIncludesLoaded === 'function') { try { await tlEnsureIncludesLoaded(); } catch (e) {} }
               const refs = (typeof tlStickyNoteRefs === 'function') ? tlStickyNoteRefs() : [];
               const rr = await window.electronAPI.invoke('open-sticky-notes', { file: externalFilePath, notes: refs, mode: (localStorage.getItem('tlStickyDisplayMode') || 'split') });
               tlStickyNotesOpen = !!(rr && rr.ok);

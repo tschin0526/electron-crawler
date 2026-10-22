@@ -134,7 +134,7 @@
         //    setCalEventsView(true) 幂等：重跑 showCalEventsPaneOnly()（重新隐藏文字编辑器）+ 重渲染行程内容；
         //    内容来自 #taskText 实时缓冲，不会丢编辑。
         setCalEventsView(true);
-        tlRefreshIncludedEvents(); // 📎 打开/切入 calendar.md 时，加载同目录 calendar-*.md（只读合并；加载完自动重绘）
+        tlKickIncludeRefresh(); // 📎 打开/切入 calendar.md 时，加载同目录 calendar-*.md（只读合并；加载完自动重绘）
       } else if (calEventsView) {
         setCalEventsView(false);
       }
@@ -147,6 +147,19 @@
     // 📎 加载同目录 calendar-*.md（结构与 calendar.md 相同：EVENT / HOLIDAY / DIARY）并解析为只读数据：
     //   - 外部文件模式：目录 = externalFilePath 所在目录，读取走 readFileByPath
     //   - 内部 md 模式：目录 = TODO_DATA_DIR（getTodoDataDir），读取走 readMdFile
+    // 📎 include 载入的「可等待句柄」：tlRefreshIncludedEvents 本身是异步且原本是「发射后不管」，
+    //    于是开便利贴时草稿档（calendar-event-draft.md）里的行程还没合并进来 →
+    //    便利贴页次少算（实测：9 张 vs 实际 12 张，差的正是草稿档那 3 张）。
+    //    现在所有调用点走 tlKickIncludeRefresh()，需要「拿到完整清单」的地方先 await tlEnsureIncludesLoaded()。
+    let tlIncludeReady = Promise.resolve();
+    function tlKickIncludeRefresh() {
+      tlIncludeReady = tlRefreshIncludedEvents().catch(() => {});
+      return tlIncludeReady;
+    }
+    async function tlEnsureIncludesLoaded() {
+      try { await tlIncludeReady; } catch (e) {}
+      return tlIncludeReady;
+    }
     async function tlRefreshIncludedEvents() {
       if (!isCalendarMdDoc()) { tlIncludedEvents = []; tlIncludedHolidays = []; tlIncludedDiaries = []; tlIncludedFiles = []; return; }
       const api = window.electronAPI || {};
@@ -204,6 +217,150 @@
         //    故在此「最后一次启动渲染」之后再自动按一次「今天」按钮，确保滚动真正生效并留下。
         tlTriggerStartupToday();
       }
+      // 🆕 include 合并完 → 便利贴集合可能变大（草稿档的行程也带便利贴）：必须重算并推给主进程，
+      //    否则翻页窗/翻页清单停在「开窗那一刻」的张数（实测少 3 张，正是草稿档那 3 张）
+      if (typeof tlUpdateStickyBadge === 'function') tlUpdateStickyBadge();
+      if (typeof tlPushStickyRefreshes === 'function') tlPushStickyRefreshes();
+    }
+
+    // ===== 📎 INCLUDE 外部文件「就地回写」（草稿便利贴等只读包含行程的编辑落盘）=====
+    //   设计原则：
+    //     ① 目录规则与 tlRefreshIncludedEvents 完全一致（外部文件模式＝所在目录；内部 md 模式＝TODO_DATA_DIR），
+    //        不新增第二套路径推导；
+    //     ② 只替换目标区块的 Remark 内容，其余字段（含本程式不认识的字段）原样保留 → 不会因为
+    //        「整块重新序列化」把用户手写的东西冲掉；
+    //     ③ 永远写「来源文件」（ev.src），绝不写 calendar.md；
+    //     ④ 写完立刻重载 INCLUDE 并重绘，便利贴 / 日历一起刷新。
+    async function tlIncludeFileTarget(name) {
+      const api = window.electronAPI || {};
+      const fileName = String(name || '').trim();
+      if (!fileName) return null;
+      let dir = null, isExt = false;
+      const t = currentFileTarget();
+      if (t && t.kind === 'ext' && t.path) {
+        dir = String(t.path).replace(/[\\/][^\\/]*$/, '');
+        isExt = true;
+      } else if (api.getTodoDataDir) {
+        const r = await api.getTodoDataDir();
+        dir = (r && r.data) ? String(r.data) : null;
+      }
+      if (!dir) return null;
+      const abs = dir + '/' + fileName;
+      const mdId = fileName.replace(/\.md$/i, '');
+      return {
+        abs,
+        async read() {
+          if (isExt) {
+            const rr = api.readFileByPath ? await api.readFileByPath(abs) : null;
+            return (rr && rr.success) ? (rr.content || '') : null;
+          }
+          const rr = api.readMdFile ? await api.readMdFile(mdId) : null;
+          return (rr && rr.success) ? (rr.content || '') : null;
+        },
+        async write(content) {
+          if (isExt) {
+            if (!api.saveFileByPath) throw new Error('缺少写入外部文件的接口');
+            const r = await api.saveFileByPath(abs, content);
+            if (r && r.success === false) throw new Error(r.error || '写入失败');
+            return;
+          }
+          if (!api.saveMdFile) throw new Error('缺少写入 MD 文件的接口');
+          const r = await api.saveMdFile(mdId, content);
+          if (r && r.success === false) throw new Error(r.error || '写入失败');
+        }
+      };
+    }
+    // 只替换 blockText 里的 `- Remark:` 围栏正文；没有 Remark 字段时在原位补一个
+    function tlReplaceRemarkInBlock(blockText, notes) {
+      const nl = '\n';
+      const lines = String(blockText == null ? '' : blockText).replace(/\r\n/g, nl).split(nl);
+      const newNotes = String(notes == null ? '' : notes);
+      const fence = tlRemarkFence(newNotes);
+      const repl = [fence].concat(newNotes === '' ? [''] : newNotes.split(nl)).concat([fence]);
+      const ri = lines.findIndex((l) => /^-[ \t]*Remark:/.test(l));
+      if (ri < 0) {
+        // 没有 Remark 字段：插到区块末尾（保持块尾空行不变）
+        let at = lines.length;
+        while (at > 0 && lines[at - 1].trim() === '') at--;
+        return lines.slice(0, at).concat(['- Remark:'], repl, lines.slice(at)).join(nl);
+      }
+      // 找围栏正文范围：`- Remark:` 下一行起是开启围栏
+      let end = ri + 1;
+      const open = (lines[ri + 1] || '').match(/^(`{3,})[ \t]*$/);
+      if (open) {
+        const closeRe = new RegExp('^`{' + open[1].length + ',}[ \\t]*$');
+        let k = ri + 2;
+        while (k < lines.length && !closeRe.test(lines[k])) k++;
+        end = Math.min(k + 1, lines.length);
+      }
+      return lines.slice(0, ri + 1).concat(repl, lines.slice(end)).join(nl);
+    }
+    // 把来源文件里第 index 个 EVENT 区块整体换掉（区块＝该 ## EVENT 行到下一个 ## 级标题前）
+    function tlSpliceEventBlockText(content, index, newBlockText) {
+      const text = String(content == null ? '' : content);
+      const re = /^##[ \t]*EVENT(?:\([^)]*\))?[ \t]*$/gm;
+      const starts = [];
+      let m;
+      while ((m = re.exec(text))) starts.push(m.index);
+      if (!(index >= 0 && index < starts.length)) return null;
+      const s = starts[index];
+      const nextRel = text.slice(s + 1).search(/^##[ \t]/m);
+      const e = nextRel >= 0 ? s + 1 + nextRel : text.length;
+      const head = text.slice(0, s);
+      const tail = text.slice(e);
+      const body = String(newBlockText || '').replace(/\n+$/, '') + '\n';
+      return head + body + (tail ? (tail.startsWith('\n') ? tail : '\n' + tail) : '');
+    }
+    // 便利贴「编辑回写」：把 notes 写入该行程的来源 include 文件（不碰 calendar.md）
+    //   定位顺序：key 里的区块序号（ro-<文件序号>-<区块序号>-evp<N>）→ 标题+日期唯一匹配
+    async function tlSaveIncludedEventNotes(key, notes, srcName) {
+      const target = (tlCalEvents || []).find((e) => e.uid === key);
+      const name = String(srcName || (target && target.src) || '').trim();
+      if (!name) return { ok: false, error: '找不到该行程的来源文件' };
+      const io = await tlIncludeFileTarget(name);
+      if (!io) return { ok: false, error: '无法定位所在目录（请确认 Calendar 已打开）' };
+      let content = null;
+      try { content = await io.read(); } catch (e) { return { ok: false, error: '读取 ' + name + ' 失败：' + (e.message || e) }; }
+      if (content == null) return { ok: false, error: '读取 ' + name + ' 失败' };
+      const events = tlParseEvents(content);
+      const same = (ev) => !!(ev && target && String(ev.title || '') === String(target.title || '') &&
+        String(ev.date || '') === String(target.date || ''));
+      const idxFromKey = (String(key || '').match(/^ro-\d+-(\d+)-/) || [])[1];
+      let index = (idxFromKey === undefined) ? -1 : (+idxFromKey);
+      // 有当前事件就核对「标题+日期」防止文件变动后错位；拿不到当前事件时退回 key 里的区块序号
+      if (target) {
+        if (!(index >= 0 && same(events[index]))) index = events.findIndex(same);
+      } else if (!(index >= 0 && index < events.length)) {
+        index = -1;
+      }
+      if (!(index >= 0 && events[index])) {
+        return { ok: false, error: '在 ' + name + ' 中找不到该行程（文件可能已被外部修改，请刷新后重试）' };
+      }
+      // 取出该区块原文：用同一套分块正则定位
+      const starts = [];
+      const re = /^##[ \t]*EVENT(?:\([^)]*\))?[ \t]*$/gm;
+      let m;
+      while ((m = re.exec(content))) starts.push(m.index);
+      // 安全阀：解析出的条目数必须与原始区块数一致（有「缺 title 的块」时序号会错位 → 宁可拒写）
+      if (starts.length !== events.length) {
+        return { ok: false, error: name + ' 中含有缺标题的 EVENT 区块，无法安全定位，已取消写入' };
+      }
+      const s = starts[index];
+      const nextRel = content.slice(s + 1).search(/^##[ \t]/m);
+      const e = nextRel >= 0 ? s + 1 + nextRel : content.length;
+      const blockText = content.slice(s, e);
+      const newBlock = tlReplaceRemarkInBlock(blockText, notes);
+      const next = tlSpliceEventBlockText(content, index, newBlock);
+      if (next == null) return { ok: false, error: '无法定位 ' + name + ' 中该行程的区块' };
+      if (next === content) return { ok: true, file: name, unchanged: true };
+      try { await io.write(next); } catch (err) { return { ok: false, error: '写入 ' + name + ' 失败：' + (err.message || err) }; }
+      // 只同步内存里的这一条（不重跑 tlRefreshIncludedEvents：那是启动/切换文件用的，
+      // 收尾会按一次「今天」而把用户正在看的滚动位置拉走）
+      const mem = (tlCalEvents || []).find((e) => e.uid === key);
+      if (mem) mem.notes = String(notes == null ? '' : notes);
+      if (typeof tlRenderEventsContent === 'function') tlRenderEventsContent();
+      if (typeof tlPushStickyRefreshes === 'function') tlPushStickyRefreshes();
+      return { ok: true, file: name };
     }
 
     // 📂 Include 加载清单：列出同目录被 include 的 calendar-*.md 及其大小
@@ -254,7 +411,7 @@
       // 立即落盘（含外部文件模式）：写回 calendar.md，供下次启动按勾选加载 + 跨设备同步
       if (typeof saveTask === 'function') { try { saveTask(false, true); } catch (e) {} }
       // 立即动态重载：勾选→出现，取消→释放，无需重开文件
-      tlRefreshIncludedEvents();
+      tlKickIncludeRefresh();
       // 刷新弹窗计数（列表本身状态已由 checkbox 反映）
       const fileEl = document.getElementById('tlIncludeListFile');
       if (fileEl) fileEl.textContent = '已加载 ' + list.filter((it) => it.on).length + ' / 共 ' + list.length + ' 个文件';
@@ -843,18 +1000,36 @@
           for (let i = 0; i < n; i++) out.push({
             key, idx: i, html, titleHtml, title, date: ev.date || '', endDate: ev.endDate || '',
             color: ev.color || '', done: !!ev.done, tags: Array.isArray(ev.tags) ? ev.tags : [],
-            notes: ev.notes || ''
+            notes: ev.notes || '',
+            // 🆕 来源文件名（仅 INCLUDE 外部文件的事件有值）：便利贴据此显示文档名徽标、
+            //    并把编辑结果写回该文件（而不是 calendar.md）
+            src: ev.ro ? String(ev.src || '') : ''
           });
         }
       });
       return out;
     }
-    // 🆕 主程式事件变更后，把每张便利贴最新渲染结果推给对应便利贴窗（经由主进程中转）
-    //   仅在便利贴开启时推送，避免无谓渲染；主进程会只转发给真实存在的窗口
+    // 🆕 主程式事件变更后，把便利贴最新状态推给主进程（再由主进程中转给便利贴窗）
+    //   ⚠️ 关键：集合（key#idx 清单）变了时必须整份 sticky-note-sync。
+    //      以前一律只发逐张 sticky-note-refresh → 主进程的 stickyNoteOrder 停在开窗那一刻，
+    //      事后新增／减少的便利贴永远进不了翻页清单（症状：翻页窗「第 9 / 9 张」，
+    //      而 ☰ 清单现场查询已经 12 张；点清单第 12 项才把整份重开、数字才对上）。
+    let tlLastStickySet = '';   // 上次推过的便利贴集合指纹（有序 key#idx）
     function tlPushStickyRefreshes() {
       if (typeof tlStickyNotesOpen !== 'undefined' && !tlStickyNotesOpen) return;
       if (!window.electronAPI || !window.electronAPI.send) return;
-      tlStickyNoteRefs().forEach((ref) => { window.electronAPI.send('sticky-note-refresh', ref); });
+      const refs = tlStickyNoteRefs();
+      const setSig = refs.map((ref) => ref.key + '#' + (+ref.idx || 0)).join(',');
+      const prevSig = tlLastStickySet;
+      tlLastStickySet = setSig;
+      // 本会话第一次推：主进程刚由 open-sticky-notes 播种，只记指纹、不重复整份同步
+      if (prevSig && setSig !== prevSig) {
+        // 集合变了（张数增减 / 换行程）→ 整份同步，主进程才知道翻页清单多了或少了哪几张；
+        // sync 本身会按分量刷新已存在的窗并补建新窗，不必再逐张发 refresh
+        try { window.electronAPI.send('sticky-note-sync', { notes: refs }); } catch (err) {}
+        return;
+      }
+      refs.forEach((ref) => { window.electronAPI.send('sticky-note-refresh', ref); });
     }
     // 依据便利贴 key（= 事件 uid）找事件 uid（供桌面便利贴「在主程式打开 / 编辑回写」定位事件）
     function tlFindEventUidByKey(key) {
