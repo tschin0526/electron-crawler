@@ -146,6 +146,23 @@ body {
   color: var(--text);
   border: 1px solid var(--border);
 }
+/* 🆕 通用角標（badge）：按鈕右上角紅底白字圓形數字
+   用於頂欄「保存」按鈕（#btn-save-badge）與 combo toggle 上的 dirty 數量顯示。 */
+.btn { position: relative; }   /* 讓 badge 的 absolute 定位有參考點 */
+.btn-badge,
+.cal-include-count.has-dirty {
+  position: absolute; top: -5px; right: -8px;
+  min-width: 16px; height: 16px;
+  padding: 0 4px;
+  background: #e53e3e; color: #fff;
+  border-radius: 10px;
+  font-size: 10px; line-height: 16px;
+  text-align: center; font-weight: 600;
+  box-shadow: 0 0 0 1px var(--bg, #1a202c);
+  z-index: 10;
+}
+/* combo 菜單裡的 cal-include-count（非 dirty 時）：純文字靠右 */
+.cal-include-count { position: static; margin-left: 4px; color: var(--text-muted, #999); font-size: 11px; }
 
 .btn-secondary:hover {
   background: var(--border);
@@ -477,6 +494,37 @@ body {
 .ev-toolbar-combo-option input { flex: none; margin: 0 3px; accent-color: var(--primary); }
 .ev-toolbar-combo-action { flex: 1; border: 0; border-radius: 4px; padding: 5px 4px; background: transparent; color: inherit; text-align: left; font: inherit; cursor: pointer; }
 .ev-toolbar-combo-action:hover { color: var(--primary); background: rgba(127, 127, 127, .12); }
+/* combo 菜单裡的主動作（＋ 新增行程）：加邊框＋主題色，辨識成「主要操作」 */
+.ev-toolbar-combo-primary {
+  border: 1px solid var(--primary) !important;
+  color: var(--primary);
+  background: rgba(59, 130, 246, .08) !important;
+  font-weight: 600;
+}
+.ev-toolbar-combo-primary:hover { color: #fff !important; background: var(--primary) !important; }
+/* 📎 聯運檔案 / 📅 事件過濾 / 🏷 標籤過濾：combo 菜單裡可折疊面板的通用樣式（平時收合不占畫面；點 toggle 展開內層） */
+.cal-panel .cal-panel-toggle { position: relative; padding-right: 18px; }
+.cal-panel .cal-panel-toggle::after { content: '▸'; position: absolute; right: 4px; top: 50%; transform: translateY(-50%); font-size: 11px; color: var(--text-secondary); transition: transform .15s; }
+.cal-panel .cal-panel-toggle[aria-expanded="true"]::after { transform: translateY(-50%) rotate(90deg); }
+/* include 也沿用通用規則 */
+.cal-include-panel .cal-include-toggle { position: relative; padding-right: 18px; }
+.cal-include-panel .cal-include-toggle::after { content: '▸'; position: absolute; right: 4px; top: 50%; transform: translateY(-50%); font-size: 11px; color: var(--text-secondary); transition: transform .15s; }
+.cal-include-panel .cal-include-toggle[aria-expanded="true"]::after { transform: translateY(-50%) rotate(90deg); }
+.cal-include-count { margin-left: 2px; color: var(--text-secondary); font-size: 11px; }
+/* 面板 body：內層是真實內容（#cal-include-bar / #ev-holiday-legend / #ev-tagbar）；body 本身只做 padding 容器 */
+.cal-panel-body, .cal-include-body { padding: 2px 4px 4px; }
+/* 菜單裡的 include bar 更緊湊：壓縮 padding、縮小 chip 間距，避免撐開菜單 */
+.ev-toolbar-combo-menu .ev-include-bar { padding: 0; gap: 4px; font-size: 11px; }
+.ev-toolbar-combo-menu .ev-ib-chip { padding: 1px 3px 1px 6px; max-width: 180px; font-size: 11px; }
+.ev-toolbar-combo-menu .ev-ib-label { font-size: 11px; }
+.ev-toolbar-combo-menu .ev-ib-hint { font-size: 10px; }
+/* 菜單裡的 holiday legend：checkbox 列改成換行顯示，避免撐成超寬 */
+.ev-toolbar-combo-menu .ev-holiday-legend { padding: 4px 0; gap: 6px; flex-wrap: wrap; font-size: 11px; }
+.ev-toolbar-combo-menu .ev-legend-item { padding: 2px 4px; }
+/* 菜單裡的 tagbar：壓縮 chip 高度，避免撐開菜單 */
+.ev-toolbar-combo-menu .ev-tagbar { gap: 4px; padding: 2px 0 4px; font-size: 11px; flex-wrap: wrap; }
+.ev-toolbar-combo-menu .ev-tag-chip { padding: 1px 6px; font-size: 11px; }
+.ev-toolbar-combo-menu .ev-tagbar-label { font-size: 11px; }
 
 /* 月視圖導航 */
 .ev-monthnav { display: flex; align-items: center; gap: 10px; padding: 0 0 6px; }
@@ -1159,6 +1207,7 @@ body {
   color: var(--gold);
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   letter-spacing: 0.02em;
+  white-space: nowrap;
 }
 
 /* Toast 提示 */
@@ -1600,13 +1649,13 @@ p[data-cols-marker="true"] { display: none; }
   opacity: 0; pointer-events: none; box-shadow: 0 12px 34px rgba(0, 0, 0, .4); transition: opacity .2s ease;
 }
 .cal-sticky-toast.show { opacity: .55; }
-.cal-sticky-foot { flex: none; display: flex; align-items: center; justify-content: center; gap: 14px; color: #f8fafc; font-size: 13px; }
+.cal-sticky-foot { flex: none; display: flex; align-items: center; justify-content: center; gap: 6px; color: #f8fafc; font-size: 11.5px; flex-wrap: nowrap; overflow-x: auto; }
 .cal-sticky-foot button {
   border: 1px solid rgba(212, 175, 55, .8); background: rgba(20, 24, 34, .55); color: #f8fafc;
-  border-radius: 8px; padding: 7px 14px; font-size: 13px; cursor: pointer;
+  border-radius: 7px; padding: 5px 8px; font-size: 11.5px; cursor: pointer; white-space: nowrap; flex-shrink: 0;
 }
 .cal-sticky-foot button:disabled { opacity: .35; cursor: default; }
-#calStickyFootInd { min-width: 6em; text-align: center; opacity: .9; }
+#calStickyFootInd { min-width: 5em; text-align: center; opacity: .9; font-size: 11px; }
 /* ☰ 清單 / 設定：手機用 bottom sheet（可捲動），不遮住上方卡片太久 */
 .cal-sticky-sheet { position: absolute; inset: 0; z-index: 20; display: flex; align-items: flex-end; justify-content: center; background: rgba(0, 0, 0, .45); }
 .cal-sticky-sheet-box {

@@ -11,7 +11,7 @@
   <!-- iOS 主畫面圖示：180×180 為 Apple 官方標準尺寸（iOS 會自行加圓角遮罩，故須為不透明方圖） -->
   <link rel="apple-touch-icon" sizes="180x180" href="icon-180.png" data-page-node-id="O0oAK92VYN4nppkiMvphgO" />
   <link rel="icon" type="image/svg+xml" href="icon.svg" data-page-node-id="tgrBpFvwSKwe7BFOV44T57" />
-  <link rel="stylesheet" href="style.css" data-page-node-id="83BzEspcJAUJFbiogDqe2N" />
+  <link rel="stylesheet" href="style.css?v=159" data-page-node-id="83BzEspcJAUJFbiogDqe2N" />
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/marked-emoji@4/lib/marked-emoji.umd.js"></script>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css" data-page-node-id="GNRXknWh9AOAUFB5wifDUR">
@@ -29,7 +29,7 @@
     <header class="toolbar region" data-page-node-id="H1799o7Bi43iFcVqikgGoy">
       <div class="toolbar-left" data-page-node-id="3Bhm48LoEza4EaPuCBP0eM">
         <button id="btn-open" class="btn btn-secondary" title="開啟檔案（可一次多選）：calendar.md 為主檔，行程本體可編輯；同批其他 calendar*.md 自動作為只讀聯運——行程不可編輯，只有便利貼內容可改" data-page-node-id="jBuTh5OaGcNyn4H9q1NSLY">開啟</button>
-        <button id="btn-save" class="btn btn-secondary" title="保存文件到 iCloud" data-page-node-id="xI9aHNProtF19uKHlU9Iy2">保存</button>
+        <button id="btn-save" class="btn btn-secondary" title="保存文件到 iCloud" data-page-node-id="xI9aHNProtF19uKHlU9Iy2">保存<span class="btn-badge" id="btn-save-badge" style="display:none">0</span></button>
         <button id="btn-reset" class="btn btn-secondary" title="清除所有緩存並重新載入應用" data-page-node-id="OFInZmGq0dd8SGCfjeFRp2">重置</button>
       </div>
       <div class="toolbar-center" data-page-node-id="DBVXYuSyz7BpTGkEZ2IiLj">
@@ -215,25 +215,45 @@
               <div class="ev-toolbar-combo-sep"></div>
               <!-- 🆕 建立空 calendar 檔案：前缀固定 calendar-，输入后缀→calendar-<后缀>.md，建好即设为当前文档（空），可立即按「保存」存回 iCloud；资料未加载也能用 -->
               <div class="ev-toolbar-combo-option ev-toolbar-combo-action-row"><button type="button" class="ev-toolbar-combo-action" data-cal-action="new-cal" title="建立一个新的 calendar-<后缀>.md 空檔案，建好後按「保存」即可存回 iCloud">＋ 建立 calendar 檔案</button></div>
+              <div class="ev-toolbar-combo-sep"></div>
+              <!-- 📎 聯運檔案：動態顯示已併入的 calendar*.md chip 清單（平時不占畫面）；點 chip 上的 ✕ 移除（不刪檔案）、↓ 匯出寫回原檔 -->
+              <div class="ev-toolbar-combo-option ev-toolbar-combo-action-row cal-include-panel" id="cal-include-panel" style="display:none">
+                <button type="button" class="ev-toolbar-combo-action cal-include-toggle" id="cal-include-toggle" aria-expanded="false" title="展開／收合聯運檔案清單（只讀來源；便利貼內容可改）">📎 聯運檔案<span class="cal-include-count" id="cal-include-count"></span></button>
+              </div>
+              <div class="cal-include-body" id="cal-include-body" style="display:none">
+                <div class="ev-include-bar" id="cal-include-bar"></div>
+              </div>
+              <div class="ev-toolbar-combo-sep"></div>
+              <!-- 📅 事件過濾：EVENT / HOLIDAY(地區) / REPEAT / 只顯示日記 / 只顯示未完成——平時收合不占畫面 -->
+              <div class="ev-toolbar-combo-option ev-toolbar-combo-action-row cal-panel" id="cal-holiday-panel" style="display:none">
+                <button type="button" class="ev-toolbar-combo-action cal-panel-toggle" id="cal-holiday-toggle" aria-expanded="false" title="展開／收合事件過濾（EVENT／HOLIDAY／REPEAT／只顯示未完成）">📅 事件過濾</button>
+              </div>
+              <div class="cal-panel-body" id="cal-holiday-body" style="display:none">
+                <div class="ev-holiday-legend" id="ev-holiday-legend" style="display:none"></div>
+              </div>
+              <div class="ev-toolbar-combo-sep"></div>
+              <!-- 🏷 標籤過濾條：列出 calendar.md 裡出現過的所有標籤，點選篩選（OR 邏輯，可多選）；平時收合不占畫面 -->
+              <div class="ev-toolbar-combo-option ev-toolbar-combo-action-row cal-panel" id="cal-tagbar-panel" style="display:none">
+                <button type="button" class="ev-toolbar-combo-action cal-panel-toggle" id="cal-tagbar-toggle" aria-expanded="false" title="展開／收合標籤過濾（OR 邏輯，可多選）">🏷 標籤過濾</button>
+              </div>
+              <div class="cal-panel-body" id="cal-tagbar-body" style="display:none">
+                <div class="ev-tagbar" id="ev-tagbar">
+                  <span class="ev-tagbar-label">標籤</span>
+                  <div class="ev-tag-filter" id="ev-tag-filter"></div>
+                </div>
+              </div>
+              <div class="ev-toolbar-combo-sep"></div>
+              <!-- ＋ 新增行程：原本在工具列最右側，一併搬進 combo 菜單 -->
+              <div class="ev-toolbar-combo-option ev-toolbar-combo-action-row"><button type="button" class="ev-toolbar-combo-action ev-toolbar-combo-primary" data-cal-action="add-event" title="新增一筆行程（預設日期為今天）">＋ 新增行程</button></div>
             </div>
           </div>
-          <span class="ev-toolbar-flex"></span>
-          <button type="button" class="ev-add-btn" id="ev-add-btn">＋ 新增行程</button>
         </div>
-        <!-- 📎 多檔聯運清單：顯示已併入的 calendar*.md（只讀）；點 chip 上的 ✕ 可移除（不刪檔案） -->
-        <div class="ev-include-bar" id="cal-include-bar" style="display:none"></div>
-        <div class="ev-holiday-legend" id="ev-holiday-legend" style="display:none"></div>
         <div class="ev-monthnav" id="ev-month-nav" style="display:none">
           <button type="button" id="ev-prev-month">‹</button>
           <span id="ev-month-title"></span>
           <button type="button" id="ev-next-month">›</button>
           <button type="button" class="ev-today-mini" id="ev-today-btn">今天</button>
           <button type="button" class="ev-today-mini" id="ev-multiday-btn" style="display:none" title="跨天行程显示方式">跨天多笔</button>
-        </div>
-        <!-- 🏷 標籤過濾條：列出 calendar.md 裡出現過的所有標籤，點選篩選（OR 邏輯，可多選） -->
-        <div class="ev-tagbar" id="ev-tagbar">
-          <span class="ev-tagbar-label">標籤</span>
-          <div class="ev-tag-filter" id="ev-tag-filter"></div>
         </div>
         <div id="events-list" class="events-list"></div>
         <div id="ev-month-wrap" class="ev-split" style="display:none">
@@ -413,7 +433,7 @@
           <button type="button" class="cal-sticky-top-btn" id="calStickyMenuBtn" aria-label="便利貼清單與設定" aria-expanded="false" title="清單 / 設定">☰</button>
           <span class="cal-sticky-page-ind" id="calStickyPageInd"></span>
           <span class="cal-sticky-top-flex"></span>
-          <button type="button" class="cal-sticky-top-btn" id="calStickyEditBtn" title="編輯目前這張便利貼所屬行程">✎ 編輯</button>
+          <button type="button" class="cal-sticky-top-btn" id="calStickyEditBtn" title="編輯目前這張便利貼所屬行程">📅 日程編輯</button>
           <button type="button" class="cal-sticky-top-btn cal-sticky-close" id="calStickyCloseBtn" aria-label="關閉便利貼" title="關閉">✕</button>
         </div>
         <div class="cal-sticky-stage" id="calStickyStage">
@@ -563,17 +583,17 @@
       </div>
     </div>
   </div>
-  <script src="lunar.js"></script>
+  <script src="lunar.js?v=159"></script>
   <!-- 農民曆簡→繁術語對照表（暴露全域 almanacToTrad），供 calendar-editor.js 轉換簡體宜忌/彭祖等 -->
-  <script src="almanac-s2t.js"></script>
+  <script src="almanac-s2t.js?v=159"></script>
   <!-- Markdown 渲染管線（從 todo 編輯器移植的擴展語法支援），必須在 app.js 之前載入 -->
-  <script src="md-renderer.js"></script>
-  <script src="app.js"></script>
+  <script src="md-renderer.js?v=159"></script>
+  <script src="app.js?v=159"></script>
   <!-- 🆕 Markdown 表格網格編輯器引擎（暴露 window.MdTableGrid；與桌面 md-table-grid.js 同一份的鏡像） -->
-  <script src="md-table-grid.js"></script>
+  <script src="md-table-grid.js?v=159"></script>
   <!-- 📅 Calendar 特性編輯器（資料感知編輯器 #1）：依賴 app.js 的 state/elements，必須在其後載入 -->
-  <script src="calendar-editor.js"></script>
+  <script src="calendar-editor.js?v=159"></script>
   <!-- 🗒 便利貼（翻頁模式）：依賴 calendar-editor.js 的解析/渲染/表單，必須在其後載入 -->
-  <script src="sticky-notes.js"></script>
+  <script src="sticky-notes.js?v=159"></script>
 </body>
 </html>

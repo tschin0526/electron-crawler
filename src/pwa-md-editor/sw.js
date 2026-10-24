@@ -207,7 +207,39 @@
 //      資料未載入也能用，按「保存」存回 iCloud）、「＋ 新建便利貼」（標題＋寫入檔案下拉：主檔或已併入聯運檔，
 //      sticky=1 新行程，建好跳轉翻頁）、便利貼 ☰ 清單「🗑 删除便利貼」（刪當前翻頁那張，主檔→編輯緩衝、
 //      ro 聯運→來源檔快取標髒，window.confirm 確認）。calendar-editor.js/sticky-notes.js/index.html/style.css/app.js/sw.js 改
-const CACHE_NAME = 'md-editor-lite-v140';
+// v141：狀態列版本號同時顯示 SW 版本——頁面透過 MessageChannel 問 SW（GET_VERSION），
+//      SW 回 CACHE_NAME 尾碼，顯示成「v0.7.44 · sw.js v141」。
+//      app.js/sw.js 改，bump 讓手機重拉
+// v142：📎 聯運檔案清單從工具列下方搬進 combo 菜單——平時收合不占畫面，點「📎 聯運檔案 ▸」展開看 chip
+//      清單（含 dirty ● / ↓ 匯出 / ✕ 移除）；數量與 dirty 狀態同步顯示在 toggle 按鈕上。
+//      index.html/style.css/calendar-editor.js/sw.js 改，bump 讓手機重拉
+// v143：📅 事件過濾（EVENT/HOLIDAY/REPEAT/只顯示未完成）與 🏷 標籤過濾 一併搬進 combo 菜單——
+//      平時全部收合不占畫面，各自獨立 toggle 展開；combo 關閉時自動把三個面板都收回去。
+//      index.html/style.css/calendar-editor.js/sw.js 改，bump 讓手機重拉
+// v144：＋ 新增行程 也搬進 combo 菜單——工具列移除獨立按鈕，改在 combo 最底部用主動作樣式顯示；
+//      點擊直接呼叫 openEventForm(null)，預設日期為今天。
+//      index.html/style.css/calendar-editor.js/sw.js 改，bump 讓手機重拉
+// v145：📱 啟動恢復草稿時（iOS 關閉前的自動備份），若是 calendar.md 自動切 events 視圖並滾到今天——
+//      原本 restoreDraft() 只恢復文字與檔名、不做資料感知分派，就算草稿是 calendar.md 也停留
+//      在 edit/split 視圖；補一行 dispatchDataAwareEditor() 即串起 setView('events') →
+//      updatePreview → calStartupAutoScrollDone 守衛 → calAutoScrollToTodayPending →
+//      renderEventsContent 雙 rAF 後滾到今天（月視圖置今日格於中央、列表視圖滾到最近今日）。
+//      app.js 改，bump 讓手機重拉
+// v146：修復啟動自動滾今天不生效的兩個 race condition——
+//      (1) restoreDraft() 先 dispatchDataAwareEditor() 跑 render → init() 又 setView() 再跑一次，
+//          第二次消費 calAutoScrollToTodayPending（已是 false）→ 不滾；改為 restoreDraft 只設
+//          state.view='events'，讓 init() 走單次 setView 即可。
+//      (2) 双 rAF 不夠——panel.offsetHeight 還沒出來就執行滾；改 desktop 同套路徑的 waitPane
+//          迴圈（最多 120 帧）確保滾動容器真有高度才滾。
+//      app.js/calendar-editor.js 改，bump 讓手機重拉
+// v147：月視圖下方「今日行程列表」也要滾到今日——原來只在 calScope==='full' 時才滾，
+//      預設月視圖 calScope='day'（setCalMode 設的），導致「行事曆（上）滾了、日程事件（下）沒滾」；
+//      改為 month 模式只要有 elements.evDayList 就滾。calendar-editor.js 改，bump 讓手機重拉
+// v148：修復「多选開啟（含 calendar.md）不滚到今天」的回歸——openSingleFile 那次渲染已消費掉
+//      calAutoScrollToTodayPending（startup 守衛只觸發一次），隨後 calReplaceIncludes 重建列表把滾動
+//      重置到頂部、flag 已為 false 不再滾；改在 calReplaceIncludes 的「最終併入後」渲染前重設 flag。
+//      calendar-editor.js 改，bump 讓手機重拉
+const CACHE_NAME = 'md-editor-lite-v160';
 const ASSETS = [
   './',
   './index.html',
@@ -318,5 +350,11 @@ self.addEventListener('fetch', (event) => {
 self.addEventListener('message', (event) => {
   if (event.data && event.data.type === 'SKIP_WAITING') {
     self.skipWaiting();
+  }
+  // 回報自身版本（CACHE_NAME 尾碼），頁面狀態列拿來顯示 sw.js 版本
+  if (event.data && event.data.type === 'GET_VERSION') {
+    const reply = { type: 'VERSION', cacheName: CACHE_NAME };
+    if (event.ports && event.ports[0]) event.ports[0].postMessage(reply);
+    else if (event.source) event.source.postMessage(reply);
   }
 });

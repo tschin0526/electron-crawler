@@ -299,6 +299,10 @@ function calReplaceIncludes(list) {
   state.calIncludeFiles = clean.map((f) => ({ name: f.name, content: f.content, dirty: !!f.dirty }));
   calPersistIncludes();
   calRenderIncludeBar();
+  // 🐞 修復：多选開啟時不滾到今天——openSingleFile 那次的渲染已消費掉 calAutoScrollToTodayPending
+  //   （startup 守衛只觸發一次），隨後這裡重建列表把滾動重置到頂部，flag 已是 false → 不再滾今天。
+  //   在「最終併入後」的渲染前重設 flag，讓這次渲染滾到今天（與單檔開啟行為一致）。
+  calAutoScrollToTodayPending = true;
   renderEventsContent();
   if (typeof updateStatus === 'function') updateStatus();
   return true;
@@ -321,18 +325,50 @@ function calPendingIncludes() {
 
 // 行動端投遞：把一批檔案一次交給系統（iOS 的「儲存到檔案」可整批存進同一資料夾）
 //   多檔且支援 canShare → 一次 share；否則逐檔走 saveViaMobile（它自己會先試分享再退回下載）
+// 🛟 行動端（iOS）逐檔交付：
+//   iOS 系統分享面板的「儲存到檔案」擴展在 **多檔批量** 模式下不會逐檔彈「替換」確認，
+//   而是直接把同名檔加數字後綴存成新檔（calendar.md → calendar 2.md）。
+//   解決方案：逐檔調 navigator.share，每次只塞 1 個檔——這樣每個檔都會單獨彈面板，
+//   用戶可在每次面板裡選原資料夾 + 確認替換。代價是面板要開 N 次，但結果正確。
+//
+//   退後路徑（fallback）：`canShareFiles()` 不可用時逐檔走 downloadFile（每個產生一個下載項）。
+//
+//   回傳 how：'shareMulti'（逐檔各彈一次分享面板）| 'fallback'（逐檔下載）| 'none'（空 list）
 async function calDeliverFilesMobile(list) {
+  if (!list || !list.length) return 'none';
   const mk = (f) => new File([f.content], f.name, { type: mimeFor(f.name) });
-  const multiOk = list.length > 1
-    && typeof navigator !== 'undefined' && typeof navigator.canShare === 'function'
-    && navigator.canShare({ files: list.map(mk) })
-    && typeof canShareFiles === 'function' && canShareFiles();
-  if (typeof canShareFiles === 'function' && canShareFiles() && (list.length === 1 || multiOk)) {
-    await navigator.share({ files: list.map(mk) });
-    return list.length > 1 ? 'shareMulti' : 'share';
+
+  // 單檔可以走原本的快速路徑——一次面板就解決
+  if (list.length === 1) {
+    if (canShareFiles()) {
+      await navigator.share({ files: [mk(list[0])] });
+      return 'share';
+    }
+    downloadFile(list[0].content, list[0].name);
+    return 'downloaded';
   }
-  for (const f of list) await saveViaMobile(f.content, f.name);
-  return 'fallback';   // 逐檔（各自可能走分享或下載，語意上就是「不是一次搞定」）
+
+  // 多檔：逐檔交付（iOS 批量模式不彈替換確認是硬傷，只能這樣繞）
+  let usingShare = false;
+  if (canShareFiles()) {
+    // 探測是否真的能一次 share 全部檔案（部分 Android Safari 可能支援，但 iOS 不行）
+    const multiOk = typeof navigator.canShare === 'function'
+      && navigator.canShare({ files: list.map(mk) });
+    if (multiOk) {
+      // 多檔 share 是可行的（iOS 會把全部檔列在面板裡），但「儲存到檔案」擴展
+      // 還是會不彈替換確認——所以寧願逐檔，結果才是用戶想要的。
+      usingShare = true;
+    }
+  }
+
+  for (const f of list) {
+    if (usingShare) {
+      await navigator.share({ files: [mk(f)] });   // 每檔各開一次面板，用戶選替換
+    } else {
+      downloadFile(f.content, f.name);              // 退後：每檔一個下載項
+    }
+  }
+  return usingShare ? 'shareMulti' : 'fallback';
 }
 
 // 匯出聯運檔（可一次多檔，也可把主檔一起塞進同一批）——真正把內容交回檔案系統的入口。
@@ -404,18 +440,65 @@ async function calSaveIncludeFile(name) {
 }
 
 // 渲染聯運清單（chip + ✕）：有就地修改（dirty）的檔加 ● 與 ↓ 匯出
+//   現在改顯示在 combo 菜單裡（不再佔用工具列下方畫面空間）。
+//   同時驅動：
+//     1) combo 菜單「📎 聯運檔案」toggle — 顯示總數 + dirty 紅色角標
+//     2) 頂部工具列「保存」按鈕 — dirty 紅色角標（讓用戶隨時知道還有幾個檔要存）
 function calRenderIncludeBar() {
   const bar = document.getElementById('cal-include-bar');
-  if (!bar) return;
+  const panel = document.getElementById('cal-include-panel');
+  const body = document.getElementById('cal-include-body');
+  const count = document.getElementById('cal-include-count');
+  const toggle = document.getElementById('cal-include-toggle');
+  const saveBadge = document.getElementById('btn-save-badge');   // 🆕 頂欄保存按鈕角標
   const files = state.calIncludeFiles || [];
-  if (!files.length) { bar.style.display = 'none'; bar.innerHTML = ''; return; }
-  bar.style.display = '';
+  // 🆕 角標來源 = include dirty 數 + 主檔 dirty（state.isDirty 來自 app.js 的 textarea input）
+  const includeDirtyCount = files.filter((f) => f.dirty).length;
+  const mainDirty = (typeof state !== 'undefined' && state.isDirty) ? 1 : 0;
+  const dirtyCount = includeDirtyCount + mainDirty;
+
+  // 🆕 頂欄「保存」按鈕角標：顯示總 dirty 數量（主檔 + include），0 則隱藏
+  if (saveBadge) {
+    if (dirtyCount > 0) {
+      saveBadge.textContent = dirtyCount > 99 ? '99+' : String(dirtyCount);
+      saveBadge.style.display = '';
+    } else {
+      saveBadge.style.display = 'none';
+    }
+  }
+
+  // combo toggle 上的 cal-include-count：紅色圓角角標（CSS 已設 badge 樣式）
+  if (count) {
+    if (dirtyCount > 0) {
+      count.textContent = dirtyCount > 99 ? '99+' : String(dirtyCount);
+      count.classList.add('has-dirty');
+    } else {
+      count.textContent = '× ' + files.length;   // 無 dirty 時顯示總數（純文字）
+      count.classList.remove('has-dirty');
+    }
+  }
+
+  // 面板顯隱邏輯（維持舊行為：有 include 檔才顯示面板）
+  if (!panel && bar) {
+    if (!files.length) { bar.style.display = 'none'; bar.innerHTML = ''; return; }
+    bar.style.display = '';
+  } else if (panel) {
+    if (!files.length) { panel.style.display = 'none'; bar && (bar.innerHTML = ''); if (body) body.style.display = 'none'; return; }
+    panel.style.display = '';
+    const anyDirty = files.some((f) => f.dirty);
+    if (toggle) toggle.title = '聯運檔案 ' + files.length + ' 個' +
+      (anyDirty ? '（有 ' + dirtyCount + ' 個待匯出寫回）' : '；便利貼內容可改');
+  } else {
+    return;
+  }
+
+  // chip 清單（combo body 裡）
+  if (!bar) return;
   const chip = (f) => {
     const dirty = !!f.dirty;
     const title = dirty
       ? '已在便利貼中修改（只存本機快取）——按 ↓ 匯出檔案，覆寫原檔後才會真正落回 iCloud'
       : '來源檔：' + f.name + '（行程本體不可編輯；便利貼內容可修改）';
-    // 檔名包一層 .ev-ib-name：手機上長檔名要省略號截斷，裸文字節點會把 chip 撐成兩行
     return '<span class="ev-ib-chip' + (dirty ? ' dirty' : '') + '" title="' + escapeHtml(title) + '">' +
       '<span class="ev-ib-name">' + escapeHtml(f.name) + '</span>' +
       (dirty ? '<span class="ev-ib-dirty" aria-label="有未寫回的修改">●</span>' : '') +
@@ -1333,9 +1416,13 @@ function renderCalTagBar() {
   calAllTagNames().forEach((t) => tags.add(t));
   const options = document.getElementById('ev-tag-options');
   if (options) options.innerHTML = Array.from(tags).sort().map((t) => '<option value="' + escapeHtml(t) + '"></option>').join('');
-  if (!tags.size) { bar.style.display = 'none'; filter.innerHTML = ''; return; }
+  if (!tags.size) { bar.style.display = 'none'; filter.innerHTML = '';
+    const tagPanel = document.getElementById('cal-tagbar-panel'); if (tagPanel) tagPanel.style.display = 'none'; return; }
   // ⚠️ 必須顯式給 'flex'：CSS 裡 .ev-tagbar 預設 display:none，清空 inline style 會被 CSS 覆蓋回隱藏
   bar.style.display = 'flex';
+  // 🏷 標籤過濾外層面板（combo 菜單裡的 toggle 區塊）：有 tag 才顯示
+  const tagPanel = document.getElementById('cal-tagbar-panel');
+  if (tagPanel) tagPanel.style.display = '';
   const calIsTagInherited = (t) => {
     if (state.calTagFilter.indexOf(t) >= 0) return false;
     return state.calTagFilter.some((f) => calTagDescendants(f).indexOf(t) >= 0);
@@ -1796,7 +1883,7 @@ function calInitCalendarToolbarCombo() {
       if (wrapper) wrapper.hidden = !input.checked;
     });
   };
-  const closeMenu = () => { menu.classList.remove('open'); trigger.setAttribute('aria-expanded', 'false'); };
+  let closeMenu = () => { menu.classList.remove('open'); trigger.setAttribute('aria-expanded', 'false'); };
   apply();
   trigger.addEventListener('click', (event) => {
     event.stopPropagation();
@@ -1808,7 +1895,8 @@ function calInitCalendarToolbarCombo() {
   // 動作型項目：不曝露成工具列常駐按鈕，按下直接執行（便利貼平時完全不佔畫面，只從這裡開）
   const actionHandlers = {
     sticky: () => { if (typeof calStickyOpen === 'function') calStickyOpen(); },
-    'new-cal': () => { if (typeof calOpenNewCalDialog === 'function') calOpenNewCalDialog(); }
+    'new-cal': () => { if (typeof calOpenNewCalDialog === 'function') calOpenNewCalDialog(); },
+    'add-event': () => { openEventForm(null); }
   };
   menu.querySelectorAll('button[data-toolbar-action]').forEach((button) => {
     button.addEventListener('click', () => {
@@ -1834,6 +1922,41 @@ function calInitCalendarToolbarCombo() {
     try { localStorage.setItem(CAL_TOOLBAR_EXPOSE_KEY, JSON.stringify(selected)); } catch (e) { console.warn('[LITE] 儲存日曆工具列偏好失敗:', e); }
   }));
   document.addEventListener('click', (event) => { if (!combo.contains(event.target)) closeMenu(); });
+
+  // 📎 聯運檔案：combo 菜單裡可折疊的 chip 清單（平時收合不占畫面）
+  const incToggle = document.getElementById('cal-include-toggle');
+  const incBody = document.getElementById('cal-include-body');
+  // 📅 事件過濾：combo 菜單裡可折疊的 legend（EVENT / HOLIDAY / REPEAT / 只顯示未完成）
+  const hToggle = document.getElementById('cal-holiday-toggle');
+  const hBody = document.getElementById('cal-holiday-body');
+  // 🏷 標籤過濾：combo 菜單裡可折疊的標籤條
+  const tToggle = document.getElementById('cal-tagbar-toggle');
+  const tBody = document.getElementById('cal-tagbar-body');
+  // 菜單關閉時順手收合所有三個面板——下次打開菜單是乾淨初始態
+  const _origCloseMenu = closeMenu;
+  closeMenu = () => {
+    _origCloseMenu();
+    if (incBody) incBody.style.display = 'none';
+    if (incToggle) incToggle.setAttribute('aria-expanded', 'false');
+    if (hBody) hBody.style.display = 'none';
+    if (hToggle) hToggle.setAttribute('aria-expanded', 'false');
+    if (tBody) tBody.style.display = 'none';
+    if (tToggle) tToggle.setAttribute('aria-expanded', 'false');
+  };
+  // 通用 toggle：點 header 按鈕在「none ↔ ''」間切換內層 body，同時更新 aria-expanded
+  const wireToggle = (toggle, body) => {
+    if (!toggle || !body) return;
+    toggle.addEventListener('click', (event) => {
+      event.stopPropagation();
+      const open = body.style.display !== 'none';
+      const willOpen = !open;
+      body.style.display = willOpen ? '' : 'none';
+      toggle.setAttribute('aria-expanded', String(willOpen));
+    });
+  };
+  wireToggle(incToggle, incBody);
+  wireToggle(hToggle, hBody);
+  wireToggle(tToggle, tBody);
 }
 
 // ===== 🆕 建立 calendar 檔案 / 新建便利貼 / 刪除便利貼 共用工具 =====
@@ -2155,6 +2278,9 @@ function calRenderHolidayLegend() {
     '<input type="checkbox" ' + (state.calUndoneOnly ? 'checked' : '') + ' onchange="calSetUndoneOnly(this.checked)">只顯示未完成</label>';
   el.style.display = '';
   el.innerHTML = html;
+  // 📅 事件過濾外層面板（combo 菜單裡的 toggle 區塊）：legend 有內容才顯示面板
+  const holidayPanel = document.getElementById('cal-holiday-panel');
+  if (holidayPanel) holidayPanel.style.display = '';
   const repChk = el.querySelector('input[data-rep="repeat"]');
   if (repChk) { repChk.indeterminate = (state.calShowRepeat === 'next'); repChk.checked = (state.calShowRepeat === 'some'); }
 }
@@ -3462,7 +3588,8 @@ function calScrollActiveViewToToday() {
     scrollToNearestDate(elements.eventsList);
   } else if (state.calMode === 'month') {
     calScrollMonthToToday();
-    if (state.calScope === 'full') calScrollListToDate(elements.evDayList, elements.evDayList, today);
+    // 月視圖下方「今日行程列表」——不論 calScope 是 day 還是 full 都滾到今日
+    if (elements.evDayList) calScrollListToDate(elements.evDayList, elements.evDayList, today);
   } else if (state.calMode === 'year') {
     calScrollYearToCurrentMonth();
     if (state.calScope === 'full') calScrollListToDate(elements.evYearDayList, elements.evYearDayList, today);
@@ -3474,6 +3601,7 @@ function calScrollActiveViewToToday() {
       const nowMinutes = now.getHours() * 60 + now.getMinutes();
       scroller.scrollTop = Math.max(0, nowMinutes * hourHeight / 60 - 2 * hourHeight);
     }
+    // 日 / 週 視圖下方「行程列表」
     if (state.calScope === 'full') {
       const list = document.getElementById('ev-grid-list');
       calScrollListToDate(list, list, today);
@@ -3505,8 +3633,43 @@ function renderEventsContent() {
     renderCalTimeGrid(isDay ? [state.calCursor] : calWeekDays(state.calCursor), false);
     if (elements.evMonthTitle) elements.evMonthTitle.textContent = calCursorTitle();
   } else renderEventsList(content);
-  if (scrollToToday) requestAnimationFrame(() => requestAnimationFrame(calScrollActiveViewToToday));
+  // 📱 啟動首次進入 events 視圖的自動滾「今天」：用 waitPane 等容器有高度再滾（桌面版 tlTriggerStartupToday 同一套路徑）
+  //    單純 requestAnimationFrame × 2 不夠——restoreDraft 時 DOM 剛重建，panel.offsetHeight 可能還是 0
+  if (scrollToToday) calQueueScrollActiveViewToToday();
   else calRestoreScrollPositions(scrollPositions);
+}
+
+// 滾到今天的延遲版本：等真正的滾動容器 + 目標元素都就位才執行（最多 120 帧 ≈ 2s）
+function calQueueScrollActiveViewToToday() {
+  let tries = 0;
+  const wait = () => {
+    const mode = state.calMode;
+    let pane = null;
+    let target = null;
+    const today = calendarFmtDate(new Date());
+    if (mode === 'list') {
+      pane = elements.eventsList;
+      target = pane && pane.querySelector('.ev-date[data-ev-date="' + today + '"]');
+    } else if (mode === 'month') {
+      pane = document.querySelector('#ev-month-wrap .ev-month-scroll');
+      target = elements.evMonthGrid && elements.evMonthGrid.querySelector('.ev-cell.today');
+    } else if (mode === 'year') {
+      pane = document.querySelector('#ev-year-wrap .ev-month-scroll');
+      target = elements.evYearGrid && elements.evYearGrid.querySelector('.ev-year-month.cur-month');
+    } else if (mode === 'week' || mode === 'day') {
+      pane = document.querySelector('#ev-week-wrap .ev-timegrid-scroll');
+      // 網格模式的目標是今天的時間列或時間網格本身（scrollTop 按當前時間算）——容器有高度即可
+    }
+    // 容器有高度 + 目標元素存在（網格模式只檢查容器）→ 可以滾了
+    if (pane && pane.offsetHeight && (mode === 'week' || mode === 'day' || target)) {
+      // 再給一帧讓瀏覽器先做一次 layout flush
+      requestAnimationFrame(calScrollActiveViewToToday);
+      return;
+    }
+    if (tries++ < 120) requestAnimationFrame(wait);
+    else console.warn('[LITE] calQueueScrollActiveViewToToday 超時：mode=' + mode + ' pane=' + !!pane + ' h=' + (pane && pane.offsetHeight) + ' target=' + !!target);
+  };
+  requestAnimationFrame(wait);
 }
 
 function setCalMode(mode) {
@@ -3816,6 +3979,9 @@ function openEventForm(uid, defaultDate, pre) {
   renderEvColorSwatches();
   elements.evFormOverlay.style.display = 'flex';
   elements.evFTitle.focus();
+  // 採集表單原始值快照——closeEventForm 前比對是否有改動
+  calFormBaseline = calSnapshotEventForm();
+  console.log('[openEventForm] baseline采了 len=' + calFormBaseline.length + ' dirtyNow=' + calIsEventFormDirty());
 }
 
 function renderEvColorSwatches() {
@@ -3832,7 +3998,56 @@ function renderEvColorSwatches() {
   };
 }
 
-function closeEventForm() {
+// 行程表單 dirty 守門：openEventForm 時存一份原始快照，closeEventForm 前比對是否有改動。
+// 只有「內容真的變了」才彈 confirm；使用者在表單裡點了幾下又改回原樣 → 不問。
+let calFormBaseline = null;
+function calSnapshotEventForm() {
+  const f = elements;
+  // repeatWeekDay 是 checkbox 陣列，分開存
+  const rwd = Array.from(document.querySelectorAll('#ev-f-weekdays input[type=checkbox]'))
+    .map(cb => cb.checked ? cb.value : '');
+  return JSON.stringify({
+    title: f.evFTitle.value,
+    date: f.evFDate.value,
+    endDate: f.evFEndDate.value,
+    spanDisplay: f.evFSpanDisplay.value,
+    repeatOn: f.evFRepeatOn.checked,
+    repeatMode: f.evFRepeatMode.value,
+    repeatInterval: f.evFRepeatInterval.value,
+    repeatWeekDay: rwd.join(','),
+    repeatMonthDay: f.evFMonthDay.value,
+    repeatYearMonthDay: f.evFYearMonthDay.value,
+    repeatEndType: f.evFRepeatEndType.value,
+    repeatEndValue: f.evFRepeatEndValue.value,
+    repeatExclude: f.evFRepeatExclude.value,
+    allDay: f.evFAllday.checked,
+    done: f.evFDone.checked,
+    start: f.evFStart.value,
+    end: f.evFEnd.value,
+    location: f.evFLocation.value,
+    sticky: f.evFSticky ? f.evFSticky.value : '0',
+    color: state.evFormColor,
+    tags: (state.evFormTags || []).join(','),
+    // todoIds 是 chips 陣列，存 id
+    todoIds: (state.evFormTodoIds || []).join(','),
+    notes: f.evFNotes.value
+  });
+}
+function calIsEventFormDirty() {
+  if (calFormBaseline === null) return false;
+  return calSnapshotEventForm() !== calFormBaseline;
+}
+function closeEventForm(skipDirtyGuard) {
+  // 行程表單有未保存改動 → 先確認（與便利貼編輯模式同口徑）
+  console.log('[closeEventForm] called skip=' + skipDirtyGuard + ' baseline=' + (calFormBaseline ? calFormBaseline.slice(0,40) : 'null') + ' dirty=' + calIsEventFormDirty());
+  if (!skipDirtyGuard && calIsEventFormDirty()) {
+    const ok = window.confirm('🚨 行程內容有未保存的改動\n\n【確定】＝先保存（寫入編輯緩衝）再關閉\n【取消】＝留在表單（不丟失改動）');
+    if (ok) {
+      // 保存失敗（標題空、區塊位置變了等）→ 留在表單
+      if (!saveEventForm(false)) return;
+    } else return;
+  }
+  calFormBaseline = null;
   if (elements.evFormOverlay) elements.evFormOverlay.style.display = 'none';
   state.evFormUid = null;
   state.evFormColor = null;
@@ -3974,7 +4189,7 @@ function saveEventForm(closeAfterSave = true) {
   if (i >= 0) state.calEvents[i] = ev;
   else state.calEvents.push(ev);
   applyEventsToEditor();
-  if (closeAfterSave) closeEventForm();
+  if (closeAfterSave) closeEventForm(true);   // 已保存 → 跳過 dirty guard
   showToast(closeAfterSave
     ? '已寫入編輯內容，按頂欄「保存」存回文件'
     : '已寫入編輯內容，可繼續編輯（按頂欄「保存」存回文件）', 'success');
@@ -3994,7 +4209,7 @@ function deleteEventByUid(uid) {
 function deleteEventFromForm() {
   if (!state.evFormUid) return;
   const uid = state.evFormUid;
-  closeEventForm();
+  closeEventForm(true);   // 刪除 → 跳過 dirty guard（反正要丟棄）
   deleteEventByUid(uid);
 }
 

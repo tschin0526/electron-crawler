@@ -8,7 +8,7 @@ const VIEWS = ['edit', 'preview', 'split', 'events'];
 
 // 📌 應用版本號（單一可信來源）。
 // 每次改動都要 +1，方便在手機上確認跑的是不是最新版（狀態列左下角會顯示）。
-const APP_VERSION = '0.7.43';
+const APP_VERSION = '0.7.63';
 
 // 可處理的文字檔副檔名白名單（對齊 todo 編輯器 TEXT_EXTS，取常用子集）
 const TEXT_EXTS = [
@@ -210,6 +210,54 @@ const elements = {
   toast: document.getElementById('toast')
 };
 
+// 狀態列版本號：v<APP_VERSION> · sw.js v<SW 版本>（SW 版本 = CACHE_NAME 尾碼）
+function renderAppVersion(swVersion) {
+  if (!elements.appVersion) return;
+  const swPart = swVersion ? ' · sw.js v' + swVersion : '';
+  elements.appVersion.textContent = 'v' + APP_VERSION + swPart;
+  elements.appVersion.title = 'MD 編輯器 Lite v' + APP_VERSION +
+    (swVersion ? ' ／ Service Worker v' + swVersion : '');
+}
+
+// 問目前接管頁面的 SW 要版本號（GET_VERSION → { cacheName }），拿到後補進狀態列
+function loadSwVersion() {
+  if (!('serviceWorker' in navigator)) {
+    fetchSwVersion();
+    return;
+  }
+  navigator.serviceWorker.ready.then((reg) => {
+    const worker = reg.active;
+    if (!worker) {
+      fetchSwVersion();
+      return;
+    }
+    let replied = false;
+    const channel = new MessageChannel();
+    channel.port1.onmessage = (event) => {
+      replied = true;
+      const match = /-v(\d+)$/.exec((event.data && event.data.cacheName) || '');
+      if (match) renderAppVersion(match[1]);
+      channel.port1.close();
+    };
+    worker.postMessage({ type: 'GET_VERSION' }, [channel.port1]);
+    // SW 沒回話（舊版 SW 不認得 GET_VERSION）→ 退回抓 sw.js 解析
+    setTimeout(() => {
+      if (!replied) fetchSwVersion();
+    }, 800);
+  }).catch(() => fetchSwVersion());
+}
+
+// 退路：直接抓 sw.js 解析 CACHE_NAME 尾碼
+function fetchSwVersion() {
+  fetch(new URL('./sw.js', document.baseURI).href, { cache: 'no-store' })
+    .then((res) => res.text())
+    .then((text) => {
+      const match = /CACHE_NAME\s*=\s*['"][^'"]*-v(\d+)['"]/.exec(text);
+      if (match) renderAppVersion(match[1]);
+    })
+    .catch(() => {});
+}
+
 // 初始化
 function init() {
   loadSettings();
@@ -217,11 +265,9 @@ function init() {
   restoreDraft();
   setView(state.view);
   updateWordCount();
-  // 顯示版本號（狀態列左下角）
-  if (elements.appVersion) {
-    elements.appVersion.textContent = 'v' + APP_VERSION;
-    elements.appVersion.title = 'MD 編輯器 Lite v' + APP_VERSION;
-  }
+  // 顯示版本號（狀態列左下角）：先顯示應用版本，SW 版本問到後再補上
+  renderAppVersion('');
+  loadSwVersion();
   
   // 註冊 Service Worker（使用相對路徑，避免部署在子目錄時 404）
   if ('serviceWorker' in navigator) {
@@ -512,7 +558,7 @@ function setupEventListeners() {
     state.isDirty = elements.editor.value !== state.lastContent;
     updatePreview();
     updateWordCount();
-    updateStatus();
+    updateStatus();   // ← 已含 calRenderIncludeBar()
   });
 
   // 點擊頁面其它地方關閉工具列下拉
@@ -996,7 +1042,7 @@ async function handleSave() {
       }
     }
 
-    updateStatus();
+    updateStatus();   // ← 已含 calRenderIncludeBar()（主檔 dirty 已清）
 
   } catch (error) {
     // 用戶在保存對話框/分享面板點取消 → 靜默，不算錯誤、也不標成已存檔
@@ -1259,6 +1305,10 @@ function updateWordCount() {
 
 // 更新狀態
 function updateStatus() {
+  // 🆕 角標刷新：主檔 dirty（state.isDirty）或 include dirty 任一變化都要重算
+  //    匯入 calRenderIncludeBar（calendar-editor.js）——它同時更新頂欄「保存」按鈕角標與 combo 菜單 toggle 角標
+  if (typeof calRenderIncludeBar === 'function') calRenderIncludeBar();
+
   // 📎 多檔聯運：聯運檔（include）的修改也存在本機、也需要「保存」才寫回原檔，
   //   所以保存鍵是否可按＝主檔髒 **或** 有聯運檔待寫回；否則只改聯運檔時按鈕是灰的，
   //   使用者會以為「沒東西可存」（2026-10-23 實測回饋）。
@@ -1305,6 +1355,14 @@ function handleKeyboard(e) {
   if ((e.ctrlKey || e.metaKey) && e.key === 'b') {
     e.preventDefault();
     toggleTheme();
+  }
+
+  // Esc：行程表單打開 → 走 closeEventForm（有 dirty guard）；便利貼有自己的 Esc 處理
+  if (e.key === 'Escape') {
+    if (elements.evFormOverlay && elements.evFormOverlay.style.display === 'flex' && typeof closeEventForm === 'function') {
+      e.preventDefault();
+      closeEventForm();
+    }
   }
 }
 
@@ -1368,7 +1426,14 @@ function restoreDraft() {
       // 恢復後清除草稿，避免下次重複覆蓋
       localStorage.removeItem('md-editor-draft');
       localStorage.removeItem('md-editor-draft-name');
-      updateEventsTabVisibility(); // 📅 草稿若來自 calendar.md，恢復「行程」頁簽可見性
+      // 📅 草稿若是 calendar.md → 把 state.view 直接改成 events；
+      //    後面 init() 的 setView(state.view) 會走一次單渲染，calStartupAutoScrollDone
+      //    守衛在 updatePreview 裡設 calAutoScrollToTodayPending=true →
+      //    renderEventsContent → calQueueScrollActiveViewToToday 等容器就位後滾到今天。
+      //    ⚠️ 這裡千萬別先調 dispatchDataAwareEditor()——它會在 restoreDraft 階段先 render 一次，
+      //    然後 init() 又 setView 再 render 一次，第二次消費掉 pending（已是 false）→ 不滾。
+      if (isCalendarMd()) state.view = 'events';
+      updateEventsTabVisibility();
       showToast('已恢復上次未保存的內容', 'info');
     }
   } catch (e) { /* 忽略 */ }
