@@ -213,6 +213,335 @@ function parseCalendarEvents(md) {
   return events;
 }
 
+// ========== 📎 多檔聯運（手機 LITE 版：iCloud 無法一次多選，改以「分段多次加入」方式併入多個 calendar*.md）==========
+// 設計對齊桌面 include 機制：
+//   • 主檔＝當前編輯緩衝（elements.editor.value）的 calendar*.md，可編輯、可存回；
+//   • 加入的檔案＝只讀來源（ro），只併入顯示，絕不寫回主檔緩衝。
+//   • 每個 include 事件打 ro:true + src:檔名，uid 加 'ro-<序>-' 前綴避免與主檔 evpN 撞名。
+//   • 主檔緩衝重解析（saveEventForm/deleteEventByUid/applyEventsToEditor）一律只用主檔內容，故 include 永遠不會被改寫。
+
+// 解析某個 include 檔內容，標記 ro + 改寫 uid，使其與主檔/其它 include 的 uid 全域名唯一
+//   ⚠️ 與桌面同一口徑：ro 只鎖「行程本體」（標題／日期／刪除／完成），**便利貼內容（Remark）可以改**，
+//      改完寫回這個來源檔。所以要留 roFileIdx / roBlockIdx 兩個定位資訊：
+//      roBlockIdx＝該事件在檔案裡是第幾個 ## EVENT 標記（與 parseCalendarEvents 的 split 序同一個數，
+//      uid 的 evpN 用的就是這個 N，含無標題塊），寫回時靠它精準命中原始區塊，不重排整份檔案。
+function calParseIncludeContent(content, fileIdx, fileName, fileDirty) {
+  const events = parseCalendarEvents(content).map((ev) => {
+    const rawIdx = parseInt(String(ev.uid).replace(/^evp/, ''), 10);
+    ev.ro = true;
+    ev.src = fileName;
+    ev.roFileIdx = fileIdx;
+    ev.roBlockIdx = Number.isInteger(rawIdx) ? rawIdx : -1;
+    ev.roDirty = !!fileDirty;
+    ev.uid = 'ro-' + fileIdx + '-' + ev.uid;
+    return ev;
+  });
+  const holidays = parseCalendarHolidays(content).map((h) => {
+    h.ro = true; h.src = fileName; h.uid = 'ro-' + fileIdx + '-h-' + h.uid; return h;
+  });
+  const diaries = parseCalendarDiaries(content).map((d) => {
+    d.ro = true; d.src = fileName; return d;
+  });
+  return { events, holidays, diaries };
+}
+
+// 單一可信來源：把主檔 + 所有 include 併成 state.calEvents / calHolidays / calDiaries（含 ro 標記）
+// 所有「顯示」路徑都走這裡；「編輯/存檔」路徑仍只用主檔內容（見 saveEventForm 等）。
+function calRefreshAll() {
+  const content = (elements.editor && elements.editor.value) || '';
+  let events = parseCalendarEvents(content);
+  let holidays = parseCalendarHolidays(content);
+  let diaries = parseCalendarDiaries(content);
+  (state.calIncludeFiles || []).forEach((inc, fi) => {
+    const p = calParseIncludeContent(inc.content, fi, inc.name, inc.dirty);
+    events = events.concat(p.events);
+    holidays = holidays.concat(p.holidays);
+    diaries = diaries.concat(p.diaries);
+  });
+  state.calEvents = events;
+  calHolidays = holidays;
+  calDiaries = diaries;
+}
+
+// 註：原本的 calAddIncludeFile（單檔加入 / 同檔名刷新）已移除——
+//   2026-10-23 起「開啟」一次多選就是唯一入口，整組替換（calReplaceIncludes）已涵蓋「重選同一批」的刷新情境。
+
+// 「開啟」一次多選時決定誰是主檔（純函數，便於單測；app.js 只負責把檔名映射回 File）
+//   規則（使用者 2026-10-23 定）：calendar.md（不分大小寫）優先當主檔＝行程本體可編輯；
+//   其餘 calendar*.md 一律只讀聯運（行程不可編輯，只有便利貼內容可改）；
+//   選單裡沒有 calendar.md 時用第一個 calendar*.md 當主檔（否則整組都只讀，沒人能編輯）。
+function calPlanOpenSet(names) {
+  const list = (Array.isArray(names) ? names : []).map((n) => String(n || ''));
+  const calendars = list.filter((n) => /^calendar.*\.md$/i.test(n));
+  const others = list.filter((n) => calendars.indexOf(n) < 0);
+  if (!calendars.length) return { main: '', includes: [], others };
+  const main = calendars.find((n) => /^calendar\.md$/i.test(n)) || calendars[0];
+  return { main, includes: calendars.filter((n) => n !== main), others };
+}
+
+// 用「剛選的這一組」整組替換聯運清單（「開啟」多選時用）：不保留舊快取裡的檔案，
+//   否則舊檔會混進新組合。回傳 false＝使用者選擇保留既有修改（呼叫端要中止後續提示）。
+//   ⚠️ 修改只存在本機快取，整組替換會蓋掉還沒匯出的修改 → 有 dirty 時必須先確認（預設保留）。
+function calReplaceIncludes(list) {
+  const clean = (Array.isArray(list) ? list : []).filter((f) => f && f.name && typeof f.content === 'string');
+  const dirty = (state.calIncludeFiles || []).filter((f) => f.dirty);
+  if (dirty.length) {
+    const names = dirty.map((f) => f.name).join('、');
+    const okToReplace = window.confirm(
+      '有 ' + dirty.length + ' 個聯運檔的修改還沒匯出寫回原檔：\n' + names +
+      '\n\n重新開啟會用檔案內容蓋掉這些修改（本機快取）。\n\n要繼續嗎？'
+    );
+    if (!okToReplace) {
+      showToast('已保留現有聯運檔與未匯出的修改', 'info');
+      return false;
+    }
+  }
+  state.calIncludeFiles = clean.map((f) => ({ name: f.name, content: f.content, dirty: !!f.dirty }));
+  calPersistIncludes();
+  calRenderIncludeBar();
+  renderEventsContent();
+  if (typeof updateStatus === 'function') updateStatus();
+  return true;
+}
+
+// 從聯運清單移除（確認後才移除；不刪檔案本身）
+function calRemoveIncludeFile(name) {
+  if (!window.confirm('從聯運清單移除「' + name + '」？\n\n（僅從本次顯示移除，不會刪除檔案本身；已修改的內容仍在本機快取裡）')) return;
+  state.calIncludeFiles = (state.calIncludeFiles || []).filter((f) => f.name !== name);
+  calPersistIncludes();
+  calRenderIncludeBar();
+  renderEventsContent();
+  if (typeof updateStatus === 'function') updateStatus();
+}
+
+// 目前有修改還沒寫回原檔的聯運檔（狀態列／頂欄「保存」按鈕靠它判斷，否則只改聯運檔時保存鍵是灰的）
+function calPendingIncludes() {
+  return (state.calIncludeFiles || []).filter((f) => f.dirty);
+}
+
+// 行動端投遞：把一批檔案一次交給系統（iOS 的「儲存到檔案」可整批存進同一資料夾）
+//   多檔且支援 canShare → 一次 share；否則逐檔走 saveViaMobile（它自己會先試分享再退回下載）
+async function calDeliverFilesMobile(list) {
+  const mk = (f) => new File([f.content], f.name, { type: mimeFor(f.name) });
+  const multiOk = list.length > 1
+    && typeof navigator !== 'undefined' && typeof navigator.canShare === 'function'
+    && navigator.canShare({ files: list.map(mk) })
+    && typeof canShareFiles === 'function' && canShareFiles();
+  if (typeof canShareFiles === 'function' && canShareFiles() && (list.length === 1 || multiOk)) {
+    await navigator.share({ files: list.map(mk) });
+    return list.length > 1 ? 'shareMulti' : 'share';
+  }
+  for (const f of list) await saveViaMobile(f.content, f.name);
+  return 'fallback';   // 逐檔（各自可能走分享或下載，語意上就是「不是一次搞定」）
+}
+
+// 匯出聯運檔（可一次多檔，也可把主檔一起塞進同一批）——真正把內容交回檔案系統的入口。
+//   桌面 Chromium：逐檔 showSaveFilePicker 直接寫回，不產生下載檔；
+//   行動端：一次分享多檔 → 分享面板「儲存到檔案」→ 選原資料夾 → 覆蓋。取消（AbortError）＝整批都不標為已存。
+//   opts.extra：額外要一起交出去的檔案 [{name, content}]（主檔用；它們不屬於 include，不在此改 dirty）
+//   回傳 { saved:[檔名], how, canceled }
+async function calExportIncludes(names, opts) {
+  opts = opts || {};
+  const want = (names && names.length) ? names : calPendingIncludes().map((f) => f.name);
+  const files = (state.calIncludeFiles || []).filter((f) => want.indexOf(f.name) >= 0);
+  const extra = Array.isArray(opts.extra) ? opts.extra.filter((f) => f && f.name) : [];
+  if (!files.length && !extra.length) return { saved: [], how: 'none', canceled: false };
+  const canPick = ('showSaveFilePicker' in window) && (typeof window.showSaveFilePicker === 'function');
+  const saved = [];
+  let how = 'none';
+  let canceled = false;
+  try {
+    if (canPick) {
+      how = 'picker';
+      for (const f of files) {
+        try {
+          const handle = await window.showSaveFilePicker({ suggestedName: f.name });
+          const w = await handle.createWritable();
+          await w.write(new Blob([f.content], { type: mimeFor(f.name) + ';charset=utf-8' }));
+          await w.close();
+          f.dirty = false;
+          saved.push(f.name);
+        } catch (err) {
+          if (err && err.name === 'AbortError') { canceled = true; break; }   // 取消＝後面的不寫，保留 dirty
+          throw err;
+        }
+      }
+    } else {
+      // 主檔排最前面：分享面板裡的順序＝使用者剛剛在編輯的那份最先看到
+      how = await calDeliverFilesMobile(extra.map((f) => ({ name: f.name, content: f.content }))
+        .concat(files.map((f) => ({ name: f.name, content: f.content }))));
+      files.forEach((f) => { f.dirty = false; saved.push(f.name); });
+    }
+  } catch (err) {
+    if (err && err.name === 'AbortError') canceled = true;
+    else {
+      console.error('匯出聯運檔失敗:', err);
+      showToast('匯出失敗：' + (err && err.message ? err.message : err), 'error');
+    }
+  } finally {
+    calPersistIncludes();
+    calRenderIncludeBar();
+    renderEventsContent();
+    if (typeof calStickyRefreshIfOpen === 'function') calStickyRefreshIfOpen();
+    if (typeof updateStatus === 'function') updateStatus();
+  }
+  const n = saved.length + (how === 'picker' ? 0 : extra.length);
+  if (opts.silent) return { saved, how, canceled };
+  if (canceled && !saved.length) {
+    showToast('已取消匯出，修改仍保留在本機（下次仍可再存）', 'info');
+  } else if (n > 0) {
+    if (how === 'picker') showToast('已寫回 ' + saved.length + ' 個檔案', 'success');
+    else if (how === 'shareMulti') showToast('已送出 ' + n + ' 個檔案：在分享面板選「儲存到檔案」→ 選原資料夾 → 覆蓋', 'success');
+    else if (how === 'share') showToast('已送出「' + (saved[0] || (extra[0] && extra[0].name) || '') + '」：選「儲存到檔案」→ 選原位置 → 覆蓋', 'success');
+    else showToast('已逐檔送出 ' + n + ' 個檔案：逐一在分享面板選「儲存到檔案」→ 選原位置 → 覆蓋', 'success');
+  }
+  return { saved, how, canceled };
+}
+
+// 單檔匯出（📎 chip 上的 ↓ 走這條）
+async function calSaveIncludeFile(name) {
+  await calExportIncludes([name]);
+}
+
+// 渲染聯運清單（chip + ✕）：有就地修改（dirty）的檔加 ● 與 ↓ 匯出
+function calRenderIncludeBar() {
+  const bar = document.getElementById('cal-include-bar');
+  if (!bar) return;
+  const files = state.calIncludeFiles || [];
+  if (!files.length) { bar.style.display = 'none'; bar.innerHTML = ''; return; }
+  bar.style.display = '';
+  const chip = (f) => {
+    const dirty = !!f.dirty;
+    const title = dirty
+      ? '已在便利貼中修改（只存本機快取）——按 ↓ 匯出檔案，覆寫原檔後才會真正落回 iCloud'
+      : '來源檔：' + f.name + '（行程本體不可編輯；便利貼內容可修改）';
+    // 檔名包一層 .ev-ib-name：手機上長檔名要省略號截斷，裸文字節點會把 chip 撐成兩行
+    return '<span class="ev-ib-chip' + (dirty ? ' dirty' : '') + '" title="' + escapeHtml(title) + '">' +
+      '<span class="ev-ib-name">' + escapeHtml(f.name) + '</span>' +
+      (dirty ? '<span class="ev-ib-dirty" aria-label="有未寫回的修改">●</span>' : '') +
+      (dirty ? '<button type="button" class="ev-ib-save" data-ib-save="' + escapeHtml(f.name) + '" title="匯出這個檔案（覆寫原檔）" aria-label="匯出">↓</button>' : '') +
+      '<button type="button" class="ev-ib-x" data-ib-x="' + escapeHtml(f.name) + '" aria-label="移除">✕</button></span>';
+  };
+  const anyDirty = files.some((f) => f.dirty);
+  bar.innerHTML = '<span class="ev-ib-label">📎 聯運檔案</span>' + files.map(chip).join('') +
+    '<span class="ev-ib-hint">' + (anyDirty ? '按頂欄「保存」或 chip 的 ↓ 匯出寫回' : '便利貼內容可改') + '</span>';
+}
+
+// 內容快取到 localStorage（按主檔名索引），重新開啟主檔可免於 iCloud 重選
+//   dirty 一併存：重開後 chip 仍會提醒「這些修改還沒匯出寫回檔案」
+function calPersistIncludes() {
+  try {
+    const main = (state.currentFile && state.currentFile.name) || '';
+    if (!main) return;
+    const store = JSON.parse(localStorage.getItem('md-editor-cal-includes') || '{}');
+    store[main] = (state.calIncludeFiles || []).map((f) => ({ name: f.name, content: f.content, dirty: !!f.dirty }));
+    localStorage.setItem('md-editor-cal-includes', JSON.stringify(store));
+  } catch (e) { /* 容量超限 / 儲存禁用 → 靜默忽略，僅影響下次自動重併 */ }
+}
+
+// 開啟主檔時還原其曾加入過的 include（僅從快取讀內容，不觸發檔案選擇器）
+function calRestoreIncludes(mainName) {
+  state.calIncludeFiles = [];
+  try {
+    const store = JSON.parse(localStorage.getItem('md-editor-cal-includes') || '{}');
+    const list = store[mainName] || [];
+    state.calIncludeFiles = list.map((f) => ({ name: f.name, content: f.content, dirty: !!f.dirty }));
+  } catch (e) { state.calIncludeFiles = []; }
+  calRenderIncludeBar();
+}
+
+// 只讀事件圖標（⛔）；title 帶來源檔名，便於辨識
+function calRoIcon(ev) {
+  if (!ev || !ev.ro) return '';
+  const src = ev.src ? '：' + escapeHtml(ev.src) : '';
+  return '<span class="ev-ro-icon" title="來自被包含的檔案' + src + '：行程本體（標題／日期／刪除）與備註在行程檢視皆為唯讀，便利貼內容可修改">⛔</span>';
+}
+
+// ===== ✍️ 便利貼內容（Remark）寫回 =====
+// 與桌面 `tlReplaceRemarkInBlock` / `tlSaveIncludedEventNotes` 同一套做法：
+//   ① 主檔事件 → 照舊序列化整份回編輯緩衝（applyEventsToEditor）；
+//   ② include（ro）事件 → 只改來源檔「那一個 ## EVENT 區塊」的 Remark，其餘原文逐字保留
+//      （絕不整份重畫：來源檔可能有 ## TAGS / ## INCLUDE / 手寫註解，重畫會清掉）。
+// 定位＝roBlockIdx（parseCalendarEvents 的 split 序，evpN 的 N）。定位不到／標題對不上就寧可不寫。
+
+// 取第 blockIdx 個 ## EVENT 區塊在原文中的 [start, end)
+function calEventBlockRange(content, blockIdx) {
+  const text = String(content || '');
+  if (!Number.isInteger(blockIdx) || blockIdx < 1) return null;
+  const re = /^##[ \t]*EVENT(?:\([^)]*\))?[ \t]*$/gm;
+  const starts = [];
+  let m;
+  while ((m = re.exec(text))) starts.push(m.index);
+  const s = starts[blockIdx - 1];
+  if (s === undefined) return null;
+  // 區塊結束＝下一個 ## 標題（不限 EVENT，HOLIDAY/DIARY/TAGS/INCLUDE 都算）或檔尾
+  const nr = text.slice(s + 1).search(/^##[ \t]/m);
+  const e = nr >= 0 ? s + 1 + nr : text.length;
+  return { start: s, end: e };
+}
+
+// 把區塊內的 Remark 換成 notes；沒有 Remark 欄位就補在區塊末尾（塊尾空行保持原樣）
+function calReplaceRemarkInBlock(blockText, notes) {
+  const nl = '\n';
+  const lines = String(blockText == null ? '' : blockText).replace(/\r\n/g, nl).split(nl);
+  const newNotes = String(notes == null ? '' : notes);
+  const fence = calMdFence(newNotes);
+  const repl = [fence].concat(newNotes === '' ? [''] : newNotes.split(nl)).concat([fence]);
+  const ri = lines.findIndex((l) => /^-[ \t]*Remark:/.test(l));
+  if (ri < 0) {
+    let at = lines.length;
+    while (at > 0 && lines[at - 1].trim() === '') at--;
+    return lines.slice(0, at).concat(['- Remark:'], repl, lines.slice(at)).join(nl);
+  }
+  // 圍欄正文範圍：`- Remark:` 下一行起是開啟圍欄；找不到閉合就吃到區塊尾
+  let end = ri + 1;
+  const open = (lines[ri + 1] || '').match(/^(`{3,})[ \t]*$/);
+  if (open) {
+    const closeRe = new RegExp('^`{' + open[1].length + ',}[ \\t]*$');
+    let k = ri + 2;
+    while (k < lines.length && !closeRe.test(lines[k])) k++;
+    end = Math.min(k + 1, lines.length);
+  }
+  return lines.slice(0, ri + 1).concat(repl, lines.slice(end)).join(nl);
+}
+
+// 便利貼內容提交：ro → 寫回來源檔那一塊（內容存本機快取，需匯出才落回檔案）；非 ro → 照舊序列化
+function calCommitEventNotes(ev) {
+  if (!ev) return false;
+  if (!ev.ro) { applyEventsToEditor(); return true; }
+  const files = state.calIncludeFiles || [];
+  let inc = (Number.isInteger(ev.roFileIdx) && files[ev.roFileIdx]) ? files[ev.roFileIdx] : null;
+  if (!inc || inc.name !== ev.src) inc = files.find((f) => f.name === ev.src) || null;
+  if (!inc) { showToast('找不到來源檔案「' + String(ev.src || '') + '」，已取消寫入', 'error'); return false; }
+  const range = calEventBlockRange(inc.content, ev.roBlockIdx);
+  if (!range) { showToast('來源檔的區塊位置已變動，已取消寫入', 'error'); return false; }
+  const blockText = inc.content.slice(range.start, range.end);
+  // 安全閥：命中的區塊必須還是同一條行程（標題一致），否則寧可不寫，避免把 A 的備註蓋到 B
+  const tm = blockText.match(/- title: `([^`]*)`/);
+  if (!tm || tm[1] !== String(ev.title || '')) {
+    showToast('來源檔的區塊內容已變動，已取消寫入', 'error');
+    return false;
+  }
+  inc.content = inc.content.slice(0, range.start) + calReplaceRemarkInBlock(blockText, ev.notes) + inc.content.slice(range.end);
+  inc.dirty = true;   // 只存在本機快取；chip 上打 ● 並出現 ↓，提醒使用者匯出寫回
+  calPersistIncludes();
+  renderEventsContent();
+  if (typeof calStickyRefreshIfOpen === 'function') calStickyRefreshIfOpen();
+  // 主档路徑由 applyEventsToEditor 內的 updateStatus 處理；ro 路徑要自己叫，
+  // 否則頂欄「保存」仍是灰的 → 使用者以為沒東西可存（2026-10-23 實測回饋）
+  if (typeof updateStatus === 'function') updateStatus();
+  return true;
+}
+
+// 提交後的提示文案：主檔＝回編輯緩衝、等頂欄「保存」落盤；include＝已改來源檔本機副本、等 ↓ 匯出
+//   （把「按保存存回文件」這種對 include 不成立的說法集中換掉，免得六個呼叫點各寫一份）
+function calNotesHint(ev, mainMsg) {
+  const msg = String(mainMsg || '');
+  if (!ev || !ev.ro) return msg;
+  const stripped = msg.replace(/，按「保存」存回文件$/, '').replace(/；?按頂欄「保存」才存回文件$/, '');
+  return stripped + '，已寫入「' + (ev.src || '來源檔') + '」（本機快取，按 📎 清單的 ↓ 匯出寫回檔案）';
+}
+
 // ## HOLIDAY 解析結果（與 ## EVENT 同結構，多 holidayType 字段）；僅列表/日志視圖顯示，不進時間網格/月格 chip
 let calHolidays = [];
 // ## DIARY 解析結果（每天一條，keyed by date）；行事曆日期旁顯示日記按鈕，有則打勾
@@ -556,20 +885,45 @@ function calRenderInlineMarkdown(text) {
   }
   return html;
 }
-// 備註：可編輯（uid 有值）時依「最小 MD 表達單元」分塊，非 checkbox 區塊注入 ✎ 圓點；
-//   唯讀（uid=null，節日／tooltip）維持整段渲染，行為與外觀不變。
-function calRenderNotes(notes, uid) {
+// 備註「是否給編輯入口」：與桌面 tlRenderNotes 的 canEdit 同構——uid 有值且該行程屬主檔（非 include 只讀）。
+//   forceEditable=true 是唯一例外：便利貼才是 include 備註的唯一編輯場所，那邊一律給編輯入口。
+function calNotesCanEdit(uid, forceEditable) {
+  if (forceEditable === true) return !!uid;
+  if (!uid) return false;
+  const ev = (state.calEvents || []).find((x) => x.uid === uid);
+  return !!(ev && !ev.ro);
+}
+// 備註編輯「介面歸屬」：同一組備註編輯函式被 行程檢視 與 便利貼 兩邊共用，
+//   但 include(ro) 行程只准在便利貼裡改 → 動作當下要知道來自哪一邊。
+//   判定一律靠 DOM 歸屬（#calStickyOverlay），不靠全域旗標——重繪順序不會把它翻掉。
+function calNotesFromSticky(e) {
+  const t = e && e.target;
+  return !!(t && t.closest && t.closest('#calStickyOverlay'));
+}
+// ro 行程的備註編輯守門：行程檢視一律拒（與桌面 ev.ro 攔截同口徑），便利貼放行。
+//   回傳 true＝已攔下，呼叫端立刻 return。
+//   文案刻意短：「來自被包含的檔案」的完整說明在 ⛔ 徽標的 title 裡，toast 太長在手機上會被裁。
+function calNotesRoLocked(ev, fromSticky) {
+  if (!ev || !ev.ro || fromSticky) return false;
+  showToast('唯讀行程：備註請到便利貼修改', 'error');
+  return true;
+}
+// 備註：可編輯時依「最小 MD 表達單元」分塊，非 checkbox 區塊注入 ✎ 圓點；
+//   唯讀（uid=null 的節日／tooltip，或 include 進來的 ro 行程）整段渲染，與桌面 tlRenderNotes 一致。
+//   ⚠️ ro 行程在「行程檢視」只讀：不給任何 ✎，checkbox 仍渲染但點擊由 calToggleNoteCheck 兜住並提示；
+//      要改 include 備註只能到便利貼——那邊呼叫時傳 forceEditable=true。
+function calRenderNotes(notes, uid, forceEditable) {
   if (!notes) return '';
   const raw = String(notes).replace(/\r\n/g, '\n');
-  if (!uid) {
-    return renderMarkdown(calRenderTermDefs(calNotesWithChecks(raw, uid)));
+  if (!calNotesCanEdit(uid, forceEditable)) {
+    return renderMarkdown(calRenderTermDefs(calNotesWithChecks(raw, uid, false)));
   }
   const lines = raw.split('\n');
   let out = '';
   calSplitMdBlocks(raw).forEach((b) => {
     if (b.type === 'task') {
       // checkbox 行逐行獨立：一律沿用行內「編輯子事件」小圓點，不加外層區塊圓點
-      out += calNoteCheckLineHtml(lines[b.start], uid, b.start) + '\n';
+      out += calNoteCheckLineHtml(lines[b.start], uid, b.start, true) + '\n';
       return;
     }
     const chunk = lines.slice(b.start, b.end + 1).join('\n');
@@ -649,30 +1003,34 @@ function calRenderNoteMarkers(text) {
     .replace(/\[\[(?:dl:)?(\d{4}-\d{2}-\d{2})\]\]/g, '📅 $1')
     .replace(/\[\[cp:(\d{4}-\d{2}-\d{2})\]\]/g, '✅ $1');
 }
-function calNoteCheckLineHtml(line, uid, i) {
+function calNoteCheckLineHtml(line, uid, i, canEdit) {
   const m = line.match(/^(\s*)-\s+\[([ xX])\]\s?(.*)$/);
   if (!m) return line;
   const done = m[2] !== ' ';
-  const editButton = uid
+  // ✎（編輯子事件）與桌面 tlTaskLineHtml 同口徑：只有真的可編輯才給；ro 行程在行程檢視不給。
+  //   canEdit 由呼叫端算好傳進來（每個事件只查一次 state.calEvents，不在行級重複 find）。
+  const editButton = canEdit
     ? '<button type="button" class="ev-md-edit" title="編輯 checkbox 子事件" onclick="calOpenEditNoteCheckDialog(event,\'' +
       escapeHtml(uid) + '\',' + i + ')">✎</button>'
     : '';
+  // ⚠️ 勾選互動（onclick/onkeydown/role）只掛在「框框本身」.ev-cb 上，與桌面 tlTaskLineHtml 同口徑——
+  //   整行（含文字 .ev-md-check-text）不再觸發，避免手機上點到文字就誤勾（原先 onclick 掛在外層 .ev-md-check 整行）。
   const cbAttr = uid
-    ? ' data-uid="' + escapeHtml(uid) + '" data-line="' + i + '"' +
+    ? ' class="ev-cb interactive" data-uid="' + escapeHtml(uid) + '" data-line="' + i + '"' +
       ' onclick="calToggleNoteCheck(event,\'' + escapeHtml(uid) + '\',' + i + ')"' +
-      ' onkeydown="calCalCheckKey(event,\'' + escapeHtml(uid) + '\',' + i + ')"'
-    : '';
-  return m[1] + '<span class="ev-md-check' + (done ? ' done' : '') + '"' + cbAttr +
-    ' role="checkbox" aria-checked="' + (done ? 'true' : 'false') + '" tabindex="0">' + editButton +
-    '<span class="ev-cb">' + (done ? '✓' : '') + '</span>' +
+      ' onkeydown="calCalCheckKey(event,\'' + escapeHtml(uid) + '\',' + i + ')"' +
+      ' role="checkbox" aria-checked="' + (done ? 'true' : 'false') + '" tabindex="0"'
+    : ' class="ev-cb"';
+  return m[1] + '<span class="ev-md-check' + (done ? ' done' : '') + '">' + editButton +
+    '<span' + cbAttr + '>' + (done ? '✓' : '') + '</span>' +
     '<span class="ev-md-check-text">' + calRenderInlineMarkdown(calRenderNoteMarkers(m[3])) + '</span></span>';
 }
-function calNotesWithChecks(text, uid) {
+function calNotesWithChecks(text, uid, canEdit) {
   let inFence = false;
   return text.split('\n').map((line, i) => {
     if (/^\s*```/.test(line)) { inFence = !inFence; return line; }
     if (inFence) return line;
-    return calNoteCheckLineHtml(line, uid, i);
+    return calNoteCheckLineHtml(line, uid, i, canEdit);
   }).join('\n');
 }
 // 🖱 日/週時間網格雙擊空白處快速新增：15 分鐘取整，默認時長 1 小時；全天條＝日期(全天)
@@ -710,12 +1068,12 @@ function calSpanChipHtml(ev, pos, idx, total, occDate) {
   const occ = ' data-occ-date="' + escapeHtml(occDate || ev.date) + '"';
   // 单日 → 普通 chip（圆点+标题）
   if (pos === 'single') {
-    return '<div class="ev-chip' + (ev.done ? ' done' : '') + '"' + edit + occ + '><span class="dot" style="background:' + escapeHtml(ev.color) + '"></span>' + (ev.done ? '✓ ' : '') + calRepeatIcon(ev) + calRenderInlineMarkdown(ev.title) + links + '</div>';
+    return '<div class="ev-chip' + (ev.done ? ' done' : '') + '"' + edit + occ + '><span class="dot" style="background:' + escapeHtml(ev.color) + '"></span>' + (ev.done ? '✓ ' : '') + calRepeatIcon(ev) + calRenderInlineMarkdown(ev.title) + calRoIcon(ev) + links + '</div>';
   }
   // 跨天：start/end 显示标题作起止标识，middle 渲染为连续色条（不重复标题，悬停可见）
   const cls = 'ev-chip span ' + pos + (ev.done ? ' done' : '');
   const dot = '<span class="dot" style="background:' + escapeHtml(ev.color) + '"></span>';
-  const titlePart = (ev.done ? '✓ ' : '') + calRepeatIcon(ev) + calRenderInlineMarkdown(ev.title) + calSpanSuffix(idx, total) + links;
+  const titlePart = (ev.done ? '✓ ' : '') + calRepeatIcon(ev) + calRenderInlineMarkdown(ev.title) + calSpanSuffix(idx, total) + calRoIcon(ev) + links;
   // 每一段（start/middle/end）都顯示「標題 k/N」——空色條看不出是哪條行程的延續
   let inner = (pos === 'start' ? dot : '') + titlePart;
   const tip = (pos === 'middle') ? ' title="' + escapeHtml(ev.title) + '"' : '';
@@ -909,10 +1267,15 @@ function calShowEventMenu(anchorEl, uid) {
   menu.setAttribute('role', 'menu');
   menu.setAttribute('data-uid', uid);
   menu._anchor = anchorEl;
+  // 📎 多檔聯運：只讀（ro）事件只給「詳情」，隱藏編輯/刪除
+  calRefreshAll();
+  const ev = (state.calEvents || []).find((x) => x.uid === uid);
+  const ro = !!(ev && ev.ro);
   menu.innerHTML =
     '<button type="button" data-act="detail" role="menuitem">🔍 详情</button>' +
-    '<button type="button" data-act="edit" role="menuitem">✏️ 编辑</button>' +
-    '<button type="button" data-act="del" role="menuitem">🗑 删除</button>' +
+    (ro ? '' :
+      '<button type="button" data-act="edit" role="menuitem">✏️ 编辑</button>' +
+      '<button type="button" data-act="del" role="menuitem">🗑 删除</button>') +
     '<button type="button" data-act="cancel" role="menuitem">✕ 取消</button>';
   document.body.appendChild(menu);
   calMenuEl = menu;
@@ -938,7 +1301,8 @@ function calShowEventMenu(anchorEl, uid) {
 }
 // 选单「详情」：以可点闭的浮层显示放大内容（复用 calTipHtml），pointer-events:auto 可交互。
 function calShowEventDetail(uid, anchorEl) {
-  state.calEvents = parseCalendarEvents(elements.editor.value);
+  // 📎 多檔聯運：詳情需能看見 include 進來的只讀事件 → 用併集定位
+  calRefreshAll();
   const ev = state.calEvents.find((x) => x.uid === uid);
   if (!ev) { showToast('找不到該條行程（內容可能已被修改）', 'error'); return; }
   calRemoveMenu(); calRemoveDetail();
@@ -1380,6 +1744,8 @@ function calRenderStatsBody() {
 function calOpenStats() {
   const overlay = document.getElementById('ev-stats-overlay');
   if (!overlay) return;
+  // 📎 多檔聯運：統計需含 include 進來的只讀事件 → 先重併
+  calRefreshAll();
   const fileEl = document.getElementById('ev-stats-file');
   if (fileEl) fileEl.textContent = calFileSizeLabel();
   calRenderStatsFilters();
@@ -1441,7 +1807,8 @@ function calInitCalendarToolbarCombo() {
   menu.addEventListener('click', (event) => event.stopPropagation());
   // 動作型項目：不曝露成工具列常駐按鈕，按下直接執行（便利貼平時完全不佔畫面，只從這裡開）
   const actionHandlers = {
-    sticky: () => { if (typeof calStickyOpen === 'function') calStickyOpen(); }
+    sticky: () => { if (typeof calStickyOpen === 'function') calStickyOpen(); },
+    'new-cal': () => { if (typeof calOpenNewCalDialog === 'function') calOpenNewCalDialog(); }
   };
   menu.querySelectorAll('button[data-toolbar-action]').forEach((button) => {
     button.addEventListener('click', () => {
@@ -1452,6 +1819,14 @@ function calInitCalendarToolbarCombo() {
       else if (actionHandlers[key]) actionHandlers[key]();
     });
   });
+  // 🆕 建立 calendar 檔案 / 新建便利貼：combo 裡的動作型項目（data-cal-action），按下後開各自對話框
+  menu.querySelectorAll('button[data-cal-action]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const key = button.getAttribute('data-cal-action');
+      closeMenu();
+      if (actionHandlers[key]) actionHandlers[key]();
+    });
+  });
   checkboxes.forEach((input) => input.addEventListener('change', () => {
     const key = input.getAttribute('data-toolbar-expose');
     selected = input.checked ? Array.from(new Set(selected.concat(key))) : selected.filter((item) => item !== key);
@@ -1460,6 +1835,233 @@ function calInitCalendarToolbarCombo() {
   }));
   document.addEventListener('click', (event) => { if (!combo.contains(event.target)) closeMenu(); });
 }
+
+// ===== 🆕 建立 calendar 檔案 / 新建便利貼 / 刪除便利貼 共用工具 =====
+const CAL_NL = String.fromCharCode(10);
+function calRtrim(s) { s = String(s); while (s.length) { const c = s.charCodeAt(s.length - 1); if (c === 32 || c === 9 || c === 10 || c === 13) s = s.slice(0, -1); else break; } return s; }
+function calLtrim(s) { s = String(s); while (s.length) { const c = s.charCodeAt(0); if (c === 32 || c === 9 || c === 10 || c === 13) s = s.slice(1); else break; } return s; }
+function calSanitizeSuffix(s) {
+  let res = ''; let lastSpace = false;
+  for (const ch of String(s || '')) {
+    const code = ch.charCodeAt(0);
+    if (code === 47 || code === 92 || code === 58 || code === 42 || code === 63 || code === 34 || code === 60 || code === 62 || code === 124) continue;
+    if (code === 32 || code === 9 || code === 10 || code === 13) { if (!lastSpace && res) { res += ' '; lastSpace = true; } continue; }
+    res += ch; lastSpace = false;
+  }
+  return res.trim();
+}
+
+// ===== 🆕 建立 calendar 檔案（combo 選單）=====
+//   前綴固定 calendar-，後綴由使用者輸入 → calendar-<後綴>.md 空文件。
+//   建好即設為「當前文檔」（空內容）並標髒，頂欄「保存」即可存回 iCloud。
+//   資料尚未加載（state.currentFile 為空）也能用；若當前檔有未保存更改則先擋下，避免靜默丟失。
+let calNewCalBusy = false;
+function calNewCalEl(id) { return document.getElementById(id); }
+function calSetNewCalHint(text, isError) {
+  const h = calNewCalEl('calNewCalHint');
+  if (!h) return;
+  h.textContent = text || '';
+  h.classList.toggle('error', !!isError);
+}
+function calCloseNewCalDialog() {
+  const ov = calNewCalEl('calNewCalOverlay');
+  if (ov) ov.style.display = 'none';
+  calNewCalBusy = false;
+  const b = calNewCalEl('calNewCalCreate');
+  if (b) { b.disabled = false; b.textContent = '建立'; }
+}
+function calOpenNewCalDialog() {
+  const ov = calNewCalEl('calNewCalOverlay');
+  const inp = calNewCalEl('calNewCalSuffix');
+  if (!ov || !inp) return;
+  if (state.currentFile && state.isDirty) {
+    showToast('請先保存當前文件，或重新「開啟」後再建立新檔案', 'error');
+    return;
+  }
+  inp.value = '';
+  calSetNewCalHint('Enter 建立 · Esc 取消；建好後按頂欄「保存」即可存回 iCloud', false);
+  calNewCalBusy = false;
+  const b = calNewCalEl('calNewCalCreate');
+  if (b) { b.disabled = false; b.textContent = '建立'; }
+  ov.style.display = 'flex';
+  setTimeout(function () { inp.focus(); }, 0);
+}
+function calSubmitNewCal() {
+  if (calNewCalBusy) return;
+  const inp = calNewCalEl('calNewCalSuffix');
+  const suffix = String((inp && inp.value) || '').trim();
+  if (!suffix) { calSetNewCalHint('請先輸入檔案後綴（例如 work / 工作）', true); if (inp) inp.focus(); return; }
+  const clean = calSanitizeSuffix(suffix);
+  if (!clean) { calSetNewCalHint('後綴含非法字元，請改用字母／數字／中文／-_ 空格', true); if (inp) inp.focus(); return; }
+  const name = 'calendar-' + clean + '.md';
+  calNewCalBusy = true;
+  const b = calNewCalEl('calNewCalCreate');
+  if (b) { b.disabled = true; b.textContent = '建立中…'; }
+  calSetNewCalHint('正在建立…', false);
+  state.currentFile = { name: name, file: null, path: name, type: 'md' };
+  state.lastContent = '';
+  state.isDirty = true;
+  state.todoMode = false;
+  state.originalTodo = null;
+  if (typeof elements !== 'undefined' && elements.editor) elements.editor.value = '';
+  if (typeof calRestoreIncludes === 'function') calRestoreIncludes(name);
+  const fn = (typeof elements !== 'undefined' && elements.fileName) ? elements.fileName : null;
+  if (fn) fn.textContent = name;
+  if (typeof updateTodoModeBadge === 'function') updateTodoModeBadge();
+  if (typeof updatePreview === 'function') updatePreview();
+  if (typeof updateWordCount === 'function') updateWordCount();
+  if (typeof updateStatus === 'function') updateStatus();
+  if (typeof dispatchDataAwareEditor === 'function') dispatchDataAwareEditor();
+  calCloseNewCalDialog();
+  showToast('已建立 ' + name + '（空文件），按頂欄「保存」即可存回 iCloud', 'success');
+}
+
+// ===== 🆕 新建便利貼（combo 選單）=====
+//   標題 ＋ 寫入檔案（主檔或已併入的聯運檔）。建出的行程 sticky=1，日期＝今天。
+let calNewNoteBusy = false;
+function calSetNewNoteHint(text, isError) {
+  const h = calNewCalEl('calNewNoteHint');
+  if (!h) return;
+  h.textContent = text || '';
+  h.classList.toggle('error', !!isError);
+}
+function calCloseNewNoteDialog() {
+  const ov = calNewCalEl('calNewNoteOverlay');
+  if (ov) ov.style.display = 'none';
+  calNewNoteBusy = false;
+  const b = calNewCalEl('calNewNoteCreate');
+  if (b) { b.disabled = false; b.textContent = '建立'; }
+}
+function calOpenNewNoteDialog() {
+  const ov = calNewCalEl('calNewNoteOverlay');
+  const sel = calNewCalEl('calNewNoteTarget');
+  const inp = calNewCalEl('calNewNoteTitle');
+  if (!ov || !sel || !inp) return;
+  const opts = [];
+  if (state.currentFile && isCalendarMd()) {
+    opts.push('<option value="__MAIN__">主檔：' + escapeHtml(state.currentFile.name) + '（可編輯，存回 iCloud）</option>');
+  }
+  (state.calIncludeFiles || []).forEach(function (f) {
+    opts.push('<option value="' + escapeHtml(f.name) + '">聯運：' + escapeHtml(f.name) + '（只讀來源）</option>');
+  });
+  sel.innerHTML = opts.join('');
+  const b = calNewCalEl('calNewNoteCreate');
+  if (!opts.length) {
+    calSetNewNoteHint('請先開啟或建立一個 calendar 文件，才能新建便利貼', true);
+    if (b) b.disabled = true;
+  } else {
+    calSetNewNoteHint('Enter 建立 · Esc 取消；建好後會立即出現在便利貼翻頁中', false);
+    if (b) b.disabled = false;
+  }
+  inp.value = '';
+  ov.style.display = 'flex';
+  setTimeout(function () { inp.focus(); }, 0);
+}
+function calSubmitNewNote() {
+  if (calNewNoteBusy) return;
+  const inp = calNewCalEl('calNewNoteTitle');
+  const sel = calNewCalEl('calNewNoteTarget');
+  const title = String((inp && inp.value) || '').trim();
+  const target = String((sel && sel.value) || '');
+  if (!title) { calSetNewNoteHint('請先填寫便利貼標題', true); if (inp) inp.focus(); return; }
+  if (!target) { calSetNewNoteHint('請選擇要寫入的檔案', true); return; }
+  calNewNoteBusy = true;
+  const b = calNewCalEl('calNewNoteCreate');
+  if (b) { b.disabled = true; b.textContent = '建立中…'; }
+  const ok = calCreateStickyNote(title, target);
+  calNewNoteBusy = false;
+  if (b) { b.disabled = false; b.textContent = '建立'; }
+  if (ok) calCloseNewNoteDialog();
+  else calSetNewNoteHint('新建失敗，請稍後再試', true);
+}
+function calCreateStickyNote(title, targetName) {
+  const ev = {
+    title: title, date: calendarFmtDate(new Date()), endDate: '', allDay: true, done: false,
+    startTime: '', endTime: '', location: '', color: '', tags: [], todoIds: [], sticky: 1, notes: ''
+  };
+  const block = calEventToMarkdown(ev);
+  let roInc = null;
+  if (targetName && targetName !== '__MAIN__') {
+    const files = state.calIncludeFiles || [];
+    roInc = files.find(function (f) { return f.name === targetName; }) || null;
+    if (!roInc) { showToast('找不到目標檔「' + targetName + '」', 'error'); return false; }
+    let text = roInc.content || '';
+    if (text && text.charAt(text.length - 1) !== CAL_NL) text += CAL_NL;
+    roInc.content = (text ? text + CAL_NL : '') + block + CAL_NL;
+    roInc.dirty = true;
+    if (typeof calPersistIncludes === 'function') calPersistIncludes();
+  } else {
+    if (!state.currentFile) { showToast('請先開啟或建立一個 calendar 文件', 'error'); return false; }
+    let text = (typeof elements !== 'undefined' && elements.editor) ? elements.editor.value : '';
+    if (text && text.charAt(text.length - 1) !== CAL_NL) text += CAL_NL;
+    if (typeof elements !== 'undefined' && elements.editor) elements.editor.value = (text ? text + CAL_NL : '') + block + CAL_NL;
+    state.isDirty = (typeof elements !== 'undefined' && elements.editor) ? (elements.editor.value !== state.lastContent) : true;
+    if (typeof updateStatus === 'function') updateStatus();
+    if (typeof updateWordCount === 'function') updateWordCount();
+    if (typeof updatePreview === 'function') updatePreview();
+  }
+  if (typeof calRefreshAll === 'function') calRefreshAll();
+  if (typeof renderEventsContent === 'function') renderEventsContent();
+  if (roInc && typeof calRenderIncludeBar === 'function') calRenderIncludeBar();
+  if (typeof calStickyRefreshIfOpen === 'function') calStickyRefreshIfOpen();
+  const newEv = (state.calEvents || []).find(function (e) { return e.title === title && e.date === ev.date && e.sticky > 0 && (roInc ? (e.ro && e.src === targetName) : !e.ro); });
+  const uid = newEv ? newEv.uid : '';
+  if (typeof calStickyOpen === 'function') {
+    calStickyOpen();
+    if (uid && typeof calStickyPages !== 'undefined') {
+      const i = calStickyPages.findIndex(function (n) { return n.uid === uid; });
+      if (i >= 0 && typeof calStickyRenderPage === 'function') calStickyRenderPage(i, { toast: false });
+    }
+  }
+  showToast('已新建便利貼「' + title + '」' + (roInc ? '（' + targetName + '）' : ''), 'success');
+  return true;
+}
+
+// ===== 🆕 精準移除第 blockIdx 個 ## EVENT 區塊（blockIdx 與 uid 的 evpN 同一個數，1-based）=====
+//   title 安全閥：命中區塊的標題必須一致，否則寧可不刪（避免把 A 的區塊刪成 B）。
+function calRemoveEventBlockInContent(content, blockIdx, title) {
+  const range = calEventBlockRange(content, blockIdx);
+  if (!range) return null;
+  const blockText = content.slice(range.start, range.end);
+  if (title != null) {
+    const tm = blockText.match(/- title: `([^`]*)`/);
+    if (!tm || tm[1] !== String(title)) return null;
+  }
+  const head = calRtrim(content.slice(0, range.start));
+  const tail = calLtrim(content.slice(range.end));
+  const out = (head ? head + CAL_NL + CAL_NL : '') + tail;
+  return out ? calRtrim(out) + CAL_NL : out;
+}
+
+// ===== 🆕 對話框按鈕綁定（只需一次）=====
+function calInitNewDialogs() {
+  const wire = function (id, ev, fn) { const el = calNewCalEl(id); if (el && !el.dataset.wired) { el.dataset.wired = '1'; el.addEventListener(ev, fn); } };
+  wire('calNewCalCreate', 'click', function (e) { e.stopPropagation(); calSubmitNewCal(); });
+  wire('calNewCalCancel', 'click', function (e) { e.stopPropagation(); calCloseNewCalDialog(); });
+  wire('calNewCalClose', 'click', function (e) { e.stopPropagation(); calCloseNewCalDialog(); });
+  wire('calNewNoteCreate', 'click', function (e) { e.stopPropagation(); calSubmitNewNote(); });
+  wire('calNewNoteCancel', 'click', function (e) { e.stopPropagation(); calCloseNewNoteDialog(); });
+  wire('calNewNoteClose', 'click', function (e) { e.stopPropagation(); calCloseNewNoteDialog(); });
+  const ov = calNewCalEl('calNewCalOverlay');
+  if (ov && !ov.dataset.wired) {
+    ov.dataset.wired = '1';
+    ov.addEventListener('click', function (e) { if (e.target === ov) { e.stopPropagation(); calCloseNewCalDialog(); } });
+    ov.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape') { e.preventDefault(); calCloseNewCalDialog(); }
+      else if (e.key === 'Enter' && e.target && e.target.id === 'calNewCalSuffix') { e.preventDefault(); calSubmitNewCal(); }
+    }, true);
+  }
+  const nov = calNewCalEl('calNewNoteOverlay');
+  if (nov && !nov.dataset.wired) {
+    nov.dataset.wired = '1';
+    nov.addEventListener('click', function (e) { if (e.target === nov) { e.stopPropagation(); calCloseNewNoteDialog(); } });
+    nov.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape') { e.preventDefault(); calCloseNewNoteDialog(); }
+      else if (e.key === 'Enter' && e.target && e.target.id === 'calNewNoteTitle') { e.preventDefault(); calSubmitNewNote(); }
+    }, true);
+  }
+}
+
 // UTF-8 字節長度（純 JS，無依賴）：用於估算當前加載的 calendar.md 內容大小
 function calUtf8Len(s) {
   if (!s) return 0;
@@ -1615,6 +2217,9 @@ function calGridSelectedDay() {
 function renderCalTimeGrid(dayDates, preserveScroll = true) {
   const wrap = elements.evWeekWrap;
   if (!wrap) return;
+  // 📎 多檔聯運：本函式也被 calRerenderCalendarView / calSetCalScope 直接呼叫（未先走 renderEventsContent），
+  //    故在此確保 state.calEvents 是「主檔＋include 併集」，避免 include 事件在日/週視圖漏顯示。
+  calRefreshAll();
   const timeGridScrollTop = preserveScroll ? (wrap.querySelector('.ev-timegrid-scroll')?.scrollTop || 0) : 0;
   const detailListScrollTop = preserveScroll ? (wrap.querySelector('#ev-grid-list')?.scrollTop || 0) : 0;
   // 重複展開視窗：網格首末日 ±7 天，避免 never 無限展開
@@ -1649,7 +2254,7 @@ function renderCalTimeGrid(dayDates, preserveScroll = true) {
       arr.forEach((o) => {
         const ev = o.ev;
         html += '<div class="ev-block all-day' + (ev.done ? ' done' : '') + '" data-ev-edit="' + escapeHtml(ev.uid) + '" data-occ-date="' + escapeHtml(calendarFmtDate(dayDates[ci])) + '" style="--ev-color:' + escapeHtml(ev.color || CAL_COLORS[0]) + '">' +
-          (ev.done ? '✓ ' : '') + calRepeatIcon(ev) + calRenderInlineMarkdown(ev.title) + calSpanSuffix(o.idx, o.total) + calEventTodoLinks(ev) + '</div>';
+          (ev.done ? '✓ ' : '') + calRepeatIcon(ev) + calRenderInlineMarkdown(ev.title) + calSpanSuffix(o.idx, o.total) + calRoIcon(ev) + calEventTodoLinks(ev) + '</div>';
       });
       html += '</div>';
     });
@@ -1665,7 +2270,7 @@ function renderCalTimeGrid(dayDates, preserveScroll = true) {
           arr.forEach((h) => {
             const region = calHolidayRegionMeta(h.region);
             // 跨天假日：與行程同款「(第幾天/共幾天)」，一天一格（ci＝所屬欄＝出現日）
-            html += '<div class="ev-holiday-block" style="--holiday-color:' + escapeHtml(region.color) + '" title="' + escapeHtml(h.title) + '">' + region.icon + ' ' + calRenderInlineMarkdown(h.title) + calSpanDaySuffix(h, calendarFmtDate(dayDates[ci])) + '</div>';
+            html += '<div class="ev-holiday-block" style="--holiday-color:' + escapeHtml(region.color) + '" title="' + escapeHtml(h.title) + '">' + region.icon + ' ' + calRenderInlineMarkdown(h.title) + calSpanDaySuffix(h, calendarFmtDate(dayDates[ci])) + calRoIcon(h) + '</div>';
           });
           html += '</div>';
         });
@@ -1690,7 +2295,7 @@ function renderCalTimeGrid(dayDates, preserveScroll = true) {
       const notes = (!e.allDay && height >= 64 && e.notes) ? String(e.notes).slice(0, 400) : '';
       html += '<div class="ev-block' + (e.done ? ' done' : '') + '" data-ev-edit="' + escapeHtml(e.uid) + '" data-occ-date="' + escapeHtml(calendarFmtDate(d)) + '" style="top:' + top + 'px;height:' + height + 'px;left:calc(' + left + '% + 1px);width:calc(' + width + '% - 3px);--ev-color:' + escapeHtml(cbg) + '">' +
         // 跨天定時行程：該欄即「出現日」，標題後標 (第幾天/共幾天)
-        '<div class="t">' + (e.done ? '✓ ' : '') + calRepeatIcon(e) + calRenderInlineMarkdown(e.title) + calSpanDaySuffix(e, calendarFmtDate(d)) + calEventTodoLinks(e) + '</div>' +
+        '<div class="t">' + (e.done ? '✓ ' : '') + calRepeatIcon(e) + calRenderInlineMarkdown(e.title) + calSpanDaySuffix(e, calendarFmtDate(d)) + calRoIcon(e) + calEventTodoLinks(e) + '</div>' +
         (tm ? '<div class="tm">' + escapeHtml(tm) + '</div>' : '') +
         (e.location ? '<div class="loc">' + escapeHtml('📍 ' + e.location) + '</div>' : '') +
         // 時間格只顯示前 400 字（可能截斷區塊）→ 傳 null 走唯讀渲染，避免用截斷後的區間回寫原文
@@ -1821,9 +2426,8 @@ let calYearLastCellClick = { date: null, t: 0 };
 function renderCalYear(content) {
   const grid = elements.evYearGrid;
   if (!grid) return;
-  state.calEvents = parseCalendarEvents(content);
-  calHolidays = parseCalendarHolidays(content);
-  calDiaries = parseCalendarDiaries(content);
+  // 📎 多檔聯運：主檔 + 所有 include 併成顯示用資料集（含 ro 標記）；編輯/存檔路徑仍只用主檔內容
+  calRefreshAll();
   const y = state.calCursor.getFullYear();
   calSetRepeatWindow(y + '-01-01', y + '-12-31');
   if (elements.evMonthTitle) elements.evMonthTitle.textContent = y + '年';
@@ -2239,9 +2843,8 @@ function calRenderDiaryOnlyList(list) {
 function renderEventsList(content) {
   const list = elements.eventsList;
   if (!list) return;
-  state.calEvents = parseCalendarEvents(content);
-  calHolidays = parseCalendarHolidays(content);
-  calDiaries = parseCalendarDiaries(content);
+  // 📎 多檔聯運：主檔 + 所有 include 併成顯示用資料集（含 ro 標記）；編輯/存檔路徑仍只用主檔內容
+  calRefreshAll();
   // 📓 「只顯示日記」：勾選後走專用分支（行程/假日不參與），連「尚未有行程 / 沒有符合標籤」兩個空態也不適用
   calLoadDiaryOnly();
   if (state.calDiaryOnly) { calRenderDiaryOnlyList(list); return; }
@@ -2713,7 +3316,7 @@ function evItemHtml(ev, today, occDate) {
   const spanBadge = multi ? '<span class="ev-span-badge" title="跨天行程">⤢ 跨' + calSpanDays(ev.date, ev.endDate) + '天</span>' : '';
   return '<div class="ev-item' + (past ? ' past' : '') + (ev.done ? ' done' : '') + (multi ? ' multi' : '') + (calEventUndoneChecksOnly(ev.uid) ? ' only-undone-checks' : '') + '" data-ev-edit="' + escapeHtml(ev.uid) + '" data-occ-date="' + escapeHtml(occDate || ev.date) + '">' +
     '<input type="checkbox" class="ev-check" data-ev-done="' + escapeHtml(ev.uid) + '"' +
-    (ev.done ? ' checked' : '') + ' title="勾選＝已完成">' +
+    (ev.done ? ' checked' : '') + (ev.ro ? ' disabled' : '') + ' title="' + (ev.ro ? '來自只讀檔案，不可修改完成狀態' : '勾選＝已完成') + '">' +
     '<span class="ev-swatch" style="background:' + escapeHtml(ev.color) + '"></span>' +
     '<div class="ev-body">' +
     // 跨天行程（含跨天重複）標題後緊跟「(第幾天/共幾天)」——「回上海 (3/7)」一眼看出是第三天
@@ -2721,15 +3324,18 @@ function evItemHtml(ev, today, occDate) {
     (ev.tags && ev.tags.length ? '<span class="ev-tags">' + ev.tags.map(t => '<span class="ev-tag-view" data-tag="' + escapeHtml(calTagName(t)) + '">' + escapeHtml(calTagLabel(t)) + '</span>').join('') + '</span>' : '') +
     calSubProgressBadge(ev) +
     calSpanDisplayModeBadge(ev) +
+    calRoIcon(ev) +
     // 🗒 便利貼徽標：該行程設了「便利貼張數 ≥1」才顯示（與桌面清單行同一位置/同一圖示）；
     //    點它＝開便利貼並跳到該行程的第一張
     (ev.sticky > 0 ? '<button type="button" class="ev-sticky-flag" data-ev-sticky="' + escapeHtml(ev.uid) + '" title="開啟便利貼（' + (parseInt(ev.sticky, 10) || 0) + ' 張）">' + CAL_STICKY_IC_SVG + '</button>' : '') +
-    // ＋☐：在備註末尾加入 checkbox 子事件（與便利貼 meta 同一入口）
-    '<button type="button" class="ev-addcheck-btn" data-ev-addcheck="' + escapeHtml(ev.uid) + '" title="在備註末尾加入 checkbox 子事件">＋☐</button>' +
-    '<button type="button" class="ev-undone-filter-btn' + (calEventUndoneChecksOnly(ev.uid) ? ' active' : '') + '"' +
-    ' data-ev-undone-filter="' + escapeHtml(ev.uid) + '" aria-pressed="' + (calEventUndoneChecksOnly(ev.uid) ? 'true' : 'false') + '"' +
-    ' title="' + (calEventUndoneChecksOnly(ev.uid) ? '仅显示该事件未完成的 checkbox 子事件（点击显示全部）' : '只显示该事件未完成的 checkbox 子事件') + '">' +
-    (calEventUndoneChecksOnly(ev.uid) ? '☑' : '☐') + '</button>' +
+    // 📎 多檔聯運：只讀（ro）事件不提供「＋☐ 加入子事件」與「只顯示未完成」按鈕（這些都會寫回主檔）
+    (ev.ro ? '' :
+      // ＋☐：在備註末尾加入 checkbox 子事件（與便利貼 meta 同一入口）
+      '<button type="button" class="ev-addcheck-btn" data-ev-addcheck="' + escapeHtml(ev.uid) + '" title="在備註末尾加入 checkbox 子事件">＋☐</button>' +
+      '<button type="button" class="ev-undone-filter-btn' + (calEventUndoneChecksOnly(ev.uid) ? ' active' : '') + '"' +
+      ' data-ev-undone-filter="' + escapeHtml(ev.uid) + '" aria-pressed="' + (calEventUndoneChecksOnly(ev.uid) ? 'true' : 'false') + '"' +
+      ' title="' + (calEventUndoneChecksOnly(ev.uid) ? '仅显示该事件未完成的 checkbox 子事件（点击显示全部）' : '只显示该事件未完成的 checkbox 子事件') + '">' +
+      (calEventUndoneChecksOnly(ev.uid) ? '☑' : '☐') + '</button>') +
     calEventTodoLinks(ev) +
     '</div>' +
     '<div class="ev-meta">' + escapeHtml(time) + (ev.location ? ' · 📍' + escapeHtml(ev.location) : '') + '</div>' +
@@ -2889,9 +3495,8 @@ function renderEventsContent() {
   const isYear = state.calMode === 'year';
   const isGrid = isWeek || isDay;          // 日 / 週共用時間網格
   // 先解析一次供標籤條與日/週網格使用（月/列表的渲染函式內部會再解析一次，結果相同）
-  state.calEvents = parseCalendarEvents(content);
-  calHolidays = parseCalendarHolidays(content);
-  calDiaries = parseCalendarDiaries(content);
+  // 📎 多檔聯運：主檔 + 所有 include 併成顯示用資料集（含 ro 標記）；編輯/存檔路徑仍只用主檔內容
+  calRefreshAll();
   renderCalTagBar();
   calRenderHolidayLegend(); // 動態圖例：列出 calendar.md 中出現過的地區，輔助「目視差別」
   if (isMonth) renderCalMonth(content);
@@ -2967,9 +3572,8 @@ function calScrollYearToCurrentMonth() {
 }
 
 function renderCalMonth(content) {
-  state.calEvents = parseCalendarEvents(content);
-  calHolidays = parseCalendarHolidays(content);
-  calDiaries = parseCalendarDiaries(content);
+  // 📎 多檔聯運：主檔 + 所有 include 併成顯示用資料集（含 ro 標記）；編輯/存檔路徑仍只用主檔內容
+  calRefreshAll();
   const cur = state.calCursor;
   const y = cur.getFullYear(), m = cur.getMonth();
   // 重複展開視窗：當月 + 前 7 天（含跨月首尾週），避免 never 無限展開
@@ -2995,7 +3599,7 @@ function renderCalMonth(content) {
     // ## HOLIDAY：月格 chip（与 EVENT 视觉区隔：type 色块＋图标徽章）
     for (let k = 0; k < Math.min(2, hols.length); k++) {
       const region = calHolidayRegionMeta(hols[k].region);
-      chips += '<span class="ev-holiday-chip" style="--holiday-color:' + escapeHtml(region.color) + '" title="' + escapeHtml(hols[k].title) + '">' + region.icon + escapeHtml(region.label) + '</span>';
+      chips += '<span class="ev-holiday-chip" style="--holiday-color:' + escapeHtml(region.color) + '" title="' + escapeHtml(hols[k].title) + '">' + region.icon + escapeHtml(region.label) + calRoIcon(hols[k]) + '</span>';
     }
     if (hols.length > 2) chips += '<div class="ev-more">+' + (hols.length - 2) + '</div>';
     // 事件 chip（假日占用空间时收紧上限，避免月格溢出）
@@ -3106,13 +3710,22 @@ function onEvListClick(e) {
   const editBtn = e.target.closest('[data-ev-edit]');
   if (editBtn) {
     const uid = editBtn.getAttribute('data-ev-edit');
+    // 📎 多檔聯運：只讀（ro）事件不可編輯
+    const ev = (state.calEvents || []).find((x) => x.uid === uid);
+    if (ev && ev.ro) { showToast('行程本體來自被包含的檔案，不可編輯（便利貼內容可直接修改）', 'error'); return; }
     // 触屏：点事件改弹小选单（编辑 / 详情），不再直接开表单；桌面保持点开表单
     if (calCanHover.matches) openEventForm(uid);
     else calShowEventMenu(editBtn, uid);
     return;
   }
   const delBtn = e.target.closest('[data-ev-del]');
-  if (delBtn) { deleteEventByUid(delBtn.getAttribute('data-ev-del')); return; }
+  if (delBtn) {
+    const uid = delBtn.getAttribute('data-ev-del');
+    // 📎 多檔聯運：只讀（ro）事件不可刪除
+    const ev = (state.calEvents || []).find((x) => x.uid === uid);
+    if (ev && ev.ro) { showToast('此行程來自被包含的只讀檔案，不可刪除', 'error'); return; }
+    deleteEventByUid(uid); return;
+  }
   // 明細範圍切換（日 <-> 月/週）
   const scopeBtn = e.target.closest('[data-cal-scope]');
   if (scopeBtn) { calSetCalScope(scopeBtn.getAttribute('data-cal-scope')); return; }
@@ -3140,6 +3753,12 @@ function onEvListDblClick(e) {
 function openEventForm(uid, defaultDate, pre) {
   calHideTip();
   if (!isCalendarMd()) return;
+  // 📎 多檔聯運：先用併集定位（才能識別 ro 事件）；只讀事件不允許編輯
+  calRefreshAll();
+  if (uid) {
+    const roEv = state.calEvents.find(x => x.uid === uid);
+    if (roEv && roEv.ro) { showToast('行程本體來自被包含的檔案，不可編輯（便利貼內容可直接修改）', 'error'); return; }
+  }
   state.calEvents = parseCalendarEvents(elements.editor.value);
   renderCalTagOptions();
   state.evFormUid = null;
@@ -3488,12 +4107,15 @@ function calNoteCheckTransform(line, newDone, todayStr) {
   }
   return m[1] + '- [' + (newDone ? 'x' : ' ') + ']' + (body ? ' ' + body : '');
 }
-// 備註裡的 Markdown checkbox 勾選/取消：定位 ev.notes 的對應行，互換 - [ ] ↔ - [x]，序列化寫回編輯緩衝（按「保存」才落盤）
+// 備註裡的 Markdown checkbox 勾選/取消：定位 ev.notes 的對應行，互換 - [ ] ↔ - [x]，
+//   主檔→序列化回編輯緩衝；include 來源檔→只改該檔的那一個區塊。
+//   ⚠️ 僅限便利貼介面：行程檢視裡 include 行程為唯讀（與桌面一致），在那裡點會被告知去便利貼改。
 function calToggleNoteCheck(e, uid, line) {
   if (e) { e.stopPropagation(); e.preventDefault(); } // 阻止冒泡到 .ev-block 開啟編輯表單
-  state.calEvents = parseCalendarEvents(elements.editor.value);
-  const ev = state.calEvents.find(x => x.uid === uid);
+  // 📎 多檔聯運：從併集（主檔＋include）定位——ro 事件也要能勾自己的便利貼子事件
+  const ev = calLoadEventsForNotes().find((x) => x.uid === uid);
   if (!ev) { showToast('找不到該條行程（內容可能已被修改）', 'error'); return; }
+  if (calNotesRoLocked(ev, calNotesFromSticky(e))) return;
   const lines = String(ev.notes || '').split('\n');
   if (line < 0 || line >= lines.length) return;
   const m = lines[line].match(/^(\s*)-\s+\[([ xX])\]\s?(.*)$/);
@@ -3502,8 +4124,9 @@ function calToggleNoteCheck(e, uid, line) {
   const nextDone = !wasDone;
   lines[line] = calNoteCheckTransform(lines[line], nextDone, calendarFmtDate(new Date()));
   ev.notes = lines.join('\n');
-  applyEventsToEditor(); // 序列化 + 標髒 + 重繪（多天事件多列＋便利貼同步）
-  showToast(nextDone ? '已勾選，按「保存」存回文件' : '已取消勾選，按「保存」存回文件', 'success');
+  // 主檔→回編輯緩衝待「保存」；include→寫回來源檔那一塊（本機快取，需匯出）
+  calCommitEventNotes(ev);
+  showToast(calNotesHint(ev, nextDone ? '已勾選，按「保存」存回文件' : '已取消勾選，按「保存」存回文件'), 'success');
 }
 function calCalCheckKey(e, uid, line) {
   if (e && e.target && e.target.closest && e.target.closest('button')) return; // 圓點按鈕的 Space/Enter 不該順帶勾選
@@ -3527,7 +4150,8 @@ function calMdEditDirty() {
   return !!inp && inp.value !== calMdEditBaseline;
 }
 function calLoadEventsForNotes() {
-  state.calEvents = parseCalendarEvents(elements.editor.value);
+  // 📎 多檔聯運：便利貼來源需含 include 進來的只讀事件 → 用併集
+  calRefreshAll();
   return state.calEvents;
 }
 // ── 🆕 表格網格編輯器（區塊圓點 type==='table' 時啟用）──────────────────────────────
@@ -3586,8 +4210,11 @@ function calShowMdEditDialog(title, hint, value, target) {
 }
 function calOpenEditBlockDialog(event, uid, start, end, type) {
   if (event) { event.preventDefault(); event.stopPropagation(); }
+  const fromSticky = calNotesFromSticky(event);
   const ev = calLoadEventsForNotes().find((x) => x.uid === uid);
   if (!ev) { showToast('找不到該條行程（內容可能已被修改）', 'error'); return; }
+  // 📎 聯運：ro 行程只在便利貼裡可編輯備註；行程檢視唯讀（渲染時也已不給 ✎，這裡再兜一層）
+  if (calNotesRoLocked(ev, fromSticky)) return;
   const lines = String(ev.notes || '').replace(/\r\n/g, '\n').split('\n');
   if (!Number.isInteger(start) || !Number.isInteger(end) || start < 0 || end >= lines.length || start > end) {
     showToast('該區塊內容已變化，請關閉後重新開啟', 'error');
@@ -3598,7 +4225,7 @@ function calOpenEditBlockDialog(event, uid, start, end, type) {
     '編輯內容區塊（' + calMdUnitTypeName(type) + '）',
     '直接編輯此區塊的 Markdown 原文。保存後寫入編輯內容，按頂欄「保存」才存回文件；清空並保存＝刪除該區塊（會先確認）。',
     src,
-    { mode: 'block', uid: uid, start: start, end: end, type: type }
+    { mode: 'block', uid: uid, start: start, end: end, type: type, sticky: fromSticky }
   );
   // 🆕 表格區塊 → 進網格模式；認不出合法表格（缺表頭＋分隔行）就留在原文模式，不擋路
   if (type !== 'table' || !calEnterTableMode(src)) return;
@@ -3613,8 +4240,11 @@ function calOpenEditBlockDialog(event, uid, start, end, type) {
 }
 function calOpenEditNoteCheckDialog(event, uid, line) {
   if (event) { event.preventDefault(); event.stopPropagation(); }
+  const fromSticky = calNotesFromSticky(event);
   const ev = calLoadEventsForNotes().find((x) => x.uid === uid);
   if (!ev) { showToast('找不到該條行程（內容可能已被修改）', 'error'); return; }
+  // 📎 聯運：ro 行程的子事件只在便利貼裡可編輯；行程檢視唯讀
+  if (calNotesRoLocked(ev, fromSticky)) return;
   const lines = String(ev.notes || '').replace(/\r\n/g, '\n').split('\n');
   const m = (line >= 0 && line < lines.length) ? lines[line].match(/^(\s*)-\s+\[([ xX])\]\s?(.*)$/) : null;
   if (!m) { showToast('該子事件內容已變化，請關閉後重新開啟', 'error'); return; }
@@ -3622,23 +4252,28 @@ function calOpenEditNoteCheckDialog(event, uid, line) {
     '編輯子事件（CheckBox）',
     '勾選狀態會保留。換行＝拆成多個子事件（第一行保留原勾選狀態，其餘為未完成）；清空並保存＝刪除（會先確認）。',
     m[3] || '',
-    { mode: 'task', uid: uid, line: line }
+    { mode: 'task', uid: uid, line: line, sticky: fromSticky }
   );
 }
 // ＋☐ 的三種加入模式（與桌面便利貼選單同口徑）：
 //   check＝逐行包成 - [ ]／table＝空白網格從零建 MD 表格／text＝原樣追加任意文本。
 // 不帶 addKind 的舊入口（行程清單行的 ＋☐）一律走 check，行為不變。
-function calOpenAddCheckDialog(uid, addKind) {
+// from：動作來自哪個介面（'sticky'＝便利貼）。include(ro) 行程只在便利貼裡可加子事件，
+//   行程檢視唯讀；便利貼的呼叫端要明確傳 'sticky'（那裡的按鈕沒有 event 可判斷歸屬）。
+function calOpenAddCheckDialog(uid, addKind, from) {
   const kind = (addKind === 'table' || addKind === 'text') ? addKind : 'check';
+  const fromSticky = from === 'sticky';
   const ev = calLoadEventsForNotes().find((x) => x.uid === uid);
   if (!ev) { showToast('找不到該條行程（內容可能已被修改）', 'error'); return; }
+  // 📎 聯運：ro 行程在行程檢視不可＋☐（渲染時按鈕已不給，這裡再兜一層）
+  if (calNotesRoLocked(ev, fromSticky)) return;
   if (kind === 'table') {
     if (!calTableGridInstance()) { showToast('表格編輯器未載入', 'error'); return; }
     calShowMdEditDialog(
       '加入表格（MD）',
       '在格子裡填內容，可用「＋行／＋列」增刪；「加入」＝整張表追加到備註末尾，不關窗可連續建立。全空的表格不會寫入。',
       '',
-      { mode: 'add', uid: uid, add: 'table' }
+      { mode: 'add', uid: uid, add: 'table', sticky: fromSticky }
     );
     const g = calTableGridInstance();
     const rowsEl = calMdEditEl('calTableRows');
@@ -3654,7 +4289,7 @@ function calOpenAddCheckDialog(uid, addKind) {
       '自由編輯（純文本）',
       '直接輸入任意文本／Markdown，原樣追加到備註末尾（不會包成「- [ ]」子事件）。加入後按頂欄「保存」才存回文件。',
       '',
-      { mode: 'add', uid: uid, add: 'text' }
+      { mode: 'add', uid: uid, add: 'text', sticky: fromSticky }
     );
     const inp = calMdEditEl('calMdEditInput');
     if (inp) inp.placeholder = '任意輸入文本，Enter 換行（原樣保存，不會變成子事件）…';
@@ -3664,7 +4299,7 @@ function calOpenAddCheckDialog(uid, addKind) {
     '加入 checkbox 子事件',
     '一行一項：每個非空行都會變成一個「- [ ]」子事件，加在備註末尾。加入後按頂欄「保存」才存回文件。',
     '',
-    { mode: 'add', uid: uid, add: 'check' }
+    { mode: 'add', uid: uid, add: 'check', sticky: fromSticky }
   );
   const inp = calMdEditEl('calMdEditInput');
   if (inp) inp.placeholder = '每行一個子事件…';
@@ -3688,6 +4323,8 @@ function calMdEditSave() {
   const text = String(inp.value).replace(/\r\n/g, '\n');
   const ev = calLoadEventsForNotes().find((x) => x.uid === target.uid);
   if (!ev) { showToast('找不到該條行程（內容可能已被修改）', 'error'); calMdEditClose(); return; }
+  // 📎 聯運：ro 行程只在便利貼裡可編輯備註 → 開窗時記下的介面歸屬（target.sticky）決定放不放行
+  if (calNotesRoLocked(ev, !!(target && target.sticky))) { calMdEditClose(); return; }
   const notes = String(ev.notes || '').replace(/\r\n/g, '\n');
   const lines = notes ? notes.split('\n') : [];
   if (target.mode === 'block') {
@@ -3700,17 +4337,17 @@ function calMdEditSave() {
       if (!window.confirm('區塊內容為空＝刪除該區塊。\n\n確定要刪除嗎？')) return;
       lines.splice(target.start, span);
       ev.notes = lines.join('\n');
-      applyEventsToEditor();
+      calCommitEventNotes(ev);
       calMdEditClose();
-      showToast('已刪除區塊，按「保存」存回文件', 'success');
+      showToast(calNotesHint(ev, '已刪除區塊，按「保存」存回文件'), 'success');
       return;
     }
     const newLines = text.split('\n');
     lines.splice(target.start, span, ...newLines);
     ev.notes = lines.join('\n');
-    applyEventsToEditor();
+    calCommitEventNotes(ev);
     calMdEditClose();
-    showToast('已保存區塊，按「保存」存回文件', 'success');
+    showToast(calNotesHint(ev, '已保存區塊，按「保存」存回文件'), 'success');
     return;
   }
   if (target.mode === 'task') {
@@ -3723,20 +4360,20 @@ function calMdEditSave() {
       if (!window.confirm('子事件內容為空＝刪除該子事件。\n\n確定要刪除嗎？')) return;
       lines.splice(line, 1);
       ev.notes = lines.join('\n');
-      applyEventsToEditor();
+      calCommitEventNotes(ev);
       calMdEditClose();
-      showToast('已刪除子事件，按「保存」存回文件', 'success');
+      showToast(calNotesHint(ev, '已刪除子事件，按「保存」存回文件'), 'success');
       return;
     }
     // 一行＝一個子事件：第一行繼承原勾選狀態（含使用者自己寫的 dl/cp 標記），其餘同縮進、未完成
     const newLines = rows.map((l, i) => m[1] + '- [' + (i === 0 ? m[2] : ' ') + '] ' + l);
     lines.splice(line, 1, ...newLines);
     ev.notes = lines.join('\n');
-    applyEventsToEditor();
+    calCommitEventNotes(ev);
     calMdEditClose();
-    showToast(rows.length > 1
+    showToast(calNotesHint(ev, rows.length > 1
       ? '已拆成 ' + rows.length + ' 項子事件，按「保存」存回文件'
-      : '已保存子事件，按「保存」存回文件', 'success');
+      : '已保存子事件，按「保存」存回文件'), 'success');
     return;
   }
   if (target.mode === 'add') {
@@ -3747,10 +4384,10 @@ function calMdEditSave() {
       const items = text.split('\n').map((l) => l.trim()).filter(Boolean);
       if (!items.length) { showToast('沒有可加入的內容', 'error'); return; }
       ev.notes = (prev ? prev + '\n' : '') + items.map((l) => '- [ ] ' + l).join('\n') + '\n';
-      applyEventsToEditor();
+      calCommitEventNotes(ev);
       inp.value = '';
       calMdEditBaseline = '';
-      showToast('已加入 ' + items.length + ' 項子事件（可繼續輸入，按「取消」關閉）', 'success');
+      showToast(calNotesHint(ev, '已加入 ' + items.length + ' 項子事件（可繼續輸入，按「取消」關閉）'), 'success');
       return;
     }
     const block = text.replace(/^\s*\n+/, '').replace(/\s+$/, '');
@@ -3763,7 +4400,7 @@ function calMdEditSave() {
     }
     // 空一行隔開，切塊器才會把它當成獨立的 table／para 區塊，而不是併進上一段
     ev.notes = (prev ? prev + '\n\n' : '') + block + '\n';
-    applyEventsToEditor();
+    calCommitEventNotes(ev);
     if (kind === 'table') {
       const g = calTableGridInstance();
       const rowsEl = calMdEditEl('calTableRows');
@@ -3774,11 +4411,11 @@ function calMdEditSave() {
         calMdEditBaseline = String(inp.value);
         g.focusFirstCell();
       }
-      showToast('已加入表格（可繼續建立下一張，按「取消」關閉）', 'success');
+      showToast(calNotesHint(ev, '已加入表格（可繼續建立下一張，按「取消」關閉）'), 'success');
     } else {
       inp.value = '';
       calMdEditBaseline = '';
-      showToast('已追加文本（原樣保存，未轉成子事件；可繼續輸入，按「取消」關閉）', 'success');
+      showToast(calNotesHint(ev, '已追加文本（原樣保存，未轉成子事件；可繼續輸入，按「取消」關閉）'), 'success');
     }
   }
 }
@@ -3832,7 +4469,11 @@ function applyEventsToEditor() {
   calHolidays = holidays;
   calDiaries = diaries;
   // 📎 重畫後保留 ## TAGS / ## INCLUDE（避免父階標籤、Include 勾選被清掉）
-  elements.editor.value = calPreserveMetaBlocks(elements.editor.value, calCalendarToMarkdown(state.calEvents, holidays, diaries));
+  // 📎 多檔聯運安全網：state.calEvents 在此可能是「主檔＋include 併集」，
+  //    但編輯緩衝只屬於主檔——絕不可把 ro（只讀來源）事件序列化寫回主檔，
+  //    故序列化前先濾掉 ro（編輯/存檔路徑都只用主檔內容，這裡是雙重保險）。
+  const mainEvents = (state.calEvents || []).filter((e) => !e.ro);
+  elements.editor.value = calPreserveMetaBlocks(elements.editor.value, calCalendarToMarkdown(mainEvents, holidays, diaries));
   state.isDirty = elements.editor.value !== state.lastContent;
   updateStatus();
   updateWordCount();

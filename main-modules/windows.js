@@ -1230,18 +1230,14 @@ ipcMain.handle('sticky-note-create-calendar', (e, arg) => {
     // 最终防线：规范化后必须仍落在原目录内（dir + 固定前缀 + 后缀 + .md，已禁分隔符故必然成立，这里再断言一次）
     if (path.dirname(full) !== dir) throw new Error('档案名不合法');
     if (fs.existsSync(full)) throw new Error('档案已存在：' + name);
-    // 骨架：与 tlCalendarToMarkdown 同构（EVENT / HOLIDAY / DIARY / TAGS），已含说明注释；首存会按序列化重排但注释无害
+    // 骨架：与 tlCalendarToMarkdown 对「空行事历」的输出同构——只放说明注释，
+    //   不写空的 ## EVENT / ## HOLIDAY / ## DIARY / ## TAGS 区块标题。
+    //   （空 ## EVENT 占位块会被 tlParseEvents 跳过，导致便利贴回写子事件时
+    //    「原始标题数 ≠ 可解析事件数」的安全阀误判而拒写；且序列化器本来就不会为空的区段生成标题。）
     const skeleton = [
       '> 此 calendar 档案由便利贴菜单「＋ 建立 calendar 档案」生成。',
       '> 可在 Calendar 中独立打开，便利贴按本档案分别管理（分档案管理）。',
-      '',
-      '## EVENT',
-      '',
-      '## HOLIDAY',
-      '',
-      '## DIARY',
-      '',
-      '## TAGS',
+      '> 新增行程／便利贴后，会自动补齐对应的 ## EVENT 区块。',
       ''
     ].join('\n');
     fs.writeFileSync(full, skeleton, 'utf-8');

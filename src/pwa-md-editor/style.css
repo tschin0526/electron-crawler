@@ -398,6 +398,8 @@ body {
 .ev-title p { margin: 0; }
 /* 🔁 重複事件小圖標（## EVENT(REPEAT)）：隨文色（灰），chip/時間網格/列表行/懸停提示通用 */
 .ev-repeat-ic { color: var(--text-secondary); vertical-align: -1px; margin-right: 3px; flex: none; }
+/* 📎 多檔聯運：只讀（ro）事件標記，提示來自被包含的檔案、不可編輯 */
+.ev-ro-icon { display: inline-flex; align-items: center; justify-content: center; flex: none; font-size: 11px; line-height: 1; margin-left: 4px; color: var(--text-secondary); opacity: .8; vertical-align: -1px; }
 .ev-sub-progress { display: inline-block; margin-left: 8px; padding: 2px 9px; border-radius: 999px; background: var(--bg-secondary); border: 1px solid var(--border); color: var(--text); font-size: 11px; line-height: 1.4; font-weight: 600; white-space: nowrap; vertical-align: middle; }
 .ev-sub-progress.all-done { background: rgba(52,199,89,.15); border-color: rgba(52,199,89,.55); color: #34C759; }
 .ev-span-display-mode { display: inline-flex; align-items: center; justify-content: center; min-width: 18px; box-sizing: border-box; margin-left: 4px; padding: 1px 5px; border: 1px solid #f5c518; border-radius: 999px; color: #f5c518; font-size: 10px; line-height: 1.4; font-weight: 700; vertical-align: middle; }
@@ -443,6 +445,19 @@ body {
 /* 行程視圖工具欄：列表/月切換 + 新增 */
 .ev-toolbar { display: flex; align-items: center; gap: 10px; padding: 0 0 8px; }
 .ev-toolbar-flex { flex: 1; }
+/* 📎 多檔聯運清單：顯示已併入的 calendar*.md（只讀） */
+.ev-include-bar { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; padding: 2px 0 8px; font-size: 12px; color: var(--text-secondary); }
+.ev-ib-label { font-weight: 600; opacity: .85; }
+.ev-ib-chip { display: inline-flex; align-items: center; gap: 4px; padding: 2px 4px 2px 8px; border: 1px solid var(--border); border-radius: 999px; background: var(--bg-secondary); color: var(--text-secondary); max-width: 60vw; }
+.ev-ib-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ev-ib-x { border: none; background: transparent; color: var(--text-secondary); cursor: pointer; font-size: 12px; line-height: 1; padding: 2px 4px; border-radius: 999px; }
+.ev-ib-x:active { background: var(--danger, #e5484d); color: #fff; }
+/* 有便利貼修改還沒匯出寫回原檔：chip 打 ● 並長出 💾 匯出鍵 */
+.ev-ib-chip.dirty { border-color: #D4AF37; color: var(--text); }
+.ev-ib-dirty { color: #D4AF37; font-size: 10px; line-height: 1; }
+.ev-ib-save { border: 1px solid #D4AF37; background: rgba(212, 175, 55, .18); color: var(--text); cursor: pointer; font-size: 11px; line-height: 1; padding: 3px 5px; border-radius: 999px; }
+.ev-ib-save:active { background: rgba(212, 175, 55, .45); }
+.ev-ib-hint { opacity: .6; font-size: 11px; }
 .ev-mode-seg { display: flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
 .ev-mode-seg button { border: none; background: var(--bg-secondary); color: var(--text-secondary); font-size: 13px; padding: 5px 14px; cursor: pointer; }
 .ev-mode-seg button.active { background: var(--primary); color: #fff; }
@@ -675,6 +690,7 @@ body {
 .ev-block .loc { font-size: 10px; opacity: 0.9; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 /* 📝 備註 Markdown checkbox：- [ ] / - [x] → ☐/☑（只讀樣式，勾選項加刪除線） */
 .ev-cb { display: inline-block; min-width: 11px; height: 11px; border: 2px solid #fbbf24; border-radius: 3px; margin-right: 4px; vertical-align: -2px; text-align: center; font-size: 9px; line-height: 11px; color: #fff; } /* 框線加粗金黃 #fbbf24（與桌面金黄规范同色）：深色主題下原 var(--border) 太淡看不清 */
+.ev-cb.interactive { cursor: pointer; } /* 只有框框本身可點擊勾選（與桌面一致）；整行文字不再觸發，避免手機誤觸 */
 .ev-md-check.done .ev-cb { background: var(--primary); border-color: var(--primary); }
 .ev-md-check.done .ev-md-check-text { text-decoration: line-through; opacity: 0.75; }
 /* 可編輯備註：每行 checkbox 自成一行（舊版靠 marked 的 <br> 分行，改成分塊渲染後由這裡保證） */
@@ -988,6 +1004,57 @@ body {
   line-height: 1.7;
   background: transparent;
   color: var(--text);
+}
+
+/* ── 編輯區左側「只讀」行號邊条（與桌面 #taskText / 便利貼 #editArea 同源同義；算法見 app.js createLineGutter）── */
+.tl-text-gutter-wrap {
+  display: flex;
+  flex-direction: column;   /* 縱向 flex：textarea 靠 flex-grow 撐滿高度 */
+  position: relative;       /* 邊条絕對定位於此 */
+  box-sizing: border-box;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+/* 被包裹的 textarea：width:auto 覆蓋 #editor 的 100%，避免與 JS 寫入的 margin-left 疊加超寬被裁 */
+.tl-text-gutter-wrap > #editor {
+  width: auto;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+}
+.tl-line-gutter {
+  position: absolute;       /* 脫離 flex 流，絕不擠占 textarea 寬度 */
+  left: 0; top: 0; bottom: 0;
+  overflow: hidden;
+  box-sizing: border-box;
+  width: calc(3ch + 12px);  /* JS 會按行號位數重算 */
+  border-right: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text-secondary);
+  font-family: 'SF Mono', Monaco, 'Cascadia Code', monospace;
+  font-size: 12px;
+  line-height: 1.7;
+  text-align: right;
+  user-select: none;
+  -webkit-user-select: none;
+  pointer-events: none;     /* 純顯示，不搶焦點/不攔選區拖拽 */
+}
+.tl-line-gutter-inner {
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  will-change: transform;
+}
+.gutter-num {
+  position: absolute;
+  left: 0; right: 0;
+  box-sizing: border-box;
+  padding-right: 8px;
+  text-align: right;
+  font-size: 12px;
+  line-height: 1.7;
+  color: inherit;
 }
 
 /* 預覽區域樣式 */
@@ -1418,6 +1485,23 @@ p[data-cols-marker="true"] { display: none; }
   touch-action: pan-y; /* 橫向手勢留給翻頁，縱向仍是正文滾動 */
 }
 .cal-sticky-head { flex: none; padding: 12px 14px 0; }
+/* 標題列：標題吃剩餘寬度，來源檔案徽標靠右不換行（對齊桌面便利貼 .head / .title flex:1 的排法） */
+.cal-sticky-head-row { display: flex; align-items: flex-start; gap: 6px; }
+.cal-sticky-head-row .cal-sticky-title { flex: 1; min-width: 0; }
+/* 🆕 來源檔案徽標（「開啟」多選併進來的只讀聯運行程）：與桌面 .doc-badge 同款金色虛線膠囊，
+   過長省略，完整檔名放在 title 屬性裡；非聯運便利貼完全不佔位。 */
+.cal-sticky-src-badge {
+  display: none; flex: none; max-width: 46%; box-sizing: border-box;
+  padding: 1px 7px; border-radius: 999px;
+  border: 1px dashed #D4AF37; background: rgba(212, 175, 55, .16);
+  color: var(--cal-sticky-fg, #000); font-size: 11px; font-weight: 600;
+  line-height: 1.5; letter-spacing: .2px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  opacity: .9;
+}
+.cal-sticky-src-badge.show { display: inline-block; }
+/* 有修改還沒匯出寫回來源檔：徽標尾的 ● 用金色，與 chip 上的記號同一套語彙 */
+.cal-sticky-src-badge.dirty { border-style: solid; background: rgba(212, 175, 55, .3); }
 .cal-sticky-title { font-size: 17px; font-weight: 700; line-height: 1.4; word-break: break-word; color: var(--cal-sticky-fg, #000); }
 .cal-sticky-meta { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-top: 4px; font-size: 12px; line-height: 1.5; color: var(--cal-sticky-fg, #000); opacity: .8; }
 /* meta 行操作（＋☐ / ☐·☑）：手機要可點，用 24px 高膠囊；顏色跟便利貼字色，開啟態用金底 */
@@ -1481,11 +1565,33 @@ p[data-cols-marker="true"] { display: none; }
 .cal-sticky-body code { background: rgba(0, 0, 0, .07); padding: 0 3px; border-radius: 3px; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size: .95em; }
 .cal-sticky-body pre { background: rgba(0, 0, 0, .07); padding: 8px; border-radius: 6px; overflow: auto; }
 .cal-sticky-body pre code { background: none; padding: 0; }
-.cal-sticky-body .ev-md-check { display: block; cursor: pointer; }
+.cal-sticky-body .ev-md-check { display: block; cursor: default; }
 .cal-sticky-body .ev-md-check.done .ev-md-check-text { text-decoration: line-through; opacity: .75; }
 .cal-sticky-body .ev-md-check + br, .cal-sticky-body br:has(+ .ev-md-check) { display: none !important; }
 /* 「只顯示未完成 checkbox」：整行隱藏完成的子事件（與列表 .only-undone-checks 同一口徑） */
 .cal-sticky-body.cal-sticky-only-undone .ev-md-check.done { display: none !important; }
+/* 🆕 便利貼編輯模式：textarea 直接改事件原始 Markdown（對齊桌面 #note.editing 語義）。
+   邊条复用 .tl-line-gutter，但配色跟紙色走（透明底＋字色半透），不套 app 主題變量。 */
+#calStickyNote .tl-text-gutter-wrap { display: none; }
+#calStickyNote.editing .cal-sticky-body { display: none; }
+#calStickyNote.editing .tl-text-gutter-wrap { display: flex; flex-direction: column; }
+.cal-sticky-editarea {
+  flex: 1 1 auto; width: auto; min-width: 0; min-height: 0;
+  border: none; outline: none; resize: none; background: transparent;
+  padding: 10px 14px 14px; line-height: 1.6;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  color: var(--cal-sticky-fg, #000);
+  user-select: text; -webkit-user-select: text;
+}
+#calStickyNote .tl-line-gutter {
+  background: transparent;
+  color: var(--cal-sticky-fg, #000);
+  border-right: 1px solid currentColor;
+  opacity: .55;
+  font-size: 10px;
+}
+#calStickyNote .gutter-num { font-size: 10px; padding-right: 6px; }
+.cal-sticky-foot button.active { background: rgba(212, 175, 55, .35); }
 .cal-sticky-empty { flex: 1; display: flex; align-items: center; justify-content: center; padding: 24px; text-align: center; color: #f8fafc; opacity: .88; font-size: 14px; line-height: 1.9; }
 .cal-sticky-toast {
   position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: 6;
@@ -1586,6 +1692,22 @@ table.md-tg-table { width: 100%; border-collapse: collapse; }
 .cal-md-edit-actions { display: flex; gap: 8px; padding: 0 12px 12px; }
 .cal-md-edit-actions button { flex: 1 1 0; min-height: 42px; border: 1px solid var(--border); border-radius: 10px; background: transparent; color: var(--text); font-size: 14px; cursor: pointer; }
 .cal-md-edit-actions button.primary { border-color: var(--gold); background: var(--gold); color: #1f2937; font-weight: 700; }
+/* 🆕 建立 calendar 檔案 / 新建便利貼 弹层：前缀·后缀同列展示（对齐桌面 newCalOv 的 nc-row）＋表单标签 */
+.cal-newcal-row { display: flex; align-items: center; gap: 6px; margin: 10px 12px 0; }
+.cal-newcal-row .cal-newcal-fix { flex: none; font-size: 14px; color: var(--text-secondary); font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
+.cal-newcal-row input { flex: 1 1 auto; min-height: 38px; padding: 0 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); color: var(--text); font-size: 14px; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
+.cal-newcal-row input:focus { outline: none; border-color: var(--gold); }
+.cal-newcal-label { display: block; margin: 12px 12px 0; font-size: 13px; color: var(--text-secondary); }
+.cal-newcal-label input, .cal-newcal-label select { display: block; width: 100%; margin-top: 5px; min-height: 38px; padding: 0 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); color: var(--text); font-size: 14px; box-sizing: border-box; }
+.cal-newcal-label input:focus, .cal-newcal-label select:focus { outline: none; border-color: var(--gold); }
+.cal-newcal-hint { margin: 8px 12px 0; font-size: 12px; line-height: 1.6; color: var(--text-secondary); }
+.cal-newcal-hint.error { color: #c0392b; }
+/* 🆕 便利貼 ☰ 清單中的「删除便利貼」：與 .cal-sticky-toggle 同一套，但用紅字強調破壞性 */
+.cal-sticky-del { color: #c0392b; }
+.cal-sticky-del:active { background: rgba(192, 57, 43, .14); }
+/* 🆕 便利貼 ☰ 清單中的「＋ 新建便利貼」：與 .cal-sticky-toggle 同一套，金色填充強調為正向動作 */
+.cal-sticky-add { background: var(--gold-wash); border-color: var(--gold); font-weight: 600; }
+.cal-sticky-add:active { background: rgba(212, 175, 55, .22); }
 
 .ev-toolbar-combo-sep { height: 1px; margin: 5px 2px; background: var(--border); }
 .ev-toolbar-combo-action-row { padding: 2px; }

@@ -8,7 +8,7 @@ const VIEWS = ['edit', 'preview', 'split', 'events'];
 
 // 📌 應用版本號（單一可信來源）。
 // 每次改動都要 +1，方便在手機上確認跑的是不是最新版（狀態列左下角會顯示）。
-const APP_VERSION = '0.7.33';
+const APP_VERSION = '0.7.43';
 
 // 可處理的文字檔副檔名白名單（對齊 todo 編輯器 TEXT_EXTS，取常用子集）
 const TEXT_EXTS = [
@@ -105,7 +105,11 @@ const state = {
   evFormUid: null,              // 編輯表單當前目標 uid（null = 新增）
   evFormColor: null,            // 編輯表單當前選中顏色
   evFormTags: [],               // 編輯表單當前已選標籤
-  evFormTodoIds: []             // 🔗 編輯表單當前關聯的 Todo 卡片 id（寫回 todoIds 字段）
+  evFormTodoIds: [],            // 🔗 編輯表單當前關聯的 Todo 卡片 id（寫回 todoIds 字段）
+  // 📎 多檔聯運：額外「加入」的 calendar*.md（只讀來源，不寫回主檔編輯緩衝）；
+  //    每個元素 { name, content }；uid 在渲染時加 ro-<序> 前綴避免與主檔 evpN 撞名（對齊桌面 ro 機制）。
+  //    內容快取在 localStorage（鍵 md-editor-cal-includes，按主檔名索引），重新開啟主檔可自動重併，免於 iCloud 重選。
+  calIncludeFiles: []
 };
 
 // DOM 元素
@@ -162,6 +166,9 @@ const elements = {
   evFTodoAdd: document.getElementById('ev-f-todo-add'),
   evFNotes: document.getElementById('ev-f-notes'),
   evFResize: document.getElementById('ev-f-resize'),
+  // 📎 多檔聯運：加入 / 移除額外 calendar*.md（只讀來源）
+  calIncludeInput: document.getElementById('cal-include-input'),
+  calIncludeBar: document.getElementById('cal-include-bar'),
   // 🔁 重複事件表單
   evFRepeatOn: document.getElementById('ev-f-repeat-on'),
   evFRepeatFields: document.getElementById('ev-f-repeat-fields'),
@@ -254,7 +261,7 @@ function setupEventListeners() {
 
   // 開啟文件
   elements.btnOpen.addEventListener('click', () => {
-    elements.fileInput.click();
+    openFilePicker('');
   });
 
   elements.fileInput.addEventListener('change', handleFileSelect);
@@ -274,6 +281,7 @@ function setupEventListeners() {
   if (elements.evAddBtn) elements.evAddBtn.addEventListener('click', () => openEventForm(null));
   if (elements.evStatsBtn) elements.evStatsBtn.addEventListener('click', () => calOpenStats());
   if (typeof calInitCalendarToolbarCombo === 'function') calInitCalendarToolbarCombo();
+  if (typeof calInitNewDialogs === 'function') calInitNewDialogs();
   if (typeof calInitMdEditDialog === 'function') calInitMdEditDialog();
   // ‹ › 依當前模式步進：月→月、週→週、日→日
   if (elements.evPrevMonth) elements.evPrevMonth.addEventListener('click', () => { if (state.calMode === 'list') calListNavDay(-1); else calStepCursor(-1); });
@@ -484,6 +492,18 @@ function setupEventListeners() {
     if (tab) setView(tab.dataset.view);
   });
 
+  // 聯運清單裡每個 chip 的 ✕ 移除 / 💾 匯出（事件委派，清單動態產生）
+  if (elements.calIncludeBar) elements.calIncludeBar.addEventListener('click', (e) => {
+    // 💾 排在 ✕ 前面判斷：兩顆按鈕都在同一個 chip 裡，先命中較少見的那個
+    const save = e.target.closest('[data-ib-save]');
+    if (save) {
+      if (typeof calSaveIncludeFile === 'function') calSaveIncludeFile(save.getAttribute('data-ib-save'));
+      return;
+    }
+    const x = e.target.closest('[data-ib-x]');
+    if (x && typeof calRemoveIncludeFile === 'function') calRemoveIncludeFile(x.getAttribute('data-ib-x'));
+  });
+
   // 切換主題
   elements.btnTheme.addEventListener('click', toggleTheme);
 
@@ -630,20 +650,104 @@ function closeAllMdDropdowns() {
   });
 }
 
-// 處理文件選擇
+// 開啟意圖：'calendar'＝便利貼路徑觸發（calStickyOpen 在沒有 calendar 檔時跳選單），
+//   該輪選擇只收 calendar*.md，其餘 toast 拒絕／濾除，絕不誤開成主檔；選完成功自動開便利貼。
+//   「開啟」鈕 / Cmd+O 傳 ''＝不設限（todo 卡片 JSON 等照舊可開）。
+//   intent 在 handleFileSelect 開頭消費一次；使用者取消選單時 change 不觸發、intent 會殘留，
+//   但所有入口都經 openFilePicker 覆寫它，殘留不會污染下一輪。
+let fileOpenIntent = '';
+function openFilePicker(intent) {
+  fileOpenIntent = intent || '';
+  elements.fileInput.click();
+}
+
+// 處理文件選擇（「開啟」是唯一入口，可一次多選）
+//   📎 多選規則（2026-10-24 使用者定稿口徑，與選擇先後無關）：
+//     • 只選 1 個檔案 → 照舊開啟，並自動還原該主檔上次聯運過的檔案（本機快取）
+//     • 有選 calendar.md → 以行事历判定應用類型；calendar.md 當主檔（行程本體可編輯），
+//       其餘所有 calendar*.md 當只讀聯運檔（行程本體不可編輯，只有便利貼內容可改），排除所有非 calendar*.md
+//     • 沒選 calendar.md 但有 calendar*.md → 同上以行事历判定；第一個 calendar*.md 當主檔，其餘聯運，排除非 calendar*.md
+//     • 完全沒有 calendar*.md → 只認「第一個被選的檔案」當作業檔（二進位檔會被 isTextFile 拒絕），排除其餘所有
+//   🛡️ intent='calendar'（便利貼路徑）：iOS 原生選單無法按檔名前綴過濾（accept=".md" 在本機實測
+//     會把 .md 灰掉不可選），改在這裡嚴格校验——選錯檔零代價（拒絕＋說明），不會開錯主檔。
 async function handleFileSelect(event) {
-  const file = event.target.files[0];
+  const input = event.target;
+  let files = Array.from(input.files || []);
+  const intent = fileOpenIntent;
+  fileOpenIntent = '';
 
-  // 🛡️ 立即清空 input，允許下次重選「同一文件」也能觸發 change（否則 iOS 會因 value 未變而不重發事件）。
+  // 🛡️ 立即清空 input，允許下次重選「同一批」也能觸發 change（否則 iOS 會因 value 未變而不重發事件）。
   //    放在讀取之前（同步），避免異步讀取期間用戶再次選擇時 input 還未清空。
-  event.target.value = '';
+  input.value = '';
 
-  if (!file) return;
+  if (!files.length) return;
 
+  if (intent === 'calendar') {
+    const picked = files.filter((f) => /^calendar.*\.md$/i.test(f.name));   // 與 calPlanOpenSet 同口徑
+    if (!picked.length) {
+      showToast('便利貼只開啟 calendar*.md：「' + files.map((f) => f.name).join('、') + '」這次未開啟', 'error');
+      return;
+    }
+    if (picked.length !== files.length) {
+      showToast('已濾除 ' + (files.length - picked.length) + ' 個非 calendar*.md，只開啟 calendar 檔', 'info');
+    }
+    files = picked;
+  }
+
+  // ① 單一檔案：完全沿用舊行為（含 todo 卡片 JSON、任何文字檔）
+  if (files.length === 1) {
+    const ok = await openSingleFile(files[0]);
+    // 便利貼路徑：開啟成功就把便利貼開起來，讓「🗒 → 選檔 → 看貼」一次走完
+    if (ok && intent === 'calendar' && typeof calStickyOpen === 'function') calStickyOpen();
+    return;
+  }
+
+  // ② 多選：交給純函數判定主檔（calendar.md 優先，其餘 calendar*.md 當只讀聯運）
+  const plan = (typeof calPlanOpenSet === 'function')
+    ? calPlanOpenSet(files.map((f) => f.name))
+    : { main: '', includes: [], others: [] };
+  const byName = (n) => files.find((f) => f.name === n) || null;
+
+  if (!plan.main) {
+    // 完全沒有 calendar*.md（2026-10-24 使用者定的口徑）：只認「第一個被選的檔案」當作業檔，
+    //   其餘全部排除（不靜默丟掉，toast 點名）。第一個若是二進位檔，openSingleFile 的 isTextFile 會拒絕。
+    const first = files[0];
+    const ok = await openSingleFile(first);
+    if (ok) showToast('沒有 calendar*.md：只開啟第一個選擇的檔案「' + first.name + '」，其餘 ' + (files.length - 1) + ' 個已排除', 'info');
+    return;
+  }
+
+  const main = byName(plan.main);
+  if (!main) { showToast('找不到主檔「' + plan.main + '」', 'error'); return; }
+  const includeFiles = plan.includes.map(byName).filter(Boolean);
+  const others = plan.others;
+
+  if (!(await openSingleFile(main))) return;   // 先開主檔（openSingleFile 內會從快取還原聯運清單）
+
+  // ③ 這批還有其它 calendar*.md → 用「剛選的這一組」整組取代舊清單（不是疊加）
+  if (includeFiles.length) {
+    const picked = [];
+    for (const f of includeFiles) {
+      try { picked.push({ name: f.name, content: await readFileAsText(f) }); }
+      catch (err) { console.error('讀取聯運檔失敗:', err); }
+    }
+    const replaced = (typeof calReplaceIncludes === 'function') ? calReplaceIncludes(picked) : true;
+    if (!replaced) return;   // 使用者選擇保留既有修改（不覆蓋）
+  }
+
+  const bits = ['主檔：' + main.name + '（行程本體可編輯）'];
+  if (includeFiles.length) bits.push('聯運 ' + includeFiles.length + ' 檔（只讀·便利貼可編輯）');
+  if (others.length) bits.push('略過 ' + others.length + ' 個非 calendar 檔');
+  showToast(bits.join('；'), 'success');
+  if (intent === 'calendar' && typeof calStickyOpen === 'function') calStickyOpen();
+}
+
+// 開啟單一檔案（handleFileSelect 的實作本體）：回傳是否成功
+async function openSingleFile(file) {
   // 驗證文件類型：只收文字檔（對齊 todo 編輯器支援的類型）
   if (!isTextFile(file.name)) {
     showToast('不支援的檔案類型（僅支援文字檔：md / json / html / 程式碼 / csv …）', 'error');
-    return;
+    return false;
   }
 
   try {
@@ -678,6 +782,10 @@ async function handleFileSelect(event) {
     state.todoMode = todoMode;
     state.originalTodo = originalTodo;
 
+    // 📎 多檔聯運：若本主檔先前已「加入」過其它 calendar*.md，從 localStorage 快取還原併入清單
+    //    （避免 iCloud 文件選擇器無法一次多選/難以重選的痛點；還原後自動重併顯示，不寫回主檔）
+    if (typeof calRestoreIncludes === 'function') calRestoreIncludes(file.name);
+
     // 更新 UI
     elements.editor.value = editorContent;
     elements.fileName.textContent = file.name;
@@ -691,10 +799,12 @@ async function handleFileSelect(event) {
     // todo 卡片模式（json 但 text 是 md）也走 split，這樣能看到渲染效果；其他 json/html/程式碼 保持 edit。
     // 📅 calendar.md（行程應用數據文件）→ 自動切到「行程」視圖，只讀查看行程列表
     dispatchDataAwareEditor();
+    return true;
 
   } catch (error) {
     console.error('讀取文件失敗:', error);
     showToast(`讀取失敗：${error.message}`, 'error');
+    return false;
   }
 }
 
@@ -770,6 +880,10 @@ async function handleReset() {
 async function handleSave() {
   const rawContent = elements.editor.value;
 
+  // 📎 多檔聯運：先把「有修改還沒寫回原檔」的聯運檔點名。iOS 一次只能開一個分享面板，
+  //    所以主檔與聯運檔要嘛一起送（一次面板存全部），要嘛分開送；這裡統一交給 calExportIncludes 決定。
+  const pendingIncludes = (typeof calPendingIncludes === 'function') ? calPendingIncludes() : [];
+
   // 🆕 todo 卡片模式：把改後的正文合回原始物件再整體序列化，
   //    確保 tags / bgColor / attachments / createdAt / completedAt 等附加字段一個不丟。
   //    對齊 todo 編輯器 openExternalFile / saveExternalTodo 的「Object.assign」做法。
@@ -782,6 +896,13 @@ async function handleSave() {
     });
     content = JSON.stringify(merged, null, 2);
     saveAsJson = true;
+  }
+
+  // 只改了聯運檔（主檔緩衝沒動）：不要把主檔再存一次，直接匯出聯運檔
+  //   —— 否則 iOS 會為一個「沒改的主檔」也彈一次分享面板
+  if (!state.isDirty && state.currentFile && pendingIncludes.length) {
+    await calExportIncludes(pendingIncludes.map((f) => f.name));
+    return;
   }
 
   // 如果是新文件（未開啟過），提示輸入檔名後存出
@@ -836,25 +957,43 @@ async function handleSave() {
         showToast(saveAsJson
           ? `已合併保存 todo 卡片：${state.currentFile.name}`
           : `已保存：${state.currentFile.name}`, 'success');
+        // 📎 聯運檔也待寫回時，順手逐檔存回（桌面走 picker，直接寫進所選路徑）
+        if (pendingIncludes.length && typeof calExportIncludes === 'function') {
+          await calExportIncludes(pendingIncludes.map((f) => f.name));
+        }
       } catch (abortErr) {
         // 用戶在保存對話框點取消（AbortError）—— 靜默，不算錯誤
         if (abortErr && abortErr.name !== 'AbortError') throw abortErr;
       }
     } else {
       // 🍎 iOS / Android：沒有 showSaveFilePicker，
-      // 首選系統分享面板（可選「儲存到檔案」直接覆蓋原檔），不行才退回下載
-      const how = await saveViaMobile(content, state.currentFile.name);
-      state.isDirty = false;
-      state.lastContent = rawContent;
-      // 行動端無法直接讀回保存後的內容，保留原 originalTodo；下次的保存仍以原結構為基礎
-      if (saveAsJson) state.originalTodo = JSON.parse(content);
-      showToast(saveAsJson
-        ? (how === 'shared'
-            ? '已送出 todo 卡片：在分享面板選「儲存到檔案」→ 選原位置 → 覆蓋'
-            : '已下載 todo 卡片：點下載項 → 分享 → 儲存到檔案')
-        : (how === 'shared'
-            ? '已送出存檔：點「儲存到檔案」→ 選原位置 → 覆蓋'
-            : '已下載文件：點下載項 → 分享 → 儲存到檔案 可存回 iCloud'), 'success');
+      // 首選系統分享面板（可選「儲存到檔案」直接覆蓋原檔），不行才退回下載。
+      // 📎 若同時有聯運檔待寫回：**一次分享面板送出整批**（主檔在前），
+      //    使用者在「儲存到檔案」裡選一次資料夾就把所有檔案一起存回去，不必連點多次。
+      if (pendingIncludes.length && typeof calExportIncludes === 'function') {
+        const res = await calExportIncludes(pendingIncludes.map((f) => f.name), {
+          extra: [{ name: state.currentFile.name, content }],
+          silent: true   // 整批結果由這裡統一回報，避免兩個 toast 互相蓋掉
+        });
+        if (res.canceled) return;   // 使用者取消 → 主檔也不算已保存（維持未保存狀態，可再按）
+        state.isDirty = false;
+        state.lastContent = rawContent;
+        if (saveAsJson) state.originalTodo = JSON.parse(content);
+        showToast('已送出 ' + (pendingIncludes.length + 1) + ' 個檔案（主檔＋聯運檔）：在分享面板選「儲存到檔案」→ 選原資料夾 → 覆蓋', 'success');
+      } else {
+        const how = await saveViaMobile(content, state.currentFile.name);
+        state.isDirty = false;
+        state.lastContent = rawContent;
+        // 行動端無法直接讀回保存後的內容，保留原 originalTodo；下次的保存仍以原結構為基礎
+        if (saveAsJson) state.originalTodo = JSON.parse(content);
+        showToast(saveAsJson
+          ? (how === 'shared'
+              ? '已送出 todo 卡片：在分享面板選「儲存到檔案」→ 選原位置 → 覆蓋'
+              : '已下載 todo 卡片：點下載項 → 分享 → 儲存到檔案')
+          : (how === 'shared'
+              ? '已送出存檔：點「儲存到檔案」→ 選原位置 → 覆蓋'
+              : '已下載文件：點下載項 → 分享 → 儲存到檔案 可存回 iCloud'), 'success');
+      }
     }
 
     updateStatus();
@@ -1019,6 +1158,9 @@ function setView(view) {
   // 誰顯示完全交給 CSS（容器上的 data-view），JS 不逐個加減 class
   elements.editorContainer.dataset.view = view;
 
+  // 行號邊条輪詢：進入含編輯區的視圖時自啟（離開後 tick 下一帧自停，不必逐處掛鉤）
+  if (view === 'edit' || view === 'split') editorGutter.start();
+
   // MD 編輯工具列（格式/字體/段落/表格計算/鏈接跳轉…）只在「要編輯文本」的視圖顯示：
   // edit（編輯文本）/ split（分屏，含編輯區）顯示；preview（MD 預覽）與 events（行事曆）隱藏。
   if (elements.mdToolbar) elements.mdToolbar.style.display = (view === 'edit' || view === 'split') ? '' : 'none';
@@ -1117,10 +1259,22 @@ function updateWordCount() {
 
 // 更新狀態
 function updateStatus() {
-  const status = state.isDirty ? '● 未保存的更改' : '就緒';
+  // 📎 多檔聯運：聯運檔（include）的修改也存在本機、也需要「保存」才寫回原檔，
+  //   所以保存鍵是否可按＝主檔髒 **或** 有聯運檔待寫回；否則只改聯運檔時按鈕是灰的，
+  //   使用者會以為「沒東西可存」（2026-10-23 實測回饋）。
+  const incDirty = (typeof calPendingIncludes === 'function') ? calPendingIncludes().length : 0;
+  const canSave = !!state.isDirty || incDirty > 0;
+  const status = state.isDirty
+    ? '● 未保存的更改'
+    : (incDirty ? '● ' + incDirty + ' 個聯運檔未寫回' : '就緒');
   elements.statusText.textContent = status;
-  elements.btnSave.disabled = !state.isDirty;
-  elements.btnSave.style.opacity = state.isDirty ? '1' : '0.5';
+  elements.btnSave.disabled = !canSave;
+  elements.btnSave.style.opacity = canSave ? '1' : '0.5';
+  elements.btnSave.title = incDirty
+    ? (state.isDirty
+        ? '保存主檔，並匯出 ' + incDirty + ' 個聯運檔（一次分享面板可全部存回）'
+        : '匯出 ' + incDirty + ' 個聯運檔到原位置（主檔沒有變更，不會重存）')
+    : '保存文件到 iCloud';
 }
 
 // 處理鍵盤快捷鍵
@@ -1138,7 +1292,7 @@ function handleKeyboard(e) {
   // Ctrl/Cmd + O 開啟
   if ((e.ctrlKey || e.metaKey) && e.key === 'o') {
     e.preventDefault();
-    elements.fileInput.click();
+    openFilePicker('');
   }
   
   // Ctrl/Cmd + P 循環切換視圖（編輯 → 預覽 → 分屏）
@@ -1219,6 +1373,173 @@ function restoreDraft() {
     }
   } catch (e) { /* 忽略 */ }
 }
+
+// ── 文本編輯模式：左側「只讀」行號邊条（與桌面 #taskText、便利貼 #editArea 同源同義，算法 lockstep）──
+//  · 行號只顯示、不可編輯（pointer-events:none），是編輯器的固有裝飾（空文档也算 1 行）。
+//  · 離屏 mirror 常駐 DOM ＋ 鏡像行與行號節點池化：一次調用裡「寫」全在前、「讀」集中一批 →
+//    每帧只強制排版一次，打字延遲隨行數線性而非平方增長。
+//  · 改邊条寬 → textarea 重排後，clientWidth 是同一趟讀到的新值，mirror 立刻按新寬量測，
+//    故不需要 _settling 二次 rAF 復檢（那趟復檢會讓行號滯後一帧、舊行號殘留可見）。
+function createLineGutter(cfg) {
+  function els() {
+    return {
+      ta: document.getElementById(cfg.taId),
+      wrap: cfg.wrapId ? document.getElementById(cfg.wrapId) : null,
+      gutter: document.getElementById(cfg.gutterId),
+      inner: document.getElementById(cfg.innerId),
+    };
+  }
+  let mirror = null;
+  const mirrorLines = [];
+  const mirrorTexts = [];
+  const nums = [];
+  let layoutKey = '';
+  let raf = null;
+  let lastSig = null;
+  let lastScrollTop = null;
+
+  function lineHeightPx(cs) {
+    const lh = cs.lineHeight;
+    const fs = parseFloat(cs.fontSize) || 13;
+    // 行高可能是無量綱數值（如 1.7）或 normal，須解析成 px 才能用於邊条數字盒
+    if (!lh || lh === 'normal') return fs * 1.2;
+    if (lh.indexOf('px') >= 0) return parseFloat(lh);
+    return parseFloat(lh) * fs;
+  }
+  function ensureMirror() {
+    if (mirror) return mirror;
+    const m = document.createElement('div');
+    m.setAttribute('aria-hidden', 'true');
+    // height:0 ＋ overflow:hidden → 常駐離屏量測盒，絕不把文档撐出滾動条
+    m.style.cssText = 'position:absolute;left:-99999px;top:0;visibility:hidden;pointer-events:none;height:0;overflow:hidden';
+    document.body.appendChild(m);
+    mirror = m;
+    return m;
+  }
+  function syncScroll(ta, inner) {
+    inner.style.transform = 'translateY(' + (-ta.scrollTop) + 'px)';
+  }
+
+  function refresh() {
+    const e = els();
+    if (!e.ta || !e.gutter || !e.inner) return;
+    if (!cfg.visible(e)) return;
+    const ta = e.ta, gutter = e.gutter, inner = e.inner, m = ensureMirror();
+    const cs = getComputedStyle(ta);
+    const lhStr = lineHeightPx(cs) + 'px';
+    const lines = ta.value.replace(/\r/g, '').split('\n');
+
+    // 邊条寬度用 ch（按邊条自己的小字號）；textarea 的留白必須換成邊条的實際像素寬，
+    // 否則同一個 'calc(Nch + Mpx)' 字符串按正文字號重新解析，兩者會錯開約 2px。
+    const targetWidth = 'calc(' + (String(lines.length).length + 1) + 'ch + ' + cfg.chrome + 'px)';
+    if (gutter.style.width !== targetWidth) gutter.style.width = targetWidth;
+    const marginPx = gutter.offsetWidth + 'px';
+    if (ta.style.marginLeft !== marginPx) ta.style.marginLeft = marginPx;
+
+    // mirror 與 textarea 完全相同排版（含 padding），逐邏輯行包成 div，讀 offsetTop 即得各邏輯行起點；
+    // 鏡像寬度取 textarea 內部寬度（clientWidth）→ 折行起點與文字逐像素對齊。
+    const cw = Math.max(1, ta.clientWidth);
+    const key = [cw, cs.fontFamily, cs.fontSize, cs.fontWeight, cs.letterSpacing, cs.lineHeight,
+      cs.paddingTop, cs.paddingRight, cs.paddingBottom, cs.paddingLeft, cs.tabSize || '8'].join('|');
+    if (key !== layoutKey) {
+      layoutKey = key;
+      m.style.cssText = 'position:absolute;left:-99999px;top:0;visibility:hidden;pointer-events:none;' +
+        'height:0;overflow:hidden;box-sizing:border-box;margin:0;border:0;' +
+        'white-space:pre-wrap;word-break:break-word;overflow-wrap:break-word;' +
+        'width:' + cw + 'px;' +
+        'padding-top:' + cs.paddingTop + ';padding-right:' + cs.paddingRight +
+        ';padding-bottom:' + cs.paddingBottom + ';padding-left:' + cs.paddingLeft + ';' +
+        'font-family:' + cs.fontFamily + ';font-size:' + cs.fontSize + ';font-weight:' + cs.fontWeight +
+        ';letter-spacing:' + cs.letterSpacing + ';line-height:' + cs.lineHeight +
+        ';tab-size:' + (cs.tabSize || '8');
+    }
+
+    // 寫階段①：鏡像行數增刪 ＋ 只替換內容真的變了的行
+    while (mirrorLines.length > lines.length) { mirrorTexts.pop(); m.removeChild(mirrorLines.pop()); }
+    while (mirrorLines.length < lines.length) {
+      const d = document.createElement('div');
+      m.appendChild(d);
+      mirrorLines.push(d);
+      mirrorTexts.push(null);
+    }
+    for (let i = 0; i < lines.length; i++) {
+      if (mirrorTexts[i] !== lines[i]) {
+        mirrorTexts[i] = lines[i];
+        // 空行必須占 1 行高：完全沒有文字的行盒高度為 0，補一個換行符才有行高
+        mirrorLines[i].textContent = lines[i] === '' ? '\n' : lines[i];
+      }
+    }
+
+    // 讀階段：上面全是寫，第一次 offsetTop 才強制排版，之後是純讀 → 每次調用只排版一次
+    const tops = new Array(lines.length);
+    for (let i = 0; i < lines.length; i++) tops[i] = mirrorLines[i].offsetTop;
+
+    // 寫階段②：行號節點池化復用（inner 若被外部重建過，池裡的引用已失效 → 連容器一起清空重來）
+    if (nums.length && nums[0].parentNode !== inner) { inner.textContent = ''; nums.length = 0; }
+    while (nums.length > lines.length) inner.removeChild(nums.pop());
+    while (nums.length < lines.length) {
+      const n = document.createElement('div');
+      n.className = 'gutter-num';
+      inner.appendChild(n);
+      nums.push(n);
+    }
+    for (let i = 0; i < nums.length; i++) {
+      const n = nums[i];
+      const top = tops[i] + 'px';
+      if (n._top !== top) { n._top = top; n.style.top = top; }
+      // 逐节点守卫：池化新增的节点诞生在 lhChanged=false 的那趟，靠全局开关会漏写 inline
+      // 行高 → 新行号用 CSS 回退行高（与 textarea 不同）而错位
+      if (n._lh !== lhStr) { n._lh = lhStr; n.style.height = lhStr; n.style.lineHeight = lhStr; }
+      const label = String(i + 1);
+      if (n._label !== label) { n._label = label; n.textContent = label; }
+    }
+
+    syncScroll(ta, inner);
+  }
+
+  // 版簽＝內容 + 尺寸 + 字號/行高/內邊距：旋轉螢幕改尺寸、換主題都可能改排版，值沒變也一樣要重建
+  function signature(ta) {
+    const cs = getComputedStyle(ta);
+    return ta.value + '\0' + ta.clientWidth + 'x' + ta.clientHeight + 'x' +
+      cs.fontSize + '/' + cs.lineHeight + '/' + cs.paddingLeft + '/' + cs.paddingTop;
+  }
+  function tick() {
+    const e = els();
+    if (!e.ta || !cfg.visible(e)) { raf = null; return; }
+    const sig = signature(e.ta);
+    if (sig !== lastSig) {
+      lastSig = sig;
+      lastScrollTop = e.ta.scrollTop;
+      refresh();
+    } else if (e.ta.scrollTop !== lastScrollTop) {
+      lastScrollTop = e.ta.scrollTop;
+      syncScroll(e.ta, e.inner);
+    }
+    raf = requestAnimationFrame(tick);
+  }
+
+  return {
+    refresh: refresh,
+    start: function () {
+      if (raf == null) {
+        lastSig = null;
+        lastScrollTop = null;
+        raf = requestAnimationFrame(tick);
+      }
+    },
+    invalidate: function () { lastSig = null; },
+  };
+}
+const editorGutter = createLineGutter({
+  taId: 'editor',
+  wrapId: 'editorGutterWrap',
+  gutterId: 'editorGutter',
+  innerId: 'editorGutterInner',
+  chrome: 12,
+  // 手機版顯隱由容器 data-view 的 CSS 控制（無 inline style），用 offsetParent 判真實可見；
+  // 切到 preview/events 時 tick 下一帧自停，setView 切回 edit/split 時再自啟。
+  visible: function (e) { return e.ta.offsetParent !== null; },
+});
 
 // 啟動應用（兼容兩種時序：DOM 已就緒直接執行，否則等 DOMContentLoaded）
 if (document.readyState === 'loading') {

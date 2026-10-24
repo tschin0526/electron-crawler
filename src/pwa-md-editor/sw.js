@@ -175,7 +175,39 @@
 // v124：行程行新增「便利貼徽標」（該行程設了 - sticky: N（N>0）才顯示，與桌面 calendar 清單行同一位置＋同一圖示）；
 //      點徽標＝開便利貼並跳到該行程的第一張（原本只會回到上次停留的那張）。
 //      calendar-editor.js/style.css/sticky-notes.js/sw.js 改，bump 讓手機重拉
-const CACHE_NAME = 'md-editor-lite-v124';
+// v125：手機 LITE 多檔聯運——開啟 calendar*.md 主檔後，可用行程工具列「📎 加入档案」多次/多選載入
+//      其它 calendar*.md（只讀併入顯示，不寫回主檔；iCloud 無法一次全載，故採分段多次加入）。include 事件
+//      標 ro+⛔、禁用編輯/刪除/勾選，內容快取 localStorage（按主檔名），重開主檔自動重併。
+//      app.js/calendar-editor.js/index.html/style.css/sw.js 改，bump 讓手機重拉
+// v126：便利貼（翻頁）清單改用「主档 + include 只讀事件」併集建目錄——修「點 include 事件的便利貼徽標
+//      卻翻不到、顯示別張」的 bug（原 calStickyBuildCatalog 只解析 elements.editor.value 主檔）。
+//      便利貼內的寫入（＋☐/✎/勾選）對 ro 事件一律攔阻並提示。
+//      sticky-notes.js/calendar-editor.js/sw.js 改，bump 讓手機重拉
+// v127：便利貼加上「來源檔案徽標」📄 <檔名>（對齊桌面便利貼 #docBadge 的做法）——只有來自
+//      「📎 加入檔案」的只讀聯運行程才顯示，金色虛線膠囊，右上角不佔位；翻頁清單同名項也加 📄 記號。
+//      非聯運便利貼（主档）完全看不出差別。sticky-notes.js/index.html/style.css/sw.js 改，bump 讓手機重拉
+// v128：權限與桌面對齊——聯運（include）行程只鎖「行程本體」（標題／日期／刪除／完成），
+//      **便利貼內容可改**：勾子事件、＋☐ 加子事件/表格/文本、編輯區塊與子事件都開放，
+//      寫回只動來源檔「那一個 ## EVENT 區塊」的 Remark（其餘原文逐字保留），
+//      內容存本機快取並在 📎 chip 打 ● 出現 ↓ 匯出（覆寫原檔才真正落回 iCloud）。
+//      calendar-editor.js/app.js/sticky-notes.js/style.css/sw.js 改，bump 讓手機重拉
+// v129：「保存」鍵納入聯運檔——只改聯運檔時保存鍵不再灰掉（狀態列顯示「● N 個聯運檔未寫回」），
+//      按下即匯出；行動端把「主檔＋全部待寫回聯運檔」塞進**同一次分享面板**（選一次資料夾全部存回），
+//      桌面 Chromium 逐檔 picker 直接寫回。取消（AbortError）整批不標已存。
+//      app.js/calendar-editor.js/sw.js 改，bump 讓手機重拉
+// v130：「開啟」與「📎 加入檔案」合併成單一入口——按一次「開啟」可多選檔案，
+//      calendar.md（不分大小寫）優先當主檔＝行程本體可編輯，其餘 calendar*.md 自動成為只讀聯運
+//      （行程本體不可編輯，只有便利貼內容可改）。整組替換舊聯運清單；有未匯出修改時先確認。
+//      工具列的 📎 按鈕與其隱藏 input 移除。index.html/app.js/calendar-editor.js/sw.js 改，bump 讓手機重拉
+// v131：LITE 行程檢視的備註可寫性對齊桌面——include(ro) 行程在「行程檢視」的備註降級為唯讀
+//      （不給區塊 ✎／子事件 ✎，勾選與各編輯入口一律攔下並提示去便利貼改）；便利貼那邊仍可改並寫回來源檔。
+//      兩邊共用同一組編輯函式，靠 DOM 歸屬（#calStickyOverlay）判斷這次動作來自哪個介面。
+//      calendar-editor.js/sticky-notes.js/sw.js 改，bump 讓手機重拉
+// v132：combo 選單新增三項——「＋ 建立 calendar 檔案」（前綴固定 calendar-，建空檔→設為當前文檔並標髒，
+//      資料未載入也能用，按「保存」存回 iCloud）、「＋ 新建便利貼」（標題＋寫入檔案下拉：主檔或已併入聯運檔，
+//      sticky=1 新行程，建好跳轉翻頁）、便利貼 ☰ 清單「🗑 删除便利貼」（刪當前翻頁那張，主檔→編輯緩衝、
+//      ro 聯運→來源檔快取標髒，window.confirm 確認）。calendar-editor.js/sticky-notes.js/index.html/style.css/app.js/sw.js 改
+const CACHE_NAME = 'md-editor-lite-v140';
 const ASSETS = [
   './',
   './index.html',

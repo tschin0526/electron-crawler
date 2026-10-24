@@ -300,22 +300,6 @@
       }
       return lines.slice(0, ri + 1).concat(repl, lines.slice(end)).join(nl);
     }
-    // 把来源文件里第 index 个 EVENT 区块整体换掉（区块＝该 ## EVENT 行到下一个 ## 级标题前）
-    function tlSpliceEventBlockText(content, index, newBlockText) {
-      const text = String(content == null ? '' : content);
-      const re = /^##[ \t]*EVENT(?:\([^)]*\))?[ \t]*$/gm;
-      const starts = [];
-      let m;
-      while ((m = re.exec(text))) starts.push(m.index);
-      if (!(index >= 0 && index < starts.length)) return null;
-      const s = starts[index];
-      const nextRel = text.slice(s + 1).search(/^##[ \t]/m);
-      const e = nextRel >= 0 ? s + 1 + nextRel : text.length;
-      const head = text.slice(0, s);
-      const tail = text.slice(e);
-      const body = String(newBlockText || '').replace(/\n+$/, '') + '\n';
-      return head + body + (tail ? (tail.startsWith('\n') ? tail : '\n' + tail) : '');
-    }
     // 便利贴「编辑回写」：把 notes 写入该行程的来源 include 文件（不碰 calendar.md）
     //   定位顺序：key 里的区块序号（ro-<文件序号>-<区块序号>-evp<N>）→ 标题+日期唯一匹配
     async function tlSaveIncludedEventNotes(key, notes, srcName) {
@@ -341,22 +325,34 @@
       if (!(index >= 0 && events[index])) {
         return { ok: false, error: '在 ' + name + ' 中找不到该行程（文件可能已被外部修改，请刷新后重试）' };
       }
-      // 取出该区块原文：用同一套分块正则定位
-      const starts = [];
+      // 取出该区块原文：先列出所有 ## EVENT 标题位置，但只保留「有标题」的块来对齐 parsed index
+      //   —— tlParseEvents 会跳过无标题块（如新建档案骨架遗留的空 ## EVENT 占位），
+      //      因此 parsed index 与「原始标题 index」在有空占位块时会错位；按标题块对齐才安全。
       const re = /^##[ \t]*EVENT(?:\([^)]*\))?[ \t]*$/gm;
+      const allStarts = [];
       let m;
-      while ((m = re.exec(content))) starts.push(m.index);
-      // 安全阀：解析出的条目数必须与原始区块数一致（有「缺 title 的块」时序号会错位 → 宁可拒写）
-      if (starts.length !== events.length) {
-        return { ok: false, error: name + ' 中含有缺标题的 EVENT 区块，无法安全定位，已取消写入' };
+      while ((m = re.exec(content))) allStarts.push(m.index);
+      const blockEndAt = (s) => {
+        const nr = content.slice(s + 1).search(/^##[ \t]/m);
+        return nr >= 0 ? s + 1 + nr : content.length;
+      };
+      // 与 tlParseEvents/tlParseBlock 同一口径判定「有标题」：- title: `非空`
+      const titledStarts = allStarts.filter((s) => {
+        const tm = content.slice(s, blockEndAt(s)).match(/- title: `([^`]*)`/);
+        return !!tm && tm[1].length > 0;
+      });
+      // 安全阀：有标题的区块数必须与解析出的条目数一致（解析口径若变动 → 序号可能错位 → 宁可拒写）
+      if (titledStarts.length !== events.length) {
+        return { ok: false, error: name + ' 中 EVENT 区块无法安全定位，已取消写入' };
       }
-      const s = starts[index];
-      const nextRel = content.slice(s + 1).search(/^##[ \t]/m);
-      const e = nextRel >= 0 ? s + 1 + nextRel : content.length;
+      const s = titledStarts[index];
+      const e = blockEndAt(s);
       const blockText = content.slice(s, e);
       const newBlock = tlReplaceRemarkInBlock(blockText, notes);
-      const next = tlSpliceEventBlockText(content, index, newBlock);
-      if (next == null) return { ok: false, error: '无法定位 ' + name + ' 中该行程的区块' };
+      // 就地替换 [s, e)（不走 tlSpliceEventBlockText：它按原始标题 index 取块，遇空占位块会写错位置）
+      const body = String(newBlock || '').replace(/\n+$/, '') + '\n';
+      const tail = content.slice(e);
+      const next = content.slice(0, s) + body + (tail ? (tail.startsWith('\n') ? tail : '\n' + tail) : '');
       if (next === content) return { ok: true, file: name, unchanged: true };
       try { await io.write(next); } catch (err) { return { ok: false, error: '写入 ' + name + ' 失败：' + (err.message || err) }; }
       // 只同步内存里的这一条（不重跑 tlRefreshIncludedEvents：那是启动/切换文件用的，

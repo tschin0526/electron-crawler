@@ -28,15 +28,19 @@
     <!-- 頂部工具列 -->
     <header class="toolbar region" data-page-node-id="H1799o7Bi43iFcVqikgGoy">
       <div class="toolbar-left" data-page-node-id="3Bhm48LoEza4EaPuCBP0eM">
-        <button id="btn-open" class="btn btn-secondary" title="從 iCloud 開啟文字檔（md/json/html/code…）" data-page-node-id="jBuTh5OaGcNyn4H9q1NSLY">開啟</button>
+        <button id="btn-open" class="btn btn-secondary" title="開啟檔案（可一次多選）：calendar.md 為主檔，行程本體可編輯；同批其他 calendar*.md 自動作為只讀聯運——行程不可編輯，只有便利貼內容可改" data-page-node-id="jBuTh5OaGcNyn4H9q1NSLY">開啟</button>
         <button id="btn-save" class="btn btn-secondary" title="保存文件到 iCloud" data-page-node-id="xI9aHNProtF19uKHlU9Iy2">保存</button>
         <button id="btn-reset" class="btn btn-secondary" title="清除所有緩存並重新載入應用" data-page-node-id="OFInZmGq0dd8SGCfjeFRp2">重置</button>
       </div>
       <div class="toolbar-center" data-page-node-id="DBVXYuSyz7BpTGkEZ2IiLj">
                 <!-- 🛡️ 不设 accept 过滤：iOS Safari 对 .md 这类无系统 UTI 注册的扩展名会解析失败，
              导致文件在选择器里灰掉不可选（.json/.txt 等系统认识的反而正常）。
-             改为显示全部文件，选中后由 app.js 的 isTextFile 白名单校验兜底（非文字档 toast 拒绝）。 -->
-        <input type="file" id="file-input" style="display:none" data-page-node-id="ahnBqONLSIh2nJB0SkRIx6" />
+             改为显示全部文件，选中后由 app.js 的 isTextFile 白名单校验兜底（非文字档 toast 拒绝）。
+             便利貼路徑另有一層：openFilePicker('calendar') intent → handleFileSelect 該輪只收
+             calendar*.md（嚴格校验、選錯拒絕），把關做在選擇之後而非選單顯示。 -->
+        <!-- 📎 多檔聯運（2026-10-23）：只留這一個選擇器且可 multiple——
+             按下「開啟」一次選好整組：calendar.md 當主檔（行程可編輯），其餘 calendar*.md 自動成為只讀聯運。 -->
+        <input type="file" id="file-input" multiple style="display:none" data-page-node-id="ahnBqONLSIh2nJB0SkRIx6" />
         <span id="file-name" class="file-name" data-page-node-id="QBa1VlJLq9aZiZ2eIlwNQj">未開啟文件</span>
         <!-- 🆕 todo 卡片模式徽章：開啟符合 todo 卡片結構的 JSON 後顯示，提示用戶保存時會合併原結構 -->
         <span id="todo-mode-badge" class="todo-badge" title="保存時自動合併原 JSON 結構，只覆寫 text/updatedAt 字段" data-page-node-id="jh8nIwOyChaeT5SooKW639">📇 todo 卡片</span>
@@ -179,7 +183,11 @@
     <!-- 主編輯區域 -->
     <main class="editor-container" id="editor-container" data-view="edit" data-page-node-id="4lifpnYRioAK2vdbugOaDi">
       <div id="editor-pane" class="pane editor-pane region" data-page-node-id="1mwUIwO64NpAhDQXx0d0WX">
-        <textarea id="editor" class="editor" placeholder="在此輸入內容...&#10;&#10;支持從 iCloud Drive 開啟 .md / .json / .html / 程式碼等文字檔進行編輯"></textarea>
+        <!-- 左側只讀行號邊条：與桌面 #taskText / 便利貼 #editArea 同源同義（app.js createLineGutter） -->
+        <div class="tl-text-gutter-wrap" id="editorGutterWrap">
+          <div class="tl-line-gutter" id="editorGutter"><div class="tl-line-gutter-inner" id="editorGutterInner"></div></div>
+          <textarea id="editor" class="editor" placeholder="在此輸入內容...&#10;&#10;支持從 iCloud Drive 開啟 .md / .json / .html / 程式碼等文字檔進行編輯"></textarea>
+        </div>
       </div>
       <div id="preview-pane" class="pane preview-pane region" data-page-node-id="EYhIlTOhzwJjMUzU6PWw9A">
         <div id="preview" class="preview" data-page-node-id="nVFjSH28JrcvAirXNDtYaa"></div>
@@ -204,11 +212,16 @@
               <div class="ev-toolbar-combo-sep"></div>
               <!-- 🗒 便利貼：動作型項目（不曝露成工具列常駐按鈕）→ 按下才以全屏翻頁檢視，平時完全不佔畫面 -->
               <div class="ev-toolbar-combo-option ev-toolbar-combo-action-row"><button type="button" class="ev-toolbar-combo-action" data-toolbar-action="sticky" title="以翻頁模式檢視所有便利貼事件（不自動顯示）">🗒 便利貼（翻頁）</button></div>
+              <div class="ev-toolbar-combo-sep"></div>
+              <!-- 🆕 建立空 calendar 檔案：前缀固定 calendar-，输入后缀→calendar-<后缀>.md，建好即设为当前文档（空），可立即按「保存」存回 iCloud；资料未加载也能用 -->
+              <div class="ev-toolbar-combo-option ev-toolbar-combo-action-row"><button type="button" class="ev-toolbar-combo-action" data-cal-action="new-cal" title="建立一个新的 calendar-<后缀>.md 空檔案，建好後按「保存」即可存回 iCloud">＋ 建立 calendar 檔案</button></div>
             </div>
           </div>
           <span class="ev-toolbar-flex"></span>
           <button type="button" class="ev-add-btn" id="ev-add-btn">＋ 新增行程</button>
         </div>
+        <!-- 📎 多檔聯運清單：顯示已併入的 calendar*.md（只讀）；點 chip 上的 ✕ 可移除（不刪檔案） -->
+        <div class="ev-include-bar" id="cal-include-bar" style="display:none"></div>
         <div class="ev-holiday-legend" id="ev-holiday-legend" style="display:none"></div>
         <div class="ev-monthnav" id="ev-month-nav" style="display:none">
           <button type="button" id="ev-prev-month">‹</button>
@@ -406,11 +419,22 @@
         <div class="cal-sticky-stage" id="calStickyStage">
           <div class="cal-sticky-note" id="calStickyNote">
             <div class="cal-sticky-head">
-              <div class="cal-sticky-title" id="calStickyTitle"></div>
+              <div class="cal-sticky-head-row">
+                <div class="cal-sticky-title" id="calStickyTitle"></div>
+                <!-- 🆕 來源檔案徽標（對齊桌面便利貼 #docBadge）：只有「開啟」多選時併進來的
+                     只讀聯運行程才顯示，讓使用者一眼看出這張便利貼不可編輯。 -->
+                <span class="cal-sticky-src-badge" id="calStickySrcBadge" role="note"></span>
+              </div>
               <div class="cal-sticky-meta" id="calStickyMeta"></div>
               <ul class="cal-sticky-tags" id="calStickyTags"></ul>
             </div>
             <div class="cal-sticky-body" id="calStickyBody"></div>
+            <!-- 🆕 編輯模式：textarea 直接改事件原始 Markdown（notes），對齊桌面便利貼 #editArea；
+                 左側行號邊条與 #editor 共用 .tl-line-gutter 样式＋app.js createLineGutter 算法 -->
+            <div class="tl-text-gutter-wrap" id="calStickyEditWrap">
+              <div class="tl-line-gutter" id="calStickyEditGutter"><div class="tl-line-gutter-inner" id="calStickyEditGutterInner"></div></div>
+              <textarea class="cal-sticky-editarea" id="calStickyEditArea" spellcheck="false" placeholder="在此直接編輯事件內容（Markdown）…"></textarea>
+            </div>
           </div>
           <div class="cal-sticky-empty" id="calStickyEmpty" style="display:none"></div>
           <div class="cal-sticky-toast" id="calStickyToast" role="status" aria-live="polite"></div>
@@ -424,6 +448,9 @@
           </div>
         </div>
         <div class="cal-sticky-foot" id="calStickyFoot">
+          <!-- 🆕 內容模式把手（對齊桌面左下角浮動 ✎/▤）：渲染 ⇄ 編輯；編輯模式才顯示「保存」 -->
+          <button type="button" id="calStickyModeBtn" title="切換到編輯模式（直接改原始 Markdown）" aria-label="切換內容模式">✎</button>
+          <button type="button" id="calStickySaveBtn" style="display:none" title="寫回便利貼內容（主檔＝編輯緩衝；聯運檔＝來源檔快取）">保存</button>
           <button type="button" id="calStickyPrevBtn">‹ 上一張</button>
           <span id="calStickyFootInd"></span>
           <button type="button" id="calStickyNextBtn">下一張 ›</button>
@@ -440,6 +467,10 @@
             <div class="cal-sticky-list-title" id="calStickyListTitle"></div>
             <div class="cal-sticky-list" id="calStickyList"></div>
             <button type="button" class="cal-sticky-toggle" id="calStickyUndone" aria-pressed="false">只顯示未完成 checkbox：關</button>
+            <!-- 🆕 新建便利貼：开「＋ 新建便利貼」弹层（选目标档＋填标题）；原在 combo 菜单，移至此处并置于删除之上 -->
+            <button type="button" class="cal-sticky-toggle cal-sticky-add" id="calStickyNewNoteBtn">＋ 新建便利貼</button>
+            <!-- 🆕 删除便利貼：删当前翻页显示的那张（与桌面便利贴窗「删除」同口徑）；破坏性操作，程式内会先确认 -->
+            <button type="button" class="cal-sticky-toggle cal-sticky-del" id="calStickyDeleteBtn">🗑 删除便利貼</button>
             <div class="cal-sticky-sec">
               <div class="cal-sticky-sec-title">背景色</div>
               <div class="cal-sticky-swatches" id="calStickyBgSwatches"></div>
@@ -461,6 +492,41 @@
             </div>
             <div class="cal-sticky-hint">在行程編輯表單把「便利貼張數」設為 1 以上，該行程就會出現在這裡。開關狀態、樣式與上次停留的頁次會自動記住（存在本機瀏覽器），下次開啟便利貼時原樣還原，不會改寫 calendar.md。</div>
           </div>
+        </div>
+      </div>
+    </div>
+    <!-- 🆕 建立 calendar 檔案（combo 選單）：前缀固定 calendar-，输入后缀→calendar-<后缀>.md 空文件 -->
+    <div id="calNewCalOverlay" class="cal-md-edit-overlay" style="display:none">
+      <div class="cal-md-edit-box" role="dialog" aria-modal="true" aria-labelledby="calNewCalTitle">
+        <div class="cal-md-edit-head"><span id="calNewCalTitle">＋ 建立 calendar 檔案</span><button type="button" class="cal-md-edit-close" id="calNewCalClose" aria-label="關閉">✕</button></div>
+        <div class="cal-md-edit-hint">前缀固定為 calendar-，後綴由你輸入（自動加 .md）。建立後是空文件，按頂欄「保存」即可存回 iCloud。</div>
+        <div class="cal-newcal-row">
+          <span class="cal-newcal-fix">calendar-</span>
+          <input type="text" id="calNewCalSuffix" maxlength="60" placeholder="輸入後綴，例如 work / 工作" spellcheck="false" autocomplete="off">
+          <span class="cal-newcal-fix">.md</span>
+        </div>
+        <div class="cal-newcal-hint" id="calNewCalHint"></div>
+        <div class="cal-md-edit-actions">
+          <button type="button" id="calNewCalCancel">取消</button>
+          <button type="button" class="primary" id="calNewCalCreate">建立</button>
+        </div>
+      </div>
+    </div>
+    <!-- 🆕 新建便利貼（combo 選單）：标题 ＋ 写入文件（主档或已并入的联运行程档） -->
+    <div id="calNewNoteOverlay" class="cal-md-edit-overlay" style="display:none">
+      <div class="cal-md-edit-box" role="dialog" aria-modal="true" aria-labelledby="calNewNoteDlgTitle">
+        <div class="cal-md-edit-head"><span id="calNewNoteDlgTitle">＋ 新建便利貼</span><button type="button" class="cal-md-edit-close" id="calNewNoteClose" aria-label="關閉">✕</button></div>
+        <div class="cal-md-edit-hint">新建一張便利貼（日程事件，sticky=1）。可寫入主檔（可編輯，存回 iCloud）或已併入的聯運檔（只讀來源，存回需按「保存」匯出）。</div>
+        <label class="cal-newcal-label">便利貼標題
+          <input type="text" id="calNewNoteTitle" maxlength="200" placeholder="例如：十二月第一天測試" spellcheck="false" autocomplete="off">
+        </label>
+        <label class="cal-newcal-label">寫入檔案
+          <select id="calNewNoteTarget"></select>
+        </label>
+        <div class="cal-newcal-hint" id="calNewNoteHint"></div>
+        <div class="cal-md-edit-actions">
+          <button type="button" id="calNewNoteCancel">取消</button>
+          <button type="button" class="primary" id="calNewNoteCreate">建立</button>
         </div>
       </div>
     </div>

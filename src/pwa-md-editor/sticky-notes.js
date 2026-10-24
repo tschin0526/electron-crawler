@@ -3,8 +3,12 @@
  * ------------------------------------------------------------
  * 資料源與桌面便利貼一致：calendar 檔中 `- sticky: \`N\``（N>0）的行程
  * 會展開成 N 張便利貼；本檔案只負責「顯示 / 翻頁 / 顯示偏好」，
- * 絕不改寫 calendar 檔。備註 checkbox 仍走 calToggleNoteCheck →
- * 編輯緩衝 → 頂欄「保存」，與行程列表同一條寫回路徑。
+ * 絕不改寫 calendar 檔。備註 checkbox ✎ 與勾選仍走 calToggleNoteCheck /
+ * calOpenEditNoteCheckDialog → calCommitEventNotes（主檔＝編輯緩衝；
+ * include 檔＝只改來源檔那一塊 Remark），與行程列表同一條寫回路徑。
+ * ⚠️ 權限分工（對齊桌面）：include(ro) 行程的備註**只能在便利貼裡改**——
+ *    行程檢視那邊是唯讀的，所以這裡呼叫 calRenderNotes 一律帶 forceEditable=true、
+ *    calOpenAddCheckDialog 要明確傳 'sticky'。
  * 由組合菜單「🗒 便利貼（翻頁）」主動開啟，平時不佔畫面。
  * ============================================================ */
 'use strict';
@@ -89,8 +93,16 @@ function calStickyIdentityOf(ev, idx) {
 }
 function calStickyBuildCatalog() {
   if (typeof isCalendarMd !== 'function' || !isCalendarMd()) return [];
-  const events = (typeof parseCalendarEvents === 'function' && typeof elements !== 'undefined' && elements.editor)
-    ? parseCalendarEvents(elements.editor.value) : [];
+  // 📎 多檔聯運：用「主档 + include 只讀事件」的併集，否則來自 calendar-*.md 的便利貼
+  //   雖在行程列表看得到徽標（sticky>0），卻不在便利貼翻頁清單裡 → 點徽標翻不到。
+  //   calRefreshAll 是唯一可信來源（同時刷新 state.calEvents / calHolidays / calDiaries）。
+  let events = [];
+  if (typeof calRefreshAll === 'function') {
+    calRefreshAll();
+    events = (typeof state !== 'undefined' && Array.isArray(state.calEvents)) ? state.calEvents : [];
+  } else if (typeof parseCalendarEvents === 'function' && typeof elements !== 'undefined' && elements.editor) {
+    events = parseCalendarEvents(elements.editor.value);
+  }
   const out = [];
   events.forEach((ev) => {
     // 不設上限：與桌面便利貼同一口徑（表單 UI 以 9 為輸入上限，但檔案既有 >9 張不可靜默截斷）
@@ -106,7 +118,12 @@ function calStickyBuildCatalog() {
         done: !!ev.done,
         color: ev.color || '',
         tags: Array.isArray(ev.tags) ? ev.tags.slice() : [],
-        notes: ev.notes || ''
+        notes: ev.notes || '',
+        // 📄 來源檔案：來自「開啟」多選併入的聯運行程才有值（主档＝空字串）。
+        //   dirty＝該來源檔有便利貼修改還沒匯出寫回（chip/徽标打 ●）。
+        src: ev.src || '',
+        ro: !!ev.ro,
+        dirty: !!ev.roDirty
       });
     }
   });
@@ -168,6 +185,13 @@ function calStickyApplyStyle(prefs) {
   body.style.color = prefs.fontColor;
   body.style.fontWeight = String(prefs.fontWeight || 400);
   body.classList.toggle('cal-sticky-only-undone', !!prefs.undoneChecksOnly);
+  // 編輯框與正文同一套字級/字色/字重（對齊桌面 applyContentFont），縮放偏好在編輯模式同樣生效
+  const ea = calStickyEl('calStickyEditArea');
+  if (ea) {
+    ea.style.fontSize = (CAL_STICKY_BASE_FONT * (prefs.fontScale || 1)).toFixed(2) + 'px';
+    ea.style.color = prefs.fontColor;
+    ea.style.fontWeight = String(prefs.fontWeight || 400);
+  }
 }
 
 // ===== meta / 子事件進度 =====
@@ -259,7 +283,7 @@ function calStickyToggleAddCheckMenu(event) {
 function calStickyPickAddMode(act) {
   calStickyCloseAddCheckMenu();
   if (!calStickyCurrentUid || typeof calOpenAddCheckDialog !== 'function') return;
-  calOpenAddCheckDialog(calStickyCurrentUid, act);
+  calOpenAddCheckDialog(calStickyCurrentUid, act, 'sticky');
 }
 
 // ===== 渲染一頁（循環）=====
@@ -278,8 +302,44 @@ function calStickyUpdateIndicator(current, total) {
   if (nextBtn) nextBtn.disabled = !multi;
   const editBtn = calStickyEl('calStickyEditBtn');
   if (editBtn) editBtn.disabled = !total;
+  const modeBtn = calStickyEl('calStickyModeBtn');
+  if (modeBtn) modeBtn.disabled = !total;
+  const saveBtn = calStickyEl('calStickySaveBtn');
+  if (saveBtn) saveBtn.disabled = !total;
 }
 
+// 顯示用短檔名：手機寬度有限，全名會被截成「calendar-calendar-d…」→ draft2 / draft3 分不出來。
+//   聯運檔一律是 calendar*.md，前綴沒有資訊量，所以剝掉重複的 calendar 前綴，
+//   只留真正能區分的那一段（calendar-calendar-draft2.md → draft2.md）；完整檔名留在 title。
+function calStickyShortSrc(name) {
+  let s = String(name || '').trim();
+  let guard = 0;
+  while (guard < 4 && /^calendar[-_.]/i.test(s)) { s = s.replace(/^calendar[-_.]/i, ''); guard += 1; }
+  return s || String(name || '').trim();
+}
+// 🆕 來源檔案徽標（對齊桌面便利貼 applyDocBadge）：只在這張便利貼的行程來自
+//   聯運檔（「開啟」時同批選進來的其它 calendar*.md）才出現。權限與桌面一致——**便利貼內容可改**（寫回來源檔），
+//   只有行程本體（標題／日期／刪除／完成）鎖住，所以文案要說清楚「可編、但行程不可編」。
+//   有修改未匯出時（dirty）尾巴加 ●，提醒還要把檔案匯出覆寫原檔。
+function calStickyApplySrcBadge(note) {
+  const el = calStickyEl('calStickySrcBadge');
+  if (!el) return;
+  const src = String((note && note.src) || '').trim();
+  if (src) {
+    const dirty = !!note.dirty;
+    el.textContent = '📄 ' + calStickyShortSrc(src) + (dirty ? ' ●' : '');
+    el.title = '內容來源：' + src +
+      '\n（便利貼內容可修改；行程本體不可編輯）' +
+      (dirty ? '\n● 有修改還在本機，需在 📎 聯運檔案清單按 ↓ 匯出覆寫原檔' : '');
+    el.classList.toggle('dirty', dirty);
+    el.classList.add('show');
+  } else {
+    el.textContent = '';
+    el.removeAttribute('title');
+    el.classList.remove('show');
+    el.classList.remove('dirty');
+  }
+}
 function calStickyRenderPage(target, options) {
   options = options || {};
   calStickyCloseAddCheckMenu();   // 換頁＝＋☐ 的位置與所屬行程都變了，選單先收合
@@ -291,6 +351,16 @@ function calStickyRenderPage(target, options) {
     calStickyIndex = 0;
     calStickyCurrentId = '';
     calStickyCurrentUid = '';
+    calStickyApplySrcBadge(null);   // 沒有便利貼時徽標一併清掉，否則會殘留上一張的檔名
+    // 沒有便利貼：編輯模式直接退出（編輯對象已不存在，不留 textarea 與未保存態）
+    if (calStickyEditMode) {
+      calStickyEditMode = false;
+      calStickyEditDirty = false;
+      if (noteEl) noteEl.classList.remove('editing');
+      const ea0 = calStickyEl('calStickyEditArea');
+      if (ea0) ea0.style.boxShadow = '';
+      calStickySyncEditBtn();
+    }
     if (noteEl) noteEl.style.display = 'none';
     if (emptyEl) {
       emptyEl.style.display = 'flex';
@@ -322,6 +392,7 @@ function calStickyRenderPage(target, options) {
   const prefs = calStickyNotePrefs(note.identity);
   const titleEl = calStickyEl('calStickyTitle');
   if (titleEl) titleEl.innerHTML = note.title ? calRenderInlineMarkdown(note.title) : '(無標題)';
+  calStickyApplySrcBadge(note);
   const metaEl = calStickyEl('calStickyMeta');
   if (metaEl) metaEl.innerHTML = escapeHtml(calStickyMetaText(note)) + calStickyProgressHtml(note) + calStickyMetaActionsHtml(prefs);
   const tagsEl = calStickyEl('calStickyTags');
@@ -331,8 +402,10 @@ function calStickyRenderPage(target, options) {
   }
   const bodyEl = calStickyEl('calStickyBody');
   if (bodyEl) {
+    // forceEditable=true：便利貼是 include 備註唯一的編輯場所（行程檢視對 ro 行程是唯讀的），
+    //   所以即使 note.ro 也照樣給 ✎ 與可勾 checkbox；寫回仍走 calCommitEventNotes（只改來源檔那一塊）
     bodyEl.innerHTML = note.notes
-      ? calRenderNotes(note.notes, note.uid)
+      ? calRenderNotes(note.notes, note.uid, true)
       : '<p style="opacity:.6">（無備註）</p>';
     if (options.resetScroll !== false) bodyEl.scrollTop = 0;
   }
@@ -347,6 +420,7 @@ function calStickyRenderPage(target, options) {
 
 function calStickyStep(delta) {
   if (!calStickyIsOpen || calStickyPages.length <= 1) return;
+  if (!calStickyGuardDirtyForNav()) return;
   calStickyRenderPage(calStickyIndex + delta, { toast: true });
 }
 
@@ -388,11 +462,14 @@ function calStickyRenderSheetList() {
     nameEl.type = 'button';
     nameEl.className = 'cal-sticky-list-name';
     const label = calStickyNoteLabel(note);
-    nameEl.textContent = label;
-    nameEl.title = label + '（點擊顯示這張便利貼）';
+    // 📄 聯運檔的便利貼在清單裡也打個記號，否則翻頁時分不清哪張不可編輯
+    const shown = note.src ? '📄 ' + label : label;
+    nameEl.textContent = shown;
+    nameEl.title = shown + '（點擊顯示這張便利貼）';
     nameEl.addEventListener('click', () => {
       const idx = calStickyPages.findIndex((n) => n.identity === note.identity);
       if (idx >= 0) {
+        if (!calStickyGuardDirtyForNav()) return;
         calStickyRenderPage(idx, { toast: false });
         calStickyCloseSheet();
       }
@@ -566,7 +643,15 @@ function calStickyZoom(delta) {
 // ev（可選）＝從清單行的便利貼徽標進來：開在該行程的第一張，而不是上次停留的那張
 function calStickyOpen(ev) {
   if (typeof isCalendarMd !== 'function' || !isCalendarMd()) {
-    if (typeof showToast === 'function') showToast('便利貼僅適用於 calendar 檔（檔名 calendar*.md）', 'error');
+    // 🛡️ 嚴格校验路線（2026-10-24）：不再只吐錯誤 toast——直接帶 intent='calendar' 跳檔案選單，
+    //   該輪 handleFileSelect 只收 calendar*.md（選錯拒絕＋說明），選成功自動開便利貼。
+    //   iOS 原生選單無法按檔名前綴過濾，把關只能做在選擇之後。
+    if (typeof openFilePicker === 'function') {
+      if (typeof showToast === 'function') showToast('便利貼只適用 calendar*.md：請在選單挑選檔案', 'info');
+      openFilePicker('calendar');
+    } else if (typeof showToast === 'function') {
+      showToast('便利貼僅適用於 calendar 檔（檔名 calendar*.md）', 'error');
+    }
     return;
   }
   const overlay = calStickyEl('calStickyOverlay');
@@ -594,9 +679,22 @@ function calStickyOpen(ev) {
   }
   calStickyRenderPage(idx, { toast: false });
 }
-function calStickyClose() {
+function calStickyClose(skipDirtyGuard) {
+  // 編輯中有未保存改動：確定＝保存再關；取消＝留在編輯模式（切換檔案路徑傳 skipDirtyGuard 不問）
+  if (!skipDirtyGuard && calStickyEditMode && calStickyEditDirty) {
+    const ok = window.confirm('內容有未保存的改動。\n\n確定＝先保存再關閉便利貼\n取消＝留在編輯模式');
+    if (ok) { if (!calStickySaveEdit()) return; }
+    else return;
+  }
   calStickyIsOpen = false;
   calStickyPendingRename = null;
+  calStickyEditMode = false;
+  calStickyEditDirty = false;
+  const noteEl = calStickyEl('calStickyNote');
+  if (noteEl) noteEl.classList.remove('editing');
+  const ea = calStickyEl('calStickyEditArea');
+  if (ea) ea.style.boxShadow = '';
+  calStickySyncEditBtn();
   const overlay = calStickyEl('calStickyOverlay');
   if (overlay) overlay.style.display = 'none';
   calStickyCloseAddCheckMenu();
@@ -609,6 +707,167 @@ function calStickyEditCurrent() {
   calStickyCloseSheet();
   calStickyPendingRename = { uid: calStickyCurrentUid, identity: calStickyCurrentId };
   openEventForm(calStickyCurrentUid);
+}
+
+// ===== 🆕 編輯模式：textarea 直接改事件原始 Markdown（notes），對齊桌面便利貼 setEditMode / saveNoteEdit =====
+//  · 手動保存制：輸入只標「未保存」（紅色內圈描邊），按「保存」才寫回；離開編輯／翻頁／關閉時有改動先確認。
+//  · 寫回與 checkbox 勾選同一條路徑：主檔 → calCommitEventNotes 序列化回編輯緩衝；
+//    include(ro) → 只改來源檔那一個 ## EVENT 區塊的 Remark（絕不整份重畫）。
+let calStickyEditMode = false;
+let calStickyEditDirty = false;
+let calStickyEditSavePending = false;
+let calStickyEditDirtyTimer = null;
+
+function calStickyCurrentEvent() {
+  return ((typeof state !== 'undefined' && Array.isArray(state.calEvents)) ? state.calEvents : [])
+    .find((e) => e.uid === calStickyCurrentUid) || null;
+}
+// 未保存提示：編輯框內圈描邊（紅＝未保存；綠＝剛保存，1.6 秒淡出），與桌面 markEditDirty 同口徑
+function calStickyMarkEditDirty(on) {
+  const ea = calStickyEl('calStickyEditArea');
+  if (!ea) return;
+  if (calStickyEditDirtyTimer) { clearTimeout(calStickyEditDirtyTimer); calStickyEditDirtyTimer = null; }
+  if (on) {
+    ea.title = '有未保存的改動 —— 按「保存」寫回';
+    ea.style.boxShadow = 'inset 0 0 0 1px rgba(220,38,38,.55)';
+  } else {
+    ea.title = '';
+    ea.style.boxShadow = 'inset 0 0 0 1px rgba(34,197,94,.5)';
+    calStickyEditDirtyTimer = setTimeout(() => {
+      if (ea) ea.style.boxShadow = '';
+      calStickyEditDirtyTimer = null;
+    }, 1600);
+  }
+}
+function calStickySaveEdit() {
+  const ea = calStickyEl('calStickyEditArea');
+  if (!ea || calStickyEditSavePending) return false;
+  const ev = calStickyCurrentEvent();
+  if (!ev) { showToast('找不到該便利貼的來源行程', 'error'); return false; }
+  if (typeof calNotesRoLocked === 'function' && calNotesRoLocked(ev, true)) return false;
+  calStickyEditSavePending = true;
+  const prevNotes = ev.notes;
+  ev.notes = ea.value;
+  const ok = (typeof calCommitEventNotes === 'function') ? calCommitEventNotes(ev) : false;
+  calStickyEditSavePending = false;
+  if (!ok) {
+    ev.notes = prevNotes;   // 寫回被拒（區塊位置/標題已變）：還原記憶體值，避免與檔案脫節
+    return false;
+  }
+  calStickyEditDirty = false;
+  calStickyMarkEditDirty(false);
+  // ro 路徑 calCommitEventNotes 已自刷；主檔路徑補刷一次，讓進度徽章/來源●同趟更新
+  if (!ev.ro && typeof calStickyRefreshIfOpen === 'function') calStickyRefreshIfOpen();
+  return true;
+}
+function calStickySyncEditBtn() {
+  const modeBtn = calStickyEl('calStickyModeBtn');
+  const saveBtn = calStickyEl('calStickySaveBtn');
+  if (modeBtn) {
+    modeBtn.textContent = calStickyEditMode ? '▤' : '✎';
+    modeBtn.title = calStickyEditMode ? '切換到渲染模式' : '切換到編輯模式（直接改原始 Markdown）';
+    modeBtn.setAttribute('aria-label', modeBtn.title);
+    modeBtn.classList.toggle('active', calStickyEditMode);
+  }
+  if (saveBtn) saveBtn.style.display = calStickyEditMode ? '' : 'none';
+}
+function calStickySetEditMode(edit) {
+  const note = calStickyEl('calStickyNote');
+  const ea = calStickyEl('calStickyEditArea');
+  if (!note || !ea) return;
+  // 離開編輯前：有未保存改動 → 先確認（取消＝留在編輯模式，不丟改動）
+  if (!edit && calStickyEditMode && calStickyEditDirty) {
+    const ok = window.confirm('內容有未保存的改動。\n\n確定＝先保存再返回渲染模式\n取消＝留在編輯模式（不丟改動）');
+    if (ok) { if (!calStickySaveEdit()) return; }
+    else return;
+  }
+  calStickyEditMode = !!edit;
+  if (calStickyEditMode) {
+    const ev = calStickyCurrentEvent();
+    ea.value = ev ? (ev.notes || '') : '';
+    calStickyEditDirty = false;
+    ea.style.boxShadow = '';
+    ea.scrollTop = 0;
+    note.classList.add('editing');
+    calStickyApplyStyle(calStickyNotePrefs(calStickyCurrentId));   // 字級/字色/字重同步到編輯框
+    calStickyEditGutter.start();
+  } else {
+    note.classList.remove('editing');
+    calStickyEditDirty = false;
+    ea.style.boxShadow = '';
+    // 渲染模式：重拉最新渲染結果（編輯回寫後緩衝已變，這裡確保顯示最新）
+    calStickyRenderPage(calStickyIndex, { toast: false, resetScroll: false });
+  }
+  calStickySyncEditBtn();
+}
+// 翻頁 / 清單跳轉前的髒守門（對齊桌面 renderFlipPage）：確定＝保存再導航；取消＝中止。
+// 導航成功一律退出編輯模式（每張各自編輯，避免 textarea 內容錯位）。
+function calStickyGuardDirtyForNav() {
+  if (!calStickyEditMode) return true;
+  if (calStickyEditDirty) {
+    const ok = window.confirm('內容有未保存的改動。\n\n確定＝先保存再切換便利貼\n取消＝留在本頁');
+    if (!ok) return false;
+    if (!calStickySaveEdit()) return false;
+  }
+  calStickyEditMode = false;
+  const note = calStickyEl('calStickyNote');
+  if (note) note.classList.remove('editing');
+  const ea = calStickyEl('calStickyEditArea');
+  if (ea) ea.style.boxShadow = '';
+  calStickySyncEditBtn();
+  return true;
+}
+// 行號邊条：與 #editor 共用 app.js 的 createLineGutter（同名算法第三份實例）；
+// 顯隱＝便利貼開著 ＋ 編輯模式 ＋ textarea 真實可見（offsetParent），離開後 tick 自停
+const calStickyEditGutter = createLineGutter({
+  taId: 'calStickyEditArea',
+  wrapId: 'calStickyEditWrap',
+  gutterId: 'calStickyEditGutter',
+  innerId: 'calStickyEditGutterInner',
+  chrome: 10,
+  visible: function (e) { return calStickyIsOpen && calStickyEditMode && e.ta.offsetParent !== null; },
+});
+
+
+// 🆕 刪除便利貼：刪當前翻頁顯示的那張所屬行程（與桌面便利貼窗「刪除」同口徑）。
+//   主檔事件 → 從編輯緩衝移除該 ## EVENT 塊；ro 聯運事件 → 從來源檔快取移除並標髒，等匯出寫回。
+//   破壞性操作 → 先用 window.confirm 確認（行動端機制；與行程刪除同一套）。
+function calStickyDeleteCurrent() {
+  if (!calStickyIsOpen) { showToast('請先開啟便利貼', 'error'); return; }
+  const note = calStickyPages[calStickyIndex];
+  if (!note) { showToast('目前沒有可刪除的便利貼', 'error'); return; }
+  if (!window.confirm('確定刪除便利貼「' + (note.title || '未命名') + '」嗎？' + String.fromCharCode(10) + String.fromCharCode(10) + '刪除後該行程將從來源檔案中移除，不可恢復。')) return;
+  const ev = (state.calEvents || []).find((e) => e.uid === note.uid);
+  if (!ev) { showToast('找不到該便利貼的來源行程', 'error'); return; }
+  if (ev.ro) {
+    const files = state.calIncludeFiles || [];
+    let inc = (Number.isInteger(ev.roFileIdx) && files[ev.roFileIdx]) ? files[ev.roFileIdx] : null;
+    if (!inc || inc.name !== ev.src) inc = files.find((f) => f.name === ev.src) || null;
+    if (!inc) { showToast('找不到來源檔「' + (ev.src || '') + '」', 'error'); return; }
+    const next = (typeof calRemoveEventBlockInContent === 'function') ? calRemoveEventBlockInContent(inc.content, ev.roBlockIdx, ev.title) : null;
+    if (next === null) { showToast('來源檔區塊位置已變動，已取消刪除', 'error'); return; }
+    inc.content = next;
+    inc.dirty = true;
+    if (typeof calPersistIncludes === 'function') calPersistIncludes();
+    if (typeof calRefreshAll === 'function') calRefreshAll();
+    if (typeof renderEventsContent === 'function') renderEventsContent();
+    if (typeof calRenderIncludeBar === 'function') calRenderIncludeBar();
+  } else {
+    const blockIdx = parseInt(String(ev.uid).slice(3), 10);
+    const src = (typeof elements !== 'undefined' && elements.editor) ? elements.editor.value : '';
+    const next = (typeof calRemoveEventBlockInContent === 'function') ? calRemoveEventBlockInContent(src, blockIdx, ev.title) : null;
+    if (next === null) { showToast('檔案區塊位置已變動，已取消刪除', 'error'); return; }
+    if (typeof elements !== 'undefined' && elements.editor) elements.editor.value = next;
+    state.isDirty = (typeof elements !== 'undefined' && elements.editor) ? (elements.editor.value !== state.lastContent) : true;
+    if (typeof updateStatus === 'function') updateStatus();
+    if (typeof updateWordCount === 'function') updateWordCount();
+    if (typeof updatePreview === 'function') updatePreview();
+    if (typeof calRefreshAll === 'function') calRefreshAll();
+    if (typeof renderEventsContent === 'function') renderEventsContent();
+  }
+  calStickyCloseSheet();
+  if (typeof calStickyRefreshIfOpen === 'function') calStickyRefreshIfOpen();
+  showToast('已刪除便利貼「' + (note.title || '未命名') + '」', 'success');
 }
 
 // 勾選 checkbox / 表單存檔後：重新解析（evpN 可能位移），保留當前這張
@@ -661,7 +920,7 @@ function calStickyRefreshIfOpen() {
 // 切換檔案（開啟新檔 / 載入草稿）：關閉彈層並換用該檔的偏好命名空間
 function calStickyOnFileChange() {
   calStickyResetStore();
-  if (calStickyIsOpen) calStickyClose();
+  if (calStickyIsOpen) calStickyClose(true);
 }
 
 // ===== 觸控 / 鍵盤 =====
@@ -713,6 +972,7 @@ function calStickyOnKeyDown(e) {
     e.preventDefault();
     if (calStickyAddCheckMenuOpen()) calStickyCloseAddCheckMenu();
     else if (calStickySheetOpen()) calStickyCloseSheet();
+    else if (calStickyEditMode) calStickySetEditMode(false);   // 編輯中：Esc 先退編輯（有髒改動會先問），不直接關彈層
     else calStickyClose();
     return;
   }
@@ -731,6 +991,15 @@ function calStickyInit() {
   on('calStickyMenuBtn', 'click', calStickyOpenSheet);
   on('calStickySheetClose', 'click', calStickyCloseSheet);
   on('calStickyEditBtn', 'click', calStickyEditCurrent);
+  on('calStickyModeBtn', 'click', () => calStickySetEditMode(!calStickyEditMode));
+  on('calStickySaveBtn', 'click', () => { if (calStickySaveEdit()) showToast('已保存', 'success'); });
+  const editArea = calStickyEl('calStickyEditArea');
+  if (editArea) {
+    // 手動保存制：輸入只標記「未保存」，不再自動落盤（與桌面便利貼同口徑）
+    editArea.addEventListener('input', () => { calStickyEditDirty = true; calStickyMarkEditDirty(true); });
+  }
+  on('calStickyDeleteBtn', 'click', calStickyDeleteCurrent);
+  on('calStickyNewNoteBtn', 'click', () => { if (typeof calOpenNewNoteDialog === 'function') calOpenNewNoteDialog(); });
   on('calStickyPrevBtn', 'click', () => calStickyStep(-1));
   on('calStickyNextBtn', 'click', () => calStickyStep(1));
   on('calStickyUndone', 'click', calStickyToggleUndone);
