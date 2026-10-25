@@ -1184,7 +1184,8 @@
         const n = parseInt(ev && ev.sticky, 10) || 0;
         if (n > 0) {
           const key = ev.uid || ((ev.title || '') + '|' + (ev.date || ''));
-          const html = (typeof tlRenderNotes === 'function') ? tlRenderNotes(ev.notes, ev.uid || key) : '';
+          // 🆕 便利贴层：include(ro) 行程也全開编辑（落回來源檔），故传 forceEditable=true
+          const html = (typeof tlRenderNotes === 'function') ? tlRenderNotes(ev.notes, ev.uid || key, true) : '';
           // 🆕 标题同样由主窗口渲染（与列表行同一 tlRenderInlineMarkdown 管线），避免便利贴里显示原始 <BIG> 等标签
           const titleHtml = (typeof tlRenderInlineMarkdown === 'function') ? tlRenderInlineMarkdown(ev.title || '') : '';
           const titleNode = document.createElement('div');
@@ -1406,11 +1407,13 @@
     }
     // 備註渲染：uid 可編輯時依「最小 MD 表達單元」分塊，每塊非 checkbox 類型注入編輯小圓點；
     //   uid 為 null（節日 / tooltip）或唯讀事件 → 整段渲染，行為完全不變。
-    function tlRenderNotes(notes, uid) {
+    //   🆕 forceEditable：便利贴层对 include(ro) 行程全開（编辑落回來源檔，见 tlSaveIncludedEventNotes），
+    //      故便利贴渲染须传 true；行程視圖 / 事件表單維持 ro 唯讀（不顯示編輯小圓點）。
+    function tlRenderNotes(notes, uid, forceEditable) {
       if (!notes) return '';
       const raw = String(notes);
       const event = uid ? tlCalEvents.find((x) => x.uid === uid) : null;
-      const canEdit = !!(uid && event && !event.ro);
+      const canEdit = !!(uid && event && (!event.ro || forceEditable));
       if (!canEdit) {
         const withChecks = tlNotesWithChecks(raw, uid);
         return renderMarkdown(tlRenderTermDefs(withChecks));
@@ -1422,7 +1425,7 @@
       blocks.forEach((b) => {
         if (b.type === 'task') {
           // checkbox 行：保留既有「行內編輯小圓點」（編輯子事件），不加外層區塊圓點
-          out += tlRenderTermDefs(tlTaskLineHtml(lines[b.start], uid, b.start)) + '\n';
+          out += tlRenderTermDefs(tlTaskLineHtml(lines[b.start], uid, b.start, forceEditable)) + '\n';
           return;
         }
         const chunk = lines.slice(b.start, b.end + 1).join('\n');
@@ -1590,12 +1593,12 @@
     }
     // 單行 checkbox → 帶編輯小圓點 + 可交互勾選框的 HTML；非 task 行原樣回傳。
     //   i 為「整段 notes 的全域行索引」（保存回寫以此為準）。
-    function tlTaskLineHtml(line, uid, i) {
+    function tlTaskLineHtml(line, uid, i, forceEditable) {
       const m = line.match(/^(\s*)-\s+\[([ xX])\]\s?(.*)$/);
       if (!m) return line;
       const done = m[2] !== ' ';
       const event = uid && tlCalEvents.find((item) => item.uid === uid);
-      const editButton = uid && event && !event.ro
+      const editButton = uid && event && (!event.ro || forceEditable)
         ? '<button type="button" class="ev-md-edit" title="编辑 checkbox 子事件" onclick="tlOpenEditNoteCheckDialog(event,\'' +
           tlEscapeHtml(uid) + '\',' + i + ')">\u270e</button>'
         : '';

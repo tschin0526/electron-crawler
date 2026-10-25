@@ -74,6 +74,9 @@ function hideAllEdgeHandles() {
 }
 let editMode = false; // 内容模式：false＝渲染（Markdown 预览）/ true＝编辑（直接改原始 notes）
 let editDirty = false;// 编辑后是否有未保存改动（⌘S 才落盘）
+// 🆕 定位開關：當前便利貼窗的定位詞（空字串＝不高亮）。由本窗 ☰ 菜單的 combo 搜尋框（menuOnSearchInput/menuToggleLocate）驅動；
+//    刷新/翻頁只重打高亮、不改這個值（故換張或同步後高亮仍在）。
+let NOTE_HL = '';
 function geomId() { return IS_FLIP ? { key: FLIP_KEY, idx: FLIP_IDX } : { key: KEY, idx: IDX }; }
 
 let marked = null;
@@ -255,6 +258,7 @@ async function init() {
   if (!html && ev.notes) html = '<p>' + escapeHtml(ev.notes).replace(/\n/g, '<br>') + '</p>';
   document.getElementById('body').innerHTML = html;
   syncUndoneChecksFilter();
+  noteApplyHighlight(); // 🆕 依當前定位詞重打高亮
   // 新便利贴默认淡黄纸底（仅当用户未手动改过色时）；不再继承事件色，保持纸质便利贴观感
   if (!inst.color) state.color = STICKY_DEF_BG;
   // 勾选框填充色跟随事件色（与日历渲染一致：.ev-md-check.done .ev-cb 用事件色）
@@ -313,7 +317,18 @@ function setupControls() {
     if (!editMode) rereadStickyNoteTable(); // 按浮动按钮＝重新读表（编辑中有未保存改动时不覆盖）
     armEdgeHandlesAutoHide(); // 点击后从「此刻」重新计算 4 秒自动隐藏
     if (menu) menu.classList.toggle('open');
-    if (menu && menu.classList.contains('open')) loadStickyMenuNotes();
+    if (menu && menu.classList.contains('open')) {
+      // 🆕 開菜單＝清空搜尋，定位隨之強制關閉（內容消失→關；下次輸入再預設開）
+      const s = document.getElementById('mStickySearch');
+      if (s) s.value = '';
+      menuSearchQuery = '';
+      menuLocateOn = false;
+      menuLastQueryEmpty = true;
+      NOTE_HL = '';
+      noteApplyHighlight();
+      menuSyncLocate();
+      loadStickyMenuNotes();
+    }
   };
   ipcRenderer.on('sticky-note-catalog-updated', () => {
     if (menu && menu.classList.contains('open')) loadStickyMenuNotes();
@@ -1645,6 +1660,8 @@ function applyNoteContent(arg) {
     if (ev0 && ev0.notes) html = '<p>' + escapeHtml(ev0.notes).replace(/\n/g, '<br>') + '</p>';
   }
   document.getElementById('body').innerHTML = html;
+  // 🆕 定位高亮：渲染模式下把定位詞以 <mark> 標示在標題與內容
+  noteApplyHighlight();
   const ev = sourceEvent(KEY);
   if (ev || arg) {
     renderMeta(Object.assign({}, ev || {}, {
@@ -1699,6 +1716,66 @@ function applyDocBadge() {
     el.removeAttribute('title');
     el.classList.remove('show');
   }
+}
+// 🆕 定位高亮：把 root 內所有文本節點的命中片段包成 <mark class="search-highlight">（只碰文本節點，不破壞標籤結構）
+function noteWrapMatches(root, query) {
+  if (!root || !query) return;
+  const lower = query.toLowerCase();
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+    acceptNode(node) {
+      const p = node.parentNode;
+      if (!p) return NodeFilter.FILTER_REJECT;
+      const tag = p.nodeName.toLowerCase();
+      if (tag === 'style' || tag === 'script' || tag === 'noscript' ||
+          (tag === 'mark' && p.classList.contains('search-highlight'))) return NodeFilter.FILTER_REJECT;
+      if (!node.nodeValue || !node.nodeValue.trim()) return NodeFilter.FILTER_SKIP;
+      return NodeFilter.FILTER_ACCEPT;
+    }
+  });
+  const nodes = [];
+  let n;
+  while ((n = walker.nextNode())) nodes.push(n);
+  for (const textNode of nodes) {
+    const text = textNode.nodeValue;
+    const lowerText = text.toLowerCase();
+    const hits = [];
+    let idx = 0;
+    while ((idx = lowerText.indexOf(lower, idx)) !== -1) { hits.push([idx, idx + query.length]); idx += query.length; }
+    if (!hits.length) continue;
+    const parent = textNode.parentNode;
+    const frag = document.createDocumentFragment();
+    let cursor = 0;
+    for (const h of hits) {
+      if (h[0] > cursor) frag.appendChild(document.createTextNode(text.slice(cursor, h[0])));
+      const mark = document.createElement('mark');
+      mark.className = 'search-highlight';
+      mark.textContent = text.slice(h[0], h[1]);
+      frag.appendChild(mark);
+      cursor = h[1];
+    }
+    if (cursor < text.length) frag.appendChild(document.createTextNode(text.slice(cursor)));
+    parent.replaceChild(frag, textNode);
+  }
+}
+// 摘掉 #body / #title 內所有 search-highlight 標記，還原文本（冪等）
+function noteUnwrapHighlights() {
+  ['body', 'title'].forEach((id) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.querySelectorAll('mark.search-highlight').forEach((m) => {
+      const p = m.parentNode;
+      if (!p) return;
+      p.replaceChild(document.createTextNode(m.textContent), m);
+      p.normalize();
+    });
+  });
+}
+// 依當前 NOTE_HL 重打高亮（先清再打，重複呼叫也安全）
+function noteApplyHighlight() {
+  noteUnwrapHighlights();
+  if (!NOTE_HL) return;
+  noteWrapMatches(document.getElementById('body'), NOTE_HL);
+  noteWrapMatches(document.getElementById('title'), NOTE_HL);
 }
 // 当前事件对象：优先本地解析（calendar.md 正式档）；本地没有则用主程式推来的 ref
 //   ⚠️ 只有「外部 include 来源」(meta.src 非空) 才回退到 ref：正式档的事件若被删掉，
@@ -1772,6 +1849,8 @@ function updateMenuTheme() {
 function applyColor() {
   const hex = tint(state.color, state.opacity);
   document.getElementById('note').style.background = hex;
+  // 🆕 紙張實色（不隨透明度變淡）：供搜尋高標做 reverse（字=紙色、底=字色）時取用，保證對比與可讀
+  document.getElementById('note').style.setProperty('--note-bg', tint(state.color, 100));
   document.getElementById('bar').style.background = state.color;
   // ＋☐ 浮层盒与便利贴同背景色（取实色 tint(…,100)，不随透明度变淡，保证浮层可读）；文字色经 --note-fg 继承
   const acBox = document.getElementById('addCheckBox');
@@ -1924,6 +2003,7 @@ async function renderNoteContent() {
   if (titleHtml) titleEl.innerHTML = titleHtml; else titleEl.textContent = ev.title;
   if (!html && ev.notes) html = '<p>' + escapeHtml(ev.notes).replace(/\n/g, '<br>') + '</p>';
   document.getElementById('body').innerHTML = html;
+  noteApplyHighlight(); // 🆕 依當前定位詞重打高亮
   syncUndoneChecksFilter();
   renderMeta(ev);
   renderTags(ev);
@@ -2396,6 +2476,52 @@ function persistFlipPosition() {
   });
 }
 
+// 🆕 便利貼窗 ☰ 菜單 combo 搜尋框：定位開關（locate toggle）—— 過濾翻頁清單 + 以 reverse 高亮當前這張
+//   規則（與手機端／LITE 一致）：有搜尋內容時預設開啟（可手動關）；無內容時固定關閉（disabled，不可開啟）。
+let menuSearchQuery = '';   // 目前查詢詞（已 trim + 轉小寫）
+let menuLocateOn = false;   // 使用者意圖：預設開 / 手動關
+let menuLastQueryEmpty = true; // 上一次查詢是否為空（用於「內容出現→預設開」的轉場判斷）
+function menuGetQuery() {
+  const el = document.getElementById('mStickySearch');
+  return (((el && el.value) || '').trim().toLowerCase());
+}
+function menuLocateEffective() { return menuLocateOn && !!menuGetQuery(); }
+// 搜尋框 oninput：轉場（空→非空預設開／非空→空強制關）→ 同步開關 → 重過濾清單 → 即時高亮當前張
+function menuOnSearchInput() {
+  const q = menuGetQuery();
+  const empty = !q;
+  if (!empty && menuLastQueryEmpty) menuLocateOn = true; // 內容剛出現 → 預設開啟
+  if (empty) menuLocateOn = false;                       // 內容消失 → 強制關閉
+  menuLastQueryEmpty = empty;
+  menuSearchQuery = q;
+  menuSyncLocate();
+  menuApplyLocate();
+  loadStickyMenuNotes();
+}
+// 手動點擊定位開關（無內容時 disabled，不可開啟）
+function menuToggleLocate() {
+  if (!menuGetQuery()) return;
+  menuLocateOn = !menuLocateOn;
+  menuSyncLocate();
+  menuApplyLocate();
+}
+// 把目前定位狀態反映到 NOTE_HL 並重打高亮（渲染模式；編輯模式下 body 隱藏，重打也無害）
+function menuApplyLocate() {
+  NOTE_HL = menuLocateEffective() ? menuGetQuery() : '';
+  noteApplyHighlight();
+}
+// 同步定位按鈕的 disabled / aria-pressed / 文字狀態
+function menuSyncLocate() {
+  const btn = document.getElementById('mStickyLocateBtn');
+  if (!btn) return;
+  const q = menuGetQuery();
+  const on = menuLocateOn && !!q;
+  btn.disabled = !q;
+  btn.setAttribute('aria-pressed', String(on));
+  btn.classList.toggle('on', on);
+  btn.textContent = on ? '📍 定位：開' : '📍 定位';
+}
+
 async function loadStickyMenuNotes() {
   const wrap = document.getElementById('mStickyListWrap');
   const list = document.getElementById('mStickyList');
@@ -2410,6 +2536,16 @@ async function loadStickyMenuNotes() {
     const pageNotes = result && Array.isArray(result.order) ? result.order : allNotes.filter(note => note.isOpen);
     const inactiveNotes = mode === 'flip' ? allNotes.filter(note => !note.isOpen) : [];
     const notes = mode === 'flip' ? pageNotes : allNotes;
+    // 🆕 combo 搜尋：依目前查詢詞過濾清單（標題＋內容，不區分大小寫）；空查詢＝不過濾
+    const q = menuSearchQuery;
+    const menuMatch = (item) => {
+      if (!q) return true;
+      const hay = (String(item.title || item.key || '') + ' ' + String(item.notes || '')).toLowerCase();
+      return hay.indexOf(q) >= 0;
+    };
+    const pageShown = pageNotes.filter(menuMatch);
+    const inactiveShown = inactiveNotes.filter(menuMatch);
+    const notesShown = notes.filter(menuMatch);
     // 🆕 这份清单是「现场查询」的结果，而翻页窗的 flipOrder 只是开窗那一刻的快照；
     //    这里顺手对齐，让「第 N / T 张」与这份清单永远同一来源（只换清单与页次，不动画面内容）
     if (IS_FLIP && mode === 'flip' && Array.isArray(result.order)) {
@@ -2419,13 +2555,17 @@ async function loadStickyMenuNotes() {
     // 标题写清算术：翻页张数 / 未开启张数 分开讲，避免把「未开启」的行数也算成页数
     // 🆕 一行化（省纵向空间）：可见文案只留「翻页清单 N 张（另有 M 张未开启）」，超出宽度自动省略号；
     //    完整说明（怎么操作、未开启为何不计入）放 title tooltip。分体模式同一套处理。
+    // 🆕 搜尋時標題改顯示「符合 N 項」（與手機端清單同調），讓使用者知道過濾出了幾張。
+    const matchCount = pageShown.length + inactiveShown.length;
     const flipFull = '翻页清单 ' + pageNotes.length + ' 张'
       + (inactiveNotes.length ? '（另有 ' + inactiveNotes.length + ' 张未开启，不计入翻页）' : '')
       + '：点击名称显示，点开 / 关切换';
-    listTitle.textContent = mode === 'flip'
-      ? '翻页清单 ' + pageNotes.length + ' 张'
-        + (inactiveNotes.length ? '（另有 ' + inactiveNotes.length + ' 张未开启）' : '')
-      : '已设定的便利贴';
+    listTitle.textContent = q
+      ? ('符合 ' + matchCount + ' 項')
+      : (mode === 'flip'
+        ? '翻页清单 ' + pageNotes.length + ' 张'
+          + (inactiveNotes.length ? '（另有 ' + inactiveNotes.length + ' 张未开启）' : '')
+        : '已设定的便利贴');
     listTitle.title = mode === 'flip' ? flipFull : '已设定的便利贴（点击名称显示；点击开 / 关切换）';
     list.replaceChildren();
     const appendNoteRow = (item, index) => {
@@ -2457,17 +2597,29 @@ async function loadStickyMenuNotes() {
       row.append(indexEl, nameEl, stateEl);
       list.appendChild(row);
     };
-    notes.forEach(appendNoteRow);
-    if (inactiveNotes.length) {
+    notesShown.forEach(appendNoteRow);
+    if (inactiveShown.length) {
       const inactiveTitle = document.createElement('div');
       inactiveTitle.className = 'm-sticky-list-inactive-title';
       inactiveTitle.textContent = '未开启（不计入翻页 · 点「开」才加入）';
       list.appendChild(inactiveTitle);
       // ⚠️ 未开启项「不编号」：以前从 1 再数一遍，视觉上会和上方页次连成一片，
       //    让人误以为总页数是「已开启 + 未开启」（例：9 页 + 3 张未开启 = 看成 12 张）
-      inactiveNotes.forEach((item) => appendNoteRow(item, null));
+      inactiveShown.forEach((item) => appendNoteRow(item, null));
     }
-    wrap.classList.toggle('open', notes.length > 0 || inactiveNotes.length > 0);
+    // 🆕 有查詢但一張都不符合：給一句提示（與手機端「沒有符合」同調）
+    if (q && matchCount === 0) {
+      const empty = document.createElement('div');
+      empty.className = 'm-sticky-list-title';
+      empty.style.padding = '6px 9px';
+      empty.textContent = '沒有符合「' + q + '」的便利貼';
+      list.appendChild(empty);
+    }
+    // ⚠️ 展開與否只根據「整份清單有沒有便利貼」——**不可**因為過濾後 0 符合就移除 .open：
+    //    搜尋框就在這個框裡，一移除 .open 會連標題＋搜尋框＋清單整個 display:none，
+    //    使用者一輸入查不到的字就全消失、連清除都做不到（2026-10-25 實測回饋）。
+    //    0 符合時保留展開，改在清單區顯示「沒有符合」提示即可。
+    wrap.classList.toggle('open', allNotes.length > 0);
   } catch (error) {
     if (requestSeq !== stickyMenuLoadSeq) return;
     console.error('[StickyNote] 读取便利贴清单失败:', error);
@@ -2534,6 +2686,7 @@ async function renderFlipPage(i) {
   if (titleHtml) titleEl.innerHTML = titleHtml; else titleEl.textContent = ev.title;
   if (!html && ev.notes) html = '<p>' + escapeHtml(ev.notes).replace(/\n/g, '<br>') + '</p>';
   document.getElementById('body').innerHTML = html;
+  noteApplyHighlight(); // 🆕 依當前定位詞重打高亮
   syncUndoneChecksFilter();
   applyColor();
   applyContentFont();

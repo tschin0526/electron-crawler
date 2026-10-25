@@ -3013,25 +3013,35 @@ function renderEventsList(content) {
     html += (ds === highlight) ? '<div class="ev-date-group sel-date">' + g + '</div>' : g;
   }
   list.innerHTML = html;
-  // 滾動到錨點日（今天，或 < > 導航到的日期）；錨點日不在列表 → 滾到最近未來日
+  // 滾動不在本函式內做：由 renderEventsContent → calQueueScrollActiveViewToToday（今天／最近日）擇機滾動
 }
 
-// 自動滾動到離今天最近的日期懸浮條（優先今天，其次最近未來日期，最後最後一個）
+// 自動滾動到「離今天最近、且有行程資料的那一天」
+// 規則：優先今天（距離 0）；今天無行程則取「日期距離最小」的那一天（過去或未來皆可，按絕對天數就近）；
+//       天數相同（如今天前後各一天）則取較早的日期（過去那天），確保結果確定。
 // ⚠️ 用 calScrollElToTop 而不是 scrollIntoView：`.ev-date` 吸頂後 rect 是「位移後」的位置，
 //    scrollIntoView 會誤判「已在視口內」而不滾（與 2026-09-19 那個單向滾動 bug 同源）。
+function calDayDiff(a, b) {
+  // a, b: 'YYYY-MM-DD'；回傳整數天數差 a - b（走 UTC，不受時區/夏令時影響）
+  const pa = a.split('-').map(Number), pb = b.split('-').map(Number);
+  const da = Date.UTC(pa[0], pa[1] - 1, pa[2]);
+  const db = Date.UTC(pb[0], pb[1] - 1, pb[2]);
+  return Math.round((da - db) / 86400000);
+}
 function scrollToNearestDate(list) {
   if (!list) return;
-  const headers = list.querySelectorAll('.ev-date[data-ev-date]');
+  const headers = Array.from(list.querySelectorAll('.ev-date[data-ev-date]'));
   if (!headers.length) return;
   const today = calendarFmtDate(new Date());
-  let pick = null;
-  // 1. 精確匹配今天
-  for (let i = 0; i < headers.length; i++) if (headers[i].dataset.evDate === today) { pick = headers[i]; break; }
-  // 2. 找最近未來日期
-  if (!pick) for (let i = 0; i < headers.length; i++) if (headers[i].dataset.evDate > today) { pick = headers[i]; break; }
-  // 3. 全是過去日期 → 滾到最後一個
-  if (!pick) pick = headers[headers.length - 1];
-  calScrollElToTop(pick, list);
+  let best = headers[0], bestDist = Infinity;
+  for (const h of headers) {
+    const dist = Math.abs(calDayDiff(h.dataset.evDate, today));
+    // 距離相同：優先較早的日期（過去那天），結果確定
+    if (dist < bestDist || (dist === bestDist && h.dataset.evDate < best.dataset.evDate)) {
+      best = h; bestDist = dist;
+    }
+  }
+  calScrollElToTop(best, list);
 }
 
 // 列表模式：< > 逐日移動「選中日」（金色描邊隨其移動）並滾動到該日
@@ -3592,7 +3602,9 @@ function calScrollActiveViewToToday() {
     if (elements.evDayList) calScrollListToDate(elements.evDayList, elements.evDayList, today);
   } else if (state.calMode === 'year') {
     calScrollYearToCurrentMonth();
-    if (state.calScope === 'full') calScrollListToDate(elements.evYearDayList, elements.evYearDayList, today);
+    // 與列表模式同款：今天無行程時滾到「離今天絕對距離最小、且有行程」的那一天（過去/未來皆可，tie 取較早日），
+    // 不再像 calScrollListToDate 只偏好未來日。年網格本身仍置中當月（calScrollYearToCurrentMonth）。
+    if (state.calScope === 'full') scrollToNearestDate(elements.evYearDayList);
   } else {
     const scroller = document.querySelector('#ev-week-wrap .ev-timegrid-scroll');
     if (scroller) {
@@ -3649,7 +3661,9 @@ function calQueueScrollActiveViewToToday() {
     const today = calendarFmtDate(new Date());
     if (mode === 'list') {
       pane = elements.eventsList;
-      target = pane && pane.querySelector('.ev-date[data-ev-date="' + today + '"]');
+      // 今天無行程時也要能滾：只要有任何「有行程的日期」就放行，由 calScrollActiveViewToToday
+      // → scrollToNearestDate 選「離今天最近」的那一天（過去或未來皆可），不再因 target 為 null 而整個略過
+      target = pane && pane.querySelector('.ev-date[data-ev-date]');
     } else if (mode === 'month') {
       pane = document.querySelector('#ev-month-wrap .ev-month-scroll');
       target = elements.evMonthGrid && elements.evMonthGrid.querySelector('.ev-cell.today');

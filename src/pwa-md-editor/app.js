@@ -8,7 +8,7 @@ const VIEWS = ['edit', 'preview', 'split', 'events'];
 
 // 📌 應用版本號（單一可信來源）。
 // 每次改動都要 +1，方便在手機上確認跑的是不是最新版（狀態列左下角會顯示）。
-const APP_VERSION = '0.7.63';
+const APP_VERSION = '1.8.9';
 
 // 可處理的文字檔副檔名白名單（對齊 todo 編輯器 TEXT_EXTS，取常用子集）
 const TEXT_EXTS = [
@@ -116,6 +116,9 @@ const state = {
 const elements = {
   btnOpen: document.getElementById('btn-open'),
   btnSave: document.getElementById('btn-save'),
+  btnSaveCaret: document.getElementById('btn-save-caret'),
+  btnSaveMenu: document.getElementById('btn-save-menu'),
+  btnSaveCombo: document.getElementById('btn-save-combo'),
   btnReset: document.getElementById('btn-reset'),
   btnTheme: document.getElementById('btn-theme'),
   fileInput: document.getElementById('file-input'),
@@ -312,8 +315,31 @@ function setupEventListeners() {
 
   elements.fileInput.addEventListener('change', handleFileSelect);
 
-  // 保存文件
-  elements.btnSave.addEventListener('click', handleSave);
+  // 保存文件：主按鈕＝保存全部（等同原本行為：主檔＋所有待寫回聯運檔）
+  elements.btnSave.addEventListener('click', () => handleSave('all'));
+
+  // 🆕 保存 combo：右側 ▾ 下拉徽標 → 展開「選擇要保存的檔案」選單
+  if (elements.btnSaveCaret) {
+    elements.btnSaveCaret.addEventListener('click', (e) => {
+      e.stopPropagation();   // 避免觸發下面的 document 外部點擊關閉
+      e.preventDefault();
+      toggleSaveMenu();
+    });
+  }
+  // 選單項目：點擊＝只存該檔（handleSave 會遞減角標）
+  if (elements.btnSaveMenu) {
+    elements.btnSaveMenu.addEventListener('click', (e) => {
+      const item = e.target.closest('.btn-save-menu-item');
+      if (!item) return;
+      const target = item.dataset.saveTarget;
+      closeSaveMenu();
+      if (target) handleSave(target);
+    });
+  }
+  // 點擊頁面其它地方關閉保存選單
+  document.addEventListener('click', (e) => {
+    if (e.target.closest && !e.target.closest('#btn-save-combo')) closeSaveMenu();
+  });
 
   // 重置：清除所有緩存並重新載入整個應用
   elements.btnReset.addEventListener('click', handleReset);
@@ -922,13 +948,27 @@ async function handleReset() {
   }
 }
 
-// 保存文件
-async function handleSave() {
-  const rawContent = elements.editor.value;
+// 保存文件。
+//   target（可選）：
+//     'all'（預設）＝ 原本行為：主檔＋所有待寫回聯運檔一次存（頂欄「保存」主按鈕＝此值）；
+//     'main'        ＝ 只存主檔，不動聯運檔；
+//     'include:<檔名>' ＝ 只存指定聯運檔（角標會隨之遞減）。
+async function handleSave(target) {
+  target = target || 'all';
+  const onlyInclude = (typeof target === 'string' && target.indexOf('include:') === 0)
+    ? target.slice('include:'.length) : null;
+  // 要匯出的聯運檔清單（依 target 縮減：只存某一個聯運檔 / 只存主檔＝空 / 全部＝所有 pending）
+  const wantIncludes = onlyInclude
+    ? [onlyInclude]
+    : (target === 'main' ? [] : calPendingIncludes().map((f) => f.name));
 
-  // 📎 多檔聯運：先把「有修改還沒寫回原檔」的聯運檔點名。iOS 一次只能開一個分享面板，
-  //    所以主檔與聯運檔要嘛一起送（一次面板存全部），要嘛分開送；這裡統一交給 calExportIncludes 決定。
-  const pendingIncludes = (typeof calPendingIncludes === 'function') ? calPendingIncludes() : [];
+  // 只存單一聯運檔：完全不碰主檔（dirty 角標由 calRenderIncludeBar 在匯出後自動遞減）
+  if (onlyInclude) {
+    if (typeof calSaveIncludeFile === 'function') await calSaveIncludeFile(onlyInclude);
+    return;
+  }
+
+  const rawContent = elements.editor.value;
 
   // 🆕 todo 卡片模式：把改後的正文合回原始物件再整體序列化，
   //    確保 tags / bgColor / attachments / createdAt / completedAt 等附加字段一個不丟。
@@ -944,10 +984,16 @@ async function handleSave() {
     saveAsJson = true;
   }
 
+  // 只存主檔但主檔沒改 → 無東西可存（聯運檔另有下拉清單可個別存）
+  if (target === 'main' && !state.isDirty && state.currentFile) {
+    showToast('主檔沒有修改，無需保存', 'info');
+    return;
+  }
+
   // 只改了聯運檔（主檔緩衝沒動）：不要把主檔再存一次，直接匯出聯運檔
   //   —— 否則 iOS 會為一個「沒改的主檔」也彈一次分享面板
-  if (!state.isDirty && state.currentFile && pendingIncludes.length) {
-    await calExportIncludes(pendingIncludes.map((f) => f.name));
+  if (!state.isDirty && state.currentFile && wantIncludes.length) {
+    await calExportIncludes(wantIncludes);
     return;
   }
 
@@ -1004,8 +1050,8 @@ async function handleSave() {
           ? `已合併保存 todo 卡片：${state.currentFile.name}`
           : `已保存：${state.currentFile.name}`, 'success');
         // 📎 聯運檔也待寫回時，順手逐檔存回（桌面走 picker，直接寫進所選路徑）
-        if (pendingIncludes.length && typeof calExportIncludes === 'function') {
-          await calExportIncludes(pendingIncludes.map((f) => f.name));
+        if (wantIncludes.length && typeof calExportIncludes === 'function') {
+          await calExportIncludes(wantIncludes);
         }
       } catch (abortErr) {
         // 用戶在保存對話框點取消（AbortError）—— 靜默，不算錯誤
@@ -1016,8 +1062,8 @@ async function handleSave() {
       // 首選系統分享面板（可選「儲存到檔案」直接覆蓋原檔），不行才退回下載。
       // 📎 若同時有聯運檔待寫回：**一次分享面板送出整批**（主檔在前），
       //    使用者在「儲存到檔案」裡選一次資料夾就把所有檔案一起存回去，不必連點多次。
-      if (pendingIncludes.length && typeof calExportIncludes === 'function') {
-        const res = await calExportIncludes(pendingIncludes.map((f) => f.name), {
+      if (wantIncludes.length && typeof calExportIncludes === 'function') {
+        const res = await calExportIncludes(wantIncludes, {
           extra: [{ name: state.currentFile.name, content }],
           silent: true   // 整批結果由這裡統一回報，避免兩個 toast 互相蓋掉
         });
@@ -1025,7 +1071,7 @@ async function handleSave() {
         state.isDirty = false;
         state.lastContent = rawContent;
         if (saveAsJson) state.originalTodo = JSON.parse(content);
-        showToast('已送出 ' + (pendingIncludes.length + 1) + ' 個檔案（主檔＋聯運檔）：在分享面板選「儲存到檔案」→ 選原資料夾 → 覆蓋', 'success');
+        showToast('已送出 ' + (wantIncludes.length + 1) + ' 個檔案（主檔＋聯運檔）：在分享面板選「儲存到檔案」→ 選原資料夾 → 覆蓋', 'success');
       } else {
         const how = await saveViaMobile(content, state.currentFile.name);
         state.isDirty = false;
@@ -1051,6 +1097,56 @@ async function handleSave() {
     showToast(`保存失敗：${error.message}`, 'error');
   }
 }
+
+// 🆕 保存 combo：下拉選單列出「可保存的檔案」（主檔＋各待寫回聯運檔），點選只存那一份
+function renderSaveMenu() {
+  const menu = elements.btnSaveMenu;
+  if (!menu) return;
+  menu.innerHTML = '';
+  const items = [];
+  if (state.isDirty && state.currentFile) {
+    items.push({ label: state.currentFile.name, sub: '主檔', target: 'main' });
+  }
+  const inc = (typeof calPendingIncludes === 'function') ? calPendingIncludes() : [];
+  inc.forEach((f) => items.push({ label: f.name, sub: '聯運檔', target: 'include:' + f.name }));
+  if (!items.length) {
+    const empty = document.createElement('div');
+    empty.className = 'btn-save-menu-empty';
+    empty.textContent = '沒有未保存的修改';
+    menu.appendChild(empty);
+    return;
+  }
+  items.forEach((it) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'btn-save-menu-item';
+    b.setAttribute('role', 'menuitem');
+    b.dataset.saveTarget = it.target;
+    b.innerHTML = '<span class="bmi-ic">📄</span>' +
+      '<span class="bmi-name"></span><span class="bmi-sub"></span>';
+    b.querySelector('.bmi-name').textContent = it.label;
+    b.querySelector('.bmi-sub').textContent = it.sub;
+    menu.appendChild(b);
+  });
+}
+
+function toggleSaveMenu(force) {
+  const combo = elements.btnSaveCombo;
+  const menu = elements.btnSaveMenu;
+  const caret = elements.btnSaveCaret;
+  if (!combo || !menu || !caret) return;
+  const open = (typeof force === 'boolean') ? force : menu.hasAttribute('hidden');
+  if (open) {
+    renderSaveMenu();
+    menu.removeAttribute('hidden');
+    caret.setAttribute('aria-expanded', 'true');
+  } else {
+    menu.setAttribute('hidden', '');
+    caret.setAttribute('aria-expanded', 'false');
+  }
+}
+
+function closeSaveMenu() { toggleSaveMenu(false); }
 
 // 詢問檔名（新文件保存時）；取消返回 null
 function promptFilename(fallback) {
@@ -1320,6 +1416,11 @@ function updateStatus() {
   elements.statusText.textContent = status;
   elements.btnSave.disabled = !canSave;
   elements.btnSave.style.opacity = canSave ? '1' : '0.5';
+  if (elements.btnSaveCaret) {
+    elements.btnSaveCaret.disabled = !canSave;
+    elements.btnSaveCaret.style.opacity = canSave ? '1' : '0.5';
+    if (!canSave) closeSaveMenu();
+  }
   elements.btnSave.title = incDirty
     ? (state.isDirty
         ? '保存主檔，並匯出 ' + incDirty + ' 個聯運檔（一次分享面板可全部存回）'

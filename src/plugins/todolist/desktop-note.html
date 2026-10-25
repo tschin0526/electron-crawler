@@ -202,6 +202,12 @@
     .body code { background: rgba(0,0,0,.06); padding: 0 3px; border-radius: 3px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .95em; }
     .body pre { background: rgba(0,0,0,.06); padding: 8px; border-radius: 6px; overflow: auto; }
     .body pre code { background: none; padding: 0; }
+    /* 🆕 定位高亮：reverse 渲染（字/底對調）——底＝便利貼字色(--note-fg)、字＝紙張實色(--note-bg)，
+       與金色 TERM 膠囊明確區分；對比度由便利貼自身的字/底配對保證，深淺便條上都清楚 */
+    .body mark.search-highlight, .title mark.search-highlight {
+      background: var(--note-fg, #000); color: var(--note-bg, #FFF3B0);
+      padding: 0 2px; border-radius: 2px; font-weight: 700;
+    }
     .body .katex { font-size: 1em; }
     /* 📝 備註 Markdown checkbox：樣式與 Calendar 對齊；只讓方框可勾選，編輯圓點獨立操作 */
     .ev-cb {
@@ -306,6 +312,19 @@
     .m-sticky-list-title { padding: 2px 9px 3px; color: var(--menu-muted, #6b7280); font-size: 10px; text-align: center;
       white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .m-sticky-list-inactive-title { margin-top: 4px; padding: 5px 9px 3px; border-top: 1px solid var(--menu-divider, rgba(0,0,0,.10)); color: var(--menu-muted, #6b7280); font-size: 10px; text-align: center; }
+    /* 🆕 combo 搜尋框：搜尋 input ＋ 定位開關並排（置於翻頁清單上方，與手機端 ☰ 清單同一边） */
+    .m-sticky-search-wrap { display: flex; align-items: stretch; gap: 5px; padding: 4px 7px 2px; }
+    .m-sticky-search { flex: 1; min-width: 0; box-sizing: border-box; padding: 4px 8px;
+      border: 1px solid var(--menu-divider, rgba(0,0,0,.18)); border-radius: 6px;
+      background: var(--menu-bg, #fff); color: var(--note-fg, #1f2430);
+      font: inherit; font-size: 12px; }
+    .m-sticky-search::placeholder { color: var(--menu-muted, #6b7280); opacity: .85; }
+    .m-sticky-search:focus { outline: none; border-color: var(--ev-primary, #7c3aed); }
+    .m-sticky-locate { flex: none; padding: 0 8px; border: 1px solid var(--menu-divider, rgba(0,0,0,.18)); border-radius: 6px;
+      background: transparent; color: var(--menu-muted, #6b7280);
+      font: inherit; font-size: 11px; cursor: pointer; white-space: nowrap; }
+    .m-sticky-locate:disabled { opacity: .4; cursor: not-allowed; }
+    .m-sticky-locate.on { border-color: var(--ev-primary, #7c3aed); color: var(--ev-primary, #7c3aed); }
     .m-sticky-list-items { max-height: 120px; overflow-y: auto; }
     .m-sticky-item { display: flex; align-items: center; gap: 4px; }
     .m-sticky-item-index { flex: none; width: 20px; color: var(--menu-muted, #6b7280); font-size: 11px; text-align: right; font-variant-numeric: tabular-nums; }
@@ -469,6 +488,12 @@
       <button class="mi" id="miEmail" title="把这张便利贴的内容发送邮件">📧 发邮件</button>
       <div class="m-sticky-list" id="mStickyListWrap">
         <div class="m-sticky-list-title" id="mStickyListTitle" title="已设定的便利贴（点击名称显示；点击开 / 关切换）">已设定的便利贴</div>
+        <!-- 🆕 combo 搜尋框：過濾下方翻頁清單 ＋ 定位開關（與手機端便利貼 ☰ 清單同一边）。
+             有搜尋內容時定位預設開啟（可手動關）、無內容時固定關閉；開啟時以 reverse 高亮當前這張的命中。 -->
+        <div class="m-sticky-search-wrap">
+          <input type="search" class="m-sticky-search" id="mStickySearch" placeholder="搜尋便利貼（標題／內容）" autocomplete="off" spellcheck="false" oninput="menuOnSearchInput()">
+          <button type="button" class="m-sticky-locate" id="mStickyLocateBtn" aria-pressed="false" disabled title="定位開關：開啟後以 reverse 高亮標示搜尋結果（無搜尋內容時固定關閉）" onclick="menuToggleLocate()">📍 定位</button>
+        </div>
         <div class="m-sticky-list-items" id="mStickyList"></div>
       </div>
       <button class="mi" id="miUndoneChecks" aria-pressed="false">只显示未完成 checkbox：关</button>

@@ -29,7 +29,11 @@
     <header class="toolbar region" data-page-node-id="H1799o7Bi43iFcVqikgGoy">
       <div class="toolbar-left" data-page-node-id="3Bhm48LoEza4EaPuCBP0eM">
         <button id="btn-open" class="btn btn-secondary" title="開啟檔案（可一次多選）：calendar.md 為主檔，行程本體可編輯；同批其他 calendar*.md 自動作為只讀聯運——行程不可編輯，只有便利貼內容可改" data-page-node-id="jBuTh5OaGcNyn4H9q1NSLY">開啟</button>
-        <button id="btn-save" class="btn btn-secondary" title="保存文件到 iCloud" data-page-node-id="xI9aHNProtF19uKHlU9Iy2">保存<span class="btn-badge" id="btn-save-badge" style="display:none">0</span></button>
+        <div class="btn-save-combo" id="btn-save-combo">
+          <button id="btn-save" class="btn btn-secondary btn-save-main" title="保存全部（主檔＋所有待寫回的聯運檔）" data-page-node-id="xI9aHNProtF19uKHlU9Iy2">保存<span class="btn-badge" id="btn-save-badge" style="display:none">0</span></button>
+          <button id="btn-save-caret" class="btn btn-secondary btn-save-caret" type="button" title="選擇要保存的檔案" aria-haspopup="true" aria-expanded="false">▾</button>
+          <div class="btn-save-menu" id="btn-save-menu" role="menu" hidden></div>
+        </div>
         <button id="btn-reset" class="btn btn-secondary" title="清除所有緩存並重新載入應用" data-page-node-id="OFInZmGq0dd8SGCfjeFRp2">重置</button>
       </div>
       <div class="toolbar-center" data-page-node-id="DBVXYuSyz7BpTGkEZ2IiLj">
@@ -484,6 +488,12 @@
             <button type="button" class="cal-sticky-top-btn" id="calStickySheetClose" aria-label="關閉清單與設定">✕</button>
           </div>
           <div class="cal-sticky-sheet-body">
+            <div class="cal-sticky-search-wrap">
+              <input type="search" class="cal-sticky-search" id="calStickySearch" placeholder="搜尋便利貼（標題／內容）" autocomplete="off" spellcheck="false" oninput="calStickyOnSearchInput()">
+              <!-- 🆕 combo 搜尋框：定位開關。有搜尋內容時預設開啟（可手動關），無內容時固定關閉（disabled） -->
+              <button type="button" class="cal-sticky-locate" id="calStickyLocateBtn" aria-pressed="false" disabled
+                title="定位開關：開啟後在便利貼渲染模式以高亮標示搜尋結果（無搜尋內容時固定關閉）" onclick="calStickyToggleLocate()">📍 定位</button>
+            </div>
             <div class="cal-sticky-list-title" id="calStickyListTitle"></div>
             <div class="cal-sticky-list" id="calStickyList"></div>
             <button type="button" class="cal-sticky-toggle" id="calStickyUndone" aria-pressed="false">只顯示未完成 checkbox：關</button>

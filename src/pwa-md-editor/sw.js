@@ -239,7 +239,63 @@
 //      calAutoScrollToTodayPending（startup 守衛只觸發一次），隨後 calReplaceIncludes 重建列表把滾動
 //      重置到頂部、flag 已為 false 不再滾；改在 calReplaceIncludes 的「最終併入後」渲染前重設 flag。
 //      calendar-editor.js 改，bump 讓手機重拉
-const CACHE_NAME = 'md-editor-lite-v160';
+// v161：手機 LITE 只讀（ro / include）事件的「完成」checkbox 補視覺暗化——HTML 早已加 disabled（不觸發
+//       change/click，故本就點不動），但缺 .ev-check:disabled 暗化 CSS，導致看起來「亮的但點不動」；
+//       補 .ev-item .ev-check:disabled { cursor:default; opacity:.45 } 對齊桌面。style.css 改，bump 讓手機重拉
+// v162：手機版主版本號升版 0 → 1（1.8.0）——APP_VERSION 與 manifest.json 長期停在 0.x 不恰當；
+//       app.js APP_VERSION '0.7.64'→'1.8.0'、manifest.json version '0.8.0'→'1.8.0' 拉齊（原兩者已不同步）；
+//       CACHE_NAME 跟進 v161→v162（app.js 內容變更，須讓手機重拉最新資源）。純版本號維護，無功能變動。
+// v163：頂欄「保存」按鈕改為 combo——主按鈕＝保存全部（原行為），右側 ▾ 下拉可選單一檔案保存
+//       （只存主檔 / 只存某個聯運檔），dirty 角標隨之遞減。app.js/style.css/index.html 改，bump 讓手機重拉；
+//       APP_VERSION 與 manifest.json 同步 1.8.0→1.8.1。
+// v164：修正保存 combo 下拉選單定位——原 right:0 讓選單向左延伸出螢幕左緣、裁掉檔名開頭；
+//       改 left:0（按鈕在頂部最左，向右展開）並加 max-width 防極窄屏溢出。純 style.css 改，bump 讓手機重拉；
+//       APP_VERSION 與 manifest.json 同步 1.8.1→1.8.2。
+// v165：列表模式按「今天」、今天無行程時不再「一動不動」——calQueueScrollActiveViewToToday 的 list 分支
+//       原把 target 限定為「今天那天的 .ev-date 頭」，今天無行程→target=null→整個滾動流程被略過；
+//       改為「只要有任一有行程的日期就放行」。scrollToNearestDate 同步由「只找最近未來日」改為
+//       「取離今天絕對距離最小的有行程日」（過去/未來皆可，天數相同取較早日），並補 calDayDiff 輔助。
+//       calendar-editor.js 改，bump 讓手機重拉；APP_VERSION 與 manifest.json 同步 1.8.2→1.8.3。
+// v166：收緊列表事件項「內容行」行盒——原 TERM 膠囊 line-height 1.7（高 ~25px）、標籤膠囊 line-height 1.35 + padding 3px、
+//       ✎ 最小高 17px，把標題行（被撐到 ~48px）與 notes 內 checkbox 子事件行（被撐到 ~25px）整行撐高，視覺上「內容行間距太大」。
+//       改 TERM 膠囊 line-height 1.7→1.3 + padding 0 .55em→0 .5em + font .9em→.88em、標籤膠囊 line-height 1.35→1.2 + padding 3px 12px→2px 10px、
+//       ✎ 最小 17px→15px + vertical-align -.2em→-.15em；行盒降約 24%（checkbox 子事件行 25→19px、TERM 膠囊 25→17-20px）。
+//       純 style.css 改，bump 讓手機重拉；APP_VERSION 與 manifest.json 同步 1.8.3→1.8.4。
+// v167：進一步收緊列表事件項「內容行」行盒（上輪 v166 使用者仍嫌鬆）——在 v166 基礎上再降 line-height 與膠囊尺寸：
+//       .ev-title 顯式 line-height 1.3、.ev-notes line-height 1.35；TERM 膠囊 line-height 1.3→1.15 + padding 0 .5em→0 .42em + font .88em→.85em、
+//       TERM 領域小膠囊 line-height 1.6→1.15 + padding 0 .4em→0 .35em + font .76em→.72em；標籤膠囊 padding 2px 10px→1px 8px + line-height 1.2→1.1；
+//       ✎/MD 編輯圓點 width/height 1.3em→1.2em + min 15px→13px + font .7em→.62em。
+//       實測（Electron 真引擎）：checkbox 子事件行盒 19→18px、TERM 膠囊(標題)20→17px、(notes)17→14px、標籤 20→17px、✎ 15→13px、標題行 45→43px，
+//       事件內容行(18px) 已小於事件間距(~21px＝padding 10+10 + 1px border)，符合「內容行距應小於事件間距」的原訴求。
+//       純 style.css 改，bump 讓手機重拉；APP_VERSION 與 manifest.json 同步 1.8.4→1.8.5。
+// v168：年視圖「今天」滾動邏輯對齊列表模式——原年模式下方「全年行程列表」按 today 滾動走 calScrollListToDate
+//       （calPickScrollTarget 只偏好「未來日」），今天無行程時定位不確定、且與列表模式的「絕對距離最近、tie 取較早」不一致。
+//       改為呼叫與列表模式同款的 scrollToNearestDate(elements.evYearDayList)：今天無行程時滾到「離今天絕對距離最小且有行程」的那天
+//       （過去/未來皆可、天數相同取較早），與 v165 列表邏輯完全一致。年網格本身仍由 calScrollYearToCurrentMonth 置中當月，不受影響。
+//       calendar-editor.js 改，bump 讓手機重拉；APP_VERSION 與 manifest.json 同步 1.8.5→1.8.6。
+// v169：便利貼（兩端）下拉選單支援搜尋——LITE `#calStickySheet` 與桌面 `#tlStickyMenu` 各加一個搜尋框，
+//       輸入即過濾清單：LITE 匹配「標題（去裝飾）＋ 內容(notes)」、桌面匹配「標題＋日期＋內容」，皆不區分大小寫；
+//       LITE 清單標題同步顯示「符合 N 項」、無符合時提示「沒有符合「xxx」的便利貼」；兩端開啟選單時清空搜尋框。
+//       實作：LITE 在 sticky-notes.js 增 calStickyMatchQuery ＋ 改 calStickyRenderSheetList（oninput 觸發）、
+//       index.html 加 #calStickySearch、style.css 加 .cal-sticky-search；桌面在 index.html 改 tlRenderStickyMenuList
+//       （oninput 觸發）＋ 加 #tlStickySearch ＋ 加 .ev-sticky-search。清單重繪只替換列表容器、不動搜尋框，故輸入焦點不丟。
+//       LITE sticky-notes.js/index.html/style.css 改，bump 讓手機重拉；APP_VERSION 與 manifest.json 同步 1.8.6→1.8.7。
+// v170：便利貼搜尋升級為 combo 搜尋框（定位開關）——在搜尋框旁加「📍 定位」開關：有搜尋內容時預設開啟（可手動關）、
+//       無內容時固定關閉（disabled，不可開啟）。開啟時在便利貼「渲染模式」把搜尋詞以 <mark class="search-highlight">
+//       金底高亮標示（LITE 標題＋內容；桌面便利貼窗 #body/#title 同樣高亮），方便快速查找結果。
+//       實作：LITE sticky-notes.js 增 calStickyOnSearchInput/calStickyToggleLocate/calStickySyncLocate/calStickyWrap ＋
+//       calStickyRenderPage 渲染模式注入高亮；index.html 加 #calStickyLocateBtn、style.css 加 .cal-sticky-locate ＋
+//       search-highlight。桌面同款 combo（index.html 加 #tlStickyLocateBtn ＋ .ev-sticky-locate）並經由新 IPC
+//       sticky-note-locate（windows.js 廣播給所有便利貼窗）／sticky-note-locate-get（新窗啟動補種）把定位詞送進
+//       desktop-note.js 的 noteApplyHighlight；刷新載荷亦帶 hl（tlPushStickyRefreshes / refresh-complete）。
+//       LITE index.html/sticky-notes.js/style.css 改，bump 讓手機重拉；APP_VERSION 與 manifest.json 同步 1.8.7→1.8.8。
+// v171：搜尋高亮改 reverse 渲染（承接 v170）——使用者回饋金底高亮與 TERM 術語膠囊顏色太近，改為「字/底對調」：
+//       高標底＝便利貼字色(--note-fg / --cal-sticky-fg)、高標字＝紙張實色(--note-bg / --cal-sticky-bg)，
+//       與金色膠囊明確區分，對比度由便利貼自身字/底配對保證（深淺便條皆清楚）。
+//       實作：desktop-note.js applyColor 增設 --note-bg（tint 實色 100）；LITE calStickyApplyStyle 增設 --cal-sticky-bg；
+//       desktop-note.html 與 style.css 的 .search-highlight 由金底黑字改為 var(--note-fg/--cal-sticky-fg) 底 + 紙色字。
+//       LITE sticky-notes.js/style.css 改，bump 讓手機重拉；APP_VERSION 與 manifest.json 同步 1.8.8→1.8.9。
+const CACHE_NAME = 'md-editor-lite-v171';
 const ASSETS = [
   './',
   './index.html',

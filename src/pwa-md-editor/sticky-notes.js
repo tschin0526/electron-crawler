@@ -178,6 +178,8 @@ function calStickyApplyStyle(prefs) {
   if (!note) return;
   note.style.background = calStickyTint(prefs.color, prefs.opacity);
   note.style.setProperty('--cal-sticky-fg', prefs.fontColor);
+  // 🆕 紙張實色（不隨透明度變淡）：供搜尋高標做 reverse（字=紙色、底=字色）時取用
+  note.style.setProperty('--cal-sticky-bg', calStickyTint(prefs.color, 100));
   note.style.setProperty('--cal-sticky-tag-bg', calStickyContrastTagBg(prefs.fontColor));
   const body = calStickyEl('calStickyBody');
   if (!body) return;
@@ -409,6 +411,12 @@ function calStickyRenderPage(target, options) {
       : '<p style="opacity:.6">（無備註）</p>';
     if (options.resetScroll !== false) bodyEl.scrollTop = 0;
   }
+  // 🆕 定位高亮：渲染模式（非編輯）下，若定位開關生效，把搜尋詞以 <mark> 標示在標題與內容
+  if (calStickyLocateEffective() && !calStickyEditMode) {
+    const q = calStickyGetQuery();
+    calStickyWrap(titleEl, q);
+    calStickyWrap(bodyEl, q);
+  }
   calStickyApplyStyle(prefs);
   calStickyUpdateIndicator(i + 1, total);
   calStickyRenderSheetList();
@@ -464,14 +472,106 @@ function calStickyNoteLabel(note) {
   const name = calStripTitleDecor(note.title) || '未命名便利貼';
   return name + (note.idx > 0 ? ' (' + (note.idx + 1) + ')' : '');
 }
+// 🆕 便利貼清單搜尋：標題（去裝飾）＋ 內容（notes）模糊匹配（不區分大小寫）
+function calStickyMatchQuery(note, q) {
+  if (!q) return true;
+  const hay = (calStickyNoteLabel(note) + ' ' + (note.title || '') + ' ' + (note.notes || '')).toLowerCase();
+  return hay.indexOf(q) >= 0;
+}
+
+// 🆕 combo 搜尋框：定位開關（locate toggle）—— 在便利貼渲染模式以 <mark> 高亮搜尋結果
+//   規則：有搜尋內容時預設開啟（使用者可自行關閉）；無內容時固定關閉（不可開啟）。
+let calStickyLocateOn = false;        // 使用者意圖：預設開 / 手動關
+let calStickyLastQueryEmpty = true;   // 上一次查詢是否為空（用於「內容出現→預設開」的轉場判斷）
+function calStickyGetQuery() {
+  const el = calStickyEl('calStickySearch');
+  return (((el && el.value) || '').trim().toLowerCase());
+}
+// 真正生效的定位：開關開著「且」有搜尋內容
+function calStickyLocateEffective() {
+  return calStickyLocateOn && !!calStickyGetQuery();
+}
+// 搜尋框 oninput：先處理「內容出現→預設開啟 / 內容消失→強制關閉」的轉場，再同步開關 UI 與重繪
+function calStickyOnSearchInput() {
+  const q = calStickyGetQuery();
+  const empty = !q;
+  if (!empty && calStickyLastQueryEmpty) calStickyLocateOn = true; // 內容剛出現 → 預設開啟
+  if (empty) calStickyLocateOn = false;                            // 內容消失 → 強制關閉
+  calStickyLastQueryEmpty = empty;
+  calStickySyncLocate();
+  calStickyRenderSheetList();
+  // 渲染模式（翻頁視圖）即時反映定位高亮
+  if (calStickyPages.length) calStickyRenderPage(calStickyIndex, { toast: false });
+}
+// 手動點擊定位開關（無內容時 disabled，不可開啟）
+function calStickyToggleLocate() {
+  if (!calStickyGetQuery()) return;
+  calStickyLocateOn = !calStickyLocateOn;
+  calStickySyncLocate();
+  if (calStickyPages.length) calStickyRenderPage(calStickyIndex, { toast: false });
+}
+// 同步定位按鈕的 disabled / aria-pressed / 文字狀態
+function calStickySyncLocate() {
+  const btn = calStickyEl('calStickyLocateBtn');
+  if (!btn) return;
+  const q = calStickyGetQuery();
+  const on = calStickyLocateOn && !!q;
+  btn.disabled = !q;
+  btn.setAttribute('aria-pressed', String(on));
+  btn.classList.toggle('on', on);
+  btn.textContent = on ? '📍 定位：開' : '📍 定位';
+}
+// 把 root 內所有文本節點的命中片段包成 <mark class="search-highlight">（只碰文本節點，不破壞標籤結構）
+function calStickyWrap(root, query) {
+  if (!root || !query) return;
+  const lower = query.toLowerCase();
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+    acceptNode(node) {
+      const p = node.parentNode;
+      if (!p) return NodeFilter.FILTER_REJECT;
+      const tag = p.nodeName.toLowerCase();
+      if (tag === 'style' || tag === 'script' || tag === 'noscript' ||
+          (tag === 'mark' && p.classList.contains('search-highlight'))) return NodeFilter.FILTER_REJECT;
+      if (!node.nodeValue || !node.nodeValue.trim()) return NodeFilter.FILTER_SKIP;
+      return NodeFilter.FILTER_ACCEPT;
+    }
+  });
+  const nodes = [];
+  let n;
+  while ((n = walker.nextNode())) nodes.push(n);
+  for (const textNode of nodes) {
+    const text = textNode.nodeValue;
+    const lowerText = text.toLowerCase();
+    const hits = [];
+    let idx = 0;
+    while ((idx = lowerText.indexOf(lower, idx)) !== -1) { hits.push([idx, idx + query.length]); idx += query.length; }
+    if (!hits.length) continue;
+    const parent = textNode.parentNode;
+    const frag = document.createDocumentFragment();
+    let cursor = 0;
+    for (const h of hits) {
+      if (h[0] > cursor) frag.appendChild(document.createTextNode(text.slice(cursor, h[0])));
+      const mark = document.createElement('mark');
+      mark.className = 'search-highlight';
+      mark.textContent = text.slice(h[0], h[1]);
+      frag.appendChild(mark);
+      cursor = h[1];
+    }
+    if (cursor < text.length) frag.appendChild(document.createTextNode(text.slice(cursor)));
+    parent.replaceChild(frag, textNode);
+  }
+}
 function calStickyRenderSheetList() {
   const listEl = calStickyEl('calStickyList');
   if (!listEl) return;
   const titleEl = calStickyEl('calStickyListTitle');
+  const q = (((calStickyEl('calStickySearch') && calStickyEl('calStickySearch').value) || '').trim().toLowerCase());
   const hidden = new Set(calStickyLoadStore().hidden);
-  const inactive = calStickyCatalog.filter((n) => hidden.has(n.identity));
+  const inactive = calStickyCatalog.filter((n) => hidden.has(n.identity) && calStickyMatchQuery(n, q));
+  const pages = calStickyPages.filter((n) => calStickyMatchQuery(n, q));
   if (titleEl) {
-    titleEl.textContent = '翻頁清單（' + calStickyPages.length + ' 項；點名稱顯示，點開 / 關切換）';
+    const base = '翻頁清單（' + calStickyPages.length + ' 項；點名稱顯示，點開 / 關切換）';
+    titleEl.textContent = q ? (base + ' · 符合 ' + (pages.length + inactive.length) + ' 項') : base;
   }
   const frag = document.createDocumentFragment();
   const appendRow = (note, no) => {
@@ -508,7 +608,7 @@ function calStickyRenderSheetList() {
     row.append(noEl, nameEl, stateEl);
     frag.appendChild(row);
   };
-  calStickyPages.forEach((note, i) => appendRow(note, i + 1));
+  pages.forEach((note, i) => appendRow(note, i + 1));
   if (inactive.length) {
     const title = document.createElement('div');
     title.className = 'cal-sticky-list-inactive-title';
@@ -521,6 +621,11 @@ function calStickyRenderSheetList() {
     const empty = document.createElement('div');
     empty.className = 'cal-sticky-list-title';
     empty.textContent = '目前沒有便利貼（在行程表單設定「便利貼張數」）。';
+    frag.appendChild(empty);
+  } else if (!pages.length && !inactive.length) {
+    const empty = document.createElement('div');
+    empty.className = 'cal-sticky-list-title';
+    empty.textContent = '沒有符合「' + q + '」的便利貼。';
     frag.appendChild(empty);
   }
   listEl.replaceChildren(frag);
@@ -561,6 +666,12 @@ function calStickyCloseSheet() {
 }
 function calStickyOpenSheet() {
   if (!calStickyIsOpen) return;
+  const s = calStickyEl('calStickySearch');
+  if (s) s.value = '';
+  // 開清單＝清空搜尋，定位隨之強制關閉（內容消失→關；下次輸入再預設開）
+  calStickyLocateOn = false;
+  calStickyLastQueryEmpty = true;
+  calStickySyncLocate();
   calStickyRenderSheetList();
   const prefs = calStickyCurrentId ? calStickyNotePrefs(calStickyCurrentId) : calStickyNotePrefs('');
   calStickySyncControls(prefs);

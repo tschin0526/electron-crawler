@@ -2449,6 +2449,16 @@
     .ev-seg button.active { background: var(--ev-primary); color: #fff; }
     .ev-seg button:not(.active):hover { background: var(--ev-hover, rgba(127,127,127,.10)); }
     .ev-sticky-menu-list { max-height: 300px; overflow-y: auto; }
+    /* 🆕 便利貼清單搜尋框（置於選單清單頂部） */
+    .ev-sticky-search-wrap { padding: 4px 8px 8px; }
+    .ev-sticky-search {
+      width: 100%; box-sizing: border-box; padding: 7px 10px;
+      border: 1px solid var(--ev-border); border-radius: 8px;
+      background: var(--ev-card); color: var(--ev-text);
+      font: inherit; font-size: 13px;
+    }
+    .ev-sticky-search::placeholder { color: var(--ev-muted); opacity: .85; }
+    .ev-sticky-search:focus { outline: none; border-color: var(--ev-primary); }
     .ev-sticky-row {
       display: flex; align-items: center; gap: 8px;
       padding: 6px 8px; border-radius: 7px;
@@ -5130,6 +5140,7 @@
                 <button type="button" class="ev-sticky-menu-item" onclick="tlToggleStickyWindow()">开启/关闭 便利贴</button>
                 <div class="ev-sticky-menu-sep"></div>
                 <div class="ev-sticky-menu-head">已设定为便利贴的事件（点「取消」可移除设定）</div>
+                <div class="ev-sticky-search-wrap"><input type="search" class="ev-sticky-search" id="tlStickySearch" placeholder="搜尋便利貼（標題／內容）" autocomplete="off" spellcheck="false" oninput="tlRenderStickyMenuList()"></div>
                 <div class="ev-sticky-menu-list" id="tlStickyMenuList"></div>
               </div>
             </span>
@@ -7114,6 +7125,8 @@
       const btn = document.getElementById('tlStickyBtn');
       if (!menu || !btn) return;
       if (menu.style.display === 'block') { tlCloseStickyMenu(); return; }
+      const s = document.getElementById('tlStickySearch');
+      if (s) s.value = '';
       tlRenderStickyMenuList();
       tlSyncStickyModeSeg();
       menu.style.display = 'block';
@@ -7135,11 +7148,31 @@
       if (!list) return;
       const events = (typeof tlCalEvents !== 'undefined' && Array.isArray(tlCalEvents))
         ? tlCalEvents.filter(function (e) { return (e.sticky | 0) > 0; }) : [];
+      const q = (((document.getElementById('tlStickySearch') || {}).value) || '').trim().toLowerCase();
+      const match = function (ev, plainTitle) {
+        if (!q) return true;
+        const hay = (plainTitle + ' ' + (ev.date || '') + ' ' + (ev.notes || '')).toLowerCase();
+        return hay.indexOf(q) >= 0;
+      };
+      const filtered = events.filter(function (ev) {
+        const rawTitle = ev.title || '(无标题)';
+        let plainTitle = rawTitle;
+        if (typeof tlRenderInlineMarkdown === 'function') {
+          const titleNode = document.createElement('div');
+          titleNode.innerHTML = tlRenderInlineMarkdown(rawTitle);
+          plainTitle = (titleNode.textContent || titleNode.innerText || rawTitle).replace(/\s+/g, ' ').trim();
+        }
+        return match(ev, plainTitle);
+      });
       if (!events.length) {
         list.innerHTML = '<div class="ev-sticky-empty">还没有事件被设为便利贴<br>（在行程表单里把「桌面便利贴 ×N」设为 ≥1）</div>';
         return;
       }
-      list.innerHTML = events.map(function (ev, index) {
+      if (!filtered.length) {
+        list.innerHTML = '<div class="ev-sticky-empty">没有符合「' + q.replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }) + '」的便利贴。</div>';
+        return;
+      }
+      list.innerHTML = filtered.map(function (ev, index) {
         const color = ev.color || '#7c3aed';
         const n = ev.sticky | 0;
         const rawTitle = ev.title || '(无标题)';
