@@ -302,6 +302,15 @@
 //       轉換與欄位驗證抽成共用 sticky-settings.js（桌面主程序 require 同一份，避免兩端口徑分歧）。
 //       LITE index.html/sticky-notes.js/style.css/sticky-settings.js/sw.js 改，bump 讓手機重拉；
 //       APP_VERSION 與 manifest.json 同步 1.8.9→1.9.0。
+// v180：便利貼「設定資料缺失」提醒改為常駐（不自動關閉）——toast 加 ✕ 關閉鈕，由使用者手動關閉；
+//       showToast 加 persistent 參數（第 4 參，預設 false），persistent 時不排程自動消失、顯示 ✕；
+//       #toast 結構改成 <span id="toast-msg">＋<button id="toast-close">，.toast 改 flex 並加 .closable（換行＋最大寬度）。
+//       LITE index.html/style.css/app.js/sticky-notes.js/sw.js 改，bump 讓手機重拉；APP_VERSION 與 manifest.json 同步 1.9.7→1.9.8。
+// v179：便利貼「設定資料缺失」提醒——手機 LITE 啟動／開啟 calendar 時，若本機 localStorage 找不到該檔的
+//       便利貼設定、且本次「開啟」又沒帶入 sticky-notes-settings-*.json，就 toast 提醒使用者去「開啟」一次
+//       選 calendar 檔＋該設定 JSON 來還原（承接「換 origin／清網站資料後設定不見」）。
+//       判斷點 calStickyHasStoredSettings()（以 storage 鍵是否存在為準）；同一 session 同一 calendar 只提醒一次。
+//       LITE app.js/sticky-notes.js/sw.js 改，bump 讓手機重拉；APP_VERSION 與 manifest.json 同步 1.9.6→1.9.7。
 // v178：修正便利貼摺疊 ▸ 標記位置偏移——掃描摺疊塊時外層 for 迴圈在內層跳過整塊後又 i++，
 //       漏算「摺疊塊後第一條可見行」，每個前置摺疊塊就讓後面的 ▸ 再往上偏一條可見行
 //       （多塊時偏移累積十幾行，出現 tooltip 寫「第 89–91 行」卻畫在第 57 行附近）。
@@ -325,7 +334,7 @@
 //       按保存時設定 JSON 與主檔、聯運檔一起交付（iOS 逐檔各彈一次分享面板）；
 //       交付成功才清角標，取消則保留。頁次不列入比對（翻頁不會亮角標）。
 //       app.js/calendar-editor.js/sticky-notes.js 改，bump 讓手機重拉；APP_VERSION 1.9.0→1.9.1。
-const CACHE_NAME = 'md-editor-lite-v178';
+const CACHE_NAME = 'md-editor-lite-v180';
 const ASSETS = [
   './',
   './index.html',

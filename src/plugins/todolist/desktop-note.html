@@ -454,7 +454,23 @@
       -webkit-app-region: no-drag; user-select: none;
     }
     .fold-seam:hover { opacity: 1; }
-  </style>
+      /* 🆕 右键 checkbox 编辑小圆点 → 「找出相同的项目」结果列表 */
+    .fs-list { max-height: 42vh; overflow-y: auto; margin: 6px 0; }
+    .fs-item { padding: 5px 4px; border-bottom: 1px solid rgba(127,127,127,.22); font-size: 12px; line-height: 1.4; }
+    .fs-item:last-child { border-bottom: none; }
+    .fs-item .fs-title { font-weight: 600; word-break: break-word; }
+    .fs-item .fs-meta { display: flex; align-items: center; gap: 6px; margin-top: 2px; font-size: 11px; }
+    .fs-item .fs-src { opacity: .72; }
+    .fs-jump { margin-left: auto; padding: 1px 10px; border: 1px solid #D4AF37; border-radius: 6px; background: rgba(212,175,55,.2); color: var(--note-fg, #eee); font-size: 11px; cursor: pointer; -webkit-app-region: no-drag; }
+    .fs-jump:hover { background: rgba(212,175,55,.42); }
+    .fs-empty { padding: 10px 4px; opacity: .72; font-size: 12px; text-align: center; }
+    /* 🆕 源头行提示：本便利贴第几行触发了这次查找 */
+    .fs-context { padding: 2px 4px 6px; margin-bottom: 4px; font-size: 11px; opacity: .8; border-bottom: 1px solid color-mix(in srgb, var(--note-fg, #eee) 18%, transparent); }
+    /* 🆕 结果窗体：金色外框加粗＋金色辉光，强调「金框窗体」（背景由 applyColor 设成便利贴实色，文字经 --note-fg 继承，深浅主题都可读） */
+    #findSameBox { border-width: 2px; box-shadow: 0 0 0 1px rgba(212,175,55,.4), 0 12px 30px rgba(0,0,0,.5), 0 3px 8px rgba(0,0,0,.3); }
+    #findSameBox #findSameCloseBtn { background: rgba(212,175,55,.22); border-color: #D4AF37; }
+    #findSameBox #findSameCloseBtn:hover { background: rgba(212,175,55,.42); }
+</style>
 </head>
 <body>
   <div id="note">
@@ -473,6 +489,10 @@
       <button type="button" class="nami" data-act="check" role="menuitem">☐ 加入 checkbox 子事件</button>
       <button type="button" class="nami" data-act="table" role="menuitem">▦ 加入 MD 表格</button>
       <button type="button" class="nami" data-act="text" role="menuitem">✎ 自由编辑（任意文本）</button>
+    </div>
+    <!-- 🆕 右键 checkbox 编辑小圆点（.ev-md-edit）→ 下拉菜单「找出相同的项目」 -->
+    <div class="note-addcheck-menu" id="noteFindSameMenu" role="menu">
+      <button type="button" class="nami" role="menuitem">🔍 找出相同的项目</button>
     </div>
     <div class="body" id="body"></div>
     <div class="tl-text-gutter-wrap" id="editAreaGutterWrap">
@@ -645,6 +665,16 @@
         <div class="ac-actions">
           <button type="button" class="ac-copy ac-primary" id="ncCreateBtn">建立</button>
           <button type="button" class="ac-copy" id="ncCancelBtn">取消</button>
+        </div>
+      </div>
+    </div>
+    <!-- 🆕 「找出相同的项目」结果 Modal（复用 addcheck-ov／addcheck-box 外观） -->
+    <div class="addcheck-ov" id="findSameOv">
+      <div class="addcheck-box" id="findSameBox">
+        <div class="ac-title">🔍 找到相同的子事件</div>
+        <div id="findSameList" class="fs-list"></div>
+        <div class="ac-actions">
+          <button type="button" class="ac-copy" id="findSameCloseBtn">关闭</button>
         </div>
       </div>
     </div>

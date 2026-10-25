@@ -1197,6 +1197,107 @@ window.tlOpenEditNoteCheckDialog = function (event, uid, line) {
     setTimeout(() => inp.focus(), 0);
   }
 };
+
+// ===== 🆕 右键 checkbox 编辑小圆点（.ev-md-edit）→ 下拉菜单「找出相同的项目」 =====
+// 目的：多档联运下，同一 checkbox 子事件可能出现在多个 calendar*.md；右键该小圆点 →
+//   拿「该子事件的内容（checkbox 文本）」去比对所有便利贴（主档＋并入的联运档都算），找出含相同子事件的其它张。
+//   左键 ✎ 仍进编辑（onclick＝tlOpenEditNoteCheckDialog，contextmenu 与 click 分流不冲突）。
+let noteFindSameTarget = null;   // { uid, line, text }
+function noteFindSameOpen(e) {
+  const dot = e.target.closest && e.target.closest('.ev-md-edit');
+  if (!dot) return;              // 不是小圆点：不拦截，交给浏览器原生右键
+  e.preventDefault();            // 阻止原生右键
+  const uid = dot.getAttribute('data-uid') || '';
+  const line = dot.getAttribute('data-line');
+  const notes = eventNotesForKey(uid);
+  if (notes == null) { window.alert('找不到该行程，无法比对相同项目'); return; }
+  const lines = String(notes).split('\n');
+  const li = Number(line);
+  if (!Number.isInteger(li) || li < 0 || li >= lines.length) { window.alert('该子事件内容已变化，请刷新便利贴后重试'); return; }
+  const m = lines[li].match(/^(\s*)-\s+\[([ xX])\]\s?(.*)$/);
+  if (!m) { window.alert('该子事件内容已变化，请刷新便利贴后重试'); return; }
+  const text = (m[3] || '').trim();
+  if (!text) { window.alert('该子事件没有内容，无法比对相同项目'); return; }
+  noteFindSameTarget = { uid: uid, line: li, text: text };
+  const menu = document.getElementById('noteFindSameMenu');
+  if (!menu) return;
+  const noteEl = document.getElementById('note');
+  const rect = noteEl.getBoundingClientRect();
+  menu.style.left = Math.max(2, e.clientX - rect.left) + 'px';
+  menu.style.top = Math.max(2, e.clientY - rect.top) + 'px';
+  menu.classList.add('open');
+}
+function noteFindSameClose() {
+  const menu = document.getElementById('noteFindSameMenu');
+  if (menu) menu.classList.remove('open');
+  noteFindSameTarget = null;
+}
+async function noteFindSameRun() {
+  const target = noteFindSameTarget;
+  noteFindSameClose();
+  if (!target) return;
+  const curUid = target.uid;
+  const curText = target.text;
+  let result = null;
+  try { result = await ipcRenderer.invoke('sticky-note-order'); } catch (err) { result = null; }
+  const allNotes = (result && Array.isArray(result.notes)) ? result.notes : [];
+  // 排除自己（uid 相同）；其它張只要「至少含一个 checkbox 文本与目標完全相同」即视为命中，并记录命中行号（1-based）
+  const matches = [];
+  allNotes.forEach((n) => {
+    if (!n || n.key === curUid) return;
+    const nl = String(n.notes || '').split('\n');
+    const hitLines = [];
+    for (let k = 0; k < nl.length; k += 1) {
+      const mm = nl[k].match(/^(\s*)-\s+\[([ xX])\]\s?(.*)$/);
+      if (mm && (mm[3] || '').trim() === curText) hitLines.push(k + 1);
+    }
+    if (hitLines.length) matches.push({ note: n, lines: hitLines });
+  });
+  const ov = document.getElementById('findSameOv');
+  const list = document.getElementById('findSameList');
+  if (!ov || !list) return;
+  if (!matches.length) {
+    list.innerHTML = '<div class="fs-empty">✅ 在其它便利贴中未找到相同内容的子事件</div>';
+  } else {
+    // 源头行提示：本便利贴第几行触发了这次查找
+    const ctx = '<div class="fs-context">本便利贴第 ' + (target.line + 1) + ' 行的内容，在以下便利贴中也出现：</div>';
+    const items = matches.map((m) => {
+      const n = m.note;
+      const title = escapeHtml(n.title || '(无标题)');
+      const date = n.date ? '（' + escapeHtml(n.date) + '）' : '';
+      const src = n.src ? (' @ ' + escapeHtml(n.src)) : ' @ 主档';
+      const lineTxt = m.lines.length === 1
+        ? '第 ' + m.lines[0] + ' 行'
+        : '第 ' + m.lines.join('、') + ' 行';
+      // 🆕 切换按钮：data-line0 为 0-based 行号（body 内 .ev-cb[data-line] 用 0-based），点击后翻到该张并滚动到该行
+      const line0 = m.lines[0] - 1;
+      const keyAttr = escapeHtml(n.key);
+      return '<div class="fs-item"><div class="fs-title">' + title + date + '</div>' +
+        '<div class="fs-meta"><span class="fs-src">' + src + ' · ' + lineTxt + '</span>' +
+        '<button type="button" class="fs-jump" data-key="' + keyAttr + '" data-line0="' + line0 + '">切换</button></div></div>';
+    }).join('');
+    list.innerHTML = ctx + items;
+  }
+  ov.classList.add('show');
+}
+
+// 🆕 结果项「切换」按钮：翻到被匹配的那张便利贴，并滚动到命中的 checkbox 行
+async function noteFindSameSwitchTo(key, line0) {
+  const ov = document.getElementById('findSameOv');
+  if (ov) ov.classList.remove('show');
+  if (!flipOrder || !flipOrder.length) { window.alert('当前便利贴不支持翻页切换'); return; }
+  const idx = flipOrder.findIndex((f) => f && f.key === key);
+  if (idx < 0) { window.alert('找不到该便利贴，无法切换（可能尚未载入翻页清单）'); return; }
+  if (idx !== flipIndex) {
+    try { await renderFlipPage(idx); } catch (e) { /* 渲染失败也不阻塞滚动尝试 */ }
+  }
+  // 滚动到命中的 checkbox 行：body 内 .ev-cb[data-line] 为 0-based 行号（ro 行程也有 .ev-cb，比 .ev-md-edit 更稳）
+  const el = document.querySelector('#body .ev-cb[data-line="' + line0 + '"]');
+  if (el && typeof el.scrollIntoView === 'function') {
+    el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  }
+}
+
 function stickyBlockTypeName(type) {
   return ({ code: '代码块', table: '表格', heading: '标题', hr: '分隔线', quote: '引用', list: '列表', para: '段落' })[type] || '区块';
 }
@@ -1933,6 +2034,9 @@ function applyColor() {
   if (newNoteBox) newNoteBox.style.background = tint(state.color, 100);
   const newCalBox = document.getElementById('newCalBox');
   if (newCalBox) newCalBox.style.background = tint(state.color, 100);
+  // 🆕 找出相同项目结果窗：同样取便利贴实色背景，避免白底+--note-fg 在深色便利贴上看不清（金色外框由 .addcheck-box 提供）
+  const findSameBox = document.getElementById('findSameBox');
+  if (findSameBox) findSameBox.style.background = tint(state.color, 100);
   updateMenuTheme();
   syncCustomSwatchActive();
 }
@@ -3335,5 +3439,38 @@ function bindFlipSwipe(note) {
     renderFlipPage(flipIndex + dir);
   }, { passive: true });
 }
+
+// 🆕 右键 checkbox 编辑小圆点（.ev-md-edit）→ 下拉菜单「找出相同的项目」的全局绑定（分体/翻页模式共用，脚本载入即生效）
+document.addEventListener('contextmenu', noteFindSameOpen);
+document.addEventListener('click', (e) => {
+  const menu = document.getElementById('noteFindSameMenu');
+  if (menu && menu.classList.contains('open') && !(e.target.closest && e.target.closest('#noteFindSameMenu'))) noteFindSameClose();
+}, true);
+document.addEventListener('keydown', (e) => {
+  if (e.key !== 'Escape') return;
+  const menu = document.getElementById('noteFindSameMenu');
+  if (menu && menu.classList.contains('open')) { noteFindSameClose(); return; }
+  const ov = document.getElementById('findSameOv');
+  if (ov && ov.classList.contains('show')) { ov.classList.remove('show'); return; }
+});
+(function bindFindSameOverlay() {
+  const fsMenu = document.getElementById('noteFindSameMenu');
+  if (fsMenu) { const item = fsMenu.querySelector('.nami'); if (item) item.addEventListener('click', noteFindSameRun); }
+  const fsOv = document.getElementById('findSameOv');
+  if (fsOv) {
+    fsOv.addEventListener('click', (e) => { if (e.target === fsOv) fsOv.classList.remove('show'); });
+    const cb = document.getElementById('findSameCloseBtn');
+    if (cb) cb.onclick = () => fsOv.classList.remove('show');
+    // 🆕 结果项「切换」按钮：事件委托（按钮是 innerHTML 动态生成，无法逐个绑 onclick）
+    fsOv.addEventListener('click', (e) => {
+      const btn = e.target.closest && e.target.closest('.fs-jump');
+      if (!btn) return;
+      e.stopPropagation();
+      const key = btn.getAttribute('data-key') || '';
+      const line0 = parseInt(btn.getAttribute('data-line0') || '-1', 10);
+      noteFindSameSwitchTo(key, line0);
+    });
+  }
+})();
 
 init();

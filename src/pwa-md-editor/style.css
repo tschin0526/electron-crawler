@@ -1275,12 +1275,38 @@ body {
   transition: all 0.3s ease;
   z-index: 1000;
   white-space: nowrap;
+  display: flex;
+  align-items: center;
+  max-width: 92vw;
+  box-sizing: border-box;
 }
 
 .toast.show {
   opacity: 1;
   transform: translateX(-50%) translateY(0);
 }
+
+/* 🆕 常駐提醒（需手動關閉）：允許換行、限定最大寬度、顯示 ✕ 關閉鈕 */
+.toast.closable {
+  white-space: normal;
+  text-align: center;
+  padding-right: 14px;
+}
+.toast-close {
+  flex: none;
+  margin-left: 12px;
+  width: 24px;
+  height: 24px;
+  border: none;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.18);
+  color: #fff;
+  font-size: 13px;
+  line-height: 22px;
+  padding: 0;
+  cursor: pointer;
+}
+.toast-close:hover { background: rgba(255, 255, 255, 0.34); }
 
 .toast.success {
   background: var(--success);

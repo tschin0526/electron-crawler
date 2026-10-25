@@ -89,6 +89,27 @@ function calStickyResetStore() {
   calStickyStoreKeyCache = '';
 }
 
+// ===== 🆕 開檔後「請載入設定 JSON」提醒 =====
+// 手機 LITE 的便利貼設定只存 localStorage，換 origin／清網站資料就整份消失；
+// 可攜 JSON（sticky-notes-settings-*.json）是還原手段。本機找不到設定、
+// 且本次開檔又沒帶入設定 JSON 時，提醒使用者去「開啟」一次選 calendar + 該 JSON。
+//   loadedThisOpen：本次「開啟」動作是否已套用設定 JSON（由 app.js 的 handleFileSelect 傳入）
+function calStickyHasStoredSettings() {
+  try { return localStorage.getItem(calStickyStorageKey()) != null; }
+  catch (e) { return false; }
+}
+const calStickyRemindedCalendars = new Set();   // 同一 session、同一 calendar 只提醒一次，避免重複打擾
+function calStickyAfterCalendarOpen(loadedThisOpen) {
+  if (typeof isCalendarMd !== 'function' || !isCalendarMd()) return;   // 非 calendar 檔不提醒
+  if (calStickyHasStoredSettings()) return;                          // 本機已有設定資料 → 不提醒
+  if (loadedThisOpen) return;                                        // 本次開檔已載入設定 JSON → 不提醒
+  const name = calStickyCurrentFileName().toLowerCase();
+  if (calStickyRemindedCalendars.has(name)) return;                   // 同一 session 同一 calendar 只提醒一次
+  calStickyRemindedCalendars.add(name);
+  // 🆕 這條是「請去載入設定」的提醒：常駐（persistent），不自動關閉，由使用者按 ✕ 手動關閉
+  showToast('⚠ 本機找不到便利貼設定：若你曾匯出「sticky-notes-settings-*.json」，請用「開啟」一次選取 calendar 檔與該設定 JSON 來還原', 'info', 0, true);
+}
+
 // ===== 「設定已寫回 JSON」基線（保存角標用）=====
 // 只比對樣式＋關閉清單；頁次（lastId/lastIdx）不列入，否則光是翻頁就會一直亮角標。
 const CAL_STICKY_SYNCED_PREFIX = 'calStickySettingsSynced:';
@@ -1869,6 +1890,7 @@ function calStickyOnKeyDown(e) {
   if (e.key === 'ArrowLeft') { e.preventDefault(); calStickyStep(-1); }
   else if (e.key === 'ArrowRight') { e.preventDefault(); calStickyStep(1); }
 }
+
 
 // ===== 初始化（DOM 已就緒直接綁定，與 app.js 同一時序約定）=====
 function calStickyInit() {

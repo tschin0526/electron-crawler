@@ -1599,7 +1599,7 @@
       const done = m[2] !== ' ';
       const event = uid && tlCalEvents.find((item) => item.uid === uid);
       const editButton = uid && event && (!event.ro || forceEditable)
-        ? '<button type="button" class="ev-md-edit" title="编辑 checkbox 子事件" onclick="tlOpenEditNoteCheckDialog(event,\'' +
+        ? '<button type="button" class="ev-md-edit" title="编辑 checkbox 子事件" data-uid="' + tlEscapeHtml(uid) + '" data-line="' + i + '" onclick="tlOpenEditNoteCheckDialog(event,\'' +
           tlEscapeHtml(uid) + '\',' + i + ')">\u270e</button>'
         : '';
       const cbAttr = uid

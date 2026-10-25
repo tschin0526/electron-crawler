@@ -8,7 +8,7 @@ const VIEWS = ['edit', 'preview', 'split', 'events'];
 
 // 📌 應用版本號（單一可信來源）。
 // 每次改動都要 +1，方便在手機上確認跑的是不是最新版（狀態列左下角會顯示）。
-const APP_VERSION = '1.9.6';
+const APP_VERSION = '1.9.8';
 
 // 可處理的文字檔副檔名白名單（對齊 todo 編輯器 TEXT_EXTS，取常用子集）
 const TEXT_EXTS = [
@@ -210,7 +210,9 @@ const elements = {
   statusText: document.getElementById('status-text'),
   wordCount: document.getElementById('word-count'),
   appVersion: document.getElementById('app-version'),
-  toast: document.getElementById('toast')
+  toast: document.getElementById('toast'),
+  toastMsg: document.getElementById('toast-msg'),
+  toastClose: document.getElementById('toast-close')
 };
 
 // 狀態列版本號：v<APP_VERSION> · sw.js v<SW 版本>（SW 版本 = CACHE_NAME 尾碼）
@@ -343,6 +345,13 @@ function setupEventListeners() {
 
   // 重置：清除所有緩存並重新載入整個應用
   elements.btnReset.addEventListener('click', handleReset);
+
+  // 🆕 常駐提醒的 ✕ 關閉鈕：由使用者手動關閉訊息
+  if (elements.toastClose) {
+    elements.toastClose.addEventListener('click', () => {
+      if (typeof hideToast === 'function') hideToast();
+    });
+  }
 
   // 📅 行程視圖（calendar.md）：模式切換 / 月曆導航 / 新增 / 條目編輯刪除（事件委派）
   if (elements.evModeList) elements.evModeList.addEventListener('click', () => setCalMode('list'));
@@ -816,7 +825,10 @@ async function handleFileSelect(event) {
   if (files.length === 1) {
     const ok = await openSingleFile(files[0]);
     // 設定 JSON 跟著這批一起選 → 主檔就緒後立刻套用（不必再進便利貼選單按載入）
-    if (ok && settingsPicked.length) await applyPickedStickySettings(settingsPicked);
+    let settingsApplied = false;
+    if (ok && settingsPicked.length) settingsApplied = await applyPickedStickySettings(settingsPicked);
+    // 🆕 開啟 calendar 後：本機設定資料不存在、且本次沒帶設定 JSON → 提醒去「開啟」載入備份
+    if (ok && typeof calStickyAfterCalendarOpen === 'function') calStickyAfterCalendarOpen(settingsApplied);
     // 便利貼路徑：開啟成功就把便利貼開起來，讓「🗒 → 選檔 → 看貼」一次走完
     if (ok && intent === 'calendar' && typeof calStickyOpen === 'function') calStickyOpen();
     return;
@@ -858,6 +870,8 @@ async function handleFileSelect(event) {
   // 設定 JSON 也一起選了 → 主檔＋聯運檔都就緒後套用（樣式／關閉清單／頁次立即生效）
   let settingsApplied = false;
   if (settingsPicked.length) settingsApplied = await applyPickedStickySettings(settingsPicked);
+  // 🆕 開啟 calendar 後：本機設定資料不存在、且本次沒帶設定 JSON → 提醒去「開啟」載入備份
+  if (typeof calStickyAfterCalendarOpen === 'function') calStickyAfterCalendarOpen(settingsApplied);
 
   const bits = ['主檔：' + main.name + '（行程本體可編輯）'];
   if (includeFiles.length) bits.push('聯運 ' + includeFiles.length + ' 檔（只讀·便利貼可編輯）');
@@ -1559,13 +1573,21 @@ function handleBeforeUnload(e) {
 }
 
 // 顯示提示消息
-function showToast(message, type = 'info') {
-  elements.toast.textContent = message;
-  elements.toast.className = `toast ${type} show`;
-  
-  setTimeout(() => {
-    elements.toast.classList.remove('show');
-  }, 3000);
+function showToast(message, type = 'info', duration = 3000, persistent = false) {
+  const t = elements.toast;
+  if (elements.toastMsg) elements.toastMsg.textContent = message;
+  else t.textContent = message;
+  // 🆕 persistent＝常駐提醒：不自動關閉，顯示 ✕ 關閉鈕，由使用者手動關閉
+  t.className = `toast ${type}` + (persistent ? ' show closable' : ' show');
+  if (elements.toastClose) elements.toastClose.style.display = persistent ? '' : 'none';
+  if (showToast._timer) { clearTimeout(showToast._timer); showToast._timer = null; }
+  if (!persistent) {
+    showToast._timer = setTimeout(() => { t.classList.remove('show'); }, duration);
+  }
+}
+// 🆕 手動關閉訊息（常駐提醒的 ✕ 鈕呼叫）
+function hideToast() {
+  if (elements.toast) elements.toast.classList.remove('show');
 }
 
 // 本地存儲設置
@@ -1619,6 +1641,8 @@ function restoreDraft() {
       if (isCalendarMd()) state.view = 'events';
       updateEventsTabVisibility();
       showToast('已恢復上次未保存的內容', 'info');
+      // 🆕 啟動恢復的是 calendar 檔、且本機設定資料不存在、也沒載入設定 JSON → 提醒去「開啟」載入備份
+      if (typeof calStickyAfterCalendarOpen === 'function') calStickyAfterCalendarOpen(false);
     }
   } catch (e) { /* 忽略 */ }
 }
