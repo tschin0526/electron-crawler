@@ -467,6 +467,35 @@ function setupControls() {
   document.getElementById('miOpenAiConsole').onclick = (e) => { e.stopPropagation(); closeMenu(); ipcRenderer.invoke('open-ai-console-from-note'); };
   // 📧 发邮件：收件人浮层 → 直调本机邮件服务（sendStickyEmail）
   document.getElementById('miEmail').onclick = (e) => { e.stopPropagation(); closeMenu(); openStickyEmailDialog(); };
+  // 📥📤 设定备份：可携 JSON（与手机 LITE 互通；主进程负责选档／确认／写入并即时套用）
+  const importSettingsBtn = document.getElementById('miImportSettings');
+  if (importSettingsBtn) importSettingsBtn.onclick = async (e) => {
+    e.stopPropagation();
+    closeMenu();
+    try {
+      const r = await ipcRenderer.invoke('sticky-notes-import-settings');
+      if (!r || r.canceled) return;
+      showStickyRefreshFeedback(r.ok
+        ? '已载入设定：套用 ' + r.applied + ' 张（JSON 共 ' + r.notes + ' 项，本档符合 ' + r.matched + ' 项）'
+        : ('载入设定失败：' + (r.error || '未知错误')), !r.ok);
+    } catch (err) {
+      showStickyRefreshFeedback('载入设定失败：' + ((err && err.message) || err), true);
+    }
+  };
+  const exportSettingsBtn = document.getElementById('miExportSettings');
+  if (exportSettingsBtn) exportSettingsBtn.onclick = async (e) => {
+    e.stopPropagation();
+    closeMenu();
+    try {
+      const r = await ipcRenderer.invoke('sticky-notes-export-settings');
+      if (!r || r.canceled) return;
+      showStickyRefreshFeedback(r.ok
+        ? '已汇出设定：' + r.path + '（' + r.notes + ' 项样式、' + r.hidden + ' 项关闭）'
+        : ('汇出设定失败：' + (r.error || '未知错误')), !r.ok);
+    } catch (err) {
+      showStickyRefreshFeedback('汇出设定失败：' + ((err && err.message) || err), true);
+    }
+  };
   const stickyList = document.getElementById('mStickyList');
   if (stickyList) stickyList.onclick = async (e) => {
     const target = e.target instanceof Element ? e.target : null;
@@ -1793,6 +1822,36 @@ function sourceEvent(key) {
 }
 // 监听主程式推来的刷新（自动同步）
 ipcRenderer.on('sticky-note-refresh', (e, arg) => applyNoteContent(arg));
+// 📥 主进程载入可携设定后：重读自身状态并立即套用（只读不写回，避免覆盖刚导入的值）
+ipcRenderer.on('sticky-note-apply-state', async (e, payload) => {
+  if (IS_FLIP) {
+    if (!flipTotal) { clearFlipPage(); return; }
+    // 汇入档带了上次页次 → 跳到那一页再重绘（否则重绘会把当前页写回 lastId／lastIdx）
+    const lastId = (payload && typeof payload.lastId === 'string') ? payload.lastId : '';
+    const lastIdx = (payload && Number.isFinite(+payload.lastIdx)) ? +payload.lastIdx : 0;
+    const target = lastId ? flipStartIndex('', lastIdx, lastId) : flipIndex;
+    await renderFlipPage(target);
+    return;
+  }
+  let inst = {};
+  try { inst = (await ipcRenderer.invoke('sticky-note-get', { key: KEY, idx: IDX })) || {}; } catch (e) {}
+  state.color = inst.color || STICKY_DEF_BG;
+  state.opacity = (typeof inst.opacity === 'number') ? inst.opacity : 100;
+  state.fontScale = (typeof inst.fontScale === 'number') ? inst.fontScale : 1;
+  state.fontColor = (typeof inst.fontColor === 'string' && inst.fontColor) ? inst.fontColor : STICKY_DEF_FG;
+  state.fontWeight = (typeof inst.fontWeight === 'number') ? inst.fontWeight : 400;
+  state.undoneChecksOnly = !!inst.undoneChecksOnly;
+  syncUndoneChecksFilter();
+  applyColor();
+  applyContentFont();
+  syncTextAppearance();
+  const op = document.getElementById('opacity');
+  if (op) {
+    op.value = String(state.opacity);
+    document.getElementById('opacityVal').textContent = state.opacity + '%';
+  }
+  updateZoomInd();
+});
 
 function parseHexRgb(hex) {
   let value = String(hex || '').replace('#', '');
@@ -2365,6 +2424,14 @@ function applyFlipOrder(order) {
   updateFlipInd();
   return { changed, index: target };
 }
+// 清单被设定档全部关掉时，翻页窗仍要留住（它是重新开启的入口），但不能继续显示旧内容
+function clearFlipPage() {
+  document.getElementById('title').textContent = '(没有可翻页的便利贴)';
+  document.getElementById('meta').textContent = '';
+  document.getElementById('tags').innerHTML = '';
+  document.getElementById('body').innerHTML = '';
+  updateFlipInd();
+}
 
 // 🆕 后台对齐：窗口脚本开始运行之前主进程推的「顺序更新」会整条丢掉（webContents 还没挂监听），
 //    这里再主动查两次把启动瞬间错过的顺序补回来（拉取不会丢）；只在清单真的变了才重绘。
@@ -2391,7 +2458,8 @@ async function initFlip() {
   ipcRenderer.on('sticky-note-order-updated', (e, payload) => {
     flipOrderSeq++;
     applyFlipOrder(payload && payload.order);
-    if (!flipTotal) return;
+    if (!flipTotal) { clearFlipPage(); return; }
+    if (payload && payload.skipRender) return; // 紧接着会推 apply-state（可能还要跳页），避免两次重绘互踩
     if (editMode) return; // 编辑中不抢画面（页数已更新，内容等翻页再取）
     renderFlipPage(flipIndex);
   });

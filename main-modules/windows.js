@@ -7,6 +7,8 @@ const path = require('path');
 const fs = require('fs');
 const os = require('os');
 const http = require('http');
+// 便利貼設定可攜 JSON 的轉換／驗證（與 LITE 共用同一份，見 src/pwa-md-editor/sticky-settings.js）
+const StickySettings = require('../src/pwa-md-editor/sticky-settings.js');
 
 // 应用根目录（本模组位于 main-modules/ 子目录，回退一级即 electron-crawler 根）
 const APP_ROOT = path.join(__dirname, '..');
@@ -354,16 +356,187 @@ function writeStickyStateFile(p, text) {
 function saveStickyNoteState() {
   try {
     const p = stickyStatePath();
-    if (!p || !stickyNoteState) return;            // 还没读到存档 → 不写（宁可不存，也不覆盖）
+    if (!p || !stickyNoteState) return false;      // 还没读到存档 → 不写（宁可不存，也不覆盖）
     const disk = readStickyStateFile(p);
-    if (!disk.canWrite) return;                    // 档案现在读不到且里面可能还有资料 → 冻存
+    if (!disk.canWrite) return false;              // 档案现在读不到且里面可能还有资料 → 冻存
     const merged = mergeStickyState(disk.state, stickyNoteState);
     const text = JSON.stringify(merged, null, 2);
-    if (disk.ok && disk.text === text) { stickyNoteState = merged; return; }   // 内容没变就不重写档案（iCloud 目录里少一次无谓同步）
+    if (disk.ok && disk.text === text) { stickyNoteState = merged; return true; }   // 内容没变就不重写档案（iCloud 目录里少一次无谓同步）
     writeStickyStateFile(p, text);
     stickyNoteState = merged;
-  } catch (e) { console.warn('[Main] 便利贴存档写入失败（本次不覆盖旧档）:', e); }
+    return true;
+  } catch (e) {
+    console.warn('[Main] 便利贴存档写入失败（本次不覆盖旧档）:', e);
+    return false;
+  }
 }
+
+// ===== 設定備份：可攜 JSON（與 LITE 互通）=====
+// 桌面原生存檔 sticky-notes-state.json 本來就會自動讀寫；這兩個動作是給
+// 「手機 ↔ 桌面」搬設定用的：匯出只含樣式／開關／頁次（幾何位置留在原生檔），
+// 載入時也認得桌面原生檔（委由 StickySettings.normalize 轉換）。
+function stickySettingsDialogParent() {
+  if (stickyNoteMode === 'flip' && stickyNoteFlipWindow && !stickyNoteFlipWindow.isDestroyed()) {
+    return stickyNoteFlipWindow;
+  }
+  for (const win of stickyNoteWindows.values()) {
+    if (win && !win.isDestroyed()) return win;
+  }
+  return (mainWindow && !mainWindow.isDestroyed()) ? mainWindow : null;
+}
+function peekNoteInst(key, idx) {
+  const arr = stickyNoteState && stickyNoteState[key];
+  const it = (Array.isArray(arr) && arr[idx] && typeof arr[idx] === 'object') ? arr[idx] : null;
+  return it;
+}
+function buildStickyPortableSettings() {
+  const notes = {};
+  (stickyNoteCatalog || []).forEach((note) => {
+    const identity = flipNoteIdentity(note);
+    if (!identity || identity === '||0') return;
+    const prefs = StickySettings.pickPrefs(peekNoteInst(note.key, note.idx));
+    if (Object.keys(prefs).length) notes[identity] = prefs;
+  });
+  const flip = peekNoteInst(FLIP_KEY, FLIP_IDX) || {};
+  return StickySettings.buildPortable({
+    notes,
+    hidden: Array.isArray(flip.flipHidden) ? flip.flipHidden : [],
+    lastId: typeof flip.lastId === 'string' ? flip.lastId : '',
+    lastIdx: Number.isFinite(+flip.lastIdx) ? +flip.lastIdx : 0
+  }, stickyNoteFile ? path.basename(stickyNoteFile) : '', 'electron-crawler');
+}
+// 导入后让已开窗口立刻吃到新样式；翻页模式同时按新的关闭清单重算顺序
+function refreshStickyWindowsAfterSettings() {
+  if (stickyNoteMode === 'flip') {
+    const hidden = flipHiddenSet();
+    stickyNoteOrder = stickyNoteCatalog.filter((note) => !hidden.has(flipNoteIdentity(note)));
+    const win = stickyNoteFlipWindow;
+    if (win && !win.isDestroyed()) {
+      win.webContents.send('sticky-note-order-updated', { order: stickyNoteOrder, skipRender: true });
+      // 带上汇入档的「上次页次」：渲染端据此跳页，否则重绘会立刻把当前页写回 lastId／lastIdx，
+      // 等于刚汇入的页次马上被旧值盖掉。
+      const flip = peekNoteInst(FLIP_KEY, FLIP_IDX) || {};
+      win.webContents.send('sticky-note-apply-state', {
+        lastId: typeof flip.lastId === 'string' ? flip.lastId : '',
+        lastIdx: Number.isFinite(+flip.lastIdx) ? +flip.lastIdx : 0
+      });
+    }
+    return;
+  }
+  stickyNoteWindows.forEach((win) => {
+    if (win && !win.isDestroyed()) win.webContents.send('sticky-note-apply-state');
+  });
+}
+ipcMain.handle('sticky-notes-export-settings', async () => {
+  try {
+    if (!stickyNoteFile || !stickyNoteState) return { ok: false, error: '尚未开启便利贴' };
+    const win = stickySettingsDialogParent();
+    const base = stickyNoteFile ? path.basename(stickyNoteFile).replace(/\.[^.]+$/, '') : 'calendar';
+    const opts = {
+      title: '汇出便利贴设定 JSON',
+      defaultPath: path.join(path.dirname(stickyNoteFile), 'sticky-notes-settings-' + base + '.json'),
+      filters: [{ name: 'JSON', extensions: ['json'] }]
+    };
+    const res = win ? await dialog.showSaveDialog(win, opts) : await dialog.showSaveDialog(opts);
+    if (res.canceled || !res.filePath) return { ok: false, canceled: true };
+    const payload = buildStickyPortableSettings();
+    fs.writeFileSync(res.filePath, JSON.stringify(payload, null, 2), 'utf8');
+    return {
+      ok: true,
+      path: res.filePath,
+      notes: Object.keys(payload.notes).length,
+      hidden: payload.hidden.length
+    };
+  } catch (e) {
+    console.warn('[Main] 便利贴设定汇出失败:', e);
+    return { ok: false, error: (e && e.message) || String(e) };
+  }
+});
+ipcMain.handle('sticky-notes-import-settings', async () => {
+  try {
+    if (!stickyNoteFile) return { ok: false, error: '尚未开启 calendar 档' };
+    const win = stickySettingsDialogParent();
+    const openOpts = {
+      title: '载入便利贴设定 JSON',
+      properties: ['openFile'],
+      filters: [{ name: 'JSON', extensions: ['json'] }]
+    };
+    const res = win ? await dialog.showOpenDialog(win, openOpts) : await dialog.showOpenDialog(openOpts);
+    if (res.canceled || !res.filePaths || !res.filePaths[0]) return { ok: false, canceled: true };
+    const file = res.filePaths[0];
+    let normalized = null;
+    try {
+      normalized = StickySettings.normalize(JSON.parse(fs.readFileSync(file, 'utf8')));
+    } catch (e) {
+      return { ok: false, error: '设定档无法使用：' + ((e && e.message) || e) };
+    }
+    const data = normalized.store;
+    const ids = Object.keys(data.notes);
+    if (!ids.length && !data.hidden.length && !data.lastId) {
+      return { ok: false, error: '这个 JSON 里没有便利贴设定' };
+    }
+    const catalogIds = new Set(stickyNoteCatalog.map((note) => flipNoteIdentity(note)));
+    const matched = ids.filter((id) => catalogIds.has(id));
+    const currentName = path.basename(stickyNoteFile);
+    const mismatch = normalized.calendarFile
+      && normalized.calendarFile.toLowerCase() !== currentName.toLowerCase();
+    const detailLines = [
+      '档案：' + path.basename(file),
+      '样式：' + ids.length + ' 项（本档符合 ' + matched.length + ' 项）',
+      '关闭清单：' + data.hidden.length + ' 项',
+      '上次页次：第 ' + (data.lastIdx + 1) + ' 张'
+    ];
+    if (mismatch) {
+      detailLines.push('⚠ 这份 JSON 来自「' + normalized.calendarFile + '」，与当前档「' + currentName + '」不同。');
+    }
+    detailLines.push('', '将以 JSON 的值取代本机现有的便利贴样式／开关／页次；',
+      '窗口位置与尺寸不在可携档内，不会变动。此操作无法复原。');
+    const detail = detailLines.join('\n');
+    const confirmOpts = {
+      type: 'warning',
+      title: '载入便利贴设定',
+      message: '确定要载入并取代目前的便利贴设定吗？',
+      detail,
+      buttons: ['取消', '载入并取代'],
+      defaultId: 0,          // 安全默认：回车／Esc／关窗都等于「取消」，不会误取代
+      cancelId: 0,
+      noLink: true
+    };
+    const choice = win ? dialog.showMessageBoxSync(win, confirmOpts) : dialog.showMessageBoxSync(confirmOpts);
+    if (choice !== 1) return { ok: false, canceled: true };
+
+    if (!stickyNoteState) stickyNoteState = loadStickyNoteState();
+    let applied = 0;
+    stickyNoteCatalog.forEach((note) => {
+      const identity = flipNoteIdentity(note);
+      const prefs = data.notes[identity];
+      if (!prefs) return;
+      const it = noteInst(note.key, note.idx);
+      Object.assign(it, prefs);
+      if (stickyIdentityOf(note) !== '|' && !it._id) it._id = stickyIdentityOf(note);
+      applied += 1;
+    });
+    const flip = noteInst(FLIP_KEY, FLIP_IDX);
+    flip.flipHidden = data.hidden.slice();
+    if (data.lastId) flip.lastId = data.lastId;
+    flip.lastIdx = data.lastIdx;
+    if (!saveStickyNoteState()) {
+      return { ok: false, error: '设定存档目前无法写入，本次载入没有保存；请检查 sticky-notes-state.json 的存取权限' };
+    }
+    refreshStickyWindowsAfterSettings();
+    return {
+      ok: true,
+      path: file,
+      applied,
+      notes: ids.length,
+      matched: matched.length,
+      hidden: data.hidden.length
+    };
+  } catch (e) {
+    console.warn('[Main] 便利贴设定载入失败:', e);
+    return { ok: false, error: (e && e.message) || String(e) };
+  }
+});
 function noteWinId(key, idx) { return key + '#' + idx; }
 // 记录/更新一张便利贴的来源元数据（notes＝原始 Markdown 备注，src＝INCLUDE 来源文件名，空＝calendar.md）
 function rememberStickyMeta(note) {

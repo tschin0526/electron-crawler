@@ -295,7 +295,22 @@
 //       實作：desktop-note.js applyColor 增設 --note-bg（tint 實色 100）；LITE calStickyApplyStyle 增設 --cal-sticky-bg；
 //       desktop-note.html 與 style.css 的 .search-highlight 由金底黑字改為 var(--note-fg/--cal-sticky-fg) 底 + 紙色字。
 //       LITE sticky-notes.js/style.css 改，bump 讓手機重拉；APP_VERSION 與 manifest.json 同步 1.8.8→1.8.9。
-const CACHE_NAME = 'md-editor-lite-v171';
+// v172：便利貼設定可攜 JSON（承接「改程式／重開後設定不見」）——LITE localStorage 對 origin + 檔名敏感，
+//       換 port／LAN IP 或清網站資料就整份消失。便利貼 ☰ 清單新增「📥 載入設定 JSON／📤 匯出設定 JSON」：
+//       匯出檔名 sticky-notes-settings-<calendar檔名>.json，內含每張樣式、關閉清單、上次頁次；
+//       載入時同時認得桌面原生存檔 sticky-notes-state.json（自動逐筆轉換），確認後取代目前 calendar 檔的 storage。
+//       轉換與欄位驗證抽成共用 sticky-settings.js（桌面主程序 require 同一份，避免兩端口徑分歧）。
+//       LITE index.html/sticky-notes.js/style.css/sticky-settings.js/sw.js 改，bump 讓手機重拉；
+//       APP_VERSION 與 manifest.json 同步 1.8.9→1.9.0。
+// v174：手機版「開啟」一次選 calendar.md ＋ sticky-notes-settings-*.json 時，主檔開好就自動套用設定
+//       （不必再進便利貼選單按「載入設定 JSON」）；只選設定 JSON 也能套用到目前 calendar 檔；
+//       剛啟動還沒開檔時先選設定 JSON → 依 JSON 自帶的 calendarFile 寫入該檔設定槽，開啟後即生效。
+//       app.js/sticky-notes.js/sw.js 改，bump 讓手機重拉；APP_VERSION 與 manifest.json 同步 1.9.1→1.9.2。
+// v173：便利貼設定接進主保存流程——改樣式／關閉清單後頂欄「保存」亮角標，
+//       按保存時設定 JSON 與主檔、聯運檔一起交付（iOS 逐檔各彈一次分享面板）；
+//       交付成功才清角標，取消則保留。頁次不列入比對（翻頁不會亮角標）。
+//       app.js/calendar-editor.js/sticky-notes.js 改，bump 讓手機重拉；APP_VERSION 1.9.0→1.9.1。
+const CACHE_NAME = 'md-editor-lite-v174';
 const ASSETS = [
   './',
   './index.html',
@@ -306,6 +321,7 @@ const ASSETS = [
   './md-renderer.js',
   './md-table-grid.js',
   './calendar-editor.js',
+  './sticky-settings.js',
   './sticky-notes.js',
   './manifest.json',
   './icon.svg',

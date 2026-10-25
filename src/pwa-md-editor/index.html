@@ -520,7 +520,14 @@
                 <button type="button" id="calStickyZoomIn" title="放大字體">A＋</button>
               </div>
             </div>
-            <div class="cal-sticky-hint">在行程編輯表單把「便利貼張數」設為 1 以上，該行程就會出現在這裡。開關狀態、樣式與上次停留的頁次會自動記住（存在本機瀏覽器），下次開啟便利貼時原樣還原，不會改寫 calendar.md。</div>
+            <div class="cal-sticky-sec">
+              <div class="cal-sticky-sec-title">設定備份（建議存到 calendar 同一個資料夾）</div>
+              <div class="cal-sticky-io">
+                <button type="button" class="cal-sticky-toggle" id="calStickyImportSettingsBtn" title="從 JSON 還原便利貼樣式／開關／頁次（會取代本機目前的設定）">📥 載入設定 JSON</button>
+                <button type="button" class="cal-sticky-toggle" id="calStickyExportSettingsBtn" title="把便利貼樣式／開關／頁次匯出成 JSON">📤 匯出設定 JSON</button>
+              </div>
+            </div>
+            <div class="cal-sticky-hint">在行程編輯表單把「便利貼張數」設為 1 以上，該行程就會出現在這裡。開關狀態、樣式與上次停留的頁次會自動記住（存在本機瀏覽器），下次開啟便利貼時原樣還原，不會改寫 calendar.md。換裝置或清過瀏覽器資料時，可用下方「匯出／載入設定 JSON」備份到 calendar 同目錄。</div>
           </div>
         </div>
       </div>
@@ -603,6 +610,8 @@
   <script src="md-table-grid.js?v=159"></script>
   <!-- 📅 Calendar 特性編輯器（資料感知編輯器 #1）：依賴 app.js 的 state/elements，必須在其後載入 -->
   <script src="calendar-editor.js?v=159"></script>
+  <!-- 🗒 便利貼設定 JSON 轉換（桌面／LITE 共用，驗證＋格式互轉） -->
+  <script src="sticky-settings.js?v=159"></script>
   <!-- 🗒 便利貼（翻頁模式）：依賴 calendar-editor.js 的解析/渲染/表單，必須在其後載入 -->
   <script src="sticky-notes.js?v=159"></script>
 </body>

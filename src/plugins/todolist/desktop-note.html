@@ -484,6 +484,11 @@
       </div>
       <!-- 🆕 建立新 calendar 档案：输入后缀 → 在当前 calendar 同目录生成 calendar-<后缀>.md，供 Calendar 独立打开、分档案管理便利贴 -->
       <button class="mi" id="miNewCalendar" title="建立一个新的 calendar 档案（calendar-*.md）：输入后缀，在当前 calendar 同目录生成文件，可在 Calendar 中独立打开以分档案管理便利贴">＋ 建立 calendar 档案</button>
+      <!-- 🆕 便利贴设定备份：与手机 LITE 互通的可携 JSON（样式／开关／页次；窗口位置不在此档） -->
+      <div class="m-row">
+        <button class="mi" id="miImportSettings" title="从 JSON 还原便利贴样式／开关／页次（也认得手机汇出的设定档；会先确认才取代）">📥 载入设定</button>
+        <button class="mi" id="miExportSettings" title="把便利贴样式／开关／页次汇出成 JSON（建议存到 calendar 同目录，手机可载入）">📤 汇出设定</button>
+      </div>
       <!-- 📧 发邮件：把当前这张便利贴的内容经本机邮件服务发出（收件人在浮层里输入） -->
       <button class="mi" id="miEmail" title="把这张便利贴的内容发送邮件">📧 发邮件</button>
       <div class="m-sticky-list" id="mStickyListWrap">

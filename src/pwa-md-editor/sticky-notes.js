@@ -49,10 +49,13 @@ let calStickyTouchStart = null;
 function calStickyEl(id) { return document.getElementById(id); }
 
 // ===== 本機持久化（只存顯示偏好：每張樣式 / 開關 / 上次頁次）=====
-function calStickyStorageKey() {
+function calStickyCurrentFileName() {
   const name = (typeof state !== 'undefined' && state.currentFile && state.currentFile.name)
     ? state.currentFile.name : 'calendar.md';
-  return CAL_STICKY_STORE_PREFIX + String(name).toLowerCase();
+  return String(name);
+}
+function calStickyStorageKey() {
+  return CAL_STICKY_STORE_PREFIX + calStickyCurrentFileName().toLowerCase();
 }
 function calStickyLoadStore() {
   const key = calStickyStorageKey();
@@ -84,6 +87,256 @@ function calStickySaveStore() {
 function calStickyResetStore() {
   calStickyStoreCache = null;
   calStickyStoreKeyCache = '';
+}
+
+// ===== 「設定已寫回 JSON」基線（保存角標用）=====
+// 只比對樣式＋關閉清單；頁次（lastId/lastIdx）不列入，否則光是翻頁就會一直亮角標。
+const CAL_STICKY_SYNCED_PREFIX = 'calStickySettingsSynced:';
+let calStickySyncedCache = null;   // null＝本檔還沒建立基線
+let calStickySyncedKeyCache = '';
+
+function calStickySyncedKey() {
+  return CAL_STICKY_SYNCED_PREFIX + calStickyCurrentFileName().toLowerCase();
+}
+function calStickySettingsSignature() {
+  const store = calStickyLoadStore();
+  const notes = {};
+  Object.keys(store.notes || {}).sort().forEach((id) => {
+    const prefs = (typeof StickySettings !== 'undefined')
+      ? StickySettings.pickPrefs(store.notes[id])
+      : (store.notes[id] || {});
+    if (Object.keys(prefs).length) notes[id] = prefs;
+  });
+  const hidden = (store.hidden || []).slice().sort();
+  return JSON.stringify({ notes, hidden });
+}
+function calStickyReadSynced() {
+  const key = calStickySyncedKey();
+  if (key === calStickySyncedKeyCache && calStickySyncedCache !== null) return calStickySyncedCache;
+  let raw = null;
+  try { raw = localStorage.getItem(key); } catch (e) { raw = null; }
+  calStickySyncedKeyCache = key;
+  calStickySyncedCache = (typeof raw === 'string') ? raw : null;
+  return calStickySyncedCache;
+}
+function calStickyWriteSynced(signature) {
+  calStickySyncedKeyCache = calStickySyncedKey();
+  calStickySyncedCache = signature;
+  try { localStorage.setItem(calStickySyncedKeyCache, signature); } catch (e) {}
+}
+// 目前設定是否和「上次寫回的 JSON」不同（供保存按鈕角標）
+function calStickySettingsDirty() {
+  if (typeof isCalendarMd !== 'function' || !isCalendarMd()) return false;
+  const current = calStickySettingsSignature();
+  const base = calStickyReadSynced();
+  if (base === null) {   // 這個檔第一次使用：以現況當基線，不立刻亮角標
+    calStickyWriteSynced(current);
+    return false;
+  }
+  return base !== current;
+}
+// JSON 真的交付出去（picker 寫入／分享面板完成）之後才呼叫；取消不得呼叫
+function calStickyMarkSettingsSaved() {
+  calStickyWriteSynced(calStickySettingsSignature());
+  if (typeof updateStatus === 'function') updateStatus();
+}
+
+// ===== 設定備份：匯出／載入可攜 JSON（桌面與 LITE 同一套轉換，見 sticky-settings.js）=====
+// 手機 localStorage 對「origin + 檔名」敏感：換 port／LAN IP 或清網站資料就會整份不見。
+// 這兩個動作讓使用者把樣式／開關／頁次存進 calendar 同目錄的 JSON，之後再寫回 storage。
+function calStickySettingsFileName() {
+  const base = calStickyCurrentFileName().replace(/\.md$/i, '') || 'calendar';
+  return 'sticky-notes-settings-' + base + '.json';
+}
+function calStickySettingsFile() {
+  const store = calStickyLoadStore();
+  const payload = StickySettings.buildPortable({
+    notes: store.notes,
+    hidden: store.hidden,
+    lastId: store.lastId,
+    lastIdx: store.lastIdx
+  }, calStickyCurrentFileName(), 'pwa-md-editor');
+  return { name: calStickySettingsFileName(), content: JSON.stringify(payload, null, 2) };
+}
+// 回傳 { ok, canceled, how, name }；opts.silent＝由呼叫端統一回報，不自己彈 toast
+async function calStickyExportSettings(opts) {
+  opts = opts || {};
+  const silent = !!opts.silent;
+  if (typeof isCalendarMd !== 'function' || !isCalendarMd()) {
+    if (!silent) showToast('請先開啟 calendar 檔', 'error');
+    return { ok: false, canceled: false, error: 'no-file' };
+  }
+  if (typeof StickySettings === 'undefined') {
+    if (!silent) showToast('設定轉換模組未載入，請重新整理頁面', 'error');
+    return { ok: false, canceled: false, error: 'module-missing' };
+  }
+  let file = null;
+  try { file = calStickySettingsFile(); }
+  catch (e) {
+    if (!silent) showToast('匯出設定失敗：' + ((e && e.message) || e), 'error');
+    return { ok: false, canceled: false, error: (e && e.message) || String(e) };
+  }
+
+  // 桌面 Chromium：直接開儲存對話框（可選 iCloud 的 calendar 資料夾）
+  if ('showSaveFilePicker' in window && typeof window.showSaveFilePicker === 'function') {
+    try {
+      const handle = await window.showSaveFilePicker({
+        suggestedName: file.name,
+        types: [{ description: '便利貼設定 JSON', accept: { 'application/json': ['.json'] } }]
+      });
+      const writable = await handle.createWritable();
+      await writable.write(new Blob([file.content], { type: 'application/json;charset=utf-8' }));
+      await writable.close();
+      calStickyMarkSettingsSaved();
+      if (!silent) showToast('已匯出設定：' + file.name + '（請與 calendar 檔放同一目錄）', 'success');
+      return { ok: true, canceled: false, how: 'picker', name: file.name };
+    } catch (e) {
+      if (e && e.name === 'AbortError') return { ok: false, canceled: true, error: 'canceled' };
+      if (!silent) showToast('匯出設定失敗：' + ((e && e.message) || e), 'error');
+      return { ok: false, canceled: false, error: (e && e.message) || String(e) };
+    }
+  }
+
+  // iOS / Android：分享面板（存到檔案）→ 下載兜底
+  try {
+    const how = await saveViaMobile(file.content, file.name);
+    calStickyMarkSettingsSaved();
+    if (!silent) {
+      showToast(how === 'shared'
+        ? '已送出設定檔：在分享面板選「儲存到檔案」→ 存到 calendar 同一目錄'
+        : '已下載設定檔：' + file.name + '（請移到 calendar 同一目錄）', 'success');
+    }
+    return { ok: true, canceled: false, how, name: file.name };
+  } catch (e) {
+    if (e && e.name === 'AbortError') return { ok: false, canceled: true, error: 'canceled' };
+    if (!silent) showToast('匯出設定失敗：' + ((e && e.message) || e), 'error');
+    return { ok: false, canceled: false, error: (e && e.message) || String(e) };
+  }
+}
+function calStickyReadJsonFile(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      try { resolve(JSON.parse(String(reader.result || ''))); }
+      catch (e) { reject(new Error('JSON 解析失敗：' + e.message)); }
+    };
+    reader.onerror = () => reject(new Error('無法讀取檔案'));
+    reader.readAsText(file, 'UTF-8');
+  });
+}
+function calStickyImportSettings() {
+  if (typeof isCalendarMd !== 'function' || !isCalendarMd()) {
+    showToast('請先開啟 calendar 檔', 'error');
+    return;
+  }
+  if (calStickyEditMode && calStickyEditDirty) {
+    showToast('便利貼內容有未保存的改動，請先保存再載入設定', 'error');
+    return;
+  }
+  // iOS 的檔案選單對 accept 過濾不可靠（會把目標檔灰掉），故不設 accept，選完再驗內容
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.style.display = 'none';
+  input.addEventListener('change', () => {
+    const file = input.files && input.files[0];
+    input.remove();
+    if (file) calStickyApplySettingsFile(file);
+  });
+  document.body.appendChild(input);
+  input.click();
+}
+// opts.auto＝開檔時「calendar + 設定 JSON」一起選的自動套用：不再彈確認，
+//   因為選擇這個檔案本身就是使用者的明示意圖；成功與否則以 toast 回報。
+async function calStickyApplySettingsFile(file, opts) {
+  opts = opts || {};
+  const auto = !!opts.auto;
+  if (auto && calStickyEditMode && calStickyEditDirty) {
+    showToast('便利貼內容有未保存的改動，這次不套用設定 JSON', 'info');
+    return false;
+  }
+  let parsed = null;
+  try { parsed = await calStickyReadJsonFile(file); }
+  catch (e) { showToast(e.message, 'error'); return false; }
+  let normalized = null;
+  try {
+    if (typeof StickySettings === 'undefined') throw new Error('設定轉換模組未載入，請重新整理頁面');
+    normalized = StickySettings.normalize(parsed);
+  } catch (e) {
+    showToast('設定檔無法使用：' + ((e && e.message) || e), 'error');
+    return false;
+  }
+  const next = normalized.store;
+  const noteCount = Object.keys(next.notes).length;
+  if (!noteCount && !next.hidden.length && !next.lastId) {
+    showToast('這個 JSON 裡沒有便利貼設定', 'info');
+    return false;
+  }
+  // 還沒開 calendar 檔（例如剛啟動就先選設定 JSON）：以 JSON 自帶的 calendarFile 為目標，
+  //   先寫進那個檔的設定槽，之後開啟同名 calendar 檔就自動生效。
+  const hasCurrent = (typeof isCalendarMd === 'function') && isCalendarMd();
+  const currentName = hasCurrent ? calStickyCurrentFileName() : String(normalized.calendarFile || '');
+  if (!hasCurrent && !/^calendar.*\.md$/i.test(currentName)) {
+    showToast('請先開啟 calendar 檔，或選擇檔內帶 calendarFile 的設定 JSON', 'error');
+    return false;
+  }
+  const storageKey = hasCurrent ? calStickyStorageKey() : CAL_STICKY_STORE_PREFIX + currentName.toLowerCase();
+  const catalogIds = new Set(calStickyCatalog.map((n) => n.identity));
+  const matched = Object.keys(next.notes).filter((id) => catalogIds.has(id)).length;
+  const mismatch = normalized.calendarFile
+    && normalized.calendarFile.toLowerCase() !== currentName.toLowerCase();
+  if (!auto) {
+    const lines = [
+      '📥 載入便利貼設定',
+      '',
+      '檔案：' + file.name,
+      '樣式：' + noteCount + ' 項（本檔符合 ' + matched + ' 項）',
+      '關閉清單：' + next.hidden.length + ' 項',
+      '上次頁次：第 ' + (next.lastIdx + 1) + ' 張'
+    ];
+    if (mismatch) {
+      lines.push('', '⚠ 這份 JSON 來自「' + normalized.calendarFile + '」，與目前檔「' + currentName + '」不同。');
+    }
+    lines.push('', '將以此取代本機「' + currentName + '」現有的便利貼設定（原有設定無法復原）。', '', '確定載入？');
+    if (!window.confirm(lines.join('\n'))) return false;
+  }
+
+  try {
+    localStorage.setItem(storageKey, JSON.stringify({
+      notes: next.notes,
+      hidden: next.hidden,
+      lastId: next.lastId,
+      lastIdx: next.lastIdx
+    }));
+  } catch (e) {
+    showToast('寫入設定失敗：' + ((e && e.message) || e), 'error');
+    return false;
+  }
+  const summary = noteCount + ' 張樣式、' + next.hidden.length + ' 張關閉';
+  if (!hasCurrent) {
+    showToast('已套用便利貼設定：開啟「' + currentName + '」後生效（' + summary + '）', 'success');
+    return true;
+  }
+  calStickyResetStore();
+  calStickyRebuild();
+  let idx = next.lastId ? calStickyPages.findIndex((n) => n.identity === next.lastId) : -1;
+  if (idx < 0) idx = Math.min(next.lastIdx, Math.max(0, calStickyPages.length - 1));
+  if (idx < 0) idx = 0;
+  calStickyRenderPage(idx, { toast: false });
+  if (calStickySheetOpen()) {
+    calStickyRenderSheetList();
+    const prefs = calStickyCurrentId ? calStickyNotePrefs(calStickyCurrentId) : calStickyNotePrefs('');
+    calStickySyncControls(prefs);
+    calStickyRenderSwatches(prefs);
+  }
+  // 剛載入的 JSON 就是磁碟上的現況 → 基線對齊，不必再提示寫回
+  calStickyMarkSettingsSaved();
+  if (auto) {
+    showToast('已套用便利貼設定 JSON：' + summary
+      + (mismatch ? '（JSON 來自「' + normalized.calendarFile + '」）' : ''), 'success');
+  } else {
+    calStickyShowToast('已載入設定：' + summary);
+  }
+  return true;
 }
 
 // ===== 目錄：把 sticky>0 的行程展開成 N 張 =====
@@ -153,6 +406,8 @@ function calStickyWritePrefs(identity, prefs) {
   if (!identity) return;
   calStickyLoadStore().notes[identity] = prefs;
   calStickySaveStore();
+  // 樣式變更 → 保存角標依「與上次寫回的 JSON 是否不同」重算
+  if (typeof updateStatus === 'function') updateStatus();
 }
 
 // ===== 色彩工具（透明度＝8 位 hex 的 alpha；標籤底色依字色亮度取反）=====
@@ -638,6 +893,7 @@ function calStickyToggleHidden(identity) {
   if (wasHidden) store.hidden.splice(at, 1);
   else store.hidden.push(identity);
   calStickySaveStore();
+  if (typeof updateStatus === 'function') updateStatus();   // 關閉清單也算設定變更
   calStickyRebuild();
   if (wasHidden) {
     // 剛開啟：直接跳到它，讓使用者立刻看到
@@ -1057,7 +1313,10 @@ function calStickyRefreshIfOpen() {
       if (calStickyCurrentId === prev.identity) calStickyCurrentId = next.identity;
       migrated = true;
     });
-    if (migrated) calStickySaveStore();
+    if (migrated) {
+      calStickySaveStore();
+      if (typeof updateStatus === 'function') updateStatus();   // 身分搬家＝設定鍵也變了
+    }
   }
   const keepId = calStickyCurrentId;
   const keepUid = calStickyCurrentUid;
@@ -1167,6 +1426,8 @@ function calStickyInit() {
   on('calStickyPrevBtn', 'click', () => calStickyStep(-1));
   on('calStickyNextBtn', 'click', () => calStickyStep(1));
   on('calStickyUndone', 'click', calStickyToggleUndone);
+  on('calStickyImportSettingsBtn', 'click', calStickyImportSettings);
+  on('calStickyExportSettingsBtn', 'click', () => calStickyExportSettings());
   on('calStickyOpacity', 'input', (e) => calStickyUpdatePrefs({ opacity: parseInt(e.target.value, 10) || 100 }));
   on('calStickyZoomOut', 'click', () => calStickyZoom(-0.1));
   on('calStickyZoomIn', 'click', () => calStickyZoom(0.1));

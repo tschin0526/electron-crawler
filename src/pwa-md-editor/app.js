@@ -8,7 +8,7 @@ const VIEWS = ['edit', 'preview', 'split', 'events'];
 
 // 📌 應用版本號（單一可信來源）。
 // 每次改動都要 +1，方便在手機上確認跑的是不是最新版（狀態列左下角會顯示）。
-const APP_VERSION = '1.8.9';
+const APP_VERSION = '1.9.2';
 
 // 可處理的文字檔副檔名白名單（對齊 todo 編輯器 TEXT_EXTS，取常用子集）
 const TEXT_EXTS = [
@@ -733,6 +733,37 @@ function openFilePicker(intent) {
   elements.fileInput.click();
 }
 
+// 便利貼設定 JSON：檔名口徑與匯出檔一致（LITE 可攜檔＋桌面原生 state 檔）
+function isStickySettingsJsonName(name) {
+  return /^sticky-notes-(?:settings-.+|state)\.json$/i.test(String(name || ''));
+}
+
+// 開檔時一起選到的設定 JSON → 套用到剛開啟的 calendar 檔；
+//   若還沒開 calendar（剛啟動先選 JSON），由 calStickyApplySettingsFile 依 JSON 自帶的
+//   calendarFile 先寫入該檔的設定槽，等它被開啟時生效。
+//   使用者一次選「calendar + 設定 JSON」就是明示意圖，故不再彈確認（opts.auto）。
+async function applyPickedStickySettings(settingsFiles) {
+  if (!settingsFiles || !settingsFiles.length) return false;
+  if (typeof calStickyApplySettingsFile !== 'function') return false;
+  const hasCal = (typeof isCalendarMd === 'function') && isCalendarMd();
+  const current = String((state.currentFile && state.currentFile.name) || '');
+  const ownName = hasCal
+    ? 'sticky-notes-settings-' + current.replace(/\.md$/i, '').toLowerCase() + '.json'
+    : '';
+  const own = ownName ? settingsFiles.find((f) => f.name.toLowerCase() === ownName) : null;
+  const file = own || settingsFiles[0];
+  if (settingsFiles.length > 1) {
+    showToast('已套用「' + file.name + '」，其餘 ' + (settingsFiles.length - 1) + ' 個設定檔略過', 'info');
+  }
+  try {
+    return await calStickyApplySettingsFile(file, { auto: true });
+  } catch (e) {
+    console.error('[LITE] 自動套用便利貼設定失敗:', e);
+    showToast('套用設定 JSON 失敗：' + ((e && e.message) || e), 'error');
+    return false;
+  }
+}
+
 // 處理文件選擇（「開啟」是唯一入口，可一次多選）
 //   📎 多選規則（2026-10-24 使用者定稿口徑，與選擇先後無關）：
 //     • 只選 1 個檔案 → 照舊開啟，並自動還原該主檔上次聯運過的檔案（本機快取）
@@ -754,9 +785,24 @@ async function handleFileSelect(event) {
 
   if (!files.length) return;
 
+  // 🆕 便利貼設定 JSON 可與 calendar 檔一起選（一次選「calendar.md + sticky-notes-settings-*.json」）：
+  //   先分流出來，不當普通文字檔開啟，等主檔開好後自動套用。
+  const settingsPicked = files.filter((f) => isStickySettingsJsonName(f.name));
+  if (settingsPicked.length) files = files.filter((f) => !isStickySettingsJsonName(f.name));
+  if (!files.length) {
+    await applyPickedStickySettings(settingsPicked);
+    return;
+  }
+
   if (intent === 'calendar') {
     const picked = files.filter((f) => /^calendar.*\.md$/i.test(f.name));   // 與 calPlanOpenSet 同口徑
     if (!picked.length) {
+      // 只選了設定 JSON → 直接套用（已有 calendar 檔就立刻生效；還沒開則等該檔開啟後生效）
+      if (settingsPicked.length) {
+        await applyPickedStickySettings(settingsPicked);
+        if (typeof isCalendarMd === 'function' && isCalendarMd() && typeof calStickyOpen === 'function') calStickyOpen();
+        return;
+      }
       showToast('便利貼只開啟 calendar*.md：「' + files.map((f) => f.name).join('、') + '」這次未開啟', 'error');
       return;
     }
@@ -769,6 +815,8 @@ async function handleFileSelect(event) {
   // ① 單一檔案：完全沿用舊行為（含 todo 卡片 JSON、任何文字檔）
   if (files.length === 1) {
     const ok = await openSingleFile(files[0]);
+    // 設定 JSON 跟著這批一起選 → 主檔就緒後立刻套用（不必再進便利貼選單按載入）
+    if (ok && settingsPicked.length) await applyPickedStickySettings(settingsPicked);
     // 便利貼路徑：開啟成功就把便利貼開起來，讓「🗒 → 選檔 → 看貼」一次走完
     if (ok && intent === 'calendar' && typeof calStickyOpen === 'function') calStickyOpen();
     return;
@@ -807,8 +855,13 @@ async function handleFileSelect(event) {
     if (!replaced) return;   // 使用者選擇保留既有修改（不覆蓋）
   }
 
+  // 設定 JSON 也一起選了 → 主檔＋聯運檔都就緒後套用（樣式／關閉清單／頁次立即生效）
+  let settingsApplied = false;
+  if (settingsPicked.length) settingsApplied = await applyPickedStickySettings(settingsPicked);
+
   const bits = ['主檔：' + main.name + '（行程本體可編輯）'];
   if (includeFiles.length) bits.push('聯運 ' + includeFiles.length + ' 檔（只讀·便利貼可編輯）');
+  if (settingsApplied) bits.push('便利貼設定：已套用 JSON');
   if (others.length) bits.push('略過 ' + others.length + ' 個非 calendar 檔');
   showToast(bits.join('；'), 'success');
   if (intent === 'calendar' && typeof calStickyOpen === 'function') calStickyOpen();
@@ -968,6 +1021,13 @@ async function handleSave(target) {
     return;
   }
 
+  // 只存便利貼設定 JSON（保存下拉選單的單獨項目）
+  if (target === 'sticky-settings') {
+    if (typeof calStickyExportSettings === 'function') await calStickyExportSettings();
+    updateStatus();
+    return;
+  }
+
   const rawContent = elements.editor.value;
 
   // 🆕 todo 卡片模式：把改後的正文合回原始物件再整體序列化，
@@ -984,16 +1044,26 @@ async function handleSave(target) {
     saveAsJson = true;
   }
 
+  // 🆕 便利貼設定 JSON：跟主檔／聯運檔共用同一顆保存鍵。
+  //    只在「全部保存」時附帶；下拉選單選「主檔」就只存主檔。
+  const settingsExtra = [];
+  if (target !== 'main' && typeof calStickySettingsDirty === 'function' && calStickySettingsDirty()
+      && typeof calStickySettingsFile === 'function') {
+    try { settingsExtra.push(calStickySettingsFile()); }
+    catch (e) { console.warn('[LITE] 便利貼設定檔組裝失敗:', e); }
+  }
+
   // 只存主檔但主檔沒改 → 無東西可存（聯運檔另有下拉清單可個別存）
   if (target === 'main' && !state.isDirty && state.currentFile) {
     showToast('主檔沒有修改，無需保存', 'info');
     return;
   }
 
-  // 只改了聯運檔（主檔緩衝沒動）：不要把主檔再存一次，直接匯出聯運檔
+  // 只改了聯運檔／便利貼設定（主檔緩衝沒動）：不要把主檔再存一次，直接匯出待寫回的檔案
   //   —— 否則 iOS 會為一個「沒改的主檔」也彈一次分享面板
-  if (!state.isDirty && state.currentFile && wantIncludes.length) {
-    await calExportIncludes(wantIncludes);
+  if (!state.isDirty && state.currentFile && (wantIncludes.length || settingsExtra.length)) {
+    const res = await calExportIncludes(wantIncludes, { extra: settingsExtra });
+    if (settingsExtra.length && res.saved.indexOf(settingsExtra[0].name) >= 0) calStickyMarkSettingsSaved();
     return;
   }
 
@@ -1049,9 +1119,10 @@ async function handleSave(target) {
         showToast(saveAsJson
           ? `已合併保存 todo 卡片：${state.currentFile.name}`
           : `已保存：${state.currentFile.name}`, 'success');
-        // 📎 聯運檔也待寫回時，順手逐檔存回（桌面走 picker，直接寫進所選路徑）
-        if (wantIncludes.length && typeof calExportIncludes === 'function') {
-          await calExportIncludes(wantIncludes);
+        // 📎 聯運檔／便利貼設定也待寫回時，順手逐檔存回（桌面走 picker，直接寫進所選路徑）
+        if ((wantIncludes.length || settingsExtra.length) && typeof calExportIncludes === 'function') {
+          const res = await calExportIncludes(wantIncludes, { extra: settingsExtra });
+          if (settingsExtra.length && res.saved.indexOf(settingsExtra[0].name) >= 0) calStickyMarkSettingsSaved();
         }
       } catch (abortErr) {
         // 用戶在保存對話框點取消（AbortError）—— 靜默，不算錯誤
@@ -1060,18 +1131,19 @@ async function handleSave(target) {
     } else {
       // 🍎 iOS / Android：沒有 showSaveFilePicker，
       // 首選系統分享面板（可選「儲存到檔案」直接覆蓋原檔），不行才退回下載。
-      // 📎 若同時有聯運檔待寫回：**一次分享面板送出整批**（主檔在前），
-      //    使用者在「儲存到檔案」裡選一次資料夾就把所有檔案一起存回去，不必連點多次。
-      if (wantIncludes.length && typeof calExportIncludes === 'function') {
+      // 📎 若同時有聯運檔／便利貼設定待寫回：整批送出（主檔在前），
+      //    iOS 每個檔案各彈一次面板，每次選同一資料夾並確認替換即可。
+      if ((wantIncludes.length || settingsExtra.length) && typeof calExportIncludes === 'function') {
         const res = await calExportIncludes(wantIncludes, {
-          extra: [{ name: state.currentFile.name, content }],
+          extra: [{ name: state.currentFile.name, content }].concat(settingsExtra),
           silent: true   // 整批結果由這裡統一回報，避免兩個 toast 互相蓋掉
         });
         if (res.canceled) return;   // 使用者取消 → 主檔也不算已保存（維持未保存狀態，可再按）
         state.isDirty = false;
         state.lastContent = rawContent;
         if (saveAsJson) state.originalTodo = JSON.parse(content);
-        showToast('已送出 ' + (wantIncludes.length + 1) + ' 個檔案（主檔＋聯運檔）：在分享面板選「儲存到檔案」→ 選原資料夾 → 覆蓋', 'success');
+        if (settingsExtra.length && res.saved.indexOf(settingsExtra[0].name) >= 0) calStickyMarkSettingsSaved();
+        showToast('已送出 ' + res.saved.length + ' 個檔案（主檔／聯運檔／便利貼設定）：在分享面板選「儲存到檔案」→ 選原資料夾 → 覆蓋', 'success');
       } else {
         const how = await saveViaMobile(content, state.currentFile.name);
         state.isDirty = false;
@@ -1109,6 +1181,11 @@ function renderSaveMenu() {
   }
   const inc = (typeof calPendingIncludes === 'function') ? calPendingIncludes() : [];
   inc.forEach((f) => items.push({ label: f.name, sub: '聯運檔', target: 'include:' + f.name }));
+  // 🆕 便利貼設定：可只存這一份（不重存主檔／聯運檔）
+  if (typeof calStickySettingsDirty === 'function' && calStickySettingsDirty()
+      && typeof calStickySettingsFileName === 'function') {
+    items.push({ label: calStickySettingsFileName(), sub: '便利貼設定', target: 'sticky-settings' });
+  }
   if (!items.length) {
     const empty = document.createElement('div');
     empty.className = 'btn-save-menu-empty';
@@ -1409,10 +1486,14 @@ function updateStatus() {
   //   所以保存鍵是否可按＝主檔髒 **或** 有聯運檔待寫回；否則只改聯運檔時按鈕是灰的，
   //   使用者會以為「沒東西可存」（2026-10-23 實測回饋）。
   const incDirty = (typeof calPendingIncludes === 'function') ? calPendingIncludes().length : 0;
-  const canSave = !!state.isDirty || incDirty > 0;
+  // 🆕 便利貼設定也走同一顆保存鍵：改了樣式／關閉清單但還沒寫回 JSON 時要亮角標
+  const stickyDirty = (typeof calStickySettingsDirty === 'function') ? calStickySettingsDirty() : false;
+  const canSave = !!state.isDirty || incDirty > 0 || stickyDirty;
   const status = state.isDirty
     ? '● 未保存的更改'
-    : (incDirty ? '● ' + incDirty + ' 個聯運檔未寫回' : '就緒');
+    : (incDirty
+        ? '● ' + incDirty + ' 個聯運檔未寫回'
+        : (stickyDirty ? '● 便利貼設定未寫回 JSON' : '就緒'));
   elements.statusText.textContent = status;
   elements.btnSave.disabled = !canSave;
   elements.btnSave.style.opacity = canSave ? '1' : '0.5';
@@ -1421,10 +1502,12 @@ function updateStatus() {
     elements.btnSaveCaret.style.opacity = canSave ? '1' : '0.5';
     if (!canSave) closeSaveMenu();
   }
-  elements.btnSave.title = incDirty
-    ? (state.isDirty
-        ? '保存主檔，並匯出 ' + incDirty + ' 個聯運檔（一次分享面板可全部存回）'
-        : '匯出 ' + incDirty + ' 個聯運檔到原位置（主檔沒有變更，不會重存）')
+  const what = [];
+  if (state.isDirty) what.push('主檔');
+  if (incDirty) what.push(incDirty + ' 個聯運檔');
+  if (stickyDirty) what.push('便利貼設定 JSON');
+  elements.btnSave.title = canSave
+    ? '保存到 iCloud：' + what.join('、')
     : '保存文件到 iCloud';
 }
 

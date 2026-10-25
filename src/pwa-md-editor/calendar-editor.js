@@ -402,11 +402,27 @@ async function calExportIncludes(names, opts) {
           throw err;
         }
       }
+      // 🆕 extras（例如便利貼設定 JSON）在桌面也要逐檔寫回；主檔由 handleSave 自己存，不會出現在這裡
+      if (!canceled) {
+        for (const f of extra) {
+          try {
+            const handle = await window.showSaveFilePicker({ suggestedName: f.name });
+            const w = await handle.createWritable();
+            await w.write(new Blob([f.content], { type: mimeFor(f.name) + ';charset=utf-8' }));
+            await w.close();
+            saved.push(f.name);
+          } catch (err) {
+            if (err && err.name === 'AbortError') { canceled = true; break; }
+            throw err;
+          }
+        }
+      }
     } else {
       // 主檔排最前面：分享面板裡的順序＝使用者剛剛在編輯的那份最先看到
       how = await calDeliverFilesMobile(extra.map((f) => ({ name: f.name, content: f.content }))
         .concat(files.map((f) => ({ name: f.name, content: f.content }))));
       files.forEach((f) => { f.dirty = false; saved.push(f.name); });
+      extra.forEach((f) => { saved.push(f.name); });
     }
   } catch (err) {
     if (err && err.name === 'AbortError') canceled = true;
@@ -421,14 +437,14 @@ async function calExportIncludes(names, opts) {
     if (typeof calStickyRefreshIfOpen === 'function') calStickyRefreshIfOpen();
     if (typeof updateStatus === 'function') updateStatus();
   }
-  const n = saved.length + (how === 'picker' ? 0 : extra.length);
+  const n = saved.length;
   if (opts.silent) return { saved, how, canceled };
   if (canceled && !saved.length) {
     showToast('已取消匯出，修改仍保留在本機（下次仍可再存）', 'info');
   } else if (n > 0) {
-    if (how === 'picker') showToast('已寫回 ' + saved.length + ' 個檔案', 'success');
+    if (how === 'picker') showToast('已寫回 ' + n + ' 個檔案', 'success');
     else if (how === 'shareMulti') showToast('已送出 ' + n + ' 個檔案：在分享面板選「儲存到檔案」→ 選原資料夾 → 覆蓋', 'success');
-    else if (how === 'share') showToast('已送出「' + (saved[0] || (extra[0] && extra[0].name) || '') + '」：選「儲存到檔案」→ 選原位置 → 覆蓋', 'success');
+    else if (how === 'share') showToast('已送出「' + (saved[0] || '') + '」：選「儲存到檔案」→ 選原位置 → 覆蓋', 'success');
     else showToast('已逐檔送出 ' + n + ' 個檔案：逐一在分享面板選「儲存到檔案」→ 選原位置 → 覆蓋', 'success');
   }
   return { saved, how, canceled };
@@ -453,9 +469,11 @@ function calRenderIncludeBar() {
   const saveBadge = document.getElementById('btn-save-badge');   // 🆕 頂欄保存按鈕角標
   const files = state.calIncludeFiles || [];
   // 🆕 角標來源 = include dirty 數 + 主檔 dirty（state.isDirty 來自 app.js 的 textarea input）
+  //    ＋ 便利貼設定 dirty（與上次寫回的 sticky-notes-settings JSON 不同）
   const includeDirtyCount = files.filter((f) => f.dirty).length;
   const mainDirty = (typeof state !== 'undefined' && state.isDirty) ? 1 : 0;
-  const dirtyCount = includeDirtyCount + mainDirty;
+  const stickyDirty = (typeof calStickySettingsDirty === 'function' && calStickySettingsDirty()) ? 1 : 0;
+  const dirtyCount = includeDirtyCount + mainDirty + stickyDirty;
 
   // 🆕 頂欄「保存」按鈕角標：顯示總 dirty 數量（主檔 + include），0 則隱藏
   if (saveBadge) {

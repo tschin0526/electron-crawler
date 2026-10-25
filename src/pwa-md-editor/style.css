@@ -1771,6 +1771,9 @@ p[data-cols-marker="true"] { display: none; }
 .cal-sticky-toggle { display: block; width: 100%; margin: 10px 0 0; padding: 9px 12px; border: 1px solid var(--gold); border-radius: 8px; background: var(--bg); color: var(--text); font-size: 13px; text-align: left; cursor: pointer; }
 .cal-sticky-toggle.active { background: var(--gold-wash); }
 .cal-sticky-toggle:disabled { opacity: .4; cursor: default; }
+/* 便利貼設定備份：載入／匯出並排（窄螢幕不擠壓） */
+.cal-sticky-io { display: flex; gap: 8px; }
+.cal-sticky-io .cal-sticky-toggle { flex: 1 1 0; min-width: 0; margin-top: 6px; text-align: center; }
 .cal-sticky-hint { margin: 12px 0 0; font-size: 11px; line-height: 1.7; color: var(--text-secondary); }
 /* combo 菜單分隔線與「動作型」項目（便利貼：只有動作，沒有曝露勾選框） */
 /* 📝 備註區塊 / 子事件編輯 bottom sheet（z-index：便利貼 2500 < 本層 2600 < 行程表單 3000） */
