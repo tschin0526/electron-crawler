@@ -432,6 +432,28 @@
       position: absolute; left: 0; right: 0; box-sizing: border-box;
       padding-right: 6px; text-align: right; color: inherit;
     }
+    /* 🆕 折叠已完成 checkbox：右上角切换芯片（浮在编辑框上，不占排版高度） */
+    .tl-fold-chip {
+      display: none; position: absolute; top: 4px; right: 6px; z-index: 3;
+      padding: 1px 7px; border-radius: 999px; border: 1px solid color-mix(in srgb, var(--note-fg, #33384a) 28%, transparent);
+      background: rgba(127,127,127,.16);
+      color: var(--note-fg, #33384a); font-size: 10px; line-height: 1.6; white-space: nowrap;
+      cursor: pointer; opacity: .78; -webkit-app-region: no-drag; user-select: none;
+    }
+    .tl-fold-chip:hover { opacity: 1; }
+    .tl-fold-chip[aria-pressed="true"] { border-style: dashed; }
+    /* 🆕 折叠块在边条缝隙上的标记（▸N）：点哪块只展开哪块，不做全部展开 */
+    .fold-rail { position: absolute; left: 0; right: 0; top: 0; pointer-events: none; }
+    .fold-seam {
+      position: absolute; left: 1px; right: 1px; height: 14px; padding: 0; z-index: 2;
+      border: 1px solid color-mix(in srgb, var(--note-fg, #33384a) 35%, transparent); border-radius: 7px;
+      pointer-events: auto;
+      background: color-mix(in srgb, var(--note-fg, #33384a) 34%, transparent);
+      color: var(--note-fg, #33384a); font-family: inherit; font-size: 9px; font-weight: 600; line-height: 12px;
+      text-align: center; opacity: .95; cursor: pointer;
+      -webkit-app-region: no-drag; user-select: none;
+    }
+    .fold-seam:hover { opacity: 1; }
   </style>
 </head>
 <body>
@@ -456,6 +478,7 @@
     <div class="tl-text-gutter-wrap" id="editAreaGutterWrap">
       <div class="tl-line-gutter" id="editAreaGutter"><div class="tl-line-gutter-inner" id="editAreaGutterInner"></div></div>
       <textarea class="editArea" id="editArea" spellcheck="false" placeholder="在此直接编辑事件内容（Markdown）…"></textarea>
+      <button type="button" class="tl-fold-chip" id="editFoldChip" aria-pressed="false"></button>
     </div>
     <button type="button" class="note-mode-handle" id="noteModeHandle" aria-label="切换内容模式"></button>
     <button type="button" class="note-min-handle" id="noteMinHandle" aria-label="最小化便利贴"></button>

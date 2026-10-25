@@ -8,7 +8,7 @@ const VIEWS = ['edit', 'preview', 'split', 'events'];
 
 // 📌 應用版本號（單一可信來源）。
 // 每次改動都要 +1，方便在手機上確認跑的是不是最新版（狀態列左下角會顯示）。
-const APP_VERSION = '1.9.2';
+const APP_VERSION = '1.9.6';
 
 // 可處理的文字檔副檔名白名單（對齊 todo 編輯器 TEXT_EXTS，取常用子集）
 const TEXT_EXTS = [
@@ -1680,7 +1680,9 @@ function createLineGutter(cfg) {
 
     // 邊条寬度用 ch（按邊条自己的小字號）；textarea 的留白必須換成邊条的實際像素寬，
     // 否則同一個 'calc(Nch + Mpx)' 字符串按正文字號重新解析，兩者會錯開約 2px。
-    const targetWidth = 'calc(' + (String(lines.length).length + 1) + 'ch + ' + cfg.chrome + 'px)';
+    // count：折疊時行號按原文編號（1,2,5…），寬度須按原文件總行數算，避免展開/折疊時邊条抖寬。
+    const totalLines = cfg.count ? Math.max(lines.length, cfg.count()) : lines.length;
+    const targetWidth = 'calc(' + (String(totalLines).length + 1) + 'ch + ' + cfg.chrome + 'px)';
     if (gutter.style.width !== targetWidth) gutter.style.width = targetWidth;
     const marginPx = gutter.offsetWidth + 'px';
     if (ta.style.marginLeft !== marginPx) ta.style.marginLeft = marginPx;
@@ -1739,11 +1741,12 @@ function createLineGutter(cfg) {
       // 逐节点守卫：池化新增的节点诞生在 lhChanged=false 的那趟，靠全局开关会漏写 inline
       // 行高 → 新行号用 CSS 回退行高（与 textarea 不同）而错位
       if (n._lh !== lhStr) { n._lh = lhStr; n.style.height = lhStr; n.style.lineHeight = lhStr; }
-      const label = String(i + 1);
+      const label = cfg.label ? String(cfg.label(i)) : String(i + 1);
       if (n._label !== label) { n._label = label; n.textContent = label; }
     }
 
     syncScroll(ta, inner);
+    if (cfg.decorate) cfg.decorate({ ta: ta, gutter: gutter, inner: inner, lines: lines, tops: tops, lh: lhStr });
   }
 
   // 版簽＝內容 + 尺寸 + 字號/行高/內邊距：旋轉螢幕改尺寸、換主題都可能改排版，值沒變也一樣要重建

@@ -302,6 +302,21 @@
 //       轉換與欄位驗證抽成共用 sticky-settings.js（桌面主程序 require 同一份，避免兩端口徑分歧）。
 //       LITE index.html/sticky-notes.js/style.css/sticky-settings.js/sw.js 改，bump 讓手機重拉；
 //       APP_VERSION 與 manifest.json 同步 1.8.9→1.9.0。
+// v178：修正便利貼摺疊 ▸ 標記位置偏移——掃描摺疊塊時外層 for 迴圈在內層跳過整塊後又 i++，
+//       漏算「摺疊塊後第一條可見行」，每個前置摺疊塊就讓後面的 ▸ 再往上偏一條可見行
+//       （多塊時偏移累積十幾行，出現 tooltip 寫「第 89–91 行」卻畫在第 57 行附近）。
+//       改以 while 逐行推進。桌面 desktop-note.js 與 LITE sticky-notes.js 同修，
+//       bump 讓手機重拉；APP_VERSION 與 manifest.json 同步 1.9.5→1.9.6。
+// v177：便利貼編輯模式「折疊已完成 checkbox」與既有「只顯示未完成 checkbox」設定聯動——勾選才折疊，
+//       未勾選時編輯框顯示全文、行號 1..n、不顯示 chip 與 ▸ 標記；編輯中切換設定立即折疊／還原全文。
+//       保存仍沿 LCS 合併隱藏行（未勾選時本來就是全文，無隱藏行）。桌面 desktop-note.js 與
+//       LITE sticky-notes.js 同口徑；bump 讓手機重拉，APP_VERSION 與 manifest.json 同步 1.9.4→1.9.5。
+// v176：便利貼編輯模式「折疊已完成 checkbox」定稿——折疊不是刪除也不是隱藏：原文行數不變、行號不重排
+//       （折 3 行後可見行仍顯示 1,2,5…）；每個摺疊塊在行號邊條縫隙上有 ▸N 標記，點哪塊只展開哪塊；
+//       右上角 chip 全部展開／全部折疊（無完成項時不顯示）。保存時沿 LCS 錨點把折疊行按原順序插回全文，
+//       折疊期間新增／修改／刪除可見行都不會丟已完成內容；圍欄程式碼塊內的 [x] 不折。
+//       桌面 desktop-note.js/html 與 LITE sticky-notes.js/index.html/style.css/app.js 同口徑。
+//       bump 讓手機重拉；APP_VERSION 與 manifest.json 同步 1.9.3→1.9.4。
 // v174：手機版「開啟」一次選 calendar.md ＋ sticky-notes-settings-*.json 時，主檔開好就自動套用設定
 //       （不必再進便利貼選單按「載入設定 JSON」）；只選設定 JSON 也能套用到目前 calendar 檔；
 //       剛啟動還沒開檔時先選設定 JSON → 依 JSON 自帶的 calendarFile 寫入該檔設定槽，開啟後即生效。
@@ -310,7 +325,7 @@
 //       按保存時設定 JSON 與主檔、聯運檔一起交付（iOS 逐檔各彈一次分享面板）；
 //       交付成功才清角標，取消則保留。頁次不列入比對（翻頁不會亮角標）。
 //       app.js/calendar-editor.js/sticky-notes.js 改，bump 讓手機重拉；APP_VERSION 1.9.0→1.9.1。
-const CACHE_NAME = 'md-editor-lite-v174';
+const CACHE_NAME = 'md-editor-lite-v178';
 const ASSETS = [
   './',
   './index.html',

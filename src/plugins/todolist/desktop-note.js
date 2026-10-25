@@ -550,10 +550,16 @@ function setupControls() {
   const editArea = document.getElementById('editArea');
   if (editArea) {
     // 🆕 手动保存制：输入只标记「未保存」，不再自动落盘（避免打断思路、浪费 IO）
-    editArea.addEventListener('input', () => { editDirty = true; markEditDirty(true); });
+    editArea.addEventListener('input', () => { editDirty = true; markEditDirty(true); refreshDoneFoldChip(); });
     // 编辑区不触发「点击唤起主程式」/ 双击跳转
     editArea.addEventListener('click', (e) => e.stopPropagation());
     editArea.addEventListener('dblclick', (e) => e.stopPropagation());
+  }
+  // 🆕 已完成 checkbox 折叠切换（mousedown 阻止默认 → 不抢走编辑框焦点）
+  const foldChip = document.getElementById('editFoldChip');
+  if (foldChip) {
+    foldChip.addEventListener('mousedown', (e) => e.preventDefault());
+    foldChip.addEventListener('click', (e) => { e.stopPropagation(); toggleDoneFold(); });
   }
   // ⌘S / Ctrl+S 手动保存（编辑模式）；＋☐ 浮层打开时＝确认加入（焦点在 textarea 时由其自身 keydown 处理，这里兜底焦点在浮层外的情况）；本窗口无应用菜单，不会被系统抢走
   window.addEventListener('keydown', (e) => {
@@ -1842,6 +1848,11 @@ ipcRenderer.on('sticky-note-apply-state', async (e, payload) => {
   state.fontWeight = (typeof inst.fontWeight === 'number') ? inst.fontWeight : 400;
   state.undoneChecksOnly = !!inst.undoneChecksOnly;
   syncUndoneChecksFilter();
+  // 汇入设定时若正在编辑：折叠状态跟随新设定（勾选＝折叠／未勾选＝还原全文）
+  if (editMode) {
+    if (state.undoneChecksOnly) applyDoneFold();
+    else expandDoneFold();
+  }
   applyColor();
   applyContentFont();
   syncTextAppearance();
@@ -1940,6 +1951,11 @@ function syncUndoneChecksFilter() {
 function toggleUndoneChecksFilter() {
   state.undoneChecksOnly = !state.undoneChecksOnly;
   syncUndoneChecksFilter();
+  // 折叠与「只看未完成 checkbox」联动：勾选才折叠，取消勾选立即还原全文
+  if (editMode) {
+    if (state.undoneChecksOnly) applyDoneFold();
+    else expandDoneFold();
+  }
   persist();
 }
 function persist() {
@@ -2085,9 +2101,11 @@ async function setEditMode(edit) {
     if (ea) { ea.value = getEventNotes(); applyContentFont(); ea.scrollTop = 0; ea.style.boxShadow = ''; }
     if (note) note.classList.add('editing');
     startGutterLoop();
+    applyDoneFold();
   } else {
     if (note) note.classList.remove('editing');
     editDirty = false;
+    resetDoneFold();
     // 渲染模式：重新拉取最新渲染结果（编辑回写后已落盘 + 主程式刷新过，这里确保显示最新）
     renderNoteContent();
   }
@@ -2100,9 +2118,10 @@ async function saveNoteEdit() {
   const ea = document.getElementById('editArea');
   if (!ea || editSavePending) return false;
   editSavePending = true;
+  const fullNotes = doneFoldCurrentText();   // 折叠中：把隐藏行按原锚点合并回全文再落盘
   let result;
   try {
-    result = await ipcRenderer.invoke('sticky-note-save-edit', { key: KEY, idx: IDX, notes: ea.value, src: SRC_FILE });
+    result = await ipcRenderer.invoke('sticky-note-save-edit', { key: KEY, idx: IDX, notes: fullNotes, src: SRC_FILE });
   } catch (error) {
     window.alert('保存便利贴失败：' + (error && error.message ? error.message : error));
     editSavePending = false;
@@ -2115,7 +2134,8 @@ async function saveNoteEdit() {
   }
   // 本地缓存同步（外部 include 文件不走本地 calendar.md，重进编辑要能读回刚写的内容）
   const cached = refMeta.get(KEY);
-  if (cached) cached.notes = ea.value;
+  if (cached) cached.notes = fullNotes;
+  refreshDoneFoldAfterSave();
   editDirty = false;
   markEditDirty(false);
   return true;
@@ -2204,7 +2224,9 @@ function createLineGutter(cfg) {
 
     // 边条宽度用 ch（按边条自己的小字号）；textarea 的留白必须换成边条的实际像素宽，
     // 否则同一个 'calc(Nch + Mpx)' 字符串按正文大号字重新解析，两者会错开约 2px。
-    const targetWidth = 'calc(' + (String(lines.length).length + 1) + 'ch + ' + cfg.chrome + 'px)';
+    // count：折叠时行号按原文编号（1,2,5…），宽度须按原文档总行数算，避免展开/折叠时边条抖宽。
+    const totalLines = cfg.count ? Math.max(lines.length, cfg.count()) : lines.length;
+    const targetWidth = 'calc(' + (String(totalLines).length + 1) + 'ch + ' + cfg.chrome + 'px)';
     if (gutter.style.width !== targetWidth) gutter.style.width = targetWidth;
     const marginPx = gutter.offsetWidth + 'px';
     if (ta.style.marginLeft !== marginPx) ta.style.marginLeft = marginPx;
@@ -2264,11 +2286,12 @@ function createLineGutter(cfg) {
       const top = tops[i] + 'px';
       if (n._top !== top) { n._top = top; n.style.top = top; }
       if (lhChanged) { n.style.height = lhStr; n.style.lineHeight = lhStr; }
-      const label = String(i + 1);
+      const label = cfg.label ? String(cfg.label(i)) : String(i + 1);
       if (n._label !== label) { n._label = label; n.textContent = label; }
     }
 
     syncScroll(ta, inner);
+    if (cfg.decorate) cfg.decorate({ ta: ta, gutter: gutter, inner: inner, lines: lines, tops: tops, lh: lhStr });
   }
 
   // 版签＝内容 + 尺寸 + 字号/行高/内边距：拖拽改窗体尺寸、菜单缩放字号、换主题都可能改排版，
@@ -2311,9 +2334,449 @@ const editAreaGutter = createLineGutter({
   innerId: 'editAreaGutterInner',
   chrome: 10,
   visible: function () { return isEditAreaVisible(); },
+  // 折叠时行号沿用原文编号（可见行显示 1,2,5…），并在折叠缝隙上渲染可点开该块的标记
+  count: function () { return doneFoldState ? doneFoldState.orig.length : 0; },
+  label: function (i) { return doneFoldLabel(i); },
+  decorate: function (info) { doneFoldRenderRail(info); },
 });
 function refreshLineGutter() { editAreaGutter.refresh(); }
 function startGutterLoop() { editAreaGutter.start(); }
+
+// ===== 🆕 编辑模式：折叠已完成的 checkbox（- [x] / - [X]）=====
+// textarea 没有「隐藏行」能力：编辑框里放投影后的可见行，被折叠的原始行留在 doneFoldState；
+// 展开或保存时用行级 LCS 依原锚点插回 —— 折叠期间改/删任何可见行都不会丢隐藏内容。
+// 只折叠 checkbox 那一行（支持 > 引用前缀）；围栏代码块里的 - [x] 是范例，不折。
+const DONE_CHECK_RE = /^[ \t]*(?:>[ \t]*)*(?:[-*+]|\d+[.)])[ \t]+\[[xX]\](?=[ \t]|$)/;
+
+function doneFoldHiddenIndexes(lines) {
+  const hidden = [];
+  let fence = null;
+  for (let i = 0; i < lines.length; i++) {
+    const line = String(lines[i] == null ? '' : lines[i]).replace(/\r$/, '');
+    const fm = line.match(/^[ \t]*(`{3,}|~{3,})(.*)$/);
+    if (fence) {
+      if (fm && fm[1][0] === fence.ch && fm[1].length >= fence.len && !fm[2].trim()) fence = null;
+      continue;
+    }
+    if (fm) { fence = { ch: fm[1][0], len: fm[1].length }; continue; }
+    if (DONE_CHECK_RE.test(line)) hidden.push(i);
+  }
+  return hidden;
+}
+
+function projectDoneLines(lines, hiddenIdx) {
+  const skip = new Set(hiddenIdx);
+  const view = [];
+  const map = [];
+  for (let i = 0; i < lines.length; i++) {
+    if (skip.has(i)) continue;
+    view.push(lines[i]);
+    map.push(i);
+  }
+  return { view: view, map: map };
+}
+
+// 行级 LCS：回传 base 每行在 cur 的行号（-1＝被改/删）。超大文档退化为「前缀＋后缀」对齐，
+// 只在中间改动处失去精确锚点（隐藏行仍按顺序插回），避免 O(n*m) 内存。
+// 行被编辑（非删/插）时 LCS 认不出是同一行，会让相邻隐藏块错位到编辑行前面；
+// 用「共同前缀 ≥ 较短行的 60%（且至少 3 字符）」把它们配回锚点。仅用于锚点映射，不改输出内容。
+function doneLineSimilar(a, b) {
+  const x = String(a == null ? '' : a).trim();
+  const y = String(b == null ? '' : b).trim();
+  if (!x || !y || x === y) return false;
+  const min = Math.min(x.length, y.length);
+  if (min < 3) return false;
+  let i = 0;
+  while (i < min && x.charAt(i) === y.charAt(i)) i++;
+  return i >= 3 && i >= min * 0.6;
+}
+
+function matchDoneLines(base, cur) {
+  const n = base.length, m = cur.length;
+  const out = new Array(n).fill(-1);
+  if (!n || !m) return out;
+  let pre = 0;
+  while (pre < n && pre < m && base[pre] === cur[pre]) { out[pre] = pre; pre++; }
+  let suf = 0;
+  while (suf < n - pre && suf < m - pre && base[n - 1 - suf] === cur[m - 1 - suf]) {
+    out[n - 1 - suf] = m - 1 - suf; suf++;
+  }
+  const bn = n - pre - suf, cm = m - pre - suf;
+  if (bn <= 0 || cm <= 0 || bn * cm > 1600000) return out;
+  const w = cm + 1;
+  const dp = new Uint32Array((bn + 1) * w);
+  for (let i = bn - 1; i >= 0; i--) {
+    for (let j = cm - 1; j >= 0; j--) {
+      dp[i * w + j] = base[pre + i] === cur[pre + j]
+        ? dp[(i + 1) * w + j + 1] + 1
+        : Math.max(dp[(i + 1) * w + j], dp[i * w + j + 1]);
+    }
+  }
+  let i = 0, j = 0;
+  while (i < bn && j < cm) {
+    if (base[pre + i] === cur[pre + j]) { out[pre + i] = pre + j; i++; j++; }
+    else if (dp[(i + 1) * w + j] >= dp[i * w + j + 1]) i++;
+    else j++;
+  }
+  // 已匹配行把两边切成若干空隙：空隙两侧行数相同（原地改行）时，按顺序一对一补上相似行
+  // 的匹配，隐藏块才不会因「紧邻的可见行被改」而漂到它前面。
+  const curMatched = new Set();
+  for (let k = 0; k < n; k++) if (out[k] >= 0) curMatched.add(out[k]);
+  const bounds = [];
+  for (let k = 0; k < n; k++) if (out[k] >= 0) bounds.push(k);
+  let prevI = -1, prevJ = -1;
+  for (let b = 0; b <= bounds.length; b++) {
+    const nextI = b < bounds.length ? bounds[b] : n;
+    const nextJ = b < bounds.length ? out[nextI] : m;
+    const ub = [], uc = [];
+    for (let k = prevI + 1; k < nextI; k++) if (out[k] < 0) ub.push(k);
+    for (let k = prevJ + 1; k < nextJ; k++) if (!curMatched.has(k)) uc.push(k);
+    if (ub.length && ub.length === uc.length) {
+      for (let k = 0; k < ub.length; k++) {
+        if (doneLineSimilar(base[ub[k]], cur[uc[k]])) { out[ub[k]] = uc[k]; curMatched.add(uc[k]); }
+      }
+    }
+    prevI = nextI; prevJ = nextJ;
+  }
+  return out;
+}
+
+// 合并投影回全文，同时给出「旧原文行号 → 合并后行号」映射（个别展开时要把它翻译到新坐标）
+function mergeDoneLinesDetailed(orig, hiddenIdx, baseMap, curView) {
+  if (!hiddenIdx || !hiddenIdx.length) return { lines: curView.slice(), origToOut: null };
+  const skip = new Set(hiddenIdx);
+  const base = baseMap.map(function (i) { return orig[i]; });
+  const bn = base.length;
+  // 空 textarea 的 '' split 出 ['']：原本就没有可见行（或可见行被全删）时视作 0 行，
+  // 否则会在插回的隐藏行前面凭空多一条空行。
+  const cur = (curView.length === 1 && curView[0] === '' && !(bn === 1 && base[0] === '')) ? [] : curView;
+  const match = matchDoneLines(base, cur);
+  const curLen = cur.length;
+  const anchorOf = function (pos) {
+    if (!bn) return curLen;
+    if (pos <= 0) {
+      for (let i = 0; i < bn; i++) if (match[i] >= 0) return match[i];
+      return 0;
+    }
+    if (pos >= bn) {
+      for (let i = bn - 1; i >= 0; i--) if (match[i] >= 0) return match[i] + 1;
+      return curLen;
+    }
+    const before = match[pos - 1], after = match[pos];
+    if (before >= 0 && after >= 0) return after;
+    if (before >= 0) {
+      for (let i = pos; i < bn; i++) if (match[i] >= 0) return match[i];
+      return before + 1;
+    }
+    if (after >= 0) return after;
+    for (let i = pos - 1; i >= 0; i--) if (match[i] >= 0) return match[i] + 1;
+    for (let i = pos; i < bn; i++) if (match[i] >= 0) return match[i];
+    return curLen;
+  };
+  // 每个隐藏行的锚点＝它前面有多少可见行（投影坐标），再映射回当前视图坐标
+  const inserts = new Map();
+  let visibleBefore = 0;
+  for (let i = 0; i < orig.length; i++) {
+    if (skip.has(i)) {
+      const at = Math.max(0, Math.min(curLen, anchorOf(visibleBefore)));
+      if (!inserts.has(at)) inserts.set(at, []);
+      inserts.get(at).push(i);
+    } else {
+      visibleBefore++;
+    }
+  }
+  const out = [];
+  const origToOut = new Array(orig.length).fill(-1);
+  const curToOut = new Array(curLen).fill(-1);
+  for (let p = 0; p <= curLen; p++) {
+    const ins = inserts.get(p);
+    if (ins) {
+      for (let k = 0; k < ins.length; k++) { origToOut[ins[k]] = out.length; out.push(orig[ins[k]]); }
+    }
+    if (p < curLen) { curToOut[p] = out.length; out.push(cur[p]); }
+  }
+  for (let bi = 0; bi < bn; bi++) {
+    if (match[bi] >= 0) origToOut[baseMap[bi]] = curToOut[match[bi]];
+  }
+  return { lines: out, origToOut: origToOut };
+}
+
+function mergeDoneLines(orig, hiddenIdx, baseMap, curView) {
+  return mergeDoneLinesDetailed(orig, hiddenIdx, baseMap, curView).lines;
+}
+
+let doneFoldState = null; // { orig, hidden, baseMap, expanded }；null＝当前未折叠
+let doneFoldEpoch = 0;
+let doneFoldInfoCache = { key: null, info: null };
+
+function doneFoldEl() { return document.getElementById('editArea'); }
+function doneFoldCurrentText() {
+  const ea = doneFoldEl();
+  if (!ea) return '';
+  if (!doneFoldState) return ea.value;
+  return mergeDoneLines(doneFoldState.orig, doneFoldState.hidden, doneFoldState.baseMap, ea.value.split('\n')).join('\n');
+}
+function doneFoldBump() {
+  doneFoldEpoch++;
+  doneFoldInfoCache.key = null;
+}
+// 折叠行数（已从画面收起的）／已完成总数（折叠中＋仍可见的）
+function doneFoldFoldedCount() { return doneFoldState ? doneFoldState.hidden.length : 0; }
+function doneFoldCompletedCount() {
+  const ea = doneFoldEl();
+  if (!ea) return 0;
+  return doneFoldFoldedCount() + doneFoldHiddenIndexes(ea.value.split('\n')).length;
+}
+function syncDoneFoldChip() {
+  const chip = document.getElementById('editFoldChip');
+  if (!chip) return;
+  const folded = doneFoldFoldedCount();
+  const completed = doneFoldCompletedCount();
+  if (!editMode || !state.undoneChecksOnly || !completed) {
+    chip.style.display = 'none';
+    chip.textContent = '';
+    chip.removeAttribute('title');
+    chip.setAttribute('aria-pressed', 'false');
+    return;
+  }
+  chip.style.display = 'inline-block';
+  chip.textContent = (folded ? '显示已完成 ' : '隐藏已完成 ') + (folded || completed);
+  chip.title = folded
+    ? '还有 ' + folded + ' 行已完成折叠中（连同行号）；点击全部展开，或点边条上的 ▸ 单独展开某一块'
+    : '把 ' + completed + ' 行已完成 checkbox 连同行号一起折叠';
+  chip.setAttribute('aria-pressed', folded ? 'true' : 'false');
+}
+function refreshDoneFoldChip() { syncDoneFoldChip(); }
+function setDoneFoldState(lines, hiddenIdx, expandedSet) {
+  const ea = doneFoldEl();
+  const fullText = lines.join('\n');
+  const hidden = (hiddenIdx || []).slice().sort(function (a, b) { return a - b; });
+  doneFoldState = null;
+  doneFoldBump();
+  if (!hidden.length) {
+    if (ea && ea.value !== fullText) ea.value = fullText;
+    syncDoneFoldChip();
+    editAreaGutter.invalidate();
+    editAreaGutter.start();
+    return;
+  }
+  const proj = projectDoneLines(lines, hidden);
+  doneFoldState = { orig: lines, hidden: hidden, baseMap: proj.map, expanded: expandedSet || new Set() };
+  const viewText = proj.view.join('\n');
+  if (ea && ea.value !== viewText) ea.value = viewText;
+  syncDoneFoldChip();
+  editAreaGutter.invalidate();
+  editAreaGutter.start();
+}
+function applyDoneFold() {
+  const ea = doneFoldEl();
+  if (!ea) return;
+  // 未勾选「只显示未完成 checkbox」＝不折叠（已有折叠则先还原全文）
+  if (!state.undoneChecksOnly) { expandDoneFold(); syncDoneFoldChip(); return; }
+  const keepTop = ea.scrollTop;
+  const full = doneFoldCurrentText().split('\n');
+  setDoneFoldState(full, doneFoldHiddenIndexes(full), new Set());
+  if (doneFoldEl()) doneFoldEl().scrollTop = keepTop;
+}
+function expandDoneFold() {
+  const ea = doneFoldEl();
+  if (!ea || !doneFoldState) return;
+  const keepTop = ea.scrollTop;
+  const full = doneFoldCurrentText();
+  doneFoldState = null;
+  doneFoldBump();
+  if (ea.value !== full) ea.value = full;
+  ea.scrollTop = keepTop;
+  syncDoneFoldChip();
+  editAreaGutter.invalidate();
+  editAreaGutter.start();
+}
+// 只展开某一块折叠行（边条上的 ▸N）；其余折叠块保持折叠
+function expandDoneFoldBlock(targets) {
+  const ea = doneFoldEl();
+  if (!ea || !doneFoldState || !targets || !targets.length) return;
+  const keepTop = ea.scrollTop;
+  const old = doneFoldState;
+  const merged = mergeDoneLinesDetailed(old.orig, old.hidden, old.baseMap, ea.value.split('\n'));
+  const map = merged.origToOut;
+  const tr = function (i) { const v = map ? map[i] : -1; return v == null ? -1 : v; };
+  const expanded = new Set();
+  old.expanded.forEach(function (i) { const j = tr(i); if (j >= 0) expanded.add(j); });
+  targets.forEach(function (i) { const j = tr(i); if (j >= 0) expanded.add(j); });
+  const full = merged.lines;
+  const hidden = doneFoldHiddenIndexes(full).filter(function (i) { return !expanded.has(i); });
+  setDoneFoldState(full, hidden, expanded);
+  if (doneFoldEl()) doneFoldEl().scrollTop = keepTop;
+}
+function toggleDoneFold() {
+  if (doneFoldFoldedCount()) expandDoneFold(); else applyDoneFold();
+}
+function resetDoneFold() {
+  doneFoldState = null;
+  doneFoldBump();
+  syncDoneFoldChip();
+}
+// 保存成功后：以「合并后的全文」重建折叠基线（期间新勾成 [x] 的可见行顺手折进去）
+function refreshDoneFoldAfterSave() {
+  if (!state.undoneChecksOnly || !doneFoldState) { expandDoneFold(); refreshDoneFoldChip(); return; }
+  const full = doneFoldCurrentText().split('\n');
+  setDoneFoldState(full, doneFoldHiddenIndexes(full), new Set());
+}
+
+// 折叠缝隙锚点：与 mergeDoneLinesDetailed 同一套映射（折叠块插在哪，标记就画在哪）
+function doneFoldAnchorOf(match, bn, curLen, pos) {
+  if (!bn) return curLen;
+  if (pos <= 0) {
+    for (let i = 0; i < bn; i++) if (match[i] >= 0) return match[i];
+    return 0;
+  }
+  if (pos >= bn) {
+    for (let i = bn - 1; i >= 0; i--) if (match[i] >= 0) return match[i] + 1;
+    return curLen;
+  }
+  const before = match[pos - 1], after = match[pos];
+  if (before >= 0 && after >= 0) return after;
+  if (before >= 0) {
+    for (let i = pos; i < bn; i++) if (match[i] >= 0) return match[i];
+    return before + 1;
+  }
+  if (after >= 0) return after;
+  for (let i = pos - 1; i >= 0; i--) if (match[i] >= 0) return match[i] + 1;
+  for (let i = pos; i < bn; i++) if (match[i] >= 0) return match[i];
+  return curLen;
+}
+
+// 折叠视图的行号标签与折叠块位置（缓存：值与折叠状态没变就不重跑 LCS）
+function doneFoldViewInfo() {
+  const ea = doneFoldEl();
+  if (!ea || !doneFoldState) return null;
+  const key = doneFoldEpoch + '\0' + ea.value;
+  if (doneFoldInfoCache.key === key) return doneFoldInfoCache.info;
+  const st = doneFoldState;
+  const base = st.baseMap.map(function (i) { return st.orig[i]; });
+  const bn = base.length;
+  const lines = ea.value.split('\n');
+  let cur = lines;
+  if (lines.length === 1 && lines[0] === '' && bn > 0 && !(bn === 1 && base[0] === '')) cur = [];
+  const match = matchDoneLines(base, cur);
+  const curLen = cur.length;
+  const curToBase = new Array(curLen).fill(-1);
+  for (let bi = 0; bi < bn; bi++) {
+    const cj = match[bi];
+    if (cj >= 0 && curToBase[cj] < 0) curToBase[cj] = bi;
+  }
+  // 可见行编号＝它在原文里的行号（折叠不重排）；新行取邻近编号间的空位
+  const labels = new Array(lines.length);
+  if (!curLen) {
+    labels[0] = '1';
+  } else {
+    let last = 0;
+    let j = 0;
+    while (j < curLen) {
+      if (curToBase[j] >= 0) {
+        const origNo = st.baseMap[curToBase[j]] + 1;
+        last = Math.max(origNo, last + 1);
+        labels[j] = String(last);
+        j++;
+      } else {
+        let k = j;
+        while (k < curLen && curToBase[k] < 0) k++;
+        const run = k - j;
+        const nextNo = k < curLen ? st.baseMap[curToBase[k]] + 1 : 0;
+        let start = last + 1;
+        if (nextNo > 0) start = Math.max(start, nextNo - run);
+        for (let t = 0; t < run; t++) labels[j + t] = String(start + t);
+        last = start + run - 1;
+        j = k;
+      }
+    }
+  }
+  for (let t = 1; t < labels.length; t++) {
+    if (Number(labels[t]) <= Number(labels[t - 1])) labels[t] = String(Number(labels[t - 1]) + 1);
+  }
+  const blocks = [];
+  const hiddenSet = new Set(st.hidden);
+  let visibleBefore = 0;
+  // ⚠️ 必须用 while 逐行推进：若用 for，内层跳过折叠块后外层还会再 i++，
+  //    会把「折叠块后第一条可见行」漏掉不计数 → visibleBefore 逐块少 1，▸ 标记越往后偏得越多。
+  let i = 0;
+  while (i < st.orig.length) {
+    if (!hiddenSet.has(i)) { visibleBefore++; i++; continue; }
+    const first = i;
+    const indices = [];
+    while (i < st.orig.length && hiddenSet.has(i)) { indices.push(i); i++; }
+    blocks.push({
+      at: Math.max(0, Math.min(curLen, doneFoldAnchorOf(match, bn, curLen, visibleBefore))),
+      count: indices.length,
+      indices: indices,
+      firstLine: first + 1,
+      lastLine: i,
+    });
+  }
+  const info = { labels: labels, blocks: blocks };
+  doneFoldInfoCache.key = key;
+  doneFoldInfoCache.info = info;
+  return info;
+}
+function doneFoldLabel(i) {
+  const info = doneFoldViewInfo();
+  if (!info || info.labels[i] == null) return i + 1;
+  return info.labels[i];
+}
+// 每个折叠块在边条上画一个可点标记（▸N）：点哪块只展开哪块
+function doneFoldRenderRail(context) {
+  const inner = context && context.inner;
+  if (!inner) return;
+  let rail = inner.querySelector('.fold-rail');
+  const info = doneFoldViewInfo();
+  if (!info || !info.blocks.length) {
+    if (rail) { rail.textContent = ''; rail._sig = ''; }
+    return;
+  }
+  if (!rail) {
+    rail = document.createElement('div');
+    rail.className = 'fold-rail';
+    inner.appendChild(rail);
+    rail._sig = '';
+  } else if (rail.parentNode !== inner) {
+    inner.appendChild(rail);
+    rail._sig = '';
+  }
+  const lhPx = parseFloat(context.lh) || 16;
+  const tops = context.tops || [];
+  const positions = [];
+  const sigParts = [];
+  const seenTop = {};
+  for (let k = 0; k < info.blocks.length; k++) {
+    const b = info.blocks[k];
+    const rowTop = b.at < tops.length ? tops[b.at] : (tops.length ? tops[tops.length - 1] + lhPx : 0);
+    let top = Math.max(0, Math.round(rowTop - 6));
+    // 極端情況（可見行被全刪）多塊會共用同一錨點：往下錯開，避免標記完全疊住
+    const dup = seenTop[top] || 0;
+    seenTop[top] = dup + 1;
+    if (dup) top += dup * 13;
+    positions.push(top);
+    sigParts.push(b.count + ':' + b.indices.join(',') + ':' + top);
+  }
+  const sig = sigParts.join('|');
+  if (rail._sig === sig) return;
+  rail._sig = sig;
+  rail.textContent = '';
+  for (let k = 0; k < info.blocks.length; k++) {
+    const b = info.blocks[k];
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'fold-seam';
+    btn.textContent = '▸' + b.count;
+    btn.title = '第 ' + b.firstLine + '–' + b.lastLine + ' 行已完成（' + b.count + ' 行），点击展开这一块';
+    btn.style.top = positions[k] + 'px';
+    (function (indices) {
+      btn.addEventListener('mousedown', function (ev) { ev.preventDefault(); ev.stopPropagation(); });
+      btn.addEventListener('click', function (ev) { ev.stopPropagation(); expandDoneFoldBlock(indices); });
+    })(b.indices);
+    rail.appendChild(btn);
+  }
+}
 
 // 🆕 最小化：收合成小卡（标题＋日期＋标签）。状态随便利贴一并持久化，重新开启时还原
 // ⚠️ sticky-note-bounds 的宽/高是成对判定（缺 width 则 setBounds 不执行），所以这里必须同时传 width+height
@@ -2709,6 +3172,7 @@ async function renderFlipPage(i) {
   }
   editMode = false;
   editDirty = false;
+  resetDoneFold();
   syncEditSeg();
   showFlipPageToast('第 ' + (flipIndex + 1) + ' / ' + flipTotal + ' 张');
   const noteEl0 = document.getElementById('note');

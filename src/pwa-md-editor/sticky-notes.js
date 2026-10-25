@@ -322,6 +322,11 @@ async function calStickyApplySettingsFile(file, opts) {
   if (idx < 0) idx = Math.min(next.lastIdx, Math.max(0, calStickyPages.length - 1));
   if (idx < 0) idx = 0;
   calStickyRenderPage(idx, { toast: false });
+  // 匯入設定時若正在編輯：折疊狀態跟隨新設定（勾選＝折疊／未勾選＝還原全文）
+  if (calStickyEditMode) {
+    if (calStickyNotePrefs(calStickyCurrentId).undoneChecksOnly) calStickyApplyDoneFold();
+    else calStickyExpandDoneFold();
+  }
   if (calStickySheetOpen()) {
     calStickyRenderSheetList();
     const prefs = calStickyCurrentId ? calStickyNotePrefs(calStickyCurrentId) : calStickyNotePrefs('');
@@ -616,6 +621,7 @@ function calStickyRenderPage(target, options) {
       if (noteEl) noteEl.classList.remove('editing');
       const ea0 = calStickyEl('calStickyEditArea');
       if (ea0) ea0.style.boxShadow = '';
+      calStickyResetDoneFold();
       calStickySyncEditBtn();
     }
     if (noteEl) noteEl.style.display = 'none';
@@ -1013,7 +1019,14 @@ function calStickyUpdatePrefs(patch) {
   const note = calStickyPages[calStickyIndex];
   if (note && note.identity === calStickyCurrentId) calStickyApplyStyle(next);
   calStickySyncControls(next);
-  if ('undoneChecksOnly' in patch) calStickySyncMetaActions(next);
+  if ('undoneChecksOnly' in patch) {
+    calStickySyncMetaActions(next);
+    // 折疊與「只看未完成 checkbox」聯動：勾選才折疊，取消勾選立即還原全文
+    if (calStickyEditMode) {
+      if (next.undoneChecksOnly) calStickyApplyDoneFold();
+      else calStickyExpandDoneFold();
+    }
+  }
   if ('color' in patch || 'fontColor' in patch) calStickyRenderSwatches(next);
 }
 function calStickyToggleUndone() {
@@ -1088,6 +1101,7 @@ function calStickyClose(skipDirtyGuard) {
   calStickyIsOpen = false;
   calStickyPendingRename = null;
   calStickyEditMode = false;
+  calStickyResetDoneFold();
   calStickyEditDirty = false;
   const noteEl = calStickyEl('calStickyNote');
   if (noteEl) noteEl.classList.remove('editing');
@@ -1146,13 +1160,14 @@ function calStickySaveEdit() {
   if (typeof calNotesRoLocked === 'function' && calNotesRoLocked(ev, true)) return false;
   calStickyEditSavePending = true;
   const prevNotes = ev.notes;
-  ev.notes = ea.value;
+  ev.notes = calStickyDoneFoldCurrentText();   // 折疊中：把隱藏行按原錨點合併回全文再落盤
   const ok = (typeof calCommitEventNotes === 'function') ? calCommitEventNotes(ev) : false;
   calStickyEditSavePending = false;
   if (!ok) {
     ev.notes = prevNotes;   // 寫回被拒（區塊位置/標題已變）：還原記憶體值，避免與檔案脫節
     return false;
   }
+  calStickyRefreshDoneFoldAfterSave();
   calStickyEditDirty = false;
   calStickyMarkEditDirty(false);
   // ro 路徑 calCommitEventNotes 已自刷；主檔路徑補刷一次，讓進度徽章/來源●同趟更新
@@ -1203,9 +1218,11 @@ function calStickySetEditMode(edit) {
     note.classList.add('editing');
     calStickyApplyStyle(calStickyNotePrefs(calStickyCurrentId));   // 字級/字色/字重同步到編輯框
     calStickyEditGutter.start();
+    calStickyApplyDoneFold();
   } else {
     note.classList.remove('editing');
     calStickyEditDirty = false;
+    calStickyResetDoneFold();
     ea.style.boxShadow = '';
     // 渲染模式：重拉最新渲染結果（編輯回寫後緩衝已變，這裡確保顯示最新）
     calStickyRenderPage(calStickyIndex, { toast: false, resetScroll: false });
@@ -1222,6 +1239,7 @@ function calStickyGuardDirtyForNav() {
     if (!calStickySaveEdit()) return false;
   }
   calStickyEditMode = false;
+  calStickyResetDoneFold();
   const note = calStickyEl('calStickyNote');
   if (note) note.classList.remove('editing');
   const ea = calStickyEl('calStickyEditArea');
@@ -1238,7 +1256,463 @@ const calStickyEditGutter = createLineGutter({
   innerId: 'calStickyEditGutterInner',
   chrome: 10,
   visible: function (e) { return calStickyIsOpen && calStickyEditMode && e.ta.offsetParent !== null; },
+  // 折疊時行號沿用原文編號（可見行顯示 1,2,5…），並在折疊縫隙上渲染可單獨展開的標記
+  count: function () { return calStickyDoneFoldState ? calStickyDoneFoldState.orig.length : 0; },
+  label: function (i) { return calStickyDoneFoldLabel(i); },
+  decorate: function (info) { calStickyDoneFoldRenderRail(info); },
 });
+
+// ===== 🆕 編輯模式：折疊已完成的 checkbox（- [x] / - [X]）=====
+// textarea 沒有「隱藏行」能力：編輯框放投影後的可見行，被折疊的原始行留在 state；
+// 展開／保存時用行級 LCS 依原錨點插回 —— 折疊期間改／刪任何可見行都不會丟隱藏內容。
+// 只折 checkbox 那一行（支援 > 引用前綴）；圍欄程式碼區塊內的 - [x] 是範例，不折。
+const CAL_STICKY_DONE_CHECK_RE = /^[ \t]*(?:>[ \t]*)*(?:[-*+]|\d+[.)])[ \t]+\[[xX]\](?=[ \t]|$)/;
+
+function calStickyDoneFoldHiddenIndexes(lines) {
+  const hidden = [];
+  let fence = null;
+  for (let i = 0; i < lines.length; i++) {
+    const line = String(lines[i] == null ? '' : lines[i]).replace(/\r$/, '');
+    const fm = line.match(/^[ \t]*(`{3,}|~{3,})(.*)$/);
+    if (fence) {
+      if (fm && fm[1][0] === fence.ch && fm[1].length >= fence.len && !fm[2].trim()) fence = null;
+      continue;
+    }
+    if (fm) { fence = { ch: fm[1][0], len: fm[1].length }; continue; }
+    if (CAL_STICKY_DONE_CHECK_RE.test(line)) hidden.push(i);
+  }
+  return hidden;
+}
+
+function calStickyProjectDoneLines(lines, hiddenIdx) {
+  const skip = new Set(hiddenIdx);
+  const view = [];
+  const map = [];
+  for (let i = 0; i < lines.length; i++) {
+    if (skip.has(i)) continue;
+    view.push(lines[i]);
+    map.push(i);
+  }
+  return { view: view, map: map };
+}
+
+// 行級 LCS：回傳 base 每行在 cur 的行號（-1＝被改／刪）。超大文件退化為「前綴＋後綴」對齊，
+// 只在中間改動處失去精確錨點（隱藏行仍按順序插回），避免 O(n*m) 記憶體。
+// 行被编辑（非删/插）时 LCS 认不出是同一行，会让相邻隐藏块错位到编辑行前面；
+// 用「共同前缀 ≥ 较短行的 60%（且至少 3 字符）」把它们配回锚点。仅用于锚点映射，不改输出内容。
+function calStickyDoneLineSimilar(a, b) {
+  const x = String(a == null ? '' : a).trim();
+  const y = String(b == null ? '' : b).trim();
+  if (!x || !y || x === y) return false;
+  const min = Math.min(x.length, y.length);
+  if (min < 3) return false;
+  let i = 0;
+  while (i < min && x.charAt(i) === y.charAt(i)) i++;
+  return i >= 3 && i >= min * 0.6;
+}
+
+function calStickyMatchDoneLines(base, cur) {
+  const n = base.length, m = cur.length;
+  const out = new Array(n).fill(-1);
+  if (!n || !m) return out;
+  let pre = 0;
+  while (pre < n && pre < m && base[pre] === cur[pre]) { out[pre] = pre; pre++; }
+  let suf = 0;
+  while (suf < n - pre && suf < m - pre && base[n - 1 - suf] === cur[m - 1 - suf]) {
+    out[n - 1 - suf] = m - 1 - suf; suf++;
+  }
+  const bn = n - pre - suf, cm = m - pre - suf;
+  if (bn <= 0 || cm <= 0 || bn * cm > 1600000) return out;
+  const w = cm + 1;
+  const dp = new Uint32Array((bn + 1) * w);
+  for (let i = bn - 1; i >= 0; i--) {
+    for (let j = cm - 1; j >= 0; j--) {
+      dp[i * w + j] = base[pre + i] === cur[pre + j]
+        ? dp[(i + 1) * w + j + 1] + 1
+        : Math.max(dp[(i + 1) * w + j], dp[i * w + j + 1]);
+    }
+  }
+  let i = 0, j = 0;
+  while (i < bn && j < cm) {
+    if (base[pre + i] === cur[pre + j]) { out[pre + i] = pre + j; i++; j++; }
+    else if (dp[(i + 1) * w + j] >= dp[i * w + j + 1]) i++;
+    else j++;
+  }
+  // 已匹配行把两边切成若干空隙：空隙两侧行数相同（原地改行）时，按顺序一对一补上相似行
+  // 的匹配，隐藏块才不会因「紧邻的可见行被改」而漂到它前面。
+  const curMatched = new Set();
+  for (let k = 0; k < n; k++) if (out[k] >= 0) curMatched.add(out[k]);
+  const bounds = [];
+  for (let k = 0; k < n; k++) if (out[k] >= 0) bounds.push(k);
+  let prevI = -1, prevJ = -1;
+  for (let b = 0; b <= bounds.length; b++) {
+    const nextI = b < bounds.length ? bounds[b] : n;
+    const nextJ = b < bounds.length ? out[nextI] : m;
+    const ub = [], uc = [];
+    for (let k = prevI + 1; k < nextI; k++) if (out[k] < 0) ub.push(k);
+    for (let k = prevJ + 1; k < nextJ; k++) if (!curMatched.has(k)) uc.push(k);
+    if (ub.length && ub.length === uc.length) {
+      for (let k = 0; k < ub.length; k++) {
+        if (calStickyDoneLineSimilar(base[ub[k]], cur[uc[k]])) { out[ub[k]] = uc[k]; curMatched.add(uc[k]); }
+      }
+    }
+    prevI = nextI; prevJ = nextJ;
+  }
+  return out;
+}
+
+// 合併投影回全文，同時給出「舊原文行號 → 合併後行號」映射（個別展開時要翻譯到新座標）
+function calStickyMergeDoneLinesDetailed(orig, hiddenIdx, baseMap, curView) {
+  if (!hiddenIdx || !hiddenIdx.length) return { lines: curView.slice(), origToOut: null };
+  const skip = new Set(hiddenIdx);
+  const base = baseMap.map(function (i) { return orig[i]; });
+  const bn = base.length;
+  // 空 textarea 的 '' split 出 ['']：原本就沒有可見行（或可見行被全刪）時視作 0 行，
+  // 否則會在插回的隱藏行前面憑空多一條空行。
+  const cur = (curView.length === 1 && curView[0] === '' && !(bn === 1 && base[0] === '')) ? [] : curView;
+  const match = calStickyMatchDoneLines(base, cur);
+  const curLen = cur.length;
+  const anchorOf = function (pos) {
+    if (!bn) return curLen;
+    if (pos <= 0) {
+      for (let i = 0; i < bn; i++) if (match[i] >= 0) return match[i];
+      return 0;
+    }
+    if (pos >= bn) {
+      for (let i = bn - 1; i >= 0; i--) if (match[i] >= 0) return match[i] + 1;
+      return curLen;
+    }
+    const before = match[pos - 1], after = match[pos];
+    if (before >= 0 && after >= 0) return after;
+    if (before >= 0) {
+      for (let i = pos; i < bn; i++) if (match[i] >= 0) return match[i];
+      return before + 1;
+    }
+    if (after >= 0) return after;
+    for (let i = pos - 1; i >= 0; i--) if (match[i] >= 0) return match[i] + 1;
+    for (let i = pos; i < bn; i++) if (match[i] >= 0) return match[i];
+    return curLen;
+  };
+  // 每個隱藏行的錨點＝它前面有多少可見行（投影座標），再映射回當前檢視座標
+  const inserts = new Map();
+  let visibleBefore = 0;
+  for (let i = 0; i < orig.length; i++) {
+    if (skip.has(i)) {
+      const at = Math.max(0, Math.min(curLen, anchorOf(visibleBefore)));
+      if (!inserts.has(at)) inserts.set(at, []);
+      inserts.get(at).push(i);
+    } else {
+      visibleBefore++;
+    }
+  }
+  const out = [];
+  const origToOut = new Array(orig.length).fill(-1);
+  const curToOut = new Array(curLen).fill(-1);
+  for (let p = 0; p <= curLen; p++) {
+    const ins = inserts.get(p);
+    if (ins) {
+      for (let k = 0; k < ins.length; k++) { origToOut[ins[k]] = out.length; out.push(orig[ins[k]]); }
+    }
+    if (p < curLen) { curToOut[p] = out.length; out.push(cur[p]); }
+  }
+  for (let bi = 0; bi < bn; bi++) {
+    if (match[bi] >= 0) origToOut[baseMap[bi]] = curToOut[match[bi]];
+  }
+  return { lines: out, origToOut: origToOut };
+}
+
+function calStickyMergeDoneLines(orig, hiddenIdx, baseMap, curView) {
+  return calStickyMergeDoneLinesDetailed(orig, hiddenIdx, baseMap, curView).lines;
+}
+
+let calStickyDoneFoldState = null; // { orig, hidden, baseMap, expanded }；null＝當前未折疊
+let calStickyDoneFoldEpoch = 0;
+let calStickyDoneFoldInfoCache = { key: null, info: null };
+
+function calStickyDoneFoldEl() { return calStickyEl('calStickyEditArea'); }
+function calStickyDoneFoldCurrentText() {
+  const ea = calStickyDoneFoldEl();
+  if (!ea) return '';
+  if (!calStickyDoneFoldState) return ea.value;
+  return calStickyMergeDoneLines(
+    calStickyDoneFoldState.orig,
+    calStickyDoneFoldState.hidden,
+    calStickyDoneFoldState.baseMap,
+    ea.value.split('\n')
+  ).join('\n');
+}
+function calStickyDoneFoldBump() {
+  calStickyDoneFoldEpoch++;
+  calStickyDoneFoldInfoCache.key = null;
+}
+// 折疊行數（已從畫面收起的）／已完成總數（折疊中＋仍可見的）
+function calStickyDoneFoldFoldedCount() {
+  return calStickyDoneFoldState ? calStickyDoneFoldState.hidden.length : 0;
+}
+function calStickyDoneFoldCompletedCount() {
+  const ea = calStickyDoneFoldEl();
+  if (!ea) return 0;
+  return calStickyDoneFoldFoldedCount() + calStickyDoneFoldHiddenIndexes(ea.value.split('\n')).length;
+}
+function calStickySyncDoneFoldChip() {
+  const chip = calStickyEl('calStickyFoldChip');
+  if (!chip) return;
+  const folded = calStickyDoneFoldFoldedCount();
+  const completed = calStickyDoneFoldCompletedCount();
+  const prefs = calStickyNotePrefs(calStickyCurrentId);
+  if (!calStickyEditMode || !prefs.undoneChecksOnly || !completed) {
+    chip.style.display = 'none';
+    chip.textContent = '';
+    chip.removeAttribute('title');
+    chip.setAttribute('aria-pressed', 'false');
+    return;
+  }
+  chip.style.display = 'inline-block';
+  chip.textContent = (folded ? '顯示已完成 ' : '隱藏已完成 ') + (folded || completed);
+  chip.title = folded
+    ? '還有 ' + folded + ' 行已完成折疊中（連同行號）；點擊全部展開，或點邊條上的 ▸ 單獨展開某一塊'
+    : '把 ' + completed + ' 行已完成 checkbox 連同行號一起折疊';
+  chip.setAttribute('aria-pressed', folded ? 'true' : 'false');
+}
+function calStickyRefreshDoneFoldChip() { calStickySyncDoneFoldChip(); }
+function calStickySetDoneFoldState(lines, hiddenIdx, expandedSet) {
+  const ea = calStickyDoneFoldEl();
+  const fullText = lines.join('\n');
+  const hidden = (hiddenIdx || []).slice().sort(function (a, b) { return a - b; });
+  calStickyDoneFoldState = null;
+  calStickyDoneFoldBump();
+  if (!hidden.length) {
+    if (ea && ea.value !== fullText) ea.value = fullText;
+    calStickySyncDoneFoldChip();
+    calStickyEditGutter.invalidate();
+    calStickyEditGutter.start();
+    return;
+  }
+  const proj = calStickyProjectDoneLines(lines, hidden);
+  calStickyDoneFoldState = { orig: lines, hidden: hidden, baseMap: proj.map, expanded: expandedSet || new Set() };
+  const viewText = proj.view.join('\n');
+  if (ea && ea.value !== viewText) ea.value = viewText;
+  calStickySyncDoneFoldChip();
+  calStickyEditGutter.invalidate();
+  calStickyEditGutter.start();
+}
+function calStickyApplyDoneFold() {
+  const ea = calStickyDoneFoldEl();
+  if (!ea) return;
+  // 未勾選「只顯示未完成 checkbox」＝不折疊（已有折疊則先還原全文）
+  if (!calStickyNotePrefs(calStickyCurrentId).undoneChecksOnly) {
+    calStickyExpandDoneFold();
+    calStickySyncDoneFoldChip();
+    return;
+  }
+  const keepTop = ea.scrollTop;
+  const full = calStickyDoneFoldCurrentText().split('\n');
+  calStickySetDoneFoldState(full, calStickyDoneFoldHiddenIndexes(full), new Set());
+  if (calStickyDoneFoldEl()) calStickyDoneFoldEl().scrollTop = keepTop;
+}
+function calStickyExpandDoneFold() {
+  const ea = calStickyDoneFoldEl();
+  if (!ea || !calStickyDoneFoldState) return;
+  const keepTop = ea.scrollTop;
+  const full = calStickyDoneFoldCurrentText();
+  calStickyDoneFoldState = null;
+  calStickyDoneFoldBump();
+  if (ea.value !== full) ea.value = full;
+  ea.scrollTop = keepTop;
+  calStickySyncDoneFoldChip();
+  calStickyEditGutter.invalidate();
+  calStickyEditGutter.start();
+}
+// 只展開某一塊折疊行（邊條上的 ▸N）；其餘折疊塊保持折疊
+function calStickyExpandDoneFoldBlock(targets) {
+  const ea = calStickyDoneFoldEl();
+  if (!ea || !calStickyDoneFoldState || !targets || !targets.length) return;
+  const keepTop = ea.scrollTop;
+  const old = calStickyDoneFoldState;
+  const merged = calStickyMergeDoneLinesDetailed(old.orig, old.hidden, old.baseMap, ea.value.split('\n'));
+  const map = merged.origToOut;
+  const tr = function (i) { const v = map ? map[i] : -1; return v == null ? -1 : v; };
+  const expanded = new Set();
+  old.expanded.forEach(function (i) { const j = tr(i); if (j >= 0) expanded.add(j); });
+  targets.forEach(function (i) { const j = tr(i); if (j >= 0) expanded.add(j); });
+  const full = merged.lines;
+  const hidden = calStickyDoneFoldHiddenIndexes(full).filter(function (i) { return !expanded.has(i); });
+  calStickySetDoneFoldState(full, hidden, expanded);
+  if (calStickyDoneFoldEl()) calStickyDoneFoldEl().scrollTop = keepTop;
+}
+function calStickyToggleDoneFold() {
+  if (calStickyDoneFoldFoldedCount()) calStickyExpandDoneFold(); else calStickyApplyDoneFold();
+}
+function calStickyResetDoneFold() {
+  calStickyDoneFoldState = null;
+  calStickyDoneFoldBump();
+  calStickySyncDoneFoldChip();
+}
+// 保存成功後：以「合併後的全文」重建折疊基線（期間新勾成 [x] 的可見行順手折進去）
+function calStickyRefreshDoneFoldAfterSave() {
+  if (!calStickyNotePrefs(calStickyCurrentId).undoneChecksOnly || !calStickyDoneFoldState) {
+    calStickyExpandDoneFold();
+    calStickyRefreshDoneFoldChip();
+    return;
+  }
+  const full = calStickyDoneFoldCurrentText().split('\n');
+  calStickySetDoneFoldState(full, calStickyDoneFoldHiddenIndexes(full), new Set());
+}
+
+// 折疊縫隙錨點：與 calStickyMergeDoneLinesDetailed 同一套映射（折疊塊插在哪，標記就畫在哪）
+function calStickyDoneFoldAnchorOf(match, bn, curLen, pos) {
+  if (!bn) return curLen;
+  if (pos <= 0) {
+    for (let i = 0; i < bn; i++) if (match[i] >= 0) return match[i];
+    return 0;
+  }
+  if (pos >= bn) {
+    for (let i = bn - 1; i >= 0; i--) if (match[i] >= 0) return match[i] + 1;
+    return curLen;
+  }
+  const before = match[pos - 1], after = match[pos];
+  if (before >= 0 && after >= 0) return after;
+  if (before >= 0) {
+    for (let i = pos; i < bn; i++) if (match[i] >= 0) return match[i];
+    return before + 1;
+  }
+  if (after >= 0) return after;
+  for (let i = pos - 1; i >= 0; i--) if (match[i] >= 0) return match[i] + 1;
+  for (let i = pos; i < bn; i++) if (match[i] >= 0) return match[i];
+  return curLen;
+}
+
+// 折疊檢視的行號標籤與折疊塊位置（快取：值與折疊狀態沒變就不重跑 LCS）
+function calStickyDoneFoldViewInfo() {
+  const ea = calStickyDoneFoldEl();
+  if (!ea || !calStickyDoneFoldState) return null;
+  const key = calStickyDoneFoldEpoch + '\0' + ea.value;
+  if (calStickyDoneFoldInfoCache.key === key) return calStickyDoneFoldInfoCache.info;
+  const st = calStickyDoneFoldState;
+  const base = st.baseMap.map(function (i) { return st.orig[i]; });
+  const bn = base.length;
+  const lines = ea.value.split('\n');
+  let cur = lines;
+  if (lines.length === 1 && lines[0] === '' && bn > 0 && !(bn === 1 && base[0] === '')) cur = [];
+  const match = calStickyMatchDoneLines(base, cur);
+  const curLen = cur.length;
+  const curToBase = new Array(curLen).fill(-1);
+  for (let bi = 0; bi < bn; bi++) {
+    const cj = match[bi];
+    if (cj >= 0 && curToBase[cj] < 0) curToBase[cj] = bi;
+  }
+  // 可見行編號＝它在原文裡的行號（折疊不重排）；新行取鄰近編號間的空位
+  const labels = new Array(lines.length);
+  if (!curLen) {
+    labels[0] = '1';
+  } else {
+    let last = 0;
+    let j = 0;
+    while (j < curLen) {
+      if (curToBase[j] >= 0) {
+        const origNo = st.baseMap[curToBase[j]] + 1;
+        last = Math.max(origNo, last + 1);
+        labels[j] = String(last);
+        j++;
+      } else {
+        let k = j;
+        while (k < curLen && curToBase[k] < 0) k++;
+        const run = k - j;
+        const nextNo = k < curLen ? st.baseMap[curToBase[k]] + 1 : 0;
+        let start = last + 1;
+        if (nextNo > 0) start = Math.max(start, nextNo - run);
+        for (let t = 0; t < run; t++) labels[j + t] = String(start + t);
+        last = start + run - 1;
+        j = k;
+      }
+    }
+  }
+  for (let t = 1; t < labels.length; t++) {
+    if (Number(labels[t]) <= Number(labels[t - 1])) labels[t] = String(Number(labels[t - 1]) + 1);
+  }
+  const blocks = [];
+  const hiddenSet = new Set(st.hidden);
+  let visibleBefore = 0;
+  // ⚠️ 必須用 while 逐行推進：若用 for，內層跳過折疊塊後外層還會再 i++，
+  //    會漏算「折疊塊後第一條可見行」→ visibleBefore 逐塊少 1，▸ 標記越往後偏得越多。
+  let i = 0;
+  while (i < st.orig.length) {
+    if (!hiddenSet.has(i)) { visibleBefore++; i++; continue; }
+    const first = i;
+    const indices = [];
+    while (i < st.orig.length && hiddenSet.has(i)) { indices.push(i); i++; }
+    blocks.push({
+      at: Math.max(0, Math.min(curLen, calStickyDoneFoldAnchorOf(match, bn, curLen, visibleBefore))),
+      count: indices.length,
+      indices: indices,
+      firstLine: first + 1,
+      lastLine: i,
+    });
+  }
+  const info = { labels: labels, blocks: blocks };
+  calStickyDoneFoldInfoCache.key = key;
+  calStickyDoneFoldInfoCache.info = info;
+  return info;
+}
+function calStickyDoneFoldLabel(i) {
+  const info = calStickyDoneFoldViewInfo();
+  if (!info || info.labels[i] == null) return i + 1;
+  return info.labels[i];
+}
+// 每個折疊塊在邊條上畫一個可點標記（▸N）：點哪塊只展開哪塊
+function calStickyDoneFoldRenderRail(context) {
+  const inner = context && context.inner;
+  if (!inner) return;
+  let rail = inner.querySelector('.fold-rail');
+  const info = calStickyDoneFoldViewInfo();
+  if (!info || !info.blocks.length) {
+    if (rail) { rail.textContent = ''; rail._sig = ''; }
+    return;
+  }
+  if (!rail) {
+    rail = document.createElement('div');
+    rail.className = 'fold-rail';
+    inner.appendChild(rail);
+    rail._sig = '';
+  } else if (rail.parentNode !== inner) {
+    inner.appendChild(rail);
+    rail._sig = '';
+  }
+  const lhPx = parseFloat(context.lh) || 16;
+  const tops = context.tops || [];
+  const positions = [];
+  const sigParts = [];
+  const seenTop = {};
+  for (let k = 0; k < info.blocks.length; k++) {
+    const b = info.blocks[k];
+    const rowTop = b.at < tops.length ? tops[b.at] : (tops.length ? tops[tops.length - 1] + lhPx : 0);
+    let top = Math.max(0, Math.round(rowTop - 6));
+    // 極端情況（可見行被全刪）多塊會共用同一錨點：往下錯開，避免標記完全疊住
+    const dup = seenTop[top] || 0;
+    seenTop[top] = dup + 1;
+    if (dup) top += dup * 13;
+    positions.push(top);
+    sigParts.push(b.count + ':' + b.indices.join(',') + ':' + top);
+  }
+  const sig = sigParts.join('|');
+  if (rail._sig === sig) return;
+  rail._sig = sig;
+  rail.textContent = '';
+  for (let k = 0; k < info.blocks.length; k++) {
+    const b = info.blocks[k];
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'fold-seam';
+    btn.textContent = '▸' + b.count;
+    btn.title = '第 ' + b.firstLine + '–' + b.lastLine + ' 行已完成（' + b.count + ' 行），點擊展開這一塊';
+    btn.style.top = positions[k] + 'px';
+    (function (indices) {
+      btn.addEventListener('mousedown', function (ev) { ev.preventDefault(); ev.stopPropagation(); });
+      btn.addEventListener('click', function (ev) { ev.stopPropagation(); calStickyExpandDoneFoldBlock(indices); });
+    })(b.indices);
+    rail.appendChild(btn);
+  }
+}
 
 
 // 🆕 刪除便利貼：刪當前翻頁顯示的那張所屬行程（與桌面便利貼窗「刪除」同口徑）。
@@ -1419,7 +1893,17 @@ function calStickyInit() {
   const editArea = calStickyEl('calStickyEditArea');
   if (editArea) {
     // 手動保存制：輸入只標記「未保存」，不再自動落盤（與桌面便利貼同口徑）
-    editArea.addEventListener('input', () => { calStickyEditDirty = true; calStickyMarkEditDirty(true); });
+    editArea.addEventListener('input', () => {
+      calStickyEditDirty = true;
+      calStickyMarkEditDirty(true);
+      calStickyRefreshDoneFoldChip();
+    });
+  }
+  // 🆕 已完成 checkbox 折疊切換（mousedown 阻止預設 → 不搶走編輯框焦點）
+  const foldChip = calStickyEl('calStickyFoldChip');
+  if (foldChip) {
+    foldChip.addEventListener('mousedown', (e) => e.preventDefault());
+    foldChip.addEventListener('click', (e) => { e.stopPropagation(); calStickyToggleDoneFold(); });
   }
   on('calStickyDeleteBtn', 'click', calStickyDeleteCurrent);
   on('calStickyNewNoteBtn', 'click', () => { if (typeof calOpenNewNoteDialog === 'function') calOpenNewNoteDialog(); });
