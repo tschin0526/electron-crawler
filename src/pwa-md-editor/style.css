@@ -1695,6 +1695,17 @@ p[data-cols-marker="true"] { display: none; }
 .cal-sticky-body .ev-md-check + br, .cal-sticky-body br:has(+ .ev-md-check) { display: none !important; }
 /* 「只顯示未完成 checkbox」：整行隱藏完成的子事件（與列表 .only-undone-checks 同一口徑） */
 .cal-sticky-body.cal-sticky-only-undone .ev-md-check.done { display: none !important; }
+/* 🆕 便利貼內 checkbox：内框＝字體色、外框＝金色；兩者最細線緊密嵌套無縫隙；框＝字體大小（em 相對單位）
+   （僅作用於便利貼正文 .cal-sticky-body，不動主畫面 .ev-notes 的 checkbox） */
+.cal-sticky-body .ev-cb {
+  display: inline-flex; align-items: center; justify-content: center;
+  box-sizing: border-box; width: 1em; height: 1em; min-width: 0;
+  border: 1px solid var(--cal-sticky-fg, #33384a);
+  box-shadow: 0 0 0 1px #D4AF37;
+  border-radius: 2px;
+  margin-right: .35em; vertical-align: -.125em; text-align: center;
+  font-size: inherit; line-height: 1; color: #fff;
+}
 /* 🆕 便利貼編輯模式：textarea 直接改事件原始 Markdown（對齊桌面 #note.editing 語義）。
    邊条复用 .tl-line-gutter，但配色跟紙色走（透明底＋字色半透），不套 app 主題變量。 */
 #calStickyNote .tl-text-gutter-wrap { display: none; }

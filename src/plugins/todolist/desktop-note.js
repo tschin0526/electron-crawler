@@ -363,7 +363,11 @@ function setupControls() {
     rereadStickyNoteTable();
     armEdgeHandlesAutoHide(); // 点击后从「此刻」重新计算 4 秒自动隐藏
   };
-  document.getElementById('noteRefreshHandle').onclick = refreshStickyNote;
+  // 🆕 手动按 🔄 ＝使用者明确要重新采信远端 → 先解除「本地权威」保护，再刷新
+  document.getElementById('noteRefreshHandle').onclick = () => {
+    clearAuthWriteGuard(KEY);
+    refreshStickyNote();
+  };
   ipcRenderer.on('sticky-note-refresh-result', (event, result) => {
     if (!result || result.requestId !== activeStickyRefreshId) return;
     showStickyRefreshFeedback(result.message || (result.success
@@ -1082,6 +1086,10 @@ function bindAddCheckTools(saveLabel) {
     };
   }
 }
+// ⚠️ 已弃用（2026-10-26）：不要再拿它当「写入底稿」。
+//    它底层是 sourceEvent()，而对来自 INCLUDE 的便利贴只会回退到 refMeta 内存缓存 ——
+//    那份缓存可能被主程式推来的陈旧快照回滚，拿它当底稿做整篇覆写会让已删除的旧内容复活
+//    （「搬移后项目又回来」事故）。**凡涉及写入，一律改用 await fetchAuthoritativeNotes(key)。**
 function eventNotesForKey(key) {
   const ev = sourceEvent(key);
   return ev ? ev.notes || '' : null;
@@ -1106,33 +1114,111 @@ function transformNoteCheck(line, checked) {
   }
   return match[1] + '- [' + (checked ? 'x' : ' ') + ']' + (text ? ' ' + text : '');
 }
-async function saveStickyNoteContent(notes, errorLabel, eventKey) {
-  if (addCheckSavePending) return false;
+// ============================================================
+// 🆕 写入安全网（2026-10-26）：「便利贴窗只持有 calendar.md 路径」是既有限制，
+//    凡来自 INCLUDE 的便利贴（如 calendar-我的iphone.md），其 notes 底稿在无 FD 可读的情况下
+//    只能靠 refMeta 内存缓存 —— 而这个缓存会被主程式推来的快照无条件覆盖。一旦推来的是
+//    稍旧时序的值，后续任何「底稿 + 新内容」的整篇覆写就会把已删除的旧内容写回去。
+//    这正是「搬移后项目又复活」事故的根因（2026-10-26）。三重防护：
+//      ① 底稿权威化：refMeta 优先（比主进程目录快照即时），只有本地无记录时才 IPC 拉目录；
+//      ② 陈旧保护：本地刚确认的写入不被推送的 notes 覆盖，**直到推送内容与本地收敛**才解除；
+//      ③ 写后校验：回读确认真的反映了预期结果（某行必须消失 / 必须出现）。
+// ============================================================
+const NOTE_SHORTEN_MAX = 24;
+function shortenNoteText(s) {
+  const t = String(s || '').replace(/^\s*-\s*\[[ xX]\]\s*/, '').trim();
+  return t.length > NOTE_SHORTEN_MAX ? (t.slice(0, NOTE_SHORTEN_MAX) + '…') : (t || '(空白)');
+}
+// ① 底稿权威化：取指定便利贴的最新 notes（null＝拿不到，调用端须自行处理）
+//
+//    ⚠️ 来源优先顺序（2026-10-26 修）：**本地 refMeta 优先，主进程目录次之。**
+//    主进程的便利贴目录（sticky-note-order → stickyNoteCatalog）只在主程式「整批 sync」时才刷新
+//    （windows.js:889），便利贴刚写回后它**仍是写入前的旧快照**。若把它当底稿做整篇覆写，
+//    刚加入的那一项会被抹掉 —— 正是「加入 AAAAA 后再加 BBBBB，AAAAA 消失」的回归。
+//    refMeta 由两个渠道维护且都比目录即时：① 本地写入确认（markAuthWrite）② 主程式 refresh 推送。
+//    因此：本地有值就用本地；本地还没有这笔记录时，才向目录拉取。
+async function fetchAuthoritativeNotes(key) {
+  const local = refMeta.get(key);
+  if (local && typeof local.notes === 'string') return String(local.notes);
+  let result = null;
+  try { result = await ipcRenderer.invoke('sticky-note-order'); } catch (e) { return null; }
+  const arr = (result && Array.isArray(result.notes)) ? result.notes : [];
+  const hit = arr.find((n) => n && n.key === key);
+  return hit ? String(hit.notes || '') : null;
+}
+// ② 陈旧保护：记录本地刚确认写入的 notes，并竖起「本地权威」旗标
+//    （rememberRefMeta 会据此拒绝主程式推来的旧快照，直到推送内容与本地收敛）
+function markAuthWrite(key, notes) {
+  const cur = refMeta.get(key) || {};
+  cur.notes = notes;
+  cur.__writeAt = Date.now();
+  cur.__localWrite = true;
+  refMeta.set(key, cur);
+}
+// 手动解除「本地权威」（使用者主动按 🔄 刷新、或重绘整窗口时）：重新采信主程式推来的值
+function clearAuthWriteGuard(key) {
+  const cur = refMeta.get(key);
+  if (!cur) return;
+  cur.__localWrite = false;
+  refMeta.set(key, cur);
+}
+// ③ 写后校验：actualNotes 是否满足 expect = { absent?: string[], present?: string[] }
+function verifyNoteExpectation(actualNotes, expect) {
+  const lines = String(actualNotes || '').split('\n').map((l) => l.trim());
+  const absent = (expect && Array.isArray(expect.absent)) ? expect.absent : [];
+  for (let i = 0; i < absent.length; i += 1) {
+    const t = String(absent[i]).trim();
+    if (t && lines.indexOf(t) >= 0) return '「' + shortenNoteText(t) + '」仍然存在（删除未生效）';
+  }
+  const present = (expect && Array.isArray(expect.present)) ? expect.present : [];
+  for (let i = 0; i < present.length; i += 1) {
+    const t = String(present[i]).trim();
+    if (t && lines.indexOf(t) < 0) return '「' + shortenNoteText(t) + '」未出现在目标便利贴（写入未生效）';
+  }
+  return null;
+}
+// 🆕 核心：把 notes 回写到「指定便利贴」；返回 { ok, error, warn }，不弹 alert（供搬移用 toast 回报）。
+//    eventIdx/eventSrc 传 null＝沿用当前张的全局 IDX/SRC_FILE（向后兼容既有调用）。
+//    opts.expect = { absent?, present? }：写回后回读校验，不符即回报失败，避免静默留下重复资料。
+async function commitStickyNoteContent(notes, eventKey, eventIdx, eventSrc, opts) {
+  if (addCheckSavePending) return { ok: false, error: '有其它保存进行中，请稍后再试' };
   addCheckSavePending = true;
   try {
     const targetKey = eventKey || KEY;
-    const result = await ipcRenderer.invoke('sticky-note-save-edit', { key: targetKey, idx: IDX, notes, src: SRC_FILE });
-    if (!result || !result.success) {
-      window.alert(errorLabel + '失败：' + ((result && result.error) || '主进程未确认保存'));
-      return false;
-    }
+    const targetIdx = (eventIdx == null) ? IDX : (+eventIdx || 0);
+    const targetSrc = (eventSrc == null) ? SRC_FILE : eventSrc;
+    const result = await ipcRenderer.invoke('sticky-note-save-edit', { key: targetKey, idx: targetIdx, notes, src: targetSrc });
+    if (!result || !result.success) return { ok: false, error: ((result && result.error) || '主进程未确认保存') };
     // 本地缓存同步（外部 include 文件的内容只存在于 refMeta，不走本地 calendar.md）
-    const cached = refMeta.get(targetKey);
-    if (cached) cached.notes = notes;
+    markAuthWrite(targetKey, notes);          // ② 陈旧保护的起点：记版本，后面的推送不能在保护窗口内覆盖它
+    // ③ 写后校验：回读主程式的权威值，确认真的反映了预期结果（删除的行必须消失／加入的行必须出现）
+    const expect = (opts && opts.expect) || null;
+    if (expect) {
+      const fresh = await fetchAuthoritativeNotes(targetKey);
+      if (fresh == null) {
+        return { ok: true, warn: '无法回读确认写回结果，请重开便利贴确认内容是否正确' };
+      }
+      const bad = verifyNoteExpectation(fresh, expect);
+      if (bad) return { ok: false, error: bad, verifyFailed: true };
+    }
     const savedEvent = sourceEvent(targetKey);
     ipcRenderer.send('sticky-note-refresh-request', {
-      key: KEY,
-      idx: IDX,
+      key: targetKey,
+      idx: targetIdx,
       title: savedEvent ? savedEvent.title : '',
       date: savedEvent ? savedEvent.date : ''
     });
-    return true;
+    return { ok: true };
   } catch (error) {
-    window.alert(errorLabel + '失败：' + (error && error.message ? error.message : error));
-    return false;
+    return { ok: false, error: (error && error.message) ? error.message : String(error) };
   } finally {
     addCheckSavePending = false;
   }
+}
+async function saveStickyNoteContent(notes, errorLabel, eventKey) {
+  const r = await commitStickyNoteContent(notes, eventKey, null, null);
+  if (!r.ok) window.alert(errorLabel + '失败：' + r.error);
+  return r.ok;
 }
 window.tlToggleNoteCheck = async function (event, uid, line) {
   const checkbox = event && event.target.closest('.ev-cb.interactive');
@@ -1140,9 +1226,10 @@ window.tlToggleNoteCheck = async function (event, uid, line) {
   event.preventDefault();
   event.stopPropagation();
   if (addCheckSavePending) return;
-  const notes = eventNotesForKey(uid);
+  // 🆕 ① 底稿权威化：勾选也是整篇写回，底稿必须现拉现用
+  const notes = await fetchAuthoritativeNotes(uid);
   if (notes == null) {
-    window.alert('找不到该行程，无法更新子事件');
+    window.alert('无法读取该便利贴的最新内容，已取消更新（请重开便利贴后再试）。');
     return;
   }
   const lines = notes.split('\n');
@@ -1162,12 +1249,13 @@ window.tlCalCheckKey = function (event, uid, line) {
   event.preventDefault();
   window.tlToggleNoteCheck(event, uid, line);
 };
-window.tlOpenEditNoteCheckDialog = function (event, uid, line) {
+window.tlOpenEditNoteCheckDialog = async function (event, uid, line) {
   if (event) { event.preventDefault(); event.stopPropagation(); }
   if (!event || !event.target.closest('.ev-md-edit')) return;
-  const notes = eventNotesForKey(uid);
+  // 🆕 ① 底稿权威化：打开编辑框时的内容与行号必须取自最新权威值，否则会对错行落笔
+  const notes = await fetchAuthoritativeNotes(uid);
   if (notes == null) {
-    window.alert('找不到该行程，无法编辑子事件');
+    window.alert('无法读取该便利贴的最新内容，已取消编辑（请重开便利贴后再试）。');
     return;
   }
   const lines = notes.split('\n');
@@ -1202,15 +1290,21 @@ window.tlOpenEditNoteCheckDialog = function (event, uid, line) {
 // 目的：多档联运下，同一 checkbox 子事件可能出现在多个 calendar*.md；右键该小圆点 →
 //   拿「该子事件的内容（checkbox 文本）」去比对所有便利贴（主档＋并入的联运档都算），找出含相同子事件的其它张。
 //   左键 ✎ 仍进编辑（onclick＝tlOpenEditNoteCheckDialog，contextmenu 与 click 分流不冲突）。
-let noteFindSameTarget = null;   // { uid, line, text }
-function noteFindSameOpen(e) {
+let noteFindSameTarget = null;      // { uid, line, text }
+// 🆕 待搬移目标：右键那颗 checkbox 的身份。noteFindSameRun 会先 noteFindSameClose() 清掉
+//    noteFindSameTarget，故「未找到」时另存一份，供结果窗里的「搬移」按钮使用。
+let noteFindSameMoveTarget = null;
+async function noteFindSameOpen(e) {
   const dot = e.target.closest && e.target.closest('.ev-md-edit');
   if (!dot) return;              // 不是小圆点：不拦截，交给浏览器原生右键
   e.preventDefault();            // 阻止原生右键
   const uid = dot.getAttribute('data-uid') || '';
   const line = dot.getAttribute('data-line');
-  const notes = eventNotesForKey(uid);
-  if (notes == null) { window.alert('找不到该行程，无法比对相同项目'); return; }
+  const pt = { x: e.clientX, y: e.clientY };   // await 前先留住坐标（原生事件对象不回收，但留一手更安全）
+  // 🆕 ① 底稿权威化：这里算出的 li 直接决定后续要删／搬哪一行，
+  //    用陈旧的 refMeta 会对错行落笔 —— 代价远大于菜单晚几十毫秒弹出，故一律现拉现用。
+  const notes = await fetchAuthoritativeNotes(uid);
+  if (notes == null) { window.alert('无法读取该便利贴的最新内容，请重开便利贴后再试'); return; }
   const lines = String(notes).split('\n');
   const li = Number(line);
   if (!Number.isInteger(li) || li < 0 || li >= lines.length) { window.alert('该子事件内容已变化，请刷新便利贴后重试'); return; }
@@ -1223,14 +1317,55 @@ function noteFindSameOpen(e) {
   if (!menu) return;
   const noteEl = document.getElementById('note');
   const rect = noteEl.getBoundingClientRect();
-  menu.style.left = Math.max(2, e.clientX - rect.left) + 'px';
-  menu.style.top = Math.max(2, e.clientY - rect.top) + 'px';
-  menu.classList.add('open');
+  menu.classList.add('open');   // 先開，才量得到尺寸（base 是 display:none）
+  const mw = menu.offsetWidth || 160;
+  const mh = menu.offsetHeight || 40;
+  let left = pt.x - rect.left;
+  let top = pt.y - rect.top;
+  if (top + mh > rect.height - 2) top = Math.max(2, top - mh);   // 太靠下 → 往上翻
+  if (left + mw > rect.width - 2) left = Math.max(2, left - mw);  // 太靠右 → 往左翻
+  menu.style.left = String(Math.max(2, left)) + 'px';
+  menu.style.top = String(top) + 'px';
 }
 function noteFindSameClose() {
   const menu = document.getElementById('noteFindSameMenu');
   if (menu) menu.classList.remove('open');
   noteFindSameTarget = null;
+}
+// 🆕 比对前主动让「主进程便利贴目录」收敛。
+//    背景：sticky-note-order 回的是主进程的 stickyNoteCatalog 快照，只有主程式整份
+//    sticky-note-sync 时才刷新。使用者在另一张便利贴删掉某项后，这份快照往往还是旧的 ——
+//    直接拿它比对会把「早就删掉」的项目报成「仍然存在」，产生难以理解的讯息。
+//    因此比对前先发一次 refresh-request 让主程式重算并整份 sync，等到回包（或超时）再读。
+function awaitStickyNotesSync(timeoutMs) {
+  return new Promise((resolve) => {
+    let requestId = '';
+    try {
+      requestId = 'sticky-find-sync-' + Date.now() + '-' + (++stickyRefreshSeq);
+    } catch (e) { resolve(); return; }
+    let settled = false;
+    const titleEl = document.getElementById('title');
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      try { ipcRenderer.removeListener('sticky-note-refresh-result', onResult); } catch (e) {}
+      resolve();
+    };
+    const timer = setTimeout(finish, timeoutMs || 3000);
+    const onResult = (event, result) => {
+      if (!result || result.requestId !== requestId) return;
+      finish();
+    };
+    try { ipcRenderer.on('sticky-note-refresh-result', onResult); } catch (e) {}
+    ipcRenderer.send('sticky-note-refresh-request', {
+      requestId,
+      key: KEY,
+      idx: IDX,
+      title: (titleEl ? (titleEl.textContent || '') : '').replace(/\s+/g, ' ').trim(),
+      date: ''
+    });
+  });
 }
 async function noteFindSameRun() {
   const target = noteFindSameTarget;
@@ -1238,6 +1373,8 @@ async function noteFindSameRun() {
   if (!target) return;
   const curUid = target.uid;
   const curText = target.text;
+  // 🆕 先等目录收敛再比对，避免拿快照把已删除的项目报成「仍存在」
+  await awaitStickyNotesSync();
   let result = null;
   try { result = await ipcRenderer.invoke('sticky-note-order'); } catch (err) { result = null; }
   const allNotes = (result && Array.isArray(result.notes)) ? result.notes : [];
@@ -1256,10 +1393,13 @@ async function noteFindSameRun() {
   const ov = document.getElementById('findSameOv');
   const list = document.getElementById('findSameList');
   if (!ov || !list) return;
-  if (!matches.length) {
-    list.innerHTML = '<div class="fs-empty">✅ 在其它便利贴中未找到相同内容的子事件</div>';
-  } else {
-    // 源头行提示：本便利贴第几行触发了这次查找
+  const titleEl = document.getElementById('findSameTitle');
+  const moveBtn = document.getElementById('findSameMoveBtn');
+  if (matches.length) {
+    // 有找到：列出命中张，标注来源档与命中行号；隐藏「搬移」
+    noteFindSameMoveTarget = null;
+    if (titleEl) titleEl.textContent = '\u{1F50D} 找到相同的子事件';
+    if (moveBtn) moveBtn.hidden = true;
     const ctx = '<div class="fs-context">本便利贴第 ' + (target.line + 1) + ' 行的内容，在以下便利贴中也出现：</div>';
     const items = matches.map((m) => {
       const n = m.note;
@@ -1277,6 +1417,26 @@ async function noteFindSameRun() {
         '<button type="button" class="fs-jump" data-key="' + keyAttr + '" data-line0="' + line0 + '">切换</button></div></div>';
     }).join('');
     list.innerHTML = ctx + items;
+  } else {
+    // 没找到：提示可搬移，并列出其它便利贴供单选
+    noteFindSameMoveTarget = target;
+    if (titleEl) titleEl.textContent = '\u{1F50D} 未找到相同的子事件';
+    const others = allNotes.filter((n) => n && n.key !== curUid);
+    if (moveBtn) moveBtn.hidden = !others.length;
+    list.innerHTML = others.length
+      ? '<div class="fs-move-hint">✅ 未找到相同的子事件。可以将此子事件移动到以下所选择的其他便利贴中：</div>' +
+        others.map((n, i) => {
+          const title = escapeHtml(n.title || '(无标题)');
+          const date = n.date ? '（' + escapeHtml(n.date) + '）' : '';
+          const src = n.src ? escapeHtml(n.src) : '主档';
+          return '<label class="fs-move-item">' +
+            '<input type="radio" name="fsMoveTarget" value="' + escapeHtml(n.key) + '"' +
+            ' data-idx="' + escapeHtml(String(n.idx == null ? 0 : n.idx)) + '"' +
+            ' data-src="' + escapeHtml(String(n.src || '')) + '"' + (i === 0 ? ' checked' : '') + '>' +
+            '<span class="fs-move-title">' + title + date + '</span>' +
+            '<span class="fs-move-src">' + src + '</span></label>';
+        }).join('')
+      : '<div class="fs-empty">✅ 在其它便利贴中未找到相同内容的子事件</div>';
   }
   ov.classList.add('show');
 }
@@ -1298,17 +1458,169 @@ async function noteFindSameSwitchTo(key, line0) {
   }
 }
 
+// 🆕 关闭结果窗（并清掉待搬移目标，避免残留状态被下次误用）
+function hideNoteFindSame() {
+  const ov = document.getElementById('findSameOv');
+  if (ov) ov.classList.remove('show');
+  noteFindSameMoveTarget = null;
+}
+// 🆕 搬移结果 toast：常驻、按 ✕ 才关闭（对齐 LITE 的 persistent toast）；
+//   显示期间「正常／reverse」每 2 秒交错切换——normal＝纸底＋字色，reverse＝字色底＋纸色字。
+let noteMoveToastTimer = null;
+function showNoteMoveToast(message, isError = false) {
+  const el = document.getElementById('noteMoveToast');
+  const msg = document.getElementById('noteMoveToastMsg');
+  if (!el || !msg) return;
+  if (noteMoveToastTimer) { clearInterval(noteMoveToastTimer); noteMoveToastTimer = null; }
+  msg.textContent = message;
+  el.classList.toggle('error', isError);
+  el.classList.remove('reverse');
+  el.classList.add('show');
+  noteMoveToastTimer = setInterval(() => {
+    el.classList.toggle('reverse');
+  }, 2000);
+}
+function hideNoteMoveToast() {
+  const el = document.getElementById('noteMoveToast');
+  if (noteMoveToastTimer) { clearInterval(noteMoveToastTimer); noteMoveToastTimer = null; }
+  if (el) {
+    el.classList.remove('show');
+    el.classList.remove('reverse');
+  }
+}
+
+// 🆕 搬移：把当前便利贴的这个子事件复制到所选便利贴，并从当前便利贴删除该子事件。
+//    顺序＝「先复制到目标，成功后才从当前删除」——目标写入失败时原行仍在，不会丢数据。
+async function noteFindSameMove() {
+  const target = noteFindSameMoveTarget;
+  if (!target) return;
+  const checked = document.querySelector('#findSameList input[name="fsMoveTarget"]:checked');
+  if (!checked) { showNoteMoveToast('请先选择一张要搬移过去的便利贴', true); return; }
+  const destKey = String(checked.value || '');
+  const destIdx = checked.getAttribute('data-idx');
+  const destSrc = String(checked.getAttribute('data-src') || '');
+  if (!destKey || destKey === target.uid) { showNoteMoveToast('目标便利贴无效', true); return; }
+
+  // 取最新全量清单（单一可信来源）：目标便利贴与当前这张都从**同一份快照**取，
+  //    避免两次拉取之间又发生写入、让两端看到不同版本。
+  //    🆕 ① 底稿权威化：不再用可能陈旧的 refMeta（这就是事故起因），一律现拉现用。
+  let result = null;
+  try { result = await ipcRenderer.invoke('sticky-note-order'); } catch (err) { result = null; }
+  const allNotes = (result && Array.isArray(result.notes)) ? result.notes : [];
+  if (!allNotes.length) { showNoteMoveToast('无法读取便利贴最新内容，已取消搬移', true); return; }
+  const dest = allNotes.find((n) => n && n.key === destKey);
+  if (!dest) { showNoteMoveToast('找不到所选便利贴，无法搬移', true); return; }
+  // 🆕 双方的「notes」都改走本地优先的权威读取：目录快照可能比实际内容旧，
+  //    追加到目标时不能用它，否则会连带抹掉目标刚新增的内容。
+  const destNotesRaw = await fetchAuthoritativeNotes(destKey);
+  const curNotes = await fetchAuthoritativeNotes(target.uid);
+  if (destNotesRaw == null || curNotes == null) {
+    showNoteMoveToast('无法读取便利贴的最新内容，已取消搬移', true);
+    return;
+  }
+  const destNotes = String(destNotesRaw || '');
+
+  const lines = curNotes.split('\n');
+  const li = target.line;
+  if (!Number.isInteger(li) || li < 0 || li >= lines.length) {
+    showNoteMoveToast('该子事件内容已变化，请刷新便利贴后重试', true);
+    return;
+  }
+  const movedLine = lines[li];
+
+  const btn = document.getElementById('findSameMoveBtn');
+  if (btn) btn.disabled = true;
+  let ok = false;
+  let msg = '';
+  try {
+    // ① 先复制到目标便利贴末尾（保留原行文本与勾选状态）
+    //    🆕 写后回读校验：这一行必须出现在目标便利贴，否则视为失败、绝不继续删来源（避免两边都丢）
+    const newDest = destNotes ? (destNotes.replace(/\s+$/, '') + '\n' + movedLine) : movedLine;
+    const rAdd = await commitStickyNoteContent(newDest, destKey, destIdx, destSrc, {
+      expect: { present: [movedLine] }
+    });
+    if (!rAdd.ok) {
+      msg = '搬移失败：无法写入所选便利贴（' + rAdd.error + '）';
+    } else if (rAdd.warn) {
+      ok = true;
+      msg = '✅ 已将此子事件复制到「' + (dest.title || '(无标题)') + '」。' + rAdd.warn;
+    } else {
+      // ② 再从当前便利贴删除该子事件；🆕 删除后回读确认这一行真的消失了
+      const rest = lines.slice();
+      rest.splice(li, 1);
+      const rDel = await commitStickyNoteContent(rest.join('\n'), target.uid, IDX, SRC_FILE, {
+        expect: { absent: [movedLine] }
+      });
+      if (rDel.ok) {
+        ok = true;
+        msg = '✅ 已将此子事件搬移到「' + (dest.title || '(无标题)') + '」'
+          + (rDel.warn ? ('。' + rDel.warn) : '');
+      } else {
+        msg = '⚠️ 已复制到「' + (dest.title || '(无标题)') + '」，但从当前便利贴删除失败（' + rDel.error + '）'
+          + (rDel.verifyFailed ? '。请先重开便利贴确认后再处理重复的那一行。' : '');
+      }
+    }
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+  hideNoteFindSame();
+  showNoteMoveToast(msg, !ok);
+}
+
+// 🆕 菜单项「删除此小事件」：删前 confirm（含内容预览），确认后从当前便利贴移除该行并落盘，
+//    再以「常驻 toast ＋ ✕ 关闭钮」回报结果（与搬移共用同一套 toast 样式）。
+async function noteFindSameDelete() {
+  const target = noteFindSameTarget;
+  if (!target) return;
+  noteFindSameClose();   // 先收菜单，再弹确认框（避免确认框背后残留菜单）
+  // 🆕 ① 底稿权威化：重拉最新内容（不用可能陈旧的 refMeta），避免删错行或拿到旧底稿整篇覆写
+  const curNotes = await fetchAuthoritativeNotes(target.uid);
+  if (curNotes == null) { showNoteMoveToast('无法读取该便利贴的最新内容，已取消删除', true); return; }
+  const lines = curNotes.split('\n');
+  const li = target.line;
+  if (!Number.isInteger(li) || li < 0 || li >= lines.length) {
+    showNoteMoveToast('该子事件内容已变化，请刷新便利贴后重试', true);
+    return;
+  }
+  const m = lines[li].match(/^(\s*)-\s+\[([ xX])\]\s?(.*)$/);
+  if (!m) { showNoteMoveToast('该子事件内容已变化，请刷新便利贴后重试', true); return; }
+  const label = (m[3] || '').trim();
+  // 铁律：删除数据前必须交互确认，且告知「删什么、后果、可否恢复」
+  const ok = window.confirm(
+    '确定要删除这个子事件吗？\n\n' +
+    '内容：' + (label || '(无内容)') + '\n\n' +
+    '删除后会从当前便利贴移除并立即存档，无法复原。'
+  );
+  if (!ok) { showNoteMoveToast('已取消删除'); return; }
+  noteFindSameTarget = null;
+  noteFindSameMoveTarget = null;
+  const rest = lines.slice();
+  rest.splice(li, 1);
+  // 🆕 ③ 写后回读校验：确认这一行真的消失了，避免「画面消失、实际还在」的假象
+  const r = await commitStickyNoteContent(rest.join('\n'), target.uid, IDX, SRC_FILE, {
+    expect: { absent: [lines[li]] }
+  });
+  showNoteMoveToast(r.ok
+    ? ('✅ 已删除子事件' + (label ? ('：' + label) : '') + (r.warn ? ('。' + r.warn) : ''))
+    : ('⚠️ 删除失败（' + r.error + '）'), !r.ok);
+}
+
+
 function stickyBlockTypeName(type) {
   return ({ code: '代码块', table: '表格', heading: '标题', hr: '分隔线', quote: '引用', list: '列表', para: '段落' })[type] || '区块';
 }
 // 🆕 通用「最小 MD 区块」编辑（便利贴端）：编辑 notes 中 lines[start..end] 的 Markdown 原文。
 //   区间起止由主窗渲染时嵌入 onclick；⌘S／「保存」＝只落盘不关闭 · Esc 关闭；清空并保存＝删除该区块（需确认）。
-window.tlOpenEditBlockDialog = function (event, uid, start, end, type) {
+window.tlOpenEditBlockDialog = async function (event, uid, start, end, type) {
   if (event) { event.preventDefault(); event.stopPropagation(); }
   if (!event || !event.target.closest('.md-unit-edit')) return;
   if (addCheckSavePending) return;
-  const notes = eventNotesForKey(uid);
-  if (notes == null) { window.alert('找不到该行程，无法编辑区块'); return; }
+  // 🆕 ① 底稿权威化：编辑区块＝整段覆写，底稿必须现拉现用（用陈旧底稿会把已删的旧内容写回）
+  const notes = await fetchAuthoritativeNotes(uid);
+  if (notes == null) {
+    window.alert('无法读取该便利贴的最新内容，为避免覆盖资料已取消编辑。请重开便利贴后再试。');
+    return;
+  }
   const lines = notes.split('\n');
   if (!Number.isInteger(start) || !Number.isInteger(end) || start < 0 || end >= lines.length || start > end) {
     window.alert('该区块内容已变化，请刷新便利贴后重试');
@@ -1356,8 +1668,9 @@ async function confirmAddCheck() {
     if (addCheckSavePending) return false;
     const target = noteBlockEditTarget;
     const blockText = inp.value.replace(/\r\n/g, '\n');
-    const notes = eventNotesForKey(target.uid);
-    if (notes == null) { window.alert('找不到该行程，无法保存区块'); return false; }
+    // 🆕 ① 底稿权威化：整篇覆写前现拉最新底稿
+    const notes = await fetchAuthoritativeNotes(target.uid);
+    if (notes == null) { window.alert('无法读取该便利贴的最新内容，为避免覆盖资料已取消保存。'); return false; }
     const lines = notes.split('\n');
     if (target.start < 0 || target.end >= lines.length) {
       window.alert('该区块内容已变化，请刷新便利贴后重试'); return false;
@@ -1386,9 +1699,10 @@ async function confirmAddCheck() {
     const rows = inp.value.replace(/\r\n/g, '\n').split('\n').map((l) => l.trim()).filter(Boolean);
     // 🆕 内容清空＝删除该子事件：必须先经使用者确认（拒绝则留在编辑框，可先「复制」留存原文）
     if (!rows.length && !window.confirm('子事件内容为空＝删除该子事件。\n\n确定要删除吗？删除后将直接写回并存档，无法从本窗口恢复（可先按「复制」留存原文）。')) return false;
-    const notes = eventNotesForKey(target.uid);
+    // 🆕 ① 底稿权威化：整篇覆写前现拉最新底稿（陈旧底稿会把已搬走的旧内容一并写回）
+    const notes = await fetchAuthoritativeNotes(target.uid);
     if (notes == null) {
-      window.alert('找不到该行程，无法保存子事件');
+      window.alert('无法读取该便利贴的最新内容，为避免覆盖资料已取消保存。请重开便利贴后再试。');
       return false;
     }
     const lines = notes.split('\n');
@@ -1433,9 +1747,11 @@ async function confirmAddCheck() {
       if (!parsed) { showStickyRefreshFeedback('表格内容不完整（需要表头行＋分隔行）', true); return false; }
       if (!filled) { showStickyRefreshFeedback('请先在格子里填内容'); return false; }
     }
-    const ev = sourceEvent(KEY);
-    if (!ev) { window.alert('找不到该行程，无法加入内容'); return false; }
-    const prev = ev.notes ? String(ev.notes).replace(/\s+$/, '') : '';
+    // 🆕 ① 底稿权威化：追加＝「整篇覆写」，底稿必须是最新的。
+    //    用 refMeta 的话，陈旧快照会让已删除的行随这次写入一起复活（2026-10-26 事故）。
+    const authPrev = await fetchAuthoritativeNotes(KEY);
+    if (authPrev == null) { showStickyRefreshFeedback('无法读取便利贴最新内容，请重开便利贴再试', true); return false; }
+    const prev = String(authPrev).replace(/\s+$/, '');
     const notes = (prev ? prev + '\n\n' : '') + block + '\n';
     if (await saveStickyNoteContent(notes, noteAddMode === 'table' ? '加入表格' : '加入文本')) {
       if (noteAddMode === 'table') {
@@ -1471,12 +1787,15 @@ async function confirmAddCheck() {
   const lines = inp.value.replace(/\r\n/g, '\n').split('\n').map((l) => l.trim()).filter(Boolean);
   if (!lines.length) { showStickyRefreshFeedback('没有可加入的内容'); return false; }
   const md = lines.map((l) => '- [ ] ' + l).join('\n');
-  const ev = sourceEvent(KEY);
-  if (!ev) {
-    window.alert('找不到该行程，无法保存子事件');
+  // 🆕 ① 底稿权威化：先前加入 ABCDEF 时就是用了陈旧的 refMeta 底稿，
+  //    把早已搬走的内容连着新内容一起写回，才让旧项目「复活」（2026-10-26 事故）。
+  //    追加＝整篇覆写，底稿必须现拉现用。
+  const authPrev = await fetchAuthoritativeNotes(KEY);
+  if (authPrev == null) {
+    window.alert('无法读取该便利贴的最新内容，为避免覆盖资料已取消加入。请重开便利贴后再试。');
     return false;
   }
-  const prev = ev.notes ? String(ev.notes).replace(/\s*$/, '') : '';
+  const prev = String(authPrev).replace(/\s*$/, '');
   const notes = (prev ? prev + '\n' : '') + md + '\n';
   if (await saveStickyNoteContent(notes, '保存子事件')) {
     // 这一批在备注里的行区间：prev 有内容时从 prev 的行数开始，否则从第 0 行
@@ -1826,10 +2145,24 @@ let SRC_FILE = '';                       // 当前便利贴的来源文件名（
 const refMeta = new Map();               // key -> {notes, src, title, date, endDate, color, done, tags}
 function rememberRefMeta(arg) {
   if (!arg || typeof arg.key !== 'string') return;
-  const next = Object.assign({}, refMeta.get(arg.key) || {});
+  const prev = refMeta.get(arg.key);
+  const next = Object.assign({}, prev || {});
+  // 🆕 陈旧保护：本窗刚确认写入过 notes 时（__localWrite），主程式推来的值**不得覆盖**，
+  //    直到推送内容与本地一致为止（＝双方收敛，远程已收到这次写入），保护才解除。
+  //
+  //    ⚠️ 为什么不能只看时间：主程式的 tlCalEvents／tlIncludedEvents 可能仍是本次写入前的
+  //    内存快照（例如原值是后来才重算的），于是它推回来的 notes 会持续是旧的；
+  //    一旦时间窗口过期，这份旧值就灌回 refMeta，下一次「整篇覆写」便用旧底稿把
+  //    已搬走／已删除的项目写回去 —— 这正是「搬到别的便利贴后，改另一项又跑出来」的现象。
+  //    改成「内容收敛才解除」才能真正挡住；要强制同步请按便利贴的 🔄 刷新（会显式解除）。
+  const incoming = (arg.notes !== undefined && arg.notes !== null) ? String(arg.notes) : null;
+  const guard = !!(prev && prev.__localWrite && incoming !== null);
   ['notes', 'src', 'title', 'date', 'endDate', 'color', 'tags'].forEach((k) => {
+    if (k === 'notes' && guard) return;   // 保护期内：沿用本地刚写的版本
     if (arg[k] !== undefined && arg[k] !== null) next[k] = arg[k];
   });
+  if (guard) next.__localWrite = (incoming !== String(next.notes || ''));  // 收敛 → 解除保护
+  else next.__localWrite = false;
   if (typeof arg.done === 'boolean') next.done = arg.done;
   refMeta.set(arg.key, next);
   if (arg.key === KEY) syncSourceFile();
@@ -3451,16 +3784,29 @@ document.addEventListener('keydown', (e) => {
   const menu = document.getElementById('noteFindSameMenu');
   if (menu && menu.classList.contains('open')) { noteFindSameClose(); return; }
   const ov = document.getElementById('findSameOv');
-  if (ov && ov.classList.contains('show')) { ov.classList.remove('show'); return; }
+  if (ov && ov.classList.contains('show')) { hideNoteFindSame(); return; }
+  const mt = document.getElementById('noteMoveToast');
+  if (mt && mt.classList.contains('show')) { hideNoteMoveToast(); return; }
 });
 (function bindFindSameOverlay() {
   const fsMenu = document.getElementById('noteFindSameMenu');
-  if (fsMenu) { const item = fsMenu.querySelector('.nami'); if (item) item.addEventListener('click', noteFindSameRun); }
+  if (fsMenu) {
+    // 🆕 菜单项改事件委托（按 data-act 分流）：find＝找出相同的项目，del＝删除此小事件
+    fsMenu.addEventListener('click', (e) => {
+      const item = e.target.closest && e.target.closest('.nami');
+      if (!item) return;
+      e.stopPropagation();
+      const act = item.getAttribute('data-act');
+      if (act === 'find') noteFindSameRun();
+      else if (act === 'del') noteFindSameDelete();
+    });
+  }
   const fsOv = document.getElementById('findSameOv');
   if (fsOv) {
-    fsOv.addEventListener('click', (e) => { if (e.target === fsOv) fsOv.classList.remove('show'); });
     const cb = document.getElementById('findSameCloseBtn');
-    if (cb) cb.onclick = () => fsOv.classList.remove('show');
+    if (cb) cb.onclick = () => hideNoteFindSame();
+    const mv = document.getElementById('findSameMoveBtn');
+    if (mv) mv.addEventListener('click', (e) => { e.stopPropagation(); noteFindSameMove(); });
     // 🆕 结果项「切换」按钮：事件委托（按钮是 innerHTML 动态生成，无法逐个绑 onclick）
     fsOv.addEventListener('click', (e) => {
       const btn = e.target.closest && e.target.closest('.fs-jump');
@@ -3470,7 +3816,11 @@ document.addEventListener('keydown', (e) => {
       const line0 = parseInt(btn.getAttribute('data-line0') || '-1', 10);
       noteFindSameSwitchTo(key, line0);
     });
+    fsOv.addEventListener('click', (e) => { if (e.target === fsOv) hideNoteFindSame(); });
   }
+  // 🆕 搬移结果 toast 的 ✕ 关闭钮
+  const tc = document.getElementById('noteMoveToastClose');
+  if (tc) tc.onclick = () => hideNoteMoveToast();
 })();
 
 init();

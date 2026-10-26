@@ -302,6 +302,11 @@
 //       轉換與欄位驗證抽成共用 sticky-settings.js（桌面主程序 require 同一份，避免兩端口徑分歧）。
 //       LITE index.html/sticky-notes.js/style.css/sticky-settings.js/sw.js 改，bump 讓手機重拉；
 //       APP_VERSION 與 manifest.json 同步 1.8.9→1.9.0。
+// v181：便利貼內 checkbox 視覺規格化——內框用字體色（var(--cal-sticky-fg)）、外框套金色 #D4AF37，
+//       兩框皆用最細 1px 線、緊密嵌套（外框用 box-shadow 0 0 0 1px 直接貼在內框外、無任何間隙），
+//       方框大小＝字體大小（width/height:1em，font-size:inherit 隨便利貼字級縮放）。
+//       僅作用於便利貼正文 .cal-sticky-body，桌面端同步改 desktop-note.html 的 .ev-cb。
+//       LITE style.css/sw.js 改，bump 讓手機重拉；APP_VERSION 與 manifest.json 同步 1.9.8→1.9.9。
 // v180：便利貼「設定資料缺失」提醒改為常駐（不自動關閉）——toast 加 ✕ 關閉鈕，由使用者手動關閉；
 //       showToast 加 persistent 參數（第 4 參，預設 false），persistent 時不排程自動消失、顯示 ✕；
 //       #toast 結構改成 <span id="toast-msg">＋<button id="toast-close">，.toast 改 flex 並加 .closable（換行＋最大寬度）。
@@ -334,7 +339,7 @@
 //       按保存時設定 JSON 與主檔、聯運檔一起交付（iOS 逐檔各彈一次分享面板）；
 //       交付成功才清角標，取消則保留。頁次不列入比對（翻頁不會亮角標）。
 //       app.js/calendar-editor.js/sticky-notes.js 改，bump 讓手機重拉；APP_VERSION 1.9.0→1.9.1。
-const CACHE_NAME = 'md-editor-lite-v180';
+const CACHE_NAME = 'md-editor-lite-v181';
 const ASSETS = [
   './',
   './index.html',

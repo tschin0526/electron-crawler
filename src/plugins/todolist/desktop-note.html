@@ -210,11 +210,15 @@
     }
     .body .katex { font-size: 1em; }
     /* 📝 備註 Markdown checkbox：樣式與 Calendar 對齊；只讓方框可勾選，編輯圓點獨立操作 */
+    /* 🆕 便利贴内 checkbox：内框＝字体色、外框＝金色；两者最细线紧密嵌套无缝隙；框＝字体大小（em 相对单位） */
     .ev-cb {
-      display: inline-block; min-width: 11px; height: 11px;
-      border: 1px solid var(--ev-muted, #94a3b8); border-radius: 3px;
-      margin-right: 4px; vertical-align: -1px; text-align: center;
-      font-size: 9px; line-height: 11px; color: #fff;
+      display: inline-flex; align-items: center; justify-content: center;
+      box-sizing: border-box; width: 1em; height: 1em; min-width: 0;
+      border: 1px solid var(--note-fg, #33384a);
+      box-shadow: 0 0 0 1px #D4AF37;
+      border-radius: 2px;
+      margin-right: .35em; vertical-align: -.125em; text-align: center;
+      font-size: inherit; line-height: 1; color: #fff;
     }
     .ev-cb.interactive { cursor: pointer; }
     .ev-cb.interactive:hover { outline: 2px solid var(--ev-primary, #7c3aed); outline-offset: 1px; }
@@ -470,6 +474,38 @@
     #findSameBox { border-width: 2px; box-shadow: 0 0 0 1px rgba(212,175,55,.4), 0 12px 30px rgba(0,0,0,.5), 0 3px 8px rgba(0,0,0,.3); }
     #findSameBox #findSameCloseBtn { background: rgba(212,175,55,.22); border-color: #D4AF37; }
     #findSameBox #findSameCloseBtn:hover { background: rgba(212,175,55,.42); }
+    /* 🆕 搬移清单（未找到相同时提供）：条目＝单选 radio ＋ 标题 ＋ 来源檔 */
+    .fs-move-hint { padding: 2px 4px 6px; margin-bottom: 4px; font-size: 11px; opacity: .85; border-bottom: 1px solid color-mix(in srgb, var(--note-fg, #eee) 18%, transparent); }
+    .fs-move-item { display: flex; align-items: center; gap: 6px; padding: 5px 4px; border-bottom: 1px solid rgba(127,127,127,.22); font-size: 12px; cursor: pointer; -webkit-app-region: no-drag; }
+    .fs-move-item:last-child { border-bottom: none; }
+    .fs-move-item input { flex: none; width: 1em; height: 1em; margin: 0; accent-color: #D4AF37; cursor: pointer; -webkit-app-region: no-drag; }
+    .fs-move-title { flex: 1 1 auto; word-break: break-word; }
+    .fs-move-src { flex: none; font-size: 11px; opacity: .72; }
+    /* 🆕 搬移结果 toast：常驻·按 ✕ 才关闭（配色跟便利贴走，深浅主题都可读） */
+    .note-move-toast {
+      position: absolute; left: 50%; bottom: 88px; z-index: 60;
+      display: none; align-items: flex-start; gap: 8px;
+      width: min(88%, 420px); padding: 8px 10px; transform: translate(-50%, 6px);
+      border: 1px solid #D4AF37; border-radius: 8px;
+      background: var(--note-bg, rgba(32,35,42,.96)); color: var(--note-fg, #fff);
+      box-shadow: 0 8px 20px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.12);
+      font-size: 12px; line-height: 1.4; opacity: 0; pointer-events: none;
+      transition: opacity .15s ease, transform .15s ease; -webkit-app-region: no-drag;
+    }
+    .note-move-toast.show { display: flex; opacity: 1; transform: translate(-50%, 0); pointer-events: auto; }
+    .note-move-toast.error { border-color: rgba(220,38,38,.85); }
+    /* 🆕 reverse：底色与字色对调（与搜寻高标同一套 reverse 规格），每 2 秒与 normal 交错 */
+    .note-move-toast.reverse { background: var(--note-fg, #33384a); color: var(--note-bg, #FFF3B0); }
+    .note-move-toast.reverse .note-move-toast-close { color: var(--note-bg, #FFF3B0); }
+    .note-move-toast-msg { flex: 1 1 auto; word-break: break-word; }
+    .note-move-toast-close {
+      flex: none; width: 18px; height: 18px; padding: 0; margin: 0;
+      display: inline-flex; align-items: center; justify-content: center;
+      border: 1px solid rgba(212,175,55,.7); border-radius: 50%;
+      background: rgba(127,127,127,.22); color: var(--note-fg, #fff);
+      font-size: 10px; line-height: 1; cursor: pointer; -webkit-app-region: no-drag;
+    }
+    .note-move-toast-close:hover { background: rgba(212,175,55,.42); }
 </style>
 </head>
 <body>
@@ -490,9 +526,10 @@
       <button type="button" class="nami" data-act="table" role="menuitem">▦ 加入 MD 表格</button>
       <button type="button" class="nami" data-act="text" role="menuitem">✎ 自由编辑（任意文本）</button>
     </div>
-    <!-- 🆕 右键 checkbox 编辑小圆点（.ev-md-edit）→ 下拉菜单「找出相同的项目」 -->
+    <!-- 🆕 右键 checkbox 编辑小圆点（.ev-md-edit）→ 下拉菜单「找出相同的项目」「删除此小事件」 -->
     <div class="note-addcheck-menu" id="noteFindSameMenu" role="menu">
-      <button type="button" class="nami" role="menuitem">🔍 找出相同的项目</button>
+      <button type="button" class="nami" data-act="find" role="menuitem">🔍 找出相同的项目</button>
+      <button type="button" class="nami" data-act="del" role="menuitem">🗑 删除此小事件</button>
     </div>
     <div class="body" id="body"></div>
     <div class="tl-text-gutter-wrap" id="editAreaGutterWrap">
@@ -671,12 +708,18 @@
     <!-- 🆕 「找出相同的项目」结果 Modal（复用 addcheck-ov／addcheck-box 外观） -->
     <div class="addcheck-ov" id="findSameOv">
       <div class="addcheck-box" id="findSameBox">
-        <div class="ac-title">🔍 找到相同的子事件</div>
+        <div class="ac-title" id="findSameTitle">🔍 找到相同的子事件</div>
         <div id="findSameList" class="fs-list"></div>
         <div class="ac-actions">
+          <button type="button" class="ac-copy ac-primary" id="findSameMoveBtn" hidden>搬移</button>
           <button type="button" class="ac-copy" id="findSameCloseBtn">关闭</button>
         </div>
       </div>
+    </div>
+    <!-- 🆕 搬移结果 toast（常驻·手动关闭，配色跟便利贴走） -->
+    <div class="note-move-toast" id="noteMoveToast" role="status" aria-live="polite">
+      <span class="note-move-toast-msg" id="noteMoveToastMsg"></span>
+      <button type="button" class="note-move-toast-close" id="noteMoveToastClose" aria-label="关闭" title="关闭">✕</button>
     </div>
     <div class="rz" id="rz"></div>
   </div>

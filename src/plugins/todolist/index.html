@@ -7452,6 +7452,16 @@
           await complete({ success: false, message: 'Calendar 无法同步便利贴' });
           return;
         }
+        // 📎 include 档（calendar-*.md）是**非同步**并入 tlIncludedEvents 的，而便利贴清单、
+        //    跨张比对、搬移目标清单一律依赖这里的 refs。若并入还没完成就产出清单，
+        //    来自 include 的便利贴会**整批从清单里消失** —— 现象就是「某张便利贴明明开着、
+        //    却不在便利贴清单里」。故产出 refs 前先确保并入完成。
+        try {
+          if (typeof tlIncludedEvents !== 'undefined' && (!tlIncludedEvents || !tlIncludedEvents.length)
+              && typeof tlRefreshIncludedEvents === 'function') {
+            await tlRefreshIncludedEvents();
+          }
+        } catch (e) { /* 并入失败就沿用现状，不阻断本次刷新 */ }
         if (typeof tlAllEvents === 'function') {
           tlCalEvents = tlAllEvents(document.getElementById('taskText').value);
         }
