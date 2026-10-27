@@ -845,6 +845,19 @@ body {
   border-radius: 999px; color: #4a3b12;
   background: rgba(255,255,255,.5); border: 1px solid rgba(184,137,58,.65);
 }
+/* 🆕 提醒（remind）標記 [[remind:名稱:規則]]：與 term 同一顆金色膠囊，只把外框改成紅色＋前方鈴鐺，
+   規則（rule）放 title。與桌面便利貼／calendar 雙端同口径。 */
+.tl-remind {
+  display: inline-flex; align-items: center; gap: .3em;
+  margin-right: .3em; padding: 0 .42em;
+  border-radius: 999px; line-height: 1.15; font-size: .85em; font-weight: 600;
+  white-space: nowrap; cursor: help;
+  color: #4a3b12;
+  background: linear-gradient(180deg, #f4dc8e 0%, #e6bd52 55%, #d0a23a 100%);
+  border: 1px solid #e5484d;
+  box-shadow: 0 1px 2px rgba(0,0,0,.28), inset 0 1px 0 rgba(255,255,255,.65);
+}
+.tl-remind-ic { font-size: .95em; line-height: 1; }
 .ev-block.done { opacity: 0.55; }
 /* ⚠️ 對齊修復（同桌面端）：column-gap 4px × 7 會累積 28px 漂移 → 全天行程「卡在兩天中間」。
    gap 歸 0 讓欄位軌道與時間網格完全一致，視覺留白改由 .ev-allday-col 的內距提供。 */
@@ -1895,6 +1908,18 @@ table.md-tg-table { width: 100%; border-collapse: collapse; }
 /* 🆕 便利貼 ☰ 清單中的「＋ 新建便利貼」：與 .cal-sticky-toggle 同一套，金色填充強調為正向動作 */
 .cal-sticky-add { background: var(--gold-wash); border-color: var(--gold); font-weight: 600; }
 .cal-sticky-add:active { background: rgba(212, 175, 55, .22); }
+/* 🆕 VIEW 便利貼（🔔 提醒）＝只讀投影：收起來自這一張「異動資料」的入口
+   （✎ 編輯／保存／📅 日程編輯／＋☐ 加入／☰ 裡的＋新建·🗑刪除·滚动定位 ＋ 正文的 ✎ 圓點）。
+   保留：翻頁、☰ 清單、搜尋定位、顏色／字級等純顯示設定。與桌面 #note.view-note 同口径。 */
+.cal-sticky-view #calStickyEditBtn,
+.cal-sticky-view #calStickyModeBtn,
+.cal-sticky-view #calStickySaveBtn,
+.cal-sticky-view #calStickyNewNoteBtn,
+.cal-sticky-view #calStickyDeleteBtn,
+.cal-sticky-view .cal-sticky-addcheck,
+.cal-sticky-view .cal-sticky-addcheck-menu,
+.cal-sticky-view .ev-md-edit,
+.cal-sticky-view .md-unit-edit { display: none !important; }
 
 .ev-toolbar-combo-sep { height: 1px; margin: 5px 2px; background: var(--border); }
 .ev-toolbar-combo-action-row { padding: 2px; }

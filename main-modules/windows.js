@@ -257,9 +257,26 @@ const stickyNoteMeta = new Map();
 // 🆕 翻页显示模式：single window 循环多张便利贴
 let stickyNoteOrder = [];          // 翻页顺序 [{key, idx}]（与 split 模式并行存在）
 let stickyNoteCatalog = [];        // 本次 Calendar 会话中全部已设定的便利贴（含已关闭项）
+let lastStickyCatalogSync = 0;     // 🆕 方案B：最近一次 sticky-note-sync 刷新目录的时间戳
+let stickyOrderRefreshSeq = 0;     // 🆕 方案B：触发重算的请求序号
+const STICKY_ORDER_REFRESH_TTL = 1200; // 🆕 方案B：目录近期已刷新则复用，避免频繁重算
 let stickyNoteMode = 'split';       // 'split'（分体显示：每张一个独立小窗）/ 'flip'（翻页显示：单窗循环）
 let stickyNoteFlipWindow = null;    // 翻页模式唯一的窗口
 const FLIP_KEY = '__flip__', FLIP_IDX = 0; // 翻页窗几何专用 id（位置/尺寸独立，与「当前显示哪张」无关）
+// 🆕 VIEW 便利贴（投影贴）：主程式把「全部行程里符合某个条件的行」汇总成这种合成贴。
+//   两张来源：🔔 提醒（写死抓 [[remind:]]，key＝__view__）＋ 使用者自订的规则
+//   （main-modules/view-sticky-rules.js 存的 JSON，key＝__view__:<规则 id>）。
+//   它是 calendar.md 的「投影」，不是使用者新建的便利贴 → 主进程把关三件事：
+//     ① 内容永不落盘（正文每次由日历窗现算；档案里只准存这张贴的外观／几何／清单开关，
+//        那属于使用者对这张贴的偏好，跟一般便利贴同规则 —— 2026-10-27 使用者要求）；
+//     ② 不可异动资料（保存回写、删除一律拒绝）；
+//     ③ 浏览链路与普通便利贴相同（照进 catalog／order／清单／翻页）。
+const VIEW_KEY = '__view__', VIEW_IDX = 0;
+// ⚠️ 前缀判断，不是等值判断：新增一张自订投影贴就多一个 key，这里漏改＝它会被当普通便利贴写回档案。
+const isViewKey = (key) => {
+  const s = String(key == null ? '' : key);
+  return s === VIEW_KEY || s.indexOf(VIEW_KEY + ':') === 0;
+};
 let stickyStateSaveTimer = null;    // 翻页状态（最后停留那张／清单开关）落盘去抖（与几何 persistPos 同节奏）
 const pendingStickyEditSaves = new Map();
 let stickyEditSaveSeq = 0;
@@ -360,6 +377,11 @@ function saveStickyNoteState() {
     const disk = readStickyStateFile(p);
     if (!disk.canWrite) return false;              // 档案现在读不到且里面可能还有资料 → 冻存
     const merged = mergeStickyState(disk.state, stickyNoteState);
+    // 🆕 投影贴（🔔 提醒／自定义 VIEW 贴）的「外观」照一般便利贴一样落盘（2026-10-27 使用者要求）：
+    //    颜色／文字色／字号／透明度／尺寸／位置／只看未完成 都是使用者对这张贴的偏好，跟内容无关；
+    //    不落盘的从来只有「内容」——正文每次由日历窗从 calendar.md 现算，档案里那几个字节是 ref 之外的东西。
+    //    ⚠️ 若哪天要恢复剔除，只能剔除「要写出去的复本」，不能在 merged 上直接 delete：
+    //    下一行 stickyNoteState = merged 会把内存里那份一起抹掉 → 本会话改的样式／位置当场读不回来。
     const text = JSON.stringify(merged, null, 2);
     if (disk.ok && disk.text === text) { stickyNoteState = merged; return true; }   // 内容没变就不重写档案（iCloud 目录里少一次无谓同步）
     writeStickyStateFile(p, text);
@@ -409,7 +431,7 @@ function buildStickyPortableSettings() {
 function refreshStickyWindowsAfterSettings() {
   if (stickyNoteMode === 'flip') {
     const hidden = flipHiddenSet();
-    stickyNoteOrder = stickyNoteCatalog.filter((note) => !hidden.has(flipNoteIdentity(note)));
+    stickyNoteOrder = stickyNoteCatalog.filter((note) => !hidden.has(flipHiddenIdOf(note)));
     const win = stickyNoteFlipWindow;
     if (win && !win.isDestroyed()) {
       win.webContents.send('sticky-note-order-updated', { order: stickyNoteOrder, skipRender: true });
@@ -572,9 +594,13 @@ function flipHiddenSet() {
   const arr = it && Array.isArray(it.flipHidden) ? it.flipHidden : [];
   return new Set(arr.filter((x) => typeof x === 'string'));
 }
+// 投影贴按 key 记身份，不用「标题|日期|idx」：自订规则可以取同名，混在一起会互相开关。
+const viewHiddenIdOf = (key) => 'k:' + String(key);
+function flipHiddenIdOf(note) { return isViewKey(note && note.key) ? viewHiddenIdOf(note.key) : flipNoteIdentity(note); }
 function setFlipHidden(note, hidden) {
-  if (stickyIdentityOf(note) === '|') return;   // 没标题也没日期 → 无法区分，只维持本次会话
-  const id = flipNoteIdentity(note);
+  if (!note) return;
+  if (!isViewKey(note.key) && stickyIdentityOf(note) === '|') return;   // 没标题也没日期 → 无法区分，只维持本次会话
+  const id = flipHiddenIdOf(note);
   const it = noteInst(FLIP_KEY, FLIP_IDX);
   const arr = Array.isArray(it.flipHidden) ? it.flipHidden.slice() : [];
   const at = arr.indexOf(id);
@@ -614,7 +640,10 @@ function adoptStickyState(refs) {
         donors.delete(id);
       }
     }
-    if (id !== '|' && !it._id) it._id = id;
+    // 投影贴的 key 本身就稳定（__view__ / __view__:<规则id>，规则 id 存在 view-sticky-rules.json），
+    // 不需要 _id 认领；反过来，若给它 _id，「这次没算出提醒」的 🔔 就会变成捐赠者，
+    // 可能被某个同名行程认领走（等于把投影贴的样式抄给一张普通便利贴）。
+    if (!isViewKey(r.key) && id !== '|' && !it._id) it._id = id;
   });
 }
 
@@ -860,7 +889,8 @@ ipcMain.handle('open-sticky-notes', (e, arg) => {
       tags: Array.isArray(n.tags) ? n.tags : [],
       // 🆕 外部 INCLUDE 来源文件名（草稿便利贴等）：空＝calendar.md 正式档
       src: typeof n.src === 'string' ? n.src : '',
-      notes: typeof n.notes === 'string' ? n.notes : ''
+      notes: typeof n.notes === 'string' ? n.notes : '',
+      view: !!n.view            // 🆕 VIEW 便利贴旗标（与 sticky-note-sync 的 normalized 同形，别在这里抹掉）
     }));
     stickyNoteCatalog = stickyNoteOrder.slice();
     adoptStickyState(stickyNoteOrder);
@@ -870,7 +900,7 @@ ipcMain.handle('open-sticky-notes', (e, arg) => {
     if (mode === 'flip') {
       // 上次在翻页清单里关掉的，这次照样关着（key 重排过也认得出来）
       const hidden = flipHiddenSet();
-      if (hidden.size) stickyNoteOrder = stickyNoteOrder.filter(note => !hidden.has(flipNoteIdentity(note)));
+      if (hidden.size) stickyNoteOrder = stickyNoteOrder.filter(note => !hidden.has(flipHiddenIdOf(note)));
       stickyNoteFlipWindow = null;
       // 全部被关掉时也开窗：窗口菜单里的「未开启」清单是唯一能把它们再打开的入口
       if (stickyNoteCatalog.length > 0) { createFlipStickyWindow(); count = stickyNoteFlipWindow ? 1 : 0; }
@@ -885,8 +915,45 @@ ipcMain.handle('open-sticky-notes', (e, arg) => {
     return { ok: false, error: String(err && err.message || err) };
   }
 });
+// 🆕 方案B：sticky-note-order 永远返回「现算」目录，而非陈旧快照。
+//    返回前先请主程式重算（含 include 并入，见 index.html 的 tlOnStickyRefreshRequest），
+//    等其把最新 refs 经 sticky-note-sync 推回、刷新 stickyNoteCatalog 后再返回。
+//    为避免每处读取都重算（便利贴窗多处读取、含搜索框逐键），仅在目录近期未被写入/同步刷新时才触发。
+function triggerStickyRefreshAndAwaitSync(timeoutMs) {
+  return new Promise((resolve) => {
+    if (!mainWindow || mainWindow.isDestroyed() || mainWindow.webContents.isDestroyed()) {
+      resolve(false); // Calendar 未開啟，拿现有目录兜底
+      return;
+    }
+    let done = false;
+    const onSync = () => {
+      if (done) return;
+      done = true;
+      clearTimeout(timer);
+      ipcMain.removeListener('sticky-note-sync', onSync);
+      resolve(true);
+    };
+    const timer = setTimeout(() => {
+      if (done) return;
+      done = true;
+      ipcMain.removeListener('sticky-note-sync', onSync);
+      resolve(false); // 超时，拿现有目录兜底
+    }, timeoutMs || 2000);
+    ipcMain.once('sticky-note-sync', onSync); // 先挂监听，再发请求，避免漏掉回包
+    mainWindow.webContents.send('sticky-note-refresh-request', {
+      requestId: '__order_refresh__' + Date.now() + '_' + (++stickyOrderRefreshSeq)
+    });
+  });
+}
+async function ensureFreshStickyCatalog(timeoutMs) {
+  if (Date.now() - lastStickyCatalogSync < STICKY_ORDER_REFRESH_TTL) return; // 近期已刷新，目录足够新
+  await triggerStickyRefreshAndAwaitSync(timeoutMs);
+  lastStickyCatalogSync = Date.now();
+}
+
 // 返回本次 Calendar 会话中全部已设定的便利贴，以及每张目前是否开启。
-ipcMain.handle('sticky-note-order', () => {
+ipcMain.handle('sticky-note-order', async () => {
+  await ensureFreshStickyCatalog(2000); // 🆕 方案B：返回前确保目录是现算的
   const flipOpen = stickyNoteFlipWindow && !stickyNoteFlipWindow.isDestroyed();
   const catalog = new Map(stickyNoteCatalog.map(note => [noteWinId(note.key, note.idx), note]));
   if (stickyNoteMode === 'flip') {
@@ -941,6 +1008,12 @@ ipcMain.handle('toggle-sticky-note', async (event, arg) => {
       return { success: false, isOpen: true };
     }
     if (activeIndex >= 0) stickyNoteOrder.splice(activeIndex, 1);
+    // 🆕 VIEW 贴位子固定在最前面：从清单关掉的投影贴再打开时插回头部（一般贴纸仍沿用「补到末端」）
+    //    多张投影贴（🔔 ＋ 自订规则）都排在第一张普通贴之前，彼此保持「先开的在前」。
+    else if (isViewKey(note.key)) {
+      const firstNormal = stickyNoteOrder.findIndex((x) => !isViewKey(x.key));
+      stickyNoteOrder.splice(firstNormal < 0 ? stickyNoteOrder.length : firstNormal, 0, note);
+    }
     else stickyNoteOrder.push(note);
     setFlipHidden(note, activeIndex >= 0);
     if (closingLast) {
@@ -1132,7 +1205,7 @@ ipcMain.on('sticky-note-sync', (e, arg) => {
 
     if (stickyNoteMode === 'flip') {
       // 本会话见过的沿用当前开关；新出现的看持久化名单，关掉的不会被同步又打开
-      const keep = previousCatalog.has(id) ? previousOrder.has(id) : !flipHidden.has(flipNoteIdentity(normalized));
+      const keep = previousCatalog.has(id) ? previousOrder.has(id) : !flipHidden.has(flipHiddenIdOf(normalized));
       if (keep) nextOrder.push(normalized);
     } else if (!previousCatalog.has(id)) {
       createStickyNoteWindow(note.key, idx);
@@ -1146,6 +1219,13 @@ ipcMain.on('sticky-note-sync', (e, arg) => {
   stickyNoteCatalog.forEach(note => {
     const id = noteWinId(note.key, note.idx);
     if (nextIds.has(id)) return;
+    // 🆕 VIEW 贴没有「设定」可言：这一轮算出来没内容（提醒全被打勾／删掉）就直接收掉，
+    //    否则它会以「保留旧窗口」的名义挂着一张过期的汇总。
+    if (isViewKey(note.key)) {
+      const stale = stickyNoteWindows.get(id);
+      if (stale && !stale.isDestroyed()) stale.close();
+      return;
+    }
     if (stickyNoteMode !== 'flip') {
       const win = stickyNoteWindows.get(id);
       if (win && !win.isDestroyed()) nextCatalog.push(note);
@@ -1153,6 +1233,7 @@ ipcMain.on('sticky-note-sync', (e, arg) => {
   });
 
   stickyNoteCatalog = nextCatalog;
+  lastStickyCatalogSync = Date.now(); // 🆕 方案B：目录刚被刷新，供 sticky-note-order 去抖复用
   if (stickyNoteMode === 'flip') {
     stickyNoteOrder = nextOrder;
     if (stickyNoteFlipWindow && !stickyNoteFlipWindow.isDestroyed()) {
@@ -1216,6 +1297,8 @@ ipcMain.handle('sticky-note-save-edit', async (e, arg) => {
     if (!arg || typeof arg.key !== 'string' || typeof arg.notes !== 'string') {
       throw new Error('便利贴保存参数无效');
     }
+    // 🆕 VIEW 便利贴是「🔔 提醒」汇总投影 → 没有可写回的原文，任何保存一律拒绝（渲染端也已收起编辑入口，这里是最后一道闸）
+    if (isViewKey(arg.key)) throw new Error('这是自动汇总的预览便利贴（🔔 提醒／自定义 VIEW 便利贴），内容请改在来源行程里');
     if (!stickyNoteFile) throw new Error('Calendar 文件路径不可用，无法保存便利贴');
     const win = ensureMainWindowForBackgroundSave();
     const requestId = 'sticky-save-' + Date.now() + '-' + (++stickyEditSaveSeq);
@@ -1441,6 +1524,8 @@ let stickyDeleteSeq = 0;
 const pendingStickyDeletes = new Map();          // requestId -> { resolve, timer, webContentsId, sent, send }
 ipcMain.handle('sticky-note-delete', async (e, arg) => {
   try {
+    // 🆕 VIEW 便利贴没有对应的行程可删（内容只是各行程的投影）
+    if (arg && isViewKey(arg.key)) throw new Error('这是自动汇总的预览便利贴（🔔 提醒／自定义 VIEW 便利贴），没有对应的行程可以删除');
     const ev = (arg && arg.ev) || {};
     const title = String(ev.title || '').trim();
     const src = String(ev.src || '').trim();

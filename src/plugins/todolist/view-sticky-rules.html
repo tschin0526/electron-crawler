@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<!-- ============================================================
+  🧩 自定义「VIEW 便利贴」维护作业（独立窗体）
+  ------------------------------------------------------------
+  做什么：让使用者自己写「抓哪些行」的条件，做出几张跟「🔔 提醒」一样的投影便利贴。
+          条件＝关键词（任一／全部）＋ 标记（[[remind:]]／[[dl:]]／[[cp:]]）＋ 行型态，三者之间是 AND。
+  存档：data/view-sticky-rules.json（全应用共用一份）；读写都走主进程 vsr-list／vsr-save，
+        这里不碰档案系统。存完主进程会通知日历窗重算便利贴清单。
+  解析：共用 src/plugins/todolist/view-sticky-rules.js 的 normalizeRule／MARKERS／ROW_TYPE_LABEL，
+        维护窗与投影贴引擎吃同一套字段定义，不会两边不同步。
+  入口：目前挂在便利贴窗菜单（desktop-note.html 的 #miViewRules），以后也可以挂别的页面。
+  ⚠️ 这个窗体读不到 calendar.md（行程资料在日历窗那边），所以这里只设定条件、
+     不做「命中预览」——要看结果就启用后回便利贴清单翻那张投影贴。
+============================================================ -->
+<html lang="zh-Hans">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>自定义 VIEW 便利贴维护作业</title>
+<style>
+  :root {
+    --gold: #D4AF37;
+    --bg: #faf8f2;
+    --panel: #ffffff;
+    --ink: #2b2a26;
+    --sub: #7a7568;
+    --line: rgba(0, 0, 0, .12);
+    --sel: rgba(212, 175, 55, .14);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #1e1f22;
+      --panel: #26272b;
+      --ink: #e8e6e0;
+      --sub: #a9a498;
+      --line: rgba(255, 255, 255, .16);
+      --sel: rgba(212, 175, 55, .20);
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 14px 16px 18px; background: var(--bg); color: var(--ink);
+    font: 13px/1.6 -apple-system, "PingFang TC", "Microsoft YaHei", sans-serif;
+    display: flex; flex-direction: column; height: 100vh;
+  }
+  h1 { margin: 0 0 2px; font-size: 16px; letter-spacing: .5px; }
+  h1 .badge { color: var(--gold); }
+  .hint { color: var(--sub); font-size: 11.5px; margin-bottom: 10px; }
+  .hint b { color: var(--gold); font-weight: 600; }
+  .cols { flex: 1; display: flex; gap: 14px; min-height: 0; }
+  .pane { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; overflow: auto; }
+  .pane.list { width: 320px; flex: none; }
+  .pane.form { flex: 1; }
+  .pane-title { font-size: 12px; font-weight: 700; color: var(--sub); letter-spacing: 1px; margin-bottom: 8px; }
+  /* 清单 */
+  .rule { display: flex; align-items: flex-start; gap: 8px; padding: 8px 6px; border-radius: 8px; cursor: pointer; border: 1px solid transparent; }
+  .rule:hover { background: var(--sel); }
+  .rule.sel { border-color: var(--gold); background: var(--sel); }
+  .rule.off .r-title { text-decoration: line-through; color: var(--sub); }
+  .rule .r-main { flex: 1; min-width: 0; }
+  .r-title { font-weight: 600; }
+  .r-cond { color: var(--sub); font-size: 11.5px; word-break: break-all; }
+  .r-del { border: 1px solid var(--line); background: transparent; color: var(--sub); border-radius: 6px; padding: 1px 7px; cursor: pointer; font-size: 12px; }
+  .r-del:hover { color: #fff; background: #c0392b; border-color: #c0392b; }
+  .empty { color: var(--sub); font-size: 12px; padding: 10px 4px; }
+  /* 表单 */
+  .fld { margin-bottom: 14px; }
+  .fld > label { display: block; font-size: 11.5px; color: var(--sub); margin-bottom: 4px; letter-spacing: .5px; }
+  input[type="text"], select, textarea {
+    width: 100%; padding: 6px 8px; border: 1px solid var(--line); border-radius: 7px;
+    background: var(--bg); color: var(--ink); font: inherit;
+  }
+  input[type="text"]:focus, select:focus { outline: 2px solid var(--gold); outline-offset: -1px; }
+  .row { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
+  .row > * { flex: none; }
+  .chk { display: inline-flex; align-items: center; gap: 5px; cursor: pointer; padding: 3px 8px; border: 1px solid var(--line); border-radius: 999px; font-size: 12px; }
+  .chk input { accent-color: var(--gold); }
+  .types { display: flex; flex-wrap: wrap; gap: 6px; }
+  .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 999px; overflow: hidden; }
+  .seg button { border: 0; background: transparent; color: var(--ink); padding: 4px 12px; cursor: pointer; font: inherit; font-size: 12px; }
+  .seg button.on { background: var(--gold); color: #2b2400; font-weight: 700; }
+  .foot { display: flex; gap: 10px; align-items: center; margin-top: 12px; }
+  .btn { border: 1px solid var(--line); background: var(--panel); color: var(--ink); border-radius: 8px; padding: 6px 16px; cursor: pointer; font: inherit; }
+  .btn:hover { border-color: var(--gold); }
+  .btn.primary { background: var(--gold); border-color: var(--gold); color: #2b2400; font-weight: 700; }
+  .btn:disabled { opacity: .45; cursor: default; }
+  .tip { font-size: 11.5px; color: var(--sub); }
+  #toast { position: fixed; left: 50%; bottom: 26px; transform: translateX(-50%); padding: 7px 16px; border-radius: 999px; background: var(--gold); color: #2b2400; font-weight: 600; opacity: 0; transition: opacity .25s; pointer-events: none; }
+  #toast.show { opacity: 1; }
+  #toast.danger { background: #c0392b; color: #fff; }
+</style>
+</head>
+<body>
+  <h1><span class="badge">🧩</span> 自定义 VIEW 便利贴维护作业</h1>
+  <div class="hint">
+    每一条规则＝一张「<b>🔔 提醒</b>」那样的<b>投影便利贴</b>：把目前行程档里符合下面条件的行集中到同一张贴上。
+    投影贴<b>只读、也不会写进 calendar.md</b>（内容请回来源行程改）。启用后到便利贴清单／翻页里看它。
+    一条都没抓到<b>也照开一张</b>，贴面会写「这个条件目前没抓到任何行」（免得分不清是规则没生效、还是行程里真的没有）；只有「没填任何条件」的规则不会开贴。
+  </div>
+
+  <div class="cols">
+    <div class="pane list">
+      <div class="pane-title">已设定的规则</div>
+      <div id="ruleList"></div>
+      <div class="foot">
+        <button class="btn" id="btnAdd">＋ 新增一条</button>
+      </div>
+    </div>
+
+    <div class="pane form" id="formPane">
+      <div class="pane-title">条件设定</div>
+      <div class="fld">
+        <label for="fTitle">便利贴标题</label>
+        <input type="text" id="fTitle" placeholder="例如：要跟进的客户">
+      </div>
+      <div class="fld">
+        <label for="fKeywords">关键词（以 、 , 或换行分隔；留白＝不用关键词）</label>
+        <input type="text" id="fKeywords" placeholder="例如：客户、报价">
+        <div class="row" style="margin-top:6px">
+          <span class="tip">符合</span>
+          <span class="seg" id="segMode">
+            <button type="button" data-v="ANY">任一个</button>
+            <button type="button" data-v="ALL">全部</button>
+          </span>
+          <label class="chk"><input type="checkbox" id="fCase">区分大小写</label>
+        </div>
+      </div>
+      <div class="fld">
+        <label for="fMarker">标记条件</label>
+        <select id="fMarker"></select>
+        <div class="tip">与关键词是「且」的关系；选「不限」时只靠关键词过滤。</div>
+      </div>
+      <div class="fld">
+        <label>行型态（收哪些形状的行；关键词／标记至少要有一个是条件）</label>
+        <div class="types" id="fTypes"></div>
+      </div>
+      <div class="row" style="margin-bottom:10px">
+        <label class="chk"><input type="checkbox" id="fEnabled">启用这条规则</label>
+      </div>
+      <div class="foot">
+        <button class="btn primary" id="btnSave">💾 保存全部</button>
+        <button class="btn" id="btnDup">⧉ 复制这条</button>
+        <span class="tip" id="dirtyTip">修改后请按「保存全部」才会写进档案。</span>
+      </div>
+    </div>
+  </div>
+  <div id="toast"></div>
+
+<script src="view-sticky-rules.js"></script>
+<script>
+(function () {
+  'use strict';
+  const V = window.ViewStickyRules;
+  // Electron 窗体走 preload 的通用 invoke；直接用浏览器开这个档时退回提示（不炸）
+  const api = window.electronAPI;
+  const $ = (id) => document.getElementById(id);
+
+  let rules = [];        // 阵列就是将要写进 JSON 的全部内容
+  let selId = '';
+  let dirty = false;
+
+  function toast(msg, danger) {
+    const t = $('toast');
+    t.textContent = msg;
+    t.className = 'show' + (danger ? ' danger' : '');
+    clearTimeout(toast._t);
+    toast._t = setTimeout(() => { t.className = ''; }, 2200);
+  }
+  function markDirty(on) { dirty = !!on; $('dirtyTip').textContent = dirty ? '● 有修改尚未保存' : '修改后请按「保存全部」才会写进档案。'; }
+
+  // 清单上的「条件摘要」——只用引擎的定义生成文案，保证跟实际过滤同口径
+  function condText(r) {
+    const parts = [];
+    if (r.marker) parts.push('[[' + r.marker + ':…]]');
+    if (r.keywords.length) parts.push('关键词' + (r.keywordMode === 'ALL' ? '全中' : '任一') + '：' + r.keywords.join('、') + (r.caseSensitive ? '（区分大小写）' : ''));
+    if (!parts.length) parts.push('⚠ 没有条件（不会抓到内容）');
+    const types = V.ROW_TYPES.filter((t) => r.rowTypes[t]).map((t) => V.ROW_TYPE_LABEL[t]);
+    parts.push('行型态：' + (types.join('／') || '无'));
+    return parts.join(' ＋ ');
+  }
+
+  function renderList() {
+    const box = $('ruleList');
+    box.innerHTML = '';
+    if (!rules.length) {
+      const e = document.createElement('div');
+      e.className = 'empty';
+      e.textContent = '还没有规则。按下面「＋ 新增一条」开始。';
+      box.appendChild(e);
+      return;
+    }
+    rules.forEach((r) => {
+      const row = document.createElement('div');
+      row.className = 'rule' + (r.id === selId ? ' sel' : '') + (r.enabled ? '' : ' off');
+      const cb = document.createElement('input');
+      cb.type = 'checkbox'; cb.checked = !!r.enabled; cb.title = '启用／关闭这条规则';
+      cb.onchange = () => { r.enabled = cb.checked; markDirty(true); renderList(); };
+      const main = document.createElement('div');
+      main.className = 'r-main';
+      const t = document.createElement('div'); t.className = 'r-title'; t.textContent = r.title || '(未命名)';
+      const c = document.createElement('div'); c.className = 'r-cond'; c.textContent = condText(r);
+      main.appendChild(t); main.appendChild(c);
+      const del = document.createElement('button');
+      del.type = 'button'; del.className = 'r-del'; del.textContent = '🗑';
+      del.title = '删除这条规则';
+      del.onclick = (ev) => { ev.stopPropagation(); removeRule(r); };
+      row.appendChild(cb); row.appendChild(main); row.appendChild(del);
+      row.onclick = () => { selId = r.id; renderList(); renderForm(); };
+      box.appendChild(row);
+    });
+  }
+
+  // 删除是「删掉使用者写好的设定」→ 先把要删的内容列出来确认，取消为安全默认
+  function removeRule(r) {
+    const msg = '确定要删除这条自定义 VIEW 便利贴规则吗？删除后不可恢复。\n\n标题：' + (r.title || '(未命名)') +
+      '\n条件：' + condText(r);
+    if (!window.confirm(msg)) return;
+    rules = rules.filter((x) => x !== r);
+    if (selId === r.id) selId = rules.length ? rules[0].id : '';
+    markDirty(true);
+    renderList(); renderForm();
+  }
+
+  // ===== 表单 =====
+  function buildStatics() {
+    const sel = $('fMarker');
+    V.MARKERS.forEach((m) => {
+      const o = document.createElement('option');
+      o.value = m.value; o.textContent = m.label;
+      sel.appendChild(o);
+    });
+    const box = $('fTypes');
+    V.ROW_TYPES.forEach((t) => {
+      const lab = document.createElement('label');
+      lab.className = 'chk';
+      const cb = document.createElement('input');
+      cb.type = 'checkbox'; cb.setAttribute('data-type', t);
+      cb.onchange = () => { const r = selected(); if (r) { r.rowTypes[t] = cb.checked; markDirty(true); renderList(); } };
+      lab.appendChild(cb);
+      lab.appendChild(document.createTextNode(V.ROW_TYPE_LABEL[t]));
+      box.appendChild(lab);
+    });
+    $('segMode').querySelectorAll('button').forEach((b) => {
+      b.onclick = () => { const r = selected(); if (r) { r.keywordMode = b.getAttribute('data-v'); markDirty(true); renderForm(); renderList(); } };
+    });
+    $('fTitle').oninput = (e) => { const r = selected(); if (r) { r.title = e.target.value.replace(/\s+/g, ' ').trim() || r.title; markDirty(true); renderList(); } };
+    $('fKeywords').oninput = (e) => { const r = selected(); if (!r) return; r.keywords = String(e.target.value).split(/[,，、\n]/).map((x) => x.trim()).filter(Boolean); markDirty(true); renderList(); };
+    $('fCase').onchange = (e) => { const r = selected(); if (r) { r.caseSensitive = e.target.checked; markDirty(true); renderList(); } };
+    $('fMarker').onchange = (e) => { const r = selected(); if (r) { r.marker = e.target.value; markDirty(true); renderList(); } };
+    $('fEnabled').onchange = (e) => { const r = selected(); if (r) { r.enabled = e.target.checked; markDirty(true); renderList(); } };
+  }
+  function selected() { return rules.filter((r) => r.id === selId)[0] || null; }
+  function renderForm() {
+    const r = selected();
+    const pane = $('formPane');
+    pane.querySelectorAll('input[type="text"], select').forEach((el) => { el.disabled = !r; });
+    pane.querySelectorAll('.chk input, .types input').forEach((el) => { el.disabled = !r; });
+    $('segMode').querySelectorAll('button').forEach((b) => { b.disabled = !r; b.classList.toggle('on', !!r && b.getAttribute('data-v') === r.keywordMode); });
+    $('btnDup').disabled = !r;
+    if (!r) {
+      $('fTitle').value = ''; $('fKeywords').value = ''; $('fMarker').value = ''; $('fEnabled').checked = false; $('fCase').checked = false;
+      pane.querySelectorAll('.types input').forEach((el) => { el.checked = false; });
+      return;
+    }
+    $('fTitle').value = r.title === '自定义便利贴' ? '' : r.title;
+    $('fKeywords').value = r.keywords.join('、');
+    $('fMarker').value = r.marker;
+    $('fCase').checked = !!r.caseSensitive;
+    $('fEnabled').checked = !!r.enabled;
+    pane.querySelectorAll('.types input').forEach((el) => { el.checked = !!r.rowTypes[el.getAttribute('data-type')]; });
+  }
+
+  // ===== 存／读 =====
+  async function load() {
+    if (!api || typeof api.invoke !== 'function') { toast('这不是 Electron 窗体（直接用浏览器打开）→ 读不到规则档案', true); return; }
+    try {
+      const r = await api.invoke('vsr-list');
+      rules = V.normalizeList(r && Array.isArray(r.rules) ? r.rules : []);
+      if (r && r.readable === false) toast('规则档案读不到，显示的是空清单（此时请按「保存」，否则可能盖掉旧档）', true);
+      selId = rules.length ? rules[0].id : '';
+      markDirty(false); renderList(); renderForm();
+    } catch (e) { toast('读取失败：' + (e && e.message ? e.message : e), true); }
+  }
+  async function save() {
+    if (!api || typeof api.invoke !== 'function') { toast('读不到主进程，无法保存', true); return; }
+    // 标题是投影贴在清单／翻页里认得的名字（翻页「关掉哪张」按 key 记，但人要看标题）
+    const noTitle = rules.filter((r) => !r.title || r.title === '自定义便利贴');
+    if (noTitle.length) { toast('有 ' + noTitle.length + ' 条规则还没填标题，请先补上', true); return; }
+    try {
+      const res = await api.invoke('vsr-save', rules);
+      if (!res || !res.success) { toast('保存失败：' + ((res && res.error) || '主进程拒绝'), true); return; }
+      markDirty(false);
+      toast('已保存 ' + rules.length + ' 条规则，便利贴清单已更新');
+    } catch (e) { toast('保存失败：' + (e && e.message ? e.message : e), true); }
+  }
+
+  $('btnAdd').onclick = () => {
+    const r = V.blankRule();
+    r.title = '';
+    rules.push(r);
+    selId = r.id;
+    markDirty(true);
+    renderList(); renderForm();
+    $('fTitle').focus();
+  };
+  $('btnDup').onclick = () => {
+    const r = selected();
+    if (!r) return;
+    const copy = V.normalizeRule(Object.assign({}, r, { id: V.newRuleId(), title: (r.title || '自定义便利贴') + ' 副本' }));
+    copy.rowTypes = Object.assign({}, r.rowTypes);
+    copy.keywords = r.keywords.slice();
+    rules.splice(rules.indexOf(r) + 1, 0, copy);
+    selId = copy.id;
+    markDirty(true); renderList(); renderForm();
+  };
+  $('btnSave').onclick = save;
+
+  // 关窗前提醒还有修改没存（confirm 取消＝留下窗体，不误丢）
+  window.addEventListener('beforeunload', (e) => {
+    if (dirty) { e.preventDefault(); e.returnValue = ''; }
+  });
+
+  buildStatics();
+  load();
+})();
+</script>
+</body>
+</html>

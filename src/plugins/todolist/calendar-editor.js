@@ -1173,14 +1173,155 @@
     function tlEscapeHtml(s) {
       return String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
     }
+    // ===== 🆕 VIEW 便利贴（合成贴「🔔 提醒」）=====
+    //   把「全部行程」（不限有没有设便利贴，含 INCLUDE 联运档）里带 [[remind:标题:规则]] 标记的行
+    //   汇总成一张便利贴，永远排在清单／翻页第一张。
+    //   收哪些行：checkbox 只收未完成（- [ ]，已打勾的不必再提醒）；列表项／段落／引用这类
+    //   没有完成状态的行＝还没做，一律收。围栏程式码块内的 [[remind:]] 是范例，不收。
+    //   ⚠️ 三条例外口径（与普通便利贴不同，主进程与便利贴窗都按 VIEW_KEY 认得它）：
+    //     ① 内容不落盘：key 是保留字，正文每次由行程现算（程式结束这张贴的内容也就没了）；
+    //        但颜色／字号／位置／清单开关照一般便利贴写档（2026-10-27 使用者要求「重进应用要用上次的设定」）；
+    //     ② 只读：checkbox 不可点、小圆点不开编辑浮层、便利贴窗收起 ＋☐／编辑把手／删除／搬移等异动入口；
+    //        但小圆点照旧显示，右键的「复制／找出相同的项目」是纯读资料的功能，照常可用。
+    //     ③ 浏览功能与普通便利贴完全一致（清单、翻页、搜索定位、样式）。
+    const TL_VIEW_KEY = '__view__', TL_VIEW_TITLE = '\ud83d\udd14 提醒';
+    const TL_VIEW_DONE_CHECK_RE = /^[ \t]*(?:>[ \t]*)*(?:[-*+]|\d+[.)])[ \t]+\[[xX]\](?=[ \t]|$)/;
+    const TL_VIEW_LIST_ITEM_RE = /^[ \t]*(?:[-*+]|\d+[.)])[ \t]+\S/;
+    const TL_VIEW_TASK_RE = /^-\s+\[([ xX])\]\s?([\s\S]*)$/;
+    // 收集：回传 [{ ev, hits }]，hits＝[{ raw, line, text, task, sep }]。
+    //   line＝来源行程备注里的 0-based 行号、text＝checkbox 内文（右键比对用）、
+    //   sep＝自己插的空行（防 lazy continuation），不是一笔资料。
+    function tlViewStickyGroups(events) {
+      const groups = [];
+      (Array.isArray(events) ? events : []).forEach((ev) => {
+        if (!ev) return;
+        const hits = [];
+        let inFence = false;
+        String(ev.notes || '').replace(/\r\n/g, '\n').split('\n').forEach((line, i) => {
+          if (/^\s*(```|~~~)/.test(line)) { inFence = !inFence; return; }
+          if (inFence) return;
+          if (!/\[\[remind:/i.test(line)) return;
+          if (TL_VIEW_DONE_CHECK_RE.test(line)) return;
+          const t = line.trim();
+          const m = t.match(TL_VIEW_TASK_RE);
+          // 列表项后面直接接「非列表行」＝CommonMark 的 lazy continuation → 会被并到上一条里面，
+          //   所以中间補一個空行（收集來的行原本未必相鄰，源檔的空行不會一起帶過來）。
+          if (hits.length && !TL_VIEW_LIST_ITEM_RE.test(t) && TL_VIEW_LIST_ITEM_RE.test(hits[hits.length - 1].raw)) hits.push({ raw: '', sep: true });
+          hits.push({ raw: t, line: i, uid: ev.uid || '', text: m ? (m[2] || '').trim() : '', task: !!m });
+        });
+        if (hits.length) groups.push({ ev, hits });
+      });
+      return groups;
+    }
+    // 分组标题＝来源行程的标题＋（日期），一律走 Markdown 渲染：
+    //   标题本身带 `#`／`<BIG>`／[[术语]] 时照其语义渲染（不要再包 ** 变成字面符号）；
+    //   纯文字标题才补 **粗体**，维持「分组」的可辨识度。
+    function tlViewStickyHeadMd(ev) {
+      const title = String((ev && ev.title) || '(无标题)').replace(/\s+/g, ' ').trim();
+      const date = (ev && ev.date) ? '（' + tlMdShort(ev.date) + '）' : '';
+      return /^#{1,6}(\s|$)/.test(title) ? title + date : '**' + title + '**' + date;
+    }
+    function tlViewStickyMdFromGroups(groups) {
+      if (!groups.length) return '';
+      return groups.map((g) => tlViewStickyHeadMd(g.ev) + '\n' + g.hits.map((h) => h.raw).join('\n')).join('\n\n');
+    }
+    function tlViewStickyNotesMd(events) {
+      return tlViewStickyMdFromGroups(tlViewStickyGroups(events));
+    }
+    // 投影贴的 checkbox 行：结构照抄 tlTaskLineHtml（同一套 CSS），差别在两处——
+    //   checkbox 不带 onclick／data-uid（不可勾），小圆点改成「只读圆点」：无 onclick，
+    //   但带 data-src（来源行程 uid）＋ data-stitle（来源行程标题）＋ data-text（内文，免再回读来源备注）。
+    //   ⚠️ data-src 是「来源」不是「自己」：右键「找出相同的项目」要比对的第一名就是来源那张便利贴，
+    //      拿它当自己排除＝永远报「没有找到」（2026-10-27 用户实测抓到，比对端见 desktop-note.js noteFindSameOpen）。
+    function tlViewTaskLineHtml(h, ev) {
+      const m = h.raw.match(/^(\s*)-\s+\[([ xX])\]\s?([\s\S]*)$/);
+      if (!m) return '';
+      const done = m[2] !== ' ';
+      const stitle = tlEscapeHtml(String((ev && ev.title) || '').replace(/\s+/g, ' ').trim() || '(无标题)');
+      const dot = '<button type="button" class="ev-md-edit" title="右键：复制／找出相同的项目" data-uid="' + tlEscapeHtml(TL_VIEW_KEY) +
+        '" data-src="' + tlEscapeHtml(h.uid || '') + '" data-stitle="' + stitle + '" data-line="' + h.line + '" data-text="' + tlEscapeHtml(h.text) + '">\u270e</button>';
+      return m[1] + '<span class="ev-md-check' + (done ? ' done' : '') + '">' + dot +
+        '<span class="ev-cb">' + (done ? '\u2713' : '') + '</span>' +
+        '<span class="ev-md-check-text">' + tlRenderInlineMarkdown(tlRenderNoteMarkers(m[3])) + '</span></span>';
+    }
+    function tlViewStickyHtml(groups) {
+      let out = '';
+      groups.forEach((g) => {
+        out += tlRenderInlineMarkdown(tlViewStickyHeadMd(g.ev)) + '\n';
+        g.hits.forEach((h) => {
+          if (h.sep) return;
+          out += h.task ? tlViewTaskLineHtml(h, g.ev) + '\n' : renderMarkdown(tlRenderTermDefs(h.raw)) + '\n';
+        });
+      });
+      return out;
+    }
+    function tlViewStickyRef(events) {
+      const groups = tlViewStickyGroups(events);
+      const notes = tlViewStickyMdFromGroups(groups);
+      if (!notes) return null;   // 一条提醒都没有 → 这张贴不存在（而不是开一张空的）
+      return {
+        key: TL_VIEW_KEY, idx: 0, view: true,
+        notes,
+        // 走投影贴自己的渲染器：checkbox 只读、小圆点带来源身份（右键复制／找出相同要用）
+        html: tlViewStickyHtml(groups),
+        titleHtml: (typeof tlRenderInlineMarkdown === 'function') ? tlRenderInlineMarkdown(TL_VIEW_TITLE) : '',
+        title: TL_VIEW_TITLE, date: '', endDate: '', color: '', done: false, tags: [], src: ''
+      };
+    }
     // ===== 跨天行程辅助 =====
+    // 🆕 自定义 VIEW 便利贴：使用者自己定「抓哪些行」的条件，做几张跟「🔔 提醒」同类的投影贴。
+    //   条件＝关键词（任一／全部）＋ 标记（[[remind:]]／[[dl:]]／[[cp:]]）＋ 行型态，三个条件之间是 AND。
+    //   引擎在 view-sticky-rules.js（独立插件档），规则存在主进程 data/view-sticky-rules.json；
+    //   入口目前挂在便利贴窗的菜单「🧩 自定义 VIEW 便利贴维护作业」，以后也可以挂别处。
+    //   ⚠️ 三条例外口径与 🔔 完全相同（key 前缀 __view__ → 内容不落盘／不可异动；窗体只读；外观照一般便利贴存盘）。
+    let tlCustomViewRules = [];   // 规则档案的本会话复本：refs 是同步算出来的，不能就地 invoke
+    function tlCustomViewDeps() {
+      return {
+        tlEscapeHtml: tlEscapeHtml, tlRenderInlineMarkdown: tlRenderInlineMarkdown,
+        tlRenderNoteMarkers: tlRenderNoteMarkers, tlRenderTermDefs: tlRenderTermDefs,
+        renderMarkdown: renderMarkdown, tlMdShort: tlMdShort
+      };
+    }
+    function tlApplyCustomViewRules(rules) {
+      tlCustomViewRules = (window.ViewStickyRules && window.ViewStickyRules.normalizeList(rules)) || [];
+    }
+    // 启动时拉一次；维护窗存档后主进程会推 view-sticky-rules-changed 过来（不必轮询）。
+    //   第一次拉到规则时集合可能多了一张 → 必须整份 sync（force），否则翻页清单看不到新贴。
+    function tlLoadCustomViewRules() {
+      if (!window.electronAPI || typeof window.electronAPI.invoke !== 'function') return;
+      Promise.resolve(window.electronAPI.invoke('vsr-list')).then((r) => {
+        const rules = r && Array.isArray(r.rules) ? r.rules : [];
+        const before = tlCustomViewRules.map((x) => x.id + '|' + x.enabled).join(',');
+        tlApplyCustomViewRules(rules);
+        if (tlCustomViewRules.map((x) => x.id + '|' + x.enabled).join(',') !== before) tlPushStickyRefreshes(true);
+      }).catch(() => { /* 主进程没这个通道（例如非 Electron 环境）→ 只是没有自订贴 */ });
+    }
+    if (window.electronAPI && typeof window.electronAPI.onViewStickyRulesChanged === 'function') {
+      window.electronAPI.onViewStickyRulesChanged((rules) => {
+        tlApplyCustomViewRules(rules);
+        tlPushStickyRefreshes(true);
+      });
+    }
+    function tlCustomViewStickyRefs(events) {
+      if (!window.ViewStickyRules || !tlCustomViewRules.length) return [];
+      return window.ViewStickyRules.buildRefs(tlCustomViewRules, events, tlCustomViewDeps());
+    }
+    tlLoadCustomViewRules();
     // 🆕 桌面便利贴清单：把 sticky>0 的事件展开成 [{key,idx,html}]（key = 事件 uid，供桌面便利贴窗口定位）
     //    evpN 是当前 Markdown 分块位置生成的临时 key，重排事件后可能变化；刷新时由标题/日期回退定位旧便利贴。
     //    html 复用主程式 tlRenderNotes/renderMarkdown 管线（含 [[cp:]]→✅、[[dl:]]→📅、checkbox），
     //    渲染好的 HTML 交给便利贴窗口显示 → 单一可信来源，两处渲染永不漂移。
     function tlStickyNoteRefs(events) {
+      const list = Array.isArray(events) ? events : tlCalEvents;
       const out = [];
-      (Array.isArray(events) ? events : tlCalEvents).forEach((ev) => {
+      // 🆕 VIEW 便利贴永远第一张（有内容才出现）：清单、翻页、分体开窗都从这里拿
+      const viewRef = tlViewStickyRef(list);
+      if (viewRef) out.push(viewRef);
+      // 🆕 自订投影贴紧跟在 🔔 之后，再才是使用者自己设的便利贴。
+      //    与 🔔 的差别（2026-10-27 使用者要求）：自订规则「有条件但 0 命中」也照建一张，
+      //    贴面写明「这个条件没抓到任何行」——静默消失会让人分不清是规则没生效还是行程里真的没有。
+      tlCustomViewStickyRefs(list).forEach((ref) => out.push(ref));
+      list.forEach((ev) => {
         const n = parseInt(ev && ev.sticky, 10) || 0;
         if (n > 0) {
           const key = ev.uid || ((ev.title || '') + '|' + (ev.date || ''));
@@ -1526,6 +1667,7 @@
         if (term === 'dl' || term === 'cp') return null;                     // 日期標記（dl:/cp: 後接日期）
       }
       if (!term) return null;
+      if (/^remind$/i.test(term)) return null;                               // 提醒標記（remind:Title:Rule），不屬術語
       const lastColon = rest.lastIndexOf(':');
       const def = lastColon === -1 ? rest.trim() : rest.slice(0, lastColon).trim();
       const domain = lastColon === -1 ? '' : rest.slice(lastColon + 1).trim();
@@ -1575,6 +1717,15 @@
         if (/^\s*```/.test(line)) { inFence = !inFence; return line; }
         if (inFence) return line;
         return line.replace(/\[\[([^\]\n]+)\]\]/g, function (m, inner) {
+          // 🆕 提醒標記：[[remind:Title:Rule]] → 紅框膠囊（獨立於 term 的金色立體膠囊，便於區分）
+          if (/^remind:/i.test(inner)) {
+            const body = inner.slice(inner.indexOf(':') + 1).trim();
+            const c2 = body.indexOf(':');
+            const rTitle = c2 === -1 ? body : body.slice(0, c2).trim();
+            const rRule = c2 === -1 ? '' : body.slice(c2 + 1).trim();
+            return '<span class="tl-remind"' + (rRule ? ' title="' + tlEscapeHtml(rRule) + '"' : '') + '>' +
+              '<span class="tl-remind-ic">🔔</span>' + tlEscapeHtml(rTitle) + '</span>';
+          }
           const t = tlParseTermToken(inner);
           if (!t) return m;
           const allDefs = [];

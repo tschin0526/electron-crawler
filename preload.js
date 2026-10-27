@@ -179,6 +179,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.on('sticky-note-state-changed', (event, payload) => callback(payload));
   },
 
+  // 🧩 自定义「VIEW 便利贴」规则变更：主进程存完档通知日历窗重算投影贴清单
+  onViewStickyRulesChanged: (callback) => {
+    ipcRenderer.on('view-sticky-rules-changed', (event, payload) => callback(payload));
+  },
+
   // 桌面便利贴「编辑模式」回写：主进程转发请求给 Calendar 渲染进程，由其按既有流程写回 calendar.md
   onStickyEdit: (callback) => {
     ipcRenderer.on('sticky-note-edit', (event, payload) => callback(payload));

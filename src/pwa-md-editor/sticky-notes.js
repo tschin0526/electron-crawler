@@ -370,6 +370,67 @@ async function calStickyApplySettingsFile(file, opts) {
 function calStickyIdentityOf(ev, idx) {
   return String((ev && ev.title) || '') + '|' + String((ev && ev.date) || '') + '|' + (parseInt(idx, 10) || 0);
 }
+// ===== 🆕 VIEW 便利貼（合成貼「🔔 提醒」）=====
+//   把「全部行程」（不限有沒有設便利貼，含聯運 calendar-*.md）裡帶 [[remind:名稱:規則]] 標記的行
+//   彙總成一張，永遠排在清單／翻頁第一張。收哪些行：checkbox 只收未完成（- [ ]，已打勾的不必再提醒）；
+//   列表項／段落／引用這類沒有完成狀態的行＝還沒做，一律收。與桌面同口径：
+//     ① 不落盤：它是 calendar.md 的投影，樣式／開關只活在本機記憶體（見 calStickyViewPrefsLive）；
+//     ② 只讀：渲染時 uid 給空字串 → 沒有 ✎ 圓點、checkbox 不可點，異動資料的按鈕一律收起；
+//     ③ 瀏覽功能與其他貼一致（清單、翻頁、搜尋定位、樣式）。
+const CAL_STICKY_VIEW_UID = '__view__';
+const CAL_STICKY_VIEW_TITLE = '\ud83d\udd14 提醒';
+const CAL_STICKY_VIEW_IDENTITY = CAL_STICKY_VIEW_TITLE + '||0';
+const CAL_STICKY_VIEW_DONE_CHECK_RE = /^[ \t]*(?:>[ \t]*)*(?:[-*+]|\d+[.)])[ \t]+\[[xX]\](?=[ \t]|$)/;
+const CAL_STICKY_VIEW_LIST_ITEM_RE = /^[ \t]*(?:[-*+]|\d+[.)])[ \t]+\S/;
+let calStickyViewPrefsLive = null;   // 本會話對 VIEW 貼做過的樣式調整（不寫 localStorage）
+let calStickyViewHidden = false;     // 本會話把 VIEW 貼從翻頁清單關掉（同樣不落盤）
+function calStickyIsViewId(identity) { return identity === CAL_STICKY_VIEW_IDENTITY; }
+// 分組標題＝來源行程的標題＋（日期），一律走 Markdown 渲染（與桌面 tlViewStickyHeadMd 同口徑）：
+//   標題本身帶 #／<BIG>／[[術語]] 時照其語義渲染，純文字標題才補 **粗體** 維持「分組」辨識度。
+function calStickyViewHeadMd(ev) {
+  const title = String((ev && ev.title) || '(無標題)').replace(/\s+/g, ' ').trim();
+  const date = (ev && ev.date) ? '（' + calMdShort(ev.date) + '）' : '';
+  return /^#{1,6}(\s|$)/.test(title) ? title + date : '**' + title + '**' + date;
+}
+function calStickyViewNotesMd(events) {
+  const groups = [];
+  (Array.isArray(events) ? events : []).forEach((ev) => {
+    if (!ev) return;
+    const hits = [];
+    let inFence = false;
+    String(ev.notes || '').replace(/\r\n/g, '\n').split('\n').forEach((line) => {
+      if (/^\s*(```|~~~)/.test(line)) { inFence = !inFence; return; }
+      if (inFence) return;
+      // 收「帶 [[remind:]] 的行」：checkbox 只收未完成（已打勾的不必再提醒）；
+      //   列表項／段落／引用沒有完成狀態＝還沒做，一律收（與桌面 tlViewStickyNotesMd 同口徑）
+      if (!/\[\[remind:/i.test(line)) return;
+      if (CAL_STICKY_VIEW_DONE_CHECK_RE.test(line)) return;
+      const t = line.trim();
+      // 列表項後面直接接「非列表行」＝CommonMark 的 lazy continuation → 會被並到上一條裡面，
+      //   所以中間補一個空行（收集來的行原本未必相鄰，源檔的空行不會一起帶過來）。
+      if (hits.length && !CAL_STICKY_VIEW_LIST_ITEM_RE.test(t) && CAL_STICKY_VIEW_LIST_ITEM_RE.test(hits[hits.length - 1])) hits.push('');
+      hits.push(t);
+    });
+    if (!hits.length) return;
+    groups.push({ head: calStickyViewHeadMd(ev), lines: hits });
+  });
+  if (!groups.length) return '';
+  return groups.map((g) => g.head + '\n' + g.lines.join('\n')).join('\n\n');
+}
+function calStickyViewEntry(events) {
+  const notes = calStickyViewNotesMd(events);
+  if (!notes) return null;   // 一條提醒都沒有 → 這張貼不存在（而不是開一張空的）
+  return {
+    uid: CAL_STICKY_VIEW_UID, idx: 0, isView: true, identity: CAL_STICKY_VIEW_IDENTITY,
+    title: CAL_STICKY_VIEW_TITLE, date: '', endDate: '', done: false, color: '',
+    tags: [], notes, src: '', ro: false, dirty: false
+  };
+}
+// 當前這一頁是不是 VIEW 貼（翻頁／跳頁後都以「實際顯示的那張」為準）
+function calStickyCurrentIsView() {
+  const n = calStickyPages[calStickyIndex];
+  return !!(n && n.isView && n.identity === calStickyCurrentId);
+}
 function calStickyBuildCatalog() {
   if (typeof isCalendarMd !== 'function' || !isCalendarMd()) return [];
   // 📎 多檔聯運：用「主档 + include 只讀事件」的併集，否則來自 calendar-*.md 的便利貼
@@ -406,19 +467,23 @@ function calStickyBuildCatalog() {
       });
     }
   });
+  // 🆕 VIEW 便利貼永遠第一張（有內容才出現）
+  const viewEntry = calStickyViewEntry(events);
+  if (viewEntry) out.unshift(viewEntry);
   return out;
 }
 function calStickyRebuild() {
   calStickyCatalog = calStickyBuildCatalog();
   const hidden = new Set(calStickyLoadStore().hidden);
-  calStickyPages = calStickyCatalog.filter((n) => !hidden.has(n.identity));
+  calStickyPages = calStickyCatalog.filter((n) => (n.isView ? !calStickyViewHidden : !hidden.has(n.identity)));
 }
 
 // ===== 每張便利貼的顯示偏好 =====
 function calStickyIsHex(v) { return /^#[0-9a-fA-F]{6}$/.test(String(v || '')); }
 function calStickyNotePrefs(identity) {
   const store = calStickyLoadStore();
-  const raw = (identity && store.notes[identity]) || {};
+  // 🆕 VIEW 貼的偏好只活在本機記憶體（它是投影，不該在 localStorage 留下設定）
+  const raw = (calStickyIsViewId(identity) ? calStickyViewPrefsLive : (identity && store.notes[identity])) || {};
   return {
     color: calStickyIsHex(raw.color) ? raw.color : CAL_STICKY_DEF_BG,
     opacity: (typeof raw.opacity === 'number' && isFinite(raw.opacity)) ? Math.min(100, Math.max(20, Math.round(raw.opacity))) : 100,
@@ -430,6 +495,8 @@ function calStickyNotePrefs(identity) {
 }
 function calStickyWritePrefs(identity, prefs) {
   if (!identity) return;
+  // 🆕 VIEW 貼＝只讀投影：樣式只在本次會話生效，一律不進 localStorage（也不因此把設定標成「未保存」）
+  if (calStickyIsViewId(identity)) { calStickyViewPrefsLive = prefs; return; }
   calStickyLoadStore().notes[identity] = prefs;
   calStickySaveStore();
   // 樣式變更 → 保存角標依「與上次寫回的 JSON 是否不同」重算
@@ -513,11 +580,13 @@ function calStickyProgressHtml(note) {
     '" title="子事件：' + done + ' / ' + subs.length + ' 已完成">' + done + '/' + subs.length + '</span>';
 }
 // meta 行右側兩個操作（與桌面便利貼同口徑）：＋☐▾ 加入（三模式下拉）、☐/☑ 只看未完成
-function calStickyMetaActionsHtml(prefs) {
+//   🆕 VIEW 貼（note.isView）只給「只看未完成」这颗纯显示开关，不给 ＋☐▾（那是异动资料）
+function calStickyMetaActionsHtml(prefs, note) {
   const on = !!(prefs && prefs.undoneChecksOnly);
   return '<span class="cal-sticky-meta-actions">' +
-    '<button type="button" class="cal-sticky-meta-btn cal-sticky-addcheck" aria-haspopup="menu"' +
-    ' title="加入內容（checkbox 子事件／MD 表格／自由編輯）" onclick="calStickyToggleAddCheckMenu(event)">＋☐▾</button>' +
+    (note && note.isView ? '' :
+      '<button type="button" class="cal-sticky-meta-btn cal-sticky-addcheck" aria-haspopup="menu"' +
+      ' title="加入內容（checkbox 子事件／MD 表格／自由編輯）" onclick="calStickyToggleAddCheckMenu(event)">＋☐▾</button>') +
     '<button type="button" class="cal-sticky-meta-btn cal-sticky-undone-toggle' + (on ? ' active' : '') + '"' +
     ' aria-pressed="' + (on ? 'true' : 'false') + '"' +
     ' title="' + (on ? '僅顯示未完成的 checkbox 子事件（點擊顯示全部）' : '只顯示未完成的 checkbox 子事件') + '"' +
@@ -634,6 +703,8 @@ function calStickyRenderPage(target, options) {
     calStickyIndex = 0;
     calStickyCurrentId = '';
     calStickyCurrentUid = '';
+    const ovNone = calStickyEl('calStickyOverlay');
+    if (ovNone) ovNone.classList.remove('cal-sticky-view');   // 🆕 沒有便利貼：只讀 class 也要清掉，否則殘留在下一份文件
     calStickyApplySrcBadge(null);   // 沒有便利貼時徽標一併清掉，否則會殘留上一張的檔名
     // 沒有便利貼：編輯模式直接退出（編輯對象已不存在，不留 textarea 與未保存態）
     if (calStickyEditMode) {
@@ -667,6 +738,9 @@ function calStickyRenderPage(target, options) {
   const note = calStickyPages[i];
   calStickyCurrentId = note.identity;
   calStickyCurrentUid = note.uid;
+  // 🆕 VIEW 貼（🔔 提醒）＝只讀投影 → 覆層掛 class，CSS 收起 ✎／保存／日程編輯／新建／刪除／＋☐
+  const ovEl = calStickyEl('calStickyOverlay');
+  if (ovEl) ovEl.classList.toggle('cal-sticky-view', !!note.isView);
   const store = calStickyLoadStore();
   if (store.lastId !== note.identity || store.lastIdx !== i) {
     store.lastId = note.identity;
@@ -678,7 +752,7 @@ function calStickyRenderPage(target, options) {
   if (titleEl) titleEl.innerHTML = note.title ? calRenderInlineMarkdown(note.title) : '(無標題)';
   calStickyApplySrcBadge(note);
   const metaEl = calStickyEl('calStickyMeta');
-  if (metaEl) metaEl.innerHTML = escapeHtml(calStickyMetaText(note)) + calStickyProgressHtml(note) + calStickyMetaActionsHtml(prefs);
+  if (metaEl) metaEl.innerHTML = escapeHtml(calStickyMetaText(note)) + calStickyProgressHtml(note) + calStickyMetaActionsHtml(prefs, note);
   const tagsEl = calStickyEl('calStickyTags');
   if (tagsEl) {
     tagsEl.innerHTML = note.tags.map((t) =>
@@ -688,8 +762,9 @@ function calStickyRenderPage(target, options) {
   if (bodyEl) {
     // forceEditable=true：便利貼是 include 備註唯一的編輯場所（行程檢視對 ro 行程是唯讀的），
     //   所以即使 note.ro 也照樣給 ✎ 與可勾 checkbox；寫回仍走 calCommitEventNotes（只改來源檔那一塊）
+    // 🆕 VIEW 貼例外：uid 給空字串 → 走「唯讀渲染」分支（沒有 ✎ 圓點、checkbox 不可點）
     bodyEl.innerHTML = note.notes
-      ? calRenderNotes(note.notes, note.uid, true)
+      ? calRenderNotes(note.notes, note.isView ? '' : note.uid, true)
       : '<p style="opacity:.6">（無備註）</p>';
     if (options.resetScroll !== false) bodyEl.scrollTop = 0;
   }
@@ -915,12 +990,17 @@ function calStickyRenderSheetList() {
 function calStickyToggleHidden(identity) {
   if (!identity) return;
   const store = calStickyLoadStore();
-  const at = store.hidden.indexOf(identity);
-  const wasHidden = at >= 0;
-  if (wasHidden) store.hidden.splice(at, 1);
-  else store.hidden.push(identity);
-  calStickySaveStore();
-  if (typeof updateStatus === 'function') updateStatus();   // 關閉清單也算設定變更
+  // 🆕 VIEW 貼的「開／關」只活在本次會話：它是投影，記進 localStorage 下次內容可能已經不同了
+  const isView = calStickyIsViewId(identity);
+  const at = isView ? -1 : store.hidden.indexOf(identity);
+  const wasHidden = isView ? calStickyViewHidden : (at >= 0);
+  if (isView) calStickyViewHidden = !wasHidden;
+  else {
+    if (wasHidden) store.hidden.splice(at, 1);
+    else store.hidden.push(identity);
+    calStickySaveStore();
+    if (typeof updateStatus === 'function') updateStatus();   // 關閉清單也算設定變更
+  }
   calStickyRebuild();
   if (wasHidden) {
     // 剛開啟：直接跳到它，讓使用者立刻看到
@@ -1138,6 +1218,7 @@ function calStickyClose(skipDirtyGuard) {
 // ✎ 編輯：開既有的行程表單（彈層 z-index 高於便利貼，存檔後由 applyEventsToEditor 觸發刷新）
 function calStickyEditCurrent() {
   if (!calStickyCurrentUid || typeof openEventForm !== 'function') return;
+  if (calStickyCurrentIsView()) return;   // 🆕 VIEW 貼沒有對應行程，日程編輯表單無處可開
   calStickyCloseSheet();
   calStickyPendingRename = { uid: calStickyCurrentUid, identity: calStickyCurrentId };
   openEventForm(calStickyCurrentUid);
@@ -1223,6 +1304,8 @@ function calStickySetEditMode(edit) {
   const note = calStickyEl('calStickyNote');
   const ea = calStickyEl('calStickyEditArea');
   if (!note || !ea) return;
+  // 🆕 VIEW 貼（🔔 提醒）是投影、沒有可寫回的原文 → 編輯模式一律不進（✎ 按鈕已由 CSS 收起，這裡擋其他入口）
+  if (edit && calStickyCurrentIsView()) return;
   // 離開編輯前：有未保存改動 → 先確認（取消＝留在編輯模式，不丟改動）
   if (!edit && calStickyEditMode && calStickyEditDirty) {
     const ok = window.confirm('🚨 便利貼內容有未保存的改動\n\n【確定】＝先保存再返回閱讀模式\n【取消】＝留在編輯模式（不丟失改動）');
@@ -1743,6 +1826,8 @@ function calStickyDeleteCurrent() {
   if (!calStickyIsOpen) { showToast('請先開啟便利貼', 'error'); return; }
   const note = calStickyPages[calStickyIndex];
   if (!note) { showToast('目前沒有可刪除的便利貼', 'error'); return; }
+  // 🆕 VIEW 貼（🔔 提醒）是各行程的投影，沒有「這一張」可以刪；按鈕在只讀 class 下已收起，這裡再擋一次
+  if (note.isView) { showToast('「🔔 提醒」是自動匯集的预览便利貼，沒有對應的行程可以刪除', 'error'); return; }
   if (!window.confirm('確定刪除便利貼「' + (note.title || '未命名') + '」嗎？' + String.fromCharCode(10) + String.fromCharCode(10) + '刪除後該行程將從來源檔案中移除，不可恢復。')) return;
   const ev = (state.calEvents || []).find((e) => e.uid === note.uid);
   if (!ev) { showToast('找不到該便利貼的來源行程', 'error'); return; }

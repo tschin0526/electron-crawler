@@ -2082,6 +2082,19 @@
       border-radius: 999px; color: #4a3b12;
       background: rgba(255,255,255,.5); border: 1px solid rgba(184,137,58,.65);
     }
+    /* 🆕 提醒（remind）渲染：樣式與 term 金色立體膠囊完全一致，僅「外框線改為紅色」＋ 前方加鈴鐺。
+       rule 放 title（hover）顯示 */
+    .tl-remind {
+      display: inline-flex; align-items: center; gap: .3em;
+      margin-right: .3em; padding: 0 .55em;
+      border-radius: 999px; line-height: 1.7; font-size: .9em; font-weight: 600;
+      white-space: nowrap; cursor: help;
+      color: #4a3b12;
+      background: linear-gradient(180deg, #f4dc8e 0%, #e6bd52 55%, #d0a23a 100%);
+      border: 1px solid #e5484d;
+      box-shadow: 0 1px 2px rgba(0,0,0,.28), inset 0 1px 0 rgba(255,255,255,.65);
+    }
+    .tl-remind-ic { font-size: .95em; line-height: 1; }
     /* 📝 備註表格网格线：備註经 renderMarkdown 可产出 Markdown 表格（如「所有者/工具/账号/用量」），
        但 .ev-notes 此前没有任何表格边框规则 → 线条全无。浅色用 --ev-border；深色与「未勾选 checkbox 框」同款金黄 #fbbf24 */
     .ev-notes table, .ev-block .notes table, .ev-tip-notes table { border-collapse: collapse; margin: .35em 0; }
@@ -7114,7 +7127,8 @@
       const el = document.getElementById('tlStickyBadge');
       if (!el) return;
       const refs = (typeof tlStickyNoteRefs === 'function') ? tlStickyNoteRefs() : [];
-      const n = refs.length;
+      // 🔔「VIEW 便利贴」是现算的投影、不占设定数 → 角标只数真正设了张数的贴
+      const n = refs.filter((r) => !r || !r.view).length;
       el.textContent = n > 99 ? '99+' : String(n);
       el.style.display = n > 0 ? '' : 'none';
     }
@@ -12401,6 +12415,11 @@
   <script src="vendor/almanac-s2t.js"></script>
   <!-- 🆕 Markdown 表格網格編輯器引擎（暴露 window.MdTableGrid）：主窗體與便利貼共用同一份，必須在 calendar-editor.js 之前載入 -->
   <script src="md-table-grid.js"></script>
+  <!-- 🧩 自定义「VIEW 便利贴」引擎（暴露 window.ViewStickyRules）：把 🔔 提醒投影贴的收集／渲染逻辑
+       参数化成「关键词／标记／行型态」三个条件，让使用者做几张同类投影贴。
+       calendar-editor.js 的 tlStickyNoteRefs 会调它，必须在 calendar-editor.js 之前载入。
+       规则本体存 data/view-sticky-rules.json（main-modules/view-sticky-rules.js），入口目前挂在便利贴窗菜单。 -->
+  <script src="view-sticky-rules.js"></script>
   <script src="calendar-editor.js"></script>
   <script>
 

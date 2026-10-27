@@ -302,6 +302,22 @@
 //       轉換與欄位驗證抽成共用 sticky-settings.js（桌面主程序 require 同一份，避免兩端口徑分歧）。
 //       LITE index.html/sticky-notes.js/style.css/sticky-settings.js/sw.js 改，bump 讓手機重拉；
 //       APP_VERSION 與 manifest.json 同步 1.8.9→1.9.0。
+// v183：🔔 提醒「view 便利貼」顯示升級——分組標題改走 MD 語意（calStickyViewHeadMd）：行程標題本身是
+//       「# …」就照原樣交給渲染器（變成真的標題），純文字標題才補 **粗體**；先前一律包 ** 會讓
+//       「# 在我的iPhone上的便利貼草稿」顯示成字面符號。桌面端同步（tlViewStickyHeadMd），
+//       投影貼的編輯小圓點另在桌面便利貼窗支援右鍵「複製／找出相同的项目」（LITE 無右鍵功能，維持隱住）。
+//       LITE sticky-notes.js/sw.js ＋ 桌面 calendar-editor.js/desktop-note.js/html 改，bump 讓手機重拉；
+//       APP_VERSION 與 manifest.json 同步 1.10.0→1.10.1。
+// v182：🔔 提醒「view 便利貼」——每次重建便利貼目錄時，把「全部行程（含聯運檔）備註裡帶 [[remind:標題:規則]]
+//       的行」彙集成一張排在第一張的投影貼（calStickyViewEntry）：checkbox 只收未完成（- [ ]，已打勾的不必
+//       再提醒），列表項／段落／引用／標題沒有完成狀態＝一律收；代碼圍欄內不算；列表項後接非列表行補空行
+//       （防 CommonMark lazy continuation 把兩條並成一條）。
+//       [[remind:]] 另新增術語渲染（紅框金膠囊＋🔔，規則進 title；calRenderTermDefs）。
+//       ⚠️ 投影贴不落盘：样式 calStickyViewPrefsLive／关闭 calStickyViewHidden 只活在本会话，绝不写
+//       localStorage；也不给任何异动数据的入口（编辑钮／✎ 小圆点／＋☐／新增／删除全隐，
+//       calStickySetEditMode・calStickyEditCurrent・calStickyDeleteCurrent 加守门），浏览功能与一般贴一致。
+//       LITE calendar-editor.js/sticky-notes.js/style.css/sw.js 改，bump 讓手機重拉；
+//       APP_VERSION 與 manifest.json 同步 1.9.9→1.10.0。
 // v181：便利貼內 checkbox 視覺規格化——內框用字體色（var(--cal-sticky-fg)）、外框套金色 #D4AF37，
 //       兩框皆用最細 1px 線、緊密嵌套（外框用 box-shadow 0 0 0 1px 直接貼在內框外、無任何間隙），
 //       方框大小＝字體大小（width/height:1em，font-size:inherit 隨便利貼字級縮放）。
@@ -339,7 +355,7 @@
 //       按保存時設定 JSON 與主檔、聯運檔一起交付（iOS 逐檔各彈一次分享面板）；
 //       交付成功才清角標，取消則保留。頁次不列入比對（翻頁不會亮角標）。
 //       app.js/calendar-editor.js/sticky-notes.js 改，bump 讓手機重拉；APP_VERSION 1.9.0→1.9.1。
-const CACHE_NAME = 'md-editor-lite-v181';
+const CACHE_NAME = 'md-editor-lite-v183';
 const ASSETS = [
   './',
   './index.html',

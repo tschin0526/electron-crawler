@@ -88,6 +88,9 @@
     .note-addcheck-menu { position: absolute; z-index: 24; display: none; min-width: 168px; max-width: calc(100% - 12px); padding: 4px; border: 1px solid rgba(212,175,55,.5); border-radius: 10px; background: var(--menu-bg, rgba(255,255,255,.97)); color: var(--note-fg, #33384a); font-size: 12px; box-shadow: 0 12px 26px rgba(0,0,0,.32), 0 4px 8px rgba(0,0,0,.18), inset 0 1px 0 rgba(255,255,255,.35); -webkit-app-region: no-drag; }
     .note-addcheck-menu.open { display: block; }
     .note-addcheck-menu .nami { display: block; width: 100%; box-sizing: border-box; padding: 5px 9px; border: none; border-radius: 6px; background: transparent; color: inherit; font: inherit; font-size: 12px; text-align: left; line-height: 1.35; cursor: pointer; }
+    /* ⚠️ 上一行是作者样式，优先级压过浏览器的 [hidden]{display:none} → JS 里 item.hidden=true
+       只改属性、画面照旧（2026-10-27 用户回馈「🔔 提醒」右键还是四项）。收起菜单项必须靠这条。 */
+    .note-addcheck-menu .nami[hidden] { display: none !important; }
     .note-addcheck-menu .nami:hover { background: rgba(127,127,127,.18); }
     /* 🆕「只显示未完成的 checkbox 子事件」快捷按钮（紧接 ＋☐，与菜单项 miUndoneChecks 共用同一状态；开启＝金色实心） */
     .note-undone-filter { display: inline-flex; align-items: center; justify-content: center; margin-left: 4px; min-width: 18px; padding: 0 5px; height: 16px; border-radius: 999px; border: 1px solid rgba(127,127,127,.4); background: rgba(127,127,127,.12); color: var(--note-fg, #4b5160); font-size: 11px; line-height: 1; cursor: pointer; vertical-align: middle; -webkit-app-region: no-drag; }
@@ -257,6 +260,34 @@
       border-radius: 999px; color: var(--note-fg, #33384a);
       background: rgba(0,0,0,.25); border: 1px solid rgba(212,175,55,.55);
     }
+    /* 🆕 提醒（remind）渲染：樣式與 term 金色半透明膠囊完全一致，僅「外框線改為紅色」＋ 前方加鈴鐺。
+       便利貼窗用 --note-fg/--note-bg 主題變數；rule 放 title */
+    .tl-remind {
+      display: inline-flex; align-items: center; gap: .3em;
+      margin-right: .3em; padding: 0 .5em;
+      border-radius: 999px; line-height: 1.3; font-size: .9em; font-weight: 600;
+      white-space: nowrap; cursor: help;
+      color: var(--note-fg, #33384a);
+      background: rgba(212,175,55,.42);
+      border: 1px solid #e5484d;
+      box-shadow: 0 1px 2px rgba(0,0,0,.18);
+    }
+    .tl-remind-ic { font-size: .95em; line-height: 1; }
+    /* 🆕 VIEW 便利贴（🔔 提醒）＝只读投影：把「会改动这张贴资料」的入口全部收起。
+       把手平时靠 .visible 控制显隐（hover 才出现），这里用 display 直接压掉，hover 也不会冒出来。
+       保留的是浏览与显示类功能：☰ 清单／翻页／搜索定位／颜色·透明度·字号／最小化／缩放／刷新，
+       以及 .ev-md-edit 小圆点 —— 它本身不改资料，右键的「复制／找出相同的项目」照常用
+       （搬移／删除两项由 desktop-note.js 在开菜单时收起，圆点左键也没有 onclick）。 */
+    #note.view-note .note-mode-handle,
+    #note.view-note .note-addcheck,
+    /* ⚠️ 这里只能收「＋☐ 的下拉菜单」本体：小圆点的右键菜单 #noteFindSameMenu 共用同一个
+       .note-addcheck-menu 类（借它的定位与样式），整类收掉会让「复制／找出相同的项目」永远弹不出来。 */
+    #note.view-note #noteAddCheckMenu,
+    #note.view-note #miNewNote,
+    #note.view-note #miDeleteNote,
+    #note.view-note #miCalendarScroll { display: none !important; }
+    /* VIEW 贴没有「编辑」这件事：textarea 那层不该出现光标以外的暗示 */
+    #note.view-note .editArea { caret-color: transparent; }
     .body p { margin: .3em 0; }
     .body code { background: rgba(0,0,0,.06); padding: 0 3px; border-radius: 3px; }
     .body pre { background: rgba(0,0,0,.06); padding: 6px; border-radius: 6px; overflow: auto; }
@@ -468,6 +499,10 @@
     .fs-jump { margin-left: auto; padding: 1px 10px; border: 1px solid #D4AF37; border-radius: 6px; background: rgba(212,175,55,.2); color: var(--note-fg, #eee); font-size: 11px; cursor: pointer; -webkit-app-region: no-drag; }
     .fs-jump:hover { background: rgba(212,175,55,.42); }
     .fs-empty { padding: 10px 4px; opacity: .72; font-size: 12px; text-align: center; }
+    /* 🆕 投影贴的结果分两段：「📍 它的来源」与「🔎 其它便利贴也有相同内容」 */
+    .fs-group { padding: 6px 4px 2px; font-size: 11px; font-weight: 600; opacity: .8; }
+    .fs-item.fs-is-source { border-left: 2px solid #D4AF37; padding-left: 6px; }
+    .fs-item .fs-tag { display: inline-block; margin-bottom: 2px; padding: 0 6px; border: 1px solid rgba(212,175,55,.6); border-radius: 999px; font-size: 10px; opacity: .85; }
     /* 🆕 源头行提示：本便利贴第几行触发了这次查找 */
     .fs-context { padding: 2px 4px 6px; margin-bottom: 4px; font-size: 11px; opacity: .8; border-bottom: 1px solid color-mix(in srgb, var(--note-fg, #eee) 18%, transparent); }
     /* 🆕 结果窗体：金色外框加粗＋金色辉光，强调「金框窗体」（背景由 applyColor 设成便利贴实色，文字经 --note-fg 继承，深浅主题都可读） */
@@ -526,9 +561,11 @@
       <button type="button" class="nami" data-act="table" role="menuitem">▦ 加入 MD 表格</button>
       <button type="button" class="nami" data-act="text" role="menuitem">✎ 自由编辑（任意文本）</button>
     </div>
-    <!-- 🆕 右键 checkbox 编辑小圆点（.ev-md-edit）→ 下拉菜单「找出相同的项目」「删除此小事件」 -->
+    <!-- 🆕 右键 checkbox 编辑小圆点（.ev-md-edit）→ 下拉菜单：找出相同的项目 / 搬移项目 / 复制内容 / 删除此小事件（四项独立） -->
     <div class="note-addcheck-menu" id="noteFindSameMenu" role="menu">
       <button type="button" class="nami" data-act="find" role="menuitem">🔍 找出相同的项目</button>
+      <button type="button" class="nami" data-act="move" role="menuitem">📤 搬移项目</button>
+      <button type="button" class="nami" data-act="copy" role="menuitem">📋 复制内容</button>
       <button type="button" class="nami" data-act="del" role="menuitem">🗑 删除此小事件</button>
     </div>
     <div class="body" id="body"></div>
@@ -569,6 +606,11 @@
         <button class="mi" id="miImportSettings" title="从 JSON 还原便利贴样式／开关／页次（也认得手机汇出的设定档；会先确认才取代）">📥 载入设定</button>
         <button class="mi" id="miExportSettings" title="把便利贴样式／开关／页次汇出成 JSON（建议存到 calendar 同目录，手机可载入）">📤 汇出设定</button>
       </div>
+      <!-- 🧩 自定义 VIEW 便利贴维护作业：设定「抓哪些行进投影贴」的条件（关键词／标记／行型态），
+           存 data/view-sticky-rules.json；做好后清单里会多出一张与「🔔 提醒」同类的只读投影贴。
+           独立窗体（view-sticky-rules.html）＋独立插件档（main-modules/view-sticky-rules.js），
+           这里只是把入口挂在便利贴菜单上（以后也可以挂到别的页面菜单）。 -->
+      <button class="mi" id="miViewRules" title="自定义 VIEW 便利贴：按你输入的条件抓取行程内容，做成「🔔 提醒」那样的投影便利贴（可多张、可启用／关闭／修改／删除）">🧩 自定义 VIEW 便利贴维护作业</button>
       <!-- 📧 发邮件：把当前这张便利贴的内容经本机邮件服务发出（收件人在浮层里输入） -->
       <button class="mi" id="miEmail" title="把这张便利贴的内容发送邮件">📧 发邮件</button>
       <div class="m-sticky-list" id="mStickyListWrap">

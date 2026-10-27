@@ -13,7 +13,7 @@
 //    格式：主版本.次版本.修订-修改序号
 //    修改序号：每次功能修改+1
 // ============================================================
-const APP_VERSION = '1.0.0-50';  // 🎯 便利贴：折叠与「只显示未完成 checkbox」联动；修正多折叠块时 ▸ 标记逐块偏移（块后可见行漏计数）
+const APP_VERSION = '1.0.0-57';  // 🆕 自定义「VIEW 便利贴」维护作业：条件（关键词 任一／全部 ＋ [[标记]] ＋ 行型态）做出多张跟「🔔 提醒」一样的投影便利贴，可启用／修改／删除；规则存 data/view-sticky-rules.json（全应用共用一份），入口在便利贴菜单「📧 发邮件」上方；主进程投影贴认 key＝__view__ 前缀（自订贴＝__view__:<规则id>），内容只读且不落盘、外观照一般便利贴落盘。🎯 本次：条件一条都没抓到也照开一张贴，贴面写明「这个条件目前没抓到任何行」＋指路（标记条件／维护窗入口）——原先 0 命中静默消失，分不清是规则没生效还是行程里真的没有；规则关闭或「没填任何条件」仍不开贴，🔔 母本口径不变
 
 console.log('╔══════════════════════════════════════════════════╗');
 console.log('║  无限空间·AI智控台                              ║');
@@ -88,6 +88,14 @@ windowsModule.init({
   apiServerModule,
   setMainWindow: (win) => { mainWindow = win; },
   PLUGINS_DATA_DIR,
+});
+
+// 🧩 自定义「VIEW 便利贴」规则：存档 data/view-sticky-rules.json ＋ 维护窗
+//    独立插件档（不并进便利贴本体），入口目前挂在便利贴窗的菜单，以后可挂别处。
+const viewStickyRulesModule = require('./main-modules/view-sticky-rules.js');
+viewStickyRulesModule.init({
+  PLUGINS_DATA_DIR,
+  getMainWindow: () => windowsModule.getMainWindow(),
 });
 
 app.whenReady().then(() => {

@@ -948,6 +948,16 @@ function calRenderTermDefs(text) {
     if (/^\s*```/.test(line)) { inFence = !inFence; return line; }
     if (inFence) return line;
     return line.replace(/\[\[([^\]\n]+)\]\]/g, function (m, inner) {
+      // 🆕 提醒標記 [[remind:名稱:規則]] → 紅框膠囊＋鈴鐺（與桌面 tlRenderTermDefs 同口径）；
+      //    它同時是「🔔 提醒」VIEW 便利貼的收集判據。
+      if (/^remind:/i.test(inner)) {
+        const body = inner.slice(inner.indexOf(':') + 1).trim();
+        const c2 = body.indexOf(':');
+        const rTitle = c2 === -1 ? body : body.slice(0, c2).trim();
+        const rRule = c2 === -1 ? '' : body.slice(c2 + 1).trim();
+        return '<span class="tl-remind"' + (rRule ? ' title="' + escapeHtml(rRule) + '"' : '') + '>' +
+          '<span class="tl-remind-ic">🔔</span>' + escapeHtml(rTitle) + '</span>';
+      }
       const full = inner.trim();
       if (!full) return m;
       const firstColon = full.indexOf(':');
@@ -955,6 +965,7 @@ function calRenderTermDefs(text) {
       if (firstColon === -1) {
         term = full; rest = '';
         if (term === 'dl' || term === 'cp') return m;                       // 日期標記名稱
+        if (/^remind$/i.test(term)) return m;                                // 提醒標記字，不屬術語
         if (/^\d{4}-\d{2}-\d{2}$/.test(term)) return m;                     // 裸日期 → dl 機制
       } else {
         term = full.slice(0, firstColon).trim();
