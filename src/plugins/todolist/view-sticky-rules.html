@@ -191,18 +191,26 @@
     }
     rules.forEach((r) => {
       const row = document.createElement('div');
-      row.className = 'rule' + (r.id === selId ? ' sel' : '') + (r.enabled ? '' : ' off');
+      row.className = 'rule' + (r.id === selId ? ' sel' : '') + (r.enabled ? '' : ' off') + (r.builtin ? ' builtin' : '');
       const cb = document.createElement('input');
-      cb.type = 'checkbox'; cb.checked = !!r.enabled; cb.title = '启用／关闭这条规则';
+      cb.type = 'checkbox'; cb.checked = !!r.enabled; cb.title = r.builtin ? '系统内置规则，固定启用' : '启用／关闭这条规则';
+      cb.disabled = !!r.readonly;
       cb.onchange = () => { r.enabled = cb.checked; markDirty(true); renderList(); };
       const main = document.createElement('div');
       main.className = 'r-main';
       const t = document.createElement('div'); t.className = 'r-title'; t.textContent = r.title || '(未命名)';
+      if (r.builtin) {
+        const badge = document.createElement('span');
+        badge.textContent = ' 系统内置・只读';
+        badge.style.cssText = 'font-size:10px;color:var(--sub);font-weight:400;';
+        t.appendChild(badge);
+      }
       const c = document.createElement('div'); c.className = 'r-cond'; c.textContent = condText(r);
       main.appendChild(t); main.appendChild(c);
       const del = document.createElement('button');
-      del.type = 'button'; del.className = 'r-del'; del.textContent = '🗑';
-      del.title = '删除这条规则';
+      del.type = 'button'; del.className = 'r-del'; del.textContent = r.builtin ? '🔒' : '🗑';
+      del.title = r.builtin ? '系统内置规则不可删除' : '删除这条规则';
+      del.disabled = !!r.readonly;
       del.onclick = (ev) => { ev.stopPropagation(); removeRule(r); };
       row.appendChild(cb); row.appendChild(main); row.appendChild(del);
       row.onclick = () => { selId = r.id; renderList(); renderForm(); };
@@ -212,6 +220,7 @@
 
   // 删除是「删掉使用者写好的设定」→ 先把要删的内容列出来确认，取消为安全默认
   function removeRule(r) {
+    if (r.readonly) return;
     const msg = '确定要删除这条自定义 VIEW 便利贴规则吗？删除后不可恢复。\n\n标题：' + (r.title || '(未命名)') +
       '\n条件：' + condText(r);
     if (!window.confirm(msg)) return;
@@ -252,11 +261,12 @@
   function selected() { return rules.filter((r) => r.id === selId)[0] || null; }
   function renderForm() {
     const r = selected();
+    const locked = !r || !!r.readonly;
     const pane = $('formPane');
-    pane.querySelectorAll('input[type="text"], select').forEach((el) => { el.disabled = !r; });
-    pane.querySelectorAll('.chk input, .types input').forEach((el) => { el.disabled = !r; });
-    $('segMode').querySelectorAll('button').forEach((b) => { b.disabled = !r; b.classList.toggle('on', !!r && b.getAttribute('data-v') === r.keywordMode); });
-    $('btnDup').disabled = !r;
+    pane.querySelectorAll('input[type="text"], select').forEach((el) => { el.disabled = locked; });
+    pane.querySelectorAll('.chk input, .types input').forEach((el) => { el.disabled = locked; });
+    $('segMode').querySelectorAll('button').forEach((b) => { b.disabled = locked; b.classList.toggle('on', !!r && b.getAttribute('data-v') === r.keywordMode); });
+    $('btnDup').disabled = !r || !!r.readonly;
     if (!r) {
       $('fTitle').value = ''; $('fKeywords').value = ''; $('fMarker').value = ''; $('fEnabled').checked = false; $('fCase').checked = false;
       pane.querySelectorAll('.types input').forEach((el) => { el.checked = false; });
@@ -275,7 +285,9 @@
     if (!api || typeof api.invoke !== 'function') { toast('这不是 Electron 窗体（直接用浏览器打开）→ 读不到规则档案', true); return; }
     try {
       const r = await api.invoke('vsr-list');
-      rules = V.normalizeList(r && Array.isArray(r.rules) ? r.rules : []);
+      const userRules = V.normalizeList(r && Array.isArray(r.rules) ? r.rules : [])
+        .filter((x) => !x.builtin && x.id !== '__builtin_remind__');
+      rules = V.builtinRules().concat(userRules);
       if (r && r.readable === false) toast('规则档案读不到，显示的是空清单（此时请按「保存」，否则可能盖掉旧档）', true);
       selId = rules.length ? rules[0].id : '';
       markDirty(false); renderList(); renderForm();
@@ -287,10 +299,11 @@
     const noTitle = rules.filter((r) => !r.title || r.title === '自定义便利贴');
     if (noTitle.length) { toast('有 ' + noTitle.length + ' 条规则还没填标题，请先补上', true); return; }
     try {
-      const res = await api.invoke('vsr-save', rules);
+      const userRules = rules.filter((r) => !r.builtin && !r.readonly);
+      const res = await api.invoke('vsr-save', userRules);
       if (!res || !res.success) { toast('保存失败：' + ((res && res.error) || '主进程拒绝'), true); return; }
       markDirty(false);
-      toast('已保存 ' + rules.length + ' 条规则，便利贴清单已更新');
+      toast('已保存 ' + userRules.length + ' 条自定义规则，便利贴清单已更新');
     } catch (e) { toast('保存失败：' + (e && e.message ? e.message : e), true); }
   }
 

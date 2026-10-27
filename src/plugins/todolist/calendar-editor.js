@@ -1173,100 +1173,12 @@
     function tlEscapeHtml(s) {
       return String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
     }
-    // ===== 🆕 VIEW 便利贴（合成贴「🔔 提醒」）=====
-    //   把「全部行程」（不限有没有设便利贴，含 INCLUDE 联运档）里带 [[remind:标题:规则]] 标记的行
-    //   汇总成一张便利贴，永远排在清单／翻页第一张。
-    //   收哪些行：checkbox 只收未完成（- [ ]，已打勾的不必再提醒）；列表项／段落／引用这类
-    //   没有完成状态的行＝还没做，一律收。围栏程式码块内的 [[remind:]] 是范例，不收。
-    //   ⚠️ 三条例外口径（与普通便利贴不同，主进程与便利贴窗都按 VIEW_KEY 认得它）：
-    //     ① 内容不落盘：key 是保留字，正文每次由行程现算（程式结束这张贴的内容也就没了）；
-    //        但颜色／字号／位置／清单开关照一般便利贴写档（2026-10-27 使用者要求「重进应用要用上次的设定」）；
-    //     ② 只读：checkbox 不可点、小圆点不开编辑浮层、便利贴窗收起 ＋☐／编辑把手／删除／搬移等异动入口；
-    //        但小圆点照旧显示，右键的「复制／找出相同的项目」是纯读资料的功能，照常可用。
-    //     ③ 浏览功能与普通便利贴完全一致（清单、翻页、搜索定位、样式）。
-    const TL_VIEW_KEY = '__view__', TL_VIEW_TITLE = '\ud83d\udd14 提醒';
-    const TL_VIEW_DONE_CHECK_RE = /^[ \t]*(?:>[ \t]*)*(?:[-*+]|\d+[.)])[ \t]+\[[xX]\](?=[ \t]|$)/;
-    const TL_VIEW_LIST_ITEM_RE = /^[ \t]*(?:[-*+]|\d+[.)])[ \t]+\S/;
-    const TL_VIEW_TASK_RE = /^-\s+\[([ xX])\]\s?([\s\S]*)$/;
-    // 收集：回传 [{ ev, hits }]，hits＝[{ raw, line, text, task, sep }]。
-    //   line＝来源行程备注里的 0-based 行号、text＝checkbox 内文（右键比对用）、
-    //   sep＝自己插的空行（防 lazy continuation），不是一笔资料。
-    function tlViewStickyGroups(events) {
-      const groups = [];
-      (Array.isArray(events) ? events : []).forEach((ev) => {
-        if (!ev) return;
-        const hits = [];
-        let inFence = false;
-        String(ev.notes || '').replace(/\r\n/g, '\n').split('\n').forEach((line, i) => {
-          if (/^\s*(```|~~~)/.test(line)) { inFence = !inFence; return; }
-          if (inFence) return;
-          if (!/\[\[remind:/i.test(line)) return;
-          if (TL_VIEW_DONE_CHECK_RE.test(line)) return;
-          const t = line.trim();
-          const m = t.match(TL_VIEW_TASK_RE);
-          // 列表项后面直接接「非列表行」＝CommonMark 的 lazy continuation → 会被并到上一条里面，
-          //   所以中间補一個空行（收集來的行原本未必相鄰，源檔的空行不會一起帶過來）。
-          if (hits.length && !TL_VIEW_LIST_ITEM_RE.test(t) && TL_VIEW_LIST_ITEM_RE.test(hits[hits.length - 1].raw)) hits.push({ raw: '', sep: true });
-          hits.push({ raw: t, line: i, uid: ev.uid || '', text: m ? (m[2] || '').trim() : '', task: !!m });
-        });
-        if (hits.length) groups.push({ ev, hits });
-      });
-      return groups;
-    }
-    // 分组标题＝来源行程的标题＋（日期），一律走 Markdown 渲染：
-    //   标题本身带 `#`／`<BIG>`／[[术语]] 时照其语义渲染（不要再包 ** 变成字面符号）；
-    //   纯文字标题才补 **粗体**，维持「分组」的可辨识度。
-    function tlViewStickyHeadMd(ev) {
-      const title = String((ev && ev.title) || '(无标题)').replace(/\s+/g, ' ').trim();
-      const date = (ev && ev.date) ? '（' + tlMdShort(ev.date) + '）' : '';
-      return /^#{1,6}(\s|$)/.test(title) ? title + date : '**' + title + '**' + date;
-    }
-    function tlViewStickyMdFromGroups(groups) {
-      if (!groups.length) return '';
-      return groups.map((g) => tlViewStickyHeadMd(g.ev) + '\n' + g.hits.map((h) => h.raw).join('\n')).join('\n\n');
-    }
-    function tlViewStickyNotesMd(events) {
-      return tlViewStickyMdFromGroups(tlViewStickyGroups(events));
-    }
-    // 投影贴的 checkbox 行：结构照抄 tlTaskLineHtml（同一套 CSS），差别在两处——
-    //   checkbox 不带 onclick／data-uid（不可勾），小圆点改成「只读圆点」：无 onclick，
-    //   但带 data-src（来源行程 uid）＋ data-stitle（来源行程标题）＋ data-text（内文，免再回读来源备注）。
-    //   ⚠️ data-src 是「来源」不是「自己」：右键「找出相同的项目」要比对的第一名就是来源那张便利贴，
-    //      拿它当自己排除＝永远报「没有找到」（2026-10-27 用户实测抓到，比对端见 desktop-note.js noteFindSameOpen）。
-    function tlViewTaskLineHtml(h, ev) {
-      const m = h.raw.match(/^(\s*)-\s+\[([ xX])\]\s?([\s\S]*)$/);
-      if (!m) return '';
-      const done = m[2] !== ' ';
-      const stitle = tlEscapeHtml(String((ev && ev.title) || '').replace(/\s+/g, ' ').trim() || '(无标题)');
-      const dot = '<button type="button" class="ev-md-edit" title="右键：复制／找出相同的项目" data-uid="' + tlEscapeHtml(TL_VIEW_KEY) +
-        '" data-src="' + tlEscapeHtml(h.uid || '') + '" data-stitle="' + stitle + '" data-line="' + h.line + '" data-text="' + tlEscapeHtml(h.text) + '">\u270e</button>';
-      return m[1] + '<span class="ev-md-check' + (done ? ' done' : '') + '">' + dot +
-        '<span class="ev-cb">' + (done ? '\u2713' : '') + '</span>' +
-        '<span class="ev-md-check-text">' + tlRenderInlineMarkdown(tlRenderNoteMarkers(m[3])) + '</span></span>';
-    }
-    function tlViewStickyHtml(groups) {
-      let out = '';
-      groups.forEach((g) => {
-        out += tlRenderInlineMarkdown(tlViewStickyHeadMd(g.ev)) + '\n';
-        g.hits.forEach((h) => {
-          if (h.sep) return;
-          out += h.task ? tlViewTaskLineHtml(h, g.ev) + '\n' : renderMarkdown(tlRenderTermDefs(h.raw)) + '\n';
-        });
-      });
-      return out;
-    }
     function tlViewStickyRef(events) {
-      const groups = tlViewStickyGroups(events);
-      const notes = tlViewStickyMdFromGroups(groups);
-      if (!notes) return null;   // 一条提醒都没有 → 这张贴不存在（而不是开一张空的）
-      return {
-        key: TL_VIEW_KEY, idx: 0, view: true,
-        notes,
-        // 走投影贴自己的渲染器：checkbox 只读、小圆点带来源身份（右键复制／找出相同要用）
-        html: tlViewStickyHtml(groups),
-        titleHtml: (typeof tlRenderInlineMarkdown === 'function') ? tlRenderInlineMarkdown(TL_VIEW_TITLE) : '',
-        title: TL_VIEW_TITLE, date: '', endDate: '', color: '', done: false, tags: [], src: ''
-      };
+      if (!window.ViewStickyRules || typeof window.ViewStickyRules.buildRef !== 'function' ||
+          typeof window.ViewStickyRules.builtinRules !== 'function') return null;
+      return window.ViewStickyRules.buildRef(
+        window.ViewStickyRules.builtinRules()[0], events, tlCustomViewDeps()
+      );
     }
     // ===== 跨天行程辅助 =====
     // 🆕 自定义 VIEW 便利贴：使用者自己定「抓哪些行」的条件，做几张跟「🔔 提醒」同类的投影贴。
@@ -1283,7 +1195,8 @@
       };
     }
     function tlApplyCustomViewRules(rules) {
-      tlCustomViewRules = (window.ViewStickyRules && window.ViewStickyRules.normalizeList(rules)) || [];
+      tlCustomViewRules = (window.ViewStickyRules && window.ViewStickyRules.normalizeList(rules) || [])
+        .filter((rule) => !rule.builtin && rule.id !== '__builtin_remind__');
     }
     // 启动时拉一次；维护窗存档后主进程会推 view-sticky-rules-changed 过来（不必轮询）。
     //   第一次拉到规则时集合可能多了一张 → 必须整份 sync（force），否则翻页清单看不到新贴。

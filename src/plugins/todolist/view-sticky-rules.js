@@ -32,7 +32,8 @@
   //   🔔 的 key 是 '__view__'（历史保留字，也是没有 ruleId 时的形状）；
   //   自定义贴是 '__view__:<规则 id>'。主进程与便利贴窗都用「前缀」判断它是投影贴。
   const KEY_PREFIX = '__view__';
-  const viewKeyOf = (ruleId) => (ruleId ? KEY_PREFIX + ':' + ruleId : KEY_PREFIX);
+  const viewKeyOf = (ruleId) => (ruleId === '__builtin_remind__' || !ruleId)
+    ? KEY_PREFIX : KEY_PREFIX + ':' + ruleId;
   const isViewKey = (key) => {
     const s = String(key == null ? '' : key);
     return s === KEY_PREFIX || s.indexOf(KEY_PREFIX + ':') === 0;
@@ -51,6 +52,18 @@
   const ROW_TYPE_LABEL = {
     todo: '未完成 checkbox', done: '已完成 checkbox', list: '列表项',
     para: '段落／纯文字', quote: '引用（>）', heading: '标题（#）'
+  };
+  const BUILTIN_REMIND_RULE = {
+    id: '__builtin_remind__',
+    title: '🔔 提醒',
+    enabled: true,
+    keywords: [],
+    keywordMode: 'ANY',
+    marker: 'remind',
+    caseSensitive: false,
+    emptyBehavior: 'hide',
+    builtin: true,
+    rowTypes: { todo: true, done: false, list: true, para: true, quote: true, heading: true }
   };
   const MARKERS = [
     { value: '', label: '不限（有命中条件就算）' },
@@ -84,6 +97,9 @@
       keywordMode: r.keywordMode === 'ALL' ? 'ALL' : 'ANY',
       marker: marker,
       caseSensitive: !!r.caseSensitive,
+      emptyBehavior: r.emptyBehavior === 'hide' ? 'hide' : 'show',
+      builtin: r.builtin === true,
+      readonly: r.readonly === true || r.builtin === true,
       rowTypes: {
         todo: rt.todo !== false,
         done: rt.done === true,        // 默认不收已打勾（与 🔔 同口径：打勾＝不必再提醒）
@@ -99,6 +115,7 @@
   }
   function newRuleId() { return 'vsr-' + Date.now() + '-' + Math.random().toString(36).slice(2, 7); }
   function blankRule() { return normalizeRule({ id: newRuleId(), title: '' }); }
+  function builtinRules() { return [normalizeRule(BUILTIN_REMIND_RULE)]; }
 
   // 这一行是否命中规则（三个条件是 AND；关键词／标记都没设＝不收，否则会整本行程洗进贴纸）
   function ruleHasCondition(rule) {
@@ -247,9 +264,10 @@
     };
     // 一条都没命中也照建一张（2026-10-27 使用者要求）：静默消失让人分不清「规则没生效」还是「行程里就是没有」，
     // 所以把原因写在贴面上。⚠️ 只有自订规则走这里——🔔 提醒的母本在 calendar-editor.js，仍是没内容就没这张贴。
-    if (!notes) {
+    if (!notes && r.emptyBehavior !== 'hide') {
       return Object.assign(base, { notes: EMPTY_NOTES, html: D.markdown(D.termDefs(EMPTY_NOTES)) });
     }
+    if (!notes) return null;
     return Object.assign(base, { notes, html: groupsToHtml(groups, key, D) });
   }
   function buildRefs(rules, events, deps) {
@@ -266,7 +284,8 @@
     KEY_PREFIX: KEY_PREFIX, viewKeyOf: viewKeyOf, isViewKey: isViewKey,
     ROW_TYPES: ROW_TYPES, ROW_TYPE_LABEL: ROW_TYPE_LABEL, MARKERS: MARKERS,
     normalizeRule: normalizeRule, normalizeList: normalizeList,
-    newRuleId: newRuleId, blankRule: blankRule, ruleHasCondition: ruleHasCondition,
+    newRuleId: newRuleId, blankRule: blankRule, builtinRules: builtinRules,
+    ruleHasCondition: ruleHasCondition,
     EMPTY_NOTES: EMPTY_NOTES,
     rowTypeOf: rowTypeOf, collectGroups: collectGroups, groupHeadMd: groupHeadMd,
     groupsToMd: groupsToMd, groupsToHtml: groupsToHtml, taskLineHtml: taskLineHtml,
