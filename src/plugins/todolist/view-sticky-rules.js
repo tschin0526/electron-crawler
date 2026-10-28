@@ -198,14 +198,17 @@
     return groups;
   }
 
-  // ===== 分组标题＝来源行程的标题＋（日期），一律走 Markdown 渲染（与 🔔 同口径）=====
+  // ===== 分组标题＝来源行程的标题＋（日期）＋（📎 来源文件名，仅 INCLUDE 事件显示）=====
   //   标题本身带 `#`／`<BIG>`／[[术语]] 时照其语义渲染（不要再包 ** 变成字面符号）；
   //   纯文字标题才补 **粗体**，维持「分组」的可辨识度。
+  //   🆕 INCLUDE 外部文件的事件（ev.src 非空）尾巴加 `· 📎 文件名`，主档事件不显示（默认来源）。
   function groupHeadMd(ev, deps) {
     const D = makeDeps(deps);
     const title = String((ev && ev.title) || '(无标题)').replace(/\s+/g, ' ').trim();
     const date = (ev && ev.date) ? '（' + D.shortDate(ev.date) + '）' : '';
-    return HEADING_RE.test(title) ? title + date : '**' + title + '**' + date;
+    const src = (ev && ev.src) ? ' · 📎 ' + D.esc(String(ev.src).trim()) : '';
+    const head = HEADING_RE.test(title) ? title + date : '**' + title + '**' + date;
+    return head + src;
   }
   function groupsToMd(groups, deps) {
     if (!groups || !groups.length) return '';

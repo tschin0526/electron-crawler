@@ -2338,18 +2338,28 @@ function syncSourceFile() {
   SRC_FILE = String(meta.src || '');
   applyDocBadge();
 }
-// 文档名徽标：只在来源不是 calendar.md 正式档时出现
+// 文档名徽标：VIEW 便利贴（聚合视图）显示专属紫色徽标；
+//   非 VIEW 贴但有 src（include 联运文件）显示 📄 金色虚线；主档便利贴不显示。
 function applyDocBadge() {
   const el = document.getElementById('docBadge');
   if (!el) return;
+  // 🆕 VIEW 便利贴专属紫色徽标（聚合提醒视图，没有单一来源档）
+  if (isViewNote()) {
+    el.textContent = '👁 VIEW 便利貼';
+    el.title = 'VIEW 便利贴（聚合提醒视图）\n从所有来源档自动收集符合规则的提醒项；只读显示，没有对应的单一来源档。';
+    el.classList.remove('dirty');
+    el.classList.add('show', 'is-view');
+    return;
+  }
   if (SRC_FILE) {
     el.textContent = '📄 ' + SRC_FILE;
     el.title = '内容来源：' + SRC_FILE + '\n（编辑结果会写回该文件）';
     el.classList.add('show');
+    el.classList.remove('is-view');
   } else {
     el.textContent = '';
     el.removeAttribute('title');
-    el.classList.remove('show');
+    el.classList.remove('show', 'is-view', 'dirty');
   }
 }
 // 🆕 定位高亮：把 root 內所有文本節點的命中片段包成 <mark class="search-highlight">（只碰文本節點，不破壞標籤結構）

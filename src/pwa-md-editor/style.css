@@ -1640,6 +1640,12 @@ p[data-cols-marker="true"] { display: none; }
 .cal-sticky-src-badge.show { display: inline-block; }
 /* 有修改還沒匯出寫回來源檔：徽標尾的 ● 用金色，與 chip 上的記號同一套語彙 */
 .cal-sticky-src-badge.dirty { border-style: solid; background: rgba(212, 175, 55, .3); }
+/* 🆕 VIEW 便利貼專屬徽標：紫色實線膠囊，和一般 include 的金色虛線視覺區隔 */
+.cal-sticky-src-badge.is-view {
+  border: 1px solid #8b5cf6; background: rgba(139, 92, 246, .18);
+  color: #6d28d9; font-style: normal;
+}
+body.dark .cal-sticky-src-badge.is-view { color: #c4b5fd; }
 .cal-sticky-title { font-size: 17px; font-weight: 700; line-height: 1.4; word-break: break-word; color: var(--cal-sticky-fg, #000); }
 .cal-sticky-meta { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-top: 4px; font-size: 12px; line-height: 1.5; color: var(--cal-sticky-fg, #000); opacity: .8; }
 /* meta 行操作（＋☐ / ☐·☑）：手機要可點，用 24px 高膠囊；顏色跟便利貼字色，開啟態用金底 */

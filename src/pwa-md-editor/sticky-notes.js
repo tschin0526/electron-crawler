@@ -384,13 +384,57 @@ const CAL_STICKY_VIEW_DONE_CHECK_RE = /^[ \t]*(?:>[ \t]*)*(?:[-*+]|\d+[.)])[ \t]
 const CAL_STICKY_VIEW_LIST_ITEM_RE = /^[ \t]*(?:[-*+]|\d+[.)])[ \t]+\S/;
 let calStickyViewPrefsLive = null;   // 本會話對 VIEW 貼做過的樣式調整（不寫 localStorage）
 let calStickyViewHidden = false;     // 本會話把 VIEW 貼從翻頁清單關掉（同樣不落盤）
+// 🆕 自定义 VIEW 便利贴规则的运行时缓存：
+//   null = 还没从服务器拉过（首次 rebuild 会跳过自定义贴）
+//   [] = 拉到了但规则为空
+//   [...] = 规则阵列（已经过滤掉 builtin 规则）
+let calStickyCustomViewRules = null;
 function calStickyIsViewId(identity) { return identity === CAL_STICKY_VIEW_IDENTITY; }
-// 分組標題＝來源行程的標題＋（日期），一律走 Markdown 渲染（與桌面 tlViewStickyHeadMd 同口徑）：
+
+// 🆕 自定义 VIEW 贴的 deps 映射：LITE 版函数名是 calXxx，桌面版引擎接口是 tlXxx
+function calStickyViewDeps() {
+  return {
+    tlEscapeHtml: typeof escapeHtml === 'function' ? escapeHtml : (s) => String(s),
+    tlRenderInlineMarkdown: typeof calRenderInlineMarkdown === 'function' ? calRenderInlineMarkdown : (s) => String(s),
+    tlRenderNoteMarkers: typeof calRenderNoteMarkers === 'function' ? calRenderNoteMarkers : (s) => String(s),
+    tlRenderTermDefs: typeof calRenderTermDefs === 'function' ? calRenderTermDefs : (s) => String(s),
+    renderMarkdown: typeof renderMarkdown === 'function' ? renderMarkdown : (s) => String(s),
+    tlMdShort: typeof calMdShort === 'function' ? calMdShort : (s) => String(s)
+  };
+}
+
+// 🆕 从 /rules.json fetch 自定义 VIEW 便利贴规则：
+//   serve.py 把这个路径代理到项目根 data/view-sticky-rules.json（桌面版维护作业写的档）。
+//   fetch 失败（serve.py 没跑／档案不存在）→ 保持 calStickyCustomViewRules=null（下次 rebuild 跳过）。
+async function calStickyLoadCustomViewRules() {
+  try {
+    console.log('[calStickyLoadCustomViewRules] fetching /rules.json ...');
+    const res = await fetch('/rules.json', { cache: 'no-store' });
+    if (!res.ok) { console.warn('[calStickyLoadCustomViewRules] HTTP', res.status); return null; }
+    const data = await res.json();
+    const raw = Array.isArray(data) ? data : (Array.isArray(data && data.rules) ? data.rules : []);
+    const rules = raw
+      .filter((r) => r && typeof r === 'object')
+      .filter((r) => !r.builtin && r.id !== '__builtin_remind__')
+      .filter((r) => r.enabled !== false);   // 关闭的规则不生成贴
+    calStickyCustomViewRules = rules;
+    console.log('[calStickyLoadCustomViewRules] OK, custom rules:', rules.length, rules.map(r => r.id));
+    console.log('[calStickyLoadCustomViewRules] ViewStickyRules?', typeof window.ViewStickyRules);
+    return rules;
+  } catch (e) {
+    console.warn('[calStickyLoadCustomViewRules] fetch failed:', e);
+    return null;
+  }
+}
+// 分組標題＝來源行程的標題＋（日期）＋（📎 來源文件名，僅 INCLUDE 事件顯示）：
 //   標題本身帶 #／<BIG>／[[術語]] 時照其語義渲染，純文字標題才補 **粗體** 維持「分組」辨識度。
+//   🆕 INCLUDE 外部文件的事件（ev.src 非空）尾巴加 `· 📎 文件名`，主檔事件不顯示（默認來源）。
 function calStickyViewHeadMd(ev) {
   const title = String((ev && ev.title) || '(無標題)').replace(/\s+/g, ' ').trim();
   const date = (ev && ev.date) ? '（' + calMdShort(ev.date) + '）' : '';
-  return /^#{1,6}(\s|$)/.test(title) ? title + date : '**' + title + '**' + date;
+  const src = (ev && ev.src) ? ' · 📎 ' + escapeHtml(String(ev.src).trim()) : '';
+  const head = /^#{1,6}(\s|$)/.test(title) ? title + date : '**' + title + '**' + date;
+  return head + src;
 }
 function calStickyViewNotesMd(events) {
   const groups = [];
@@ -443,12 +487,12 @@ function calStickyBuildCatalog() {
   } else if (typeof parseCalendarEvents === 'function' && typeof elements !== 'undefined' && elements.editor) {
     events = parseCalendarEvents(elements.editor.value);
   }
-  const out = [];
+  const normalNotes = [];
   events.forEach((ev) => {
     // 不設上限：與桌面便利貼同一口徑（表單 UI 以 9 為輸入上限，但檔案既有 >9 張不可靜默截斷）
     const count = Math.max(0, parseInt(ev.sticky, 10) || 0);
     for (let i = 0; i < count; i += 1) {
-      out.push({
+      normalNotes.push({
         uid: ev.uid,
         idx: i,
         identity: calStickyIdentityOf(ev, i),
@@ -467,15 +511,61 @@ function calStickyBuildCatalog() {
       });
     }
   });
-  // 🆕 VIEW 便利貼永遠第一張（有內容才出現）
-  const viewEntry = calStickyViewEntry(events);
-  if (viewEntry) out.unshift(viewEntry);
+
+  // 🆕 自定义 VIEW 便利贴（从 /rules.json fetch 的规则，buildRefs 生成）：
+  //   只在 calStickyCustomViewRules !== null 时生成（fetch 已完成）；
+  //   引擎 window.ViewStickyRules 由 serve.py /vsr.js 跨目录代理加载。
+  //   📍 位置：🔔 内置 VIEW 之后、普通便利贴之前（与桌面版 tlStickyNoteRefs 同顺序）。
+  const customViews = [];
+  if (calStickyCustomViewRules !== null && calStickyCustomViewRules.length &&
+      typeof window.ViewStickyRules !== 'undefined') {
+    const V = window.ViewStickyRules;
+    const deps = calStickyViewDeps();
+    try {
+      // 🆕 注意：buildRefs(rules, events, deps) —— **rules 在第一个位置**！参数顺序别搞反！
+      const refs = V.buildRefs(calStickyCustomViewRules.map((r) => V.normalizeRule(r)), events, deps);
+      console.log('[calStickyBuildCatalog] custom VIEW refs:', refs.length, refs.map(r => ({key: r.key, title: r.title})));
+      (refs || []).forEach((ref) => {
+        customViews.push({
+          uid: ref.key,
+          idx: 0,
+          identity: ref.key + '||0',
+          title: ref.title || '(未命名)',
+          date: ref.date || '',
+          endDate: ref.endDate || '',
+          done: false,
+          color: ref.color || '',
+          tags: ref.tags || [],
+          notes: ref.notes || '',
+          src: '',
+          ro: true,
+          dirty: false,
+          isView: true,       // 标记为 VIEW 贴：徽标／只读／＋☐ 隐藏全靠这个 boolean
+          customView: true    // 标记为「自定义」VIEW 贴：hidden 过滤走 localStorage（不用 calStickyViewHidden）
+        });
+      });
+    } catch (e) { /* buildRefs 抛错 → 这条规则静默跳过，不影响其他 */ }
+  }
+
+  // 🆕 顺序与桌面版 tlStickyNoteRefs 完全对齐：
+  //   🔔 内置 VIEW → 自定义 VIEW → 普通便利贴
+  const builtinView = calStickyViewEntry(events);
+  const out = [];
+  if (builtinView) out.push(builtinView);       // 🔔 永远第一张
+  customViews.forEach((v) => out.push(v));       // 自定义 VIEW 紧跟
+  normalNotes.forEach((n) => out.push(n));       // 最后才是普通便利贴
+  console.log('[calStickyBuildCatalog] order: builtin=', builtinView ? 1 : 0, 'custom=', customViews.length, 'normal=', normalNotes.length, '→ total=', out.length);
   return out;
 }
 function calStickyRebuild() {
   calStickyCatalog = calStickyBuildCatalog();
   const hidden = new Set(calStickyLoadStore().hidden);
-  calStickyPages = calStickyCatalog.filter((n) => (n.isView ? !calStickyViewHidden : !hidden.has(n.identity)));
+  // 🆕 内置 🔔 VIEW 贴用 calStickyViewHidden（本会话变量）；
+  //   自定义 VIEW 贴和普通便利贴都用 localStorage hidden（持久化）
+  calStickyPages = calStickyCatalog.filter((n) => {
+    if (n.isView && !n.customView) return !calStickyViewHidden;
+    return !hidden.has(n.identity);
+  });
 }
 
 // ===== 每張便利貼的顯示偏好 =====
@@ -676,6 +766,16 @@ function calStickyShortSrc(name) {
 function calStickyApplySrcBadge(note) {
   const el = calStickyEl('calStickySrcBadge');
   if (!el) return;
+  // 🆕 VIEW 便利貼（聚合提醒視圖）→ 顯示專屬徽標，和一般 include 的 📄 來源徽標
+  //   視覺區隔開來，一眼就知道「這是合成的只讀視圖，沒有對應的單一來源檔」
+  if (note && note.isView) {
+    el.textContent = '👁 VIEW 便利貼';
+    el.title = 'VIEW 便利貼（聚合提醒視圖）\n從所有來源檔自動收集「今日待完成的行程」與便利貼 checkbox；\n唯讀顯示，沒有對應的單一來源檔。';
+    el.classList.remove('dirty');
+    el.classList.add('show', 'is-view');
+    console.log('[calStickyApplySrcBadge] VIEW badge applied');
+    return;
+  }
   const src = String((note && note.src) || '').trim();
   if (src) {
     const dirty = !!note.dirty;
@@ -684,12 +784,12 @@ function calStickyApplySrcBadge(note) {
       '\n（便利貼內容可修改；行程本體不可編輯）' +
       (dirty ? '\n● 有修改還在本機，需在 📎 聯運檔案清單按 ↓ 匯出覆寫原檔' : '');
     el.classList.toggle('dirty', dirty);
+    el.classList.remove('is-view');
     el.classList.add('show');
   } else {
     el.textContent = '';
     el.removeAttribute('title');
-    el.classList.remove('show');
-    el.classList.remove('dirty');
+    el.classList.remove('show', 'dirty', 'is-view');
   }
 }
 function calStickyRenderPage(target, options) {
@@ -2050,6 +2150,13 @@ function calStickyInit() {
   // 初次先渲染空狀態 / 設定色板，讓清單一打開就有內容（尚未開啟時不顯示任何東西）
   calStickySyncControls(null);
   calStickyRenderSwatches(calStickyNotePrefs(''));
+
+  // 🆕 启动后异步 fetch 自定义 VIEW 便利贴规则（不阻塞 UI）：
+  //   fetch 成功后立刻 Rebuild，让自定义 VIEW 贴出现在翻页清单里。
+  //   如果 serve.py 没跑（比如用 Electron 桌面版打开 LITE 端），fetch 会失败 → 静默跳过。
+  calStickyLoadCustomViewRules().then((rules) => {
+    if (rules !== null) calStickyRebuild();
+  });
 }
 
 if (document.readyState === 'loading') {

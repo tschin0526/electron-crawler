@@ -18,6 +18,7 @@ MD 编辑器 Lite —— 静态服务器（支持 HTTPS）
 """
 
 import argparse
+import json
 import os
 import ssl
 import sys
@@ -25,6 +26,42 @@ from functools import partial
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+# 🆕 桌面版主程式的插件数据目录（PLUGINS_DATA_DIR）：
+#   main.js 里 PLUGINS_DATA_DIR = path.join(__dirname, '../data') → __dirname 是 electron-crawler/
+#   → 往上一级到 myProgram/ → 拼 data → /Users/chincharles/myProgram/data/
+#   注意：不是 electron-crawler/data/！差了一层！
+PLUGINS_DATA_DIR = os.path.abspath(os.path.join(HERE, '..', '..', '..', 'data'))   # src/pwa-md-editor → 3 级上到 myProgram/ → +data/
+# calendar-dir.txt 放在 PLUGINS_DATA_DIR/data/ 下（与 sticky-notes-state.json 在同一 data 子目录层级）
+CALENDAR_DIR_MARKER = os.path.join(PLUGINS_DATA_DIR, 'data', 'calendar-dir.txt')
+
+def _resolve_rules_json_path():
+    """解析 view-sticky-rules.json 的真实位置（跟 calendar.md 同目录）。"""
+    # 1) 优先：主程式写的 calendar-dir.txt → 里面就是 calendar.md 的绝对目录
+    try:
+        if os.path.isfile(CALENDAR_DIR_MARKER):
+            d = open(CALENDAR_DIR_MARKER, 'r', encoding='utf-8').read().strip()
+            if d:
+                cand = os.path.join(d, 'view-sticky-rules.json')
+                if os.path.isfile(cand):
+                    return cand
+    except Exception:
+        pass
+    # 2) Fallback：PLUGINS_DATA_DIR/（旧档位置，或主程式还没写 marker）
+    fallback = os.path.join(PLUGINS_DATA_DIR, 'view-sticky-rules.json')
+    return fallback if os.path.isfile(fallback) else os.path.join(PLUGINS_DATA_DIR, 'view-sticky-rules.json')
+
+def _resolve_vsr_js_path():
+    """view-sticky-rules.js 引擎（纯 JS，从桌面版共享）。"""
+    return os.path.abspath(os.path.join(HERE, '..', 'plugins', 'todolist', 'view-sticky-rules.js'))
+
+# 🆕 跨目录共享资源的路径映射：LITE 版（纯浏览器）没有 Electron IPC，
+#   但桌面版维护的 view-sticky-rules.json 和引擎 view-sticky-rules.js 都是纯档案，
+#   通过静态服务器的特殊路由暴露给浏览器读取。
+#   CROSS_PATHS 的值是「可调用」的 → 每次请求动态解析 calendar 目录。
+CROSS_PATHS = {
+    '/rules.json': lambda: _resolve_rules_json_path(),
+    '/vsr.js': lambda: _resolve_vsr_js_path(),
+}
 
 # 补齐 / 修正 MIME，避免 Service Worker、manifest、图标被浏览器拒收
 EXTRA_MIME = {
@@ -44,6 +81,47 @@ class NoCacheHandler(SimpleHTTPRequestHandler):
     注意：这只影响网络层缓存，Service Worker 自己的 Cache Storage 不受影响，
     所以离线能力照常可测。
     """
+
+    def do_GET(self):
+        # 🆕 跨目录共享资源：/rules.json 和 /vsr.js 动态解析路径，
+        #    其余路径走正常静态文件服务（基于 --dir 指定的目录）。
+        clean = self.path.split('?', 1)[0].split('#', 1)[0]
+        if clean in CROSS_PATHS:
+            self._serve_cross_path(clean)
+            return
+        super().do_GET()
+
+    def _serve_cross_path(self, url_path):
+        """调用 CROSS_PATHS[url_path] 动态拿到绝对路径并返回。"""
+        resolver = CROSS_PATHS[url_path]
+        full = resolver() if callable(resolver) else resolver
+        try:
+            if not os.path.isfile(full):
+                # 规则档案不存在 → 返回空 JSON 阵列（LITE 端能正常解析）
+                if url_path == '/rules.json':
+                    body = json.dumps({'version': 1, 'rules': []}).encode('utf-8')
+                    self.send_response(200)
+                    self.send_header('Content-Type', 'application/json; charset=utf-8')
+                    self.send_header('Content-Length', str(len(body)))
+                    self.send_header('Cache-Control', 'no-store, must-revalidate')
+                    self.end_headers()
+                    self.wfile.write(body)
+                    return
+                self.send_error(404, 'Not Found: ' + full)
+                return
+            # 正常读取并返回
+            with open(full, 'rb') as f:
+                body = f.read()
+            ctype = self.guess_type(url_path)
+            self.send_response(200)
+            self.send_header('Content-Type', ctype)
+            self.send_header('Content-Length', str(len(body)))
+            self.send_header('Cache-Control', 'no-store, must-revalidate')
+            self.send_header('Service-Worker-Allowed', '/')
+            self.end_headers()
+            self.wfile.write(body)
+        except Exception as e:
+            self.send_error(500, 'Internal Error: ' + str(e))
 
     def end_headers(self):
         self.send_header("Cache-Control", "no-store, must-revalidate")

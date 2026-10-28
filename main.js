@@ -93,10 +93,17 @@ windowsModule.init({
 // 🧩 自定义「VIEW 便利贴」规则：存档 data/view-sticky-rules.json ＋ 维护窗
 //    独立插件档（不并进便利贴本体），入口目前挂在便利贴窗的菜单，以后可挂别处。
 const viewStickyRulesModule = require('./main-modules/view-sticky-rules.js');
-viewStickyRulesModule.init({
+const vsrApi = viewStickyRulesModule.init({
   PLUGINS_DATA_DIR,
   getMainWindow: () => windowsModule.getMainWindow(),
+  // 🆕 让规则档案跟 sticky-notes-state.json 同目录（calendar.md 的 dirname）
+  getStickyNoteFile: () => windowsModule.getStickyNoteFile(),
 });
+// 🆕 注入 reloadAndNotify → open-sticky-notes 之后主进程调它，把最新规则推给渲染端
+//    （解决时序：渲染端启动时 stickyNoteFile 还是空 → rulesPath() 找不到档案 → 返回空规则）
+if (vsrApi && typeof vsrApi.reloadAndNotify === 'function') {
+  windowsModule.setViewRulesReloader(vsrApi.reloadAndNotify);
+}
 
 app.whenReady().then(() => {
   windowsModule.createWindow();

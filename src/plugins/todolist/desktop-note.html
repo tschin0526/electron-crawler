@@ -29,6 +29,11 @@
       white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
     }
     .doc-badge.show { display: inline-block; }
+    /* VIEW 便利贴专属紫色徽标（聚合提醒视图，一眼与 include 来源的金色虚线区分） */
+    .doc-badge.is-view {
+      border: 1px solid #8b5cf6; background: rgba(139, 92, 246, .18);
+      color: #6d28d9; font-style: normal;
+    }
     .iconbtn {
       flex: none; width: 22px; height: 22px; border-radius: 6px; border: none; cursor: pointer;
       background: rgba(0,0,0,.06); color: #4b5160; font-size: 12px; line-height: 1; display: inline-flex;

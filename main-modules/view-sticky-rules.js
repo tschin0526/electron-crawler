@@ -20,9 +20,17 @@ const RULES_FILE = 'view-sticky-rules.json';
 
 let PLUGINS_DATA_DIR = '';
 let getMainWindow = null;
+let getStickyNoteFile = null;   // 🆕 动态获取当前 calendar 档案路径（来自 windows.js）
 let rulesWindow = null;
 
 function rulesPath() {
+  // 🆕 优先跟 sticky-notes-state.json 同目录（calendar.md 的 dirname）：
+  //   sticky-notes-state.json 永远跟 calendar.md 同目录 → view-sticky-rules.json 也应该这样。
+  //   calendar 路径可能还没设定（程式刚启动，用户还没开便利贴）→ fallback 到 PLUGINS_DATA_DIR。
+  try {
+    const calFile = (typeof getStickyNoteFile === 'function') ? getStickyNoteFile() : '';
+    if (calFile) return path.join(path.dirname(calFile), RULES_FILE);
+  } catch (e) { /* getStickyNoteFile 抛错 → 跳过，走 fallback */ }
   return path.join(PLUGINS_DATA_DIR || APP_ROOT, RULES_FILE);
 }
 function readRulesFile() {
@@ -91,11 +99,12 @@ function openRulesWindow() {
 function init(shared) {
   PLUGINS_DATA_DIR = (shared && shared.PLUGINS_DATA_DIR) || '';
   getMainWindow = (shared && shared.getMainWindow) || null;
+  getStickyNoteFile = (shared && shared.getStickyNoteFile) || null;
 
   // 读规则（渲染端启动时拉一次；维护窗打开时也拉一次）
   ipcMain.handle('vsr-list', async () => {
     const r = readRulesFile();
-    return { success: true, rules: r.rules, readable: r.ok };
+    return { success: true, rules: r.rules, readable: r.ok, path: rulesPath() };
   });
 
   // 存规则：整个阵列覆盖写入（维护窗是唯一写入端，规则条数少，不做合并）
@@ -120,7 +129,16 @@ function init(shared) {
     }
   });
 
-  return { rulesPath };
+  return {
+    rulesPath,
+    // 🆕 主进程在 open-sticky-notes 之后调这个：
+    //    stickyNoteFile 刚设定好 → rulesPath() 现在能正确找到 calendar.md 同目录的 view-sticky-rules.json →
+    //    重新读档案 + 推给渲染端，让它立刻把自定义 VIEW 贴加进翻页清单。
+    reloadAndNotify() {
+      const r = readRulesFile();
+      notifyRulesChanged(r.rules);
+    }
+  };
 }
 
 module.exports = { init };

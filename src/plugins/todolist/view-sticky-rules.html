@@ -45,8 +45,12 @@
   }
   h1 { margin: 0 0 2px; font-size: 16px; letter-spacing: .5px; }
   h1 .badge { color: var(--gold); }
-  .hint { color: var(--sub); font-size: 11.5px; margin-bottom: 10px; }
+  .hint { color: var(--sub); font-size: 11.5px; margin-bottom: 6px; }
   .hint b { color: var(--gold); font-weight: 600; }
+  .store-row { display: flex; align-items: center; gap: 8px; color: var(--sub); font-size: 11.5px; margin-bottom: 10px; }
+  .store-row .store-path { color: var(--ink); background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 1px 8px; font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 11px; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .store-row .store-copy { border: 1px solid var(--line); background: var(--panel); color: var(--sub); border-radius: 6px; padding: 1px 8px; cursor: pointer; font-size: 11px; }
+  .store-row .store-copy:hover { border-color: var(--gold); color: var(--gold); }
   .cols { flex: 1; display: flex; gap: 14px; min-height: 0; }
   .pane { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; overflow: auto; }
   .pane.list { width: 320px; flex: none; }
@@ -96,6 +100,11 @@
     每一条规则＝一张「<b>🔔 提醒</b>」那样的<b>投影便利贴</b>：把目前行程档里符合下面条件的行集中到同一张贴上。
     投影贴<b>只读、也不会写进 calendar.md</b>（内容请回来源行程改）。启用后到便利贴清单／翻页里看它。
     一条都没抓到<b>也照开一张</b>，贴面会写「这个条件目前没抓到任何行」（免得分不清是规则没生效、还是行程里真的没有）；只有「没填任何条件」的规则不会开贴。
+  </div>
+  <div class="store-row">
+    <span>📎 设定档案：</span>
+    <span class="store-path" id="storePath">（读取中…）</span>
+    <button type="button" class="store-copy" id="btnCopyPath" title="复制路径到剪贴簿">复制</button>
   </div>
 
   <div class="cols">
@@ -282,9 +291,19 @@
 
   // ===== 存／读 =====
   async function load() {
-    if (!api || typeof api.invoke !== 'function') { toast('这不是 Electron 窗体（直接用浏览器打开）→ 读不到规则档案', true); return; }
+    if (!api || typeof api.invoke !== 'function') {
+      $('storePath').textContent = '（非 Electron 窗体，读不到档案系统）';
+      toast('这不是 Electron 窗体（直接用浏览器打开）→ 读不到规则档案', true); return;
+    }
     try {
       const r = await api.invoke('vsr-list');
+      // 🆕 显示设定档案的实际存储位置（主进程扩展 vsr-list 回传 path）
+      if (r && r.path) {
+        $('storePath').textContent = r.path;
+        $('storePath').title = r.path;
+      } else {
+        $('storePath').textContent = '（路径未知）';
+      }
       const userRules = V.normalizeList(r && Array.isArray(r.rules) ? r.rules : [])
         .filter((x) => !x.builtin && x.id !== '__builtin_remind__');
       rules = V.builtinRules().concat(userRules);
@@ -327,6 +346,14 @@
     markDirty(true); renderList(); renderForm();
   };
   $('btnSave').onclick = save;
+
+  // 🆕 复制设定档案路径到剪贴簿
+  $('btnCopyPath').onclick = async () => {
+    const p = $('storePath').textContent;
+    if (!p || p.startsWith('（')) return;
+    try { await navigator.clipboard.writeText(p); toast('路径已复制到剪贴簿'); }
+    catch (e) { toast('复制失败：' + (e && e.message ? e.message : e), true); }
+  };
 
   // 关窗前提醒还有修改没存（confirm 取消＝留下窗体，不误丢）
   window.addEventListener('beforeunload', (e) => {

@@ -1203,11 +1203,17 @@
     function tlLoadCustomViewRules() {
       if (!window.electronAPI || typeof window.electronAPI.invoke !== 'function') return;
       Promise.resolve(window.electronAPI.invoke('vsr-list')).then((r) => {
+        console.log('[tlLoadCustomViewRules] vsr-list raw:', r);
         const rules = r && Array.isArray(r.rules) ? r.rules : [];
+        console.log('[tlLoadCustomViewRules] rules count:', rules.length, 'ids:', rules.map(x => x.id));
         const before = tlCustomViewRules.map((x) => x.id + '|' + x.enabled).join(',');
         tlApplyCustomViewRules(rules);
-        if (tlCustomViewRules.map((x) => x.id + '|' + x.enabled).join(',') !== before) tlPushStickyRefreshes(true);
-      }).catch(() => { /* 主进程没这个通道（例如非 Electron 环境）→ 只是没有自订贴 */ });
+        console.log('[tlLoadCustomViewRules] tlCustomViewRules after filter:', tlCustomViewRules.map(x => ({id: x.id, title: x.title, enabled: x.enabled})));
+        if (tlCustomViewRules.map((x) => x.id + '|' + x.enabled).join(',') !== before) {
+          console.log('[tlLoadCustomViewRules] calling tlPushStickyRefreshes(true)');
+          tlPushStickyRefreshes(true);
+        }
+      }).catch((e) => { console.error('[tlLoadCustomViewRules] error:', e); });
     }
     if (window.electronAPI && typeof window.electronAPI.onViewStickyRulesChanged === 'function') {
       window.electronAPI.onViewStickyRulesChanged((rules) => {
@@ -1216,8 +1222,13 @@
       });
     }
     function tlCustomViewStickyRefs(events) {
-      if (!window.ViewStickyRules || !tlCustomViewRules.length) return [];
-      return window.ViewStickyRules.buildRefs(tlCustomViewRules, events, tlCustomViewDeps());
+      if (!window.ViewStickyRules || !tlCustomViewRules.length) {
+        console.log('[tlCustomViewStickyRefs] SKIP ViewStickyRules?', !!window.ViewStickyRules, 'rules.length:', tlCustomViewRules.length);
+        return [];
+      }
+      const refs = window.ViewStickyRules.buildRefs(tlCustomViewRules, events, tlCustomViewDeps());
+      console.log('[tlCustomViewStickyRefs] rules:', tlCustomViewRules.length, 'events:', events.length, '→ refs:', refs.length, refs.map(r => ({key: r.key, title: r.title})));
+      return refs;
     }
     tlLoadCustomViewRules();
     // 🆕 桌面便利贴清单：把 sticky>0 的事件展开成 [{key,idx,html}]（key = 事件 uid，供桌面便利贴窗口定位）
@@ -1233,7 +1244,9 @@
       // 🆕 自订投影贴紧跟在 🔔 之后，再才是使用者自己设的便利贴。
       //    与 🔔 的差别（2026-10-27 使用者要求）：自订规则「有条件但 0 命中」也照建一张，
       //    贴面写明「这个条件没抓到任何行」——静默消失会让人分不清是规则没生效还是行程里真的没有。
-      tlCustomViewStickyRefs(list).forEach((ref) => out.push(ref));
+      const customRefs = tlCustomViewStickyRefs(list);
+      console.log('[tlStickyNoteRefs] builtin:', viewRef ? 1 : 0, 'custom:', customRefs.length, '→ total before user:', out.length + customRefs.length);
+      customRefs.forEach((ref) => out.push(ref));
       list.forEach((ev) => {
         const n = parseInt(ev && ev.sticky, 10) || 0;
         if (n > 0) {
@@ -1277,9 +1290,12 @@
       return tlCalEvents;
     }
     function tlPushStickyRefreshes(force) {
-      if (typeof tlStickyNotesOpen !== 'undefined' && !tlStickyNotesOpen) return;
+      // 🆕 force=true 时不被 tlStickyNotesOpen 守卫拦截（规则刚加载时便利贴可能还没开）：
+      //    先算好 refs、记好指纹，等下一次 open-sticky-notes 会重新调用 tlStickyNoteRefs() 拿最新集合。
+      if (!force && typeof tlStickyNotesOpen !== 'undefined' && !tlStickyNotesOpen) return;
       if (!window.electronAPI || !window.electronAPI.send) return;
       const refs = tlStickyNoteRefs(tlLiveCalEvents());
+      console.log('[tlPushStickyRefreshes] force=', force, 'refs count:', refs.length, 'keys:', refs.map(r => r.key));
       const setSig = refs.map((ref) => ref.key + '#' + (+ref.idx || 0)).join(',');
       const prevSig = tlLastStickySet;
       tlLastStickySet = setSig;

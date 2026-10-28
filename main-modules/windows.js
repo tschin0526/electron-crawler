@@ -44,6 +44,7 @@ let setMainWindowCallback = () => {};
 // 🆕 插件资料目录（由 main.js 经 init 注入）：裸档名解析（resolve-doc-path）的默认查找目录，
 //    与卡片存储目录（PLUGINS_DATA_DIR）保持一致
 let PLUGINS_DATA_DIR = '';
+let reloadViewRulesAfterOpen = null;   // 🆕 由 view-sticky-rules.js 注入：open-sticky-notes 后重载规则
 
 // 选择器测试结果回调映射（用于等待异步结果）
 const selectorTestCallbacks = new Map();
@@ -869,6 +870,26 @@ ipcMain.handle('open-sticky-notes', (e, arg) => {
     closeAllStickyNoteWindows();
     stickyNoteFile = (arg && arg.file) || '';
     stickyNoteState = loadStickyNoteState();
+    // 🆕 把 calendar.md 的目录写到 PLUGINS_DATA_DIR/data/calendar-dir.txt：
+    //    LITE 版 serve.py 读这个 marker → 知道 view-sticky-rules.json 应该跟 calendar.md 同目录。
+    //    用 .tmp + rename 避免写入中断留下空档（与其他存档同口径）。
+    if (stickyNoteFile && PLUGINS_DATA_DIR) {
+      try {
+        const calDir = path.dirname(stickyNoteFile);
+        const markerDir = path.join(PLUGINS_DATA_DIR, 'data');
+        if (!fs.existsSync(markerDir)) fs.mkdirSync(markerDir, { recursive: true });
+        const marker = path.join(markerDir, 'calendar-dir.txt');
+        const tmp = marker + '.tmp';
+        fs.writeFileSync(tmp, calDir, 'utf8');
+        try { fs.renameSync(tmp, marker); } catch (err) { fs.writeFileSync(marker, calDir, 'utf8'); try { fs.unlinkSync(tmp); } catch (e2) {} }
+      } catch (err0) { /* marker 写失败 → LITE 端 fallback 到 PLUGINS_DATA_DIR，不影响桌面版 */ }
+    }
+    // 🆕 关键：stickyNoteFile 刚设定好 → rulesPath() 现在能正确找到 calendar.md 同目录的 view-sticky-rules.json！
+    //    但渲染端的 tlLoadCustomViewRules() 在启动时就 resolve 过了（那时候 stickyNoteFile 还是空 → fallback 到 PLUGINS_DATA_DIR 找不到档案 → 返回空规则）。
+    //    所以主进程在这里主动调 reload + 推通知，让渲染端立刻拉一次最新规则。
+    if (typeof reloadViewRulesAfterOpen === 'function') {
+      try { reloadViewRulesAfterOpen(); } catch (e) { /* reload 失败不影响便利贴开启 */ }
+    }
     const notes = (arg && Array.isArray(arg.notes)) ? arg.notes : [];
     stickyNoteHtml.clear();
     stickyNoteTitleHtml.clear();
@@ -2473,4 +2494,9 @@ function init(shared) {
   });
 }
 
-module.exports = { init, createWindow, getMainWindow: () => mainWindow };
+module.exports = { init, createWindow, getMainWindow: () => mainWindow,
+  // 🆕 暴露当前 calendar 档案绝对路径（给 view-sticky-rules.js 用，让规则档案跟 calendar.md 同目录）
+  getStickyNoteFile: () => stickyNoteFile,
+  // 🆕 让 view-sticky-rules.js 把 reloadAndNotify 注入进来（init 时序：windows 先 init，vsr 后 init）
+  setViewRulesReloader: (fn) => { reloadViewRulesAfterOpen = typeof fn === 'function' ? fn : null; },
+};
