@@ -70,11 +70,11 @@
   /* 表单 */
   .fld { margin-bottom: 14px; }
   .fld > label { display: block; font-size: 11.5px; color: var(--sub); margin-bottom: 4px; letter-spacing: .5px; }
-  input[type="text"], select, textarea {
+  input[type="text"], input[type="number"], select, textarea {
     width: 100%; padding: 6px 8px; border: 1px solid var(--line); border-radius: 7px;
     background: var(--bg); color: var(--ink); font: inherit;
   }
-  input[type="text"]:focus, select:focus { outline: 2px solid var(--gold); outline-offset: -1px; }
+  input[type="text"]:focus, input[type="number"]:focus, select:focus { outline: 2px solid var(--gold); outline-offset: -1px; }
   .row { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
   .row > * { flex: none; }
   .chk { display: inline-flex; align-items: center; gap: 5px; cursor: pointer; padding: 3px 8px; border: 1px solid var(--line); border-radius: 999px; font-size: 12px; }
@@ -146,6 +146,19 @@
       <div class="row" style="margin-bottom:10px">
         <label class="chk"><input type="checkbox" id="fEnabled">启用这条规则</label>
       </div>
+      <div class="fld">
+        <label>启动通知（便利贴启动时，这张 VIEW 贴先闪烁显示）</label>
+        <div class="row">
+          <label class="chk"><input type="checkbox" id="fNotify">🔔 通知讯息</label>
+          <span class="tip">保持秒数</span>
+          <input type="number" id="fNotifySec" min="1" max="600" step="1" style="width:92px">
+          <span class="tip">秒（默认 15）</span>
+        </div>
+        <div class="tip" style="margin-top:6px">
+          勾选后：便利贴启动时这张贴会先以<b>外框闪烁</b>显示上述秒数（中途可提前关闭），
+          全部通知结束后才进入原本的便利贴显示。这张贴<b>仍会是清单／翻页里的一张普通便利贴</b>，不受影响。
+        </div>
+      </div>
       <div class="foot">
         <button class="btn primary" id="btnSave">💾 保存全部</button>
         <button class="btn" id="btnDup">⧉ 复制这条</button>
@@ -177,16 +190,8 @@
   }
   function markDirty(on) { dirty = !!on; $('dirtyTip').textContent = dirty ? '● 有修改尚未保存' : '修改后请按「保存全部」才会写进档案。'; }
 
-  // 清单上的「条件摘要」——只用引擎的定义生成文案，保证跟实际过滤同口径
-  function condText(r) {
-    const parts = [];
-    if (r.marker) parts.push('[[' + r.marker + ':…]]');
-    if (r.keywords.length) parts.push('关键词' + (r.keywordMode === 'ALL' ? '全中' : '任一') + '：' + r.keywords.join('、') + (r.caseSensitive ? '（区分大小写）' : ''));
-    if (!parts.length) parts.push('⚠ 没有条件（不会抓到内容）');
-    const types = V.ROW_TYPES.filter((t) => r.rowTypes[t]).map((t) => V.ROW_TYPE_LABEL[t]);
-    parts.push('行型态：' + (types.join('／') || '无'));
-    return parts.join(' ＋ ');
-  }
+  // 清单上的「条件摘要」——直接复用引擎的 ruleSummary，保证跟徽标弹层、实际过滤同口径（单一可信来源）
+  function condText(r) { return V.ruleSummary(r); }
 
   function renderList() {
     const box = $('ruleList');
@@ -213,6 +218,12 @@
         badge.textContent = ' 系统内置・只读';
         badge.style.cssText = 'font-size:10px;color:var(--sub);font-weight:400;';
         t.appendChild(badge);
+      }
+      if (r.notify) {   // 🆕 一眼看出哪些规则会被当成启动通知
+        const nb = document.createElement('span');
+        nb.textContent = ' 🔔 通知 ' + r.notifySeconds + '秒';
+        nb.style.cssText = 'font-size:10px;color:var(--gold);font-weight:400;';
+        t.appendChild(nb);
       }
       const c = document.createElement('div'); c.className = 'r-cond'; c.textContent = condText(r);
       main.appendChild(t); main.appendChild(c);
@@ -266,18 +277,26 @@
     $('fCase').onchange = (e) => { const r = selected(); if (r) { r.caseSensitive = e.target.checked; markDirty(true); renderList(); } };
     $('fMarker').onchange = (e) => { const r = selected(); if (r) { r.marker = e.target.value; markDirty(true); renderList(); } };
     $('fEnabled').onchange = (e) => { const r = selected(); if (r) { r.enabled = e.target.checked; markDirty(true); renderList(); } };
+    // 🆕 启动通知：勾选框 + 保持秒数（秒数走引擎的夹值，避免写入 0／负数／浮夸值）
+    $('fNotify').onchange = (e) => { const r = selected(); if (r) { r.notify = e.target.checked; markDirty(true); renderList(); } };
+    $('fNotifySec').oninput = (e) => {
+      const r = selected(); if (!r) return;
+      r.notifySeconds = V.normalizeNotifySeconds(parseInt(e.target.value, 10));
+      markDirty(true); renderList();
+    };
   }
   function selected() { return rules.filter((r) => r.id === selId)[0] || null; }
   function renderForm() {
     const r = selected();
     const locked = !r || !!r.readonly;
     const pane = $('formPane');
-    pane.querySelectorAll('input[type="text"], select').forEach((el) => { el.disabled = locked; });
+    pane.querySelectorAll('input[type="text"], input[type="number"], select').forEach((el) => { el.disabled = locked; });
     pane.querySelectorAll('.chk input, .types input').forEach((el) => { el.disabled = locked; });
     $('segMode').querySelectorAll('button').forEach((b) => { b.disabled = locked; b.classList.toggle('on', !!r && b.getAttribute('data-v') === r.keywordMode); });
     $('btnDup').disabled = !r || !!r.readonly;
     if (!r) {
       $('fTitle').value = ''; $('fKeywords').value = ''; $('fMarker').value = ''; $('fEnabled').checked = false; $('fCase').checked = false;
+      $('fNotify').checked = false; $('fNotifySec').value = String(V.NOTIFY_DEFAULT_SECONDS);
       pane.querySelectorAll('.types input').forEach((el) => { el.checked = false; });
       return;
     }
@@ -286,6 +305,8 @@
     $('fMarker').value = r.marker;
     $('fCase').checked = !!r.caseSensitive;
     $('fEnabled').checked = !!r.enabled;
+    $('fNotify').checked = !!r.notify;
+    $('fNotifySec').value = String(r.notifySeconds);
     pane.querySelectorAll('.types input').forEach((el) => { el.checked = !!r.rowTypes[el.getAttribute('data-type')]; });
   }
 

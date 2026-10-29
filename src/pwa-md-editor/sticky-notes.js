@@ -541,7 +541,10 @@ function calStickyBuildCatalog() {
           ro: true,
           dirty: false,
           isView: true,       // 标记为 VIEW 贴：徽标／只读／＋☐ 隐藏全靠这个 boolean
-          customView: true    // 标记为「自定义」VIEW 贴：hidden 过滤走 localStorage（不用 calStickyViewHidden）
+          customView: true,   // 标记为「自定义」VIEW 贴：hidden 过滤走 localStorage（不用 calStickyViewHidden）
+          // 🆕 启动通知（规则里勾了「通知讯息」）：便利贴启动时先闪烁显示这张贴
+          notify: ref.notify === true,
+          notifySeconds: ref.notifySeconds
         });
       });
     } catch (e) { /* buildRefs 抛错 → 这条规则静默跳过，不影响其他 */ }
@@ -574,13 +577,29 @@ function calStickyNotePrefs(identity) {
   const store = calStickyLoadStore();
   // 🆕 VIEW 貼的偏好只活在本機記憶體（它是投影，不該在 localStorage 留下設定）
   const raw = (calStickyIsViewId(identity) ? calStickyViewPrefsLive : (identity && store.notes[identity])) || {};
+  // 🆕 外框流星：每貼可配置（開關／飛速／大小／形狀／顏色／焰尾），預設關閉
+  const m = (raw.meteor && typeof raw.meteor === 'object') ? raw.meteor : {};
+  const meteor = {
+    on: m.on === true,
+    speed: (typeof m.speed === 'number' && isFinite(m.speed)) ? Math.min(30, Math.max(3, Math.round(m.speed))) : 12,
+    size: (typeof m.size === 'number' && isFinite(m.size)) ? Math.min(120, Math.max(4, Math.round(m.size))) : 12,
+    shape: (m.shape === 'comet' || m.shape === 'sharp' || m.shape === 'band' || m.shape === 'twin') ? m.shape : 'comet',
+    color: calStickyIsHex(m.color) ? m.color : '#ffae00',
+    follow: m.follow === true,
+    rainbow: m.rainbow === true,
+    flame: (typeof m.flame === 'number' && isFinite(m.flame)) ? Math.min(200, Math.max(20, Math.round(m.flame))) : 60
+  };
   return {
     color: calStickyIsHex(raw.color) ? raw.color : CAL_STICKY_DEF_BG,
     opacity: (typeof raw.opacity === 'number' && isFinite(raw.opacity)) ? Math.min(100, Math.max(20, Math.round(raw.opacity))) : 100,
     fontScale: (typeof raw.fontScale === 'number' && isFinite(raw.fontScale)) ? Math.min(2.5, Math.max(0.5, +raw.fontScale.toFixed(2))) : 1,
     fontColor: calStickyIsHex(raw.fontColor) ? raw.fontColor : CAL_STICKY_DEF_FG,
     fontWeight: [400, 600, 700].indexOf(raw.fontWeight) >= 0 ? raw.fontWeight : 400,
-    undoneChecksOnly: raw.undoneChecksOnly === true
+    undoneChecksOnly: raw.undoneChecksOnly === true,
+    // 🆕 卷動位置：每貼記住「上次離開前」的位置（統一行為，非設定項）
+    //    刻意不進 StickySettings.pickPrefs → 不進可攜 JSON、也不會亮「保存」角標
+    scrollPos: (typeof raw.scrollPos === 'number' && isFinite(raw.scrollPos)) ? Math.max(0, Math.round(raw.scrollPos)) : 0,
+    meteor: meteor
   };
 }
 function calStickyWritePrefs(identity, prefs) {
@@ -625,6 +644,21 @@ function calStickyApplyStyle(prefs) {
   body.style.color = prefs.fontColor;
   body.style.fontWeight = String(prefs.fontWeight || 400);
   body.classList.toggle('cal-sticky-only-undone', !!prefs.undoneChecksOnly);
+  // 🆕 外框流星：開關 → 掛 .meteor-on＋形狀 class；其餘參數走 CSS 變數（--m-color/--m-dur/--m-head/--m-flame）
+  const m = prefs.meteor;
+  note.classList.toggle('meteor-on', !!(m && m.on));
+  note.classList.toggle('meteor-rainbow', !!(m && m.on && m.rainbow));
+  note.classList.remove('meteor-shape-comet', 'meteor-shape-sharp', 'meteor-shape-band', 'meteor-shape-twin');
+  if (m && m.on) {
+    note.classList.add('meteor-shape-' + (m.shape || 'comet'));
+    const mColor = (m.follow && prefs.fontColor) ? prefs.fontColor : (m.color || '#ffae00');
+    note.style.setProperty('--m-color', mColor);
+    note.style.setProperty('--m-dur', (m.speed || 12) + 's');
+    note.style.setProperty('--m-head', (m.size || 12) + 'deg');
+    note.style.setProperty('--m-flame', (m.flame || 60) + 'deg');
+    // 🆕 大小同步放大环厚：旧上限 40°→2px，新上限 120°→6px（3×），40° 以下维持 2px 不退化
+    note.style.setProperty('--m-thick', Math.min(6, Math.max(2, (m.size || 12) / 20)) + 'px');
+  }
   // 編輯框與正文同一套字級/字色/字重（對齊桌面 applyContentFont），縮放偏好在編輯模式同樣生效
   const ea = calStickyEl('calStickyEditArea');
   if (ea) {
@@ -794,6 +828,11 @@ function calStickyApplySrcBadge(note) {
 }
 function calStickyRenderPage(target, options) {
   options = options || {};
+  // 🆕 通知期間使用者自己翻頁（左右鈕／滑動）→ 放棄整個通知階段，以使用者的操作為準
+  if (calStickyNotifyActive && !calStickyNotifyRendering) calStickyNotifyCancel();
+  // 🆕 換張／重繪前先記下「離開的那一張」的捲動位置（此刻 calStickyCurrentId 仍是它）。
+  //    編輯中不記：編輯時 body 換成 textarea，讀到的是錯的位置。
+  if (!calStickyEditMode) calStickyFlushScrollSave();
   calStickyCloseAddCheckMenu();   // 換頁＝＋☐ 的位置與所屬行程都變了，選單先收合
   calStickyRebuild();
   const total = calStickyPages.length;
@@ -875,6 +914,12 @@ function calStickyRenderPage(target, options) {
     calStickyWrap(bodyEl, q);
   }
   calStickyApplyStyle(prefs);
+  // 🆕 還原「上次離開前」的捲動位置（統一行為，無設定項）。
+  //    只在 resetScroll 時還原：編輯儲存（resetScroll=false）保留使用者當下位置，不強拉。
+  if (options.resetScroll !== false && bodyEl) {
+    const saved = calStickyGetScrollPos(note.identity);
+    if (saved) requestAnimationFrame(() => { bodyEl.scrollTop = saved; });
+  }
   calStickyUpdateIndicator(i + 1, total);
   calStickyRenderSheetList();
   calStickySyncControls(prefs);
@@ -1175,6 +1220,42 @@ function calStickySyncControls(prefs) {
       b.disabled = !has;
     });
   }
+  // 🆕 外框流星：開關＋細項同步；關閉時停用全部細項
+  const m = p.meteor || { on: false, speed: 12, size: 12, shape: 'comet', color: '#ffae00', follow: false, flame: 60 };
+  const mToggle = calStickyEl('calStickyMeteorToggle');
+  if (mToggle) {
+    mToggle.textContent = '外框流星：' + (m.on ? '開' : '關');
+    mToggle.classList.toggle('active', !!m.on);
+    mToggle.setAttribute('aria-pressed', String(!!m.on));
+    mToggle.disabled = !has;
+  }
+  const mVal = calStickyEl('calStickyMeteorVal');
+  if (mVal) mVal.textContent = m.on ? '開' : '關';
+  const mSpeed = calStickyEl('calStickyMeteorSpeed');
+  if (mSpeed) { mSpeed.value = String(m.speed); mSpeed.disabled = !has || !m.on; }
+  const mSpeedVal = calStickyEl('calStickyMeteorSpeedVal');
+  if (mSpeedVal) mSpeedVal.textContent = '每圈 ' + m.speed + ' 秒';
+  const mSize = calStickyEl('calStickyMeteorSize');
+  if (mSize) { mSize.value = String(m.size); mSize.disabled = !has || !m.on; }
+  const mSizeVal = calStickyEl('calStickyMeteorSizeVal');
+  if (mSizeVal) mSizeVal.textContent = m.size + '°';
+  const mShape = calStickyEl('calStickyMeteorShape');
+  if (mShape) {
+    mShape.querySelectorAll('button[data-shape]').forEach((b) => {
+      b.classList.toggle('active', (b.getAttribute('data-shape') || 'comet') === (m.shape || 'comet'));
+      b.disabled = !has || !m.on;
+    });
+  }
+  const mColor = calStickyEl('calStickyMeteorColor');
+  if (mColor) { mColor.value = calStickyIsHex(m.color) ? m.color : '#ffae00'; mColor.disabled = !has || !m.on || !!m.follow; }
+  const mFollow = calStickyEl('calStickyMeteorFollow');
+  if (mFollow) { mFollow.checked = !!m.follow; mFollow.disabled = !has || !m.on; }
+  const mRainbow = calStickyEl('calStickyMeteorRainbow');
+  if (mRainbow) { mRainbow.checked = !!m.rainbow; mRainbow.disabled = !has || !m.on; }
+  const mFlame = calStickyEl('calStickyMeteorFlame');
+  if (mFlame) { mFlame.value = String(m.flame); mFlame.disabled = !has || !m.on; }
+  const mFlameVal = calStickyEl('calStickyMeteorFlameVal');
+  if (mFlameVal) mFlameVal.textContent = m.flame + '°';
 }
 
 function calStickyHasColor(palette, color) {
@@ -1242,6 +1323,54 @@ function calStickyZoom(delta) {
   calStickyUpdatePrefs({ fontScale: next });
 }
 
+// 🆕 外框流星：把變更合併進 meteor 子物件再整筆寫回（calStickyUpdatePrefs 的 patch 會整顆替換 meteor）
+function calStickySetMeteor(patch) {
+  if (!calStickyCurrentId || !patch) return;
+  const cur = calStickyNotePrefs(calStickyCurrentId).meteor || {};
+  const next = Object.assign({}, cur, patch);
+  calStickyUpdatePrefs({ meteor: next });
+}
+function calStickyToggleMeteor() {
+  if (!calStickyCurrentId) return;
+  const p = calStickyNotePrefs(calStickyCurrentId);
+  calStickySetMeteor({ on: !p.meteor.on });
+}
+// 🆕 捲動位置記憶（統一行為，無設定項）：每張便利貼記住「上次離開前」的位置，下次開／翻回來即還原。
+//    直接寫 store.notes[id].scrollPos（不經 calStickyUpdatePrefs，避免每次捲動都重算角標／重套樣式）；
+//    刻意不進 StickySettings.pickPrefs → 不進可攜 JSON、不會亮「保存」角標。
+let calStickyScrollTimer = null;
+function calStickyGetScrollPos(identity) {
+  if (!identity) return 0;
+  const store = calStickyLoadStore();
+  const raw = (store.notes && store.notes[identity]) || {};
+  const v = raw.scrollPos;
+  return (typeof v === 'number' && isFinite(v)) ? Math.max(0, v) : 0;
+}
+function calStickyWriteScrollPos(identity, pos) {
+  // VIEW 貼是投影：不該在 localStorage 留下任何東西（與 calStickyWritePrefs 同一條鐵律）
+  if (!identity || calStickyIsViewId(identity)) return;
+  const store = calStickyLoadStore();
+  const cur = (store.notes && store.notes[identity]) || {};
+  if (cur.scrollPos === pos) return;   // 沒變就不寫（省掉 localStorage 寫入）
+  store.notes[identity] = Object.assign({}, cur, { scrollPos: pos });
+  calStickySaveStore();
+}
+function calStickyReadBodyScroll() {
+  const body = calStickyEl('calStickyBody');
+  return body ? Math.max(0, Math.round(body.scrollTop)) : 0;
+}
+function calStickyScheduleScrollSave() {   // 捲動中節流（400ms）
+  if (calStickyScrollTimer) clearTimeout(calStickyScrollTimer);
+  calStickyScrollTimer = setTimeout(() => {
+    calStickyScrollTimer = null;
+    calStickyWriteScrollPos(calStickyCurrentId, calStickyReadBodyScroll());
+  }, 400);
+}
+function calStickyFlushScrollSave() {   // 換張／關窗前立刻寫回（此刻 calStickyCurrentId 仍是離開的那一張）
+  if (calStickyScrollTimer) { clearTimeout(calStickyScrollTimer); calStickyScrollTimer = null; }
+  calStickyWriteScrollPos(calStickyCurrentId, calStickyReadBodyScroll());
+}
+
 // ===== 開啟 / 關閉 / 外部資料變更 =====
 // ev（可選）＝從清單行的便利貼徽標進來：開在該行程的第一張，而不是上次停留的那張
 function calStickyOpen(ev) {
@@ -1280,9 +1409,93 @@ function calStickyOpen(ev) {
     if (idx < 0 && calStickyPages.length) idx = Math.min(store.lastIdx, calStickyPages.length - 1);
     if (idx < 0) idx = 0;
   }
-  calStickyRenderPage(idx, { toast: false });
+  // 🆕 啟動通知：勾了「通知訊息」的 VIEW 貼先在便利貼窗閃爍顯示，結束才進正常顯示。
+  //    非同步跑（不改 calStickyOpen 的同步簽章）；第一張會在函式內同步渲染，畫面不會先閃一下空白。
+  if (calStickyNotifyQueue().length) {
+    calStickyRunNotifyPhase(idx).catch(() => {});
+  } else {
+    calStickyRenderPage(idx, { toast: false });
+  }
+}
+// ===== 🆕 启动通知：勾了「通知讯息」的 VIEW 贴，便利贴启动时先外框闪烁显示 =====
+//   行为：依序显示每一张（闪烁），每张停留 notifySeconds 秒，或按「✕ 关闭」提前换下一张；
+//   全部结束后才渲染原本要显示的那一张（startIndex）→ 之后正常显示行为完全不变。
+//   ⚠️ 通知贴本身就是便利贴清单里的一张（不新增、不移除），这里只是「启动时先翻到它」。
+let calStickyNotifyActive = false;
+let calStickyNotifyRendering = false;   // 通知阶段自己触发的 renderPage（用来分辨「使用者手动翻页」）
+let calStickyNotifyTimer = null;
+let calStickyNotifyResolve = null;
+const CAL_STICKY_NOTIFY_FALLBACK = 15;
+function calStickyNotifySecondsOf(note) {
+  const v = note && note.notifySeconds;
+  if (typeof v === 'number' && isFinite(v)) return Math.min(600, Math.max(1, Math.round(v)));
+  return CAL_STICKY_NOTIFY_FALLBACK;
+}
+function calStickyNotifyQueue() {
+  const out = [];
+  (calStickyPages || []).forEach((n, i) => {
+    if (!n || !n.notify || !n.isView) return;   // 只认 VIEW 贴且勾了通知的
+    out.push({ index: i, seconds: calStickyNotifySecondsOf(n) });
+  });
+  return out;
+}
+function calStickyNotifySetChrome(on) {
+  const noteEl = calStickyEl('calStickyNote');
+  if (noteEl) noteEl.classList.toggle('notify-flash', !!on);
+  const badge = calStickyEl('calStickyNotifyBadge');
+  if (badge) badge.classList.toggle('show', !!on);
+  const btn = calStickyEl('calStickyNotifyClose');
+  if (btn) btn.classList.toggle('show', !!on);
+}
+function calStickyNotifyCancel() {   // 结束／放弃通知阶段
+  if (calStickyNotifyTimer) { clearInterval(calStickyNotifyTimer); calStickyNotifyTimer = null; }
+  if (calStickyNotifyResolve) { const r = calStickyNotifyResolve; calStickyNotifyResolve = null; r(); }
+  calStickyNotifyActive = false;
+  calStickyNotifySetChrome(false);
+}
+function calStickyNotifyCloseCurrent() {   // ✕：结束当前这一张 → 回圈进下一张
+  if (!calStickyNotifyActive) return;
+  if (calStickyNotifyResolve) {
+    const r = calStickyNotifyResolve; calStickyNotifyResolve = null;
+    if (calStickyNotifyTimer) { clearInterval(calStickyNotifyTimer); calStickyNotifyTimer = null; }
+    r();
+  }
+}
+function calStickyNotifyWait(seconds) {
+  return new Promise((resolve) => {
+    let left = Math.max(1, seconds);
+    const el = calStickyEl('calStickyNotifyCount');
+    const tick = () => { if (el) el.textContent = left + 's'; };
+    const finish = () => {
+      if (calStickyNotifyTimer) { clearInterval(calStickyNotifyTimer); calStickyNotifyTimer = null; }
+      calStickyNotifyResolve = null;
+      resolve();
+    };
+    tick();
+    calStickyNotifyResolve = finish;
+    calStickyNotifyTimer = setInterval(() => { left -= 1; tick(); if (left <= 0) finish(); }, 1000);
+  });
+}
+async function calStickyRunNotifyPhase(startIndex) {
+  const queue = calStickyNotifyQueue();
+  if (!queue.length) return false;
+  calStickyNotifyActive = true;
+  for (let i = 0; i < queue.length; i++) {
+    const item = queue[i];
+    calStickyNotifyRendering = true;
+    try { calStickyRenderPage(item.index, { toast: false }); } finally { calStickyNotifyRendering = false; }
+    if (!calStickyNotifyActive) return true;   // 期间被取消（例如使用者手动翻页）
+    calStickyNotifySetChrome(true);
+    await calStickyNotifyWait(item.seconds);
+    if (!calStickyNotifyActive) return true;
+  }
+  calStickyNotifyCancel();
+  calStickyNotifyRendering = true;
+  try { calStickyRenderPage(startIndex, { toast: false }); } finally { calStickyNotifyRendering = false; }
+  return true;
 }
 function calStickyClose(skipDirtyGuard) {
+  if (!calStickyEditMode) calStickyFlushScrollSave();   // 🆕 關掉便利貼前記下最後位置（編輯中不記，避免讀到 textarea）
   console.log('[calStickyClose] called skip=' + skipDirtyGuard + ' editMode=' + calStickyEditMode + ' editDirty=' + calStickyEditDirty + ' formOpen=' + (document.getElementById('ev-form-overlay')?.style.display === 'flex') + ' formDirty=' + (typeof calIsEventFormDirty === 'function' ? calIsEventFormDirty() : 'NA'));
   // 🚨 行程表單開著且有未保存改動 → 先處理行程表單（避免便利貼關了、行程表單被遺漏）
   const formOpen = document.getElementById('ev-form-overlay')?.style.display === 'flex';
@@ -1375,6 +1588,21 @@ function calStickySaveEdit() {
   // ro 路徑 calCommitEventNotes 已自刷；主檔路徑補刷一次，讓進度徽章/來源●同趟更新
   if (!ev.ro && typeof calStickyRefreshIfOpen === 'function') calStickyRefreshIfOpen();
   return true;
+}
+// 🆕 便利貼 ☰ 選單裡的「💾 保存」：把便利貼的未保存編輯＋設定一併落盤到 calendar（iCloud / 磁碟），
+//    不用退出便利貼回到主程式左上角點保存。對齊 handleSave('all')（主檔＋聯運檔＋便利貼設定 JSON）。
+function calStickySaveToDisk() {
+  // 先把便利貼未保存的編輯寫回緩衝（否則 handleSave 讀 elements.editor 會存到舊內容）
+  if (calStickyEditMode && calStickyEditDirty && typeof calStickySaveEdit === 'function') calStickySaveEdit();
+  // 沒有可落盤的改動就不彈分享面板（對齊頂欄保存鍵的 disabled 邏輯）
+  const incDirty = (typeof calPendingIncludes === 'function') ? calPendingIncludes().length : 0;
+  const stickyDirty = (typeof calStickySettingsDirty === 'function') ? calStickySettingsDirty() : false;
+  if (!state.isDirty && !incDirty && !stickyDirty) {
+    showToast('沒有未保存的修改', 'info');
+    return;
+  }
+  if (typeof calStickyCloseSheet === 'function') calStickyCloseSheet();
+  if (typeof handleSave === 'function') handleSave('all');
 }
 function calStickySyncEditBtn() {
   const modeBtn = calStickyEl('calStickyModeBtn');
@@ -2086,6 +2314,7 @@ function calStickyInit() {
   on('calStickyCloseBtn', 'click', calStickyClose);
   on('calStickyMenuBtn', 'click', calStickyOpenSheet);
   on('calStickySheetClose', 'click', calStickyCloseSheet);
+  on('calStickySaveDiskBtn', 'click', calStickySaveToDisk);
   on('calStickyEditBtn', 'click', calStickyEditCurrent);
   // 底部 mode 按鈕：編輯模式下顯示「保存並返回」（直接保存+退出，不走 dirty guard）；
   // 渲染模式下顯示「✎」（進入編輯）。calStickySetEditMode(false) 的 dirty guard 只供 Esc/遮罩退出用。
@@ -2117,8 +2346,29 @@ function calStickyInit() {
   on('calStickyPrevBtn', 'click', () => calStickyStep(-1));
   on('calStickyNextBtn', 'click', () => calStickyStep(1));
   on('calStickyUndone', 'click', calStickyToggleUndone);
+  // 🆕 捲動位置記憶：body 捲動時節流記下位置（下次開／翻回來還原）
+  const calStickyScrollBody = calStickyEl('calStickyBody');
+  if (calStickyScrollBody) calStickyScrollBody.addEventListener('scroll', calStickyScheduleScrollSave, { passive: true });
+  // 🆕 启动通知的「✕ 关闭」钮
+  on('calStickyNotifyClose', 'click', calStickyNotifyCloseCurrent);
   on('calStickyImportSettingsBtn', 'click', calStickyImportSettings);
   on('calStickyExportSettingsBtn', 'click', () => calStickyExportSettings());
+  // 🆕 外框流星：開關／飛速／大小／形狀／顏色／跟字色／焰尾，全部走 calStickySetMeteor 合併寫回
+  on('calStickyMeteorToggle', 'click', calStickyToggleMeteor);
+  on('calStickyMeteorSpeed', 'input', (e) => calStickySetMeteor({ speed: parseInt(e.target.value, 10) || 12 }));
+  on('calStickyMeteorSize', 'input', (e) => calStickySetMeteor({ size: parseInt(e.target.value, 10) || 12 }));
+  on('calStickyMeteorFlame', 'input', (e) => calStickySetMeteor({ flame: parseInt(e.target.value, 10) || 60 }));
+  on('calStickyMeteorColor', 'input', (e) => calStickySetMeteor({ color: e.target.value, follow: false }));
+  on('calStickyMeteorFollow', 'change', (e) => calStickySetMeteor({ follow: !!e.target.checked }));
+  on('calStickyMeteorRainbow', 'change', (e) => calStickySetMeteor({ rainbow: !!e.target.checked }));
+  const mShape = calStickyEl('calStickyMeteorShape');
+  if (mShape) {
+    mShape.addEventListener('click', (e) => {
+      const btn = e.target.closest('button[data-shape]');
+      if (!btn) return;
+      calStickySetMeteor({ shape: btn.getAttribute('data-shape') || 'comet' });
+    });
+  }
   on('calStickyOpacity', 'input', (e) => calStickyUpdatePrefs({ opacity: parseInt(e.target.value, 10) || 100 }));
   on('calStickyZoomOut', 'click', () => calStickyZoom(-0.1));
   on('calStickyZoomIn', 'click', () => calStickyZoom(0.1));

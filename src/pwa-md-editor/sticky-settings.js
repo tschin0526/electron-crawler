@@ -9,7 +9,7 @@
  *   {
  *     "_format": "lite-sticky-prefs/v1",
  *     "calendarFile": "calendar.md",
- *     "notes": { "標題|日期|序號": { color, opacity, fontScale, fontColor, fontWeight, undoneChecksOnly } },
+ *     "notes": { "標題|日期|序號": { color, opacity, fontScale, fontColor, fontWeight, undoneChecksOnly, meteor } },
  *     "hidden": ["標題|日期|序號"],
  *     "lastId": "標題|日期|序號",
  *     "lastIdx": 3
@@ -31,6 +31,23 @@
   function isHex(v) { return /^#[0-9a-fA-F]{6}$/.test(String(v || '')); }
   function isFiniteNum(v) { return typeof v === 'number' && Number.isFinite(v); }
 
+  // 外框流星子物件：與 UI 相同的夾值＋白名單形狀；不信任外部 JSON，逐欄清洗
+  function pickMeteor(raw) {
+    if (!raw || typeof raw !== 'object') return null;
+    const shapes = ['comet', 'sharp', 'band', 'twin'];
+    const out = {
+      on: raw.on === true,
+      follow: raw.follow === true,
+      rainbow: raw.rainbow === true
+    };
+    if (isFiniteNum(raw.speed)) out.speed = Math.min(30, Math.max(3, Math.round(raw.speed)));
+    if (isFiniteNum(raw.size)) out.size = Math.min(120, Math.max(4, Math.round(raw.size)));
+    if (shapes.indexOf(raw.shape) >= 0) out.shape = raw.shape;
+    if (isHex(raw.color)) out.color = raw.color;
+    if (isFiniteNum(raw.flame)) out.flame = Math.min(200, Math.max(20, Math.round(raw.flame)));
+    return out;
+  }
+
   // 只收已知欄位並做與 UI 相同的夾值；未知欄位（幾何 x/y/w/h 等）不進可攜檔
   function pickPrefs(raw) {
     const out = {};
@@ -41,6 +58,8 @@
     if (isHex(raw.fontColor)) out.fontColor = raw.fontColor;
     if ([400, 600, 700].indexOf(raw.fontWeight) >= 0) out.fontWeight = raw.fontWeight;
     if (typeof raw.undoneChecksOnly === 'boolean') out.undoneChecksOnly = raw.undoneChecksOnly;
+    // 🆕 外框流星：有設定過（raw.meteor 是物件）才進可攜檔，舊設定／無此欄的便利貼不受影響
+    if (raw.meteor && typeof raw.meteor === 'object') out.meteor = pickMeteor(raw.meteor);
     return out;
   }
 

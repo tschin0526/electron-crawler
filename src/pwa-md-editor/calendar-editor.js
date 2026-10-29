@@ -467,6 +467,7 @@ function calRenderIncludeBar() {
   const count = document.getElementById('cal-include-count');
   const toggle = document.getElementById('cal-include-toggle');
   const saveBadge = document.getElementById('btn-save-badge');   // 🆕 頂欄保存按鈕角標
+  const calStickySaveBadge = document.getElementById('calStickySaveBadge');   // 🆕 ☰ 選單保存按鈕角標（與頂欄同來源）
   const files = state.calIncludeFiles || [];
   // 🆕 角標來源 = include dirty 數 + 主檔 dirty（state.isDirty 來自 app.js 的 textarea input）
   //    ＋ 便利貼設定 dirty（與上次寫回的 sticky-notes-settings JSON 不同）
@@ -482,6 +483,15 @@ function calRenderIncludeBar() {
       saveBadge.style.display = '';
     } else {
       saveBadge.style.display = 'none';
+    }
+  }
+  // 🆕 ☰ 選單「💾 保存」角標：與頂欄保存鍵共用同一份 dirtyCount（主檔＋include＋便利貼設定）
+  if (calStickySaveBadge) {
+    if (dirtyCount > 0) {
+      calStickySaveBadge.textContent = dirtyCount > 99 ? '99+' : String(dirtyCount);
+      calStickySaveBadge.style.display = '';
+    } else {
+      calStickySaveBadge.style.display = 'none';
     }
   }
 

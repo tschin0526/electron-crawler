@@ -463,6 +463,9 @@
               <textarea class="cal-sticky-editarea" id="calStickyEditArea" spellcheck="false" placeholder="在此直接編輯事件內容（Markdown）…"></textarea>
               <button type="button" class="cal-sticky-fold-chip" id="calStickyFoldChip" aria-pressed="false"></button>
             </div>
+            <!-- 🆕 启动通知：勾了「通知讯息」的 VIEW 贴先在便利贴窗闪烁显示 N 秒（可提前关闭），结束后才进正常显示 -->
+            <div class="cal-sticky-notify-badge" id="calStickyNotifyBadge" role="status" aria-live="polite">🔔 通知讯息</div>
+            <button type="button" class="cal-sticky-notify-close" id="calStickyNotifyClose" title="关闭这张通知 → 下一张（已是最后一张则进入便利贴正常显示）">✕ 关闭 <span id="calStickyNotifyCount">15s</span></button>
           </div>
           <div class="cal-sticky-empty" id="calStickyEmpty" style="display:none"></div>
           <div class="cal-sticky-toast" id="calStickyToast" role="status" aria-live="polite"></div>
@@ -489,7 +492,11 @@
         <div class="cal-sticky-sheet-box">
           <div class="cal-sticky-sheet-head">
             <span>🗒 便利貼清單 / 設定</span>
-            <button type="button" class="cal-sticky-top-btn" id="calStickySheetClose" aria-label="關閉清單與設定">✕</button>
+            <span class="cal-sticky-sheet-head-actions">
+              <!-- 🆕 落盘保存：把便利贴编辑＋设定写回 calendar（iCloud / 磁碟），不用退出便利贴回主程式左上角 -->
+              <button type="button" class="cal-sticky-top-btn cal-sticky-save" id="calStickySaveDiskBtn" title="把便利貼編輯與設定寫回 calendar（iCloud / 磁碟）">💾 保存<span class="btn-badge" id="calStickySaveBadge" style="display:none">0</span></button>
+              <button type="button" class="cal-sticky-top-btn" id="calStickySheetClose" aria-label="關閉清單與設定">✕</button>
+            </span>
           </div>
           <div class="cal-sticky-sheet-body">
             <div class="cal-sticky-search-wrap">
@@ -523,6 +530,29 @@
                 <button type="button" id="calStickyZoomOut" title="縮小字體">A−</button>
                 <button type="button" id="calStickyZoomIn" title="放大字體">A＋</button>
               </div>
+            </div>
+            <div class="cal-sticky-sec">
+              <div class="cal-sticky-sec-title">外框流星飛繞 <span class="cal-sticky-sec-val" id="calStickyMeteorVal">關</span></div>
+              <button type="button" class="cal-sticky-toggle" id="calStickyMeteorToggle" aria-pressed="false">外框流星：關</button>
+              <div class="cal-sticky-sec-title">流星飛速 <span class="cal-sticky-sec-val" id="calStickyMeteorSpeedVal">每圈 12 秒</span></div>
+              <input type="range" class="cal-sticky-range" id="calStickyMeteorSpeed" min="3" max="30" step="1" value="12">
+              <div class="cal-sticky-sec-title">流星大小（頭角寬）<span class="cal-sticky-sec-val" id="calStickyMeteorSizeVal">12°</span></div>
+              <input type="range" class="cal-sticky-range" id="calStickyMeteorSize" min="4" max="120" step="1" value="12">
+              <div class="cal-sticky-sec-title">流星形狀</div>
+              <div class="cal-sticky-shapes" id="calStickyMeteorShape">
+                <button type="button" data-shape="comet">圓點彗星</button>
+                <button type="button" data-shape="sharp">尖銳流星</button>
+                <button type="button" data-shape="band">寬幅光帶</button>
+                <button type="button" data-shape="twin">雙子流星</button>
+              </div>
+              <div class="cal-sticky-sec-title">流星顏色</div>
+              <div class="cal-sticky-meteor-color-row">
+                <input type="color" class="cal-sticky-meteor-color" id="calStickyMeteorColor" value="#ffae00">
+                <label class="cal-sticky-meteor-follow"><input type="checkbox" id="calStickyMeteorFollow"> 跟隨字色</label>
+                <label class="cal-sticky-meteor-follow"><input type="checkbox" id="calStickyMeteorRainbow"> 彩色</label>
+              </div>
+              <div class="cal-sticky-sec-title">焰火長度（焰尾角寬）<span class="cal-sticky-sec-val" id="calStickyMeteorFlameVal">60°</span></div>
+              <input type="range" class="cal-sticky-range" id="calStickyMeteorFlame" min="20" max="200" step="5" value="60">
             </div>
             <div class="cal-sticky-sec">
               <div class="cal-sticky-sec-title">設定備份（建議存到 calendar 同一個資料夾）</div>

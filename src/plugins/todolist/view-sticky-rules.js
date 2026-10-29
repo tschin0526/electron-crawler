@@ -53,6 +53,22 @@
     todo: '未完成 checkbox', done: '已完成 checkbox', list: '列表项',
     para: '段落／纯文字', quote: '引用（>）', heading: '标题（#）'
   };
+  // ===== 🆕 启动通知：勾了「通知讯息」的 VIEW 贴，在便利贴启动时先闪烁显示 =====
+  //   这两个值属于「显示行为」不是过滤条件，但同样收在规则里（维护作业唯一写入端）。
+  //   默认不勾；秒数默认 15 秒，夹在 1–600 秒（避免 0 秒／负数／浮夸值）。
+  const NOTIFY_DEFAULT_SECONDS = 15;
+  const NOTIFY_MIN_SECONDS = 1;
+  const NOTIFY_MAX_SECONDS = 600;
+  function normalizeNotifySeconds(v) {
+    const n = typeof v === 'number' && isFinite(v) ? Math.round(v) : NOTIFY_DEFAULT_SECONDS;
+    return Math.min(NOTIFY_MAX_SECONDS, Math.max(NOTIFY_MIN_SECONDS, n));
+  }
+  // 是否要当启动通知：必须是启用中的规则且勾了通知
+  function isNotifyRule(rule) {
+    const r = normalizeRule(rule);
+    return r.enabled && r.notify === true;
+  }
+
   const BUILTIN_REMIND_RULE = {
     id: '__builtin_remind__',
     title: '🔔 提醒',
@@ -63,6 +79,8 @@
     caseSensitive: false,
     emptyBehavior: 'hide',
     builtin: true,
+    notify: false,
+    notifySeconds: NOTIFY_DEFAULT_SECONDS,
     rowTypes: { todo: true, done: false, list: true, para: true, quote: true, heading: true }
   };
   const MARKERS = [
@@ -100,6 +118,9 @@
       emptyBehavior: r.emptyBehavior === 'hide' ? 'hide' : 'show',
       builtin: r.builtin === true,
       readonly: r.readonly === true || r.builtin === true,
+      // 🆕 启动通知（便利贴启动时先闪烁显示这张贴，秒数到或手动关闭后才进正常显示）
+      notify: r.notify === true,
+      notifySeconds: normalizeNotifySeconds(r.notifySeconds),
       rowTypes: {
         todo: rt.todo !== false,
         done: rt.done === true,        // 默认不收已打勾（与 🔔 同口径：打勾＝不必再提醒）
@@ -116,6 +137,19 @@
   function newRuleId() { return 'vsr-' + Date.now() + '-' + Math.random().toString(36).slice(2, 7); }
   function blankRule() { return normalizeRule({ id: newRuleId(), title: '' }); }
   function builtinRules() { return [normalizeRule(BUILTIN_REMIND_RULE)]; }
+
+  // 规则摘要（人类可读的条件文案）：维护窗清单、便利贴窗徽标弹层共用，保证同口径。
+  //   ⚠️ 与维护窗原本的 condText 完全一致；新增这里后，维护窗应改呼叫 V.ruleSummary 收口（单一可信来源）。
+  function ruleSummary(rule) {
+    const r = normalizeRule(rule);
+    const parts = [];
+    if (r.marker) parts.push('[[' + r.marker + ':…]]');
+    if (r.keywords.length) parts.push('关键词' + (r.keywordMode === 'ALL' ? '全中' : '任一') + '：' + r.keywords.join('、') + (r.caseSensitive ? '（区分大小写）' : ''));
+    if (!parts.length) parts.push('⚠ 没有条件（不会抓到内容）');
+    const types = ROW_TYPES.filter((t) => r.rowTypes[t]).map((t) => ROW_TYPE_LABEL[t]);
+    parts.push('行型态：' + (types.join('／') || '无'));
+    return parts.join(' ＋ ');
+  }
 
   // 这一行是否命中规则（三个条件是 AND；关键词／标记都没设＝不收，否则会整本行程洗进贴纸）
   function ruleHasCondition(rule) {
@@ -263,7 +297,10 @@
     const key = viewKeyOf(r.id);
     const base = {
       key, idx: 0, view: true, customView: true, ruleId: r.id,
-      titleHtml: D.inline(r.title), title: r.title, date: '', endDate: '', color: '', done: false, tags: [], src: ''
+      titleHtml: D.inline(r.title), title: r.title, date: '', endDate: '', color: '', done: false, tags: [], src: '',
+      // 🆕 启动通知旗标：随贴一起交给便利贴窗／LITE，启动阶段据此排通知顺序与秒数
+      notify: r.notify === true,
+      notifySeconds: r.notifySeconds
     };
     // 一条都没命中也照建一张（2026-10-27 使用者要求）：静默消失让人分不清「规则没生效」还是「行程里就是没有」，
     // 所以把原因写在贴面上。⚠️ 只有自订规则走这里——🔔 提醒的母本在 calendar-editor.js，仍是没内容就没这张贴。
@@ -286,9 +323,15 @@
   global.ViewStickyRules = {
     KEY_PREFIX: KEY_PREFIX, viewKeyOf: viewKeyOf, isViewKey: isViewKey,
     ROW_TYPES: ROW_TYPES, ROW_TYPE_LABEL: ROW_TYPE_LABEL, MARKERS: MARKERS,
+    NOTIFY_DEFAULT_SECONDS: NOTIFY_DEFAULT_SECONDS,
+    NOTIFY_MIN_SECONDS: NOTIFY_MIN_SECONDS,
+    NOTIFY_MAX_SECONDS: NOTIFY_MAX_SECONDS,
+    normalizeNotifySeconds: normalizeNotifySeconds,
+    isNotifyRule: isNotifyRule,
     normalizeRule: normalizeRule, normalizeList: normalizeList,
     newRuleId: newRuleId, blankRule: blankRule, builtinRules: builtinRules,
     ruleHasCondition: ruleHasCondition,
+    ruleSummary: ruleSummary,
     EMPTY_NOTES: EMPTY_NOTES,
     rowTypeOf: rowTypeOf, collectGroups: collectGroups, groupHeadMd: groupHeadMd,
     groupsToMd: groupsToMd, groupsToHtml: groupsToHtml, taskLineHtml: taskLineHtml,

@@ -233,7 +233,24 @@ function renderTags(ev) {
   document.getElementById('tags').innerHTML = (ev.tags || []).map((t) => '<li>' + escapeHtml(tagLabelOf(t)) + '</li>').join('');
 }
 
-const state = { w: DEFAULT_W, h: DEFAULT_H, color: STICKY_DEF_BG, opacity: 100, minimized: false, minH: 0, fontScale: 1, fontColor: STICKY_DEF_FG, fontWeight: 400, undoneChecksOnly: false };
+// 🆕 外框流星：把任意（含残缺／缺省）输入收敛成规范对象，桌面与 LITE 字段名一致（on/speed/size/shape/color/follow/rainbow/flame）
+function normalizeMeteor(m) {
+  m = (m && typeof m === 'object') ? m : {};
+  const shapes = ['comet', 'sharp', 'band', 'twin'];
+  const isHex = (v) => /^#[0-9a-fA-F]{6}$/.test(String(v || ''));
+  const num = (v, lo, hi, d) => (typeof v === 'number' && isFinite(v)) ? Math.min(hi, Math.max(lo, Math.round(v))) : d;
+  return {
+    on: m.on === true,
+    speed: num(m.speed, 3, 30, 12),
+    size: num(m.size, 4, 120, 12),
+    shape: shapes.indexOf(m.shape) >= 0 ? m.shape : 'comet',
+    color: isHex(m.color) ? m.color : '#ffae00',
+    follow: m.follow === true,
+    rainbow: m.rainbow === true,
+    flame: num(m.flame, 20, 200, 60)
+  };
+}
+const state = { w: DEFAULT_W, h: DEFAULT_H, color: STICKY_DEF_BG, opacity: 100, minimized: false, minH: 0, fontScale: 1, fontColor: STICKY_DEF_FG, fontWeight: 400, undoneChecksOnly: false, scrollPos: 0, meteor: { on: false, speed: 12, size: 12, shape: 'comet', color: '#ffae00', follow: false, rainbow: false, flame: 60 } };
 
 async function init() {
   if (IS_FLIP) { await initFlip(); return; }
@@ -250,7 +267,9 @@ async function init() {
     fontScale: (typeof inst.fontScale === 'number') ? inst.fontScale : 1,
     fontColor: (typeof inst.fontColor === 'string' && inst.fontColor) ? inst.fontColor : STICKY_DEF_FG,
     fontWeight: (typeof inst.fontWeight === 'number') ? inst.fontWeight : 400,
-    undoneChecksOnly: !!inst.undoneChecksOnly
+    undoneChecksOnly: !!inst.undoneChecksOnly,
+    scrollPos: (typeof inst.scrollPos === 'number' && isFinite(inst.scrollPos)) ? Math.max(0, inst.scrollPos) : 0,
+    meteor: normalizeMeteor(inst.meteor)
   });
 
   // 正文/标题都用主窗口渲染好的 HTML（同一套 renderMarkdown/tlRenderNotes/tlRenderInlineMarkdown 管线：
@@ -283,6 +302,7 @@ async function init() {
   document.getElementById('note').style.setProperty('--ev-primary', ev.color || '#7c3aed');
   applyColor();
   applyContentFont();
+  restoreScrollPos();   // 🆕 还原上次离开前的卷动位置（统一行为）
 
   // 🆕 最小化状态：收合成小卡（重测量确保窗口高度精确贴合）
   if (state.minimized) {
@@ -320,6 +340,7 @@ function setupControls() {
   };
   ipcRenderer.on('sticky-note-close-request', async (event, payload) => {
     if (!payload || typeof payload.requestId !== 'string') return;
+    flushScrollSave();   // 🆕 关窗前记下卷动位置（含翻页窗；此刻 KEY/IDX 还是这一张）
     const accepted = await confirmClose();
     try {
       await ipcRenderer.invoke('sticky-note-menu-close-result', {
@@ -346,6 +367,7 @@ function setupControls() {
       noteApplyHighlight();
       menuSyncLocate();
       loadStickyMenuNotes();
+      syncMeteorControls();   // 🆕 菜单打开时把当前便利贴的外框流星状态反映到控制项
     }
   };
   ipcRenderer.on('sticky-note-catalog-updated', () => {
@@ -638,6 +660,36 @@ function setupControls() {
   document.querySelectorAll('#mCfg .m-wbtn').forEach(b => {
     b.onclick = (e) => { e.stopPropagation(); state.fontWeight = +b.getAttribute('data-w') || 400; applyContentFont(); syncTextAppearance(); persist(); };
   });
+  // 🆕 外框流星飞绕：可展开子区（开/关 + 飞速/大小/形状/颜色/焰尾）
+  const miMeteor = document.getElementById('miMeteor');
+  if (miMeteor) miMeteor.onclick = (e) => {
+    e.stopPropagation();
+    const cfg = document.getElementById('mMeteorCfg');
+    if (cfg) cfg.classList.toggle('open');
+  };
+  const miMeteorToggle = document.getElementById('miMeteorToggle');
+  if (miMeteorToggle) miMeteorToggle.onclick = (e) => { e.stopPropagation(); toggleMeteor(); };
+  const mSp = document.getElementById('mMeteorSpeed');
+  if (mSp) mSp.oninput = () => { const v = +mSp.value; const el = document.getElementById('mMeteorSpeedVal'); if (el) el.textContent = '每圈 ' + v + ' 秒'; setMeteor({ speed: v }); };
+  const mSz = document.getElementById('mMeteorSize');
+  if (mSz) mSz.oninput = () => { const v = +mSz.value; const el = document.getElementById('mMeteorSizeVal'); if (el) el.textContent = v + '°'; setMeteor({ size: v }); };
+  const mFl = document.getElementById('mMeteorFlame');
+  if (mFl) mFl.oninput = () => { const v = +mFl.value; const el = document.getElementById('mMeteorFlameVal'); if (el) el.textContent = v + '°'; setMeteor({ flame: v }); };
+  const mSh = document.getElementById('mMeteorShape');
+  if (mSh) mSh.querySelectorAll('button[data-shape]').forEach(b => {
+    b.onclick = (e) => { e.stopPropagation(); setMeteor({ shape: b.getAttribute('data-shape') || 'comet' }); };
+  });
+  const mCol = document.getElementById('mMeteorColor');
+  if (mCol) mCol.oninput = () => setMeteor({ color: mCol.value, follow: false });
+  const mFol = document.getElementById('mMeteorFollow');
+  if (mFol) mFol.onchange = () => setMeteor({ follow: !!mFol.checked });
+  const mRb = document.getElementById('mMeteorRainbow');
+  if (mRb) mRb.onchange = () => setMeteor({ rainbow: !!mRb.checked });
+  // 🆕 卷动位置记忆：body 卷动时节流记下位置（下次开窗／翻回来还原）
+  const scrollBodyEl = document.getElementById('body');
+  if (scrollBodyEl) scrollBodyEl.addEventListener('scroll', scheduleScrollSave, { passive: true });
+  notifyBindControls();   // 🆕 启动通知的「✕ 关闭」钮
+  syncMeteorControls();
   // 🎨 自选色（调色盘）：两块色板末尾各加一个「自选色」彩虹圆点，内嵌透明 input[type=color]；
   //    input＝拖动调色盘实时预览，change＝收盘后落盘。色值统一转大写（与 PALETTE 一致）。
   function addCustomSwatch(boxId, getCur, onInput, onCommit) {
@@ -859,7 +911,7 @@ function setupControls() {
 // 原生拖拽由 OS 处理；只有「按下后未移动、松开＝点击」才会触发此 handler
 // （拖拽过程中 OS 不会派发 click），故可安全用它区分「点一下＝唤起主程式」
 function onNoteClick(e) {
-  if (e.target.closest('.iconbtn, .note-mode-handle, .note-min-handle, .note-menu-handle, .note-refresh-handle, .note-addcheck, .note-addcheck-menu, .note-undone-filter, .flip-edge')) return;  // 按钮各自处理
+  if (e.target.closest('.iconbtn, .note-mode-handle, .note-min-handle, .note-menu-handle, .note-refresh-handle, .note-addcheck, .note-addcheck-menu, .note-undone-filter, .flip-edge, .doc-badge')) return;  // 按钮/徽标各自处理（VIEW 徽标有自己的弹层，不唤起主程式）
   if (!e.target.closest('.bar, .head, .meta, .tags')) return; // 仅拖拽区点击＝唤起主程式
   ipcRenderer.invoke('wake-main-from-note', { key: KEY });
 }
@@ -867,7 +919,7 @@ function onNoteClick(e) {
 // 双击便利贴（标题栏或正文）：唤起主程式并打开该事件表单
 // 正文区是 -webkit-app-region: no-drag，双击不会触发拖动，故可安全复用「唤起+打开事件」管线
 function onNoteDblClick(e) {
-  if (e.target.closest('.iconbtn, .menu, .rz, .note-addcheck, .note-addcheck-menu, .note-undone-filter, .flip-edge, .ev-md-edit, .ev-cb')) return; // 菜单/☰按钮/翻页把手/缩放把手/checkbox 控件各自处理
+  if (e.target.closest('.iconbtn, .menu, .rz, .note-addcheck, .note-addcheck-menu, .note-undone-filter, .flip-edge, .ev-md-edit, .ev-cb, .doc-badge')) return; // 菜单/☰按钮/翻页把手/缩放把手/checkbox 控件/徽标各自处理
   ipcRenderer.invoke('wake-main-from-note', { key: KEY });
 }
 
@@ -1533,7 +1585,9 @@ async function noteShowMoveTargets(target, allNotes) {
     try { result = await ipcRenderer.invoke('sticky-note-order'); } catch (err) { result = null; }
     allNotes = (result && Array.isArray(result.notes)) ? result.notes : [];
   }
-  const others = allNotes.filter((n) => n && n.key !== (target.srcUid || target.uid));
+  // 🆕 投影贴（VIEW/🔔提醒/自订规则）不是实体档案、没有可写回的原文，绝不能作为搬移目标——
+  //    从候选清单剔除，避免把子事件「搬」进一张只读投影（搬过去也落不了盘、还制造幻影资料）。
+  const others = allNotes.filter((n) => n && n.key !== (target.srcUid || target.uid) && !isViewKey(n.key));
   if (moveBtn) moveBtn.hidden = !others.length;
   list.innerHTML = others.length
     ? '<div class="fs-move-hint">将此子事件移动到以下所选择的其他便利贴中（复制过去后从本张删除）：</div>' +
@@ -1650,6 +1704,8 @@ async function noteFindSameMove() {
   const destIdx = checked.getAttribute('data-idx');
   const destSrc = String(checked.getAttribute('data-src') || '');
   if (!destKey || destKey === selfUid) { showNoteMoveToast('目标便利贴无效', true); return; }
+  // 🆕 双保险：即便清单被绕过，也绝不允许搬进投影贴（它没有实体档、落不了盘）
+  if (isViewKey(destKey)) { showNoteMoveToast('预览便利贴（🔔 提醒／自订 VIEW 贴）是自动汇总的投影，不能作为搬移目标', true); return; }
 
   // 取最新全量清单（单一可信来源）：目标便利贴与当前这张都从**同一份快照**取，
   //    避免两次拉取之间又发生写入、让两端看到不同版本。
@@ -2280,9 +2336,14 @@ function applyNoteContent(arg) {
   let html = (arg && typeof arg.html === 'string') ? arg.html : '';
   // 🆕 移除 raw 原文兜底：html 缺失时直接留白，等待主进程推来的权威 HTML；
   //    便利贴内容即 checkbox，清光即空，绝不以未渲染 Markdown 源呈现（如 "- [ ] 11111"）。
+  // 🆕 主程式推來的內容刷新不该把使用者當下位置沖掉（重設 innerHTML 會把 scrollTop 歸零）：
+  //    先記後還，且避免「被歸零→節流存成 0」把記憶的位置洗掉
+  const bodyElRef = document.getElementById('body');
+  const keepScroll = bodyElRef ? Math.max(0, Math.round(bodyElRef.scrollTop)) : 0;
   document.getElementById('body').innerHTML = html;
   // 🆕 定位高亮：渲染模式下把定位詞以 <mark> 標示在標題與內容
   noteApplyHighlight();
+  if (keepScroll && bodyElRef) bodyElRef.scrollTop = keepScroll;
   const ev = sourceEvent(KEY);
   if (ev || arg) {
     renderMeta(Object.assign({}, ev || {}, {
@@ -2361,6 +2422,69 @@ function applyDocBadge() {
     el.removeAttribute('title');
     el.classList.remove('show', 'is-view', 'dirty');
   }
+}
+// 🆕 VIEW 便利贴徽标：点一下显示该投影贴在 JSON 里设定的抓取逻辑（关键词／标记／行型态），
+//   并在弹层里提供「前往维护作业」按钮跳到 view-sticky-rules.html。
+function closeViewRuleModal() {
+  const m = document.getElementById('viewRuleModal');
+  if (m) m.classList.remove('show');
+}
+async function showViewRuleInfo(e) {
+  if (!isViewNote()) return;            // 只有 VIEW 投影贴才弹；include 来源徽标不弹
+  if (e) e.stopPropagation();           // 别让点击冒泡到 #note 的「点击唤起主程式」→ 误开 AI 智控台
+  const m = document.getElementById('viewRuleModal');
+  if (!m) return;
+  const subEl = document.getElementById('vrSub');
+  const titleEl = document.getElementById('vrTitle');
+  const condEl = document.getElementById('vrCond');
+  // 先弹窗并给「读取中」状态，再异步拉规则，避免界面卡白
+  titleEl.textContent = '（读取中…）';
+  condEl.textContent = '正在读取设定档案 view-sticky-rules.json …';
+  subEl.textContent = '';
+  m.classList.add('show');
+  try {
+    let rule;
+    if (KEY === VIEW_KEY) {
+      // 🔔 内置提醒：条件写死抓 [[remind:]]（见引擎 BUILTIN_REMIND_RULE）
+      rule = (window.ViewStickyRules && ViewStickyRules.builtinRules) ? ViewStickyRules.builtinRules()[0] : null;
+    } else {
+      const ruleId = String(KEY).slice(VIEW_KEY.length + 1); // '__view__:' 之后的部分
+      const res = await ipcRenderer.invoke('vsr-list');
+      const rules = (res && Array.isArray(res.rules)) ? res.rules : [];
+      rule = rules.filter((r) => String(r.id) === ruleId)[0] || null;
+    }
+    if (!rule) {
+      titleEl.textContent = '（找不到对应的规则）';
+      condEl.textContent = '这张 VIEW 便利贴对应的规则不在 view-sticky-rules.json 里（可能已被删除或尚未保存）。';
+      subEl.textContent = '';
+      return;
+    }
+    const V = window.ViewStickyRules;
+    const norm = (V && V.normalizeRule) ? V.normalizeRule(rule) : rule;
+    titleEl.textContent = (norm.title || '(未命名)');
+    const tag = norm.builtin ? '系统内置・只读' : (norm.enabled ? '已启用' : '已关闭');
+    subEl.textContent = tag + ' · 设定档案：view-sticky-rules.json';
+    condEl.textContent = (V && V.ruleSummary) ? V.ruleSummary(norm) : '';
+  } catch (e) {
+    titleEl.textContent = '（读取失败）';
+    condEl.textContent = '无法读取 view-sticky-rules.json：' + (e && e.message ? e.message : e);
+    subEl.textContent = '';
+  }
+}
+function setupViewBadge() {
+  const badge = document.getElementById('docBadge');
+  if (badge) badge.addEventListener('click', showViewRuleInfo);
+  const m = document.getElementById('viewRuleModal');
+  if (!m) return;
+  const closeBtn = document.getElementById('vrClose');
+  if (closeBtn) closeBtn.addEventListener('click', closeViewRuleModal);
+  // 跳转维护作业：先关弹层，再开维护窗（vsr-open 跟菜单项走同一入口）
+  const openBtn = document.getElementById('vrOpenRules');
+  if (openBtn) openBtn.addEventListener('click', () => { closeViewRuleModal(); ipcRenderer.invoke('vsr-open'); });
+  // 点遮罩（卡片外）关闭
+  m.addEventListener('click', (e) => { if (e.target === m) closeViewRuleModal(); });
+  // Esc 关闭
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && m.classList.contains('show')) closeViewRuleModal(); });
 }
 // 🆕 定位高亮：把 root 內所有文本節點的命中片段包成 <mark class="search-highlight">（只碰文本節點，不破壞標籤結構）
 function noteWrapMatches(root, query) {
@@ -2551,6 +2675,7 @@ function applyColor() {
   if (findSameBox) findSameBox.style.background = tint(state.color, 100);
   updateMenuTheme();
   syncCustomSwatchActive();
+  applyMeteor();   // 🆕 改色/透明度/字号都会重跑 applyColor，这里顺带把外框流星状态套用到 #note
 }
 function syncUndoneChecksFilter() {
   const body = document.getElementById('body');
@@ -2579,10 +2704,10 @@ function persist() {
     // 几何（位置/尺寸/最小化）写翻页窗专用 id；颜色/透明度/字号按当前显示的便利贴自身状态写
     const g = geomId();
     ipcRenderer.invoke('sticky-note-set', { key: g.key, idx: g.idx, patch: { w: state.w, h: state.h, minimized: state.minimized, minH: state.minH } });
-    ipcRenderer.invoke('sticky-note-set', { key: KEY, idx: IDX, patch: { color: state.color, opacity: state.opacity, fontScale: state.fontScale, fontColor: state.fontColor, fontWeight: state.fontWeight, undoneChecksOnly: state.undoneChecksOnly } });
+    ipcRenderer.invoke('sticky-note-set', { key: KEY, idx: IDX, patch: { color: state.color, opacity: state.opacity, fontScale: state.fontScale, fontColor: state.fontColor, fontWeight: state.fontWeight, undoneChecksOnly: state.undoneChecksOnly, scrollPos: state.scrollPos, meteor: state.meteor } });
     return;
   }
-  ipcRenderer.invoke('sticky-note-set', { key: KEY, idx: IDX, patch: { w: state.w, h: state.h, color: state.color, opacity: state.opacity, minimized: state.minimized, minH: state.minH, fontScale: state.fontScale, fontColor: state.fontColor, fontWeight: state.fontWeight, undoneChecksOnly: state.undoneChecksOnly } });
+  ipcRenderer.invoke('sticky-note-set', { key: KEY, idx: IDX, patch: { w: state.w, h: state.h, color: state.color, opacity: state.opacity, minimized: state.minimized, minH: state.minH, fontScale: state.fontScale, fontColor: state.fontColor, fontWeight: state.fontWeight, undoneChecksOnly: state.undoneChecksOnly, scrollPos: state.scrollPos, meteor: state.meteor } });
 }
 
 // 依字体色亮度取反色：浅色文字 → 给标签一个深底；深色文字 → 给浅底（保证标签始终可读）
@@ -2617,6 +2742,92 @@ function applyContentFont() {
   // 🆕 加入/编辑子事件编辑框（.addcheck-box textarea）字号与便利贴正文一致（打开时即同步，缩放时实时跟随）
   const addCheckInput = document.getElementById('addCheckInput');
   if (addCheckInput) addCheckInput.style.fontSize = fontSize;
+}
+// 🆕 外框流星：把 state.meteor 套用到 #note（开关 → .meteor-on＋形狀 class；參數走 CSS 變數 --m-color/--m-dur/--m-head/--m-flame）
+function applyMeteor() {
+  const note = document.getElementById('note');
+  if (!note) return;
+  const m = state.meteor || { on: false };
+  note.classList.toggle('meteor-on', !!m.on);
+  note.classList.toggle('meteor-rainbow', !!(m.on && m.rainbow));
+  note.classList.remove('meteor-shape-comet', 'meteor-shape-sharp', 'meteor-shape-band', 'meteor-shape-twin');
+  if (m.on) {
+    note.classList.add('meteor-shape-' + (m.shape || 'comet'));
+    const color = (m.follow && state.fontColor) ? state.fontColor : (m.color || '#ffae00');
+    note.style.setProperty('--m-color', color);
+    note.style.setProperty('--m-dur', (m.speed || 12) + 's');
+    note.style.setProperty('--m-head', (m.size || 12) + 'deg');
+    note.style.setProperty('--m-flame', (m.flame || 60) + 'deg');
+    // 🆕 大小同步放大环厚：旧上限 40°→2px，新上限 120°→6px（3×），40° 以下维持 2px 不退化
+    note.style.setProperty('--m-thick', Math.min(6, Math.max(2, (m.size || 12) / 20)) + 'px');
+  }
+}
+// 把 state.meteor 反映到菜单控制项（翻页切页 / 开菜单都重跑）
+function syncMeteorControls() {
+  const m = state.meteor || { on: false, speed: 12, size: 12, shape: 'comet', color: '#ffae00', follow: false, flame: 60 };
+  const tgl = document.getElementById('miMeteorToggle');
+  if (tgl) { tgl.textContent = '外框流星：' + (m.on ? '开' : '关'); tgl.setAttribute('aria-pressed', m.on ? 'true' : 'false'); }
+  const sp = document.getElementById('mMeteorSpeed');
+  if (sp) sp.value = String(m.speed);
+  const spv = document.getElementById('mMeteorSpeedVal');
+  if (spv) spv.textContent = '每圈 ' + m.speed + ' 秒';
+  const sz = document.getElementById('mMeteorSize');
+  if (sz) sz.value = String(m.size);
+  const szv = document.getElementById('mMeteorSizeVal');
+  if (szv) szv.textContent = m.size + '°';
+  const sh = document.getElementById('mMeteorShape');
+  if (sh) sh.querySelectorAll('button[data-shape]').forEach(b => b.classList.toggle('active', (b.getAttribute('data-shape') || 'comet') === (m.shape || 'comet')));
+  const col = document.getElementById('mMeteorColor');
+  if (col) col.value = /^#[0-9a-fA-F]{6}$/.test(m.color || '') ? m.color : '#ffae00';
+  const fol = document.getElementById('mMeteorFollow');
+  if (fol) fol.checked = !!m.follow;
+  const rb = document.getElementById('mMeteorRainbow');
+  if (rb) rb.checked = !!m.rainbow;
+  const fl = document.getElementById('mMeteorFlame');
+  if (fl) fl.value = String(m.flame);
+  const flv = document.getElementById('mMeteorFlameVal');
+  if (flv) flv.textContent = m.flame + '°';
+  [sp, sz, sh, col, fol, fl].forEach(el => { if (el) el.disabled = !m.on; });   // 关闭时停用细项
+}
+function setMeteor(patch) {
+  if (!state.meteor || typeof state.meteor !== 'object') state.meteor = normalizeMeteor(null);
+  Object.assign(state.meteor, patch);
+  applyMeteor();
+  syncMeteorControls();
+  persist();
+}
+function toggleMeteor() {
+  setMeteor({ on: !(state.meteor && state.meteor.on) });
+}
+// 🆕 卷动位置记忆（统一行为，无开关参数）：每张便利贴记住「上次离开前」的卷动位置，
+//    下次开窗（分体）或翻回来（翻页）即还原。body 是唯一卷动容器。
+//    · 卷动中节流写回（400ms）；· 翻页换张／关窗前 flush（此刻 KEY/IDX 仍是离开的那一张）。
+let scrollSaveTimer = null;
+function currentScrollTop() {
+  const body = document.getElementById('body');
+  return body ? Math.max(0, Math.round(body.scrollTop)) : 0;
+}
+function restoreScrollPos() {
+  const body = document.getElementById('body');
+  if (!body) return;
+  const pos = (typeof state.scrollPos === 'number' && isFinite(state.scrollPos)) ? Math.max(0, state.scrollPos) : 0;
+  if (!pos) return;   // 0＝没记过，浏览器默认就在顶部，不必动
+  // 等版面定稿（高亮重包、字级／配色套用都可能改变高度）后再定位，避免被后续重绘吃掉
+  requestAnimationFrame(() => { body.scrollTop = pos; });
+}
+function writeScrollPos(pos) {
+  if (!KEY) return;   // 翻页窗首次重绘时 KEY 还是空（URL 没带 key），别写出垃圾条目
+  if (pos === (state.scrollPos || 0)) return;
+  state.scrollPos = pos;
+  ipcRenderer.invoke('sticky-note-set', { key: KEY, idx: IDX, patch: { scrollPos: pos } });
+}
+function scheduleScrollSave() {
+  if (scrollSaveTimer) clearTimeout(scrollSaveTimer);
+  scrollSaveTimer = setTimeout(() => { scrollSaveTimer = null; writeScrollPos(currentScrollTop()); }, 400);
+}
+function flushScrollSave() {
+  if (scrollSaveTimer) { clearTimeout(scrollSaveTimer); scrollSaveTimer = null; }
+  writeScrollPos(currentScrollTop());
 }
 // 同步「字体颜色 / 字重」选中态（菜单内色板 + 分段按钮）
 function syncTextAppearance() {
@@ -2693,8 +2904,12 @@ async function renderNoteContent() {
   } catch (e) {}
   if (titleHtml) titleEl.innerHTML = titleHtml; else titleEl.textContent = ev.title;
   // 🆕 移除 raw 原文兜底：html 缺失时留白，绝不以未渲染 Markdown 源呈现（如 "- [ ] 11111"）。
+  // 🆕 同上：重設 innerHTML 會把 scrollTop 歸零，先記後還（也避免被節流存成 0）
+  const bodyElKeep = document.getElementById('body');
+  const keepScrollPos = bodyElKeep ? Math.max(0, Math.round(bodyElKeep.scrollTop)) : 0;
   document.getElementById('body').innerHTML = html;
   noteApplyHighlight(); // 🆕 依當前定位詞重打高亮
+  if (keepScrollPos && bodyElKeep) bodyElKeep.scrollTop = keepScrollPos;
   syncUndoneChecksFilter();
   renderMeta(ev);
   renderTags(ev);
@@ -3593,10 +3808,101 @@ async function initFlip() {
     Number.isFinite(+geom.lastIdx) ? +geom.lastIdx : 0,
     typeof geom.lastId === 'string' ? geom.lastId : ''
   );
-  await renderFlipPage(startIndex);
+  // 🆕 启动通知：先把勾了「通知讯息」的 VIEW 贴依序闪烁显示，结束才进正常显示
+  //    （runNotifyPhase 内部最后会渲染 startIndex；回传 false＝没有通知贴，这里照旧渲染）
+  let ranNotify = false;
+  try { ranNotify = await runNotifyPhase(startIndex); } catch (e) { ranNotify = false; }
+  if (!ranNotify) await renderFlipPage(startIndex);
   // 启动兜底：补回「脚本还没挂监听时被丢掉」的顺序更新（两次足够覆盖 Calendar 载入/同步的时间差）
   [800, 2400].forEach((delay) => { setTimeout(resyncFlipOrder, delay); });
 }
+// ===== 🆕 启动通知：勾了「通知讯息」的 VIEW 贴，便利贴启动时先外框闪烁显示 =====
+//   行为：依序显示每一张（闪烁），每张停留 notifySeconds 秒，或使用者按「✕ 关闭」提前换下一张；
+//   全部结束后才渲染原本要显示的那一张（startIndex）→ 之后的正常显示行为完全不变。
+//   ⚠️ 通知贴本身就是便利贴清单里的一张（不新增、不移除），这里只是「启动时先翻到它」。
+let notifyActive = false;     // 是否正处于通知阶段
+let notifyRendering = false;  // 通知阶段自己触发的 renderFlipPage（用来分辨「使用者手动翻页」）
+let notifyTimer = null;       // 倒数 interval
+let notifyResolve = null;     // 结束当前这一张（倒数结束／手动关闭／被取消）
+const NOTIFY_FALLBACK_SECONDS = 15;
+function notifySecondsOf(note) {
+  const v = note && note.notifySeconds;
+  if (typeof v === 'number' && isFinite(v)) return Math.min(600, Math.max(1, Math.round(v)));
+  return NOTIFY_FALLBACK_SECONDS;
+}
+function notifyQueueFromOrder() {
+  const out = [];
+  flipOrder.forEach((note, i) => {
+    // 只认 VIEW 贴（__view__ 前缀）且勾了通知的
+    if (!note || !note.notify || !isViewKey(note.key)) return;
+    out.push({ index: i, seconds: notifySecondsOf(note) });
+  });
+  return out;
+}
+function notifySetChrome(on) {
+  const noteEl = document.getElementById('note');
+  if (noteEl) noteEl.classList.toggle('notify-flash', !!on);
+  const badge = document.getElementById('notifyBadge');
+  if (badge) badge.classList.toggle('show', !!on);
+  const btn = document.getElementById('notifyClose');
+  if (btn) btn.classList.toggle('show', !!on);
+}
+// 结束／放弃通知阶段：停倒数、唤醒等待者、收掉闪烁与按钮
+function notifyCancel() {
+  if (notifyTimer) { clearInterval(notifyTimer); notifyTimer = null; }
+  if (notifyResolve) { const r = notifyResolve; notifyResolve = null; r(); }
+  notifyActive = false;
+  notifySetChrome(false);
+}
+// 等这一张的秒数（同时跑倒数显示）；被 notifyCancel 唤醒＝放弃
+function notifyWait(seconds) {
+  return new Promise((resolve) => {
+    let left = Math.max(1, seconds);
+    const el = document.getElementById('notifyCount');
+    const tick = () => { if (el) el.textContent = left + 's'; };
+    const finish = () => {
+      if (notifyTimer) { clearInterval(notifyTimer); notifyTimer = null; }
+      notifyResolve = null;
+      resolve();
+    };
+    tick();
+    notifyResolve = finish;
+    notifyTimer = setInterval(() => {
+      left -= 1;
+      tick();
+      if (left <= 0) finish();
+    }, 1000);
+  });
+}
+// 手动关闭：结束「当前这一张」→ 交给回圈进下一张（最后一张则由回圈进正常显示）
+function notifyCloseCurrent() {
+  if (!notifyActive) return;
+  if (notifyResolve) { const r = notifyResolve; notifyResolve = null; if (notifyTimer) { clearInterval(notifyTimer); notifyTimer = null; } r(); }
+}
+// 回传 true＝有跑过通知阶段（return false 时呼叫端要自己渲染 startIndex）
+async function runNotifyPhase(startIndex) {
+  const queue = notifyQueueFromOrder();
+  if (!queue.length) return false;
+  notifyActive = true;
+  for (let i = 0; i < queue.length; i++) {
+    const item = queue[i];
+    notifyRendering = true;
+    try { await renderFlipPage(item.index); } finally { notifyRendering = false; }
+    if (!notifyActive) return true;   // 期间被取消（例如使用者手动翻页）→ 交由那次翻页作主
+    notifySetChrome(true);
+    await notifyWait(item.seconds);
+    if (!notifyActive) return true;
+  }
+  notifyCancel();                     // 收尾：停倒数、收闪烁
+  notifyRendering = true;
+  try { await renderFlipPage(startIndex); } finally { notifyRendering = false; }
+  return true;
+}
+function notifyBindControls() {
+  const btn = document.getElementById('notifyClose');
+  if (btn) btn.onclick = (e) => { e.stopPropagation(); notifyCloseCurrent(); };
+}
+
 function stickyFlipIdentity(note) {
   const title = String((note && note.title) || '');
   const date = String((note && note.date) || '');
@@ -3780,6 +4086,8 @@ async function loadStickyMenuNotes() {
 // 渲染第 i 张：切换 KEY/IDX（内容＋颜色/透明度按该便利贴自身状态），翻页窗几何保持不变
 async function renderFlipPage(i) {
   if (flipTotal === 0) return;
+  // 🆕 通知期间使用者自己翻页（键盘／滑动／按钮）→ 放弃整个通知阶段，以使用者的操作为准
+  if (notifyActive && !notifyRendering) notifyCancel();
   i = ((i % flipTotal) + flipTotal) % flipTotal; // 循环换页：越界自动首尾回绕（首⇄尾）
   flipIndex = i;
   // 翻页：退出编辑模式（每页各自编辑，翻页即切到该页的渲染视图，避免 textarea 内容错位）
@@ -3798,6 +4106,7 @@ async function renderFlipPage(i) {
   if (noteEl0) noteEl0.classList.remove('editing');
   const eaEl0 = document.getElementById('editArea');
   if (eaEl0) eaEl0.style.boxShadow = '';
+  flushScrollSave();   // 🆕 换张前先记下「离开的这一张」的卷动位置（此刻 KEY/IDX 仍是它）
   KEY = flipOrder[i].key;
   IDX = +flipOrder[i].idx || 0;
   syncViewNoteMode();   // 🆕 翻页换到 VIEW 贴（或离开它）→ 只读把手显隐跟着换
@@ -3823,6 +4132,8 @@ async function renderFlipPage(i) {
   state.fontColor = (inst && typeof inst.fontColor === 'string' && inst.fontColor) ? inst.fontColor : STICKY_DEF_FG;
   state.fontWeight = (inst && typeof inst.fontWeight === 'number') ? inst.fontWeight : 400;
   state.undoneChecksOnly = !!(inst && inst.undoneChecksOnly);
+  state.scrollPos = (inst && typeof inst.scrollPos === 'number' && isFinite(inst.scrollPos)) ? Math.max(0, inst.scrollPos) : 0;
+  state.meteor = normalizeMeteor(inst && inst.meteor);
 
   renderMeta(ev);
   renderTags(ev);
@@ -3842,7 +4153,9 @@ async function renderFlipPage(i) {
   syncUndoneChecksFilter();
   applyColor();
   applyContentFont();
+  restoreScrollPos();   // 🆕 还原这一张「上次离开前」的卷动位置
   syncTextAppearance();
+  syncMeteorControls();   // 🆕 重绘当前便利贴后，把外框流星状态反映到菜单控制项
   // 透明度面板同步到当前便利贴自身状态
   const op = document.getElementById('opacity');
   if (op) { op.value = String(state.opacity); document.getElementById('opacityVal').textContent = state.opacity + '%'; }
@@ -4006,6 +4319,8 @@ document.addEventListener('keydown', (e) => {
   // 🆕 搬移结果 toast 的 ✕ 关闭钮
   const tc = document.getElementById('noteMoveToastClose');
   if (tc) tc.onclick = () => hideNoteMoveToast();
+  // 🆕 VIEW 便利贴徽标：点开看 JSON 设定逻辑＋跳转维护作业
+  setupViewBadge();
 })();
 
 init();

@@ -1609,6 +1609,7 @@ p[data-cols-marker="true"] { display: none; }
 .cal-sticky-top-flex { flex: 1; }
 .cal-sticky-page-ind { font-size: 13px; color: #f8fafc; opacity: .9; white-space: nowrap; }
 .cal-sticky-top-btn {
+  position: relative;   /* 🆕 讓內層 .btn-badge 角標以本按鈕為定位參考（對齊頂欄保存鍵） */
   border: 1px solid rgba(212, 175, 55, .8); background: rgba(20, 24, 34, .55); color: #f8fafc;
   border-radius: 8px; padding: 6px 10px; font-size: 14px; line-height: 1; cursor: pointer;
 }
@@ -1622,6 +1623,98 @@ p[data-cols-marker="true"] { display: none; }
   box-shadow: 0 10px 28px rgba(0, 0, 0, .35), 0 1px 3px rgba(0, 0, 0, .18);
   touch-action: pan-y; /* 橫向手勢留給翻頁，縱向仍是正文滾動 */
 }
+/* ===== 🆕 启动通知：勾了「通知讯息」的 VIEW 贴先闪烁显示在便利贴窗 ===== */
+/* 啟動通知：卡片「內部」偽元素畫粗描邊＋內發光，整層 opacity 硬切閃爍。
+   .cal-sticky-note 是 flex:1 撐滿卡片、overflow:hidden，向外 box-shadow 會被裁掉看不到；
+   故改用 ::before（inset:0 在卡片內）＋ 亮白色（黃底對比最高）。z-index:6 壓在正文之上、徽標(7)/關閉(8)之下。 */
+.cal-sticky-note.notify-flash::before {
+  content: "";
+  position: absolute; inset: 0; z-index: 6; border-radius: 12px;
+  pointer-events: none;
+  border: 6px solid #ffffff;
+  box-shadow: inset 0 0 30px 5px rgba(255, 255, 255, .9);
+  background: rgba(255, 255, 255, .12);
+  animation: calStickyNotifyFlash .8s linear infinite;
+}
+@keyframes calStickyNotifyFlash {
+  0%, 42%   { opacity: 1; }
+  44%, 92%  { opacity: 0; }
+  94%, 100% { opacity: 1; }
+}
+.cal-sticky-notify-badge {
+  position: absolute; left: 8px; bottom: 8px; z-index: 7; display: none;
+  align-items: center; gap: 4px; padding: 3px 9px; border-radius: 999px;
+  border: 1px solid rgba(212, 175, 55, .85); background: rgba(20, 24, 34, .92);
+  color: #ffd766; font-size: 11px; font-weight: 700; pointer-events: none;
+}
+.cal-sticky-notify-badge.show { display: inline-flex; animation: calStickyNotifyBlink 1s ease-in-out infinite; }
+@keyframes calStickyNotifyBlink { 0%, 100% { opacity: 1; } 50% { opacity: .45; } }
+.cal-sticky-notify-close {
+  position: absolute; right: 8px; bottom: 8px; z-index: 8; display: none;
+  align-items: center; gap: 5px; padding: 5px 12px; border-radius: 999px;
+  border: 1px solid rgba(212, 175, 55, .85); background: rgba(20, 24, 34, .92);
+  color: #fff; font-size: 12px; font-weight: 700; cursor: pointer;
+}
+.cal-sticky-notify-close.show { display: inline-flex; }
+.cal-sticky-notify-close #calStickyNotifyCount { color: #ffd766; font-variant-numeric: tabular-nums; }
+/* 🆕 便利贴外框流星（每贴可配置：开关 / 飞速 / 大小 / 形状 / 颜色 / 焰尾长度；默认关闭）。
+   由 JS 在该贴元素挂 .meteor-on ＋ .meteor-shape-<shape>，并以 CSS 变量传入参数：
+     --m-color(颜色) --m-dur(周期秒) --m-head(头角宽deg) --m-flame(焰尾角宽deg)。
+   形状用 .meteor-shape-* 选择渐变配方；@property 驱动 from 角度，mask 只留 2px 边框环；
+   不支持 @property 的老浏览器退化为静态光环。 */
+@property --meteor-angle { syntax: '<angle>'; initial-value: 0deg; inherits: false; }
+@property --m-hue { syntax: '<angle>'; initial-value: 0deg; inherits: false; }
+/* 📌 參數預設必須掛在「本體」規則（.meteor-on，無 ::after）：JS 在本體設的行內 --m-* 才能經繼承覆蓋；
+   若寫在 ::after 規則裡，偽元素自身的宣告會遮蔽繼承值 → 顏色/速度/大小/焰尾全失效。 */
+.cal-sticky-note.meteor-on {
+  --m-color: #ffae00; --m-dur: 12s; --m-head: 12deg; --m-flame: 60deg; --m-thick: 2px;
+}
+.cal-sticky-note.meteor-on::after {
+  content: ""; position: absolute; inset: 0; z-index: 6;
+  border-radius: inherit; padding: var(--m-thick, 2px);
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor; mask-composite: exclude;
+  filter: drop-shadow(0 0 3px var(--m-color, #ffae00)) drop-shadow(0 0 8px color-mix(in srgb, var(--m-color, #ffae00) 60%, transparent)) hue-rotate(var(--m-hue, 0deg));
+  animation: viewMeteorOrbit var(--m-dur, 12s) linear infinite;
+  pointer-events: none;
+}
+/* 形状配方：流星头＝主色实色，焰尾＝主色→透明渐隐（角宽由 --m-flame 控制） */
+.cal-sticky-note.meteor-on.meteor-shape-comet::after {
+  background: conic-gradient(from 0deg, transparent calc(360deg - var(--m-head, 12deg) - var(--m-flame, 60deg)), var(--m-color, #ffae00) calc(360deg - var(--m-head, 12deg)), var(--m-color, #ffae00) 360deg);
+  background: conic-gradient(from var(--meteor-angle, 0deg), transparent calc(360deg - var(--m-head, 12deg) - var(--m-flame, 60deg)), var(--m-color, #ffae00) calc(360deg - var(--m-head, 12deg)), var(--m-color, #ffae00) 360deg);
+}
+.cal-sticky-note.meteor-on.meteor-shape-sharp::after {
+  background: conic-gradient(from 0deg, transparent calc(360deg - var(--m-head, 8deg) - var(--m-flame, 55deg)), var(--m-color, #ffae00) calc(360deg - var(--m-head, 8deg)), var(--m-color, #ffae00) calc(360deg - 2deg), #fff 360deg);
+  background: conic-gradient(from var(--meteor-angle, 0deg), transparent calc(360deg - var(--m-head, 8deg) - var(--m-flame, 55deg)), var(--m-color, #ffae00) calc(360deg - var(--m-head, 8deg)), var(--m-color, #ffae00) calc(360deg - 2deg), #fff 360deg);
+}
+.cal-sticky-note.meteor-on.meteor-shape-band::after {
+  background: conic-gradient(from 0deg, transparent calc(360deg - var(--m-head, 26deg) - var(--m-flame, 90deg)), color-mix(in srgb, var(--m-color, #ffae00) 50%, transparent) calc(360deg - var(--m-head, 26deg)), var(--m-color, #ffae00) calc(360deg - var(--m-head, 26deg) * 0.5), var(--m-color, #ffae00) 360deg);
+  background: conic-gradient(from var(--meteor-angle, 0deg), transparent calc(360deg - var(--m-head, 26deg) - var(--m-flame, 90deg)), color-mix(in srgb, var(--m-color, #ffae00) 50%, transparent) calc(360deg - var(--m-head, 26deg)), var(--m-color, #ffae00) calc(360deg - var(--m-head, 26deg) * 0.5), var(--m-color, #ffae00) 360deg);
+}
+.cal-sticky-note.meteor-on.meteor-shape-twin::after {
+  background: conic-gradient(from 0deg,
+    transparent calc(360deg - var(--m-head, 12deg) - var(--m-flame, 70deg)),
+    var(--m-color, #ffae00) calc(360deg - var(--m-head, 12deg) - var(--m-flame, 70deg) + 8deg),
+    var(--m-color, #ffae00) calc(360deg - var(--m-head, 12deg) - 18deg),
+    transparent calc(360deg - var(--m-head, 12deg) - 12deg),
+    var(--m-color, #ffae00) calc(360deg - var(--m-head, 12deg)),
+    var(--m-color, #ffae00) 360deg);
+  background: conic-gradient(from var(--meteor-angle, 0deg),
+    transparent calc(360deg - var(--m-head, 12deg) - var(--m-flame, 70deg)),
+    var(--m-color, #ffae00) calc(360deg - var(--m-head, 12deg) - var(--m-flame, 70deg) + 8deg),
+    var(--m-color, #ffae00) calc(360deg - var(--m-head, 12deg) - 18deg),
+    transparent calc(360deg - var(--m-head, 12deg) - 12deg),
+    var(--m-color, #ffae00) calc(360deg - var(--m-head, 12deg)),
+    var(--m-color, #ffae00) 360deg);
+}
+@keyframes viewMeteorOrbit { to { --meteor-angle: 360deg; } }
+/* 🆕 彩色流星：在旋转轨道动画之外，再加一段 hue 旋转动画，让整颗流星（含辉光）循环过整圈色相 → 彩虹变色 */
+.cal-sticky-note.meteor-on.meteor-rainbow::after {
+  animation: viewMeteorOrbit var(--m-dur, 12s) linear infinite, meteorHueSpin 4s linear infinite;
+}
+@keyframes meteorHueSpin { to { --m-hue: 360deg; } }
 .cal-sticky-head { flex: none; padding: 12px 14px 0; }
 /* 標題列：標題吃剩餘寬度，來源檔案徽標靠右不換行（對齊桌面便利貼 .head / .title flex:1 的排法） */
 .cal-sticky-head-row { display: flex; align-items: flex-start; gap: 6px; }
@@ -1790,7 +1883,11 @@ body.dark .cal-sticky-src-badge.is-view { color: #c4b5fd; }
   border-radius: 14px 14px 0 0; box-shadow: 0 -10px 30px rgba(0, 0, 0, .35);
 }
 .cal-sticky-sheet-head { flex: none; display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 12px 14px; border-bottom: 1px solid var(--border); font-size: 15px; font-weight: 600; }
+.cal-sticky-sheet-head-actions { display: flex; align-items: center; gap: 8px; }
 .cal-sticky-sheet-head .cal-sticky-top-btn { color: var(--text); background: var(--bg); }
+/* 🆕 ☰ 選單頭部的「💾 保存」：金色強調，一眼認出是落盤動作 */
+.cal-sticky-save { color: var(--gold) !important; border: 1px solid var(--gold); font-weight: 700; }
+.cal-sticky-save:active { background: rgba(212, 175, 55, .28); }
 .cal-sticky-sheet-body { flex: 1; min-height: 0; overflow: auto; padding: 0 14px max(14px, env(safe-area-inset-bottom)); -webkit-overflow-scrolling: touch; overscroll-behavior: contain; }
 /* 🆕 便利貼清單搜尋框（置於 bottom sheet 頂部，與下方清單同寬） */
 .cal-sticky-search-wrap { padding: 10px 0 6px; flex: none; display: flex; align-items: stretch; gap: 8px; }
@@ -1851,6 +1948,16 @@ body.dark .cal-sticky-src-badge.is-view { color: #c4b5fd; }
 .cal-sticky-io { display: flex; gap: 8px; }
 .cal-sticky-io .cal-sticky-toggle { flex: 1 1 0; min-width: 0; margin-top: 6px; text-align: center; }
 .cal-sticky-hint { margin: 12px 0 0; font-size: 11px; line-height: 1.7; color: var(--text-secondary); }
+/* 🆕 外框流星：形狀 2×2 選擇 + 顏色行（自選色＋跟隨字色）。開關由 #calStickyMeteorToggle 控制，關閉時細項停用 */
+.cal-sticky-shapes { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.cal-sticky-shapes button { padding: 7px 0; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); color: var(--text); font-size: 13px; cursor: pointer; }
+.cal-sticky-shapes button.active { background: var(--primary); border-color: var(--primary); color: #fff; }
+.cal-sticky-shapes button:disabled { opacity: .4; cursor: default; }
+.cal-sticky-meteor-color-row { display: flex; align-items: center; gap: 10px; }
+.cal-sticky-meteor-color { width: 44px; height: 30px; padding: 0; border: 1px solid var(--border); border-radius: 8px; background: none; cursor: pointer; }
+.cal-sticky-meteor-color:disabled { opacity: .4; cursor: default; }
+.cal-sticky-meteor-follow { display: flex; align-items: center; gap: 5px; font-size: 13px; color: var(--text); cursor: pointer; }
+.cal-sticky-meteor-follow input { accent-color: var(--primary); }
 /* combo 菜單分隔線與「動作型」項目（便利貼：只有動作，沒有曝露勾選框） */
 /* 📝 備註區塊 / 子事件編輯 bottom sheet（z-index：便利貼 2500 < 本層 2600 < 行程表單 3000） */
 .cal-md-edit-overlay {

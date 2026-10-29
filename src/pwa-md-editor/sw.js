@@ -302,6 +302,16 @@
 //       轉換與欄位驗證抽成共用 sticky-settings.js（桌面主程序 require 同一份，避免兩端口徑分歧）。
 //       LITE index.html/sticky-notes.js/style.css/sticky-settings.js/sw.js 改，bump 讓手機重拉；
 //       APP_VERSION 與 manifest.json 同步 1.8.9→1.9.0。
+// v184：外框流星（每张便利贴可配置：开关/飞速/大小/形状/颜色/焰尾/彩色）落地——
+//       ① 修复关键 bug：--m-color/--m-dur/--m-head/--m-flame 原写在 ::after 伪元素规则里，
+//          自身宣告遮蔽继承值 → 颜色/速度/大小/焰尾全失效（流星恒为金 12s 12° 60°）；
+//          改挂本体规则 .cal-sticky-note.meteor-on，JS 行内值经继承覆盖才生效。
+//       ② 大小(size) 上限 40→120（3×）；环厚 --m-thick 随 size 放大 2→6px。
+//       ③ 焰尾(flame) 范围 20–160(8×)→20–200(10×)，head+flame≤320<360 不破。
+//       ④ 新增「彩色」(rainbow)：@property --m-hue + hue-rotate(var(--m-hue))，
+//          .meteor-rainbow::after 加 meteorHueSpin 动画循环过整圈色相。
+//       LITE index.html/style.css/sticky-notes.js/sw.js 改，bump 讓手機重拉；
+//       APP_VERSION 與 manifest.json 同步 1.10.1→1.10.2。
 // v183：🔔 提醒「view 便利貼」顯示升級——分組標題改走 MD 語意（calStickyViewHeadMd）：行程標題本身是
 //       「# …」就照原樣交給渲染器（變成真的標題），純文字標題才補 **粗體**；先前一律包 ** 會讓
 //       「# 在我的iPhone上的便利貼草稿」顯示成字面符號。桌面端同步（tlViewStickyHeadMd），
@@ -355,7 +365,23 @@
 //       按保存時設定 JSON 與主檔、聯運檔一起交付（iOS 逐檔各彈一次分享面板）；
 //       交付成功才清角標，取消則保留。頁次不列入比對（翻頁不會亮角標）。
 //       app.js/calendar-editor.js/sticky-notes.js 改，bump 讓手機重拉；APP_VERSION 1.9.0→1.9.1。
-const CACHE_NAME = 'md-editor-lite-v183';
+// v185：🆕 外框流星設定納入「可攜 JSON」與「保存角標比對」——sticky-settings.js 的 pickPrefs 原本只收
+//       字體大小/字色/底色/透明度/字重/只看未完成，漏掉 meteor，導致手機匯出設定 JSON 時流星設定被丟掉、
+//       改流星也不會亮「保存」角標。現補上（含逐欄夾值＋白名單形狀）。
+// v186→v187：🆕 需求更正——取消「開啟後自動滾到尾部」開關（scrollEnd），
+//       改為統一行為：每張便利貼記住並還原「上次離開前」的捲動位置（scrollPos，非設定項、不進可攜 JSON）。
+//       sticky-notes.js / index.html 改，bump 讓手機重拉；APP_VERSION 與 manifest.json 同步 1.10.4→1.10.5。
+// v187→v188：🆕 VIEW 便利貼「啟動通知」——規則新增 notify（通知訊息）＋ notifySeconds（保持秒數，預設 15），
+//       便利貼啟動時先把勾了通知的 VIEW 贴以外框閃爍依序顯示，秒數到或按 ✕ 關閉後才進正常顯示。
+//       sticky-notes.js / index.html / style.css 改；APP_VERSION 與 manifest 同步 1.10.5→1.10.6。
+// v188→v189：🔧 啟動通知的外框閃爍改為「明顯硬閃爍」——亮態 4px 亮金環＋強發光（不透明度 1），
+//       滅態光環完全消失，42%→44% 硬切（≈16ms 瞬跳），週期 .8s（≈1.25 次/秒），對比遠強於原本的「呼吸」。
+//       style.css 改（桌面 desktop-note.html 同步）；APP_VERSION 與 manifest 同步 1.10.6→1.10.7。
+// v189→v190：🔧 啟動通知仍看不到閃爍——根因是 #note(inset:0 填滿視窗) 與 .cal-sticky-note(flex:1 撐滿＋overflow:hidden)
+//       上「向外 box-shadow」會被視窗/卡片邊界裁掉，視窗內根本看不到，只剩 1px 邊框色在黃底上的微弱變化。
+//       改為 ::before 偽元素（inset:0 在卡片內、不被裁）畫 6px 亮白粗邊＋內發光＋微白染，整層 opacity 硬切閃爍；
+//       亮白色在黃底上對比最高。桌面 desktop-note.html 與 LITE style.css 同步；APP_VERSION/manifest 1.10.7→1.10.8。
+const CACHE_NAME = 'md-editor-lite-v190';
 const ASSETS = [
   './',
   './index.html',

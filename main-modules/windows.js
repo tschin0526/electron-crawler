@@ -911,7 +911,10 @@ ipcMain.handle('open-sticky-notes', (e, arg) => {
       // 🆕 外部 INCLUDE 来源文件名（草稿便利贴等）：空＝calendar.md 正式档
       src: typeof n.src === 'string' ? n.src : '',
       notes: typeof n.notes === 'string' ? n.notes : '',
-      view: !!n.view            // 🆕 VIEW 便利贴旗标（与 sticky-note-sync 的 normalized 同形，别在这里抹掉）
+      view: !!n.view,            // 🆕 VIEW 便利贴旗标（与 sticky-note-sync 的 normalized 同形，别在这里抹掉）
+      // 🆕 启动通知旗标（VIEW 贴「通知讯息」）：翻页窗据此在启动时先闪烁显示这张贴
+      notify: !!n.notify,
+      notifySeconds: (typeof n.notifySeconds === 'number' && isFinite(n.notifySeconds)) ? n.notifySeconds : 15
     }));
     stickyNoteCatalog = stickyNoteOrder.slice();
     adoptStickyState(stickyNoteOrder);
