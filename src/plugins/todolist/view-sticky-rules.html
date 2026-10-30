@@ -80,6 +80,17 @@
   .chk { display: inline-flex; align-items: center; gap: 5px; cursor: pointer; padding: 3px 8px; border: 1px solid var(--line); border-radius: 999px; font-size: 12px; }
   .chk input { accent-color: var(--gold); }
   .types { display: flex; flex-wrap: wrap; gap: 6px; }
+  /* 🆕 搜索段落列表 */
+  .seg-list { display: flex; flex-direction: column; gap: 6px; }
+  .seg-chip { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border: 1px solid var(--line); border-radius: 8px; cursor: pointer; background: var(--bg); }
+  .seg-chip:hover { border-color: var(--gold); }
+  .seg-chip.sel { border-color: var(--gold); background: var(--sel); }
+  .seg-chip .sc-idx { font-weight: 700; color: var(--gold); min-width: 18px; text-align: center; }
+  .seg-chip .sc-main { flex: 1; min-width: 0; }
+  .seg-chip .sc-title { font-weight: 600; }
+  .seg-chip .sc-cond { color: var(--sub); font-size: 11px; word-break: break-all; }
+  .seg-chip .sc-cond.none { color: #c0392b; }
+  .pane-subtitle { font-size: 12px; font-weight: 700; color: var(--sub); letter-spacing: 1px; margin-bottom: 8px; }
   .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 999px; overflow: hidden; }
   .seg button { border: 0; background: transparent; color: var(--ink); padding: 4px 12px; cursor: pointer; font: inherit; font-size: 12px; }
   .seg button.on { background: var(--gold); color: #2b2400; font-weight: 700; }
@@ -119,31 +130,53 @@
     <div class="pane form" id="formPane">
       <div class="pane-title">条件设定</div>
       <div class="fld">
-        <label for="fTitle">便利贴标题</label>
+        <label for="fTitle">便利贴标题（这张 VIEW 便利贴的名字）</label>
         <input type="text" id="fTitle" placeholder="例如：要跟进的客户">
       </div>
+
       <div class="fld">
-        <label for="fKeywords">关键词（以 、 , 或换行分隔；留白＝不用关键词）</label>
-        <input type="text" id="fKeywords" placeholder="例如：客户、报价">
-        <div class="row" style="margin-top:6px">
-          <span class="tip">符合</span>
-          <span class="seg" id="segMode">
-            <button type="button" data-v="ANY">任一个</button>
-            <button type="button" data-v="ALL">全部</button>
-          </span>
-          <label class="chk"><input type="checkbox" id="fCase">区分大小写</label>
+        <label>搜索段落（每一段＝一个完整的搜索；按设定顺序显示为多个段落）</label>
+        <div class="seg-list" id="segList"></div>
+        <div class="foot" style="margin-top:6px">
+          <button class="btn" id="btnAddSeg" type="button">＋ 新增段落</button>
         </div>
       </div>
-      <div class="fld">
-        <label for="fMarker">标记条件</label>
-        <select id="fMarker"></select>
-        <div class="tip">与关键词是「且」的关系；选「不限」时只靠关键词过滤。</div>
+
+      <div id="segForm">
+        <div class="pane-subtitle" id="segSub">本段落条件</div>
+        <div class="fld">
+          <label for="fSegTitle">本段落标题（可选，显示在便利贴里区分各段）</label>
+          <input type="text" id="fSegTitle" placeholder="例如：超链接执行">
+        </div>
+        <div class="fld">
+          <label for="fKeywords">关键词（以 、 , 或换行分隔；留白＝不用关键词）</label>
+          <input type="text" id="fKeywords" placeholder="例如：客户、报价">
+          <div class="row" style="margin-top:6px">
+            <span class="tip">符合</span>
+            <span class="seg" id="segMode">
+              <button type="button" data-v="ANY">任一个</button>
+              <button type="button" data-v="ALL">全部</button>
+            </span>
+            <label class="chk"><input type="checkbox" id="fCase">区分大小写</label>
+          </div>
+        </div>
+        <div class="fld">
+          <label for="fMarker">标记条件</label>
+          <select id="fMarker"></select>
+          <div class="tip">与关键词是「且」的关系；选「不限」时只靠关键词过滤。</div>
+        </div>
+        <div class="fld">
+          <label>行型态（收哪些形状的行；关键词／标记至少要有一个是条件）</label>
+          <div class="types" id="fTypes"></div>
+        </div>
+        <div class="row" style="margin-bottom:4px">
+          <button class="btn" id="btnSegUp" type="button">↑ 上移</button>
+          <button class="btn" id="btnSegDown" type="button">↓ 下移</button>
+          <button class="btn" id="btnSegDel" type="button">🗑 删除本段落</button>
+        </div>
       </div>
-      <div class="fld">
-        <label>行型态（收哪些形状的行；关键词／标记至少要有一个是条件）</label>
-        <div class="types" id="fTypes"></div>
-      </div>
-      <div class="row" style="margin-bottom:10px">
+
+      <div class="row" style="margin:10px 0">
         <label class="chk"><input type="checkbox" id="fEnabled">启用这条规则</label>
       </div>
       <div class="fld">
@@ -179,6 +212,7 @@
 
   let rules = [];        // 阵列就是将要写进 JSON 的全部内容
   let selId = '';
+  let selSeg = 0;        // 🆕 当前正在编辑的「段落」索引
   let dirty = false;
 
   function toast(msg, danger) {
@@ -233,7 +267,7 @@
       del.disabled = !!r.readonly;
       del.onclick = (ev) => { ev.stopPropagation(); removeRule(r); };
       row.appendChild(cb); row.appendChild(main); row.appendChild(del);
-      row.onclick = () => { selId = r.id; renderList(); renderForm(); };
+      row.onclick = () => { selId = r.id; selSeg = 0; renderList(); renderForm(); };
       box.appendChild(row);
     });
   }
@@ -245,7 +279,7 @@
       '\n条件：' + condText(r);
     if (!window.confirm(msg)) return;
     rules = rules.filter((x) => x !== r);
-    if (selId === r.id) selId = rules.length ? rules[0].id : '';
+    if (selId === r.id) { selId = rules.length ? rules[0].id : ''; selSeg = 0; }
     markDirty(true);
     renderList(); renderForm();
   }
@@ -264,18 +298,19 @@
       lab.className = 'chk';
       const cb = document.createElement('input');
       cb.type = 'checkbox'; cb.setAttribute('data-type', t);
-      cb.onchange = () => { const r = selected(); if (r) { r.rowTypes[t] = cb.checked; markDirty(true); renderList(); } };
+      cb.onchange = () => { const seg = selectedSeg(); if (seg) { if (!seg.rowTypes || typeof seg.rowTypes !== 'object') seg.rowTypes = {}; seg.rowTypes[t] = cb.checked; markDirty(true); renderSegList(); } };
       lab.appendChild(cb);
       lab.appendChild(document.createTextNode(V.ROW_TYPE_LABEL[t]));
       box.appendChild(lab);
     });
     $('segMode').querySelectorAll('button').forEach((b) => {
-      b.onclick = () => { const r = selected(); if (r) { r.keywordMode = b.getAttribute('data-v'); markDirty(true); renderForm(); renderList(); } };
+      b.onclick = () => { const seg = selectedSeg(); if (seg) { seg.keywordMode = b.getAttribute('data-v'); markDirty(true); renderSegList(); renderForm(); } };
     });
     $('fTitle').oninput = (e) => { const r = selected(); if (r) { r.title = e.target.value.replace(/\s+/g, ' ').trim() || r.title; markDirty(true); renderList(); } };
-    $('fKeywords').oninput = (e) => { const r = selected(); if (!r) return; r.keywords = String(e.target.value).split(/[,，、\n]/).map((x) => x.trim()).filter(Boolean); markDirty(true); renderList(); };
-    $('fCase').onchange = (e) => { const r = selected(); if (r) { r.caseSensitive = e.target.checked; markDirty(true); renderList(); } };
-    $('fMarker').onchange = (e) => { const r = selected(); if (r) { r.marker = e.target.value; markDirty(true); renderList(); } };
+    $('fKeywords').oninput = (e) => { const seg = selectedSeg(); if (!seg) return; seg.keywords = String(e.target.value).split(/[,，、\n]/).map((x) => x.trim()).filter(Boolean); markDirty(true); renderSegList(); };
+    $('fCase').onchange = (e) => { const seg = selectedSeg(); if (seg) { seg.caseSensitive = e.target.checked; markDirty(true); renderSegList(); } };
+    $('fMarker').onchange = (e) => { const seg = selectedSeg(); if (seg) { seg.marker = e.target.value; markDirty(true); renderSegList(); } };
+    $('fSegTitle').oninput = (e) => { const seg = selectedSeg(); if (!seg) return; seg.title = e.target.value.replace(/\s+/g, ' ').trim(); markDirty(true); renderSegList(); };
     $('fEnabled').onchange = (e) => { const r = selected(); if (r) { r.enabled = e.target.checked; markDirty(true); renderList(); } };
     // 🆕 启动通知：勾选框 + 保持秒数（秒数走引擎的夹值，避免写入 0／负数／浮夸值）
     $('fNotify').onchange = (e) => { const r = selected(); if (r) { r.notify = e.target.checked; markDirty(true); renderList(); } };
@@ -284,30 +319,93 @@
       r.notifySeconds = V.normalizeNotifySeconds(parseInt(e.target.value, 10));
       markDirty(true); renderList();
     };
+    // 🆕 段落操作：新增／上移／下移／删除（至少保留 1 个段落）
+    $('btnAddSeg').onclick = () => {
+      const r = selected(); if (!r || r.readonly) return;
+      // 🆕 新段落的行型态默认复制上一段（段落1）的勾选，避免默认全空、且与使用者预期一致
+      const prev = r.segments[r.segments.length - 1];
+      const ns = V.blankSegment();
+      ns.rowTypes = (prev && prev.rowTypes && typeof prev.rowTypes === 'object')
+        ? Object.assign({}, prev.rowTypes)
+        : { todo: true, done: true, list: true, para: true, quote: true, heading: true };
+      r.segments.push(ns); selSeg = r.segments.length - 1; markDirty(true); renderSegList(); renderForm();
+    };
+    $('btnSegUp').onclick = () => { const r = selected(); if (!r || r.readonly || selSeg <= 0) return; const tmp = r.segments[selSeg]; r.segments[selSeg] = r.segments[selSeg - 1]; r.segments[selSeg - 1] = tmp; selSeg -= 1; markDirty(true); renderSegList(); renderForm(); };
+    $('btnSegDown').onclick = () => { const r = selected(); if (!r || r.readonly || selSeg >= r.segments.length - 1) return; const tmp = r.segments[selSeg]; r.segments[selSeg] = r.segments[selSeg + 1]; r.segments[selSeg + 1] = tmp; selSeg += 1; markDirty(true); renderSegList(); renderForm(); };
+    $('btnSegDel').onclick = () => {
+      const r = selected(); if (!r || r.readonly) return;
+      if (r.segments.length <= 1) { toast('至少要有 1 个段落', true); return; }
+      const seg = r.segments[selSeg];
+      if (!window.confirm('确定要删除这个段落吗？\n\n' + (V.segmentHasCondition(seg) ? V.conditionText(seg) : '（这个段落没有任何条件）'))) return;
+      r.segments.splice(selSeg, 1);
+      if (selSeg >= r.segments.length) selSeg = r.segments.length - 1;
+      markDirty(true); renderSegList(); renderForm();
+    };
   }
   function selected() { return rules.filter((r) => r.id === selId)[0] || null; }
+  // 🆕 当前正在编辑的段落（segment）
+  function selectedSeg() { const r = selected(); return (r && r.segments && r.segments[selSeg]) || null; }
+
+  // 🆕 段落列表（每一段＝一个完整搜索；点击选中后编辑其条件）
+  function renderSegList() {
+    const box = $('segList');
+    box.innerHTML = '';
+    const r = selected();
+    if (!r) return;
+    r.segments.forEach((seg, i) => {
+      const chip = document.createElement('div');
+      chip.className = 'seg-chip' + (i === selSeg ? ' sel' : '');
+      const idx = document.createElement('div'); idx.className = 'sc-idx'; idx.textContent = (i + 1);
+      const main = document.createElement('div'); main.className = 'sc-main';
+      const t = document.createElement('div'); t.className = 'sc-title'; t.textContent = seg.title || ('段落 ' + (i + 1));
+      const c = document.createElement('div'); c.className = 'sc-cond' + (V.segmentHasCondition(seg) ? '' : ' none');
+      c.textContent = V.segmentHasCondition(seg) ? V.conditionText(seg) : '⚠ 这个段落没有任何条件';
+      main.appendChild(t); main.appendChild(c);
+      chip.appendChild(idx); chip.appendChild(main);
+      chip.onclick = () => { selSeg = i; renderSegList(); renderForm(); };
+      box.appendChild(chip);
+    });
+  }
   function renderForm() {
     const r = selected();
     const locked = !r || !!r.readonly;
     const pane = $('formPane');
     pane.querySelectorAll('input[type="text"], input[type="number"], select').forEach((el) => { el.disabled = locked; });
     pane.querySelectorAll('.chk input, .types input').forEach((el) => { el.disabled = locked; });
-    $('segMode').querySelectorAll('button').forEach((b) => { b.disabled = locked; b.classList.toggle('on', !!r && b.getAttribute('data-v') === r.keywordMode); });
+    $('segMode').querySelectorAll('button').forEach((b) => { b.disabled = locked; });
     $('btnDup').disabled = !r || !!r.readonly;
+    $('btnAddSeg').disabled = !!r.readonly;
+    $('btnSegUp').disabled = !!r.readonly || !r || selSeg <= 0;
+    $('btnSegDown').disabled = !!r.readonly || !r || selSeg >= (r ? r.segments.length - 1 : 0);
+    $('btnSegDel').disabled = !!r.readonly || !r || (r ? r.segments.length <= 1 : true);
     if (!r) {
       $('fTitle').value = ''; $('fKeywords').value = ''; $('fMarker').value = ''; $('fEnabled').checked = false; $('fCase').checked = false;
       $('fNotify').checked = false; $('fNotifySec').value = String(V.NOTIFY_DEFAULT_SECONDS);
+      $('fSegTitle').value = '';
       pane.querySelectorAll('.types input').forEach((el) => { el.checked = false; });
+      $('segSub').textContent = '本段落条件';
+      $('segList').innerHTML = '';
       return;
     }
     $('fTitle').value = r.title === '自定义便利贴' ? '' : r.title;
-    $('fKeywords').value = r.keywords.join('、');
-    $('fMarker').value = r.marker;
-    $('fCase').checked = !!r.caseSensitive;
     $('fEnabled').checked = !!r.enabled;
     $('fNotify').checked = !!r.notify;
     $('fNotifySec').value = String(r.notifySeconds);
-    pane.querySelectorAll('.types input').forEach((el) => { el.checked = !!r.rowTypes[el.getAttribute('data-type')]; });
+    renderSegList();
+    // 当前段落条件
+    const seg = selectedSeg();
+    if (seg) {
+      $('segSub').textContent = '本段落条件（段落 ' + (selSeg + 1) + '／共 ' + r.segments.length + '）';
+      $('fSegTitle').value = seg.title;
+      $('fKeywords').value = seg.keywords.join('、');
+      $('fMarker').value = seg.marker;
+      $('fCase').checked = !!seg.caseSensitive;
+      $('segMode').querySelectorAll('button').forEach((b) => { b.classList.toggle('on', b.getAttribute('data-v') === seg.keywordMode); });
+      pane.querySelectorAll('.types input').forEach((el) => { el.checked = !!(seg.rowTypes && seg.rowTypes[el.getAttribute('data-type')]); });
+    } else {
+      $('segSub').textContent = '本段落条件';
+      $('fSegTitle').value = ''; $('fKeywords').value = ''; $('fMarker').value = '';
+    }
   }
 
   // ===== 存／读 =====
@@ -330,6 +428,7 @@
       rules = V.builtinRules().concat(userRules);
       if (r && r.readable === false) toast('规则档案读不到，显示的是空清单（此时请按「保存」，否则可能盖掉旧档）', true);
       selId = rules.length ? rules[0].id : '';
+      selSeg = 0;
       markDirty(false); renderList(); renderForm();
     } catch (e) { toast('读取失败：' + (e && e.message ? e.message : e), true); }
   }
@@ -351,7 +450,7 @@
     const r = V.blankRule();
     r.title = '';
     rules.push(r);
-    selId = r.id;
+    selId = r.id; selSeg = 0;
     markDirty(true);
     renderList(); renderForm();
     $('fTitle').focus();
@@ -359,11 +458,12 @@
   $('btnDup').onclick = () => {
     const r = selected();
     if (!r) return;
-    const copy = V.normalizeRule(Object.assign({}, r, { id: V.newRuleId(), title: (r.title || '自定义便利贴') + ' 副本' }));
-    copy.rowTypes = Object.assign({}, r.rowTypes);
-    copy.keywords = r.keywords.slice();
+    const copy = V.normalizeRule(Object.assign({}, r, {
+      id: V.newRuleId(), title: (r.title || '自定义便利贴') + ' 副本',
+      segments: r.segments.map((s) => Object.assign({}, s, { rowTypes: Object.assign({}, s.rowTypes) }))
+    }));
     rules.splice(rules.indexOf(r) + 1, 0, copy);
-    selId = copy.id;
+    selId = copy.id; selSeg = 0;
     markDirty(true); renderList(); renderForm();
   };
   $('btnSave').onclick = save;

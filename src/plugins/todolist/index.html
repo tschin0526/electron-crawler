@@ -2409,6 +2409,14 @@
     /* 跳转定位高亮（滚动到事件后短暂闪烁描边） */
     .tl-jump-flash { animation: tlJumpFlash 2s ease; }
     @keyframes tlJumpFlash { 0%, 60% { box-shadow: 0 0 0 3px rgba(245,197,24,.85); border-radius: 6px; } 100% { box-shadow: none; } }
+    /* 🆕 「找出相同的项目」切换定位：事件表单备注框命中行闪烁两下金底＋金环（与便利贴窗 .fs-found-blink 同口径） */
+    /* 🆕 「找出相同 → 切换」在行程表单备注框里的命中闪烁：4 秒（2s × 2 次脉冲），与便利贴窗口径一致 */
+    #tlEvFNotes.tl-evf-notes-flash { animation: tlEvfNotesFlash 2s ease-in-out 2; }
+    @keyframes tlEvfNotesFlash {
+      0%, 100% { background: var(--ev-input-bg, #fff); box-shadow: 0 0 0 0 rgba(212,175,55,0); }
+      20%, 60% { background: rgba(212,175,55,.38); box-shadow: 0 0 0 3px rgba(212,175,55,.95); }
+      40%, 80% { background: var(--ev-input-bg, #fff); box-shadow: 0 0 0 0 rgba(212,175,55,0); }
+    }
     .tl-ev-form-title { font-size: 16px; font-weight: 600; color: var(--ev-text); margin-bottom: 12px; }
     /* ===== 📊 事件统计弹层 ===== */
     .tl-ev-stats-box { max-width: min(1080px, 94vw); }
@@ -7254,7 +7262,12 @@
         : tlCalEvents;
       const uid = (typeof tlFindEventUidByKey === 'function') ? tlFindEventUidByKey(key) : null;
       if (!uid) { if (typeof showToast === 'function') showToast('找不到该行程', 'danger'); return; }
-      try { if (typeof tlOpenEventForm === 'function') tlOpenEventForm(uid); }
+      // 🆕 携带「找出相同的项目」切换定位的信息：便利贴窗经 wake-main-from-note → open-sticky-event 传来
+      //    lines（0-based 行号区间）与 text（目标原文，行号缺失时按内容兜底定位）
+      const hlLines = (payload && Array.isArray(payload.lines)) ? payload.lines.map((x) => +x || 0) : [];
+      const hlText = (payload && payload.text) ? String(payload.text) : '';
+      const pre = (hlLines.length || hlText) ? { highlightLines: hlLines, highlightText: hlText } : undefined;
+      try { if (typeof tlOpenEventForm === 'function') tlOpenEventForm(uid, null, pre); }
       catch (e) { console.warn('[TodoList] 打开便利贴对应行程失败:', e); }
     }
     if (window.electronAPI && typeof window.electronAPI.onStickyOpenEvent === 'function') {
@@ -7480,7 +7493,9 @@
           tlCalEvents = tlAllEvents(document.getElementById('taskText').value);
         }
         const refs = (typeof tlStickyNoteRefs === 'function') ? tlStickyNoteRefs() : [];
-        window.electronAPI.send('sticky-note-sync', { notes: refs });
+        // 🆕 events：全部行程（含普通行程），供便利贴窗 find-same 找回 VIEW 来源行程与跨行程相同内容
+        const events = (typeof tlCompactStickyEvents === 'function') ? tlCompactStickyEvents(tlCalEvents) : [];
+        window.electronAPI.send('sticky-note-sync', { notes: refs, events });
         if (payload && typeof payload.key === 'string') {
           const key = payload.key, idx = +payload.idx || 0;
           let ref = refs.find(r => r.key === key && r.idx === idx);

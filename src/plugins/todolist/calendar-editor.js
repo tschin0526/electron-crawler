@@ -1251,8 +1251,10 @@
         const n = parseInt(ev && ev.sticky, 10) || 0;
         if (n > 0) {
           const key = ev.uid || ((ev.title || '') + '|' + (ev.date || ''));
-          // 🆕 便利贴层：include(ro) 行程也全開编辑（落回來源檔），故传 forceEditable=true
-          const html = (typeof tlRenderNotes === 'function') ? tlRenderNotes(ev.notes, ev.uid || key, true) : '';
+          // 🆕 便利贴层：include(ro) 行程也全開编辑（落回來源檔），故传 forceEditable=true；
+          //    并把 ev 一并传入（evOverride），确保这里必定走 canEdit 分支 → 正文有 .md-unit 区块，
+          //    「找出相同 → 切换」才能定位并闪烁非 checkbox 行（否则只有 checkbox 行有元素可定位）。
+          const html = (typeof tlRenderNotes === 'function') ? tlRenderNotes(ev.notes, ev.uid || key, true, ev) : '';
           // 🆕 标题同样由主窗口渲染（与列表行同一 tlRenderInlineMarkdown 管线），避免便利贴里显示原始 <BIG> 等标签
           const titleHtml = (typeof tlRenderInlineMarkdown === 'function') ? tlRenderInlineMarkdown(ev.title || '') : '';
           const titleNode = document.createElement('div');
@@ -1289,12 +1291,31 @@
       } catch (e) { /* 解析失败就用现有快照 */ }
       return tlCalEvents;
     }
+    // 🆕 把「全部行程（含未设便利贴的普通行程）」压成比对/显示所需的精简结构，随 sticky-note-sync
+    //    一并交给主进程，供便利贴窗「找出相同的项目」搜到 VIEW 投影贴的「来源行程」（普通行程没上便利贴
+    //    清单，原本只在便利贴目录里找不到）与「其它普通行程」里的相同内容。
+    //    只挑「有备注内容」且「有 uid」的行程：① 无备注不可能命中；② 没 uid 无法定位/打开。
+    function tlCompactStickyEvents(events) {
+      const list = Array.isArray(events) ? events : (Array.isArray(tlCalEvents) ? tlCalEvents : []);
+      return list
+        .filter((ev) => ev && String(ev.notes || '').trim() && (ev.uid || ''))
+        .map((ev) => ({
+          uid: ev.uid || '',
+          title: ev.title || '',
+          date: ev.date || '',
+          endDate: ev.endDate || '',
+          // ⚠️ 只有 INCLUDE(ro) 行程才带 src（与主进程目录一致：普通档 src 恒空＝主档）
+          src: ev.ro ? String(ev.src || '') : '',
+          notes: ev.notes || ''
+        }));
+    }
     function tlPushStickyRefreshes(force) {
       // 🆕 force=true 时不被 tlStickyNotesOpen 守卫拦截（规则刚加载时便利贴可能还没开）：
       //    先算好 refs、记好指纹，等下一次 open-sticky-notes 会重新调用 tlStickyNoteRefs() 拿最新集合。
       if (!force && typeof tlStickyNotesOpen !== 'undefined' && !tlStickyNotesOpen) return;
       if (!window.electronAPI || !window.electronAPI.send) return;
-      const refs = tlStickyNoteRefs(tlLiveCalEvents());
+      const liveEvents = tlLiveCalEvents();
+      const refs = tlStickyNoteRefs(liveEvents);
       console.log('[tlPushStickyRefreshes] force=', force, 'refs count:', refs.length, 'keys:', refs.map(r => r.key));
       const setSig = refs.map((ref) => ref.key + '#' + (+ref.idx || 0)).join(',');
       const prevSig = tlLastStickySet;
@@ -1304,7 +1325,8 @@
       if (force || (prevSig && setSig !== prevSig)) {
         // 集合变了（张数增减 / 换行程）→ 整份同步，主进程才知道翻页清单多了或少了哪几张；
         // sync 本身会按分量刷新已存在的窗并补建新窗，不必再逐张发 refresh
-        try { window.electronAPI.send('sticky-note-sync', { notes: refs }); } catch (err) {}
+        // 🆕 events：全部行程（含普通行程），供便利贴窗 find-same 找回 VIEW 来源行程与跨行程相同内容
+        try { window.electronAPI.send('sticky-note-sync', { notes: refs, events: tlCompactStickyEvents(liveEvents) }); } catch (err) {}
         return;
       }
       refs.forEach((ref) => { window.electronAPI.send('sticky-note-refresh', ref); });
@@ -1479,10 +1501,14 @@
     //   uid 為 null（節日 / tooltip）或唯讀事件 → 整段渲染，行為完全不變。
     //   🆕 forceEditable：便利贴层对 include(ro) 行程全開（编辑落回來源檔，见 tlSaveIncludedEventNotes），
     //      故便利贴渲染须传 true；行程視圖 / 事件表單維持 ro 唯讀（不顯示編輯小圓點）。
-    function tlRenderNotes(notes, uid, forceEditable) {
+    function tlRenderNotes(notes, uid, forceEditable, evOverride) {
       if (!notes) return '';
       const raw = String(notes);
-      const event = uid ? tlCalEvents.find((x) => x.uid === uid) : null;
+      // 🆕 evOverride：调用方手上已有 event 对象时直接传进来，不再回查 tlCalEvents。
+      //    ⚠️ 便利贴窗正文走 tlStickyNoteRefs（下方 line ~1255），那时 tlCalEvents 可能尚未刷新/不含该 uid，
+      //    回查失败 → event=null → canEdit=false → 整段渲染（没有 .md-unit 区块），
+      //    于是「找出相同 → 切换」定位不到非 checkbox 行（2026-10-30 用户回报：只有 checkbox 行会闪）。
+      const event = evOverride || (uid ? tlCalEvents.find((x) => x.uid === uid) : null);
       const canEdit = !!(uid && event && (!event.ro || forceEditable));
       if (!canEdit) {
         const withChecks = tlNotesWithChecks(raw, uid);
@@ -1500,8 +1526,9 @@
         }
         const chunk = lines.slice(b.start, b.end + 1).join('\n');
         const inner = renderMarkdown(tlRenderTermDefs(chunk));
-        out += '<div class="md-unit"><button type="button" class="md-unit-edit" title="' + tlEditUnitTip(b.type) + '" ' +
-          'onclick="tlOpenEditBlockDialog(event,\'' + uidAttr + '\',' + b.start + ',' + b.end + ',\'' + b.type + '\')">\u270e</button>' +
+        out += '<div class="md-unit"><button type="button" class="md-unit-edit" title="' + tlEditUnitTip(b.type) + '"' +
+          ' data-uid="' + uidAttr + '" data-start="' + b.start + '" data-end="' + b.end + '" data-type="' + b.type + '"' +
+          ' onclick="tlOpenEditBlockDialog(event,\'' + uidAttr + '\',' + b.start + ',' + b.end + ',\'' + b.type + '\')">\u270e</button>' +
           inner + '</div>';
       });
       return out;
@@ -4000,6 +4027,75 @@
       document.getElementById('tlEvFormOverlay').style.display = 'flex';
       tlAutoSizeNotes();
       document.getElementById('tlEvFTitle').focus();
+      // 🆕 「找出相同的项目」切换定位：若带高亮行（0-based 行号区间），定位并闪烁备注框里那些行。
+      //    延迟一帧确保 overlay 已显示、textarea 已渲染完成，再滚动＋选中＋金底闪烁两次。
+      if (p && ((Array.isArray(p.highlightLines) && p.highlightLines.length) || p.highlightText)) {
+        const hl = Array.isArray(p.highlightLines) ? p.highlightLines.map((x) => (+x || 0)).sort((a, b) => a - b) : [];
+        setTimeout(function () { tlFlashEventFormLines(hl, p.highlightText); }, 60);
+      }
+    }
+    // 🆕 把 Markdown 原文压成可跟「备注框原文」比对的形式：去掉链接目标 / [[…]] 标记 / 行首块级符号。
+    //    用于「找出相同 → 切换」没拿到行号时的内容兜底定位。
+    function tlPlainForMatch(s) {
+      return String(s == null ? '' : s)
+        .replace(/!\[([^\]]*)\]\([^)]*\)/g, '$1')
+        .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
+        .replace(/\[\[[^\]]*\]\]/g, ' ')
+        .replace(/^[\s>#*+~-]+/, ' ')
+        .replace(/^\s*\d{1,9}[.)]\s*/, ' ')
+        .replace(/[*_`~]/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+    }
+    // 🆕 事件表单备注框命中行闪烁定位：「找出相同的项目」切换过来时，把备注框滚动到目标行、
+    //   选中该行（浏览器原生选中即高亮），并叠加金底＋金环闪烁（4 秒）。
+    //   lines 为空时用 text 兜底（按内容找行号），两者都没有就什么都不做。
+    function tlFlashEventFormLines(lines, text) {
+      const ta = document.getElementById('tlEvFNotes');
+      if (!ta) return;
+      let arr = Array.isArray(lines) ? lines.map((x) => (+x || 0)).sort((a, b) => a - b) : [];
+      if (!arr.length && text) {
+        const want = tlPlainForMatch(String(text).split('\n').map((l) => l.trim()).find((l) => l) || '');
+        if (want.length >= 2) {
+          const ls = String(ta.value || '').split('\n');
+          for (let i = 0; i < ls.length; i += 1) {
+            if (tlPlainForMatch(ls[i]).indexOf(want) >= 0) { arr = [i]; break; }
+          }
+        }
+      }
+      if (!arr.length) return;
+      const start = Math.max(0, arr[0]);
+      const end = Math.max(start, arr[arr.length - 1]);
+      const value = ta.value || '';
+      // 由 0-based 行号换算字符偏移（行号按 \n 计数；行首＝上一换行之后）
+      function lineToOffset(targetLine) {
+        let i = 0, ln = 0;
+        while (i < value.length && ln < targetLine) { if (value[i] === '\n') ln++; i++; }
+        return i;
+      }
+      const sOff = lineToOffset(start);
+      let eOff = value.length;
+      // end 行末尾＝下一换行之前（没有则到文末）
+      (function () {
+        let i = sOff, ln = start;
+        while (i < value.length) {
+          if (value[i] === '\n') { if (ln === end) { eOff = i; return; } ln++; }
+          i++;
+        }
+        eOff = value.length;
+      })();
+      if (eOff < sOff) eOff = sOff;
+      try { ta.focus(); ta.setSelectionRange(sOff, eOff); } catch (e) {}
+      // 滚动到目标行（lineHeight 取实际计算值，退化 20px）
+      try {
+        const lh = parseFloat(getComputedStyle(ta).lineHeight) || (parseFloat(getComputedStyle(ta).fontSize) * 1.4) || 20;
+        ta.scrollTop = Math.max(0, start * lh - ta.clientHeight / 3);
+      } catch (e) {}
+      ta.classList.remove('tl-evf-notes-flash');
+      void ta.offsetWidth;   // 强制 reflow 重启动画
+      ta.classList.add('tl-evf-notes-flash');
+      // 🆕 4 秒（CSS 为 2s × 2 次脉冲）：与便利贴窗的命中闪烁时长一致，更醒目
+      setTimeout(function () { ta.classList.remove('tl-evf-notes-flash'); }, 4200);
     }
 
     // 📝 開啟編輯/新增行程時，依備註內容自動加高 textarea（最多 15 行，不足 15 行按實際行數）

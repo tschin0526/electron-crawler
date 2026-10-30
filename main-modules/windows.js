@@ -258,6 +258,7 @@ const stickyNoteMeta = new Map();
 // 🆕 翻页显示模式：single window 循环多张便利贴
 let stickyNoteOrder = [];          // 翻页顺序 [{key, idx}]（与 split 模式并行存在）
 let stickyNoteCatalog = [];        // 本次 Calendar 会话中全部已设定的便利贴（含已关闭项）
+let stickyNoteAllEvents = [];      // 🆕 本次会话全部行程（含未设便利贴的普通行程），随 sticky-note-sync 带来；供便利贴窗 find-same 找回来源
 let lastStickyCatalogSync = 0;     // 🆕 方案B：最近一次 sticky-note-sync 刷新目录的时间戳
 let stickyOrderRefreshSeq = 0;     // 🆕 方案B：触发重算的请求序号
 const STICKY_ORDER_REFRESH_TTL = 1200; // 🆕 方案B：目录近期已刷新则复用，避免频繁重算
@@ -1000,7 +1001,7 @@ ipcMain.handle('sticky-note-order', async () => {
   const order = stickyNoteMode === 'flip'
     ? stickyNoteOrder.map(note => notesById.get(noteWinId(note.key, note.idx))).filter(Boolean)
     : notes.filter(note => note.isOpen);
-  return { mode: stickyNoteMode, order, notes };
+  return { mode: stickyNoteMode, order, notes, events: stickyNoteAllEvents };
 });
 function requestStickyNoteClose(win) {
   const requestId = 'sticky-menu-close-' + Date.now() + '-' + (++stickyMenuCloseSeq);
@@ -1206,6 +1207,8 @@ ipcMain.on('sticky-note-refresh', (e, arg) => {
 });
 ipcMain.on('sticky-note-sync', (e, arg) => {
   const refs = arg && Array.isArray(arg.notes) ? arg.notes : [];
+  // 🆕 全部行程（含普通行程）随 sync 带来；只有带 events 字段的新版才刷新（旧版不覆盖，避免回退成空）
+  if (arg && Array.isArray(arg.events)) stickyNoteAllEvents = arg.events;
   const previousCatalog = new Map(stickyNoteCatalog.map(note => [noteWinId(note.key, note.idx), note]));
   const previousOrder = new Map(stickyNoteOrder.map((note, index) => [noteWinId(note.key, note.idx), index]));
   const nextCatalog = [];
@@ -1817,7 +1820,12 @@ ipcMain.handle('wake-main-from-note', (e, arg) => {
   const win = showMainWindow();
   const channel = (arg && arg.action === 'scroll') ? 'scroll-sticky-event' : 'open-sticky-event';
   const notifySticky = () => {
-    if (!win.isDestroyed()) win.webContents.send(channel, { key: (arg && arg.key) || '' });
+    if (!win.isDestroyed()) win.webContents.send(channel, {
+      key: (arg && arg.key) || '',
+      // 🆕 「找出相同的项目」切换定位：便利贴窗传来的高亮行（0-based 行号区间）＋目标原文，转交主程式 open-sticky-event
+      lines: (arg && Array.isArray(arg.lines)) ? arg.lines : [],
+      text: (arg && typeof arg.text === 'string') ? arg.text : ''
+    });
   };
   if (win.webContents.isLoading()) win.webContents.once('did-finish-load', notifySticky);
   else notifySticky();

@@ -101,34 +101,57 @@
   }
 
   // ===== 规则：读进来的 JSON 一律先归一化（缺字段补默认值，脏值不让它炸）=====
-  function normalizeRule(raw) {
-    const r = raw && typeof raw === 'object' ? raw : {};
-    const rt = r.rowTypes && typeof r.rowTypes === 'object' ? r.rowTypes : {};
-    const kw = Array.isArray(r.keywords) ? r.keywords
-      : (typeof r.keywords === 'string' ? String(r.keywords).split(/[,，、\n]/) : []);
-    const marker = MARKERS.some((m) => m.value === r.marker) ? r.marker : '';
+  // 段落（segment）：每一段＝一个完整的搜索（关键词＋标记＋模式＋大小写＋行型态）。
+  //   旧版规则没有 segments 字段 → 用顶层条件合成「单一段落」（向后兼容，外观与旧版一致）。
+  function normalizeSegment(raw) {
+    const s = raw && typeof raw === 'object' ? raw : {};
+    const kw = Array.isArray(s.keywords) ? s.keywords
+      : (typeof s.keywords === 'string' ? String(s.keywords).split(/[,，、\n]/) : []);
+    const marker = MARKERS.some((m) => m.value === s.marker) ? s.marker : '';
+    const rt = s.rowTypes && typeof s.rowTypes === 'object' ? s.rowTypes : null;  // null＝继承规则层
     return {
-      id: String(r.id == null ? '' : r.id),
-      title: String(r.title == null ? '' : r.title).replace(/\s+/g, ' ').trim() || '自定义便利贴',
-      enabled: r.enabled !== false,
+      title: String(s.title == null ? '' : s.title).replace(/\s+/g, ' ').trim(),
       keywords: kw.map((x) => String(x == null ? '' : x).trim()).filter(Boolean),
-      keywordMode: r.keywordMode === 'ALL' ? 'ALL' : 'ANY',
+      keywordMode: s.keywordMode === 'ALL' ? 'ALL' : 'ANY',
       marker: marker,
-      caseSensitive: !!r.caseSensitive,
-      emptyBehavior: r.emptyBehavior === 'hide' ? 'hide' : 'show',
-      builtin: r.builtin === true,
-      readonly: r.readonly === true || r.builtin === true,
-      // 🆕 启动通知（便利贴启动时先闪烁显示这张贴，秒数到或手动关闭后才进正常显示）
-      notify: r.notify === true,
-      notifySeconds: normalizeNotifySeconds(r.notifySeconds),
-      rowTypes: {
+      caseSensitive: !!s.caseSensitive,
+      rowTypes: rt ? {
         todo: rt.todo !== false,
         done: rt.done === true,        // 默认不收已打勾（与 🔔 同口径：打勾＝不必再提醒）
         list: rt.list !== false,
         para: rt.para !== false,
         quote: rt.quote !== false,
         heading: rt.heading !== false
-      }
+      } : null
+    };
+  }
+  function blankSegment() { return normalizeSegment({ title: '', keywords: [], keywordMode: 'ANY', marker: '', caseSensitive: false, rowTypes: null }); }
+  function normalizeRule(raw) {
+    const r = raw && typeof raw === 'object' ? raw : {};
+    const rt = r.rowTypes && typeof r.rowTypes === 'object' ? r.rowTypes : {};
+    const ruleRowTypes = {
+      todo: rt.todo !== false, done: rt.done === true, list: rt.list !== false,
+      para: rt.para !== false, quote: rt.quote !== false, heading: rt.heading !== false
+    };
+    // 段落：优先用显式 segments；否则（旧版规则）用顶层条件合成单一段落
+    let segments;
+    if (Array.isArray(r.segments) && r.segments.length) segments = r.segments.map(normalizeSegment);
+    else segments = [normalizeSegment({
+      title: '', keywords: r.keywords, keywordMode: r.keywordMode,
+      marker: r.marker, caseSensitive: r.caseSensitive, rowTypes: r.rowTypes
+    })];
+    segments.forEach((s) => { if (!s.rowTypes) s.rowTypes = ruleRowTypes; });  // 未明写行型态→继承规则层
+    return {
+      id: String(r.id == null ? '' : r.id),
+      title: String(r.title == null ? '' : r.title).replace(/\s+/g, ' ').trim() || '自定义便利贴',
+      enabled: r.enabled !== false,
+      segments: segments,
+      emptyBehavior: r.emptyBehavior === 'hide' ? 'hide' : 'show',
+      builtin: r.builtin === true,
+      readonly: r.readonly === true || r.builtin === true,
+      // 🆕 启动通知（便利贴启动时先闪烁显示这张贴，秒数到或手动关闭后才进正常显示）
+      notify: r.notify === true,
+      notifySeconds: normalizeNotifySeconds(r.notifySeconds)
     };
   }
   function normalizeList(list) {
@@ -138,30 +161,41 @@
   function blankRule() { return normalizeRule({ id: newRuleId(), title: '' }); }
   function builtinRules() { return [normalizeRule(BUILTIN_REMIND_RULE)]; }
 
-  // 规则摘要（人类可读的条件文案）：维护窗清单、便利贴窗徽标弹层共用，保证同口径。
-  //   ⚠️ 与维护窗原本的 condText 完全一致；新增这里后，维护窗应改呼叫 V.ruleSummary 收口（单一可信来源）。
-  function ruleSummary(rule) {
-    const r = normalizeRule(rule);
+  // 单段条件文案（不含「段落」前缀）：维护窗清单、徽标弹层、段落标题共用，保证同口径。
+  //   ⚠️ 标记用「标记＝remind」而不是「[[remind:…]]」——后者会被 termDefs 当胶囊解析，
+  //      这里只是说明文字，不能出现成对的双方括号。
+  function conditionText(cond) {
+    if (!cond) return '⚠ 没有条件（不会抓到内容）';
     const parts = [];
-    if (r.marker) parts.push('[[' + r.marker + ':…]]');
-    if (r.keywords.length) parts.push('关键词' + (r.keywordMode === 'ALL' ? '全中' : '任一') + '：' + r.keywords.join('、') + (r.caseSensitive ? '（区分大小写）' : ''));
+    if (cond.marker) parts.push('标记＝' + cond.marker);
+    if (cond.keywords.length) parts.push('关键词' + (cond.keywordMode === 'ALL' ? '全中' : '任一') + '：' + cond.keywords.join('、') + (cond.caseSensitive ? '（区分大小写）' : ''));
     if (!parts.length) parts.push('⚠ 没有条件（不会抓到内容）');
-    const types = ROW_TYPES.filter((t) => r.rowTypes[t]).map((t) => ROW_TYPE_LABEL[t]);
+    const types = ROW_TYPES.filter((t) => cond.rowTypes && cond.rowTypes[t]).map((t) => ROW_TYPE_LABEL[t]);
     parts.push('行型态：' + (types.join('／') || '无'));
     return parts.join(' ＋ ');
   }
-
-  // 这一行是否命中规则（三个条件是 AND；关键词／标记都没设＝不收，否则会整本行程洗进贴纸）
-  function ruleHasCondition(rule) {
-    return rule.keywords.length > 0 || !!rule.marker;
+  // 规则摘要（人类可读）：单段＝旧格式（与旧版一致）；多段＝「共 N 段：段落1（…）｜段落2（…）」。
+  function ruleSummary(rule) {
+    const r = normalizeRule(rule);
+    if (r.segments.length === 1) return conditionText(r.segments[0]);
+    return '共 ' + r.segments.length + ' 段：' + r.segments.map((s, i) =>
+      '段落' + (i + 1) + (s.title ? '：' + s.title : '') + '（' + conditionText(s) + '）').join(' ｜ ');
   }
-  function lineHitsRule(line, trimmed, rule) {
-    if (rule.marker && !new RegExp('\\[\\[' + rule.marker + ':', 'i').test(line)) return false;
-    if (!rule.keywords.length) return true;
-    const hay = rule.caseSensitive ? trimmed : trimmed.toLowerCase();
-    const ok = rule.keywords.map((k) => (rule.caseSensitive ? k : k.toLowerCase()))
+
+  // 这一段是否算「有搜索条件」（关键词／标记至少要有一个）；整条规则＝任一段有即可
+  function segmentHasCondition(seg) {
+    return !!seg && (seg.keywords.length > 0 || !!seg.marker);
+  }
+  function ruleHasCondition(rule) {
+    return (rule && Array.isArray(rule.segments) ? rule.segments : []).some(segmentHasCondition);
+  }
+  function lineHitsRule(line, trimmed, cond) {
+    if (cond.marker && !new RegExp('\\[\\[' + cond.marker + ':', 'i').test(line)) return false;
+    if (!cond.keywords.length) return true;
+    const hay = cond.caseSensitive ? trimmed : trimmed.toLowerCase();
+    const ok = cond.keywords.map((k) => (cond.caseSensitive ? k : k.toLowerCase()))
       .filter((k) => k).map((k) => hay.indexOf(k) >= 0);
-    return rule.keywordMode === 'ALL' ? ok.every(Boolean) : ok.some(Boolean);
+    return cond.keywordMode === 'ALL' ? ok.every(Boolean) : ok.some(Boolean);
   }
 
   // 0 命中时贴面上的话：把「为什么是空的」和「去哪改」直接写在贴子上。
@@ -195,16 +229,17 @@
     };
   }
 
-  // ===== 收集：规则 ＋ 全部行程 → 分组（结构与 🔔 的 tlViewStickyGroups 逐字相同）=====
+  // ===== 收集：一段条件 ＋ 全部行程 → 分组（结构与 🔔 的 tlViewStickyGroups 逐字相同）=====
   //   回传 [{ ev, hits }]，hits＝[{ raw, line, uid, text, task, type }]＋分隔用空行 { raw:'', sep:true }。
   //   line＝来源行程备注里的 0-based 行号；text＝checkbox 内文（便利贴窗右键「找出相同」要比对的字）。
   //   收哪些行：围栏程式码块内的标记是范例→不收；其余按 rowTypes／关键词／标记过滤。
   //   ⚠️ 「列表项」后面直接接「非列表行」＝CommonMark 的 lazy continuation，会被并到上一条里面，
   //      所以中间要补一个空行（收集来的行原本未必相邻，源档的空行不会一起带过来）。
-  function collectGroups(events, rule, deps) {
+  //   cond＝一个段落（segment）：{ keywords, keywordMode, marker, caseSensitive, rowTypes }。
+  function collectGroups(events, cond, deps) {
     const D = makeDeps(deps);
     const groups = [];
-    if (!ruleHasCondition(rule)) return groups;
+    if (!segmentHasCondition(cond)) return groups;
     (Array.isArray(events) ? events : []).forEach((ev) => {
       if (!ev) return;
       const hits = [];
@@ -215,8 +250,8 @@
         const t = line.trim();
         if (!t) return;
         const type = rowTypeOf(line, t);
-        if (!rule.rowTypes[type]) return;
-        if (!lineHitsRule(line, t, rule)) return;
+        if (!cond.rowTypes[type]) return;
+        if (!lineHitsRule(line, t, cond)) return;
         // 🆕 已完成的 checkbox（type='done'）也要當 task 行渲染。
         //   否則 done 行會落進下面的「非 task」分支 → D.markdown(D.termDefs(raw))，
         //   被 GFM 當成一般任務清單 → 顯示成「方形 checkbox ＋ 未解析的 [[cp:…]] 原文」，
@@ -267,48 +302,121 @@
       '<span class="ev-cb">' + (done ? '\u2713' : '') + '</span>' +
       '<span class="ev-md-check-text">' + D.inline(D.noteMarkers(m[3])) + '</span></span>';
   }
+  // 非 task 行（段落／列表项／引用／标题／含 [[…]] 胶囊的行）：投影贴里同样给编辑小圆点，
+  //   但「最小 MD 单元」口径必须与来源便利贴（calendar-editor.js::tlSplitMdBlocks）一致——
+  //   连续同类行合并成一个单元、一颗圆点（例如连续两条 - 列表项＝一个 list 块＝一颗圆点），
+  //   而不是像之前那样「每行一颗」。否则 VIEW 投影贴会把同一 list 块的 2 条 bullet 显示成 2 颗圆点，
+  //   与来源便利贴（1 颗）不一致，让使用者误以为「比来源多了编辑单元」（2026-10-30 使用者回报）。
+  //   ⚠️ 圆点保持只读：不开编辑浮层（投影贴无落盘位置）；用 .md-unit 包住以复用来源便利贴的左侧凹槽定位。
+  //   ⚠️ 圆点的 data-text 携带「整块原文」（多行用 \n 连接），供「找出相同的项目」比整块而非单行；
+  //      见 desktop-note.js noteFindSameComputeMatches 的整块比对分支。
+  function viewMergeCategory(h) {
+    // 与 tlSplitMdBlocks 同口径：list/para/quote 连续可并；heading/hr/code/table 各自独立（每命中即新单元）
+    if (h.type === 'list') return 'list';
+    if (h.type === 'para') return 'para';
+    if (h.type === 'quote') return 'quote';
+    // heading/hr/code/table：用行号保证每命中独立成单元（不会与相邻同类合并）
+    return 'solo:' + (h.line != null ? h.line : Math.random());
+  }
+  // 把一组命中切成「编辑单元」：连续同类非 task 行合并成一个单元；task 行各自独立（沿用 checkbox 行逻辑）。
+  function groupHitsIntoUnits(hits) {
+    const units = [];
+    let cur = null;
+    (hits || []).forEach((h) => {
+      if (h.sep) return;
+      if (h.task) { if (cur) units.push(cur); units.push({ task: true, hits: [h] }); cur = null; return; }
+      const cat = viewMergeCategory(h);
+      if (cur && !cur.task && cur.cat === cat) cur.hits.push(h);
+      else { if (cur) units.push(cur); cur = { cat: cat, task: false, hits: [h] }; }
+    });
+    if (cur) units.push(cur);
+    return units;
+  }
+  // 一个非 task 编辑单元（可能含 1..n 条连续同类行）：整块渲染成 1 个 .md-unit ＋ 1 颗只读圆点。
+  function nonTaskUnitHtml(hits, ev, selfKey, deps) {
+    const D = makeDeps(deps);
+    const list = (hits && hits.length) ? hits : [];
+    if (!list.length) return '';
+    const first = list[0];
+    const stitle = D.esc(String((ev && ev.title) || '').replace(/\s+/g, ' ').trim() || '(无标题)');
+    const chunk = list.map((h) => String(h.raw || '').trim()).join('\n');   // 整块原文（多行用 \n 连接）
+    const dot = '<button type="button" class="ev-md-edit" title="右键：复制／找出相同的项目"' +
+      ' data-uid="' + D.esc(selfKey) + '" data-src="' + D.esc(first.uid || '') +
+      '" data-stitle="' + stitle + '" data-line="' + (first.line != null ? first.line : '') +
+      '" data-text="' + D.esc(chunk) + '">\u270e</button>';
+    // 🆕 data-start/data-end：与 tlRenderNotes 的 .md-unit 同口径（0-based 行区间），
+    //    让「找出相同的项目 → 切换」能在便利贴窗里用同一个选择器定位到这个单元并闪烁。
+    const last = list[list.length - 1];
+    return '<div class="md-unit" data-start="' + (first.line != null ? first.line : '') +
+      '" data-end="' + (last.line != null ? last.line : (first.line != null ? first.line : '')) + '">' +
+      dot + D.markdown(D.termDefs(chunk)) + '</div>';
+  }
   function groupsToHtml(groups, selfKey, deps) {
     const D = makeDeps(deps);
     let out = '';
     (groups || []).forEach((g) => {
       out += D.inline(groupHeadMd(g.ev, D)) + '\n';
-      g.hits.forEach((h) => {
-        if (h.sep) return;
-        out += h.task ? taskLineHtml(h, g.ev, selfKey, D) + '\n'
-          : D.markdown(D.termDefs(h.raw)) + '\n';
+      groupHitsIntoUnits(g.hits).forEach((u) => {
+        out += u.task ? taskLineHtml(u.hits[0], g.ev, selfKey, D) + '\n'
+          : nonTaskUnitHtml(u.hits, g.ev, selfKey, D) + '\n';
       });
     });
     return out;
   }
 
+  // 段落标题（markdown）：「### 段落 N：标题」＋ 一行条件说明（blockquote，纯文字、不含 [[…]]）。
+  //   只在「多段落」时才渲染（单段落与旧版外观一致，不加标题）；条件文案走 conditionText（已避开 [[…]]）。
+  function segmentHeaderMd(seg, i) {
+    const title = seg.title ? '：' + seg.title : '';
+    return '### 段落 ' + (i + 1) + title + '\n> 条件：' + conditionText(seg);
+  }
+
   // ===== 一张自定义投影贴 =====
-  //   回传 null 只有两种：规则关闭、或一个命中条件都没设（＝还没填好，不是「抓完发现没有」）。
+  //   回传 null 只有两种：规则关闭、或所有段落都没有命中条件（＝还没填好，不是「抓完发现没有」）。
   //   有条件但 0 命中 → 照建一张，贴面写明原因（见 EMPTY_NOTES）。
+  //   🆕 多段落：每段各是一个完整搜索，按 segments 顺序显示为多个「段落 N」区块；
+  //      单段落（含 🔔 内置、旧版自定义）外观与旧版完全一致（不加标题）。
   function buildRef(rule, events, deps) {
     const D = makeDeps(deps);
     const r = normalizeRule(rule);
     if (!r.enabled) return null;                     // 关闭的规则＝不要这张贴
-    // 一个条件都没设（无关键词也无标记）＝还没填好，不是「抓完发现没有」：
-    // 维护窗已经用「⚠ 没有条件（不会抓到内容）」直接提示这一条，这里不再开一张空贴，
-    // 更重要的是绝不能把整本行程洗进贴纸。
-    if (!ruleHasCondition(r)) return null;
-    const groups = collectGroups(events, r, D);
-    const notes = groupsToMd(groups, D);
+    if (!r.segments.some(segmentHasCondition)) return null;   // 全部段落都没条件＝还没填好
     const key = viewKeyOf(r.id);
     const base = {
       key, idx: 0, view: true, customView: true, ruleId: r.id,
       titleHtml: D.inline(r.title), title: r.title, date: '', endDate: '', color: '', done: false, tags: [], src: '',
-      // 🆕 启动通知旗标：随贴一起交给便利贴窗／LITE，启动阶段据此排通知顺序与秒数
       notify: r.notify === true,
       notifySeconds: r.notifySeconds
     };
-    // 一条都没命中也照建一张（2026-10-27 使用者要求）：静默消失让人分不清「规则没生效」还是「行程里就是没有」，
-    // 所以把原因写在贴面上。⚠️ 只有自订规则走这里——🔔 提醒的母本在 calendar-editor.js，仍是没内容就没这张贴。
-    if (!notes && r.emptyBehavior !== 'hide') {
+    // 每段独立收集（只收「有」条件的段落）
+    const segResults = r.segments
+      .filter(segmentHasCondition)
+      .map((seg) => ({ seg, groups: collectGroups(events, seg, D) }));
+    const totalHits = segResults.reduce((a, s) => a + s.groups.length, 0);
+    if (totalHits === 0) {
+      if (r.emptyBehavior === 'hide') return null;
       return Object.assign(base, { notes: EMPTY_NOTES, html: D.markdown(D.termDefs(EMPTY_NOTES)) });
     }
-    if (!notes) return null;
-    return Object.assign(base, { notes, html: groupsToHtml(groups, key, D) });
+    const multi = segResults.length > 1;
+    let notes = '';
+    let html = '';
+    segResults.forEach((sr, i) => {
+      const g = sr.groups;
+      const segNotes = groupsToMd(g, D);
+      const segHtml = groupsToHtml(g, key, D);
+      if (!multi) { notes += segNotes; html += segHtml; return; }
+      // 🆕 多段落：每段一个标题，按设定顺序显示
+      const head = segmentHeaderMd(sr.seg, i);
+      const headHtml = D.markdown(D.termDefs(head));
+      if (g.length) {
+        notes += (notes ? '\n\n' : '') + head + '\n' + segNotes;
+        html += (html ? '\n' : '') + headHtml + '\n' + segHtml;
+      } else {
+        notes += (notes ? '\n\n' : '') + head + '\n\n> （这个段落目前没抓到任何行）';
+        html += (html ? '\n' : '') + headHtml + '\n' + D.markdown('> （这个段落目前没抓到任何行）');
+      }
+    });
+    return Object.assign(base, { notes, html });
   }
   function buildRefs(rules, events, deps) {
     const D = makeDeps(deps);
@@ -330,8 +438,9 @@
     isNotifyRule: isNotifyRule,
     normalizeRule: normalizeRule, normalizeList: normalizeList,
     newRuleId: newRuleId, blankRule: blankRule, builtinRules: builtinRules,
-    ruleHasCondition: ruleHasCondition,
-    ruleSummary: ruleSummary,
+    blankSegment: blankSegment,
+    segmentHasCondition: segmentHasCondition, ruleHasCondition: ruleHasCondition,
+    conditionText: conditionText, ruleSummary: ruleSummary,
     EMPTY_NOTES: EMPTY_NOTES,
     rowTypeOf: rowTypeOf, collectGroups: collectGroups, groupHeadMd: groupHeadMd,
     groupsToMd: groupsToMd, groupsToHtml: groupsToHtml, taskLineHtml: taskLineHtml,

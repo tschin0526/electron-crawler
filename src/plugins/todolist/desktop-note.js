@@ -247,10 +247,10 @@ function normalizeMeteor(m) {
     color: isHex(m.color) ? m.color : '#ffae00',
     follow: m.follow === true,
     rainbow: m.rainbow === true,
-    flame: num(m.flame, 20, 200, 60)
+    flame: num(m.flame, 10, 600, 160)
   };
 }
-const state = { w: DEFAULT_W, h: DEFAULT_H, color: STICKY_DEF_BG, opacity: 100, minimized: false, minH: 0, fontScale: 1, fontColor: STICKY_DEF_FG, fontWeight: 400, undoneChecksOnly: false, scrollPos: 0, meteor: { on: false, speed: 12, size: 12, shape: 'comet', color: '#ffae00', follow: false, rainbow: false, flame: 60 } };
+const state = { w: DEFAULT_W, h: DEFAULT_H, color: STICKY_DEF_BG, opacity: 100, minimized: false, minH: 0, fontScale: 1, fontColor: STICKY_DEF_FG, fontWeight: 400, undoneChecksOnly: false, scrollPos: 0, meteor: { on: false, speed: 12, size: 12, shape: 'comet', color: '#ffae00', follow: false, rainbow: false, flame: 160 } };
 
 async function init() {
   if (IS_FLIP) { await initFlip(); return; }
@@ -674,7 +674,7 @@ function setupControls() {
   const mSz = document.getElementById('mMeteorSize');
   if (mSz) mSz.oninput = () => { const v = +mSz.value; const el = document.getElementById('mMeteorSizeVal'); if (el) el.textContent = v + '°'; setMeteor({ size: v }); };
   const mFl = document.getElementById('mMeteorFlame');
-  if (mFl) mFl.oninput = () => { const v = +mFl.value; const el = document.getElementById('mMeteorFlameVal'); if (el) el.textContent = v + '°'; setMeteor({ flame: v }); };
+  if (mFl) mFl.oninput = () => { const v = +mFl.value; const el = document.getElementById('mMeteorFlameVal'); if (el) el.textContent = v + 'px'; setMeteor({ flame: v }); };
   const mSh = document.getElementById('mMeteorShape');
   if (mSh) mSh.querySelectorAll('button[data-shape]').forEach(b => {
     b.onclick = (e) => { e.stopPropagation(); setMeteor({ shape: b.getAttribute('data-shape') || 'comet' }); };
@@ -1366,7 +1366,12 @@ let noteFindSameTarget = null;      // { uid＝比对时排除的「自己」, s
 // 🆕 待搬移目标：右键那颗 checkbox 的身份。noteFindSameRun 会先 noteFindSameClose() 清掉
 //    noteFindSameTarget，故「未找到」时另存一份，供结果窗里的「搬移」按钮使用。
 let noteFindSameMoveTarget = null;
+// 🆕 本次「找出相同」的目标文本（可能是整块多行）：切换时用来做「按内容定位」兜底——
+//    当 .md-unit / .ev-cb 都找不到时（例如该贴正文走的是整段渲染分支、没有区块包裹），
+//    改用渲染后的纯文字比对定位行元素（2026-10-30：非 checkbox 行切换后不闪烁）。
+let noteFindSameCurText = '';
 async function noteFindSameOpen(e) {
+  noteBlockMenuClose();          // 开任一套菜单前，先收掉另一套，避免重叠
   const dot = e.target.closest && e.target.closest('.ev-md-edit');
   if (!dot) return;              // 不是小圆点：不拦截，交给浏览器原生右键
   e.preventDefault();            // 阻止原生右键
@@ -1475,21 +1480,60 @@ async function noteFindSameComputeMatches(target) {
   let result = null;
   try { result = await ipcRenderer.invoke('sticky-note-order'); } catch (err) { result = null; }
   const allNotes = (result && Array.isArray(result.notes)) ? result.notes : [];
-  // 排除「自己」那一张（target.uid＝圆点所在的那张；投影贴的 uid 是 __view__，所以来源那张不会被排掉——
-  //   它正是答案本身，见 noteFindSameOpen 的 ⚠️ 注释）；其它張只要「至少含一个 checkbox 文本与目標完全相同」即视为命中，并记录命中行号（1-based）
-  const matches = [];
+  const allEvents = (result && Array.isArray(result.events)) ? result.events : [];
+  // 可搜索集合＝① 便利贴目录（实体便利贴，可翻页切换）＋ ② 全部行程（含未设便利贴的普通行程，
+  //    供 VIEW 投影贴找回「来源行程」与「其它普通行程」里的相同内容）。
+  // ⚠️ 去重：普通行程若本身就是某张实体便利贴（key===uid），目录版优先（可翻页跳转），事件版跳过，避免同张出现两次。
+  const seenStickyKey = new Set();
+  const searchList = [];
   allNotes.forEach((n) => {
-    if (!n || n.key === curUid) return;
-    if (isViewKey(n.key)) return;   // 🆕 投影贴（🔔＋自订）里本来就是各来源行程内容的复本，算它＝永远「找到相同」，是噪音
-    const nl = String(n.notes || '').split('\n');
-    const hitLines = [];
-    for (let k = 0; k < nl.length; k += 1) {
-      const mm = nl[k].match(/^(\s*)-\s+\[([ xX])\]\s?(.*)$/);
-      if (mm && (mm[3] || '').trim() === curText) hitLines.push(k + 1);
-    }
-    if (hitLines.length) matches.push({ note: n, lines: hitLines });
+    if (!n || typeof n.key !== 'string') return;
+    if (isViewKey(n.key)) return;            // 🆕 投影贴（🔔＋自订）里本来就是各来源行程内容的复本，算它＝永远「找到相同」，是噪音
+    seenStickyKey.add(n.key);
+    searchList.push({ kind: 'sticky', note: n, uid: n.key });
   });
-  return { allNotes, matches };
+  allEvents.forEach((ev) => {
+    const uid = ev && ev.uid ? String(ev.uid) : '';
+    if (!uid || seenStickyKey.has(uid)) return;   // 已是实体便利贴→用目录版（可翻页跳转）
+    searchList.push({ kind: 'event', note: ev, uid });
+  });
+  // 目标可能是「单行」（旧单行圆点）或「整块」（VIEW 投影贴把连续同类行并成 1 个圆点、data-text 携带整块原文）。
+  const curLines = String(curText || '').split('\n');
+  const isBlock = curLines.length > 1;
+  // 排除「自己」那一张（target.uid＝圆点所在的那张；投影贴的 uid 是 __view__，所以来源那张不会被排掉——
+  //   它正是答案本身，见 noteFindSameOpen 的 ⚠️ 注释）；其它張只要「至少含一段与目标完全相同的内容」即视为命中。
+  const matches = [];
+  searchList.forEach((item) => {
+    const n = item.note;
+    if (!n) return;
+    if (item.kind === 'sticky' && n.key === curUid) return;   // 排除「自己」那张实体便利贴
+    const nl = String(n.notes || '').split('\n');
+    const hitLines = [];     // 每个命中＝行号数组（单行＝[k+1]；整块＝[起..止] 扁平）
+    const hitDone = [];
+    if (isBlock) {
+      // 🆕 整块比对：在目标备注里找「逐行 trim 后」与 curLines 完全一致的连续行段，记其行号区间。
+      for (let k = 0; k + curLines.length <= nl.length; k += 1) {
+        let ok = true;
+        for (let m = 0; m < curLines.length; m++) {
+          if (nl[k + m].trim() !== curLines[m].trim()) { ok = false; break; }
+        }
+        if (ok) { for (let m = 0; m < curLines.length; m++) { hitLines.push(k + 1 + m); hitDone.push(false); } }
+      }
+    } else {
+      const single = curLines[0].trim();
+      for (let k = 0; k < nl.length; k += 1) {
+        const raw = nl[k];
+        const mm = raw.match(/^(\s*)-\s+\[([ xX])\]\s?(.*)$/);
+        // 🆕 同时比对 checkbox 内容（mm[3]）与非 task 行整行（raw.trim()）：
+        //    之前只比 checkbox → 投影贴里的「列表/胶囊/段落」行（如 [[超链接执行]]）永远比不到，
+        //    而它恰恰常是使用者想找回来源的那一行（2026-10-29 用户回报）。
+        const lineText = mm ? (mm[3] || '').trim() : raw.trim();
+        if (lineText && lineText === single) { hitLines.push(k + 1); hitDone.push(mm ? (mm[2] !== ' ') : false); }
+      }
+    }
+    if (hitLines.length) matches.push({ note: n, lines: hitLines, doneFlags: hitDone, kind: item.kind, uid: item.uid });
+  });
+  return { allNotes, allEvents, matches };
 }
 
 // 浮层里显示长文案一律截断：便利贴只有 240px 宽，整段回显会把结果盖掉（全文挂 title 悬停看）。
@@ -1504,6 +1548,8 @@ async function noteFindSameRun() {
   noteFindSameClose();
   if (!target) return;
   const { matches } = await noteFindSameComputeMatches(target);
+  // 🆕 记住本次目标文本：切换时若行号定位不到（区块不存在／行号因过滤位移），改用内容比对兜底
+  noteFindSameCurText = String(target.text || '');
   const ov = document.getElementById('findSameOv');
   const list = document.getElementById('findSameList');
   if (!ov || !list) return;
@@ -1523,14 +1569,22 @@ async function noteFindSameRun() {
     const lineTxt = m.lines.length === 1
       ? '第 ' + m.lines[0] + ' 行'
       : '第 ' + m.lines.join('、') + ' 行';
-    // 🆕 切换按钮：data-line0 为 0-based 行号（body 内 .ev-cb[data-line] 用 0-based），点击后翻到该张并滚动到该行
+    // 🆕 切换按钮：data-line0 为 0-based 行号（body 内 .ev-cb[data-line] 用 0-based），点击后翻到该张并滚动到该行；
+    //    data-done＝命中首行是否为已完成项目（供「来源贴只看未完成」时给出双闪 toast 例外）。
+    //    🆕 data-kind：实体便利贴(sticky)→翻页切换；普通行程(event，如 VIEW 来源)→唤起主程式打开该行程。
     const line0 = m.lines[0] - 1;
-    const keyAttr = escapeHtml(n.key);
+    const lineDone = (m.doneFlags && m.doneFlags[0]) ? 1 : 0;
+    // 🆕 data-lines：命中行区间的 0-based 行号（逗号分隔，连续块含多行）。普通行程（event）切换时
+    //    一并送给主程式，让行程表单的备注框能滚动＋选中＋金底闪烁定位到这些行（见 tlFlashEventFormLines）。
+    const lines0 = m.lines.map((x) => x - 1).join(',');
+    const jumpAttr = (m.kind === 'event')
+      ? ' data-kind="event" data-uid="' + escapeHtml(m.uid || '') + '"'
+      : ' data-kind="sticky" data-key="' + escapeHtml(n.key || '') + '"';
     return '<div class="fs-item' + (tag ? ' fs-is-source' : '') + '">' +
       (tag ? '<div class="fs-tag">' + tag + '</div>' : '') +
       '<div class="fs-title">' + title + date + '</div>' +
       '<div class="fs-meta"><span class="fs-src">' + src + ' · ' + lineTxt + '</span>' +
-      '<button type="button" class="fs-jump" data-key="' + keyAttr + '" data-line0="' + line0 + '">切换</button></div></div>';
+      '<button type="button" class="fs-jump"' + jumpAttr + ' data-lines="' + lines0 + '" data-line0="' + line0 + '" data-done="' + lineDone + '">切换</button></div></div>';
   };
   if (matches.length) {
     // 有找到：列出命中张，标注来源档与命中行号；隐藏「搬移」
@@ -1538,7 +1592,8 @@ async function noteFindSameRun() {
     setHead('\u{1F50D} 找到相同的子事件（' + clip + '）');
     if (moveBtn) moveBtn.hidden = true;
     // 🆕 投影贴：来源那张必然在结果里，单独标成「它的来源」，与「其它便利贴也有相同内容」分两段
-    const source = target.view ? matches.filter((m) => m.note && m.note.key === target.srcUid) : [];
+    //    ⚠️ 来源身份用 m.uid（实体便利贴＝key；普通行程＝uid）比对 target.srcUid，两端口径一致
+    const source = target.view ? matches.filter((m) => m && m.uid === target.srcUid) : [];
     const others = matches.filter((m) => source.indexOf(m) < 0);
     let html = '<div class="fs-context">' + (target.view
       ? '该提醒的内容出现在以下便利贴中：'
@@ -1635,21 +1690,144 @@ async function noteFindSameMoveCheck(target) {
   noteShowMoveTargets(target, allNotes);
 }
 
-// 🆕 结果项「切换」按钮：翻到被匹配的那张便利贴，并滚动到命中的 checkbox 行
-async function noteFindSameSwitchTo(key, line0) {
+// 🆕 结果项「切换」按钮：翻到被匹配的那张便利贴，滚动到命中的子事件行并闪烁两下；
+//   例外：该项目已完成、而来源便利贴当前只显示未完成 → 无处可滚，弹「双闪」toast 说明即可。
+async function noteFindSameSwitchTo(key, line0, done, lines) {
   const ov = document.getElementById('findSameOv');
   if (ov) ov.classList.remove('show');
-  if (!flipOrder || !flipOrder.length) { window.alert('当前便利贴不支持翻页切换'); return; }
-  const idx = flipOrder.findIndex((f) => f && f.key === key);
-  if (idx < 0) { window.alert('找不到该便利贴，无法切换（可能尚未载入翻页清单）'); return; }
+  // 🆕 该便利贴不在翻页清单里（例如来源那张没开成桌面便利贴、或目前不是翻页模式）→ 无法翻页切换，
+  //    退而唤起主程式打开该行程表单并闪烁定位命中行（key＝实体便利贴的 uid，可直接当 uid 用）。
+  const idx = (flipOrder && flipOrder.length) ? flipOrder.findIndex((f) => f && f.key === key) : -1;
+  if (idx < 0) {
+    // 整块命中时传整段行区间（表单里会把整块选中＋闪烁），退化为单行也照旧可用
+    noteFindSameOpenSourceEvent(key, (Array.isArray(lines) && lines.length) ? lines : (line0 >= 0 ? [line0] : []));
+    return;
+  }
   if (idx !== flipIndex) {
     try { await renderFlipPage(idx); } catch (e) { /* 渲染失败也不阻塞滚动尝试 */ }
   }
-  // 滚动到命中的 checkbox 行：body 内 .ev-cb[data-line] 为 0-based 行号（ro 行程也有 .ev-cb，比 .ev-md-edit 更稳）
-  const el = document.querySelector('#body .ev-cb[data-line="' + line0 + '"]');
-  if (el && typeof el.scrollIntoView === 'function') {
-    el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  // 例外：已完成项目 ＋ 来源贴「只看未完成」→ 该行被过滤、无处可滚，给明确双闪 toast（仍已切到来源贴）
+  if (done && state.undoneChecksOnly) {
+    showFindSameBlinkToast('该项目已完成 ✅，而「来源便利贴」当前只显示未完成的項目，因此无法滚动定位到它。');
+    return;
   }
+  // 滚动到命中位置并闪烁（4 秒）。
+  // 🆕 改用 noteFindFlashLocated：轮询等翻页重渲染落地，且「行号定位不到」时按内容兜底——
+  //    之前只查 .ev-cb[data-line]，非 checkbox 行（列表/胶囊/段落）永远定位不到 → 切换过去毫无反应
+  //    （2026-10-30 用户回报：只有 checkbox 开头的项目会闪）。
+  noteFindFlashLocated(line0, noteFindSameCurText);
+}
+
+// 🆕 依 0-based 行号找出 body 里对应的元素：
+//   ① checkbox 子事件行 → .ev-cb[data-line]（逐行独立）；
+//   ② 区块（.md-unit[data-start][data-end]，0-based 行区间）→ 命中行落在块内任意一行即算该块。
+function noteFindLineEl(line0) {
+  const n = Number(line0);
+  if (!Number.isFinite(n) || n < 0) return null;
+  const cb = document.querySelector('#body .ev-cb[data-line="' + n + '"]');
+  if (cb) return cb;
+  const units = document.querySelectorAll('#body .md-unit[data-start]');
+  for (let i = 0; i < units.length; i += 1) {
+    const u = units[i];
+    const s = parseInt(u.getAttribute('data-start'), 10);
+    if (isNaN(s)) continue;
+    const eAttr = u.getAttribute('data-end');
+    const e = (eAttr === null || eAttr === '') ? s : parseInt(eAttr, 10);
+    if (n >= s && n <= (isNaN(e) ? s : e)) return u;
+  }
+  return null;
+}
+
+// 🆕 把 Markdown 原文压成「可跟渲染后文字比对」的纯文字：
+//    去掉链接目标 / 图片 / [[…]] 胶囊标记 / 行首块级符号 / 强调符号，空白归一。
+//    用途：「找出相同」的目标文本是**原文**（data-text），而画面上是**渲染后**的 textContent，
+//    直接用原文比永远对不上（例如 `- [[超链接执行]] [执行X](exec:...)` → 画面上只有「执行X」）。
+function notePlainText(s) {
+  return String(s == null ? '' : s)
+    .replace(/!\[([^\]]*)\]\([^)]*\)/g, '$1')
+    .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')     // [文字](链接) → 文字
+    .replace(/\[\[[^\]]*\]\]/g, ' ')             // [[dl:/cp:/term:/remind:/超链接执行]] 等标记整段移除
+    .replace(/^[\s>#*+~-]+/, ' ')                // 行首块级标记（# > - * + 1. 等）
+    .replace(/^\s*\d{1,9}[.)]\s*/, ' ')          // 有序列表序号
+    .replace(/[*_`~]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+// 🆕 按内容在第 #body 里找「最贴合的那一行元素」：以目标首行为准，
+//    先找渲染纯文字完全相等的（取最短＝最内层），没有再退化为包含匹配。
+//    返回值尽量升级为可闪烁的容器（.md-unit 区块 / .ev-md-check 行）。
+function noteFindElByText(text) {
+  const root = document.getElementById('body');
+  if (!root) return null;
+  const firstLine = String(text == null ? '' : text).split('\n').map((l) => l.trim()).find((l) => l) || '';
+  const want = notePlainText(firstLine);
+  if (want.length < 2) return null;              // 太短容易误命中，宁可不闪
+  const nodes = root.querySelectorAll('li, p, h1, h2, h3, h4, h5, h6, blockquote, pre, td, th, .ev-md-check-text');
+  let exact = null, fuzzy = null, exactLen = Infinity, fuzzyLen = Infinity;
+  for (let i = 0; i < nodes.length; i += 1) {
+    const el = nodes[i];
+    const plain = notePlainText(el.textContent);
+    if (!plain) continue;
+    if (plain === want) { if (plain.length < exactLen) { exact = el; exactLen = plain.length; } }
+    else if (plain.indexOf(want) >= 0) { if (plain.length < fuzzyLen) { fuzzy = el; fuzzyLen = plain.length; } }
+  }
+  const hit = exact || fuzzy;
+  if (!hit) return null;
+  return hit.closest('.md-unit, .ev-md-check') || hit;
+}
+
+// 🆕 切换后的「定位＋闪烁」：翻页会重渲染 body（异步取 sticky-note-html），元素引用会失效，
+//    故改为轮询——每 120ms 重新找一次，最多约 2.4 秒，找到才滚动＋闪烁（4 秒）。
+//    查找顺序：行号（.ev-cb[data-line] / .md-unit 区间）→ 内容（渲染后纯文字比对）。
+function noteFindFlashLocated(line0, text) {
+  let tries = 0;
+  const MAX = 20;                     // 20 × 120ms ≈ 2.4s
+  const tick = () => {
+    tries += 1;
+    const el = noteFindLineEl(line0) || noteFindElByText(text);
+    if (el) {
+      try { el.scrollIntoView({ block: 'center', behavior: 'smooth' }); } catch (e) {}
+      setTimeout(() => blinkFoundLineTwice(el), 80);
+      return;
+    }
+    if (tries < MAX) setTimeout(tick, 120);
+    else if (typeof showNoteMoveToast === 'function') {
+      // 兜底回报：确实切过去了但画面上找不到该行（内容被「只看未完成」过滤／行已变动），
+      //   避免使用者以为是「点了没反应」。（双色交错 toast：未主动关闭则 30 秒自动消失）
+      showNoteMoveToast('已切换到该便利贴，但画面上没找到这一行（可能被过滤或内容已变动）', true);
+    }
+  };
+  tick();
+}
+
+// 🆕 结果项「切换」→ 跳到「普通行程」（VIEW 投影贴的来源行程／未设便利贴的行程）：
+//   这类命中不在翻页清单里（没实体便利贴），无法用 renderFlipPage 翻；改为唤起主程式并打开该行程表单。
+//   复用既有 wake-main-from-note（action='open'）→ 主程式 open-sticky-event → tlOnStickyOpenEvent → tlOpenEventForm(uid)。
+//   ⚠️ lines（0-based 行号区间）必须一起送：主程式据它把备注框滚动到命中行、选中并金底闪烁两次
+//      （tlFlashEventFormLines）——否则「切换过去了但找不到内容在哪」（2026-10-30 用户回报）。
+function noteFindSameOpenSourceEvent(uid, lines) {
+  const ov = document.getElementById('findSameOv');
+  if (ov) ov.classList.remove('show');
+  if (!uid) { window.alert('找不到该行程，无法切换'); return; }
+  const payload = { key: uid, action: 'open' };
+  if (Array.isArray(lines) && lines.length) payload.lines = lines;
+  // 🆕 一并送目标原文：主程式在「行号对不上/被过滤」时按内容在备注框里找行（兜底定位）
+  if (noteFindSameCurText) payload.text = noteFindSameCurText;
+  try { ipcRenderer.invoke('wake-main-from-note', payload); }
+  catch (err) { window.alert('唤起主程式打开行程失败：' + (err && err.message ? err.message : err)); }
+}
+
+// 让命中的行闪烁：checkbox 行取外层 .ev-md-check（金底＋金环脉冲）；
+//   非 checkbox 行（列表/胶囊/段落）取 .md-unit 区块，整块闪同样的金底＋金环。
+//   🆕 时长 4 秒（约 4 次脉冲）——使用者要求「闪久一点、更醒目」（2026-10-30）。
+function blinkFoundLineTwice(cbEl) {
+  const row = (cbEl && cbEl.closest) ? (cbEl.closest('.ev-md-check') || cbEl.closest('.md-unit') || cbEl) : cbEl;
+  if (!row) return;
+  row.classList.remove('fs-found-blink');
+  void row.offsetWidth;   // 强制 reflow，确保重复点击也能重新触发动画
+  row.classList.add('fs-found-blink');
+  setTimeout(() => { row.classList.remove('fs-found-blink'); }, 4200);
 }
 
 // 🆕 关闭结果窗（并清掉待搬移目标，避免残留状态被下次误用）
@@ -1688,7 +1866,30 @@ function hideNoteMoveToast() {
   if (el) {
     el.classList.remove('show');
     el.classList.remove('reverse');
+    el.classList.remove('blink2');
   }
+}
+
+// 🆕 「双闪」toast：复用搬移 toast 容器，给一条需要醒目提示的讯息（如「已完成项目无处可滚」），
+//    toast 本体闪烁两下后，约 4.5 秒自动关闭（短于搬移 toast 的 30 秒）。
+let findSameBlinkTimer = null;
+let findSameBlinkAuto = null;
+function showFindSameBlinkToast(message) {
+  const el = document.getElementById('noteMoveToast');
+  const msg = document.getElementById('noteMoveToastMsg');
+  if (!el || !msg) return;
+  // 先清掉搬移 toast 自身的计时器与双闪计时器，避免互相干扰
+  if (noteMoveToastTimer) { clearInterval(noteMoveToastTimer); noteMoveToastTimer = null; }
+  if (noteMoveToastAutoTimer) { clearTimeout(noteMoveToastAutoTimer); noteMoveToastAutoTimer = null; }
+  if (findSameBlinkTimer) { clearTimeout(findSameBlinkTimer); findSameBlinkTimer = null; }
+  if (findSameBlinkAuto) { clearTimeout(findSameBlinkAuto); findSameBlinkAuto = null; }
+  msg.textContent = message;
+  el.classList.remove('reverse');
+  el.classList.add('error');     // 红边，更醒目
+  el.classList.add('show', 'blink2');
+  // 双闪动画（1.2s）结束后去掉 blink2（保留 show，随后自动关闭）
+  findSameBlinkTimer = setTimeout(() => { if (el) el.classList.remove('blink2'); }, 1300);
+  findSameBlinkAuto = setTimeout(() => { hideNoteMoveToast(); }, 4500);
 }
 
 // 🆕 搬移：把当前便利贴的这个子事件复制到所选便利贴，并从当前便利贴删除该子事件。
@@ -1832,6 +2033,76 @@ async function noteFindSameCopy(t) {
 function stickyBlockTypeName(type) {
   return ({ code: '代码块', table: '表格', heading: '标题', hr: '分隔线', quote: '引用', list: '列表', para: '段落' })[type] || '区块';
 }
+// 🆕 右键 区块编辑小圆点（.md-unit-edit）→ 区块级菜单「编辑此区块／复制整块内容／删除此区块」
+//   与 checkbox 子事件的 #noteFindSameMenu 平行：区块不是「小事件」，没有跨张比对/搬移语义，故独立一套。
+let noteBlockMenuTarget = null;   // { uid, start, end, type, dot }
+function noteBlockMenuOpen(e) {
+  const dot = e.target.closest && e.target.closest('.md-unit-edit');
+  if (!dot) return;              // 不是区块把手：交给浏览器原生右键
+  e.preventDefault();            // 阻止原生右键
+  const uid = dot.getAttribute('data-uid') || '';
+  const start = parseInt(dot.getAttribute('data-start') || '-1', 10);
+  const end = parseInt(dot.getAttribute('data-end') || '-1', 10);
+  const type = dot.getAttribute('data-type') || '';
+  if (!uid || !Number.isInteger(start) || start < 0 || !Number.isInteger(end) || end < start) {
+    window.alert('该区块信息不完整，无法打开菜单'); return;
+  }
+  noteBlockMenuTarget = { uid, start, end, type, dot };
+  noteFindSameClose();           // 关掉另一套菜单，避免重叠
+  const menu = document.getElementById('noteBlockMenu');
+  if (!menu) return;
+  menu.classList.add('open');
+  const r = menu.getBoundingClientRect();
+  let x = e.clientX, y = e.clientY;
+  if (x + r.width > window.innerWidth) x = Math.max(0, window.innerWidth - r.width - 4);
+  if (y + r.height > window.innerHeight) y = Math.max(0, window.innerHeight - r.height - 4);
+  menu.style.left = x + 'px';
+  menu.style.top = y + 'px';
+}
+function noteBlockMenuClose() {
+  const menu = document.getElementById('noteBlockMenu');
+  if (menu) menu.classList.remove('open');
+  noteBlockMenuTarget = null;
+}
+// 🆕 复制整块内容：读权威底稿、取 [start..end] 原文写剪贴板（与 noteFindSameCopy 同源 IPC）
+async function noteBlockCopy(t) {
+  if (!t) return;
+  const notes = await fetchAuthoritativeNotes(t.uid);
+  if (notes == null) { showNoteMoveToast('无法读取该便利贴的最新内容，已取消复制', true); return; }
+  const lines = notes.split('\n');
+  if (t.start < 0 || t.end >= lines.length || t.end < t.start) { showNoteMoveToast('区块内容已变化，请刷新便利贴后重试', true); return; }
+  const text = lines.slice(t.start, t.end + 1).join('\n');
+  if (!text.trim()) { showNoteMoveToast('该区块没有内容，无法复制', true); return; }
+  try {
+    const result = await ipcRenderer.invoke('write-text-to-clipboard', text);
+    if (!result || result.success !== true) throw new Error((result && result.error) || '写入剪贴板失败');
+    showNoteMoveToast('✅ 已复制区块内容（' + stickyBlockTypeName(t.type) + '）', false);
+  } catch (error) {
+    showNoteMoveToast('复制失败：' + (error && error.message ? error.message : error), true);
+  }
+}
+// 🆕 删除此区块：删前 confirm（含类型＋内容预览），确认后移除 [start..end] 并落盘，回读校验
+async function noteBlockDelete(t) {
+  if (!t) return;
+  if (isViewKey(t.uid)) { showNoteMoveToast('预览便利贴（🔔 提醒／自订 VIEW 贴）是自动汇总的投影，请到来源行程里删除', true); return; }
+  const notes = await fetchAuthoritativeNotes(t.uid);
+  if (notes == null) { showNoteMoveToast('无法读取该便利贴的最新内容，已取消删除', true); return; }
+  const lines = notes.split('\n');
+  if (t.start < 0 || t.end >= lines.length || t.end < t.start) { showNoteMoveToast('区块内容已变化，请刷新便利贴后重试', true); return; }
+  const removed = lines.slice(t.start, t.end + 1);
+  const typeName = stickyBlockTypeName(t.type);
+  const ok = window.confirm(
+    '确定要删除这个区块吗？\n\n类型：' + typeName + '\n内容：\n' + removed.join('\n') + '\n\n删除后会从当前便利贴移除并立即存档，无法复原。'
+  );
+  if (!ok) { showNoteMoveToast('已取消删除'); return; }
+  const rest = lines.slice();
+  rest.splice(t.start, t.end - t.start + 1);
+  const r = await commitStickyNoteContent(rest.join('\n'), t.uid, IDX, SRC_FILE, { expect: { absent: removed } });
+  showNoteMoveToast(r.ok
+    ? ('✅ 已删除区块（' + typeName + '）' + (r.warn ? ('。' + r.warn) : ''))
+    : ('⚠️ 删除失败（' + r.error + '）'), !r.ok);
+}
+
 // 🆕 通用「最小 MD 区块」编辑（便利贴端）：编辑 notes 中 lines[start..end] 的 Markdown 原文。
 //   区间起止由主窗渲染时嵌入 onclick；⌘S／「保存」＝只落盘不关闭 · Esc 关闭；清空并保存＝删除该区块（需确认）。
 window.tlOpenEditBlockDialog = async function (event, uid, start, end, type) {
@@ -2756,15 +3027,24 @@ function applyMeteor() {
     const color = (m.follow && state.fontColor) ? state.fontColor : (m.color || '#ffae00');
     note.style.setProperty('--m-color', color);
     note.style.setProperty('--m-dur', (m.speed || 12) + 's');
-    note.style.setProperty('--m-head', (m.size || 12) + 'deg');
-    note.style.setProperty('--m-flame', (m.flame || 60) + 'deg');
+    // 焰火長度(flame)＝「亮頭+拖尾總可見長度(px)」：先依便利貼周長反推總角度，再從中切出亮頭。
+    // 亮頭不超過總長一半，讓 flame 設很小時整段都短（否則固定 12° 亮頭會吃掉預算、使 10px 失效）。
+    const nW = note.clientWidth || 360, nH = note.clientHeight || 360;
+    const perim = 2 * (nW + nH);
+    const sizeHead = Math.min(120, Math.max(1, m.size || 12));
+    let totalDeg = ((m.flame || 160) / perim) * 360;
+    totalDeg = Math.min(300, Math.max(1.5, totalDeg));
+    const headDeg = Math.max(0.5, Math.min(sizeHead, totalDeg * 0.5));
+    const tailDeg = Math.max(0.5, totalDeg - headDeg);
+    note.style.setProperty('--m-head', headDeg + 'deg');
+    note.style.setProperty('--m-flame', tailDeg + 'deg');
     // 🆕 大小同步放大环厚：旧上限 40°→2px，新上限 120°→6px（3×），40° 以下维持 2px 不退化
     note.style.setProperty('--m-thick', Math.min(6, Math.max(2, (m.size || 12) / 20)) + 'px');
   }
 }
 // 把 state.meteor 反映到菜单控制项（翻页切页 / 开菜单都重跑）
 function syncMeteorControls() {
-  const m = state.meteor || { on: false, speed: 12, size: 12, shape: 'comet', color: '#ffae00', follow: false, flame: 60 };
+  const m = state.meteor || { on: false, speed: 12, size: 12, shape: 'comet', color: '#ffae00', follow: false, flame: 160 };
   const tgl = document.getElementById('miMeteorToggle');
   if (tgl) { tgl.textContent = '外框流星：' + (m.on ? '开' : '关'); tgl.setAttribute('aria-pressed', m.on ? 'true' : 'false'); }
   const sp = document.getElementById('mMeteorSpeed');
@@ -2786,7 +3066,7 @@ function syncMeteorControls() {
   const fl = document.getElementById('mMeteorFlame');
   if (fl) fl.value = String(m.flame);
   const flv = document.getElementById('mMeteorFlameVal');
-  if (flv) flv.textContent = m.flame + '°';
+  if (flv) flv.textContent = m.flame + 'px';
   [sp, sz, sh, col, fol, fl].forEach(el => { if (el) el.disabled = !m.on; });   // 关闭时停用细项
 }
 function setMeteor(patch) {
@@ -4269,16 +4549,21 @@ function bindFlipSwipe(note) {
   }, { passive: true });
 }
 
-// 🆕 右键 checkbox 编辑小圆点（.ev-md-edit）→ 下拉菜单「找出相同的项目」的全局绑定（分体/翻页模式共用，脚本载入即生效）
+// 🆕 右键 编辑小圆点 → 下拉菜单：checkbox 子事件（.ev-md-edit＝#noteFindSameMenu）／区块（.md-unit-edit＝#noteBlockMenu），两套全局绑定（分体/翻页模式共用，脚本载入即生效）
 document.addEventListener('contextmenu', noteFindSameOpen);
+document.addEventListener('contextmenu', noteBlockMenuOpen);
 document.addEventListener('click', (e) => {
-  const menu = document.getElementById('noteFindSameMenu');
-  if (menu && menu.classList.contains('open') && !(e.target.closest && e.target.closest('#noteFindSameMenu'))) noteFindSameClose();
+  const fsm = document.getElementById('noteFindSameMenu');
+  if (fsm && fsm.classList.contains('open') && !(e.target.closest && e.target.closest('#noteFindSameMenu'))) noteFindSameClose();
+  const bm = document.getElementById('noteBlockMenu');
+  if (bm && bm.classList.contains('open') && !(e.target.closest && e.target.closest('#noteBlockMenu'))) noteBlockMenuClose();
 }, true);
 document.addEventListener('keydown', (e) => {
   if (e.key !== 'Escape') return;
-  const menu = document.getElementById('noteFindSameMenu');
-  if (menu && menu.classList.contains('open')) { noteFindSameClose(); return; }
+  const fsm = document.getElementById('noteFindSameMenu');
+  if (fsm && fsm.classList.contains('open')) { noteFindSameClose(); return; }
+  const bm = document.getElementById('noteBlockMenu');
+  if (bm && bm.classList.contains('open')) { noteBlockMenuClose(); return; }
   const ov = document.getElementById('findSameOv');
   if (ov && ov.classList.contains('show')) { hideNoteFindSame(); return; }
   const mt = document.getElementById('noteMoveToast');
@@ -4299,6 +4584,21 @@ document.addEventListener('keydown', (e) => {
       else if (act === 'del') noteFindSameDelete();
     });
   }
+  const nbMenu = document.getElementById('noteBlockMenu');
+  if (nbMenu) {
+    // 🆕 区块菜单项事件委托（按 data-act 分流）：edit＝编辑该区块，copy＝复制整块内容，del＝删除此区块
+    nbMenu.addEventListener('click', (e) => {
+      const item = e.target.closest && e.target.closest('.nami');
+      if (!item) return;
+      e.stopPropagation();
+      const act = item.getAttribute('data-act');
+      const t = noteBlockMenuTarget;
+      if (!t) { noteBlockMenuClose(); return; }
+      if (act === 'edit') { const tt = t; noteBlockMenuClose(); const synth = { preventDefault() {}, stopPropagation() {}, target: tt.dot }; tlOpenEditBlockDialog(synth, tt.uid, tt.start, tt.end, tt.type); }
+      else if (act === 'copy') { noteBlockMenuClose(); noteBlockCopy(t); }
+      else if (act === 'del') { noteBlockMenuClose(); noteBlockDelete(t); }
+    });
+  }
   const fsOv = document.getElementById('findSameOv');
   if (fsOv) {
     const cb = document.getElementById('findSameCloseBtn');
@@ -4310,9 +4610,16 @@ document.addEventListener('keydown', (e) => {
       const btn = e.target.closest && e.target.closest('.fs-jump');
       if (!btn) return;
       e.stopPropagation();
-      const key = btn.getAttribute('data-key') || '';
+      const kind = btn.getAttribute('data-kind') || 'sticky';
       const line0 = parseInt(btn.getAttribute('data-line0') || '-1', 10);
-      noteFindSameSwitchTo(key, line0);
+      const done = parseInt(btn.getAttribute('data-done') || '0', 10);
+      // 🆕 命中行区间（0-based，连续块含多行）：主程式行程表单据此闪烁定位
+      const linesAttr = btn.getAttribute('data-lines') || '';
+      const lines = linesAttr ? linesAttr.split(',').map((x) => parseInt(x, 10)).filter((x) => !isNaN(x)) : [];
+      // 🆕 普通行程（如 VIEW 投影贴的来源行程）不在翻页清单里（没实体便利贴），无法用 renderFlipPage 翻；
+      //    改用唤起主程式打开该行程表单（wake-main-from-note → open-sticky-event → tlOpenEventForm）。
+      if (kind === 'event') noteFindSameOpenSourceEvent(btn.getAttribute('data-uid') || '', lines);
+      else noteFindSameSwitchTo(btn.getAttribute('data-key') || '', line0, done, lines);
     });
     fsOv.addEventListener('click', (e) => { if (e.target === fsOv) hideNoteFindSame(); });
   }

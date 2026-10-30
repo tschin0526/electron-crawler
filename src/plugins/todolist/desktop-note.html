@@ -39,7 +39,7 @@
     .doc-badge.is-view:hover { background: rgba(139, 92, 246, .32); }
     /* 🆕 便利贴外框流星（每贴可配置：开关 / 飞速 / 大小 / 形状 / 颜色 / 焰尾长度；默认关闭）。
        由 JS 在该贴元素挂 .meteor-on ＋ .meteor-shape-<shape>，并以 CSS 变量传入参数：
-         --m-color(颜色) --m-dur(周期秒) --m-head(头角宽deg) --m-flame(焰尾角宽deg)。
+         --m-color(颜色) --m-dur(周期秒) --m-head(头角宽deg) --m-flame(亮頭+拖尾總長，由 JS 用 px 反推角度)。
        形状用 .meteor-shape-* 选择渐变配方；@property 驱动 from 角度，mask 只留 2px 边框环，
        流星不旋转元素（环始终贴合边框，不会随转角错位）。不支持 @property 的老浏览器退化为静态光环。 */
     @property --meteor-angle { syntax: '<angle>'; initial-value: 0deg; inherits: false; }
@@ -338,6 +338,8 @@
     #body .md-unit > *:last-child { margin-bottom: 0; }
     #body .md-unit-edit { position: absolute; left: 0; top: .15em; display: inline-flex; width: 13px; height: 13px; padding: 0; align-items: center; justify-content: center; border: 0; border-radius: 50%; background: var(--ev-primary, #d4af37); color: #fff; font-size: 9px; line-height: 1; cursor: pointer; opacity: .8; -webkit-app-region: no-drag; }
     #body .md-unit-edit:hover, #body .md-unit-edit:focus-visible { opacity: 1; outline: 2px solid var(--ev-primary, #d4af37); outline-offset: 1px; }
+    /* 🆕 VIEW 投影贴非 task 行：复用 .md-unit 凹槽，把只读 .ev-md-edit 圆点定位到左侧（与 .md-unit-edit 同凹槽，dot 对齐 checkbox 行圆点） */
+    #body .md-unit > .ev-md-edit { position: absolute; left: 0; top: .15em; margin: 0; }
     /* 🆕 術語（term）渲染：金色半透明底色与便利贴表面拉开层次，字色＝--note-fg，
        金色描边呼应菜单；高度压窄。領域小膠囊為中性半透明，嵌於大膠囊內 */
     .tl-term { display: inline; }
@@ -682,6 +684,29 @@
       font-size: 10px; line-height: 1; cursor: pointer; -webkit-app-region: no-drag;
     }
     .note-move-toast-close:hover { background: rgba(212,175,55,.42); }
+    /* 🆕 双闪 toast：本体闪烁两下（保留 show 态的 translate(-50%,0)，仅叠加 scale/opacity 脉冲），突出提示 */
+    .note-move-toast.blink2 { animation: fsToastBlink 1.2s ease-in-out 1; }
+    @keyframes fsToastBlink {
+      0%, 100% { opacity: 1; transform: translate(-50%, 0) scale(1); }
+      20%      { opacity: .25; transform: translate(-50%, 0) scale(.95); }
+      50%      { opacity: 1; transform: translate(-50%, 0) scale(1.05); }
+      80%      { opacity: .25; transform: translate(-50%, 0) scale(.95); }
+    }
+    /* 🆕 切换定位后：命中的子事件行（.ev-md-check 那一行）闪烁（1s × 4 ≈ 4 秒，醒目一些） */
+    .ev-md-check.fs-found-blink {
+      animation: fsFoundBlink 2s ease-in-out 2;
+      border-radius: 6px;
+    }
+    /* 🆕 切换定位后：命中的非 checkbox 区块（.md-unit，例如 [[超链接执行]] 那两行）整块闪烁（同样 4 秒） */
+    #body .md-unit.fs-found-blink {
+      animation: fsFoundBlink 2s ease-in-out 2;
+      border-radius: 6px;
+    }
+    @keyframes fsFoundBlink {
+      0%, 100% { background: transparent; box-shadow: 0 0 0 0 rgba(212,175,55,0); }
+      20%, 60% { background: rgba(212,175,55,.5); box-shadow: 0 0 0 3px rgba(212,175,55,.95); }
+      40%, 80% { background: transparent; box-shadow: 0 0 0 0 rgba(212,175,55,0); }
+    }
 </style>
 </head>
 <body>
@@ -708,6 +733,12 @@
       <button type="button" class="nami" data-act="move" role="menuitem">📤 搬移项目</button>
       <button type="button" class="nami" data-act="copy" role="menuitem">📋 复制内容</button>
       <button type="button" class="nami" data-act="del" role="menuitem">🗑 删除此小事件</button>
+    </div>
+    <!-- 🆕 右键 区块编辑小圆点（.md-unit-edit）→ 区块级下拉菜单：编辑此区块／复制整块内容／删除此区块（与 #noteFindSameMenu 平行；区块不是「小事件」，无跨张比对/搬移语义） -->
+    <div class="note-addcheck-menu" id="noteBlockMenu" role="menu">
+      <button type="button" class="nami" data-act="edit" role="menuitem">✎ 编辑此区块</button>
+      <button type="button" class="nami" data-act="copy" role="menuitem">📋 复制整块内容</button>
+      <button type="button" class="nami" data-act="del" role="menuitem">🗑 删除此区块</button>
     </div>
     <div class="body" id="body"></div>
     <div class="tl-text-gutter-wrap" id="editAreaGutterWrap">
@@ -814,8 +845,8 @@
           <label class="m-meteor-follow"><input type="checkbox" id="mMeteorFollow"> 跟随字色</label>
           <label class="m-meteor-follow"><input type="checkbox" id="mMeteorRainbow"> 彩色</label>
         </div>
-        <div class="plabel">焰火长度 <span id="mMeteorFlameVal">60°</span></div>
-        <div class="opacityRow"><input type="range" id="mMeteorFlame" min="20" max="200" step="5"></div>
+        <div class="plabel">焰火總長（亮頭＋拖尾） <span id="mMeteorFlameVal">160px</span></div>
+        <div class="opacityRow"><input type="range" id="mMeteorFlame" min="10" max="600" step="10" value="160"></div>
       </div>
       <div class="msep"></div>
       <!-- 第 4 行：字体大小（A− 百分比 A＋） -->
