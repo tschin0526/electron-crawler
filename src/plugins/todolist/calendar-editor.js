@@ -1236,7 +1236,13 @@
     //    html 复用主程式 tlRenderNotes/renderMarkdown 管线（含 [[cp:]]→✅、[[dl:]]→📅、checkbox），
     //    渲染好的 HTML 交给便利贴窗口显示 → 单一可信来源，两处渲染永不漂移。
     function tlStickyNoteRefs(events) {
-      const list = Array.isArray(events) ? events : tlCalEvents;
+      // ⚠️ 无参时务必走「实时」事件全集（tlLiveCalEvents），而非 tlCalEvents 快照：
+      //    tlCalEvents 只有在「事件视图重绘」时才会把 include 进来的 calendar-*.md 事件并入
+      //    （见 tlRenderEventsContent 的 `if(!calEventsView) return` 门控）；一旦重绘没跑或滞后，
+      //    tlCalEvents 就是「include 未合并」的旧快照 → 外部档（如 calendar-我的iphone.md）的事件
+      //    会在便利贴里整批消失。tlLiveCalEvents() 直接重读 textarea 并 .concat(tlIncludedEvents)，
+      //    与 tlPushStickyRefreshes 同一数据源，保证 include 事件不漏。tlPushStickyRefreshes 已用它，这里补齐。
+      const list = Array.isArray(events) ? events : tlLiveCalEvents();
       const out = [];
       // 🆕 VIEW 便利贴永远第一张（有内容才出现）：清单、翻页、分体开窗都从这里拿
       const viewRef = tlViewStickyRef(list);
@@ -1244,7 +1250,15 @@
       // 🆕 自订投影贴紧跟在 🔔 之后，再才是使用者自己设的便利贴。
       //    与 🔔 的差别（2026-10-27 使用者要求）：自订规则「有条件但 0 命中」也照建一张，
       //    贴面写明「这个条件没抓到任何行」——静默消失会让人分不清是规则没生效还是行程里真的没有。
-      const customRefs = tlCustomViewStickyRefs(list);
+      const customRefs = tlCustomViewStickyRefs(list).map((ref) => {
+        // 🆕 标题同样经 tlRenderInlineMarkdown 渲染后再取纯文字，与下方「使用者自己设的便利贴」（第 1259-1262 行）
+        //    同一管线：避免 VIEW 投影贴清单里出现原始 # ／ <BIG> 等 Markdown 样式符号
+        //    （一般便利贴清单不会显示 MD 样式，VIEW 贴应与之保持一致；贴面标题仍用 titleHtml 渲染，不受影响）。
+        const tNode = document.createElement('div');
+        tNode.innerHTML = ref.titleHtml || '';
+        const plain = (tNode.textContent || tNode.innerText || ref.title || '').replace(/\s+/g, ' ').trim();
+        return Object.assign({}, ref, { title: plain });
+      });
       console.log('[tlStickyNoteRefs] builtin:', viewRef ? 1 : 0, 'custom:', customRefs.length, '→ total before user:', out.length + customRefs.length);
       customRefs.forEach((ref) => out.push(ref));
       list.forEach((ev) => {
@@ -1598,9 +1612,11 @@
       }
       return blocks;
     }
-    // 備註 checkbox 行內的 deadline / completed 標記（顯示層轉換，不改寫源）：裸日期與 [[dl:...]] → 📅、[[cp:...]] → ✅
+    // 備註 checkbox 行內的 建立日 / deadline / completed 標記（顯示層轉換，不改寫源）：
+    //   [[cr:...]] → 🆕（建立日）、裸日期與 [[dl:...]] → 📅、[[cp:...]] → ✅（cr 須排在最前，先轉才不會被 dl 規則吃掉）
     function tlRenderNoteMarkers(text) {
       return String(text)
+        .replace(/\[\[cr:(\d{4}-\d{2}-\d{2})\]\]/g, '🆕 $1')
         .replace(/\[\[(?:dl:)?(\d{4}-\d{2}-\d{2})\]\]/g, '📅 $1')
         .replace(/\[\[cp:(\d{4}-\d{2}-\d{2})\]\]/g, '✅ $1');
     }
@@ -4229,12 +4245,72 @@
       if (ov) ov.onkeydown = null;
       if (copyButton) copyButton.style.display = 'none';
       document.querySelector('#tlAddCheckOverlay .tl-ev-form-title').textContent = '建立 CheckBox 项目';
-      document.querySelector('#tlAddCheckOverlay .tl-ev-form-hint').innerHTML = '每行一个项目，保存后以 <code>- [ ] …</code> 形式追加到「备注」末尾';
+      document.querySelector('#tlAddCheckOverlay .tl-ev-form-hint').innerHTML = '每行一个项目，保存后以 <code>- [ ] …</code> 形式追加到「备注」末尾；系统自动补上建立日标记 <code>[[cr:今天]]</code>';
       document.querySelector('#tlAddCheckOverlay .btn-primary').textContent = '加入备注';
       if (inp) inp.value = '';
       if (inp) inp.rows = 4;
       if (ov) ov.style.display = 'flex';
       if (inp) setTimeout(() => inp.focus(), 0);
+    }
+    // 🆕 编辑子事件编辑框：自动把文本里「未标注的已知术语」包成 [[term]] / [[term:释文]] 标记。
+    //   规则：① 已位于 [[...]] 内的字串不重复标注；② 多术语重叠时最长匹配优先；③ 仅标注未在 [[...]] 内的出现。
+    //   字典来源＝tlCollectTerms()（全事件里出现过的 [[term...]] 术语名＋释文）。
+    function tlAutoMarkTermsInText(text) {
+      const terms = tlCollectTerms();
+      const dict = (terms || [])
+        .map((t) => ({ term: t.term, def: (t.def || '').trim() }))
+        .filter((t) => t.term && t.term.length >= 2)
+        .sort((a, b) => b.term.length - a.term.length);   // 长词优先
+      if (!dict.length) return { text: String(text), count: 0 };
+      const src = String(text);
+      // 1) 保护区：已存在的 [[...]] 不在此内标注（已标注的不重复标）
+      const protectedSpans = [];
+      let m; const br = /\[\[[^\]\n]*\]\]/g;
+      while ((m = br.exec(src)) !== null) protectedSpans.push([m.index, m.index + m[0].length]);
+      const inProtected = (i) => protectedSpans.some((sp) => i >= sp[0] && i < sp[1]);
+      // 2) 收集候选命中（端点落入保护区则跳过）
+      const cands = [];
+      for (const d of dict) {
+        const term = d.term; let from = 0, idx;
+        while ((idx = src.indexOf(term, from)) !== -1) {
+          const end = idx + term.length;
+          if (!inProtected(idx) && !inProtected(end - 1)) cands.push({ start: idx, end: end, term: term, def: d.def });
+          from = idx + 1;
+        }
+      }
+      if (!cands.length) return { text: src, count: 0 };
+      // 3) 最长优先 + 非重叠贪心
+      cands.sort((a, b) => (b.end - b.start) - (a.end - a.start) || a.start - b.start);
+      const used = new Array(src.length).fill(false);
+      const accepted = [];
+      for (const c of cands) {
+        let overlap = false;
+        for (let i = c.start; i < c.end; i++) { if (used[i]) { overlap = true; break; } }
+        if (overlap) continue;
+        for (let i = c.start; i < c.end; i++) used[i] = true;
+        accepted.push(c);
+      }
+      accepted.sort((a, b) => a.start - b.start);
+      // 4) 重建文本
+      let out = '', cursor = 0;
+      for (const c of accepted) {
+        out += src.slice(cursor, c.start);
+        const marker = (c.def && c.def.indexOf(']]') === -1) ? ('[[' + c.term + ':' + c.def + ']]') : ('[[' + c.term + ']]');
+        out += marker;
+        cursor = c.end;
+      }
+      out += src.slice(cursor);
+      return { text: out, count: accepted.length };
+    }
+    function tlAutoMarkTermsInEditBox() {
+      const inp = document.getElementById('tlAddCheckInput');
+      if (!inp) return;
+      if (!inp.value.trim()) { showToast('编辑框为空，无可标示的内容', 'danger'); return; }
+      const res = tlAutoMarkTermsInText(inp.value);
+      if (!res.count) { showToast('没有发现可标示的未标注术语', 'info'); return; }
+      inp.value = res.text;
+      inp.dispatchEvent(new Event('input', { bubbles: true }));
+      showToast('已自动标示 ' + res.count + ' 处术语（最长匹配优先，已标注不重复）', 'success');
     }
     function tlOpenEditNoteCheckDialog(event, uid, line) {
       if (event) { event.preventDefault(); event.stopPropagation(); }
@@ -4254,7 +4330,7 @@
       const inp = document.getElementById('tlAddCheckInput');
       const copyButton = document.getElementById('tlCopyNoteCheckButton');
       document.querySelector('#tlAddCheckOverlay .tl-ev-form-title').textContent = '编辑 CheckBox 子事件';
-      document.querySelector('#tlAddCheckOverlay .tl-ev-form-hint').textContent = '只修改子事件文字；勾选状态会保留，日期标记（[[dl:…]]/[[cp:…]]）以原文显示可直接编辑；换行（shift+enter）＝拆成多个子事件（第一行保留本条的勾选状态）；清空内容并保存＝删除该子事件（会先确认）';
+      document.querySelector('#tlAddCheckOverlay .tl-ev-form-hint').textContent = '只修改子事件文字；勾选状态会保留，日期标记（[[cr:…]] 建立日／[[dl:…]] 预计完成／[[cp:…]] 完成日，建立日会自动补在最前面）以原文显示可直接编辑；换行（shift+enter）＝拆成多个子事件（第一行保留本条的勾选状态）；清空内容并保存＝删除该子事件（会先确认）';
       document.querySelector('#tlAddCheckOverlay .btn-primary').textContent = '保存修改';
       if (copyButton) copyButton.style.display = '';
       if (ov) ov.onkeydown = (e) => {
@@ -4435,8 +4511,10 @@
           showToast(saved ? '子事件已删除并存档' : '子事件已删除到行程缓冲，但尚未确认存档成功', saved ? 'success' : 'danger');
           return;
         }
-        // 🆕 原文保真：编辑框已是完整原文（含 [[]] 标记），保存时直接写回，不再额外补/删标记
-        const newLines = rows.map((l, i) => match[1] + '- [' + (i === 0 ? match[2] : ' ') + '] ' + l);
+        // 🆕 原文保真：编辑框已是完整原文（含 [[]] 标记），保存时直接写回；并自动补建立日标记 [[cr:今天]]
+        //    （已含 cr 则不動＝保留原始建立日、不重複補；若含 dl/cp 則 cr 排在最前）
+        const todayCr = tlFmtDate(new Date());
+        const newLines = rows.map((l, i) => match[1] + '- [' + (i === 0 ? match[2] : ' ') + '] ' + tlEnsureCrMarker(l, todayCr));
         lines.splice(target.line, 1, ...newLines);
         ev.notes = lines.join('\n');
         tlCloseAddCheckDialog();
@@ -4448,7 +4526,8 @@
       }
       const lines = inp.value.replace(/\r\n/g, '\n').split('\n').map((l) => l.trim()).filter((l) => l.length);
       if (!lines.length) { tlCloseAddCheckDialog(); return; }
-      const md = lines.map((l) => '- [ ] ' + l).join('\n');
+      const todayCr = tlFmtDate(new Date());  // 新增子事件：自動補建立日標記 [[cr:今天]]（已含則不重複補）
+      const md = lines.map((l) => '- [ ] ' + tlEnsureCrMarker(l, todayCr)).join('\n');
       // 列表模式：追加到目标事件备注，并直接存档（写缓冲 + saveTask 落盘），无需打开编辑表单
       if (tlAddCheckTargetUid) {
         const uid = tlAddCheckTargetUid;
@@ -4730,7 +4809,20 @@
       showToast(ev.done ? '已标记完成，按「保存」写回 calendar.md' : '已取消完成，按「保存」写回 calendar.md', 'success');
     }
 
-    // 備註 checkbox 行勾選互換 + dl/cp 標記維護（純函數，不改入參；便於單測）：newDone=true 勾選、false 取消；todayStr 為 YYYY-MM-DD
+    // 備註 checkbox 行：確保帶有 [[cr:建立日期]] 標記（不存在才補 today；已有則不動，避免重複／改到原始建立日）。
+    // 建立日期一律排在最前：若正文已有 [[dl:…]]/[[cp:…]] 則插到它們前面；否則補在行尾。純函數，不改入參。
+    function tlEnsureCrMarker(body, todayStr) {
+      if (/\[\[cr:\d{4}-\d{2}-\d{2}\]\]/.test(body)) return body;  // 已有建立日：保留原值、不重複補
+      const cr = '[[cr:' + todayStr + ']]';
+      const trimmed = body.replace(/\s+$/, '');
+      if (!trimmed.trim()) return cr;  // 空正文：直接給建立日標記（不帶前導空白）
+      const m = body.match(/\[\[(dl|cp):\d{4}-\d{2}-\d{2}\]\]/);
+      if (m && typeof m.index === 'number') {
+        return body.slice(0, m.index).replace(/\s+$/, '') + ' ' + cr + ' ' + body.slice(m.index);
+      }
+      return trimmed + ' ' + cr;
+    }
+    // 備註 checkbox 行勾選互換 + dl/cp/cr 標記維護（純函數，不改入參；便於單測）：newDone=true 勾選、false 取消；todayStr 為 YYYY-MM-DD
     function tlNoteCheckTransform(line, newDone, todayStr) {
       const m = line.match(/^(\s*)-\s+\[([ xX])\]\s?(.*)$/);
       if (!m) return line;
@@ -4746,7 +4838,7 @@
         // 取消勾選：移除 cp 塊（保留 dl）
         body = body.replace(/\s*\[\[cp:\d{4}-\d{2}-\d{2}\]\]/g, '');
       }
-      return m[1] + '- [' + (newDone ? 'x' : ' ') + ']' + (body ? ' ' + body : '');
+      return m[1] + '- [' + (newDone ? 'x' : ' ') + '] ' + tlEnsureCrMarker(body, todayStr);
     }
     // 備註裡的 Markdown checkbox 勾選/取消：定位 ev.notes 的對應行，互換 - [ ] ↔ - [x]，序列化寫回 taskText（按「保存」才落盤）
     function tlToggleNoteCheck(e, uid, line) {

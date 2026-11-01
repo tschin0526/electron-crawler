@@ -587,7 +587,7 @@ function calStickyNotePrefs(identity) {
     color: calStickyIsHex(m.color) ? m.color : '#ffae00',
     follow: m.follow === true,
     rainbow: m.rainbow === true,
-    flame: (typeof m.flame === 'number' && isFinite(m.flame)) ? Math.min(200, Math.max(20, Math.round(m.flame))) : 60
+    flame: (typeof m.flame === 'number' && isFinite(m.flame)) ? Math.min(600, Math.max(10, Math.round(m.flame))) : 160
   };
   return {
     color: calStickyIsHex(raw.color) ? raw.color : CAL_STICKY_DEF_BG,
@@ -654,8 +654,17 @@ function calStickyApplyStyle(prefs) {
     const mColor = (m.follow && prefs.fontColor) ? prefs.fontColor : (m.color || '#ffae00');
     note.style.setProperty('--m-color', mColor);
     note.style.setProperty('--m-dur', (m.speed || 12) + 's');
-    note.style.setProperty('--m-head', (m.size || 12) + 'deg');
-    note.style.setProperty('--m-flame', (m.flame || 60) + 'deg');
+    // 焰火長度(flame)＝「亮頭+拖尾總可見長度(px)」：先依便利貼周長反推總角度，再從中切出亮頭。
+    // 亮頭不超過總長一半，讓 flame 設很小時整段都短（否則固定 12° 亮頭會吃掉預算、使 10px 失效）。
+    const nW = note.clientWidth || 360, nH = note.clientHeight || 360;
+    const perim = 2 * (nW + nH);
+    const sizeHead = Math.min(120, Math.max(1, m.size || 12));
+    let totalDeg = ((m.flame || 160) / perim) * 360;
+    totalDeg = Math.min(300, Math.max(1.5, totalDeg));
+    const headDeg = Math.max(0.5, Math.min(sizeHead, totalDeg * 0.5));
+    const tailDeg = Math.max(0.5, totalDeg - headDeg);
+    note.style.setProperty('--m-head', headDeg + 'deg');
+    note.style.setProperty('--m-flame', tailDeg + 'deg');
     // 🆕 大小同步放大环厚：旧上限 40°→2px，新上限 120°→6px（3×），40° 以下维持 2px 不退化
     note.style.setProperty('--m-thick', Math.min(6, Math.max(2, (m.size || 12) / 20)) + 'px');
   }
@@ -1221,7 +1230,7 @@ function calStickySyncControls(prefs) {
     });
   }
   // 🆕 外框流星：開關＋細項同步；關閉時停用全部細項
-  const m = p.meteor || { on: false, speed: 12, size: 12, shape: 'comet', color: '#ffae00', follow: false, flame: 60 };
+  const m = p.meteor || { on: false, speed: 12, size: 12, shape: 'comet', color: '#ffae00', follow: false, flame: 160 };
   const mToggle = calStickyEl('calStickyMeteorToggle');
   if (mToggle) {
     mToggle.textContent = '外框流星：' + (m.on ? '開' : '關');
@@ -1255,7 +1264,7 @@ function calStickySyncControls(prefs) {
   const mFlame = calStickyEl('calStickyMeteorFlame');
   if (mFlame) { mFlame.value = String(m.flame); mFlame.disabled = !has || !m.on; }
   const mFlameVal = calStickyEl('calStickyMeteorFlameVal');
-  if (mFlameVal) mFlameVal.textContent = m.flame + '°';
+  if (mFlameVal) mFlameVal.textContent = m.flame + 'px';
 }
 
 function calStickyHasColor(palette, color) {
@@ -2357,7 +2366,7 @@ function calStickyInit() {
   on('calStickyMeteorToggle', 'click', calStickyToggleMeteor);
   on('calStickyMeteorSpeed', 'input', (e) => calStickySetMeteor({ speed: parseInt(e.target.value, 10) || 12 }));
   on('calStickyMeteorSize', 'input', (e) => calStickySetMeteor({ size: parseInt(e.target.value, 10) || 12 }));
-  on('calStickyMeteorFlame', 'input', (e) => calStickySetMeteor({ flame: parseInt(e.target.value, 10) || 60 }));
+  on('calStickyMeteorFlame', 'input', (e) => calStickySetMeteor({ flame: parseInt(e.target.value, 10) || 160 }));
   on('calStickyMeteorColor', 'input', (e) => calStickySetMeteor({ color: e.target.value, follow: false }));
   on('calStickyMeteorFollow', 'change', (e) => calStickySetMeteor({ follow: !!e.target.checked }));
   on('calStickyMeteorRainbow', 'change', (e) => calStickySetMeteor({ rainbow: !!e.target.checked }));

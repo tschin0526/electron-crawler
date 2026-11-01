@@ -551,8 +551,8 @@
                 <label class="cal-sticky-meteor-follow"><input type="checkbox" id="calStickyMeteorFollow"> 跟隨字色</label>
                 <label class="cal-sticky-meteor-follow"><input type="checkbox" id="calStickyMeteorRainbow"> 彩色</label>
               </div>
-              <div class="cal-sticky-sec-title">焰火長度（焰尾角寬）<span class="cal-sticky-sec-val" id="calStickyMeteorFlameVal">60°</span></div>
-              <input type="range" class="cal-sticky-range" id="calStickyMeteorFlame" min="20" max="200" step="5" value="60">
+              <div class="cal-sticky-sec-title">焰火總長（亮頭＋拖尾）<span class="cal-sticky-sec-val" id="calStickyMeteorFlameVal">160px</span></div>
+              <input type="range" class="cal-sticky-range" id="calStickyMeteorFlame" min="10" max="600" step="10" value="160">
             </div>
             <div class="cal-sticky-sec">
               <div class="cal-sticky-sec-title">設定備份（建議存到 calendar 同一個資料夾）</div>
@@ -628,6 +628,7 @@
           <div class="cal-table-grid-scroll" id="calTableGridScroll"></div>
         </div>
         <div class="cal-md-edit-actions">
+          <button type="button" id="calMdEditAutoTerm">自動標示術語</button>
           <button type="button" id="calMdEditCancel">取消</button>
           <button type="button" class="primary" id="calMdEditSave">保存</button>
         </div>
@@ -645,7 +646,7 @@
   <!-- 📅 Calendar 特性編輯器（資料感知編輯器 #1）：依賴 app.js 的 state/elements，必須在其後載入 -->
   <script src="calendar-editor.js?v=lite-order-fix-20261028e"></script>
   <!-- 🆕 VIEW 便利贴规则引擎（从桌面版共享，路径由 serve.py /vsr.js 跨目录代理到 src/plugins/todolist/） -->
-  <script src="/vsr.js?v=lite-order-fix-20261028e"></script>
+  <script src="/vsr.js?v=lite-multi-seg-20261030"></script>
   <!-- 🗒 便利貼設定 JSON 轉換（桌面／LITE 共用，驗證＋格式互轉） -->
   <script src="sticky-settings.js?v=lite-order-fix-20261028e"></script>
   <!-- 🗒 便利貼（翻頁模式）：依賴 calendar-editor.js 的解析/渲染/表單，必須在其後載入 -->

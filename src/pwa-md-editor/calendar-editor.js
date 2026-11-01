@@ -994,6 +994,98 @@ function calRenderTermDefs(text) {
     });
   }).join('\n');
 }
+// 🆕 術語字典：掃描所有事件（title+notes）裡出現過的 [[term...]]，彙整成 {term, def}（供編輯框「自動標示術語」使用）
+function calCollectTerms() {
+  const map = new Map();
+  const scan = (text) => {
+    if (!text) return;
+    let inFence = false;
+    String(text).split('\n').forEach((line) => {
+      if (/^\s*```/.test(line)) { inFence = !inFence; return; }
+      if (inFence) return;
+      String(line).replace(/\[\[([^\]\n]+)\]\]/g, (m, inner) => {
+        if (/^remind:/i.test(inner)) return m;
+        const full = inner.trim();
+        if (!full) return m;
+        const firstColon = full.indexOf(':');
+        let term, rest;
+        if (firstColon === -1) {
+          term = full; rest = '';
+          if (term === 'dl' || term === 'cp') return m;
+          if (/^remind$/i.test(term)) return m;
+          if (/^\d{4}-\d{2}-\d{2}$/.test(term)) return m;
+        } else {
+          term = full.slice(0, firstColon).trim();
+          rest = full.slice(firstColon + 1);
+          if (term === 'dl' || term === 'cp') return m;
+        }
+        if (!term) return m;
+        const lastColon = rest.lastIndexOf(':');
+        const def = lastColon === -1 ? rest.trim() : rest.slice(0, lastColon).trim();
+        const key = term.toLowerCase();
+        if (!map.has(key)) map.set(key, { term: term, def: def });
+        return m;
+      });
+    });
+  };
+  (state.calEvents || []).forEach((ev) => { scan(ev.title); scan(ev.notes); });
+  return Array.from(map.values());
+}
+// 🆕 編輯子事件編輯框：自動把文本裡「未標註的已知術語」包成 [[term]] / [[term:釋文]] 標記。
+//   規則：① 已位於 [[...]] 內的字串不重複標註；② 多術語重疊時最長匹配優先；③ 僅標註未在 [[...]] 內的出現。
+function calAutoMarkTermsInText(text) {
+  const terms = calCollectTerms();
+  const dict = (terms || [])
+    .map((t) => ({ term: t.term, def: (t.def || '').trim() }))
+    .filter((t) => t.term && t.term.length >= 2)
+    .sort((a, b) => b.term.length - a.term.length);   // 長詞優先
+  if (!dict.length) return { text: String(text), count: 0 };
+  const src = String(text);
+  const protectedSpans = [];
+  let m; const br = /\[\[[^\]\n]*\]\]/g;
+  while ((m = br.exec(src)) !== null) protectedSpans.push([m.index, m.index + m[0].length]);
+  const inProtected = (i) => protectedSpans.some((sp) => i >= sp[0] && i < sp[1]);
+  const cands = [];
+  for (const d of dict) {
+    const term = d.term; let from = 0, idx;
+    while ((idx = src.indexOf(term, from)) !== -1) {
+      const end = idx + term.length;
+      if (!inProtected(idx) && !inProtected(end - 1)) cands.push({ start: idx, end: end, term: term, def: d.def });
+      from = idx + 1;
+    }
+  }
+  if (!cands.length) return { text: src, count: 0 };
+  cands.sort((a, b) => (b.end - b.start) - (a.end - a.start) || a.start - b.start);
+  const used = new Array(src.length).fill(false);
+  const accepted = [];
+  for (const c of cands) {
+    let overlap = false;
+    for (let i = c.start; i < c.end; i++) { if (used[i]) { overlap = true; break; } }
+    if (overlap) continue;
+    for (let i = c.start; i < c.end; i++) used[i] = true;
+    accepted.push(c);
+  }
+  accepted.sort((a, b) => a.start - b.start);
+  let out = '', cursor = 0;
+  for (const c of accepted) {
+    out += src.slice(cursor, c.start);
+    const marker = (c.def && c.def.indexOf(']]') === -1) ? ('[[' + c.term + ':' + c.def + ']]') : ('[[' + c.term + ']]');
+    out += marker;
+    cursor = c.end;
+  }
+  out += src.slice(cursor);
+  return { text: out, count: accepted.length };
+}
+function calAutoMarkTermsInEditBox() {
+  const inp = document.getElementById('calMdEditInput');
+  if (!inp) return;
+  if (!inp.value.trim()) { showToast('編輯框為空，無可標示的內容', 'error'); return; }
+  const res = calAutoMarkTermsInText(inp.value);
+  if (!res.count) { showToast('沒有發現可標示的未標註術語', 'info'); return; }
+  inp.value = res.text;
+  inp.dispatchEvent(new Event('input', { bubbles: true }));
+  showToast('已自動標示 ' + res.count + ' 處術語（最長匹配優先，已標註不重複）', 'success');
+}
 // 基礎 Markdown 渲染（標題/備註共用）。
 // 標題行內使用：若 marked 只產出單個 <p>，去掉 <p> 包裝，避免在 .ev-title 裡產生多餘段間距。
 function calRenderInlineMarkdown(text) {
@@ -1119,9 +1211,11 @@ function calSplitMdBlocks(text) {
 function calMdUnitTypeName(type) {
   return ({ code: '代碼塊', table: '表格', heading: '標題', hr: '分隔線', quote: '引用', list: '列表', para: '段落' })[type] || '區塊';
 }
-// 備註 checkbox 行內的 deadline / completed 標記（顯示層轉換，不改寫源）：裸日期與 [[dl:...]] → 📅、[[cp:...]] → ✅
+// 備註 checkbox 行內的 建立日(cr) / deadline(dl) / completed(cp) 標記（顯示層轉換，不改寫源）：
+//   [[cr:...]] → 🆕（建立日）、裸日期與 [[dl:...]] → 📅、[[cp:...]] → ✅（cr 須排在最前，先轉才不會被 dl 規則吃掉）
 function calRenderNoteMarkers(text) {
   return String(text)
+    .replace(/\[\[cr:(\d{4}-\d{2}-\d{2})\]\]/g, '🆕 $1')
     .replace(/\[\[(?:dl:)?(\d{4}-\d{2}-\d{2})\]\]/g, '📅 $1')
     .replace(/\[\[cp:(\d{4}-\d{2}-\d{2})\]\]/g, '✅ $1');
 }
@@ -4698,6 +4792,8 @@ function calInitMdEditDialog() {
   if (closeBtn) closeBtn.addEventListener('click', calMdEditRequestClose);
   if (cancelBtn) cancelBtn.addEventListener('click', calMdEditRequestClose);
   if (saveBtn) saveBtn.addEventListener('click', calMdEditSave);
+  const autoTermBtn = calMdEditEl('calMdEditAutoTerm');
+  if (autoTermBtn) autoTermBtn.addEventListener('click', calAutoMarkTermsInEditBox);
   const inp = calMdEditEl('calMdEditInput');
   if (inp) {
     inp.addEventListener('keydown', (e) => {

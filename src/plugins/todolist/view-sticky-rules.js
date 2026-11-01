@@ -86,6 +86,7 @@
   const MARKERS = [
     { value: '', label: '不限（有命中条件就算）' },
     { value: 'remind', label: '[[remind:…]] 提醒标记' },
+    { value: 'cr', label: '[[cr:…]] 建立日期标记' },
     { value: 'dl', label: '[[dl:…]] deadline 标记' },
     { value: 'cp', label: '[[cp:…]] completed 标记' }
   ];
@@ -107,13 +108,36 @@
     const s = raw && typeof raw === 'object' ? raw : {};
     const kw = Array.isArray(s.keywords) ? s.keywords
       : (typeof s.keywords === 'string' ? String(s.keywords).split(/[,，、\n]/) : []);
+    const tags = Array.isArray(s.tags) ? s.tags
+      : (typeof s.tags === 'string' ? String(s.tags).split(/[,，、\n]/) : []);
     const marker = MARKERS.some((m) => m.value === s.marker) ? s.marker : '';
     const rt = s.rowTypes && typeof s.rowTypes === 'object' ? s.rowTypes : null;  // null＝继承规则层
+    // 🆕 日期条件：建档日(cr)／完成日(cp)／预计完成(dl)，两种比较口径——固定日期(kind 省略) 或 距今天数(kind:'age')：
+    //   • 固定日期：该日期 比较 设定日(value: YYYY-MM-DD)；
+    //   • 距今天数：该日期 到今天 经过 N 天（ageDays = today − d），再拿 N 跟 days 比较（> 超过／< 不到／= 正好）。
+    //   两者都限定小事件勾选状态(doneState)。合法条件＝field + op + (固定日期的 value ｜ 距今天数的 days≥0)。
+    const FIELDS = { cr: 1, dl: 1, cp: 1 }, OPS = { '>': 1, '<': 1, '=': 1 }, DONE = { any: 1, undone: 1, done: 1 };
+    const dc = (s.dateCond && typeof s.dateCond === 'object') ? s.dateCond : null;
+    let dateCond = null;
+    if (dc && FIELDS[dc.field] && OPS[dc.op]) {
+      const doneState = DONE[dc.doneState] ? dc.doneState : 'any';
+      if (dc.kind === 'age') {
+        const rawDays = typeof dc.days === 'number' ? Math.round(dc.days) : parseInt(String(dc.days), 10);
+        if (isFinite(rawDays) && rawDays >= 0) dateCond = { field: dc.field, op: dc.op, kind: 'age', days: rawDays, doneState };
+      } else if (/^\d{4}-\d{2}-\d{2}$/.test(dc.value || '')) {
+        dateCond = { field: dc.field, op: dc.op, value: dc.value, doneState };
+      }
+    }
     return {
       title: String(s.title == null ? '' : s.title).replace(/\s+/g, ' ').trim(),
       keywords: kw.map((x) => String(x == null ? '' : x).trim()).filter(Boolean),
       keywordMode: s.keywordMode === 'ALL' ? 'ALL' : 'ANY',
+      tags: tags.map((x) => String(x == null ? '' : x).trim()).filter(Boolean),
+      tagMode: s.tagMode === 'ALL' ? 'ALL' : 'ANY',
+      detail: s.detail === false ? false : true,   // false＝只显示事件标题（不收明细行）
+      includeDoneEvents: s.includeDoneEvents === false ? false : true,  // 标题模式下是否也列「已完成」事件的标题（默认列）
       marker: marker,
+      dateCond: dateCond,
       caseSensitive: !!s.caseSensitive,
       rowTypes: rt ? {
         todo: rt.todo !== false,
@@ -125,7 +149,7 @@
       } : null
     };
   }
-  function blankSegment() { return normalizeSegment({ title: '', keywords: [], keywordMode: 'ANY', marker: '', caseSensitive: false, rowTypes: null }); }
+  function blankSegment() { return normalizeSegment({ title: '', keywords: [], keywordMode: 'ANY', tags: [], tagMode: 'ANY', detail: true, includeDoneEvents: true, marker: '', caseSensitive: false, rowTypes: null }); }
   function normalizeRule(raw) {
     const r = raw && typeof raw === 'object' ? raw : {};
     const rt = r.rowTypes && typeof r.rowTypes === 'object' ? r.rowTypes : {};
@@ -166,9 +190,38 @@
   //      这里只是说明文字，不能出现成对的双方括号。
   function conditionText(cond) {
     if (!cond) return '⚠ 没有条件（不会抓到内容）';
+    // 🆕 只显示事件标题：带标签条件的段落自动走此模式（用户 2026-10-31 要求标签搜索只列标题）；
+    //    行级条件（标记／行型态）在此模式不适用，只列事件级条件＋明确标注「只显示事件标题」。
+    const titleOnly = (cond.tags && cond.tags.length > 0) || cond.detail === false;
+    if (titleOnly) {
+      const parts = [];
+      if (cond.tags && cond.tags.length) parts.push('标签' + (cond.tagMode === 'ALL' ? '全有' : '任一') + '：' + cond.tags.join('、'));
+      if (cond.keywords && cond.keywords.length) parts.push('标题关键词' + (cond.keywordMode === 'ALL' ? '全中' : '任一') + '：' + cond.keywords.join('、') + (cond.caseSensitive ? '（区分大小写）' : ''));
+      if (!parts.length) parts.push('⚠ 没有条件（不会抓到内容）');
+      parts.push('只显示事件标题');
+      if (cond.includeDoneEvents === false) parts.push('（不含已完成事件）');
+      return parts.join(' ＋ ');
+    }
     const parts = [];
     if (cond.marker) parts.push('标记＝' + cond.marker);
     if (cond.keywords.length) parts.push('关键词' + (cond.keywordMode === 'ALL' ? '全中' : '任一') + '：' + cond.keywords.join('、') + (cond.caseSensitive ? '（区分大小写）' : ''));
+    if (cond.tags && cond.tags.length) parts.push('标签' + (cond.tagMode === 'ALL' ? '全有' : '任一') + '：' + cond.tags.join('、'));
+    if (cond.dateCond) {
+      const fld = { cr: '建档日期', dl: '预计完成', cp: '完成日期' }[cond.dateCond.field] || cond.dateCond.field;
+      const st = { undone: '未完成', done: '已完成', any: '' }[cond.dateCond.doneState] || '';
+      if (cond.dateCond.kind === 'age') {
+        // 距今天数口径（直觉版）：> 距离今天 N 天后（未来侧）／< 距离今天 N 天前（过去侧）／= 距今天正好 N 天
+        const opAge = {
+          '>': '距离今天 ' + cond.dateCond.days + ' 天后',
+          '<': '距离今天 ' + cond.dateCond.days + ' 天前',
+          '=': '距离今天 正好 ' + cond.dateCond.days + ' 天'
+        }[cond.dateCond.op] || cond.dateCond.op;
+        parts.push(fld + ' ' + opAge + (st ? '（' + st + '）' : ''));
+      } else {
+        const op = { '>': '晚于', '<': '早于', '=': '等于' }[cond.dateCond.op] || cond.dateCond.op;
+        parts.push(fld + op + cond.dateCond.value + (st ? '（' + st + '）' : ''));
+      }
+    }
     if (!parts.length) parts.push('⚠ 没有条件（不会抓到内容）');
     const types = ROW_TYPES.filter((t) => cond.rowTypes && cond.rowTypes[t]).map((t) => ROW_TYPE_LABEL[t]);
     parts.push('行型态：' + (types.join('／') || '无'));
@@ -184,7 +237,7 @@
 
   // 这一段是否算「有搜索条件」（关键词／标记至少要有一个）；整条规则＝任一段有即可
   function segmentHasCondition(seg) {
-    return !!seg && (seg.keywords.length > 0 || !!seg.marker);
+    return !!seg && (seg.keywords.length > 0 || !!seg.marker || (seg.tags && seg.tags.length > 0) || !!seg.dateCond);
   }
   function ruleHasCondition(rule) {
     return (rule && Array.isArray(rule.segments) ? rule.segments : []).some(segmentHasCondition);
@@ -236,21 +289,131 @@
   //   ⚠️ 「列表项」后面直接接「非列表行」＝CommonMark 的 lazy continuation，会被并到上一条里面，
   //      所以中间要补一个空行（收集来的行原本未必相邻，源档的空行不会一起带过来）。
   //   cond＝一个段落（segment）：{ keywords, keywordMode, marker, caseSensitive, rowTypes }。
-  function collectGroups(events, cond, deps) {
+  // 🆕 事件是否「已完成」：
+  //   ① 优先认事件级的「已完成」勾选框（编辑器里「已完成」写入的 ev.done，与标题旁「· 已完成」同为一条数据）；
+  //   ② 兜底：事件备注里的 checkbox 子项（与 TASK_RE 同口径，仅认 `- [ ]`／`- [x]`）至少有一项、且全部已打勾（[x]）。
+  //   没有任何 checkbox 子项、且事件级未勾选「已完成」的事件 → 不算已完成（照常显示，不受 includeDoneEvents 影响）。
+  function eventIsCompleted(ev) {
+    if (!ev) return false;
+    // ① 事件级「已完成」勾选框（编辑器「已完成」写入的 ev.done）—— 这是最直接的信号
+    if (ev.done === true) return true;
+    // ② 兜底：备注里 checkbox 子项全部已打勾
+    const notes = String(ev.notes || '');
+    let any = false, allDone = true;
+    notes.replace(/\r\n/g, '\n').split('\n').forEach((line) => {
+      const t = line.trim();
+      if (!t) return;
+      const m = t.match(TASK_RE);
+      if (m) { any = true; if (m[1] !== 'x' && m[1] !== 'X') allDone = false; }
+    });
+    return any && allDone;
+  }
+  // 🆕 今天的日期（本地，YYYY-MM-DD）：相对日期条件用
+  function todayStr() {
+    const t = new Date();
+    const y = t.getFullYear();
+    const m = String(t.getMonth() + 1).padStart(2, '0');
+    const d = String(t.getDate()).padStart(2, '0');
+    return y + '-' + m + '-' + d;
+  }
+  // 🆕 两个 YYYY-MM-DD 相差的整数天（按 UTC 计算，避开日光节约时间造成的 ±1 小时误差）；a→b 为正表示 b 较晚
+  function daysBetween(a, b) {
+    const da = Date.parse(a + 'T00:00:00Z');
+    const db = Date.parse(b + 'T00:00:00Z');
+    if (!isFinite(da) || !isFinite(db)) return NaN;
+    return Math.floor((db - da) / 86400000);
+  }
+  // 🆕 在 YYYY-MM-DD 上加／减 N 天（UTC 计算，避开日光节约误差），回传 YYYY-MM-DD
+  function addDays(dateStr, n) {
+    const t = Date.parse(dateStr + 'T00:00:00Z');
+    if (!isFinite(t)) return '';
+    const d = new Date(t + n * 86400000);
+    const y = d.getUTCFullYear();
+    const m = String(d.getUTCMonth() + 1).padStart(2, '0');
+    const day = String(d.getUTCDate()).padStart(2, '0');
+    return y + '-' + m + '-' + day;
+  }
+  // 🆕 日期条件匹配：小事件须是 checkbox（按 doneState 限定 未完成／已完成），且行内含 [[field:YYYY-MM-DD]]；
+  //   固定模式＝该日期 比较 设定日；相对模式（kind:'age'）＝该日期 到今天 经过的天数 比较 N 天。
+  function dateCondMatch(type, line, dc) {
+    if (dc.doneState === 'undone' && type !== 'todo') return false;
+    if (dc.doneState === 'done' && type !== 'done') return false;
+    if (dc.doneState === 'any' && type !== 'todo' && type !== 'done') return false;
+    const m = line.match(new RegExp('\\[\\[' + dc.field + ':(\\d{4}-\\d{2}-\\d{2})\\]\\]', 'i'));
+    if (!m) return false;
+    const d = m[1];
+    if (dc.kind === 'age') {
+      // 🆕 用户直觉口径（2026-11-01 调整）：> ＝「距离今天 N 天后」（field 在 今天+N 之后，未来侧）；
+      //    < ＝「距离今天 N 天前」（field 在 今天−N 之前，过去侧，如建档已满 N 天）；= ＝「距今天正好 N 天」（前后皆可）。
+      //    以「今天 ± N 天」为比较基准，operator 方向不再与直觉相反（旧版用「该日期已存放几天」再比，导致 > 反而抓到更旧的）。
+      const today = todayStr();
+      if (dc.op === '=') return Math.abs(daysBetween(d, today)) === dc.days;   // 正好距离今天 N 天
+      const target = addDays(today, dc.op === '>' ? dc.days : -dc.days);        // 后：今天+N；前：今天−N
+      if (!target) return false;
+      const cmp = d < target ? -1 : (d > target ? 1 : 0);
+      if (dc.op === '>') return cmp > 0;   // 距离今天 N 天后（未来侧）
+      if (dc.op === '<') return cmp < 0;   // 距离今天 N 天前（过去侧）
+      return false;
+    }
+    const cmp = d < dc.value ? -1 : (d > dc.value ? 1 : 0);
+    if (dc.op === '>') return cmp > 0;
+    if (dc.op === '<') return cmp < 0;
+    return cmp === 0;
+  }
+  function collectGroups(events, cond, deps, includeTitle) {
     const D = makeDeps(deps);
+    const searchTitle = includeTitle !== false;   // 默认纳入标题搜索；🔔 内置贴传 false 保持只搜正文
     const groups = [];
     if (!segmentHasCondition(cond)) return groups;
     (Array.isArray(events) ? events : []).forEach((ev) => {
       if (!ev) return;
+      // 🆕 事件级标签过滤：事件须带指定标签（tags 任一／全部）才纳入本段搜索；与下方行级条件为「且」
+      if (cond.tags && cond.tags.length) {
+        const evTagNames = (ev.tags || []).map((t) => (t && typeof t === 'object' ? (t.name || '') : (t || '')));
+        const tagHit = cond.tagMode === 'ALL'
+          ? cond.tags.every((tg) => evTagNames.indexOf(tg) >= 0)
+          : cond.tags.some((tg) => evTagNames.indexOf(tg) >= 0);
+        if (!tagHit) return;
+      }
+      // 🆕 自动「只显示事件标题」：带标签条件的段落，事件级命中即收整张行程、不展开其下的小事件
+      //    （checkbox 子项）——用户 2026-10-31 明确要求：标签搜索只列事件标题，不要把小事件也列出。
+      //    亦兼容旧手动开关 detail:false（残留则同样走此分支）。行级条件（标记／行型态）在此无意义→忽略；
+      //    若段落另设了关键词，则只比对事件标题（标题命中才收这张行程）。
+      // 🆕 日期条件只在明细（行）模式有意义 → 有 dateCond 时强制走明细分支（即便也设了标签／只显示标题）
+      const titleOnly = cond.dateCond && cond.dateCond.field ? false : ((cond.tags && cond.tags.length > 0) || cond.detail === false);
+      if (titleOnly) {
+        // 🆕 关闭「包含已完成事件」时，跳过「已完成」事件的标题（事件级「已完成」勾选框已勾，
+        //    或其备注里 checkbox 子项全部已打勾）。仅影响标题模式的事件级收录；明细模式由行型态的
+        //    已完成 checkbox 控制，与此无关。
+        if (cond.includeDoneEvents === false && eventIsCompleted(ev)) return;
+        let ok = true;
+        if (cond.keywords && cond.keywords.length) {
+          const titleRaw = String(ev.title == null ? '' : ev.title);
+          ok = searchTitle && titleRaw.trim() ? lineHitsRule(titleRaw, titleRaw.trim(), cond) : false;
+        }
+        if (ok) groups.push({ ev, hits: [] });
+        return;
+      }
       const hits = [];
       let inFence = false;
+      // 🆕 标题也纳入搜索范围：标题命中关键词／标记（不受 rowType 限制）时，这张行程也算命中，
+      //    这样「便利贴标题」含关键词／标记的行程也会被收进这张 VIEW 投影贴。
+      const titleRaw = String(ev.title == null ? '' : ev.title);
+      const titleTrim = titleRaw.trim();
+      // 🆕 日期条件只作用在行上，不作用在标题 → 有 dateCond 时不把标题命中当收录（避免没命中行的事件被标题捎带进来）
+      const titleHit = (searchTitle && titleTrim && !(cond.dateCond && cond.dateCond.field)) ? lineHitsRule(titleRaw, titleTrim, cond) : false;
       String(ev.notes || '').replace(/\r\n/g, '\n').split('\n').forEach((line, i) => {
         if (FENCE_RE.test(line)) { inFence = !inFence; return; }
         if (inFence) return;
         const t = line.trim();
         if (!t) return;
         const type = rowTypeOf(line, t);
-        if (!cond.rowTypes[type]) return;
+        // 🆕 日期条件优先：设了 dateCond.field 时按「日期比较＋勾选状态」过滤小事件（取代行型态门槛，直接判定 todo/done），并与关键词 AND；否则走原行型态门槛
+        if (cond.dateCond && cond.dateCond.field) {
+          if (!dateCondMatch(type, line, cond.dateCond)) return;
+        } else {
+          if (!cond.rowTypes[type]) return;
+        }
         if (!lineHitsRule(line, t, cond)) return;
         // 🆕 已完成的 checkbox（type='done'）也要當 task 行渲染。
         //   否則 done 行會落進下面的「非 task」分支 → D.markdown(D.termDefs(raw))，
@@ -262,7 +425,10 @@
         }
         hits.push({ raw: t, line: i, uid: ev.uid || '', text: m ? (m[2] || '').trim() : '', task: !!m, type: type });
       });
-      if (hits.length) groups.push({ ev, hits });
+      // 正文有命中行 → 照常收；正文无命中但标题命中 → 仍收这张行程（其分组标题即来源标题，
+      //   可经 groupHeadHtml 的切换徽标一键跳回来源）。不再压入独立的「标题命中」单元，
+      //   避免与分组标题的切换徽标重复显示（2026-10-30 用户要求）。
+      if (hits.length || titleHit) groups.push({ ev, hits });
     });
     return groups;
   }
@@ -281,7 +447,28 @@
   }
   function groupsToMd(groups, deps) {
     if (!groups || !groups.length) return '';
-    return groups.map((g) => groupHeadMd(g.ev, deps) + '\n' + g.hits.map((h) => h.raw).join('\n')).join('\n\n');
+    return groups.map((g) => groupHeadMd(g.ev, deps) + (g.hits && g.hits.length ? '\n' + g.hits.map((h) => h.raw).join('\n') : '')).join('\n\n');
+  }
+
+  // ===== 分组标题（来源行程的标题）渲染成「可点整块＋📍 切换按钮」=====
+  //   与标题命中项的「📍 切换回来源」同一机制：点击唤起主程式打开该来源行程表单
+  //   （noteFindSameOpenSourceEvent → wake-main-from-note → tlOpenEventForm(uid)）。
+  //   整块标题都可点（data-src＝来源行程 uid），让使用者一眼看到「这段内容来自哪张行程」并随手切换；
+  //   标题前方放一个 gold 圆形「切换」徽标（class vsr-goto-source，外观仿编辑小圆点）。
+  function groupHeadHtml(ev, deps) {
+    const D = makeDeps(deps);
+    const inner = D.inline(groupHeadMd(ev, D));   // 维持原本的标题（粗体/标题语义）＋日期＋来源档
+    const src = (ev && ev.uid) ? ev.uid : '';
+    const stitle = D.esc(String((ev && ev.title) || '').replace(/\s+/g, ' ').trim() || '(无标题)');
+    // 切换徽标：放在标题「最前面」，外观仿照编辑小圆点（同尺寸圆形），但用 gold 主色与圆点（purple）区分——
+    //   purple＝编辑/复制/找出相同；gold＝跳回来源行程。点击经 .vsr-goto-source 委托切换来源。
+    //   ⚠️ 整块用 display:flex 横排（而非 block＋inline 徽标）：来源标题若本身是 # 标题会被渲染成 block 元素，
+    //      inline 徽标会被挤到单独一行（台雄生日 即此例）；flex 横排可保证徽标与标题永远同一行。
+    const dot = '<button type="button" class="vsr-goto-source" data-src="' + D.esc(src) +
+      '" title="切换到来源：' + stitle + '"' +
+      ' style="display:inline-flex;flex:none;width:13px;height:13px;padding:0;margin:0;align-items:center;justify-content:center;vertical-align:-2px;border:0;border-radius:50%;background:var(--gold,#D4AF37);color:#fff;font-size:9px;line-height:1;cursor:pointer;opacity:.85;-webkit-app-region:no-drag;">↪</button>';
+    return '<div class="vsr-group-head" data-src="' + D.esc(src) + '" title="点击切换到来源：' + stitle + '"' +
+      ' style="cursor:pointer;display:flex;align-items:center;gap:4px;flex-wrap:nowrap;margin:2px 0 4px;">' + dot + inner + '</div>';
   }
 
   // ===== 渲染 =====
@@ -355,7 +542,7 @@
     const D = makeDeps(deps);
     let out = '';
     (groups || []).forEach((g) => {
-      out += D.inline(groupHeadMd(g.ev, D)) + '\n';
+      out += groupHeadHtml(g.ev, D) + '\n';
       groupHitsIntoUnits(g.hits).forEach((u) => {
         out += u.task ? taskLineHtml(u.hits[0], g.ev, selfKey, D) + '\n'
           : nonTaskUnitHtml(u.hits, g.ev, selfKey, D) + '\n';
@@ -364,11 +551,18 @@
     return out;
   }
 
-  // 段落标题（markdown）：「### 段落 N：标题」＋ 一行条件说明（blockquote，纯文字、不含 [[…]]）。
-  //   只在「多段落」时才渲染（单段落与旧版外观一致，不加标题）；条件文案走 conditionText（已避开 [[…]]）。
+  // 段落标题（markdown）：多段落时渲染「段落 N：标题」；单段落与旧版一致不加标题。
+  //   条件说明不再铺在便利贴里，改为悬停 tooltip（见 buildRef）。
+  //   🆕 标题开头的 # 层级标记（#{1,6}）决定整段段落标题的层级：带 #＝用户自定层级（如 #→H1、##→H2），
+  //      不带 #＝默认 H3（与旧版「### 段落 N：」一致）。这样 # 真的会改变渲染（层级不同、字号不同），
+  //      且 # 在一行开头当标题标记用、不会变成字面符号，整行仍与「段落 N：」并成一行（满足「不要换行」）。
   function segmentHeaderMd(seg, i) {
-    const title = seg.title ? '：' + seg.title : '';
-    return '### 段落 ' + (i + 1) + title + '\n> 条件：' + conditionText(seg);
+    const titleRaw = seg.title ? String(seg.title).replace(/\s+/g, ' ').trim() : '';
+    const m = titleRaw.match(/^(#{1,6})\s*/);          // 提取开头的标题层级
+    const level = m ? m[1].length : 3;                // 默认 H3（与旧版一致）
+    const body = m ? titleRaw.slice(m[0].length) : titleRaw;  // 去掉层级标记后的标题正文
+    const hashes = '#'.repeat(level);
+    return body ? (hashes + ' 段落 ' + (i + 1) + '：' + body) : (hashes + ' 段落 ' + (i + 1));
   }
 
   // ===== 一张自定义投影贴 =====
@@ -391,29 +585,45 @@
     // 每段独立收集（只收「有」条件的段落）
     const segResults = r.segments
       .filter(segmentHasCondition)
-      .map((seg) => ({ seg, groups: collectGroups(events, seg, D) }));
+      .map((seg) => ({ seg, groups: collectGroups(events, seg, D, !r.builtin) }));
     const totalHits = segResults.reduce((a, s) => a + s.groups.length, 0);
     if (totalHits === 0) {
       if (r.emptyBehavior === 'hide') return null;
       return Object.assign(base, { notes: EMPTY_NOTES, html: D.markdown(D.termDefs(EMPTY_NOTES)) });
     }
     const multi = segResults.length > 1;
+    // 🆕 标题 tooltip 统一显示「所有段落」的设定摘要（单／多段落同一逻辑）：把每段的条件摘要合并后
+    //    挂到便利贴标题文字上，鼠标悬停标题即见全部段落。多段落时每段标题（.vsr-seg-hd）再各挂「该段」条件，
+    //    两者并存（用户要求每段也能单独看自己的条件）。
+    const titleTipParts = segResults.map((sr, i) => {
+      const seg = sr.seg;
+      const label = multi
+        ? ('段落' + (i + 1) + (seg.title ? '：' + seg.title : '') + '：')
+        : (seg.title ? seg.title + '：' : '');
+      return label + conditionText(seg);
+    });
+    base.titleTip = titleTipParts.join('\n');
     let notes = '';
     let html = '';
     segResults.forEach((sr, i) => {
       const g = sr.groups;
       const segNotes = groupsToMd(g, D);
       const segHtml = groupsToHtml(g, key, D);
-      if (!multi) { notes += segNotes; html += segHtml; return; }
-      // 🆕 多段落：每段一个标题，按设定顺序显示
-      const head = segmentHeaderMd(sr.seg, i);
-      const headHtml = D.markdown(D.termDefs(head));
+      // 🆕 多段落时，把「该段」条件摘要挂到段落标题（.vsr-seg-hd，hover 段落 N 标题即见），
+      //    与便利贴标题的「全部段落合并」tooltip 并存——用户要求每段也要能单独看自己的条件。
+      const segTip = conditionText(sr.seg);
+      let head = '', headHtml = '';
+      if (multi) {
+        head = segmentHeaderMd(sr.seg, i);
+        const hr = D.markdown(D.termDefs(head));
+        headHtml = '<div class="vsr-seg-hd"' + (segTip ? ' data-tip="' + D.esc(segTip) + '"' : '') + '>' + hr + '</div>';
+      }
       if (g.length) {
-        notes += (notes ? '\n\n' : '') + head + '\n' + segNotes;
-        html += (html ? '\n' : '') + headHtml + '\n' + segHtml;
+        notes += (notes ? '\n\n' : '') + head + (head ? '\n' : '') + segNotes;
+        html += (html ? '\n' : '') + '<div class="vsr-seg">' + headHtml + (headHtml ? '\n' : '') + segHtml + '</div>';
       } else {
-        notes += (notes ? '\n\n' : '') + head + '\n\n> （这个段落目前没抓到任何行）';
-        html += (html ? '\n' : '') + headHtml + '\n' + D.markdown('> （这个段落目前没抓到任何行）');
+        notes += (notes ? '\n\n' : '') + head + (head ? '\n' : '') + '\n\n> （这个段落目前没抓到任何行）';
+        html += (html ? '\n' : '') + '<div class="vsr-seg">' + headHtml + (headHtml ? '\n' : '') + D.markdown('> （这个段落目前没抓到任何行）') + '</div>';
       }
     });
     return Object.assign(base, { notes, html });

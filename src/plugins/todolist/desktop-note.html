@@ -18,7 +18,33 @@
     .head { display: flex; align-items: center; gap: 6px; padding: 8px 34px 4px 12px; flex: none; }
     /* 拖拽区＝色条/标题栏/日期/标签：手型光标提示「这里就是拖动把手」 */
     .bar, .head, .meta, .tags { -webkit-app-region: drag; cursor: grab; }
-    .title { font-weight: 700; font-size: 14px; color: var(--note-fg, #1f2430); flex: 1; word-break: break-word; line-height: 1.35; }
+    /* 标题栏整体仍是 drag（继承 .head），保持可拖动；只把「文字本身」用 .tt 设为 no-drag 小「洞」。 */
+    .title { font-weight: 700; font-size: 14px; color: var(--note-fg, #1f2430); flex: 1; word-break: break-word; line-height: 1.35; position: relative; }
+    /* .tt＝标题文字容器：no-drag 才能响应 :hover（macOS drag 区不响应指针事件）；position:relative 供 ::after 锚定 */
+    .tt { -webkit-app-region: no-drag; position: relative; }
+    /* 标题 tooltip：只在 .tt（文字）上悬停才出现（范围＝文字本身，最小），用自定义 ::after（data-tip 驱动） */
+    .tt[data-tip]:not([data-tip=""]):hover::after {
+      content: attr(data-tip);
+      position: absolute; left: 0; top: 100%; z-index: 40; margin-top: 5px;
+      max-width: 300px; padding: 6px 9px;
+      border: 1px solid rgba(212,175,55,.6); border-radius: 8px;
+      background: var(--menu-bg, rgba(40,42,54,.98)); color: var(--note-fg, #f2f4f8);
+      font: 400 12px/1.45 var(--ui-font, system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif);
+      white-space: pre-line; word-break: break-word;
+      box-shadow: 0 10px 24px rgba(0,0,0,.35); pointer-events: none; -webkit-app-region: no-drag;
+    }
+    /* VIEW 段落标题 tooltip：多段落时 hover 「段落 N」标题即见该段条件；与便利贴标题合并 tooltip 并存 */
+    .vsr-seg-hd { position: relative; }
+    .vsr-seg-hd[data-tip]:not([data-tip=""]):hover::after {
+      content: attr(data-tip);
+      position: absolute; left: 0; top: 100%; z-index: 40; margin-top: 5px;
+      max-width: 300px; padding: 6px 9px;
+      border: 1px solid rgba(212,175,55,.6); border-radius: 8px;
+      background: var(--menu-bg, rgba(40,42,54,.98)); color: var(--note-fg, #f2f4f8);
+      font: 400 12px/1.45 var(--ui-font, system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif);
+      white-space: pre-line; word-break: break-word;
+      box-shadow: 0 10px 24px rgba(0,0,0,.35); pointer-events: none; -webkit-app-region: no-drag;
+    }
     /* 🆕 文档名徽标（外部 include 来源）：金色虚线胶囊，与标签胶囊区分；过长省略，完整名在 title 属性里 */
     .doc-badge {
       display: none; flex: none; max-width: 60%; box-sizing: border-box;
@@ -248,6 +274,19 @@
     .ac-unsaved .ac-copy { margin-top: 0; padding: 4px 10px; }
     .ac-unsaved .ac-danger { border-color: rgba(220,38,38,.6); background: rgba(220,38,38,.12); }
     .ac-unsaved .ac-danger:hover { background: rgba(220,38,38,.24); }
+    /* 🆕 自动标示术语：勾选确认浮层 */
+    .addcheck-box .at-all { display: flex; align-items: center; gap: 6px; margin: 2px 0 6px; font-size: 11px; opacity: .85; -webkit-app-region: no-drag; cursor: pointer; }
+    .addcheck-box .at-list { max-height: 42vh; overflow: auto; border: 1px solid rgba(127,127,127,.3); border-radius: 8px; padding: 4px 6px; background: rgba(127,127,127,.06); }
+    .addcheck-box .at-item { display: flex; align-items: baseline; gap: 6px; padding: 4px 2px; border-bottom: 1px dashed rgba(127,127,127,.25); -webkit-app-region: no-drag; cursor: pointer; }
+    .addcheck-box .at-item:last-of-type { border-bottom: 0; }
+    .addcheck-box .at-chk { flex: none; margin: 0; }
+    .addcheck-box .at-idx { flex: none; font-size: 10px; opacity: .6; white-space: nowrap; }
+    /* 🆕 术语/标记色跟随 --note-fg 主题自适应（金/绿与字色混色），深浅便利贴都可读，不再写死深浅 */
+    .addcheck-box .at-term { font-weight: 700; color: color-mix(in srgb, var(--note-fg, #33384a) 78%, #D4AF37); }
+    .addcheck-box .at-arrow { flex: none; opacity: .6; }
+    .addcheck-box .at-marker { color: color-mix(in srgb, var(--note-fg, #33384a) 70%, #2a7d3b); word-break: break-all; }
+    .addcheck-box .at-ctx { padding: 0 2px 4px 22px; font-size: 10px; opacity: .7; white-space: pre-wrap; word-break: break-all; line-height: 1.4; }
+    .addcheck-box .at-hl { background: rgba(212,175,55,.35); border-radius: 3px; padding: 0 1px; }
     /* 🆕 收件人历史下拉（复用菜单配色 --menu-bg/--note-fg，保证深浅主题可读） */
     .email-input-wrap { position: relative; }
     .email-recipient-dropdown {
@@ -465,6 +504,10 @@
     .m-sticky-item-name { flex: 1; min-width: 0; width: auto; overflow: hidden; text-overflow: ellipsis; }
     .m-sticky-item-state { flex: none; width: auto; min-width: 24px; text-align: right; color: var(--menu-muted, #6b7280); }
     .m-sticky-item-state.open { color: var(--menu-status-open, #15803d); }
+    /* VIEW 便利贴：下拉清单中仅用「斜体」与普通便利贴做出区隔（不改颜色，沿用一般便利贴名称的字色），使用者一眼可辨 */
+    .m-sticky-item-view { padding-left: 3px; }
+    .m-sticky-item-view .m-sticky-item-name { font-style: italic; }
+    .m-sticky-item-view .m-sticky-item-index { font-style: italic; }
     /* 菜单第一行：常用图标按钮（说明文字在title tooltip） */
     .m-actions { display: flex; align-items: center; gap: 4px; padding: 1px 2px; }
     .m-actions .m-act {
@@ -740,6 +783,13 @@
       <button type="button" class="nami" data-act="copy" role="menuitem">📋 复制整块内容</button>
       <button type="button" class="nami" data-act="del" role="menuitem">🗑 删除此区块</button>
     </div>
+    <!-- 🆕 右键 VIEW 投影贴分组标题（.vsr-group-head）的「📍 切换徽标」→ 下拉菜单：
+         菜单项1＝原左键行为（切换到来源行程编辑器）；菜单项2＝仅滚动定位到 calendar 该事件所在位置（不开编辑器）。
+         与 #noteFindSameMenu / #noteBlockMenu 平行，但只认 .vsr-group-head（标题区），不认小圆点。 -->
+    <div class="note-addcheck-menu" id="vsrGotoMenu" role="menu">
+      <button type="button" class="nami" data-act="open" role="menuitem">📝 切换到日程事件编辑器</button>
+      <button type="button" class="nami" data-act="scroll" role="menuitem">📍 滚动到该事件所在位置</button>
+    </div>
     <div class="body" id="body"></div>
     <div class="tl-text-gutter-wrap" id="editAreaGutterWrap">
       <div class="tl-line-gutter" id="editAreaGutter"><div class="tl-line-gutter-inner" id="editAreaGutterInner"></div></div>
@@ -879,6 +929,7 @@
         </div>
         <div class="ac-hint">Enter 换行（与「编辑小圆点」手感一致）· ⌘S 或「保存」加入（加入后不关闭，可继续输入下一批）· Esc 关闭（草稿未加入会先问是否保存）</div>
         <div class="ac-actions">
+          <button type="button" class="ac-copy" id="autoTermCheckButton">自动标示术语</button>
           <button type="button" class="ac-copy" id="copyNoteCheckButton">复制</button>
           <button type="button" class="ac-copy" id="editFullNoteFromCheckButton">编辑完整备注</button>
           <button type="button" class="ac-copy ac-primary" id="saveCheckButton">保存</button>
@@ -892,6 +943,19 @@
             <button type="button" class="ac-copy ac-danger" id="addCheckDiscardButton">不保存，直接关闭</button>
             <button type="button" class="ac-copy ac-primary" id="addCheckSaveCloseButton">保存并关闭</button>
           </div>
+        </div>
+      </div>
+    </div>
+    <!-- 🆕 自动标示术语：勾选确认浮层（列出待替换项，默认全选，确认后才写回编辑框） -->
+    <div class="addcheck-ov" id="autoTermOv">
+      <div class="addcheck-box" id="autoTermBox">
+        <div class="ac-title">自动标示术语 — 请勾选要替换的项目</div>
+        <label class="at-all"><input type="checkbox" id="autoTermAllChk" checked> 全选 / 取消全选</label>
+        <div class="at-list" id="autoTermList"></div>
+        <div class="ac-hint">默认全部勾选；取消勾选的项目不会被替换；确认后才写入编辑框（最长匹配优先，已标注不重复）。</div>
+        <div class="ac-actions">
+          <button type="button" class="ac-copy" id="autoTermCancel">取消</button>
+          <button type="button" class="ac-copy ac-primary" id="autoTermConfirm">确认替换</button>
         </div>
       </div>
     </div>

@@ -11,6 +11,8 @@
 
 // 快取名帶版本：每次改資源內容或 SW 邏輯都要 bump 版本號，
 // 讓舊快取名自動失效、activate 階段清掉，確保用戶一定拿到最新資源。
+// v186：備註 checkbox 子事件的 建立日(cr) 標記在 LITE/手機版正確渲染——calRenderNoteMarkers 補上 [[cr:...]]→🆕（建立日）轉換（原本只處理 dl→📅/cp→✅，導致 [[cr:...]] 被下游 calRenderInlineMarkdown 當成未知 marker 渲染成只顯「cr」的徽章、丟掉日期）；與桌面版 tlRenderNotes 對齊（cr→🆕 排最前先轉）；calendar-editor.js 改，bump 讓手機重拉
+// v187：編輯子事件編輯框新增「自動標示術語」——calCollectTerms（掃描全事件 [[term...]] 建術語字典）＋ calAutoMarkTermsInText：把編輯框內「未標註的已知術語」包成 [[term]] / [[term:釋文]]；規則＝①已位於 [[...]] 內的不重複標註 ②多術語重疊時最長匹配優先 ③僅標註未在 [[...]] 內的出現；編輯框加 #calMdEditAutoTerm 按鈕（#calMdEditOverlay）。與桌面版 tlAutoMarkTermsInText 同邏輯；calendar-editor.js/index.html 改，bump 讓手機重拉
 // v105：標籤樹過濾升級——①標籤條併入 ## TAGS 樹登記的全部標籤（父階標籤即使無事件直接掛靠也顯示）；②calEventMatchesTag 改 BOM 展開：選中標籤＝匹配自身＋全部子階＋孫階（新增 calTagDescendants 沿樹向下收集，seen 防成環）；③繼承選中：被選中主標籤 BOM 覆蓋的子/孫標籤顯示 ghost 藍 active-desc 樣式（與 .active 實心藍白配色有差異）；calendar-editor.js/style.css 改，bump 讓手機重拉
 // v104：統計彈層與桌面對齊——①「只顯示事件主體」過濾（calBuildStats 加 mainOnly：有子事件的事件本身不算主體，其子事件照常計入子事件欄；無子事件的事件才是主體；calStatsFilter.mainOnly＋篩選區 checkbox＋匯總卡標題改「主事件（無子事件＝主體）」）；②同一主事件的子事件行交替色帶分組（紫↔藍 band-a/band-b）；③明細表狀態列前移到內容列前、狀態改 ○＝完成/✕＝未完成 圖標；calendar-editor.js/style.css 改，bump 讓手機重拉
 // v103：展開明細子事件內容懸停 → tooltip 顯示所屬主事件標題（原生 title 屬性，*BuildStats 子事件推送補 ptitle: ev.title；主事件行不加；d-content[title] cursor:help＋點狀底線提示可懸停）；calendar-editor.js/style.css 改，bump 讓手機重拉
@@ -381,7 +383,24 @@
 //       上「向外 box-shadow」會被視窗/卡片邊界裁掉，視窗內根本看不到，只剩 1px 邊框色在黃底上的微弱變化。
 //       改為 ::before 偽元素（inset:0 在卡片內、不被裁）畫 6px 亮白粗邊＋內發光＋微白染，整層 opacity 硬切閃爍；
 //       亮白色在黃底上對比最高。桌面 desktop-note.html 與 LITE style.css 同步；APP_VERSION/manifest 1.10.7→1.10.8。
-const CACHE_NAME = 'md-editor-lite-v190';
+// v190→v191：🔧 流星「焰火長度」(flame 角寬) 下限 20°→10°（用戶設到最短仍嫌長，再減半）；上限與預設不變。
+//       index.html(滑桿 min) / sticky-notes.js / sticky-settings.js 三處 LITE 前端改，bump 讓手機重拉；APP_VERSION/manifest 1.10.8→1.10.9。
+// v191→v192：🔧 流星「焰火長度」(flame 角寬) 下限 10°→1°（用戶接受角度對應長度，但要求最小角度 1°）；滑桿 step 5→1 以便小角度微調；上限與預設不變。
+//       index.html(滑桿 min/step) / sticky-notes.js / sticky-settings.js 三處 LITE 前端改，bump 讓手機重拉；APP_VERSION/manifest 1.10.9→1.10.10。
+// v192→v193：🔧 流星「焰火長度」(flame) 由「圈上的角度(deg)」改為「亮頭+拖尾總可見長度(px)」，渲染端依便利貼周長反推角度，使任何尺寸便利貼上總長一致（預設 160px≈10中文字、範圍 10–600）。
+//       index.html(滑桿 min/max/step/value 與標籤) / sticky-notes.js(applyStyle+normalize+sync+listener) / sticky-settings.js(夾值) 改，bump 讓手機重拉；APP_VERSION/manifest 1.10.10→1.10.11。
+// v193→v194：🔧 修正 flame=總長預算的實作——亮頭不再固定 12° 吃掉預算（否則 flame 設很小仍只見亮頭），改為亮頭不超過總長一半、隨預算縮放，使 flame=10px 真的≈10px。
+//       sticky-notes.js(applyStyle 頭/尾切分) 改，bump 讓手機重拉；APP_VERSION/manifest 1.10.11→1.10.12。
+// v194→v195：🔧 VIEW 投影贴非 task 行（段落/列表/标题/含 [[…]] 胶囊的行）也补一颗只读 .ev-md-edit 圆点（与 checkbox 行同口径，右键 复制/找出相同），
+//       修正「VIEW 便利贴的非 task 行没有编辑小圆点」的不一致（view-sticky-rules.js::groupsToHtml 改）。桌面 desktop-note.html 加 .md-unit>.ev-md-edit 凹槽定位；
+//       LITE 端 .cal-sticky-view 本就隐藏所有 VIEW 圆点，本次不变。bump 让手机重拉 view-sticky-rules.js；APP_VERSION/manifest 1.10.12→1.10.13。
+// v196（2026-10-30）：VIEW 投影贴的非 task 行改为按「最小 MD 单元」分组（连续 list/para/quote 合并成 1 个 .md-unit + 1 颗圆点），与来源便利贴 tlSplitMdBlocks 口径一致；
+//       圆点 data-text 携带整块原文（多行 \n 连接）。桌面 desktop-note.js find-same 增加整块比对分支。APP_VERSION/manifest 1.10.13→1.10.14。
+//       同版追加：.md-unit 补 data-start/data-end（0-based 行区间），供桌面便利贴窗「找出相同 → 切换」定位并闪烁该区块。LITE 视觉不变。
+// v197（2026-10-30）：VIEW 便利贴「搜索段落」多段落能力——一条规则可含多段（每段＝一个完整搜索），结果按序显示为多个「段落 N」区块；
+//       引擎 view-sticky-rules.js（normalizeRule 增 segments／buildRef 多段渲染，单段与 🔔 外观不变）＋ 维护窗 view-sticky-rules.html（段落列表＋每段条件编辑）。
+//       /vsr.js 引擎经桌面共享、LITE 同款渲染，故 bump + 刷新 ?v 戳让手机重拉；APP_VERSION/manifest 1.10.14→1.10.15。
+const CACHE_NAME = 'md-editor-lite-v199';
 const ASSETS = [
   './',
   './index.html',

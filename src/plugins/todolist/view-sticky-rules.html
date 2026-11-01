@@ -68,7 +68,8 @@
   .r-del:hover { color: #fff; background: #c0392b; border-color: #c0392b; }
   .empty { color: var(--sub); font-size: 12px; padding: 10px 4px; }
   /* 表单 */
-  .fld { margin-bottom: 14px; }
+  /* 🆕 每种过滤方式（关键词／标记／日期／标签／行型态…）用外框卡片区隔，便于视觉上区分彼此；外框线条改为金黄色 */
+  .fld { margin-bottom: 14px; border: 1px solid var(--gold); border-radius: 10px; padding: 10px 12px; background: var(--bg); }
   .fld > label { display: block; font-size: 11.5px; color: var(--sub); margin-bottom: 4px; letter-spacing: .5px; }
   input[type="text"], input[type="number"], select, textarea {
     width: 100%; padding: 6px 8px; border: 1px solid var(--line); border-radius: 7px;
@@ -87,7 +88,9 @@
   .seg-chip.sel { border-color: var(--gold); background: var(--sel); }
   .seg-chip .sc-idx { font-weight: 700; color: var(--gold); min-width: 18px; text-align: center; }
   .seg-chip .sc-main { flex: 1; min-width: 0; }
-  .seg-chip .sc-title { font-weight: 600; }
+  .seg-chip .sc-title { font-weight: 600; cursor: text; }
+  .seg-chip .sc-title-edit { font-weight: 600; padding: 2px 6px; border-color: var(--gold); }
+  .seg-chip .sc-title-edit:focus { outline: 2px solid var(--gold); outline-offset: -1px; }
   .seg-chip .sc-cond { color: var(--sub); font-size: 11px; word-break: break-all; }
   .seg-chip .sc-cond.none { color: #c0392b; }
   .pane-subtitle { font-size: 12px; font-weight: 700; color: var(--sub); letter-spacing: 1px; margin-bottom: 8px; }
@@ -135,7 +138,7 @@
       </div>
 
       <div class="fld">
-        <label>搜索段落（每一段＝一个完整的搜索；按设定顺序显示为多个段落）</label>
+        <label>搜索段落（每一段＝一个完整的搜索；按设定顺序显示为多个段落；双击段落名称可直接改名）</label>
         <div class="seg-list" id="segList"></div>
         <div class="foot" style="margin-top:6px">
           <button class="btn" id="btnAddSeg" type="button">＋ 新增段落</button>
@@ -145,11 +148,7 @@
       <div id="segForm">
         <div class="pane-subtitle" id="segSub">本段落条件</div>
         <div class="fld">
-          <label for="fSegTitle">本段落标题（可选，显示在便利贴里区分各段）</label>
-          <input type="text" id="fSegTitle" placeholder="例如：超链接执行">
-        </div>
-        <div class="fld">
-          <label for="fKeywords">关键词（以 、 , 或换行分隔；留白＝不用关键词）</label>
+          <label for="fKeywords">关键词（以 、 , 或换行分隔；留白＝不用关键词；便利贴标题与正文都会搜）</label>
           <input type="text" id="fKeywords" placeholder="例如：客户、报价">
           <div class="row" style="margin-top:6px">
             <span class="tip">符合</span>
@@ -166,8 +165,56 @@
           <div class="tip">与关键词是「且」的关系；选「不限」时只靠关键词过滤。</div>
         </div>
         <div class="fld">
-          <label>行型态（收哪些形状的行；关键词／标记至少要有一个是条件）</label>
+          <label for="fDateField">日期条件（按小事件的建档日／完成日／预计完成 过滤）</label>
+          <div class="row" style="gap:6px;align-items:center;flex-wrap:wrap">
+            <select id="fDateField">
+              <option value="">不限（不用日期条件）</option>
+              <option value="cr">建档日期 [[cr:…]]</option>
+              <option value="cp">完成日期 [[cp:…]]</option>
+              <option value="dl">预计完成 [[dl:…]]</option>
+            </select>
+            <span class="tip">比较</span>
+            <select id="fDateOp">
+              <option value="">—</option>
+              <option value="&gt;">晚于 ＞</option>
+              <option value="&lt;">早于 ＜</option>
+              <option value="=">等于 ＝</option>
+            </select>
+            <span class="tip">基准</span>
+            <select id="fDateMode">
+              <option value="fixed">固定日期</option>
+              <option value="age">距今天数</option>
+            </select>
+            <input type="date" id="fDateVal" style="width:auto">
+            <input type="number" id="fDateDays" min="0" step="1" style="width:auto;display:none" placeholder="N 天">
+            <span class="tip">小事件状态</span>
+            <select id="fDateDone">
+              <option value="any">不限</option>
+              <option value="undone">未完成（− [ ]）</option>
+              <option value="done">已完成（− [x]）</option>
+            </select>
+          </div>
+          <div class="tip">抓取「该日期字段 满足比较条件 且 勾选状态符合」的小事件（备注里的 checkbox 子项）。
+            基准选「固定日期」→ 该日期 晚于/早于 你指定的日历日（YYYY-MM-DD）；选「距今天数」→ 以「今天 ± N 天」为界：&gt; 后＝该日期在 今天+N天 之后（未来侧，如截止日还远），&lt; 前＝该日期在 今天−N天 之前（过去侧，如建档已满 N 天），= 正好＝距今天正好 N 天（前后皆可）。
+            仅「展开明细行」模式有效（带标签会自动只显示标题，日期条件将不生效）。</div>
+        </div>
+        <div class="fld">
+          <label for="fTags">标签（以 、 , 或换行分隔；事件须带这些标签才纳入此段搜索）</label>
+          <input type="text" id="fTags" placeholder="例如：编程、工作">
+          <div class="row" style="margin-top:6px">
+            <span class="tip">符合</span>
+            <span class="seg" id="tagMode">
+              <button type="button" data-v="ANY">任一个</button>
+              <button type="button" data-v="ALL">全部</button>
+            </span>
+            <label class="chk"><input type="checkbox" id="fIncludeDone">包含已完成的事件</label>
+          </div>
+          <div class="tip">「只显示标题」模式下：勾选＝已完成的事件也列出标题；不勾＝只列未完成的事件。「已完成」指事件级「已完成」勾选框已勾（编辑器里那个勾选框），或其备注里 checkbox 子项全部已打勾。明细模式由行型態的「已完成 checkbox」控制，与此无关。</div>
+        </div>
+        <div class="fld">
+          <label>行型态（收哪些形状的行；仅「关键词／标记」搜索才用得到，关键词／标记／标签 至少要有一个是条件）</label>
           <div class="types" id="fTypes"></div>
+          <div class="tip">⚠ 带「标签」条件的段落会<b>自动只显示事件标题</b>（不展开事件下的小事件），此「行型态」选项对标签搜索无效。</div>
         </div>
         <div class="row" style="margin-bottom:4px">
           <button class="btn" id="btnSegUp" type="button">↑ 上移</button>
@@ -213,6 +260,7 @@
   let rules = [];        // 阵列就是将要写进 JSON 的全部内容
   let selId = '';
   let selSeg = 0;        // 🆕 当前正在编辑的「段落」索引
+  let lastSegClick = { i: -1, t: 0 };   // 🆕 段落名称双击检测（跨列表重建仍有效）
   let dirty = false;
 
   function toast(msg, danger) {
@@ -306,11 +354,38 @@
     $('segMode').querySelectorAll('button').forEach((b) => {
       b.onclick = () => { const seg = selectedSeg(); if (seg) { seg.keywordMode = b.getAttribute('data-v'); markDirty(true); renderSegList(); renderForm(); } };
     });
+    $('tagMode').querySelectorAll('button').forEach((b) => {
+      b.onclick = () => { const seg = selectedSeg(); if (seg) { seg.tagMode = b.getAttribute('data-v'); markDirty(true); renderSegList(); renderForm(); } };
+    });
+    $('fTags').oninput = (e) => { const seg = selectedSeg(); if (!seg) return; seg.tags = String(e.target.value).split(/[,，、\n]/).map((x) => x.trim()).filter(Boolean); markDirty(true); renderSegList(); };
+    $('fIncludeDone').onchange = (e) => { const seg = selectedSeg(); if (seg) { seg.includeDoneEvents = e.target.checked; markDirty(true); renderSegList(); } };
     $('fTitle').oninput = (e) => { const r = selected(); if (r) { r.title = e.target.value.replace(/\s+/g, ' ').trim() || r.title; markDirty(true); renderList(); } };
     $('fKeywords').oninput = (e) => { const seg = selectedSeg(); if (!seg) return; seg.keywords = String(e.target.value).split(/[,，、\n]/).map((x) => x.trim()).filter(Boolean); markDirty(true); renderSegList(); };
     $('fCase').onchange = (e) => { const seg = selectedSeg(); if (seg) { seg.caseSensitive = e.target.checked; markDirty(true); renderSegList(); } };
     $('fMarker').onchange = (e) => { const seg = selectedSeg(); if (seg) { seg.marker = e.target.value; markDirty(true); renderSegList(); } };
-    $('fSegTitle').oninput = (e) => { const seg = selectedSeg(); if (!seg) return; seg.title = e.target.value.replace(/\s+/g, ' ').trim(); markDirty(true); renderSegList(); };
+    // 🆕 日期条件：把控件的值收敛进 seg.dateCond。两种基准——固定日期(value) 或 距今天数(days)。
+    //   合法＝field + op +（固定日期的 value ｜ 距今天数的 days≥0）；任一缺则视为未启用。
+    const syncDateCond = () => {
+      const seg = selectedSeg(); if (!seg) return;
+      const field = $('fDateField').value, op = $('fDateOp').value, doneState = $('fDateDone').value;
+      if (!field || !op) { seg.dateCond = null; markDirty(true); renderSegList(); return; }
+      if ($('fDateMode').value === 'age') {
+        const days = parseInt($('fDateDays').value, 10);
+        if (!isFinite(days) || days < 0) { seg.dateCond = null; markDirty(true); renderSegList(); return; }
+        seg.dateCond = { field, op, kind: 'age', days, doneState: doneState || 'any' };
+      } else {
+        const value = $('fDateVal').value;
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) { seg.dateCond = null; markDirty(true); renderSegList(); return; }
+        seg.dateCond = { field, op, value, doneState: doneState || 'any' };
+      }
+      markDirty(true); renderSegList();
+    };
+    $('fDateField').onchange = syncDateCond;
+    $('fDateOp').onchange = syncDateCond;
+    $('fDateVal').onchange = syncDateCond;
+    $('fDateDays').oninput = syncDateCond;
+    $('fDateMode').onchange = () => { applyDateMode(); syncDateCond(); };
+    $('fDateDone').onchange = syncDateCond;
     $('fEnabled').onchange = (e) => { const r = selected(); if (r) { r.enabled = e.target.checked; markDirty(true); renderList(); } };
     // 🆕 启动通知：勾选框 + 保持秒数（秒数走引擎的夹值，避免写入 0／负数／浮夸值）
     $('fNotify').onchange = (e) => { const r = selected(); if (r) { r.notify = e.target.checked; markDirty(true); renderList(); } };
@@ -346,7 +421,53 @@
   // 🆕 当前正在编辑的段落（segment）
   function selectedSeg() { const r = selected(); return (r && r.segments && r.segments[selSeg]) || null; }
 
-  // 🆕 段落列表（每一段＝一个完整搜索；点击选中后编辑其条件）
+  // 🆕 日期基准切换：距今天数＝显示 N 天输入框、隐藏日历日；固定日期反之。
+  //   同时按基准改 operator 下拉的字眼（距今天数用「N 天后／N 天前／正好 N 天」，固定日期用「晚于／早于／等于」），与引擎语义一致。
+  function applyDateMode() {
+    const age = $('fDateMode').value === 'age';
+    $('fDateVal').style.display = age ? 'none' : '';
+    $('fDateDays').style.display = age ? '' : 'none';
+    const opLabels = age
+      ? { '>': 'N 天后', '<': 'N 天前', '=': '正好 N 天' }
+      : { '>': '晚于 ＞', '<': '早于 ＜', '=': '等于 ＝' };
+    Array.from($('fDateOp').options).forEach((o) => {
+      if (o.value && opLabels[o.value]) o.textContent = opLabels[o.value];
+    });
+  }
+
+  // 🆕 双击段落名称直接改名：就地输入框，回车保存／Esc 取消／失焦保存
+  function beginSegTitleEdit(seg, titleEl, i) {
+    const r = selected();
+    if (!r || r.readonly) return;
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.className = 'sc-title-edit';
+    input.value = seg.title || '';
+    input.placeholder = '段落 ' + (i + 1) + ' 名称';
+    input.title = '输入段落名称（显示在 VIEW 便利贴里区分各段）；回车保存，Esc 取消';
+    input.onclick = (e) => e.stopPropagation();   // 输入框内点击不冒泡到 chip（避免重建毁掉输入框）
+    titleEl.textContent = '';
+    titleEl.appendChild(input);
+    input.focus();
+    input.select();
+    let settled = false;
+    const commit = () => {
+      if (settled) return; settled = true;
+      const v = input.value.replace(/\s+/g, ' ').trim();
+      if (v !== (seg.title || '')) { seg.title = v; markDirty(true); }
+      renderSegList();
+    };
+    const cancel = () => {
+      if (settled) return; settled = true;
+      renderSegList();
+    };
+    input.onblur = commit;
+    input.onkeydown = (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); commit(); }
+      else if (e.key === 'Escape') { e.preventDefault(); cancel(); }
+    };
+  }
+  // 🆕 段落列表（每一段＝一个完整搜索；单击选中；双击标题就地改名）
   function renderSegList() {
     const box = $('segList');
     box.innerHTML = '';
@@ -358,6 +479,17 @@
       const idx = document.createElement('div'); idx.className = 'sc-idx'; idx.textContent = (i + 1);
       const main = document.createElement('div'); main.className = 'sc-main';
       const t = document.createElement('div'); t.className = 'sc-title'; t.textContent = seg.title || ('段落 ' + (i + 1));
+      t.title = '双击编辑段落名称';
+      t.onclick = (e) => {
+        const now = Date.now();
+        if (lastSegClick.i === i && (now - lastSegClick.t) < 350) {
+          lastSegClick = { i: -1, t: 0 };
+          e.stopPropagation();                 // 不再冒泡到 chip.onclick（避免重建把输入框毁掉）
+          beginSegTitleEdit(seg, t, i);
+        } else {
+          lastSegClick = { i, t: now };        // 先记下，等第二次点击判断是否双击
+        }
+      };
       const c = document.createElement('div'); c.className = 'sc-cond' + (V.segmentHasCondition(seg) ? '' : ' none');
       c.textContent = V.segmentHasCondition(seg) ? V.conditionText(seg) : '⚠ 这个段落没有任何条件';
       main.appendChild(t); main.appendChild(c);
@@ -370,7 +502,7 @@
     const r = selected();
     const locked = !r || !!r.readonly;
     const pane = $('formPane');
-    pane.querySelectorAll('input[type="text"], input[type="number"], select').forEach((el) => { el.disabled = locked; });
+    pane.querySelectorAll('input[type="text"], input[type="number"], input[type="date"], select').forEach((el) => { el.disabled = locked; });
     pane.querySelectorAll('.chk input, .types input').forEach((el) => { el.disabled = locked; });
     $('segMode').querySelectorAll('button').forEach((b) => { b.disabled = locked; });
     $('btnDup').disabled = !r || !!r.readonly;
@@ -381,7 +513,6 @@
     if (!r) {
       $('fTitle').value = ''; $('fKeywords').value = ''; $('fMarker').value = ''; $('fEnabled').checked = false; $('fCase').checked = false;
       $('fNotify').checked = false; $('fNotifySec').value = String(V.NOTIFY_DEFAULT_SECONDS);
-      $('fSegTitle').value = '';
       pane.querySelectorAll('.types input').forEach((el) => { el.checked = false; });
       $('segSub').textContent = '本段落条件';
       $('segList').innerHTML = '';
@@ -396,15 +527,29 @@
     const seg = selectedSeg();
     if (seg) {
       $('segSub').textContent = '本段落条件（段落 ' + (selSeg + 1) + '／共 ' + r.segments.length + '）';
-      $('fSegTitle').value = seg.title;
       $('fKeywords').value = seg.keywords.join('、');
       $('fMarker').value = seg.marker;
+      $('fTags').value = (seg.tags || []).join('、');
       $('fCase').checked = !!seg.caseSensitive;
       $('segMode').querySelectorAll('button').forEach((b) => { b.classList.toggle('on', b.getAttribute('data-v') === seg.keywordMode); });
+      $('tagMode').querySelectorAll('button').forEach((b) => { b.classList.toggle('on', b.getAttribute('data-v') === seg.tagMode); });
+      $('fIncludeDone').checked = seg.includeDoneEvents !== false;
+      $('fDateField').value = (seg.dateCond && seg.dateCond.field) || '';
+      $('fDateOp').value = (seg.dateCond && seg.dateCond.op) || '';
+      $('fDateMode').value = (seg.dateCond && seg.dateCond.kind === 'age') ? 'age' : 'fixed';
+      $('fDateVal').value = (seg.dateCond && seg.dateCond.kind !== 'age' && seg.dateCond.value) || '';
+      $('fDateDays').value = (seg.dateCond && seg.dateCond.kind === 'age' && typeof seg.dateCond.days === 'number') ? String(seg.dateCond.days) : '';
+      $('fDateDone').value = (seg.dateCond && seg.dateCond.doneState) || 'any';
+      applyDateMode();
       pane.querySelectorAll('.types input').forEach((el) => { el.checked = !!(seg.rowTypes && seg.rowTypes[el.getAttribute('data-type')]); });
     } else {
       $('segSub').textContent = '本段落条件';
-      $('fSegTitle').value = ''; $('fKeywords').value = ''; $('fMarker').value = '';
+      $('fKeywords').value = ''; $('fMarker').value = ''; $('fTags').value = '';
+      $('fDateField').value = ''; $('fDateOp').value = ''; $('fDateVal').value = ''; $('fDateDays').value = ''; $('fDateMode').value = 'fixed'; $('fDateDone').value = 'any';
+      applyDateMode();
+      $('segMode').querySelectorAll('button').forEach((b) => { b.classList.toggle('on', b.getAttribute('data-v') === 'ANY'); });
+      $('tagMode').querySelectorAll('button').forEach((b) => { b.classList.toggle('on', b.getAttribute('data-v') === 'ANY'); });
+      $('fIncludeDone').checked = true;
     }
   }
 

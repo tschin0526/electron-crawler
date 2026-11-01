@@ -570,6 +570,7 @@ function rememberStickyMeta(note) {
     notes: (typeof note.notes === 'string') ? note.notes : '',
     src: (typeof note.src === 'string') ? note.src : '',
     title: (typeof note.title === 'string') ? note.title : '',
+    titleTip: (typeof note.titleTip === 'string') ? note.titleTip : '',
     date: (typeof note.date === 'string') ? note.date : '',
     endDate: (typeof note.endDate === 'string') ? note.endDate : '',
     color: (typeof note.color === 'string') ? note.color : '',
@@ -1003,6 +1004,45 @@ ipcMain.handle('sticky-note-order', async () => {
     : notes.filter(note => note.isOpen);
   return { mode: stickyNoteMode, order, notes, events: stickyNoteAllEvents };
 });
+// 🆕 返回全部日历事件里出现过的术语字典（{term, def}），供便利贴窗「自动标示术语」使用。
+//   字典来源＝扫描 stickyNoteAllEvents（随 sticky-note-sync 带来，结构与 tlCalEvents 一致）的 title+notes 里 [[term...]] 标记，
+//   与桌面 calendar-editor.js 的 tlCollectTerms 同口径（排除 dl/cp 日期标记、remind、裸日期）。
+ipcMain.handle('sticky-note-terms', async () => {
+  const terms = new Map();
+  const scan = (text) => {
+    if (!text) return;
+    let inFence = false;
+    String(text).split('\n').forEach((line) => {
+      if (/^\s*```/.test(line)) { inFence = !inFence; return; }
+      if (inFence) return;
+      String(line).replace(/\[\[([^\]\n]+)\]\]/g, (m, inner) => {
+        if (/^remind:/i.test(inner)) return m;
+        const full = inner.trim();
+        if (!full) return m;
+        const firstColon = full.indexOf(':');
+        let term, rest;
+        if (firstColon === -1) {
+          term = full; rest = '';
+          if (term === 'dl' || term === 'cp') return m;
+          if (/^remind$/i.test(term)) return m;
+          if (/^\d{4}-\d{2}-\d{2}$/.test(term)) return m;
+        } else {
+          term = full.slice(0, firstColon).trim();
+          rest = full.slice(firstColon + 1);
+          if (term === 'dl' || term === 'cp') return m;
+        }
+        if (!term) return m;
+        const lastColon = rest.lastIndexOf(':');
+        const def = lastColon === -1 ? rest.trim() : rest.slice(0, lastColon).trim();
+        const key = term.toLowerCase();
+        if (!terms.has(key)) terms.set(key, { term: term, def: def });
+        return m;
+      });
+    });
+  };
+  (stickyNoteAllEvents || []).forEach((ev) => { scan(ev.title); scan(ev.notes); });
+  return Array.from(terms.values());
+});
 function requestStickyNoteClose(win) {
   const requestId = 'sticky-menu-close-' + Date.now() + '-' + (++stickyMenuCloseSeq);
   return new Promise(resolve => {
@@ -1149,6 +1189,7 @@ ipcMain.handle('sticky-note-html', (e, arg) => {
     notes: (meta && typeof meta.notes === 'string') ? meta.notes : null,
     src: (meta && typeof meta.src === 'string') ? meta.src : '',
     title: (meta && typeof meta.title === 'string') ? meta.title : '',
+    titleTip: (meta && typeof meta.titleTip === 'string') ? meta.titleTip : '',
     date: (meta && typeof meta.date === 'string') ? meta.date : '',
     endDate: (meta && typeof meta.endDate === 'string') ? meta.endDate : '',
     color: (meta && typeof meta.color === 'string') ? meta.color : '',

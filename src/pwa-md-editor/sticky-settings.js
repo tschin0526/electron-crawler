@@ -32,6 +32,7 @@
   function isFiniteNum(v) { return typeof v === 'number' && Number.isFinite(v); }
 
   // 外框流星子物件：與 UI 相同的夾值＋白名單形狀；不信任外部 JSON，逐欄清洗
+  //   flame 語義＝「亮頭+拖尾總可見長度(px)」，範圍 10–600（預設 160 ≈ 10 中文字）；實際角度由渲染端依周長反推。
   function pickMeteor(raw) {
     if (!raw || typeof raw !== 'object') return null;
     const shapes = ['comet', 'sharp', 'band', 'twin'];
@@ -44,7 +45,7 @@
     if (isFiniteNum(raw.size)) out.size = Math.min(120, Math.max(4, Math.round(raw.size)));
     if (shapes.indexOf(raw.shape) >= 0) out.shape = raw.shape;
     if (isHex(raw.color)) out.color = raw.color;
-    if (isFiniteNum(raw.flame)) out.flame = Math.min(200, Math.max(20, Math.round(raw.flame)));
+    if (isFiniteNum(raw.flame)) out.flame = Math.min(600, Math.max(10, Math.round(raw.flame)));
     return out;
   }
 

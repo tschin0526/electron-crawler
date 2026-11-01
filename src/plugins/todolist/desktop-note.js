@@ -81,6 +81,19 @@ function geomId() { return IS_FLIP ? { key: FLIP_KEY, idx: FLIP_IDX } : { key: K
 
 let marked = null;
 function escapeHtml(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+// 渲染便利贴标题：把标题内容包进 .tt（no-drag）小「洞」，并把单段落 tooltip 挂到 .tt 上。
+// 关键：macOS 上 drag 区不响应 :hover/任何指针事件，故仅「文字本身」设为 no-drag——
+// tooltip 只在文字上出现（范围最小，符合「悬停测试专用这几字才显示」），
+// 标题栏其余空白/色条/.meta/.tags 仍是 drag，拖动照常（只牺牲「抓在文字正上方」发起拖拽）。
+function setStickyTitle(titleEl, htmlOrNull, text, tip) {
+  titleEl.textContent = '';
+  const span = document.createElement('span');
+  span.className = 'tt';
+  if (tip) span.setAttribute('data-tip', tip);   // setAttribute 自动处理引号，无需手动 escape
+  if (htmlOrNull) span.innerHTML = htmlOrNull;     // 主窗口渲染好的 HTML（受信任）
+  else span.textContent = (text == null ? '' : String(text));
+  titleEl.appendChild(span);
+}
 function tint(hex, opacityPct) {
   let h = (hex || '').replace('#', '');
   if (h.length === 3) h = h.split('').map(c => c + c).join('');
@@ -290,7 +303,10 @@ async function init() {
   renderTags(ev);
   // 🆕 标题：优先用主窗口渲染好的 HTML（与列表行一致）；拿不到时退回纯文本（避免显示原始标签）
   const titleEl = document.getElementById('title');
-  if (titleHtml) { titleEl.innerHTML = titleHtml; } else { titleEl.textContent = ev.title; }
+  // 🆕 单段落 VIEW 贴：把段落名称＋条件摘要挂到标题 tooltip（多段落标题不挂，每段各自有 tooltip）。
+  //   标题文字包进 .tt（no-drag）小洞：tooltip 只在文字上出现，标题栏其余仍是 drag 可拖动。
+  const tip1 = (ev && typeof ev.titleTip === 'string' && ev.titleTip) ? ev.titleTip : '';
+  setStickyTitle(titleEl, titleHtml, ev.title, tip1);
   // 🆕 移除 raw 原文兜底：便利贴正文即 checkbox，清光即空，留白＝正确终态；
   //    旧逻辑会把 notes 当未渲染 Markdown 源塞进正文（如 "- [ ] 11111"），属显示错误。
   document.getElementById('body').innerHTML = html;
@@ -1157,6 +1173,142 @@ function bindAddCheckTools(saveLabel) {
       if (requestCloseAddCheck()) setEditMode(true);  // 有改动 → 先问，决定完才切到整篇编辑
     };
   }
+  // 🆕 自动标示术语（便利贴窗是独立渲染进程，术语字典由主进程 sticky-note-terms 提供）
+  const autoTermBtn = document.getElementById('autoTermCheckButton');
+  if (autoTermBtn) {
+    autoTermBtn.style.display = '';
+    autoTermBtn.onclick = (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      noteAutoMarkTermsInEditBox();
+    };
+  }
+  // 🆕 自动标示术语「勾选确认」浮层按钮（onclick/onchange 幂等，绑定一次即可）
+  const atOv = document.getElementById('autoTermOv');
+  if (atOv) atOv.onclick = (event) => { if (event.target === atOv) noteAutoTermClose(); };  // 点背景关闭
+  const atConfirm = document.getElementById('autoTermConfirm');
+  if (atConfirm) atConfirm.onclick = (event) => { event.preventDefault(); event.stopPropagation(); noteAutoTermConfirm(); };
+  const atCancel = document.getElementById('autoTermCancel');
+  if (atCancel) atCancel.onclick = (event) => { event.preventDefault(); event.stopPropagation(); noteAutoTermClose(); };
+  const atAll = document.getElementById('autoTermAllChk');
+  if (atAll) atAll.onchange = () => {
+    const list = document.getElementById('autoTermList');
+    if (list) list.querySelectorAll('.at-chk').forEach((c) => { c.checked = atAll.checked; });
+  };
+}
+// ── 🆕 自动标示术语（与主窗 tlAutoMarkTermsInText 同源规则）：
+//    ① 已存在 [[...]] 保护区不重复标注；② 未标注字串最长匹配优先；③ 大小写敏感精确匹配。
+//    字典来源＝主进程 sticky-note-terms（扫描全部日历事件的 [[term...]]，与主窗 tlCollectTerms 同源）。
+//    🆕 流程改为「列出候选项 + 勾选确认」：先展示待替换清单（默认全选），用户确认后才写回编辑框。
+let noteAutoTermState = null;   // { src, accepted:[{start,end,term,marker}], inp }
+async function noteAutoMarkTermsInEditBox() {
+  const inp = document.getElementById('addCheckInput');
+  if (!inp) return;
+  if (!inp.value.trim()) { window.alert('编辑框为空，无可标示的内容'); return; }
+  let terms = [];
+  try {
+    terms = await ipcRenderer.invoke('sticky-note-terms');
+  } catch (error) {
+    window.alert('读取术语字典失败：' + (error && error.message ? error.message : error));
+    return;
+  }
+  const dict = (terms || [])
+    .map((t) => ({ term: t.term, def: (t.def || '').trim() }))
+    .filter((t) => t.term && t.term.length >= 2)
+    .sort((a, b) => b.term.length - a.term.length);   // 长词优先
+  if (!dict.length) {
+    window.alert('目前没有可用的术语字典（需先在任意事件中定义 [[术语]] 或 [[术语:释文]]）');
+    return;
+  }
+  const src = String(inp.value);
+  // 1) 保护区：已存在的 [[...]] 不在此内标注（已标注的不重复标）
+  const protectedSpans = [];
+  let m; const br = /\[\[[^\]\n]*\]\]/g;
+  while ((m = br.exec(src)) !== null) protectedSpans.push([m.index, m.index + m[0].length]);
+  const inProtected = (i) => protectedSpans.some((sp) => i >= sp[0] && i < sp[1]);
+  // 2) 收集候选命中（端点落入保护区则跳过）
+  const cands = [];
+  for (const d of dict) {
+    const term = d.term; let from = 0, idx;
+    while ((idx = src.indexOf(term, from)) !== -1) {
+      const end = idx + term.length;
+      if (!inProtected(idx) && !inProtected(end - 1)) cands.push({ start: idx, end: end, term: term, def: d.def });
+      from = idx + 1;
+    }
+  }
+  // 3) 最长优先 + 非重叠贪心
+  cands.sort((a, b) => (b.end - b.start) - (a.end - b.start) || a.start - b.start);
+  const used = new Array(src.length).fill(false);
+  const accepted = [];
+  for (const c of cands) {
+    let overlap = false;
+    for (let i = c.start; i < c.end; i++) { if (used[i]) { overlap = true; break; } }
+    if (overlap) continue;
+    for (let i = c.start; i < c.end; i++) used[i] = true;
+    const marker = (c.def && c.def.indexOf(']]') === -1) ? ('[[' + c.term + ':' + c.def + ']]') : ('[[' + c.term + ']]');
+    accepted.push({ start: c.start, end: c.end, term: c.term, marker: marker });
+  }
+  if (!accepted.length) { window.alert('没有发现可标示的未标注术语'); return; }
+  accepted.sort((a, b) => a.start - b.start);
+  // 🆕 不直接写回：保存候选与原文，打开「勾选确认」浮层
+  noteAutoTermState = { src: src, accepted: accepted, inp: inp };
+  noteAutoTermRenderList();
+  const ov = document.getElementById('autoTermOv');
+  if (ov) ov.classList.add('show');
+}
+// 渲染候选项清单（默认全选；每项含上下文预览，避免同名多处混淆）
+function noteAutoTermRenderList() {
+  const st = noteAutoTermState;
+  const list = document.getElementById('autoTermList');
+  const allChk = document.getElementById('autoTermAllChk');
+  if (!st || !list) return;
+  list.innerHTML = '';
+  if (allChk) allChk.checked = true;
+  st.accepted.forEach((c, i) => {
+    const label = document.createElement('label');
+    label.className = 'at-item';
+    const chk = document.createElement('input');
+    chk.type = 'checkbox'; chk.className = 'at-chk'; chk.checked = true; chk.dataset.i = String(i);
+    // 子项变化时同步「全选」主勾选状态
+    chk.onchange = () => {
+      const all = document.getElementById('autoTermAllChk');
+      if (all) all.checked = list.querySelectorAll('.at-chk:checked').length === st.accepted.length;
+    };
+    const idx = document.createElement('span'); idx.className = 'at-idx'; idx.textContent = '第 ' + (i + 1) + ' 处';
+    const term = document.createElement('span'); term.className = 'at-term'; term.textContent = c.term;
+    const arrow = document.createElement('span'); arrow.className = 'at-arrow'; arrow.textContent = ' → ';
+    const marker = document.createElement('span'); marker.className = 'at-marker'; marker.textContent = c.marker;
+    label.append(chk, idx, term, arrow, marker);
+    // 上下文预览（命中字串高亮）；换行转 ⏎ 以免破坏排版
+    const ctx = document.createElement('div'); ctx.className = 'at-ctx';
+    const b = document.createElement('span'); b.textContent = st.src.slice(Math.max(0, c.start - 12), c.start).replace(/\n/g, '⏎');
+    const hl = document.createElement('span'); hl.className = 'at-hl'; hl.textContent = st.src.slice(c.start, c.end).replace(/\n/g, '⏎');
+    const a = document.createElement('span'); a.textContent = st.src.slice(c.end, Math.min(st.src.length, c.end + 12)).replace(/\n/g, '⏎');
+    ctx.append(b, hl, a);
+    list.append(label, ctx);
+  });
+}
+// 确认替换：仅写回被勾选的项（accepted 已非重叠，子集亦非重叠）
+function noteAutoTermConfirm() {
+  const st = noteAutoTermState;
+  if (!st) return;
+  const checks = document.querySelectorAll('#autoTermList .at-chk');
+  const sel = [];
+  checks.forEach((chk) => { if (chk.checked) sel.push(st.accepted[Number(chk.dataset.i)]); });
+  if (!sel.length) { noteAutoTermClose(); window.alert('未勾选任何项目，未做替换'); return; }
+  sel.sort((a, b) => a.start - b.start);
+  let out = '', cursor = 0;
+  for (const c of sel) { out += st.src.slice(cursor, c.start); out += c.marker; cursor = c.end; }
+  out += st.src.slice(cursor);
+  st.inp.value = out;
+  st.inp.dispatchEvent(new Event('input', { bubbles: true }));
+  noteAutoTermClose();
+  window.alert('已自动标示 ' + sel.length + ' 处术语（最长匹配优先，已标注不重复）');
+}
+function noteAutoTermClose() {
+  const ov = document.getElementById('autoTermOv');
+  if (ov) ov.classList.remove('show');
+  noteAutoTermState = null;
 }
 // ⚠️ 已弃用（2026-10-26）：不要再拿它当「写入底稿」。
 //    它底层是 sourceEvent()，而对来自 INCLUDE 的便利贴只会回退到 refMeta 内存缓存 ——
@@ -1172,6 +1324,19 @@ function localDateString(date = new Date()) {
   const day = String(date.getDate()).padStart(2, '0');
   return `${year}-${month}-${day}`;
 }
+// 備註 checkbox 行：確保帶有 [[cr:建立日期]] 標記（不存在才補今天；已有則不動，避免重複／改到原始建立日）。
+// 建立日期一律排在最前：若正文已有 [[dl:…]]/[[cp:…]] 則插到它們前面；否則補在行尾。純函數，不改入參。
+function ensureCrMarker(text) {
+  if (/\[\[cr:\d{4}-\d{2}-\d{2}\]\]/.test(text)) return text;  // 已有建立日：保留原值、不重複補
+  const cr = '[[cr:' + localDateString() + ']]';
+  const trimmed = text.replace(/\s+$/, '');
+  if (!trimmed.trim()) return cr;  // 空正文：直接給建立日標記（不帶前導空白）
+  const m = text.match(/\[\[(dl|cp):\d{4}-\d{2}-\d{2}\]\]/);
+  if (m && typeof m.index === 'number') {
+    return text.slice(0, m.index).replace(/\s+$/, '') + ' ' + cr + ' ' + text.slice(m.index);
+  }
+  return trimmed + ' ' + cr;
+}
 function transformNoteCheck(line, checked) {
   const match = line.match(/^(\s*)-\s+\[([ xX])\]\s?(.*)$/);
   if (!match) return null;
@@ -1184,7 +1349,7 @@ function transformNoteCheck(line, checked) {
   } else {
     text = text.replace(/\s*\[\[cp:\d{4}-\d{2}-\d{2}\]\]/g, '');
   }
-  return match[1] + '- [' + (checked ? 'x' : ' ') + ']' + (text ? ' ' + text : '');
+  return match[1] + '- [' + (checked ? 'x' : ' ') + '] ' + ensureCrMarker(text);
 }
 // ============================================================
 // 🆕 写入安全网（2026-10-26）：「便利贴窗只持有 calendar.md 路径」是既有限制，
@@ -1345,7 +1510,7 @@ window.tlOpenEditNoteCheckDialog = async function (event, uid, line) {
   const inp = document.getElementById('addCheckInput');
   if (ov) {
     ov.querySelector('.ac-title').textContent = '编辑子事件（CheckBox）';
-    ov.querySelector('.ac-hint').textContent = '⌘S 保存（不关闭，可继续编辑）· Esc 关闭（有改动会先问是否保存）；勾选状态会保留，日期标记（[[dl:…]]/[[cp:…]]）以原文显示可直接编辑；换行（shift+enter）＝拆成多个子事件（第一行保留本条的勾选状态）；清空内容并保存＝删除该子事件（会先确认）';
+    ov.querySelector('.ac-hint').textContent = '⌘S 保存（不关闭，可继续编辑）· Esc 关闭（有改动会先问是否保存）；勾选状态会保留，日期标记（[[cr:…]] 建立日／[[dl:…]] 预计完成／[[cp:…]] 完成日，建立日会自动补在最前面）以原文显示可直接编辑；换行（shift+enter）＝拆成多个子事件（第一行保留本条的勾选状态）；清空内容并保存＝删除该子事件（会先确认）';
     ov.classList.add('show');
   }
   bindAddCheckTools();
@@ -2064,6 +2229,42 @@ function noteBlockMenuClose() {
   if (menu) menu.classList.remove('open');
   noteBlockMenuTarget = null;
 }
+// 🆕 右键 VIEW 投影贴「切换徽标」（.vsr-group-head 标题区）→ 下拉菜单：
+//   菜单项1＝原左键行为（切换到来源行程编辑器，复用 noteFindSameOpenSourceEvent）；
+//   菜单项2＝仅滚动定位到 calendar 该事件所在位置（不开编辑器，action='scroll'）。
+//   与 #noteFindSameMenu / #noteBlockMenu 平行，但只认 .vsr-group-head（标题区），不认小圆点。
+let vsrGotoSrc = '';
+function vsrGotoMenuOpen(e) {
+  const head = e.target.closest && e.target.closest('.vsr-group-head');
+  if (!head) return;            // 不在标题区：不拦截，交给浏览器原生右键（也避免误关其它菜单）
+  const src = head.getAttribute('data-src') || '';
+  if (!src) return;
+  e.preventDefault();           // 阻止原生右键
+  // ⚠️ 关键：关掉另两套菜单的动作必须放在「确认要开自己菜单」之后，
+  //   否则本全局 contextmenu 监听会在每次右键都先跑、把 noteFindSameOpen/noteBlockMenuOpen
+  //   刚打开的「编辑小圆点」菜单（#noteFindSameMenu / #noteBlockMenu）立刻关掉（2026-10-31 实测踩雷）。
+  noteFindSameClose();          // 开这套菜单前，先收掉另两套，避免重叠
+  noteBlockMenuClose();
+  vsrGotoSrc = src;
+  const menu = document.getElementById('vsrGotoMenu');
+  if (!menu) return;
+  const noteEl = document.getElementById('note');
+  const rect = noteEl.getBoundingClientRect();
+  menu.classList.add('open');   // 先開，才量得到尺寸（base 是 display:none）
+  const mw = menu.offsetWidth || 190;
+  const mh = menu.offsetHeight || 64;
+  let left = e.clientX - rect.left;
+  let top = e.clientY - rect.top;
+  if (top + mh > rect.height - 2) top = Math.max(2, top - mh);   // 太靠下 → 往上翻
+  if (left + mw > rect.width - 2) left = Math.max(2, left - mw);  // 太靠右 → 往左翻
+  menu.style.left = String(Math.max(2, left)) + 'px';
+  menu.style.top = String(top) + 'px';
+}
+function vsrGotoMenuClose() {
+  const menu = document.getElementById('vsrGotoMenu');
+  if (menu) menu.classList.remove('open');
+  vsrGotoSrc = '';
+}
 // 🆕 复制整块内容：读权威底稿、取 [start..end] 原文写剪贴板（与 noteFindSameCopy 同源 IPC）
 async function noteBlockCopy(t) {
   if (!t) return;
@@ -2217,8 +2418,9 @@ async function confirmAddCheck() {
       if (await saveStickyNoteContent(lines.join('\n'), '删除子事件', target.uid)) { closeEditNoteCheck(); return true; }
       return false;
     }
-    // 🆕 原文保真：编辑框已是完整原文（含 [[]] 标记），保存时直接写回，不再额外补/删标记
-    const newLines = rows.map((l, i) => match[1] + '- [' + (i === 0 ? match[2] : ' ') + '] ' + l);
+    // 🆕 原文保真：编辑框已是完整原文（含 [[]] 标记），保存时直接写回；并自动补建立日标记 [[cr:今天]]
+    //    （已含 cr 则不動＝保留原始建立日、不重複補；若含 dl/cp 則 cr 排在最前）
+    const newLines = rows.map((l, i) => match[1] + '- [' + (i === 0 ? match[2] : ' ') + '] ' + ensureCrMarker(l));
     lines.splice(target.line, span, ...newLines);
     noteCheckEditTarget = { uid: target.uid, line: target.line, count: newLines.length };
     // 🆕 编辑模式：⌘S／「保存」＝只落盘不离开视窗（离开视窗要过「未保存改动」这道问）
@@ -2280,7 +2482,7 @@ async function confirmAddCheck() {
   if (addCheckSavePending) return false;
   const lines = inp.value.replace(/\r\n/g, '\n').split('\n').map((l) => l.trim()).filter(Boolean);
   if (!lines.length) { showStickyRefreshFeedback('没有可加入的内容'); return false; }
-  const md = lines.map((l) => '- [ ] ' + l).join('\n');
+  const md = lines.map((l) => '- [ ] ' + ensureCrMarker(l)).join('\n');
   // 🆕 ① 底稿权威化：先前加入 ABCDEF 时就是用了陈旧的 refMeta 底稿，
   //    把早已搬走的内容连着新内容一起写回，才让旧项目「复活」（2026-10-26 事故）。
   //    追加＝整篇覆写，底稿必须现拉现用。
@@ -2598,12 +2800,17 @@ function applyNoteContent(arg) {
   rememberRefMeta(arg);
   syncViewNoteMode();   // 🆕 VIEW 贴＝只读投影（刷新后可能从有内容变成没内容）
   const titleEl = document.getElementById('title');
+  let ev0 = null;
+  let titleHtml2 = null, titleText2 = '';
   if (arg && arg.titleHtml) {
-    titleEl.innerHTML = arg.titleHtml;
+    titleHtml2 = arg.titleHtml;
   } else {
-    const ev0 = sourceEvent(KEY);
-    titleEl.textContent = ev0 ? ev0.title : '';
+    ev0 = sourceEvent(KEY);
+    titleText2 = ev0 ? ev0.title : '';
   }
+  // 🆕 单段落 VIEW 贴：标题 tooltip（段落名称＋条件摘要）；多段落不挂。文字包进 .tt（no-drag），只写 data-tip。
+  const tip2 = (ev0 && typeof ev0.titleTip === 'string' && ev0.titleTip) ? ev0.titleTip : '';
+  setStickyTitle(titleEl, titleHtml2, titleText2, tip2);
   let html = (arg && typeof arg.html === 'string') ? arg.html : '';
   // 🆕 移除 raw 原文兜底：html 缺失时直接留白，等待主进程推来的权威 HTML；
   //    便利贴内容即 checkbox，清光即空，绝不以未渲染 Markdown 源呈现（如 "- [ ] 11111"）。
@@ -2655,7 +2862,7 @@ function rememberRefMeta(arg) {
   //    改成「内容收敛才解除」才能真正挡住；要强制同步请按便利贴的 🔄 刷新（会显式解除）。
   const incoming = (arg.notes !== undefined && arg.notes !== null) ? String(arg.notes) : null;
   const guard = !!(prev && prev.__localWrite && incoming !== null);
-  ['notes', 'src', 'title', 'date', 'endDate', 'color', 'tags'].forEach((k) => {
+  ['notes', 'src', 'title', 'titleTip', 'date', 'endDate', 'color', 'tags'].forEach((k) => {
     if (k === 'notes' && guard) return;   // 保护期内：沿用本地刚写的版本
     if (arg[k] !== undefined && arg[k] !== null) next[k] = arg[k];
   });
@@ -2831,7 +3038,8 @@ function sourceEvent(key) {
   return {
     title: meta.title || '', date: meta.date || '', endDate: meta.endDate || '',
     color: meta.color || '#FFCC00', tags: Array.isArray(meta.tags) ? meta.tags : [],
-    notes: meta.notes || '', done: !!meta.done, uid: key, key
+    notes: meta.notes || '', done: !!meta.done, uid: key, key,
+    titleTip: meta.titleTip || ''
   };
 }
 // 监听主程式推来的刷新（自动同步）
@@ -2944,6 +3152,9 @@ function applyColor() {
   // 🆕 找出相同项目结果窗：同样取便利贴实色背景，避免白底+--note-fg 在深色便利贴上看不清（金色外框由 .addcheck-box 提供）
   const findSameBox = document.getElementById('findSameBox');
   if (findSameBox) findSameBox.style.background = tint(state.color, 100);
+  // 🆕 自动标示术语确认浮层盒：同样取便利贴实色背景，与所在便利贴色调一致（否则在深色便利贴上白底+--note-fg 看不清）
+  const autoTermBox = document.getElementById('autoTermBox');
+  if (autoTermBox) autoTermBox.style.background = tint(state.color, 100);
   updateMenuTheme();
   syncCustomSwatchActive();
   applyMeteor();   // 🆕 改色/透明度/字号都会重跑 applyColor，这里顺带把外框流星状态套用到 #note
@@ -3182,7 +3393,8 @@ async function renderNoteContent() {
     titleHtml = (typeof res.titleHtml === 'string') ? res.titleHtml : '';
     rememberRefMeta(Object.assign({ key: KEY }, res));
   } catch (e) {}
-  if (titleHtml) titleEl.innerHTML = titleHtml; else titleEl.textContent = ev.title;
+  const tip = (ev && typeof ev.titleTip === 'string' && ev.titleTip) ? ev.titleTip : '';
+  setStickyTitle(titleEl, titleHtml || null, ev.title, tip);
   // 🆕 移除 raw 原文兜底：html 缺失时留白，绝不以未渲染 Markdown 源呈现（如 "- [ ] 11111"）。
   // 🆕 同上：重設 innerHTML 會把 scrollTop 歸零，先記後還（也避免被節流存成 0）
   const bodyElKeep = document.getElementById('body');
@@ -4306,7 +4518,9 @@ async function loadStickyMenuNotes() {
     list.replaceChildren();
     const appendNoteRow = (item, index) => {
       const row = document.createElement('div');
-      row.className = 'm-sticky-item';
+      // 🆕 VIEW 便利贴（key 前缀 __view__）在清单中加专属 class，CSS 用斜体＋主色与之区分，一眼可辨
+      const isView = isViewKey(item.key);
+      row.className = 'm-sticky-item' + (isView ? ' m-sticky-item-view' : '');
       const name = String(item.title || item.key || '未命名便利贴').replace(/\s+/g, ' ').trim();
       const label = (name || '未命名便利贴') + ((+item.idx || 0) > 0 ? ' (' + ((+item.idx || 0) + 1) + ')' : '');
       const indexEl = document.createElement('span');
@@ -4426,7 +4640,9 @@ async function renderFlipPage(i) {
     titleHtml = (typeof res.titleHtml === 'string') ? res.titleHtml : '';
   } catch (e) { html = ''; titleHtml = ''; }
   const titleEl = document.getElementById('title');
-  if (titleHtml) titleEl.innerHTML = titleHtml; else titleEl.textContent = ev.title;
+  // 🆕 单段落 VIEW 贴：标题 tooltip（段落名称＋条件摘要）；多段落不挂。文字包进 .tt（no-drag），只写 data-tip。
+  const tip = (ev && typeof ev.titleTip === 'string' && ev.titleTip) ? ev.titleTip : '';
+  setStickyTitle(titleEl, titleHtml, ev.title, tip);
   // 🆕 移除 raw 原文兜底：html 缺失时留白，绝不以未渲染 Markdown 源呈现（如 "- [ ] 11111"）。
   document.getElementById('body').innerHTML = html;
   noteApplyHighlight(); // 🆕 依當前定位詞重打高亮
@@ -4552,11 +4768,14 @@ function bindFlipSwipe(note) {
 // 🆕 右键 编辑小圆点 → 下拉菜单：checkbox 子事件（.ev-md-edit＝#noteFindSameMenu）／区块（.md-unit-edit＝#noteBlockMenu），两套全局绑定（分体/翻页模式共用，脚本载入即生效）
 document.addEventListener('contextmenu', noteFindSameOpen);
 document.addEventListener('contextmenu', noteBlockMenuOpen);
+document.addEventListener('contextmenu', vsrGotoMenuOpen);
 document.addEventListener('click', (e) => {
   const fsm = document.getElementById('noteFindSameMenu');
   if (fsm && fsm.classList.contains('open') && !(e.target.closest && e.target.closest('#noteFindSameMenu'))) noteFindSameClose();
   const bm = document.getElementById('noteBlockMenu');
   if (bm && bm.classList.contains('open') && !(e.target.closest && e.target.closest('#noteBlockMenu'))) noteBlockMenuClose();
+  const vm = document.getElementById('vsrGotoMenu');
+  if (vm && vm.classList.contains('open') && !(e.target.closest && e.target.closest('#vsrGotoMenu'))) vsrGotoMenuClose();
 }, true);
 document.addEventListener('keydown', (e) => {
   if (e.key !== 'Escape') return;
@@ -4564,10 +4783,14 @@ document.addEventListener('keydown', (e) => {
   if (fsm && fsm.classList.contains('open')) { noteFindSameClose(); return; }
   const bm = document.getElementById('noteBlockMenu');
   if (bm && bm.classList.contains('open')) { noteBlockMenuClose(); return; }
+  const vm = document.getElementById('vsrGotoMenu');
+  if (vm && vm.classList.contains('open')) { vsrGotoMenuClose(); return; }
   const ov = document.getElementById('findSameOv');
   if (ov && ov.classList.contains('show')) { hideNoteFindSame(); return; }
   const mt = document.getElementById('noteMoveToast');
   if (mt && mt.classList.contains('show')) { hideNoteMoveToast(); return; }
+  const at = document.getElementById('autoTermOv');
+  if (at && at.classList.contains('show')) { noteAutoTermClose(); return; }
 });
 (function bindFindSameOverlay() {
   const fsMenu = document.getElementById('noteFindSameMenu');
@@ -4599,6 +4822,25 @@ document.addEventListener('keydown', (e) => {
       else if (act === 'del') { noteBlockMenuClose(); noteBlockDelete(t); }
     });
   }
+  const vsrMenu = document.getElementById('vsrGotoMenu');
+  if (vsrMenu) {
+    // 🆕 切换徽标右键菜单项事件委托（按 data-act 分流）：open＝切换到来源行程编辑器；scroll＝仅滚动定位到 calendar
+    vsrMenu.addEventListener('click', (e) => {
+      const item = e.target.closest && e.target.closest('.nami');
+      if (!item) return;
+      e.stopPropagation();
+      const act = item.getAttribute('data-act');
+      const src = vsrGotoSrc;
+      vsrGotoMenuClose();
+      if (!src) return;
+      if (act === 'open') noteFindSameOpenSourceEvent(src, []);          // 原左键行为
+      else if (act === 'scroll') {
+        // 🆕 仅滚动定位到 calendar 该事件所在位置（不开编辑器）：复用 wake-main-from-note action='scroll'
+        try { ipcRenderer.invoke('wake-main-from-note', { key: src, action: 'scroll' }); }
+        catch (err) { window.alert('滚动到该事件失败：' + (err && err.message ? err.message : err)); }
+      }
+    });
+  }
   const fsOv = document.getElementById('findSameOv');
   if (fsOv) {
     const cb = document.getElementById('findSameCloseBtn');
@@ -4623,6 +4865,24 @@ document.addEventListener('keydown', (e) => {
     });
     fsOv.addEventListener('click', (e) => { if (e.target === fsOv) hideNoteFindSame(); });
   }
+  // 🆕 VIEW 投影贴「标题命中」单元与「分组标题」的「📍 切换」：直接唤起主程式打开该来源行程
+  //   （标题在来源行程表单顶部），复用 noteFindSameOpenSourceEvent，不依赖「找出相同」（它按正文内容比对，标题不在正文里）。
+  //   先判「📍 切换」按钮（避免与整块分组标题的点击重复触发），再判整块分组标题（.vsr-group-head）。
+  document.addEventListener('click', (e) => {
+    const btn = e.target.closest && e.target.closest('.vsr-goto-source');
+    if (btn) {
+      e.stopPropagation();
+      const src = btn.getAttribute('data-src') || '';
+      if (src) noteFindSameOpenSourceEvent(src, []);
+      return;
+    }
+    const head = e.target.closest && e.target.closest('.vsr-group-head');
+    if (head) {
+      e.stopPropagation();
+      const src = head.getAttribute('data-src') || '';
+      if (src) noteFindSameOpenSourceEvent(src, []);
+    }
+  });
   // 🆕 搬移结果 toast 的 ✕ 关闭钮
   const tc = document.getElementById('noteMoveToastClose');
   if (tc) tc.onclick = () => hideNoteMoveToast();
