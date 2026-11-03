@@ -72,6 +72,9 @@ function notifyRulesChanged(rules) {
 
 function openRulesWindow() {
   if (rulesWindow && !rulesWindow.isDestroyed()) {
+    // 🆕 已开则强制 reload：确保加载磁盘上最新的 view-sticky-rules.html（开发期改了代码后不必手动关窗重开）。
+    //   ⚠️ reload 会丢弃窗体内「未保存」的编辑——维护窗的存档是显式按「保存全部」，改完请先存盘再重开。
+    rulesWindow.reload();
     rulesWindow.focus();
     return rulesWindow;
   }

@@ -4233,11 +4233,32 @@
     }
 
     function tlCloseEventForm() {
+      // 🆕 关闭前记住正在编辑的 uid（清状态后用它查出事件日期，关闭后滚动到该日期）
+      //   需求：从便利贴打开某行程的编辑窗体，退出后往往不知道该行程在哪 → 关闭时自动回到它所在日期。
+      //   滚动机制复用 tlOnStickyScrollToEvent：设游标 + pending 标志 + 重渲。
+      //   删除路径（tlDeleteFromForm）会先把 tlEvFormUid 清空 → 这里 closingUid 为空 → 不滚动。
+      const closingUid = tlEvFormUid;
       const ov = document.getElementById('tlEvFormOverlay');
       if (ov) ov.style.display = 'none';
       tlEvFormUid = null;
       tlEvFormColor = null;
       tlEvFormTarget = '';
+      // 🆕 关闭后滚动到该行程所在日期（取消／写入／Esc／点遮罩 都触发）
+      if (closingUid && tlCalEvents && tlCalEvents.length) {
+        const ev = tlCalEvents.find(function (x) { return (x.uid || '') === closingUid; });
+        const date = ev ? ((typeof tlEventDisplayDate === 'function') ? tlEventDisplayDate(ev) : (ev.date || '')) : '';
+        if (date) {
+          const d = new Date(date + 'T00:00:00');
+          if (!isNaN(d.getTime())) tlCalCursor = d;
+          tlCalSelected = date;
+          tlListSel = date;
+          if (tlCalMode === 'year') tlYearAutoScrollPending = true;
+          if (tlCalMode === 'month') tlMonthAutoScrollPending = true;
+          if (tlCalMode === 'list') tlListScrollAnchorPending = true;
+          else tlDetailListScrollPending = true;
+          tlRenderEventsContent();
+        }
+      }
     }
 
     // 📋 备注「＋ CheckBox」：开小窗输入，保存后以 `- [ ] 内容` 追加到备注末尾（多行＝每行一个 checkbox）
@@ -4704,6 +4725,7 @@
     function tlDeleteFromForm() {
       if (!tlEvFormUid) return;
       const uid = tlEvFormUid;
+      tlEvFormUid = null;                 // 🆕 删除前先清 uid，使 tlCloseEventForm 不做「滚动回该日期」（删除后该事件已不在，滚动无意义）
       tlCloseEventForm();
       tlDeleteEvent(uid);
     }

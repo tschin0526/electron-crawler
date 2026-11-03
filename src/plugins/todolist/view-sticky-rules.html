@@ -103,6 +103,11 @@
   .btn.primary { background: var(--gold); border-color: var(--gold); color: #2b2400; font-weight: 700; }
   .btn:disabled { opacity: .45; cursor: default; }
   .tip { font-size: 11.5px; color: var(--sub); }
+  /* 🆕 互斥淡出：当某设定区域被引擎「忽略」（输入无效）时，整块淡化 + 禁止输入，防止使用者误设 */
+  .fld.muted { opacity: .45; pointer-events: none; filter: grayscale(.2); }
+  .fld.muted .tip { color: var(--sub); }
+  /* 🆕 行型态内「单个勾选项」粒度淡化：未完成/已完成 checkbox 在有日期条件时被 doneState 接管（无效），只淡化这两项 */
+  .types .chk.muted { opacity: .45; pointer-events: none; filter: grayscale(.2); }
   #toast { position: fixed; left: 50%; bottom: 26px; transform: translateX(-50%); padding: 7px 16px; border-radius: 999px; background: var(--gold); color: #2b2400; font-weight: 600; opacity: 0; transition: opacity .25s; pointer-events: none; }
   #toast.show { opacity: 1; }
   #toast.danger { background: #c0392b; color: #fff; }
@@ -201,7 +206,7 @@
             事件日期 时 **关键词／标记 留空** 即收该日全部内容；勾选状态只约束 checkbox 行（非 checkbox 行始终保留）。
             仅「展开明细行」模式有效（带标签会自动只显示标题，日期条件将不生效）。</div>
         </div>
-        <div class="fld">
+        <div class="fld" id="fldTags">
           <label for="fTags">标签（以 、 , 或换行分隔；事件须带这些标签才纳入此段搜索）</label>
           <input type="text" id="fTags" placeholder="例如：编程、工作">
           <div class="row" style="margin-top:6px">
@@ -214,10 +219,10 @@
           </div>
           <div class="tip">「只显示标题」模式下：勾选＝已完成的事件也列出标题；不勾＝只列未完成的事件。「已完成」指事件级「已完成」勾选框已勾（编辑器里那个勾选框），或其备注里 checkbox 子项全部已打勾。明细模式由行型態的「已完成 checkbox」控制，与此无关。</div>
         </div>
-        <div class="fld">
+        <div class="fld" id="fldTypes">
           <label>行型态（收哪些形状的行；仅「关键词／标记」搜索才用得到，关键词／标记／标签 至少要有一个是条件）</label>
           <div class="types" id="fTypes"></div>
-          <div class="tip">⚠ 带「标签」条件的段落会<b>自动只显示事件标题</b>（不展开事件下的小事件），此「行型态」选项对标签搜索无效。</div>
+          <div class="tip">⚠ 此「行型态」在部分情形<b>无效（会被引擎忽略、这里会淡化禁用）</b>：① 带「标签」条件的段落会<b>自动只显示事件标题</b>（整块无效）；② 日期字段选「建档/完成/预计完成」时由行内标记过滤取代（整块无效）；③ 日期字段选「事件日期」时，「未完成/已完成 checkbox」两项由「小事件状态」下拉接管（仅这两项淡化，列表/段落/引用/标题仍有效）。</div>
         </div>
         <div class="row" style="margin-bottom:4px">
           <button class="btn" id="btnSegUp" type="button">↑ 上移</button>
@@ -347,6 +352,7 @@
     V.ROW_TYPES.forEach((t) => {
       const lab = document.createElement('label');
       lab.className = 'chk';
+      lab.setAttribute('data-kind', (t === 'todo' || t === 'done') ? 'task' : 'struct');   // 🆕 区分「checkbox 类(会被日期条件接管)」与「结构类」以便精细淡化
       const cb = document.createElement('input');
       cb.type = 'checkbox'; cb.setAttribute('data-type', t);
       cb.onchange = () => { const seg = selectedSeg(); if (seg) { if (!seg.rowTypes || typeof seg.rowTypes !== 'object') seg.rowTypes = {}; seg.rowTypes[t] = cb.checked; markDirty(true); renderSegList(); } };
@@ -360,7 +366,7 @@
     $('tagMode').querySelectorAll('button').forEach((b) => {
       b.onclick = () => { const seg = selectedSeg(); if (seg) { seg.tagMode = b.getAttribute('data-v'); markDirty(true); renderSegList(); renderForm(); } };
     });
-    $('fTags').oninput = (e) => { const seg = selectedSeg(); if (!seg) return; seg.tags = String(e.target.value).split(/[,，、\n]/).map((x) => x.trim()).filter(Boolean); markDirty(true); renderSegList(); };
+    $('fTags').oninput = (e) => { const seg = selectedSeg(); if (!seg) return; seg.tags = String(e.target.value).split(/[,，、\n]/).map((x) => x.trim()).filter(Boolean); markDirty(true); renderSegList(); applyMutualExclusion(); };
     $('fIncludeDone').onchange = (e) => { const seg = selectedSeg(); if (seg) { seg.includeDoneEvents = e.target.checked; markDirty(true); renderSegList(); } };
     $('fTitle').oninput = (e) => { const r = selected(); if (r) { r.title = e.target.value.replace(/\s+/g, ' ').trim() || r.title; markDirty(true); renderList(); } };
     $('fKeywords').oninput = (e) => { const seg = selectedSeg(); if (!seg) return; seg.keywords = String(e.target.value).split(/[,，、\n]/).map((x) => x.trim()).filter(Boolean); markDirty(true); renderSegList(); };
@@ -371,25 +377,21 @@
     const syncDateCond = () => {
       const seg = selectedSeg(); if (!seg) return;
       const field = $('fDateField').value, op = $('fDateOp').value, doneState = $('fDateDone').value;
-      if (!field || !op) { seg.dateCond = null; markDirty(true); renderSegList(); return; }
+      if (!field || !op) { seg.dateCond = null; markDirty(true); renderSegList(); applyMutualExclusion(); return; }
       // 🆕 单开关「只列含未完 checkbox 的事件」(hideNoHitEvents) 仅「事件日期」时有意义；其余情况归零，避免脏值带入
       seg.hideNoHitEvents = (field === 'ev') ? $('fHideNoHit').checked : false;
       if ($('fDateMode').value === 'age') {
         const days = parseInt($('fDateDays').value, 10);
-        if (!isFinite(days) || days < 0) { seg.dateCond = null; markDirty(true); renderSegList(); return; }
+        if (!isFinite(days) || days < 0) { seg.dateCond = null; markDirty(true); renderSegList(); applyMutualExclusion(); return; }
         seg.dateCond = { field, op, kind: 'age', days, doneState: doneState || 'any' };
       } else {
         const value = $('fDateVal').value;
-        if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) { seg.dateCond = null; markDirty(true); renderSegList(); return; }
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) { seg.dateCond = null; markDirty(true); renderSegList(); applyMutualExclusion(); return; }
         seg.dateCond = { field, op, value, doneState: doneState || 'any' };
       }
-      markDirty(true); renderSegList();
+      markDirty(true); renderSegList(); applyMutualExclusion();
     };
-    // 🆕 仅「事件日期」时显示单开关「只列含未完 checkbox 的事件」：隐藏无子项的纯标题事件，并保留「已勾完成却仍含未完 checkbox」的事件
-    const applyHideNoHitVis = () => {
-      const isEv = $('fDateField').value === 'ev';
-      $('fHideNoHitWrap').style.display = isEv ? 'inline-flex' : 'none';
-    };
+    // 🆕 仅「事件日期」时显示单开关「只列含未完 checkbox 的事件」（applyHideNoHitVis/applyMutualExclusion 已移至 IIFE 顶层，供 renderForm 调用）
     $('fDateField').onchange = () => { applyHideNoHitVis(); syncDateCond(); };
     $('fDateOp').onchange = syncDateCond;
     $('fDateVal').onchange = syncDateCond;
@@ -443,6 +445,39 @@
       : { '>': '晚于 ＞', '<': '早于 ＜', '=': '等于 ＝' };
     Array.from($('fDateOp').options).forEach((o) => {
       if (o.value && opLabels[o.value]) o.textContent = opLabels[o.value];
+    });
+  }
+  // 🆕 仅「事件日期」时显示单开关「只列含未完 checkbox 的事件」：隐藏无子项的纯标题事件，并保留「已勾完成却仍含未完 checkbox」的事件
+  //   🆕 移至 IIFE 顶层（原在 buildStatics 内部 const，renderForm 访问不到 → 报 ReferenceError）
+  function applyHideNoHitVis() {
+    const isEv = $('fDateField').value === 'ev';
+    $('fHideNoHitWrap').style.display = isEv ? 'inline-flex' : 'none';
+  }
+  // 🆕 互斥淡出：不改引擎逻辑，只把「引擎会忽略的无效设定」淡化禁用，防止误设。
+  //   依据 collectGroups 的真实分支推导（见 view-sticky-rules.js L462/L497-506）：
+  //   • 带标签(tags) 且无日期条件 → titleOnly 分支，整块 rowTypes 完全被忽略 → 淡化整块行型态。
+  //   • 日期字段选 cr/dl/cp（行内标记日期，且已构成有效 dateCond）→ dateCondMatch 取代整块 rowTypes → 淡化整块行型态。
+  //   • 日期字段选 ev（事件日期，且已构成有效 dateCond）→ todo/done 行走 else-if 分支只看 doneState、被「小事件状态」下拉接管（无效）；
+  //     但非 checkbox 行(list/para/quote/heading)仍落到 else 分支读 rowTypes（有效）→ 只淡化「未完成/已完成 checkbox」两项。
+  //   ⚠️ 判定用「已生效的 seg.dateCond」而非控件原始值：日期字段选了但 op/value 没填齐（dateCond=null）时引擎仍走行型态门槛，不应淡化。
+  //   🆕 移至 IIFE 顶层（原在 buildStatics 内部 const，renderForm 访问不到 → 报 ReferenceError）
+  function applyMutualExclusion() {
+    const seg = selectedSeg();
+    const hasTags = !!(seg && seg.tags && seg.tags.length);
+    const dc = seg && seg.dateCond;                       // 已生效（field+op+value/days 齐备）才为真
+    const box = $('fldTypes');
+    if (!box) return;
+    // ① 整块淡化：带标签(无日期条件) 或 行内标记日期(cr/dl/cp)
+    const wholeIgnored = (hasTags && !dc) || (dc && dc.field !== 'ev');
+    box.classList.toggle('muted', !!wholeIgnored);
+    // ② 单勾选项淡化：ev 日期条件下，checkbox 类(todo/done)被 doneState 接管（整块淡化时已涵盖，无需再单独设）
+    box.querySelectorAll('.chk').forEach((lab) => {
+      const isTask = lab.getAttribute('data-kind') === 'task';
+      const muted = wholeIgnored || (!!dc && dc.field === 'ev' && isTask);
+      lab.classList.toggle('muted', !!muted);
+      // 🆕 真·禁用：不只视觉淡化，也把底层 checkbox 的 disabled 置真，确保任何交互都无法勾选
+      const input = lab.querySelector('input');
+      if (input) input.disabled = !!muted;
     });
   }
 
@@ -527,6 +562,7 @@
       pane.querySelectorAll('.types input').forEach((el) => { el.checked = false; });
       $('segSub').textContent = '本段落条件';
       $('segList').innerHTML = '';
+      $('fldTypes').classList.remove('muted');
       return;
     }
     $('fTitle').value = r.title === '自定义便利贴' ? '' : r.title;
@@ -554,6 +590,7 @@
       $('fHideNoHit').checked = !!seg.hideNoHitEvents;
       applyHideNoHitVis();
       applyDateMode();
+      applyMutualExclusion();
       pane.querySelectorAll('.types input').forEach((el) => { el.checked = !!(seg.rowTypes && seg.rowTypes[el.getAttribute('data-type')]); });
     } else {
       $('segSub').textContent = '本段落条件';
@@ -562,6 +599,7 @@
       $('fHideNoHit').checked = false;
       applyHideNoHitVis();
       applyDateMode();
+      applyMutualExclusion();
       $('segMode').querySelectorAll('button').forEach((b) => { b.classList.toggle('on', b.getAttribute('data-v') === 'ANY'); });
       $('tagMode').querySelectorAll('button').forEach((b) => { b.classList.toggle('on', b.getAttribute('data-v') === 'ANY'); });
       $('fIncludeDone').checked = true;
