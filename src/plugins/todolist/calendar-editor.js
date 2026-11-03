@@ -1091,7 +1091,7 @@
       s += '- title: `' + tlMdEscape(ev.title) + '`\n';
       s += '- date: `' + tlMdEscape(ev.date) + '`\n';
       if (ev.endDate && ev.endDate !== ev.date) s += '- endDate: `' + tlMdEscape(ev.endDate) + '`\n';
-      if (ev.spanDisplay === 'first' || ev.spanDisplay === 'last') s += '- spanDisplay: `' + ev.spanDisplay + '`\n';
+      if (ev.spanDisplay === 'first' || ev.spanDisplay === 'last' || ev.spanDisplay === 'today') s += '- spanDisplay: `' + ev.spanDisplay + '`\n';
       s += '- allDay: `' + (ev.allDay ? 'true' : 'false') + '`\n';
       // 完成状态：永远显式写出（与桌面 calendar 插件同一栏位、同一顺序）
       s += '- done: `' + (ev.done ? 'true' : 'false') + '`\n';
@@ -1174,19 +1174,21 @@
       return String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
     }
     function tlViewStickyRef(events) {
-      if (!window.ViewStickyRules || typeof window.ViewStickyRules.buildRef !== 'function' ||
-          typeof window.ViewStickyRules.builtinRules !== 'function') return null;
-      return window.ViewStickyRules.buildRef(
-        window.ViewStickyRules.builtinRules()[0], events, tlCustomViewDeps()
-      );
+      if (!window.ViewStickyRules || typeof window.ViewStickyRules.buildRef !== 'function') return null;
+      // 🆕 用「存盘里被自定义过的内置提醒规则」来生成这张贴（tlBuiltinViewRule，由 tlApplyCustomViewRules 捕获），
+      //   没有存盘版才回退引擎默认的 BUILTIN_REMIND_RULE——这样维护窗里对「提醒」的标题／条件／通知等自定义才会落地。
+      const rule = tlBuiltinViewRule || (window.ViewStickyRules.builtinRules ? window.ViewStickyRules.builtinRules()[0] : null);
+      if (!rule) return null;
+      return window.ViewStickyRules.buildRef(rule, events, tlCustomViewDeps());
     }
     // ===== 跨天行程辅助 =====
     // 🆕 自定义 VIEW 便利贴：使用者自己定「抓哪些行」的条件，做几张跟「🔔 提醒」同类的投影贴。
     //   条件＝关键词（任一／全部）＋ 标记（[[remind:]]／[[dl:]]／[[cp:]]）＋ 行型态，三个条件之间是 AND。
     //   引擎在 view-sticky-rules.js（独立插件档），规则存在主进程 data/view-sticky-rules.json；
-    //   入口目前挂在便利贴窗的菜单「🧩 自定义 VIEW 便利贴维护作业」，以后也可以挂别处。
+    //   入口目前挂在便利贴窗的菜单「🧩 自定义 VIEW 便利贴设定维护作业」，以后也可以挂别处。
     //   ⚠️ 三条例外口径与 🔔 完全相同（key 前缀 __view__ → 内容不落盘／不可异动；窗体只读；外观照一般便利贴存盘）。
     let tlCustomViewRules = [];   // 规则档案的本会话复本：refs 是同步算出来的，不能就地 invoke
+    let tlBuiltinViewRule = null; // 🆕 内置「提醒」规则的本会话复本（存盘版优先，否则引擎默认）；tlViewStickyRef 用它生成提醒贴
     function tlCustomViewDeps() {
       return {
         tlEscapeHtml: tlEscapeHtml, tlRenderInlineMarkdown: tlRenderInlineMarkdown,
@@ -1195,8 +1197,12 @@
       };
     }
     function tlApplyCustomViewRules(rules) {
-      tlCustomViewRules = (window.ViewStickyRules && window.ViewStickyRules.normalizeList(rules) || [])
-        .filter((rule) => !rule.builtin && rule.id !== '__builtin_remind__');
+      const all = (window.ViewStickyRules && window.ViewStickyRules.normalizeList(rules)) || [];
+      // 🆕 自定义规则：排除内置提醒（它单独走 tlViewStickyRef，不在这里重复生成）
+      tlCustomViewRules = all.filter((rule) => !rule.builtin && rule.id !== '__builtin_remind__');
+      // 🆕 捕获内置提醒规则（存盘版优先，否则引擎默认）——供 tlViewStickyRef 生成「提醒」贴，让自定义生效
+      const b = all.filter((rule) => rule.id === '__builtin_remind__' || rule.builtin)[0];
+      tlBuiltinViewRule = b || (window.ViewStickyRules ? window.ViewStickyRules.builtinRules()[0] : null);
     }
     // 启动时拉一次；维护窗存档后主进程会推 view-sticky-rules-changed 过来（不必轮询）。
     //   第一次拉到规则时集合可能多了一张 → 必须整份 sync（force），否则翻页清单看不到新贴。
@@ -1364,6 +1370,12 @@
       return tlMdShort(a) + ' \u2013 ' + tlMdShort(b);
     }
     function tlEventOccurrences(ev) {
+      // 🆕 显示方式＝「显示在今天」：无论真实 date/endDate 为何，都只在「今天」出现一笔
+      //   （与 首末天/每天 同列于「显示方式」下拉；覆盖跨天、单日、重复所有类型；真实日期原样保留在编辑器里）。
+      if (ev && ev.spanDisplay === 'today') {
+        const today = tlFmtDate(new Date());
+        return [{ date: today, ev, pos: 'single', idx: 1, total: 1 }];
+      }
       const out = [];
       if (tlIsMultiDay(ev)) {
         let cur = new Date(ev.date + 'T00:00:00');
@@ -1416,6 +1428,7 @@
     //   用于便利贴「滚动」等需要「跳到事件实际被渲染的那一天」的场景
     function tlEventDisplayDate(ev) {
       if (!ev) return '';
+      if (ev.spanDisplay === 'today') return tlFmtDate(new Date());   // 🆕 显示在今天 → 锚定今天
       if (!tlIsMultiDay(ev)) return ev.date || '';
       const mode = (ev.spanDisplay === 'first' || ev.spanDisplay === 'last') ? ev.spanDisplay : 'daily';
       if (mode === 'last' && ev.endDate) return ev.endDate;
@@ -1640,6 +1653,7 @@
       }
       if (!term) return null;
       if (/^remind$/i.test(term)) return null;                               // 提醒標記（remind:Title:Rule），不屬術語
+      if (/^bookmark$/i.test(term)) return null;                             // 收藏標記（bookmark:Title:Note），不屬術語
       const lastColon = rest.lastIndexOf(':');
       const def = lastColon === -1 ? rest.trim() : rest.slice(0, lastColon).trim();
       const domain = lastColon === -1 ? '' : rest.slice(lastColon + 1).trim();
@@ -1697,6 +1711,15 @@
             const rRule = c2 === -1 ? '' : body.slice(c2 + 1).trim();
             return '<span class="tl-remind"' + (rRule ? ' title="' + tlEscapeHtml(rRule) + '"' : '') + '>' +
               '<span class="tl-remind-ic">🔔</span>' + tlEscapeHtml(rTitle) + '</span>';
+          }
+          // 🆕 收藏標記：[[bookmark:Title:Note]] → 藍框膠囊（獨立於 term，便於標記收藏項目）
+          if (/^bookmark:/i.test(inner)) {
+            const body = inner.slice(inner.indexOf(':') + 1).trim();
+            const c2 = body.indexOf(':');
+            const bTitle = c2 === -1 ? body : body.slice(0, c2).trim();
+            const bNote = c2 === -1 ? '' : body.slice(c2 + 1).trim();
+            return '<span class="tl-bookmark"' + (bNote ? ' title="' + tlEscapeHtml(bNote) + '"' : '') + '>' +
+              '<span class="tl-bookmark-ic"><svg viewBox="0 0 24 24" width="1em" height="1em" focusable="false" aria-hidden="true"><path fill="currentColor" d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z"/></svg></span>' + tlEscapeHtml(bTitle) + '</span>';
           }
           const t = tlParseTermToken(inner);
           if (!t) return m;
@@ -3050,11 +3073,12 @@
       return '<span class="ev-sub-progress' + (all ? ' all-done' : '') + '" title="备注子事件：' + done + ' / ' + subs.length + ' 已完成">' + done + '/' + subs.length + '</span>';
     }
     function tlSpanDisplayModeBadge(ev) {
-      if (!tlIsMultiDay(ev)) return '';
-      const mode = ev.spanDisplay === 'first' || ev.spanDisplay === 'last' ? ev.spanDisplay : 'daily';
-      const letter = mode === 'first' ? 'H' : mode === 'last' ? 'E' : 'A';
-      const label = mode === 'first' ? '首天显示' : mode === 'last' ? '末天显示' : '每天显示';
-      return '<span class="ev-span-display-mode" title="跨天模式：' + label + '">' + letter + '</span>';
+      const isToday = ev && ev.spanDisplay === 'today';
+      if (!tlIsMultiDay(ev) && !isToday) return '';
+      const mode = ev.spanDisplay === 'first' ? 'first' : ev.spanDisplay === 'last' ? 'last' : isToday ? 'today' : 'daily';
+      const letter = mode === 'first' ? 'H' : mode === 'last' ? 'E' : mode === 'today' ? '今' : 'A';
+      const label = mode === 'first' ? '首天显示' : mode === 'last' ? '末天显示' : mode === 'today' ? '显示在今天' : '每天显示';
+      return '<span class="ev-span-display-mode" title="显示方式：' + label + '">' + letter + '</span>';
     }
     function tlEventUndoneChecksOnly(uid) {
       return tlUndoneChecksByEvent[uid] === true;
@@ -4002,7 +4026,7 @@
       document.getElementById('tlEvFTitle').value = ev ? ev.title : '';
       document.getElementById('tlEvFDate').value = ev ? ev.date : (defaultDate || (tlCalMode === 'month' ? tlCalSelected : today) || today);
       document.getElementById('tlEvFEndDate').value = ev ? (ev.endDate || '') : '';
-      document.getElementById('tlEvFSpanDisplay').value = ev && (ev.spanDisplay === 'first' || ev.spanDisplay === 'last') ? ev.spanDisplay : 'daily';
+      document.getElementById('tlEvFSpanDisplay').value = ev && (ev.spanDisplay === 'first' || ev.spanDisplay === 'last' || ev.spanDisplay === 'today') ? ev.spanDisplay : 'daily';
       // ===== 重複事件 =====
       // p.repeat：由「重复事件一览」的新增按钮传入 → 新增时直接进「重复」模式并带出起始日的星期
       const rMode = ev ? (ev.repeatMode || '') : (p.repeat ? 'weekly' : '');
@@ -4263,6 +4287,7 @@
         .sort((a, b) => b.term.length - a.term.length);   // 长词优先
       if (!dict.length) return { text: String(text), count: 0 };
       const src = String(text);
+      const srcL = src.toLowerCase();   // 🆕 大小写不敏感匹配：字典去重按 toLowerCase，匹配口径须一致，否则定义过也会因大小写漏标
       // 1) 保护区：已存在的 [[...]] 不在此内标注（已标注的不重复标）
       const protectedSpans = [];
       let m; const br = /\[\[[^\]\n]*\]\]/g;
@@ -4271,10 +4296,10 @@
       // 2) 收集候选命中（端点落入保护区则跳过）
       const cands = [];
       for (const d of dict) {
-        const term = d.term; let from = 0, idx;
-        while ((idx = src.indexOf(term, from)) !== -1) {
-          const end = idx + term.length;
-          if (!inProtected(idx) && !inProtected(end - 1)) cands.push({ start: idx, end: end, term: term, def: d.def });
+        const termL = d.term.toLowerCase(); let from = 0, idx;
+        while ((idx = srcL.indexOf(termL, from)) !== -1) {
+          const end = idx + d.term.length;   // 原始字串长度＝小写长度，定位用原串下標
+          if (!inProtected(idx) && !inProtected(end - 1)) cands.push({ start: idx, end: end, term: d.term, def: d.def });
           from = idx + 1;
         }
       }

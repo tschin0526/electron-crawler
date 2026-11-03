@@ -86,6 +86,7 @@
   const MARKERS = [
     { value: '', label: '不限（有命中条件就算）' },
     { value: 'remind', label: '[[remind:…]] 提醒标记' },
+    { value: 'bookmark', label: '[[bookmark:…]] 收藏标记' },
     { value: 'cr', label: '[[cr:…]] 建立日期标记' },
     { value: 'dl', label: '[[dl:…]] deadline 标记' },
     { value: 'cp', label: '[[cp:…]] completed 标记' }
@@ -116,7 +117,7 @@
     //   • 固定日期：该日期 比较 设定日(value: YYYY-MM-DD)；
     //   • 距今天数：该日期 到今天 经过 N 天（ageDays = today − d），再拿 N 跟 days 比较（> 超过／< 不到／= 正好）。
     //   两者都限定小事件勾选状态(doneState)。合法条件＝field + op + (固定日期的 value ｜ 距今天数的 days≥0)。
-    const FIELDS = { cr: 1, dl: 1, cp: 1 }, OPS = { '>': 1, '<': 1, '=': 1 }, DONE = { any: 1, undone: 1, done: 1 };
+    const FIELDS = { cr: 1, dl: 1, cp: 1, ev: 1 }, OPS = { '>': 1, '<': 1, '=': 1 }, DONE = { any: 1, undone: 1, done: 1 };
     const dc = (s.dateCond && typeof s.dateCond === 'object') ? s.dateCond : null;
     let dateCond = null;
     if (dc && FIELDS[dc.field] && OPS[dc.op]) {
@@ -136,6 +137,10 @@
       tagMode: s.tagMode === 'ALL' ? 'ALL' : 'ANY',
       detail: s.detail === false ? false : true,   // false＝只显示事件标题（不收明细行）
       includeDoneEvents: s.includeDoneEvents === false ? false : true,  // 标题模式下是否也列「已完成」事件的标题（默认列）
+      // 🆕 单开关「只列含未完 checkbox 的事件」：① 收录判定只看是否真有未打勾 checkbox 行（type==='todo'）→ 隐藏无子项的纯标题事件（台雄生日等）；
+      //   ② 事件级「未完成」闸门对「已勾完成却仍含未完 checkbox」的事件放行（保留「留尾巴」资料）。二者同源（都围绕「未完 checkbox」），
+      //      合并为单一开关，去掉维护窗两个语义重叠的勾选框（用户 2026-11-03 指摘冗余）。旧配置 keepUndoneInDone 视为同义开启，平滑迁移。
+      hideNoHitEvents: s.hideNoHitEvents === true || s.keepUndoneInDone === true,
       marker: marker,
       dateCond: dateCond,
       caseSensitive: !!s.caseSensitive,
@@ -172,7 +177,9 @@
       segments: segments,
       emptyBehavior: r.emptyBehavior === 'hide' ? 'hide' : 'show',
       builtin: r.builtin === true,
-      readonly: r.readonly === true || r.builtin === true,
+      // 🆕 内置「提醒」规则改为「可编辑但不可删」：不再因为 builtin 而自动 readonly。
+      //   readonly 只留给显式标记 r.readonly===true 的规则（目前没有），保留这个字段以备将来锁定用。
+      readonly: r.readonly === true,
       // 🆕 启动通知（便利贴启动时先闪烁显示这张贴，秒数到或手动关闭后才进正常显示）
       notify: r.notify === true,
       notifySeconds: normalizeNotifySeconds(r.notifySeconds)
@@ -207,7 +214,7 @@
     if (cond.keywords.length) parts.push('关键词' + (cond.keywordMode === 'ALL' ? '全中' : '任一') + '：' + cond.keywords.join('、') + (cond.caseSensitive ? '（区分大小写）' : ''));
     if (cond.tags && cond.tags.length) parts.push('标签' + (cond.tagMode === 'ALL' ? '全有' : '任一') + '：' + cond.tags.join('、'));
     if (cond.dateCond) {
-      const fld = { cr: '建档日期', dl: '预计完成', cp: '完成日期' }[cond.dateCond.field] || cond.dateCond.field;
+      const fld = { cr: '建档日期', dl: '预计完成', cp: '完成日期', ev: '事件日期' }[cond.dateCond.field] || cond.dateCond.field;
       const st = { undone: '未完成', done: '已完成', any: '' }[cond.dateCond.doneState] || '';
       if (cond.dateCond.kind === 'age') {
         // 距今天数口径（直觉版）：> 距离今天 N 天后（未来侧）／< 距离今天 N 天前（过去侧）／= 距今天正好 N 天
@@ -225,6 +232,7 @@
     if (!parts.length) parts.push('⚠ 没有条件（不会抓到内容）');
     const types = ROW_TYPES.filter((t) => cond.rowTypes && cond.rowTypes[t]).map((t) => ROW_TYPE_LABEL[t]);
     parts.push('行型态：' + (types.join('／') || '无'));
+    if (cond.hideNoHitEvents) parts.push('只列含未完 checkbox 的事件（隐藏无子项纯标题、保留已勾完成却留尾巴）');
     return parts.join(' ＋ ');
   }
   // 规则摘要（人类可读）：单段＝旧格式（与旧版一致）；多段＝「共 N 段：段落1（…）｜段落2（…）」。
@@ -254,7 +262,7 @@
   // 0 命中时贴面上的话：把「为什么是空的」和「去哪改」直接写在贴子上。
   //   ⚠️ 这段刻意不出现成对的双方括号：它会先过 termDefs（术语胶囊）再进 markdown，
   //      写成 `[[remind:` 那种示范文字有被解析器咬掉的风险，所以只讲「顺序、括号位置要对得上」。
-  const EMPTY_NOTES = '**这个条件目前没抓到任何行**\n\n关键词要和行程档里出现的文字一模一样（顺序与括号位置都要对得上）；要抓提醒，请把上方的「标记条件」选成 remind。改条件请开便利贴菜单的「🧩 自定义 VIEW 便利贴维护作业」。';
+  const EMPTY_NOTES = '**这个条件目前没抓到任何行**\n\n关键词要和行程档里出现的文字一模一样（顺序与括号位置都要对得上）；要抓提醒，请把上方的「标记条件」选成 remind。改条件请开便利贴菜单的「🧩 自定义 VIEW 便利贴设定维护作业」。';
 
   // ===== 依赖注入 =====
   //   渲染器由宿主（calendar-editor.js）传进来，保持「单一可信来源」：
@@ -308,6 +316,12 @@
     });
     return any && allDone;
   }
+  // 🆕 事件备注里是否含有「未完成的 checkbox」（− [ ]）：用于「事件已勾『已完成』却还留尾巴」的边界——
+  //   用户要求这类事件的未完 checkbox 也要被抓出来（见 collectGroups 的 ev+undone 闸门：hideNoHitEvents 开启时对「已勾完成却留尾巴」的事件放行）。
+  function eventHasUncompletedCheckbox(ev) {
+    if (!ev) return false;
+    return /\n?[ \t]*-\s+\[\s\]\s?/.test('\n' + String(ev.notes || ''));
+  }
   // 🆕 今天的日期（本地，YYYY-MM-DD）：相对日期条件用
   function todayStr() {
     const t = new Date();
@@ -360,6 +374,52 @@
     if (dc.op === '<') return cmp < 0;
     return cmp === 0;
   }
+  // 🆕 事件日期条件（dateCond.field === 'ev'）：比对「事件本身的日历日」ev.date，而非行内 [[cr/dl/cp:…]] 标记。
+  //    只在「事件级」判定整张事件是否收（在 collectGroups 的事件循环外调用）；固定模式比 value，距今天数模式比 今天±N。
+  //    ⚠️ 跨天行程（endDate 存在且 ≠ date）：事件日期是一个「区间 [lo, hi]」而非单日——与日历「某天 occurring」同口径，
+  //       今天／指定日 落在 [lo, hi] 内即算该日有此行程。这是修复核心：旧版只比起始日 ev.date，导致「10/31–11/1」的行程
+  //       在 11/1（今天）因 起始日距今天 1 天 ≠ 0 而被「正好 0 天（今天）」条件漏掉。
+  //    复用 todayStr/addDays/daysBetween；operator 语义与 dateCondMatch 一致（> 后／< 前／= 正好），边界含当日。
+  function eventDateMatch(ev, dc) {
+    const today = todayStr();
+    const d0 = (ev && typeof ev.date === 'string') ? ev.date : '';
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(d0)) return false;
+    // 跨天行程 → 区间 [lo, hi]（ISO 串可直接按字典序比较）；否则单日 lo=hi=date。
+    //   ⚠️ endDate 必须是合法日期串才视为跨天——单日事件 endDate 多为空串 ''，若误当成区间下界会把 lo 变成 ''，
+    //      使「today >= lo」恒真而把未来单日事件也漏进「今天」匹配（2026-11-01 测试发现）。
+    const d1 = (ev && typeof ev.endDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(ev.endDate) && ev.endDate !== d0) ? ev.endDate : d0;
+    let lo = d0 <= d1 ? d0 : d1, hi = d0 <= d1 ? d1 : d0;
+    // 🆕 显示方式（spanDisplay）＝锚定「行程实际被渲染的那一天」，与日历 tlEventOccurrences / tlEventDisplayDate 完全同口径，
+    //   否则「显示在今天」的行程在 VIEW 便利贴里会被漏掉（2026-11-02 用户回报：日历能显示、VIEW 抓不到）。
+    //   • 'today'（显示在今天）：无视真实 date/endDate，整张只锚定今天 → 「正好今天(days:0)」命中、其余日期不命中；
+    //     固定日期查询 value===today 也命中（它确实「显式出现在今天」），value===真实日期则不命中（它今天不渲染）。
+    //   • 'first'/'last'（首末天）：仅多天行程的 首天／末天 被渲染（tlFilterSpanDisplay），区间收缩为 [lo,lo]／[hi,hi]；单天等同 daily。
+    //   • 其余（'daily' 或空）→ 维持原区间 [lo, hi]（跨天行程整段可命中，见 2026-11-01 修复）。
+    const span = (ev && typeof ev.spanDisplay === 'string') ? ev.spanDisplay : 'daily';
+    if (span === 'today') { lo = hi = today; }
+    else if (span === 'first') { hi = lo; }
+    else if (span === 'last') { lo = hi; }
+    if (dc.kind === 'age') {
+      if (dc.op === '=') {
+        // 正好 N 天：N=0 → 今天落在行程区间内（含跨天，与日历「今天」一致）；N>0 → 行程发生的某天正好是「今天±N」（前后皆可）
+        if (dc.days === 0) return today >= lo && today <= hi;
+        const fwd = addDays(today, dc.days), bwd = addDays(today, -dc.days);
+        return (fwd >= lo && fwd <= hi) || (bwd >= lo && bwd <= hi);
+      }
+      const target = addDays(today, dc.op === '>' ? dc.days : -dc.days);   // 后：今天+N；前：今天−N
+      if (!target) return false;
+      // > 后（未来侧）：行程起始在 target 当天或之后（N=1 即「明天」起，与维护窗说明一致）；
+      // < 前（过去侧）：行程结束在 target 当天或之前（整段已过去）。
+      if (dc.op === '>') return lo >= target;
+      return hi <= target;
+    }
+    // 固定日期：该日期落在行程区间内即命中（与日历「某天 occurring」同口径）；op 仍区分 晚于／早于／等于（边界含当日）
+    const v = dc.value;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(v)) return false;
+    if (dc.op === '=') return v >= lo && v <= hi;   // 指定日在区间内（含跨天）
+    if (dc.op === '>') return lo >= v;               // 晚于：行程起始在 value 当天或之后
+    return hi <= v;                                   // 早于：行程结束在 value 当天或之前
+  }
   function collectGroups(events, cond, deps, includeTitle) {
     const D = makeDeps(deps);
     const searchTitle = includeTitle !== false;   // 默认纳入标题搜索；🔔 内置贴传 false 保持只搜正文
@@ -374,6 +434,25 @@
           ? cond.tags.every((tg) => evTagNames.indexOf(tg) >= 0)
           : cond.tags.some((tg) => evTagNames.indexOf(tg) >= 0);
         if (!tagHit) return;
+      }
+      // 🆕 事件日期条件（dateCond.field==='ev'）：事件级闸口，整张事件按其日历日 ev.date 过滤；命中才继续收内容。
+      //    与「行内标记」日期条件（cr/dl/cp）不同——ev 比的是事件本身的日期，用于「某天（或今天）的日程汇总」。
+      if (cond.dateCond && cond.dateCond.field === 'ev' && !eventDateMatch(ev, cond.dateCond)) return;
+      // 🆕 事件状态（dateCond.doneState）在 field:'ev' 时作用于「整张事件」，而非逐行 checkbox：
+      //   'undone' → 排除已完成的事件（ev.done 为真，或备注里 checkbox 子项全部已打勾）；'done' → 只收已完成的；'any'（默认）→ 不限制。
+      //   否则「所有未完成的项目」这类规则会把「小事件全打勾 ＋ 事件本身已勾」的已完成行程也列进来——
+      //   因为明细模式只要有「任意一行」（如备注里的段落文字）命中就收整张事件，导致已完成行程照样出现（2026-11-02 用户回报）。
+      //   🆕 hideNoHitEvents（单开关「只列含未完 checkbox 的事件」，ev+undone）：事件虽已勾「已完成」，但备注里仍有未完 checkbox 时，不整张排除——
+      //     把那张事件的未完 checkbox 也抓出来（用户 2026-11-03 明确要求「已勾完成却留尾巴的 checkbox 也要」）。
+      //     判断「真正全完」＝ eventIsCompleted 且 不含未完 checkbox；只要还有未完 checkbox，就保留该事件。
+      if (cond.dateCond && cond.dateCond.field === 'ev' && cond.dateCond.doneState && cond.dateCond.doneState !== 'any') {
+        const completed = eventIsCompleted(ev);
+        if (cond.dateCond.doneState === 'undone') {
+          const keep = cond.hideNoHitEvents && eventHasUncompletedCheckbox(ev);
+          if (completed && !keep) return;   // 真正全完才排除；留尾巴则保留
+        } else if (cond.dateCond.doneState === 'done' && !completed) {
+          return;    // 只收已完成
+        }
       }
       // 🆕 自动「只显示事件标题」：带标签条件的段落，事件级命中即收整张行程、不展开其下的小事件
       //    （checkbox 子项）——用户 2026-10-31 明确要求：标签搜索只列事件标题，不要把小事件也列出。
@@ -400,17 +479,28 @@
       //    这样「便利贴标题」含关键词／标记的行程也会被收进这张 VIEW 投影贴。
       const titleRaw = String(ev.title == null ? '' : ev.title);
       const titleTrim = titleRaw.trim();
-      // 🆕 日期条件只作用在行上，不作用在标题 → 有 dateCond 时不把标题命中当收录（避免没命中行的事件被标题捎带进来）
-      const titleHit = (searchTitle && titleTrim && !(cond.dateCond && cond.dateCond.field)) ? lineHitsRule(titleRaw, titleTrim, cond) : false;
+      // 🆕 日期条件只作用在行上，不作用在标题 → 行级标记日期（cr/dl/cp）不把标题命中当收录（避免没命中行的事件被标题捎带进来）。
+      //    ⚠️ 但「事件日期」(field==='ev') 例外：ev 的日期闸口已在事件级跑过（上方 line 416），命中即代表这张行程「发生在指定日」，
+      //       此时标题本就是事件的名字、理应永远显示——若仍压抑 titleHit，会让「今天日历」这类纯事件日期规则把「没有备注正文」的行程整张漏掉
+      //       （2026-11-02 修复：用户今日 2 笔行程都无备注 → 便利贴误报「这一天没有行程」）。
+      //       故只对「行级标记日期」压抑 titleHit，ev 放行（无关键词时 lineHitsRule 恒真 → 标题必被收录；有关键词时仍按标题/正文命中过滤）。
+      const titleHit = (searchTitle && titleTrim && !(cond.dateCond && cond.dateCond.field && cond.dateCond.field !== 'ev')) ? lineHitsRule(titleRaw, titleTrim, cond) : false;
       String(ev.notes || '').replace(/\r\n/g, '\n').split('\n').forEach((line, i) => {
         if (FENCE_RE.test(line)) { inFence = !inFence; return; }
         if (inFence) return;
         const t = line.trim();
         if (!t) return;
         const type = rowTypeOf(line, t);
-        // 🆕 日期条件优先：设了 dateCond.field 时按「日期比较＋勾选状态」过滤小事件（取代行型态门槛，直接判定 todo/done），并与关键词 AND；否则走原行型态门槛
-        if (cond.dateCond && cond.dateCond.field) {
+        // 🆕 日期条件：field 为 cr/dl/cp 时按「行内标记 + 日期比较 + 勾选状态」过滤小事件（取代行型态门槛）；
+        //    field==='ev' 已在事件级闸口处理，这里不再逐行比 [[ev:…]]（不存在），仅对 checkbox 行施加 doneState 门槛
+        //    （未完成的事件不收已勾项、反之亦然），非 checkbox 行（段落/列表/引用/标题）一律保留；其余走原行型态门槛。
+        if (cond.dateCond && cond.dateCond.field && cond.dateCond.field !== 'ev') {
           if (!dateCondMatch(type, line, cond.dateCond)) return;
+        } else if (cond.dateCond && cond.dateCond.field === 'ev' && (type === 'todo' || type === 'done')) {
+          const ds = cond.dateCond.doneState;
+          if (ds === 'undone' && type !== 'todo') return;
+          if (ds === 'done' && type !== 'done') return;
+          if (ds === 'any' && type !== 'todo' && type !== 'done') return;
         } else {
           if (!cond.rowTypes[type]) return;
         }
@@ -428,7 +518,13 @@
       // 正文有命中行 → 照常收；正文无命中但标题命中 → 仍收这张行程（其分组标题即来源标题，
       //   可经 groupHeadHtml 的切换徽标一键跳回来源）。不再压入独立的「标题命中」单元，
       //   避免与分组标题的切换徽标重复显示（2026-10-30 用户要求）。
-      if (hits.length || titleHit) groups.push({ ev, hits });
+      // 🆕 hideNoHitEvents：只列「含未完 checkbox（todo 行）」的事件，隐藏无子项的纯标题事件（如生日/纯日程）——
+      //   用户 2026-11-03 明确不要这些没有任务的事件出现在「所有未完成的项目」。开启时无视 titleHit。
+      //   ⚠️ 不能用 hits.length>0：normalizeSegment 会把 rowTypes 展开成「para/list/quote/heading 默认 true」，
+      //      纯标题事件若带任意段落备注，其段落会被收进 hits → 误判「有命中」。本意是「含未完 checkbox」，
+      //      故只看是否真有 type==='todo'（未打勾的 checkbox）行。
+      const include = cond.hideNoHitEvents ? hits.some((h) => h.type === 'todo') : (hits.length || titleHit);
+      if (include) groups.push({ ev, hits });
     });
     return groups;
   }
@@ -440,7 +536,9 @@
   function groupHeadMd(ev, deps) {
     const D = makeDeps(deps);
     const title = String((ev && ev.title) || '(无标题)').replace(/\s+/g, ' ').trim();
-    const date = (ev && ev.date) ? '（' + D.shortDate(ev.date) + '）' : '';
+    const evDate = (ev && ev.date) ? ev.date : '';
+    const evEnd = (ev && ev.endDate && ev.endDate !== evDate) ? ev.endDate : '';
+    const date = evDate ? '（' + D.shortDate(evDate) + (evEnd ? ' – ' + D.shortDate(evEnd) : '') + '）' : '';
     const src = (ev && ev.src) ? ' · 📎 ' + D.esc(String(ev.src).trim()) : '';
     const head = HEADING_RE.test(title) ? title + date : '**' + title + '**' + date;
     return head + src;
@@ -583,13 +681,22 @@
       notifySeconds: r.notifySeconds
     };
     // 每段独立收集（只收「有」条件的段落）
+    // 🆕 searchTitle 对所有规则一致（不再 !r.builtin）：内置「提醒」规则现在可像自定义规则一样被编辑
+    //   （改标题／加段落／改用关键词或标记收集），若仍对内置关掉标题搜索，编辑后的内置规则与同条件的自定义规则
+    //   会产出不同结果——仅「标题命中」的事件（如标题里带 ⭐／关键词、正文无对应标记行）会被漏抓。
+    //   默认内置（marker=remind、无关键词）标题里没有 [[remind:]]，searchTitle=true 对其行为无影响 → 零回归。
     const segResults = r.segments
       .filter(segmentHasCondition)
-      .map((seg) => ({ seg, groups: collectGroups(events, seg, D, !r.builtin) }));
+      .map((seg) => ({ seg, groups: collectGroups(events, seg, D, true) }));
     const totalHits = segResults.reduce((a, s) => a + s.groups.length, 0);
     if (totalHits === 0) {
       if (r.emptyBehavior === 'hide') return null;
-      return Object.assign(base, { notes: EMPTY_NOTES, html: D.markdown(D.termDefs(EMPTY_NOTES)) });
+      // 🆕 事件日期便利贴（任一段用 field==='ev'）0 命中时，给一句「这一天没有行程」比通用 EMPTY_NOTES 更贴切
+      const isEvDate = segResults.some((sr) => sr.seg.dateCond && sr.seg.dateCond.field === 'ev');
+      const emptyNotes = isEvDate
+        ? '**这一天没有行程**\n\n事件本身的日期没匹配到任何日程。改日期条件请开便利贴菜单的「🧩 自定义 VIEW 便利贴设定维护作业」。'
+        : EMPTY_NOTES;
+      return Object.assign(base, { notes: emptyNotes, html: D.markdown(D.termDefs(emptyNotes)) });
     }
     const multi = segResults.length > 1;
     // 🆕 标题 tooltip 统一显示「所有段落」的设定摘要（单／多段落同一逻辑）：把每段的条件摘要合并后
@@ -605,6 +712,8 @@
     base.titleTip = titleTipParts.join('\n');
     let notes = '';
     let html = '';
+    const tabBtns = [];
+    let segsHtml = '';
     segResults.forEach((sr, i) => {
       const g = sr.groups;
       const segNotes = groupsToMd(g, D);
@@ -618,14 +727,39 @@
         const hr = D.markdown(D.termDefs(head));
         headHtml = '<div class="vsr-seg-hd"' + (segTip ? ' data-tip="' + D.esc(segTip) + '"' : '') + '>' + hr + '</div>';
       }
-      if (g.length) {
-        notes += (notes ? '\n\n' : '') + head + (head ? '\n' : '') + segNotes;
-        html += (html ? '\n' : '') + '<div class="vsr-seg">' + headHtml + (headHtml ? '\n' : '') + segHtml + '</div>';
-      } else {
-        notes += (notes ? '\n\n' : '') + head + (head ? '\n' : '') + '\n\n> （这个段落目前没抓到任何行）';
-        html += (html ? '\n' : '') + '<div class="vsr-seg">' + headHtml + (headHtml ? '\n' : '') + D.markdown('> （这个段落目前没抓到任何行）') + '</div>';
+      const segInner = headHtml + (headHtml ? '\n' : '') +
+        (g.length ? segHtml : D.markdown('> （这个段落目前没抓到任何行）'));
+      // 🆕 多段落：每段一个页签按钮 + 一个内容面板（页签方式时只显示 active 面板）
+      if (multi) {
+        // 🆕 页签按钮只显示「描述」文字、隐藏「段落 N」字眼以节省横向空间；无描述时才回退「段落 N」
+        const desc = (sr.seg.title ? String(sr.seg.title).replace(/^#{1,6}\s*/, '').trim() : '');
+        const label = desc || ('段落 ' + (i + 1));
+        // 🆕 胶囊只挂 data-tip（条件摘要 tooltip，由 CSS ::after 渲染）；不再挂原生 title="label"——
+        // 原生 title 只会重复可见文字、且与自定义 tooltip 叠成双气泡，已无意义。
+        // 标签文字包进 .vsr-tab-label 内层：省略号截断交給内层做，.vsr-tab 本身保持 overflow:visible，
+        // 否则按钮的 overflow:hidden 会把定位在它下方(top:100%)的 ::after tooltip 整个裁掉（看不到）。
+        tabBtns.push('<button type="button" class="vsr-tab' + (i === 0 ? ' vsr-active' : '') + '" data-seg="' + i + '"' +
+          (segTip ? ' data-tip="' + D.esc(segTip) + '"' : '') + '><span class="vsr-tab-label">' + D.esc(label) + '</span></button>');
+        segsHtml += (segsHtml ? '\n' : '') + '<div class="vsr-seg' + (i === 0 ? ' vsr-active' : '') + '" data-seg="' + i + '">' + segInner + '</div>';
+      }
+      const notesBlock = head + (head ? '\n' : '') + (g.length ? segNotes : '\n\n> （这个段落目前没抓到任何行）');
+      notes += (notes ? '\n\n' : '') + notesBlock;
+      if (!multi) {
+        html += (html ? '\n' : '') + '<div class="vsr-seg">' + segInner + '</div>';
       }
     });
+    // 🆕 多段落：包一层 .vsr-display，内含「顺序平铺／页签方式」随时切换控件 + 页签栏 + 内容面板。
+    //    两种模式都在同一份 html 里，由便利贴端的 CSS + JS 决定显示哪种（默认顺序平铺，偏好记忆在 localStorage）。
+    //    单段落（含 🔔 内置、旧版自定义）维持原样（不加 .vsr-display，无切换控件，零回归）。
+    if (multi) {
+      const toggle = '<div class="vsr-display-toggle" role="group" aria-label="显示方式">' +
+        '<button type="button" class="vsr-mode-btn vsr-mode-flat vsr-active" data-mode="flat">顺序平铺</button>' +
+        '<button type="button" class="vsr-mode-btn vsr-mode-tabs" data-mode="tabs">页签方式</button>' +
+        '</div>';
+      const tabs = '<div class="vsr-tabs">' + tabBtns.join('') + '</div>';
+      html = '<div class="vsr-display vsr-mode-flat" data-segs="' + segResults.length + '">' +
+        toggle + '\n' + tabs + '\n' + '<div class="vsr-segs">\n' + segsHtml + '\n</div></div>';
+    }
     return Object.assign(base, { notes, html });
   }
   function buildRefs(rules, events, deps) {

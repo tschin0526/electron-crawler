@@ -781,6 +781,12 @@ function calRangeLabel(a, b, st, et) {
 }
 // 把一條行程展開成「逐日出現」陣列（跨天行程每天一條，帶 start/middle/end 位置）
 function calEventOccurrences(ev) {
+  // 🆕 显示方式＝「显示在今天」：无论真实 date/endDate 为何，都只在「今天」出现一笔
+  //   （与 首末天/每天 同列于「显示方式」下拉；覆盖跨天、单日、重复所有类型；真实日期原样保留在编辑器里）
+  if (ev && ev.spanDisplay === 'today') {
+    const today = calendarFmtDate(new Date());
+    return [{ date: today, ev, pos: 'single', idx: 1, total: 1 }];
+  }
   const out = [];
   if (calIsMultiDay(ev)) {
     let cur = new Date(ev.date + 'T00:00:00');
@@ -838,11 +844,12 @@ function calSubProgressBadge(ev) {
     '" title="备注子事件：' + done + ' / ' + subs.length + ' 已完成">' + done + '/' + subs.length + '</span>';
 }
 function calSpanDisplayModeBadge(ev) {
-  if (!calIsMultiDay(ev)) return '';
-  const mode = ev.spanDisplay === 'first' || ev.spanDisplay === 'last' ? ev.spanDisplay : 'daily';
-  const letter = mode === 'first' ? 'H' : mode === 'last' ? 'E' : 'A';
-  const label = mode === 'first' ? '首天显示' : mode === 'last' ? '末天显示' : '每天显示';
-  return '<span class="ev-span-display-mode" title="跨天模式：' + label + '">' + letter + '</span>';
+  const isToday = ev && ev.spanDisplay === 'today';
+  if (!calIsMultiDay(ev) && !isToday) return '';
+  const mode = ev.spanDisplay === 'first' ? 'first' : ev.spanDisplay === 'last' ? 'last' : isToday ? 'today' : 'daily';
+  const letter = mode === 'first' ? 'H' : mode === 'last' ? 'E' : mode === 'today' ? '今' : 'A';
+  const label = mode === 'first' ? '首天显示' : mode === 'last' ? '末天显示' : mode === 'today' ? '显示在今天' : '每天显示';
+  return '<span class="ev-span-display-mode" title="显示方式：' + label + '">' + letter + '</span>';
 }
 // ☐「只顯示該事件未完成的 checkbox 子事件」：每事件一個開關（純 UI 偏好 → localStorage，絕不改寫 calendar.md）
 const CAL_UNDONE_CHECKS_KEY = 'calUndoneChecksByEvent';
@@ -968,6 +975,15 @@ function calRenderTermDefs(text) {
         return '<span class="tl-remind"' + (rRule ? ' title="' + escapeHtml(rRule) + '"' : '') + '>' +
           '<span class="tl-remind-ic">🔔</span>' + escapeHtml(rTitle) + '</span>';
       }
+      // 🆕 收藏標記 [[bookmark:名稱:備註]] → 藍框膠囊＋🌟星星（與桌面 tlRenderTermDefs 同口径）
+      if (/^bookmark:/i.test(inner)) {
+        const body = inner.slice(inner.indexOf(':') + 1).trim();
+        const c2 = body.indexOf(':');
+        const bTitle = c2 === -1 ? body : body.slice(0, c2).trim();
+        const bNote = c2 === -1 ? '' : body.slice(c2 + 1).trim();
+        return '<span class="tl-bookmark"' + (bNote ? ' title="' + escapeHtml(bNote) + '"' : '') + '>' +
+          '<span class="tl-bookmark-ic"><svg viewBox="0 0 24 24" width="1em" height="1em" focusable="false" aria-hidden="true"><path fill="currentColor" d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z"/></svg></span>' + escapeHtml(bTitle) + '</span>';
+      }
       const full = inner.trim();
       if (!full) return m;
       const firstColon = full.indexOf(':');
@@ -976,6 +992,7 @@ function calRenderTermDefs(text) {
         term = full; rest = '';
         if (term === 'dl' || term === 'cp') return m;                       // 日期標記名稱
         if (/^remind$/i.test(term)) return m;                                // 提醒標記字，不屬術語
+        if (/^bookmark$/i.test(term)) return m;                               // 收藏標記字，不屬術語
         if (/^\d{4}-\d{2}-\d{2}$/.test(term)) return m;                     // 裸日期 → dl 機制
       } else {
         term = full.slice(0, firstColon).trim();
@@ -1005,6 +1022,7 @@ function calCollectTerms() {
       if (inFence) return;
       String(line).replace(/\[\[([^\]\n]+)\]\]/g, (m, inner) => {
         if (/^remind:/i.test(inner)) return m;
+        if (/^bookmark:/i.test(inner)) return m;
         const full = inner.trim();
         if (!full) return m;
         const firstColon = full.indexOf(':');
@@ -1013,6 +1031,7 @@ function calCollectTerms() {
           term = full; rest = '';
           if (term === 'dl' || term === 'cp') return m;
           if (/^remind$/i.test(term)) return m;
+          if (/^bookmark$/i.test(term)) return m;
           if (/^\d{4}-\d{2}-\d{2}$/.test(term)) return m;
         } else {
           term = full.slice(0, firstColon).trim();
@@ -3637,7 +3656,7 @@ function calEventToMarkdown(ev) {
   s += '- title: `' + calMdEscape(ev.title) + '`\n';
   s += '- date: `' + calMdEscape(ev.date) + '`\n';
   if (ev.endDate && ev.endDate !== ev.date) s += '- endDate: `' + calMdEscape(ev.endDate) + '`\n';
-  if (ev.spanDisplay === 'first' || ev.spanDisplay === 'last') s += '- spanDisplay: `' + ev.spanDisplay + '`\n';
+  if (ev.spanDisplay === 'first' || ev.spanDisplay === 'last' || ev.spanDisplay === 'today') s += '- spanDisplay: `' + ev.spanDisplay + '`\n';
   s += '- allDay: `' + (ev.allDay ? 'true' : 'false') + '`\n';
   // 完成狀態：永遠顯式寫出（與桌面 calendar 插件同一欄位、同一順序）
   s += '- done: `' + (ev.done ? 'true' : 'false') + '`\n';
@@ -4084,7 +4103,7 @@ function openEventForm(uid, defaultDate, pre) {
   elements.evFTitle.value = ev ? ev.title : '';
   elements.evFDate.value = ev ? ev.date : (defaultDate || (state.calMode === 'month' ? state.calSelectedDate : today) || today);
   elements.evFEndDate.value = ev ? (ev.endDate || '') : '';
-  elements.evFSpanDisplay.value = ev && (ev.spanDisplay === 'first' || ev.spanDisplay === 'last') ? ev.spanDisplay : 'daily';
+  elements.evFSpanDisplay.value = ev && (ev.spanDisplay === 'first' || ev.spanDisplay === 'last' || ev.spanDisplay === 'today') ? ev.spanDisplay : 'daily';
   // ===== 重複事件 =====
   // p.repeat：由「重複事件一覽」的新增按鈕傳入 → 新增時直接進「重複」模式並帶出起始日的星期
   const rMode = ev ? (ev.repeatMode || '') : (p.repeat ? 'weekly' : '');

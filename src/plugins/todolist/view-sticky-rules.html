@@ -16,7 +16,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>自定义 VIEW 便利贴维护作业</title>
+<title>自定义 VIEW 便利贴设定维护作业</title>
 <style>
   :root {
     --gold: #D4AF37;
@@ -109,7 +109,7 @@
 </style>
 </head>
 <body>
-  <h1><span class="badge">🧩</span> 自定义 VIEW 便利贴维护作业</h1>
+  <h1><span class="badge">🧩</span> 自定义 VIEW 便利贴设定维护作业</h1>
   <div class="hint">
     每一条规则＝一张「<b>🔔 提醒</b>」那样的<b>投影便利贴</b>：把目前行程档里符合下面条件的行集中到同一张贴上。
     投影贴<b>只读、也不会写进 calendar.md</b>（内容请回来源行程改）。启用后到便利贴清单／翻页里看它。
@@ -165,10 +165,11 @@
           <div class="tip">与关键词是「且」的关系；选「不限」时只靠关键词过滤。</div>
         </div>
         <div class="fld">
-          <label for="fDateField">日期条件（按小事件的建档日／完成日／预计完成 过滤）</label>
+          <label for="fDateField">日期条件（按「事件本身的日期」或 小事件的建档日／完成日／预计完成 过滤）</label>
           <div class="row" style="gap:6px;align-items:center;flex-wrap:wrap">
             <select id="fDateField">
               <option value="">不限（不用日期条件）</option>
+              <option value="ev">事件日期（行程本身的日历日）</option>
               <option value="cr">建档日期 [[cr:…]]</option>
               <option value="cp">完成日期 [[cp:…]]</option>
               <option value="dl">预计完成 [[dl:…]]</option>
@@ -193,9 +194,11 @@
               <option value="undone">未完成（− [ ]）</option>
               <option value="done">已完成（− [x]）</option>
             </select>
+            <label class="chk" id="fHideNoHitWrap" style="display:none"><input type="checkbox" id="fHideNoHit">只列含未完 checkbox 的事件（隐藏无子项的纯标题事件；已勾完成但仍有未完 checkbox 的也保留）</label>
           </div>
           <div class="tip">抓取「该日期字段 满足比较条件 且 勾选状态符合」的小事件（备注里的 checkbox 子项）。
-            基准选「固定日期」→ 该日期 晚于/早于 你指定的日历日（YYYY-MM-DD）；选「距今天数」→ 以「今天 ± N 天」为界：&gt; 后＝该日期在 今天+N天 之后（未来侧，如截止日还远），&lt; 前＝该日期在 今天−N天 之前（过去侧，如建档已满 N 天），= 正好＝距今天正好 N 天（前后皆可）。
+            字段选「事件日期」→ 按**行程本身的日历日**（ev.date）过滤整张行程，用来做「今天／指定某天 的日程汇总」便利贴：基准「距今天数」+ 比较「正好」+ N=0 即今天；基准「固定日期」填某天即该天；N=1 + 后 即明天。选「建档/完成/预计完成」→ 比的是备注里行内 [[cr/dl/cp:…]] 标记（小事件级）。
+            事件日期 时 **关键词／标记 留空** 即收该日全部内容；勾选状态只约束 checkbox 行（非 checkbox 行始终保留）。
             仅「展开明细行」模式有效（带标签会自动只显示标题，日期条件将不生效）。</div>
         </div>
         <div class="fld">
@@ -289,7 +292,7 @@
       const row = document.createElement('div');
       row.className = 'rule' + (r.id === selId ? ' sel' : '') + (r.enabled ? '' : ' off') + (r.builtin ? ' builtin' : '');
       const cb = document.createElement('input');
-      cb.type = 'checkbox'; cb.checked = !!r.enabled; cb.title = r.builtin ? '系统内置规则，固定启用' : '启用／关闭这条规则';
+      cb.type = 'checkbox'; cb.checked = !!r.enabled; cb.title = r.builtin ? '系统内置规则（可启用／关闭）' : '启用／关闭这条规则';
       cb.disabled = !!r.readonly;
       cb.onchange = () => { r.enabled = cb.checked; markDirty(true); renderList(); };
       const main = document.createElement('div');
@@ -297,7 +300,7 @@
       const t = document.createElement('div'); t.className = 'r-title'; t.textContent = r.title || '(未命名)';
       if (r.builtin) {
         const badge = document.createElement('span');
-        badge.textContent = ' 系统内置・只读';
+        badge.textContent = ' 系统内置';
         badge.style.cssText = 'font-size:10px;color:var(--sub);font-weight:400;';
         t.appendChild(badge);
       }
@@ -312,7 +315,7 @@
       const del = document.createElement('button');
       del.type = 'button'; del.className = 'r-del'; del.textContent = r.builtin ? '🔒' : '🗑';
       del.title = r.builtin ? '系统内置规则不可删除' : '删除这条规则';
-      del.disabled = !!r.readonly;
+      del.disabled = !!r.builtin;
       del.onclick = (ev) => { ev.stopPropagation(); removeRule(r); };
       row.appendChild(cb); row.appendChild(main); row.appendChild(del);
       row.onclick = () => { selId = r.id; selSeg = 0; renderList(); renderForm(); };
@@ -322,7 +325,7 @@
 
   // 删除是「删掉使用者写好的设定」→ 先把要删的内容列出来确认，取消为安全默认
   function removeRule(r) {
-    if (r.readonly) return;
+    if (r.builtin || r.readonly) return;
     const msg = '确定要删除这条自定义 VIEW 便利贴规则吗？删除后不可恢复。\n\n标题：' + (r.title || '(未命名)') +
       '\n条件：' + condText(r);
     if (!window.confirm(msg)) return;
@@ -369,6 +372,8 @@
       const seg = selectedSeg(); if (!seg) return;
       const field = $('fDateField').value, op = $('fDateOp').value, doneState = $('fDateDone').value;
       if (!field || !op) { seg.dateCond = null; markDirty(true); renderSegList(); return; }
+      // 🆕 单开关「只列含未完 checkbox 的事件」(hideNoHitEvents) 仅「事件日期」时有意义；其余情况归零，避免脏值带入
+      seg.hideNoHitEvents = (field === 'ev') ? $('fHideNoHit').checked : false;
       if ($('fDateMode').value === 'age') {
         const days = parseInt($('fDateDays').value, 10);
         if (!isFinite(days) || days < 0) { seg.dateCond = null; markDirty(true); renderSegList(); return; }
@@ -380,12 +385,18 @@
       }
       markDirty(true); renderSegList();
     };
-    $('fDateField').onchange = syncDateCond;
+    // 🆕 仅「事件日期」时显示单开关「只列含未完 checkbox 的事件」：隐藏无子项的纯标题事件，并保留「已勾完成却仍含未完 checkbox」的事件
+    const applyHideNoHitVis = () => {
+      const isEv = $('fDateField').value === 'ev';
+      $('fHideNoHitWrap').style.display = isEv ? 'inline-flex' : 'none';
+    };
+    $('fDateField').onchange = () => { applyHideNoHitVis(); syncDateCond(); };
     $('fDateOp').onchange = syncDateCond;
     $('fDateVal').onchange = syncDateCond;
     $('fDateDays').oninput = syncDateCond;
     $('fDateMode').onchange = () => { applyDateMode(); syncDateCond(); };
-    $('fDateDone').onchange = syncDateCond;
+    $('fDateDone').onchange = () => { applyHideNoHitVis(); syncDateCond(); };
+    $('fHideNoHit').onchange = (e) => { const seg = selectedSeg(); if (seg) { seg.hideNoHitEvents = e.target.checked; markDirty(true); renderSegList(); } };
     $('fEnabled').onchange = (e) => { const r = selected(); if (r) { r.enabled = e.target.checked; markDirty(true); renderList(); } };
     // 🆕 启动通知：勾选框 + 保持秒数（秒数走引擎的夹值，避免写入 0／负数／浮夸值）
     $('fNotify').onchange = (e) => { const r = selected(); if (r) { r.notify = e.target.checked; markDirty(true); renderList(); } };
@@ -505,7 +516,7 @@
     pane.querySelectorAll('input[type="text"], input[type="number"], input[type="date"], select').forEach((el) => { el.disabled = locked; });
     pane.querySelectorAll('.chk input, .types input').forEach((el) => { el.disabled = locked; });
     $('segMode').querySelectorAll('button').forEach((b) => { b.disabled = locked; });
-    $('btnDup').disabled = !r || !!r.readonly;
+    $('btnDup').disabled = !r || !!r.readonly || !!r.builtin;
     $('btnAddSeg').disabled = !!r.readonly;
     $('btnSegUp').disabled = !!r.readonly || !r || selSeg <= 0;
     $('btnSegDown').disabled = !!r.readonly || !r || selSeg >= (r ? r.segments.length - 1 : 0);
@@ -540,12 +551,16 @@
       $('fDateVal').value = (seg.dateCond && seg.dateCond.kind !== 'age' && seg.dateCond.value) || '';
       $('fDateDays').value = (seg.dateCond && seg.dateCond.kind === 'age' && typeof seg.dateCond.days === 'number') ? String(seg.dateCond.days) : '';
       $('fDateDone').value = (seg.dateCond && seg.dateCond.doneState) || 'any';
+      $('fHideNoHit').checked = !!seg.hideNoHitEvents;
+      applyHideNoHitVis();
       applyDateMode();
       pane.querySelectorAll('.types input').forEach((el) => { el.checked = !!(seg.rowTypes && seg.rowTypes[el.getAttribute('data-type')]); });
     } else {
       $('segSub').textContent = '本段落条件';
       $('fKeywords').value = ''; $('fMarker').value = ''; $('fTags').value = '';
       $('fDateField').value = ''; $('fDateOp').value = ''; $('fDateVal').value = ''; $('fDateDays').value = ''; $('fDateMode').value = 'fixed'; $('fDateDone').value = 'any';
+      $('fHideNoHit').checked = false;
+      applyHideNoHitVis();
       applyDateMode();
       $('segMode').querySelectorAll('button').forEach((b) => { b.classList.toggle('on', b.getAttribute('data-v') === 'ANY'); });
       $('tagMode').querySelectorAll('button').forEach((b) => { b.classList.toggle('on', b.getAttribute('data-v') === 'ANY'); });
@@ -568,9 +583,12 @@
       } else {
         $('storePath').textContent = '（路径未知）';
       }
-      const userRules = V.normalizeList(r && Array.isArray(r.rules) ? r.rules : [])
-        .filter((x) => !x.builtin && x.id !== '__builtin_remind__');
-      rules = V.builtinRules().concat(userRules);
+      const savedRules = V.normalizeList(r && Array.isArray(r.rules) ? r.rules : []);
+      // 🆕 优先用存盘里被自定义过的内置规则（id='__builtin_remind__' 或 builtin:true），没有才回退引擎默认
+      const savedBuiltin = savedRules.filter((x) => x.id === '__builtin_remind__' || x.builtin)[0] || null;
+      const userRules = savedRules.filter((x) => !x.builtin && x.id !== '__builtin_remind__');
+      const builtin = savedBuiltin || V.builtinRules()[0];
+      rules = [builtin].concat(userRules);
       if (r && r.readable === false) toast('规则档案读不到，显示的是空清单（此时请按「保存」，否则可能盖掉旧档）', true);
       selId = rules.length ? rules[0].id : '';
       selSeg = 0;
@@ -583,11 +601,13 @@
     const noTitle = rules.filter((r) => !r.title || r.title === '自定义便利贴');
     if (noTitle.length) { toast('有 ' + noTitle.length + ' 条规则还没填标题，请先补上', true); return; }
     try {
-      const userRules = rules.filter((r) => !r.builtin && !r.readonly);
+      // 🆕 持久化「除 readonly 以外」的全部规则——内置「提醒」规则（builtin:true）也一并写回，
+      //   这样在维护窗里对它的自定义（标题／条件／通知／启用开关）才会落地。它仍保留 builtin:true → 不可删。
+      const userRules = rules.filter((r) => !r.readonly);
       const res = await api.invoke('vsr-save', userRules);
       if (!res || !res.success) { toast('保存失败：' + ((res && res.error) || '主进程拒绝'), true); return; }
       markDirty(false);
-      toast('已保存 ' + userRules.length + ' 条自定义规则，便利贴清单已更新');
+      toast('已保存 ' + userRules.length + ' 条规则（含内置「提醒」），便利贴清单已更新');
     } catch (e) { toast('保存失败：' + (e && e.message ? e.message : e), true); }
   }
 

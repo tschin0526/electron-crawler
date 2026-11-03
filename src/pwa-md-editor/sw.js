@@ -400,7 +400,12 @@
 // v197（2026-10-30）：VIEW 便利贴「搜索段落」多段落能力——一条规则可含多段（每段＝一个完整搜索），结果按序显示为多个「段落 N」区块；
 //       引擎 view-sticky-rules.js（normalizeRule 增 segments／buildRef 多段渲染，单段与 🔔 外观不变）＋ 维护窗 view-sticky-rules.html（段落列表＋每段条件编辑）。
 //       /vsr.js 引擎经桌面共享、LITE 同款渲染，故 bump + 刷新 ?v 戳让手机重拉；APP_VERSION/manifest 1.10.14→1.10.15。
-const CACHE_NAME = 'md-editor-lite-v199';
+// v200（2026-11-02）：VIEW 多段落便利贴新增「顺序平铺／页签方式」随时切换（便利贴正文内控件，偏好记忆在 localStorage）；
+//       LITE 端 calStickyBuildCatalog 自定义 VIEW 携带 ref.html（与桌面同款富渲染，含 .vsr-display 页签结构）、
+//       calStickyRenderPage 对 VIEW 改用 html、新增 calStickyInitViewDisplay 点击切换；style.css 补 .vsr-* 样式。
+//       /vsr.js 引擎 buildRef 多段落包 .vsr-display（桌面 sticky-note-html IPC 与 LITE 同源），故 bump + 刷新 ?v 让手机重拉；
+//       APP_VERSION/manifest 1.10.15→1.10.16。
+const CACHE_NAME = 'md-editor-lite-v200';
 const ASSETS = [
   './',
   './index.html',

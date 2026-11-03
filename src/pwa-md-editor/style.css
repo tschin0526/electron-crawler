@@ -858,6 +858,19 @@ body {
   box-shadow: 0 1px 2px rgba(0,0,0,.28), inset 0 1px 0 rgba(255,255,255,.65);
 }
 .tl-remind-ic { font-size: .95em; line-height: 1; }
+/* 🆕 收藏（bookmark）標記 [[bookmark:名稱:備註]]：與 remind 同一顆膠囊，只把外框改成藍色＋前方書籤，
+   備註（note）放 title。與桌面便利貼／calendar 雙端同口径。 */
+.tl-bookmark {
+  display: inline-flex; align-items: center; gap: .3em;
+  margin-right: .3em; padding: 0 .42em;
+  border-radius: 999px; line-height: 1.15; font-size: .85em; font-weight: 600;
+  white-space: nowrap; cursor: help;
+  color: #0b3a53;
+  background: linear-gradient(180deg, #bfe3f5 0%, #8ec9e8 55%, #5fb0d6 100%);
+  border: 1px solid #1c7fb8;
+  box-shadow: 0 1px 2px rgba(0,0,0,.28), inset 0 1px 0 rgba(255,255,255,.65);
+}
+.tl-bookmark-ic { font-size: .95em; line-height: 1; display: inline-flex; align-items: center; color: #FFC107; }
 .ev-block.done { opacity: 0.55; }
 /* ⚠️ 對齊修復（同桌面端）：column-gap 4px × 7 會累積 28px 漂移 → 全天行程「卡在兩天中間」。
    gap 歸 0 讓欄位軌道與時間網格完全一致，視覺留白改由 .ev-allday-col 的內距提供。 */
@@ -1799,6 +1812,53 @@ body.dark .cal-sticky-src-badge.is-view { color: #c4b5fd; }
 .cal-sticky-body table { border-collapse: collapse; width: 100%; margin: .5em 0; font-size: .92em; }
 .cal-sticky-body th, .cal-sticky-body td { border: 1px solid rgba(212, 175, 55, .62); padding: 3px 6px; text-align: left; vertical-align: top; }
 .cal-sticky-body th { background: rgba(212, 175, 55, .18); font-weight: 600; }
+/* 🆕 VIEW 多段落：顺序平铺／页签方式 随时切换（控件在便利贴正文内；偏好记忆在 localStorage） */
+.vsr-display { margin: 0; }
+.vsr-display-toggle { display: flex; gap: 4px; margin: .2em 0 .6em; user-select: none; }
+.vsr-mode-btn {
+  flex: 0 0 auto; cursor: pointer; padding: 2px 10px; border-radius: 999px;
+  border: 1px solid rgba(0, 0, 0, .18); background: transparent; color: var(--cal-sticky-fg, #000);
+  font: 600 11px/1.4 system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; opacity: .8;
+}
+.vsr-mode-btn.vsr-active {
+  background: rgba(212, 175, 55, .22); border-color: #D4AF37; color: var(--cal-sticky-fg, #000); opacity: 1;
+}
+.vsr-tabs { display: none; flex-wrap: wrap; gap: 4px; margin: 0 0 .6em; }
+.vsr-tab {
+  position: relative;
+  cursor: pointer; padding: 2px 10px; border-radius: 999px;
+  border: 1px solid rgba(0, 0, 0, .16); background: transparent; color: var(--cal-sticky-fg, #000);
+  font: 600 11px/1.4 system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+  max-width: 100%; min-width: 0;
+}
+/* 标签文字单独成层做省略号截断：.vsr-tab 本身必须 overflow:visible，否则条件 tooltip(::after, top:100%) 会被按钮 overflow:hidden 裁掉 */
+.vsr-tab-label { display: block; max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.vsr-tab:hover { border-color: #D4AF37; }
+.vsr-tab.vsr-active { background: rgba(212, 175, 55, .22); border-color: #D4AF37; color: var(--cal-sticky-fg, #000); }
+/* 🆕 VIEW 每段条件 tooltip（移动端补齐，与桌面端对齐）：
+   平铺模式 hover .vsr-seg-hd（段落标题）、页签方式 hover .vsr-tab（胶囊）即见该段条件摘要。
+   移动端无 --menu-bg，故 tooltip 用硬编码深底 + 浅字（保证浅色纸张上可读，不依赖主题变量避免深底深字）。 */
+.vsr-seg-hd { position: relative; }
+.vsr-seg-hd[data-tip]:not([data-tip=""]):hover::after,
+.vsr-tab[data-tip]:not([data-tip=""]):hover::after {
+  content: attr(data-tip);
+  position: absolute; left: 0; top: 100%; z-index: 40; margin-top: 5px;
+  width: max-content; max-width: min(300px, 80vw); padding: 6px 9px;
+  border: 1px solid rgba(212, 175, 55, .6); border-radius: 8px;
+  background: rgba(40, 42, 54, .98); color: #f2f4f8;
+  font: 400 12px/1.45 system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+  white-space: pre-line; word-break: break-word;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, .35); pointer-events: none;
+}
+/* 顺序平铺（默认）：页签栏隐藏，所有段落堆叠显示（含各自 .vsr-seg-hd 标题） */
+.vsr-display.vsr-mode-flat .vsr-tabs { display: none; }
+.vsr-display.vsr-mode-flat .vsr-seg { display: block; }
+.vsr-display.vsr-mode-flat .vsr-seg-hd { display: block; }
+/* 页签方式：显示页签栏、隐藏段落内标题、仅显示 active 段落 */
+.vsr-display.vsr-mode-tabs .vsr-tabs { display: flex; }
+.vsr-display.vsr-mode-tabs .vsr-seg { display: none; }
+.vsr-display.vsr-mode-tabs .vsr-seg.vsr-active { display: block; }
+.vsr-display.vsr-mode-tabs .vsr-seg-hd { display: none; }
 .cal-sticky-body code { background: rgba(0, 0, 0, .07); padding: 0 3px; border-radius: 3px; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size: .95em; }
 .cal-sticky-body pre { background: rgba(0, 0, 0, .07); padding: 8px; border-radius: 6px; overflow: auto; }
 .cal-sticky-body pre code { background: none; padding: 0; }

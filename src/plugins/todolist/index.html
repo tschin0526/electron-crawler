@@ -2095,6 +2095,19 @@
       box-shadow: 0 1px 2px rgba(0,0,0,.28), inset 0 1px 0 rgba(255,255,255,.65);
     }
     .tl-remind-ic { font-size: .95em; line-height: 1; }
+    /* 🆕 收藏（bookmark）渲染：樣式與 remind 一致，僅「外框線改為藍色」＋ 前方加書籤。
+       note 放 title（hover）顯示 */
+    .tl-bookmark {
+      display: inline-flex; align-items: center; gap: .3em;
+      margin-right: .3em; padding: 0 .55em;
+      border-radius: 999px; line-height: 1.7; font-size: .9em; font-weight: 600;
+      white-space: nowrap; cursor: help;
+      color: #0b3a53;
+      background: linear-gradient(180deg, #bfe3f5 0%, #8ec9e8 55%, #5fb0d6 100%);
+      border: 1px solid #1c7fb8;
+      box-shadow: 0 1px 2px rgba(0,0,0,.28), inset 0 1px 0 rgba(255,255,255,.65);
+    }
+    .tl-bookmark-ic { font-size: .95em; line-height: 1; display: inline-flex; align-items: center; color: #FFC107; }
     /* 📝 備註表格网格线：備註经 renderMarkdown 可产出 Markdown 表格（如「所有者/工具/账号/用量」），
        但 .ev-notes 此前没有任何表格边框规则 → 线条全无。浅色用 --ev-border；深色与「未勾选 checkbox 框」同款金黄 #fbbf24 */
     .ev-notes table, .ev-block .notes table, .ev-tip-notes table { border-collapse: collapse; margin: .35em 0; }
@@ -5378,11 +5391,12 @@
         <label class="tl-ev-f-label">日期<span class="tl-ev-f-dow" id="tlEvFDateDow"></span><span class="tl-ev-f-lunar" id="tlEvFDateLunar" title="農民曆 / 老黃曆" onclick="tlShowAlmanac((document.getElementById('tlEvFDate').value||tlFmtDate(new Date())),this)"></span><input type="date" id="tlEvFDate"></label>
         <label class="tl-ev-f-label">结束日期（留空＝单日）<span class="tl-ev-f-dow" id="tlEvFEndDateDow"></span><span class="tl-ev-f-lunar" id="tlEvFEndDateLunar" title="農民曆 / 老黃曆" onclick="tlShowAlmanac((document.getElementById('tlEvFEndDate').value||tlFmtDate(new Date())),this)"></span><input type="date" id="tlEvFEndDate"></label>
       </div>
-      <label class="tl-ev-f-label">跨天显示方式（仅跨天事件）
+      <label class="tl-ev-f-label">显示方式（每天／首末天／今天）
         <select id="tlEvFSpanDisplay">
           <option value="daily">每天显示</option>
           <option value="first">仅首天显示</option>
           <option value="last">仅末天显示</option>
+          <option value="today">显示在今天</option>
         </select>
       </label>
       <div class="tl-ev-f-repeat" id="tlEvFRepeatBox">

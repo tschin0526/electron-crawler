@@ -389,6 +389,7 @@ let calStickyViewHidden = false;     // 本會話把 VIEW 貼從翻頁清單關�
 //   [] = 拉到了但规则为空
 //   [...] = 规则阵列（已经过滤掉 builtin 规则）
 let calStickyCustomViewRules = null;
+let calStickyBuiltinViewRule = null;   // 🆕 内置「提醒」规则的存盘版（优先）；没有则回退到硬收集／引擎默认
 function calStickyIsViewId(identity) { return identity === CAL_STICKY_VIEW_IDENTITY; }
 
 // 🆕 自定义 VIEW 贴的 deps 映射：LITE 版函数名是 calXxx，桌面版引擎接口是 tlXxx
@@ -413,12 +414,18 @@ async function calStickyLoadCustomViewRules() {
     if (!res.ok) { console.warn('[calStickyLoadCustomViewRules] HTTP', res.status); return null; }
     const data = await res.json();
     const raw = Array.isArray(data) ? data : (Array.isArray(data && data.rules) ? data.rules : []);
+    // 🆕 捕获内置「提醒」规则的存盘版（优先），供 calStickyViewEntry 用引擎 buildRef 生成——让手机端也吃得到自定义
+    const savedBuiltin = raw.filter((r) => r && typeof r === 'object' && (r.builtin === true || r.id === '__builtin_remind__'))[0] || null;
+    calStickyBuiltinViewRule = savedBuiltin
+      ? (typeof window.ViewStickyRules !== 'undefined' ? window.ViewStickyRules.normalizeRule(savedBuiltin) : savedBuiltin)
+      : null;
+    // 🆕 自定义规则：排除内置提醒（它单独走 calStickyViewEntry，不在这里重复生成）
     const rules = raw
       .filter((r) => r && typeof r === 'object')
       .filter((r) => !r.builtin && r.id !== '__builtin_remind__')
       .filter((r) => r.enabled !== false);   // 关闭的规则不生成贴
     calStickyCustomViewRules = rules;
-    console.log('[calStickyLoadCustomViewRules] OK, custom rules:', rules.length, rules.map(r => r.id));
+    console.log('[calStickyLoadCustomViewRules] OK, custom rules:', rules.length, rules.map(r => r.id), 'builtin?', !!calStickyBuiltinViewRule);
     console.log('[calStickyLoadCustomViewRules] ViewStickyRules?', typeof window.ViewStickyRules);
     return rules;
   } catch (e) {
@@ -462,6 +469,23 @@ function calStickyViewNotesMd(events) {
   return groups.map((g) => g.head + '\n' + g.lines.join('\n')).join('\n\n');
 }
 function calStickyViewEntry(events) {
+  // 🆕 手机端也吃得到维护作业里对「🔔 提醒」的自定义（标题／条件／通知／空行为／启用开关）：
+  //   优先用引擎 buildRef（与桌面同口径），引擎没就绪或没规则时回退到下面的硬收集逻辑。
+  if (calStickyBuiltinViewRule && typeof window.ViewStickyRules !== 'undefined') {
+    try {
+      const V = window.ViewStickyRules;
+      const ref = V.buildRef(calStickyBuiltinViewRule, events, calStickyViewDeps());
+      if (!ref) return null;   // 规则关闭／0 命中且 hide → 这张贴不出现（与硬收集返回 null 同义）
+      return {
+        uid: CAL_STICKY_VIEW_UID, idx: 0, isView: true, identity: CAL_STICKY_VIEW_IDENTITY,
+        title: ref.title || CAL_STICKY_VIEW_TITLE, date: '', endDate: '', done: false, color: '',
+        tags: [], notes: ref.notes || '', html: ref.html || '',
+        src: '', ro: false, dirty: false,
+        notify: ref.notify === true, notifySeconds: ref.notifySeconds
+      };
+    } catch (e) { /* 引擎炸了 → 回退到下面的硬收集逻辑 */ }
+  }
+  // 回退：硬收集（引擎没加载／没抓到存盘内置规则时），行为与旧版一致
   const notes = calStickyViewNotesMd(events);
   if (!notes) return null;   // 一條提醒都沒有 → 這張貼不存在（而不是開一張空的）
   return {
@@ -537,6 +561,7 @@ function calStickyBuildCatalog() {
           color: ref.color || '',
           tags: ref.tags || [],
           notes: ref.notes || '',
+          html: ref.html || '',   // 🆕 多段落 VIEW 富渲染（含 .vsr-display 页签结构）；有则优先用，否则回退 notes
           src: '',
           ro: true,
           dirty: false,
@@ -835,6 +860,42 @@ function calStickyApplySrcBadge(note) {
     el.classList.remove('show', 'dirty', 'is-view');
   }
 }
+// 🆕 多段落 VIEW 便利贴（手机端）：套用记忆的「顺序平铺／页签方式」并显示 active 段落；绑定点击。
+//   偏好按便利贴 identity 记忆在 localStorage（vsr-display-mode:<identity> / vsr-display-active:<identity>）；
+//   单段落或普通便利贴的 body 里没有 .vsr-display → 直接 no-op，零回归。
+function calStickyInitViewDisplay(bodyEl, identity) {
+  const disp = bodyEl && bodyEl.querySelector('.vsr-display');
+  if (!disp) return;
+  const segCount = Math.max(0, parseInt(disp.getAttribute('data-segs') || '0', 10) || 0);
+  const store = (typeof localStorage !== 'undefined') ? localStorage : null;
+  const modeKey = 'vsr-display-mode:' + identity, activeKey = 'vsr-display-active:' + identity;
+  let mode = (store && store.getItem(modeKey) === 'tabs') ? 'tabs' : 'flat';
+  let active = 0;
+  if (store) {
+    const a = parseInt(store.getItem(activeKey), 10);
+    if (isFinite(a) && a >= 0 && a < segCount) active = a;
+  }
+  const apply = () => {
+    disp.classList.toggle('vsr-mode-tabs', mode === 'tabs');
+    disp.classList.toggle('vsr-mode-flat', mode !== 'tabs');
+    disp.querySelectorAll('.vsr-mode-btn').forEach((b) => { b.classList.toggle('vsr-active', b.getAttribute('data-mode') === mode); });
+    disp.querySelectorAll('.vsr-tab').forEach((t) => { t.classList.toggle('vsr-active', parseInt(t.getAttribute('data-seg'), 10) === active); });
+    disp.querySelectorAll('.vsr-seg').forEach((s) => { s.classList.toggle('vsr-active', parseInt(s.getAttribute('data-seg'), 10) === active); });
+  };
+  apply();
+  disp.addEventListener('click', (e) => {
+    const t = e.target.closest && e.target.closest('.vsr-mode-btn, .vsr-tab');
+    if (!t) return;
+    if (t.classList.contains('vsr-mode-btn')) {
+      mode = t.getAttribute('data-mode') === 'tabs' ? 'tabs' : 'flat';
+      if (store) store.setItem(modeKey, mode);
+    } else if (t.classList.contains('vsr-tab')) {
+      const s = parseInt(t.getAttribute('data-seg'), 10);
+      if (isFinite(s) && s >= 0 && s < segCount) { active = s; if (store) store.setItem(activeKey, String(s)); }
+    }
+    apply();
+  });
+}
 function calStickyRenderPage(target, options) {
   options = options || {};
   // 🆕 通知期間使用者自己翻頁（左右鈕／滑動）→ 放棄整個通知階段，以使用者的操作為準
@@ -908,12 +969,19 @@ function calStickyRenderPage(target, options) {
   }
   const bodyEl = calStickyEl('calStickyBody');
   if (bodyEl) {
-    // forceEditable=true：便利貼是 include 備註唯一的編輯場所（行程檢視對 ro 行程是唯讀的），
-    //   所以即使 note.ro 也照樣給 ✎ 與可勾 checkbox；寫回仍走 calCommitEventNotes（只改來源檔那一塊）
-    // 🆕 VIEW 貼例外：uid 給空字串 → 走「唯讀渲染」分支（沒有 ✎ 圓點、checkbox 不可點）
-    bodyEl.innerHTML = note.notes
-      ? calRenderNotes(note.notes, note.isView ? '' : note.uid, true)
-      : '<p style="opacity:.6">（無備註）</p>';
+    // 🆕 自定义 VIEW 多段落便利贴：优先用 ref.html（富渲染，含 .vsr-display 页签结构），与桌面同款、两端一致；
+    //   其余（普通便利贴、🔔 内置 VIEW、无 html 的自定义 VIEW）仍走原 calRenderNotes 平铺渲染。
+    if (note.isView && note.html) {
+      bodyEl.innerHTML = note.html;
+    } else if (note.notes) {
+      // forceEditable=true：便利貼是 include 備註唯一的編輯場所（行程檢視對 ro 行程是唯讀的），
+      //   所以即使 note.ro 也照樣給 ✎ 與可勾 checkbox；寫回仍走 calCommitEventNotes（只改來源檔那一塊）
+      // 🆕 VIEW 貼例外：uid 給空字串 → 走「唯讀渲染」分支（沒有 ✎ 圓點、checkbox 不可點）
+      bodyEl.innerHTML = calRenderNotes(note.notes, note.isView ? '' : note.uid, true);
+    } else {
+      bodyEl.innerHTML = '<p style="opacity:.6">（無備註）</p>';
+    }
+    if (note.isView && note.html) calStickyInitViewDisplay(bodyEl, note.identity);
     if (options.resetScroll !== false) bodyEl.scrollTop = 0;
   }
   // 🆕 定位高亮：渲染模式（非編輯）下，若定位開關生效，把搜尋詞以 <mark> 標示在標題與內容

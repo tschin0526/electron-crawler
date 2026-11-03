@@ -80,7 +80,7 @@ function openRulesWindow() {
     height: 780,
     minWidth: 760,
     minHeight: 480,
-    title: '自定义 VIEW 便利贴维护作业',
+    title: '自定义 VIEW 便利贴设定维护作业',
     frame: true,
     webPreferences: {
       webSecurity: false,

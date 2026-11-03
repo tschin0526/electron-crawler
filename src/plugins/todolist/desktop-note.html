@@ -38,13 +38,79 @@
     .vsr-seg-hd[data-tip]:not([data-tip=""]):hover::after {
       content: attr(data-tip);
       position: absolute; left: 0; top: 100%; z-index: 40; margin-top: 5px;
-      max-width: 300px; padding: 6px 9px;
+      width: max-content; max-width: 340px; padding: 6px 9px;
       border: 1px solid rgba(212,175,55,.6); border-radius: 8px;
       background: var(--menu-bg, rgba(40,42,54,.98)); color: var(--note-fg, #f2f4f8);
       font: 400 12px/1.45 var(--ui-font, system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif);
       white-space: pre-line; word-break: break-word;
       box-shadow: 0 10px 24px rgba(0,0,0,.35); pointer-events: none; -webkit-app-region: no-drag;
     }
+    /* VIEW 胶囊页签 tooltip：页签方式时 .vsr-seg-hd 被隐藏（.vsr-mode-tabs .vsr-seg-hd{display:none}），
+       故把同一条「该段条件摘要」tooltip 挂到胶囊 .vsr-tab 上——hover 胶囊即见该段条件。
+       与平铺段标题 tooltip 同源（均来自 buildRef 写入的 data-tip）。
+       胶囊被 JS 搬到表头 .vsr-tabs-head 时元素仍是 .vsr-tab，同一规则覆盖正文与表头两处。 */
+    .vsr-tab[data-tip]:not([data-tip=""]):hover::after {
+      content: attr(data-tip);
+      position: absolute; left: 0; top: 100%; z-index: 40; margin-top: 5px;
+      width: max-content; max-width: 340px; padding: 6px 9px;
+      border: 1px solid rgba(212,175,55,.6); border-radius: 8px;
+      background: var(--menu-bg, rgba(40,42,54,.98)); color: var(--note-fg, #f2f4f8);
+      font: 400 12px/1.45 var(--ui-font, system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif);
+      white-space: pre-line; word-break: break-word;
+      box-shadow: 0 10px 24px rgba(0,0,0,.35); pointer-events: none; -webkit-app-region: no-drag;
+    }
+    /* 🆕 VIEW 多段落：顺序平铺／页签方式 随时切换（控件在便利贴正文内，偏好记忆在 localStorage） */
+    .vsr-display { margin: 0; }
+    .vsr-display-toggle {
+      display: flex; gap: 4px; margin: .2em 0 .6em; -webkit-app-region: no-drag; user-select: none;
+    }
+    /* 🆕 桌面专属：计数行（1/44）与模式切换控件（顺序平铺／页签方式）同行——左计数、右开关，节省纵向空间 */
+    .meta-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex: none; padding: 0 12px; -webkit-app-region: drag; }
+    /* 模式切换控件容器：默认隐藏，有控件才显示；仅桌面专属（手机端控件留在正文） */
+    .vsr-head { display: none; flex: none; -webkit-app-region: no-drag; user-select: none; }
+    .vsr-head .vsr-display-toggle { margin: 0; }
+    .vsr-mode-btn {
+      flex: 0 0 auto; cursor: pointer; padding: 2px 10px; border-radius: 999px;
+      border: 1px solid color-mix(in srgb, var(--note-fg) 28%, transparent);
+      background: transparent; color: var(--note-fg, #5b6170);
+      font: 600 11px/1.4 var(--ui-font, system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif);
+      opacity: .8;
+    }
+    .vsr-mode-btn:hover { opacity: 1; }
+    .vsr-mode-btn.vsr-active {
+      background: color-mix(in srgb, #D4AF37 30%, transparent);
+      border-color: #D4AF37; color: var(--note-fg, #1f2430); opacity: 1;
+    }
+    .vsr-tabs { display: none; flex-wrap: wrap; gap: 4px; margin: 0 0 .6em; }
+    .vsr-tab {
+      position: relative;
+      cursor: pointer; padding: 2px 10px; border-radius: 999px;
+      border: 1px solid color-mix(in srgb, var(--note-fg) 24%, transparent);
+      background: transparent; color: var(--note-fg, #5b6170);
+      font: 600 11px/1.4 var(--ui-font, system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif);
+      max-width: 100%; min-width: 0;
+    }
+    /* 标签文字单独成层做省略号截断：.vsr-tab 本身必须 overflow:visible，否则条件 tooltip(::after, top:100%) 会被按钮 overflow:hidden 裁掉 */
+    .vsr-tab-label { display: block; max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .vsr-tab:hover { border-color: #D4AF37; }
+    .vsr-tab.vsr-active {
+      background: color-mix(in srgb, #D4AF37 30%, transparent);
+      border-color: #D4AF37; color: var(--note-fg, #1f2430);
+    }
+    /* 🆕 桌面专属：段落页签固定表头行（JS 把正文 .vsr-display 里的 .vsr-tabs 整体搬到这里，
+       使其像 #vsrHead 的模式切换胶囊一样永远留在表头、滚动内容时不掉）。仅页签方式显示，顺序平铺隐藏。 */
+    .vsr-tabs-head { display: none; flex: none; padding: 0 12px 6px; -webkit-app-region: no-drag; user-select: none; }
+    .vsr-tabs-head.vsr-mode-tabs { display: block; }
+    .vsr-tabs-head .vsr-tabs { display: flex; flex-wrap: wrap; gap: 4px; margin: 0; }
+    /* 顺序平铺（默认）：页签栏隐藏，所有段落堆叠显示（含各自 .vsr-seg-hd 标题） */
+    .vsr-display.vsr-mode-flat .vsr-tabs { display: none; }
+    .vsr-display.vsr-mode-flat .vsr-seg { display: block; }
+    .vsr-display.vsr-mode-flat .vsr-seg-hd { display: block; }
+    /* 页签方式：显示页签栏、隐藏段落内标题、仅显示 active 段落 */
+    .vsr-display.vsr-mode-tabs .vsr-tabs { display: flex; }
+    .vsr-display.vsr-mode-tabs .vsr-seg { display: none; }
+    .vsr-display.vsr-mode-tabs .vsr-seg.vsr-active { display: block; }
+    .vsr-display.vsr-mode-tabs .vsr-seg-hd { display: none; }
     /* 🆕 文档名徽标（外部 include 来源）：金色虚线胶囊，与标签胶囊区分；过长省略，完整名在 title 属性里 */
     .doc-badge {
       display: none; flex: none; max-width: 60%; box-sizing: border-box;
@@ -200,7 +266,7 @@
     }
     .note-refresh-feedback.visible { opacity: 1; transform: translate(-50%, 0); }
     .note-refresh-feedback.error { border-color: rgba(220,38,38,.7); }
-    .meta { padding: 0 12px; font-size: 11px; color: var(--note-fg, #8a8f99); flex: none; }
+    .meta { padding: 0; font-size: 11px; color: var(--note-fg, #8a8f99); flex: none; min-width: 0; }
     /* 子事件进度胶囊「完成/总数」（日期右边；全完成转绿）——与主程式列表行 .ev-sub-progress 同款式 */
     .note-sub-progress { display: inline-block; margin-left: 6px; padding: 1px 8px; border-radius: 999px; font-size: 10px; line-height: 1.5; font-weight: 600; white-space: nowrap; vertical-align: middle; color: var(--note-fg, #33384a); background: rgba(127,127,127,.16); border: 1px solid rgba(127,127,127,.4); }
     .note-sub-progress.all-done { background: rgba(52,199,89,.2); border-color: rgba(52,199,89,.6); color: #2F9E44; }
@@ -411,6 +477,19 @@
       box-shadow: 0 1px 2px rgba(0,0,0,.18);
     }
     .tl-remind-ic { font-size: .95em; line-height: 1; }
+    /* 🆕 收藏（bookmark）渲染：樣式與 remind 一致，僅「外框線改為藍色」＋ 前方加書籤，便於區分提醒與收藏。
+       便利貼窗用 --note-fg/--note-bg 主題變數；note 放 title */
+    .tl-bookmark {
+      display: inline-flex; align-items: center; gap: .3em;
+      margin-right: .3em; padding: 0 .5em;
+      border-radius: 999px; line-height: 1.3; font-size: .9em; font-weight: 600;
+      white-space: nowrap; cursor: help;
+      color: var(--note-fg, #33384a);
+      background: rgba(92,160,210,.42);
+      border: 1px solid #1c7fb8;
+      box-shadow: 0 1px 2px rgba(0,0,0,.18);
+    }
+    .tl-bookmark-ic { font-size: .95em; line-height: 1; display: inline-flex; align-items: center; color: #FFC107; }
     /* 🆕 VIEW 便利贴（🔔 提醒）＝只读投影：把「会改动这张贴资料」的入口全部收起。
        把手平时靠 .visible 控制显隐（hover 才出现），这里用 display 直接压掉，hover 也不会冒出来。
        保留的是浏览与显示类功能：☰ 清单／翻页／搜索定位／颜色·透明度·字号／最小化／缩放／刷新，
@@ -761,7 +840,15 @@
            只在来源不是 calendar.md 正式档时显示，用于一眼认出「草稿便利贴」 -->
       <span class="doc-badge" id="docBadge" role="note"></span>
     </div>
-    <div class="meta" id="meta"></div>
+    <!-- 🆕 多段落 VIEW 便利贴：模式切换控件（顺序平铺／页签方式）与计数行（1/44）同行右对齐。
+         控件由 JS 从正文 .vsr-display 搬到 #vsrHead，单段落／普通便利贴没有此控件时整块隐藏。仅桌面专属。 -->
+    <div class="meta-row" id="metaRow">
+      <div class="meta" id="meta"></div>
+      <div class="vsr-head" id="vsrHead"></div>
+    </div>
+    <!-- 🆕 多段落 VIEW 便利贴「段落页签」固定表头行：JS 把正文 .vsr-display 里的 .vsr-tabs 整体搬到此行，
+         使其像 #vsrHead 的模式切换胶囊一样永远留在表头、滚动内容时不掉。仅桌面专属；无多段落时整块隐藏。 -->
+    <div class="vsr-tabs-head" id="vsrTabs"></div>
     <ul class="tags" id="tags"></ul>
     <!-- 🆕 ＋☐ 下拉选单：子事件（原功能）／用表格网格建立 MD 表格／自由编辑任意文本。
          放在 #note 下而非 #meta 内：meta 每次刷新都会 innerHTML 重绘，选单挂在里面会被冲掉。 -->
@@ -831,11 +918,11 @@
         <button class="mi" id="miImportSettings" title="从 JSON 还原便利贴样式／开关／页次（也认得手机汇出的设定档；会先确认才取代）">📥 载入设定</button>
         <button class="mi" id="miExportSettings" title="把便利贴样式／开关／页次汇出成 JSON（建议存到 calendar 同目录，手机可载入）">📤 汇出设定</button>
       </div>
-      <!-- 🧩 自定义 VIEW 便利贴维护作业：设定「抓哪些行进投影贴」的条件（关键词／标记／行型态），
+      <!-- 🧩 自定义 VIEW 便利贴设定维护作业：设定「抓哪些行进投影贴」的条件（关键词／标记／行型态），
            存 data/view-sticky-rules.json；做好后清单里会多出一张与「🔔 提醒」同类的只读投影贴。
            独立窗体（view-sticky-rules.html）＋独立插件档（main-modules/view-sticky-rules.js），
            这里只是把入口挂在便利贴菜单上（以后也可以挂到别的页面菜单）。 -->
-      <button class="mi" id="miViewRules" title="自定义 VIEW 便利贴：按你输入的条件抓取行程内容，做成「🔔 提醒」那样的投影便利贴（可多张、可启用／关闭／修改／删除）">🧩 自定义 VIEW 便利贴维护作业</button>
+      <button class="mi" id="miViewRules" title="自定义 VIEW 便利贴：按你输入的条件抓取行程内容，做成「🔔 提醒」那样的投影便利贴（可多张、可启用／关闭／修改／删除）">🧩 自定义 VIEW 便利贴设定维护作业</button>
       <!-- 📧 发邮件：把当前这张便利贴的内容经本机邮件服务发出（收件人在浮层里输入） -->
       <button class="mi" id="miEmail" title="把这张便利贴的内容发送邮件">📧 发邮件</button>
       <div class="m-sticky-list" id="mStickyListWrap">
@@ -1039,7 +1126,7 @@
       <div class="vr-cond" id="vrCond"></div>
       <div class="vr-foot">
         <button type="button" class="vr-btn" id="vrClose">关闭</button>
-        <button type="button" class="vr-btn primary" id="vrOpenRules" title="打开自定义 VIEW 便利贴维护作业">⚙ 前往维护作业</button>
+        <button type="button" class="vr-btn primary" id="vrOpenRules" title="打开自定义 VIEW 便利贴设定维护作业">⚙ 前往维护作业</button>
       </div>
     </div>
   </div>

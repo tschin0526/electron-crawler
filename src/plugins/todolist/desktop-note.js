@@ -312,6 +312,7 @@ async function init() {
   document.getElementById('body').innerHTML = html;
   syncUndoneChecksFilter();
   noteApplyHighlight(); // 🆕 依當前定位詞重打高亮
+  refreshNoteViewDisplay(); // 🆕 多段落 VIEW 便利贴：初始渲染后套用记忆的「顺序平铺／页签方式」与 active 段落
   // 新便利贴默认淡黄纸底（仅当用户未手动改过色时）；不再继承事件色，保持纸质便利贴观感
   if (!inst.color) state.color = STICKY_DEF_BG;
   // 勾选框填充色跟随事件色（与日历渲染一致：.ev-md-check.done .ev-cb 用事件色）
@@ -525,7 +526,7 @@ function setupControls() {
   document.getElementById('miOpenTodolist').onclick = (e) => { e.stopPropagation(); closeMenu(); ipcRenderer.invoke('open-todolist-from-note'); };
   // 🤖 唤起 AI 智能控制台（主程序，等同 ./start.sh）：主窗切到 crawler-window 并显示
   document.getElementById('miOpenAiConsole').onclick = (e) => { e.stopPropagation(); closeMenu(); ipcRenderer.invoke('open-ai-console-from-note'); };
-  // 🧩 自定义 VIEW 便利贴维护作业：开独立维护窗（规则窗不依赖这张贴是谁，投影贴里也照样能开）
+  // 🧩 自定义 VIEW 便利贴设定维护作业：开独立维护窗（规则窗不依赖这张贴是谁，投影贴里也照样能开）
   document.getElementById('miViewRules').onclick = (e) => { e.stopPropagation(); closeMenu(); ipcRenderer.invoke('vsr-open'); };
   // 📧 发邮件：收件人浮层 → 直调本机邮件服务（sendStickyEmail）
   document.getElementById('miEmail').onclick = (e) => { e.stopPropagation(); closeMenu(); openStickyEmailDialog(); };
@@ -1197,7 +1198,7 @@ function bindAddCheckTools(saveLabel) {
   };
 }
 // ── 🆕 自动标示术语（与主窗 tlAutoMarkTermsInText 同源规则）：
-//    ① 已存在 [[...]] 保护区不重复标注；② 未标注字串最长匹配优先；③ 大小写敏感精确匹配。
+//    ① 已存在 [[...]] 保护区不重复标注；② 未标注字串最长匹配优先；③ 大小写不敏感精确匹配（字典去重本就不区分大小写）。
 //    字典来源＝主进程 sticky-note-terms（扫描全部日历事件的 [[term...]]，与主窗 tlCollectTerms 同源）。
 //    🆕 流程改为「列出候选项 + 勾选确认」：先展示待替换清单（默认全选），用户确认后才写回编辑框。
 let noteAutoTermState = null;   // { src, accepted:[{start,end,term,marker}], inp }
@@ -1221,6 +1222,7 @@ async function noteAutoMarkTermsInEditBox() {
     return;
   }
   const src = String(inp.value);
+  const srcL = src.toLowerCase();   // 🆕 大小写不敏感匹配：字典去重按 toLowerCase，匹配口径须一致，否则定义过也会因大小写漏标
   // 1) 保护区：已存在的 [[...]] 不在此内标注（已标注的不重复标）
   const protectedSpans = [];
   let m; const br = /\[\[[^\]\n]*\]\]/g;
@@ -1229,10 +1231,10 @@ async function noteAutoMarkTermsInEditBox() {
   // 2) 收集候选命中（端点落入保护区则跳过）
   const cands = [];
   for (const d of dict) {
-    const term = d.term; let from = 0, idx;
-    while ((idx = src.indexOf(term, from)) !== -1) {
-      const end = idx + term.length;
-      if (!inProtected(idx) && !inProtected(end - 1)) cands.push({ start: idx, end: end, term: term, def: d.def });
+    const termL = d.term.toLowerCase(); let from = 0, idx;
+    while ((idx = srcL.indexOf(termL, from)) !== -1) {
+      const end = idx + d.term.length;   // 原始字串长度＝小写长度，定位用原串下標
+      if (!inProtected(idx) && !inProtected(end - 1)) cands.push({ start: idx, end: end, term: d.term, def: d.def });
       from = idx + 1;
     }
   }
@@ -2821,6 +2823,7 @@ function applyNoteContent(arg) {
   document.getElementById('body').innerHTML = html;
   // 🆕 定位高亮：渲染模式下把定位詞以 <mark> 標示在標題與內容
   noteApplyHighlight();
+  refreshNoteViewDisplay(); // 🆕 多段落 VIEW 便利贴：主进程推送刷新重渲染后重新套用记忆的「顺序平铺／页签方式」与 active 段落
   if (keepScroll && bodyElRef) bodyElRef.scrollTop = keepScroll;
   const ev = sourceEvent(KEY);
   if (ev || arg) {
@@ -2921,14 +2924,16 @@ async function showViewRuleInfo(e) {
   subEl.textContent = '';
   m.classList.add('show');
   try {
+    // 🆕 统一拉一次规则档案（内置提醒也优先用存盘里被自定义过的版本，没有才回退引擎默认）
+    const res = await ipcRenderer.invoke('vsr-list');
+    const rules = (res && Array.isArray(res.rules)) ? res.rules : [];
     let rule;
     if (KEY === VIEW_KEY) {
-      // 🔔 内置提醒：条件写死抓 [[remind:]]（见引擎 BUILTIN_REMIND_RULE）
-      rule = (window.ViewStickyRules && ViewStickyRules.builtinRules) ? ViewStickyRules.builtinRules()[0] : null;
+      // 🔔 内置提醒：优先用存盘里被自定义过的内置规则（见引擎 BUILTIN_REMIND_RULE），没有才回退默认
+      const saved = rules.filter((r) => r.id === '__builtin_remind__' || r.builtin === true)[0];
+      rule = saved || (window.ViewStickyRules && ViewStickyRules.builtinRules ? ViewStickyRules.builtinRules()[0] : null);
     } else {
       const ruleId = String(KEY).slice(VIEW_KEY.length + 1); // '__view__:' 之后的部分
-      const res = await ipcRenderer.invoke('vsr-list');
-      const rules = (res && Array.isArray(res.rules)) ? res.rules : [];
       rule = rules.filter((r) => String(r.id) === ruleId)[0] || null;
     }
     if (!rule) {
@@ -2940,7 +2945,7 @@ async function showViewRuleInfo(e) {
     const V = window.ViewStickyRules;
     const norm = (V && V.normalizeRule) ? V.normalizeRule(rule) : rule;
     titleEl.textContent = (norm.title || '(未命名)');
-    const tag = norm.builtin ? '系统内置・只读' : (norm.enabled ? '已启用' : '已关闭');
+    const tag = norm.builtin ? '系统内置' : (norm.enabled ? '已启用' : '已关闭');
     subEl.textContent = tag + ' · 设定档案：view-sticky-rules.json';
     condEl.textContent = (V && V.ruleSummary) ? V.ruleSummary(norm) : '';
   } catch (e) {
@@ -3401,11 +3406,101 @@ async function renderNoteContent() {
   const keepScrollPos = bodyElKeep ? Math.max(0, Math.round(bodyElKeep.scrollTop)) : 0;
   document.getElementById('body').innerHTML = html;
   noteApplyHighlight(); // 🆕 依當前定位詞重打高亮
+  refreshNoteViewDisplay(); // 🆕 多段落 VIEW 便利贴：绑定（一次性事件委托）＋套用记忆的「顺序平铺／页签方式」与 active 段落
   if (keepScrollPos && bodyElKeep) bodyElKeep.scrollTop = keepScrollPos;
   syncUndoneChecksFilter();
   renderMeta(ev);
   renderTags(ev);
   return true;
+}
+// 🆕 多段落 VIEW 便利贴：套用记忆的「顺序平铺／页签方式」并显示 active 段落。
+//   偏好按便利贴 key 记忆在 localStorage（vsr-display-mode:<key> / vsr-display-active:<key>）；
+//   单段落或普通便利贴的 body 里没有 .vsr-display → 直接 no-op，零回归。
+//   ⚠️ 关键：点击监听改成「挂在稳定的 #body 上、一次性事件委托」——body.innerHTML 被翻页（renderFlipPage）
+//      或主进程推送刷新（applyNoteContent）重设后，监听也不会丢；旧写法把监听绑在瞬态 .vsr-display 上，
+//      翻页重渲染后监听随 DOM 一起被销毁，导致桌面点「页签方式」毫无反应（手机端无翻页/刷新重渲染故正常）。
+let noteViewDisplayBound = false;
+function applyNoteViewDisplay() {
+  const key = (typeof KEY !== 'undefined' && KEY) ? KEY : '';   // 模块级 KEY＝当前便利贴 key，作 localStorage 命名空间
+  const body = document.getElementById('body');
+  const disp = body && body.querySelector('.vsr-display');
+  if (!disp) return;
+  const segCount = Math.max(0, parseInt(disp.getAttribute('data-segs') || '0', 10) || 0);
+  const store = (typeof localStorage !== 'undefined') ? localStorage : null;
+  const modeKey = 'vsr-display-mode:' + key, activeKey = 'vsr-display-active:' + key;
+  let mode = (store && store.getItem(modeKey) === 'tabs') ? 'tabs' : 'flat';
+  let active = 0;
+  if (store) { const a = parseInt(store.getItem(activeKey), 10); if (isFinite(a) && a >= 0 && a < segCount) active = a; }
+  disp.classList.toggle('vsr-mode-tabs', mode === 'tabs');
+  disp.classList.toggle('vsr-mode-flat', mode !== 'tabs');
+  // 🆕 页签栏可能被搬到标题栏 #vsrTabs（桌面），故 mode 类也同步到 #vsrTabs，驱动 .vsr-tabs-head 的显隐
+  const tabsHead = document.getElementById('vsrTabs');
+  if (tabsHead) { tabsHead.classList.toggle('vsr-mode-tabs', mode === 'tabs'); tabsHead.classList.toggle('vsr-mode-flat', mode !== 'tabs'); }
+  // 🆕 模式按钮可能已被搬到标题栏 #vsrHead（桌面），故在 #note 范围内查找（兼容正文内与头部两种位置）
+  const noteEl = document.getElementById('note');
+  if (noteEl) noteEl.querySelectorAll('.vsr-mode-btn').forEach((b) => { b.classList.toggle('vsr-active', b.getAttribute('data-mode') === mode); });
+  // 🆕 页签（.vsr-tab）同样可能已被搬到 #vsrTabs（桌面），故在 #note 范围内查找（兼容两种位置）
+  if (noteEl) noteEl.querySelectorAll('.vsr-tab').forEach((t) => { t.classList.toggle('vsr-active', parseInt(t.getAttribute('data-seg'), 10) === active); });
+  disp.querySelectorAll('.vsr-seg').forEach((s) => { s.classList.toggle('vsr-active', parseInt(s.getAttribute('data-seg'), 10) === active); });
+}
+function onBodyViewDisplayClick(e) {
+  const t = e.target.closest && e.target.closest('.vsr-mode-btn, .vsr-tab');
+  if (!t) return;
+  const key = (typeof KEY !== 'undefined' && KEY) ? KEY : '';
+  const store = (typeof localStorage !== 'undefined') ? localStorage : null;
+  const body = document.getElementById('body');
+  const disp = body && body.querySelector('.vsr-display');
+  if (!disp) return;
+  const segCount = Math.max(0, parseInt(disp.getAttribute('data-segs') || '0', 10) || 0);
+  if (t.classList.contains('vsr-mode-btn')) {
+    const mode = t.getAttribute('data-mode') === 'tabs' ? 'tabs' : 'flat';
+    if (store) store.setItem('vsr-display-mode:' + key, mode);
+  } else if (t.classList.contains('vsr-tab')) {
+    const s = parseInt(t.getAttribute('data-seg'), 10);
+    if (isFinite(s) && s >= 0 && s < segCount) { if (store) store.setItem('vsr-display-active:' + key, String(s)); }
+  }
+  applyNoteViewDisplay();
+}
+function bindNoteViewDisplayOnce() {
+  if (noteViewDisplayBound) return;
+  const note = document.getElementById('note');
+  if (!note) return;
+  // 🆕 挂在稳定的 #note 上（不是 #body）：模式切换控件可能被搬到标题栏 #vsrHead，
+  //    #body 只覆盖正文，会漏掉头部控件；#note 是头部与正文共同的稳定祖先。
+  note.addEventListener('click', onBodyViewDisplayClick);
+  noteViewDisplayBound = true;
+}
+// 每次重设 body.innerHTML 后调用：确保监听已绑（一次性）且套用记忆的模式/active 段落
+function refreshNoteViewDisplay() {
+  bindNoteViewDisplayOnce();
+  applyNoteViewDisplay();
+  placeViewDisplayToggleInHeader(); // 🆕 桌面：把模式切换控件搬到标题栏下方（VIEW 徽标之下），腾出正文空间
+}
+
+// 🆕 桌面专属：把正文 .vsr-display 里的 .vsr-display-toggle（顺序平铺／页签方式）搬到标题栏 #vsrHead，
+//   置于 VIEW 徽标右下方；手机端不调用此函数，控件留在正文。每次重渲染先清空 #vsrHead 再搬入新节点，
+//   避免翻页/刷新重渲染产生重复控件。单段落／普通便利贴没有 .vsr-display → 整块隐藏。
+function placeViewDisplayToggleInHeader() {
+  const head = document.getElementById('vsrHead');
+  const tabsHead = document.getElementById('vsrTabs');
+  const body = document.getElementById('body');
+  const disp = body && body.querySelector('.vsr-display');
+  // 无多段落控件 → 两处表头控件整块隐藏并清空（避免翻页/刷新重渲染残留旧节点）
+  if (!head) { /* noop */ } else if (!disp) { head.innerHTML = ''; head.style.display = 'none'; }
+  if (!tabsHead) { /* noop */ } else if (!disp) { tabsHead.innerHTML = ''; tabsHead.className = 'vsr-tabs-head'; }
+  if (!head || !disp) return;
+  // 🆕 模式切换控件（顺序平铺／页签方式）搬到 #vsrHead
+  head.innerHTML = '';
+  const toggle = disp.querySelector('.vsr-display-toggle');
+  if (!toggle) { head.style.display = 'none'; }
+  else { head.appendChild(toggle); head.style.display = 'flex'; }   // 节点整体搬移（委托监听挂在 #note 上，移出 #body 仍生效）
+  // 🆕 段落页签栏（.vsr-tabs）搬到 #vsrTabs，使其像模式切换胶囊一样固定表头、滚动时不掉
+  if (tabsHead) {
+    tabsHead.innerHTML = '';
+    const tabs = disp.querySelector('.vsr-tabs');
+    if (!tabs) { tabsHead.className = 'vsr-tabs-head'; }   // 无页签（理论上多段落必有，保险）
+    else { tabsHead.appendChild(tabs); }                    // 节点整体搬移；显隐由 applyNoteViewDisplay 同步的 mode 类驱动
+  }
 }
 // 切换内容模式：edit=true 进编辑（textarea 填原始 notes）/ false 回渲染（重新取最新 HTML）
 async function setEditMode(edit) {
@@ -4646,6 +4741,7 @@ async function renderFlipPage(i) {
   // 🆕 移除 raw 原文兜底：html 缺失时留白，绝不以未渲染 Markdown 源呈现（如 "- [ ] 11111"）。
   document.getElementById('body').innerHTML = html;
   noteApplyHighlight(); // 🆕 依當前定位詞重打高亮
+  refreshNoteViewDisplay(); // 🆕 多段落 VIEW 便利贴：翻页重渲染后重新套用记忆的「顺序平铺／页签方式」与 active 段落
   syncUndoneChecksFilter();
   applyColor();
   applyContentFont();
