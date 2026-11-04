@@ -405,7 +405,15 @@
 //       calStickyRenderPage 对 VIEW 改用 html、新增 calStickyInitViewDisplay 点击切换；style.css 补 .vsr-* 样式。
 //       /vsr.js 引擎 buildRef 多段落包 .vsr-display（桌面 sticky-note-html IPC 与 LITE 同源），故 bump + 刷新 ?v 让手机重拉；
 //       APP_VERSION/manifest 1.10.15→1.10.16。
-const CACHE_NAME = 'md-editor-lite-v200';
+// v201（2026-11-04）：修 VIEW 投影贴「非 checkbox 单元」漏做建立日／截止／完成标记转换，致 [[cr:…]] 以原文显示
+//       （普通便利贴走母本 tlRenderNoteMarkersLines 已正确）。/vsr.js 引擎 nonTaskUnitHtml 补 noteMarkersLines
+//       （逐行、跳过代码围栏），bump + 刷新 ?v 戳让手机重拉；顺手把落后的 app.js APP_VERSION 1.10.15
+//       与 manifest 1.10.16 一并拉齐到 1.10.17。
+// v202（2026-11-04）：行程編輯窗體新增「唯讀模式」——被 include 的外部檔行程（ev.ro）不再 toast 拒絕，
+//       改開「檢視行程（唯讀）」：欄位 disabled／備註 readOnly、隱藏寫入與刪除、金色唯讀橫幅標來源檔；
+//       calSetEventFormReadonly 為單一可信來源，saveEventForm／deleteEventFromForm／closeEventForm 都有守衛。
+//       calendar-editor.js / index.html / style.css 改，bump + 刷新 ?v 戳讓手機重拉；APP_VERSION/manifest 1.10.17→1.10.18。
+const CACHE_NAME = 'md-editor-lite-v202';
 const ASSETS = [
   './',
   './index.html',

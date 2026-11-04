@@ -1163,7 +1163,7 @@ function calRenderNotes(notes, uid, forceEditable) {
     out += '<div class="md-unit"><button type="button" class="md-unit-edit" title="編輯' +
       calMdUnitTypeName(b.type) + '" onclick="calOpenEditBlockDialog(event,\'' + escapeHtml(uid) +
       '\',' + b.start + ',' + b.end + ',\'' + b.type + '\')">✎</button>' +
-      renderMarkdown(calRenderTermDefs(chunk)) + '</div>';
+      renderMarkdown(calRenderTermDefs(calRenderNoteMarkersLines(chunk))) + '</div>';
   });
   return out;
 }
@@ -1238,6 +1238,15 @@ function calRenderNoteMarkers(text) {
     .replace(/\[\[(?:dl:)?(\d{4}-\d{2}-\d{2})\]\]/g, '📅 $1')
     .replace(/\[\[cp:(\d{4}-\d{2}-\d{2})\]\]/g, '✅ $1');
 }
+// 逐行套用 cr/dl/cp 顯示轉換（跳過代碼圍欄）；讓「非 checkbox 行」也能正確渲染 [[cr:…]]→🆕（與桌面 tlRenderNoteMarkersLines 同口徑）
+function calRenderNoteMarkersLines(text) {
+  let inFence = false;
+  return String(text).split('\n').map(function (line) {
+    if (/^\s*(```|~~~)/.test(line)) { inFence = !inFence; return line; }
+    if (inFence) return line;
+    return calRenderNoteMarkers(line);
+  }).join('\n');
+}
 function calNoteCheckLineHtml(line, uid, i, canEdit) {
   const m = line.match(/^(\s*)-\s+\[([ xX])\]\s?(.*)$/);
   if (!m) return line;
@@ -1265,7 +1274,9 @@ function calNotesWithChecks(text, uid, canEdit) {
   return text.split('\n').map((line, i) => {
     if (/^\s*```/.test(line)) { inFence = !inFence; return line; }
     if (inFence) return line;
-    return calNoteCheckLineHtml(line, uid, i, canEdit);
+    // checkbox 行由 calNoteCheckLineHtml 內建 cr 渲染；其餘行（段落/列表/引用…）也套用 cr/dl/cp 顯示轉換（與桌面同口徑）
+    if (/^\s*[-*+]\s+\[[ xX]\]/.test(line)) return calNoteCheckLineHtml(line, uid, i, canEdit);
+    return calRenderNoteMarkers(line);
   }).join('\n');
 }
 // 🖱 日/週時間網格雙擊空白處快速新增：15 分鐘取整，默認時長 1 小時；全天條＝日期(全天)
@@ -1502,15 +1513,16 @@ function calShowEventMenu(anchorEl, uid) {
   menu.setAttribute('role', 'menu');
   menu.setAttribute('data-uid', uid);
   menu._anchor = anchorEl;
-  // 📎 多檔聯運：只讀（ro）事件只給「詳情」，隱藏編輯/刪除
+  // 🆕 多檔聯運：ro 事件給「檢視（唯讀）」，刪除依舊不給（2026-11-04）
   calRefreshAll();
   const ev = (state.calEvents || []).find((x) => x.uid === uid);
   const ro = !!(ev && ev.ro);
   menu.innerHTML =
     '<button type="button" data-act="detail" role="menuitem">🔍 详情</button>' +
-    (ro ? '' :
-      '<button type="button" data-act="edit" role="menuitem">✏️ 编辑</button>' +
-      '<button type="button" data-act="del" role="menuitem">🗑 删除</button>') +
+    (ro
+      ? '<button type="button" data-act="edit" role="menuitem">🔒 检视（只读）</button>'
+      : '<button type="button" data-act="edit" role="menuitem">✏️ 编辑</button>' +
+        '<button type="button" data-act="del" role="menuitem">🗑 删除</button>') +
     '<button type="button" data-act="cancel" role="menuitem">✕ 取消</button>';
   document.body.appendChild(menu);
   calMenuEl = menu;
@@ -4039,9 +4051,7 @@ function onEvListClick(e) {
   const editBtn = e.target.closest('[data-ev-edit]');
   if (editBtn) {
     const uid = editBtn.getAttribute('data-ev-edit');
-    // 📎 多檔聯運：只讀（ro）事件不可編輯
-    const ev = (state.calEvents || []).find((x) => x.uid === uid);
-    if (ev && ev.ro) { showToast('行程本體來自被包含的檔案，不可編輯（便利貼內容可直接修改）', 'error'); return; }
+    // 🆕 多檔聯運：ro 事件不再拒絕，openEventForm 會開成「檢視行程（唯讀）」窗體（2026-11-04）
     // 触屏：点事件改弹小选单（编辑 / 详情），不再直接开表单；桌面保持点开表单
     if (calCanHover.matches) openEventForm(uid);
     else calShowEventMenu(editBtn, uid);
@@ -4082,24 +4092,27 @@ function onEvListDblClick(e) {
 function openEventForm(uid, defaultDate, pre) {
   calHideTip();
   if (!isCalendarMd()) return;
-  // 📎 多檔聯運：先用併集定位（才能識別 ro 事件）；只讀事件不允許編輯
+  // 📎 多檔聯運：先用併集定位（才能識別 ro 事件）。
+  //    🆕 ro 事件不再 toast 拒絕，而是開「檢視行程（唯讀）」窗體（與桌面同口徑，2026-11-04）。
   calRefreshAll();
+  let roEv = null;
   if (uid) {
-    const roEv = state.calEvents.find(x => x.uid === uid);
-    if (roEv && roEv.ro) { showToast('行程本體來自被包含的檔案，不可編輯（便利貼內容可直接修改）', 'error'); return; }
+    const hit = state.calEvents.find(x => x.uid === uid);
+    if (hit && hit.ro) roEv = hit;
   }
   state.calEvents = parseCalendarEvents(elements.editor.value);
   renderCalTagOptions();
   state.evFormUid = null;
-  let ev = null;
-  if (uid) {
+  // ro 事件不在主檔解析結果裡，直接用上面的併集快照帶入表單
+  let ev = roEv;
+  if (uid && !ev) {
     ev = state.calEvents.find(x => x.uid === uid) || null;
     if (!ev) { showToast('找不到該條行程（內容可能已被修改）', 'error'); return; }
-    state.evFormUid = uid;
   }
+  if (uid) state.evFormUid = uid;
   const p = pre || {}; // 🖱 雙擊空白快速新增時的預填：{ allDay, startTime, endTime }
   const today = calendarFmtDate(new Date());
-  elements.evFormTitle.textContent = uid ? '編輯行程' : '新增行程';
+  // 標題／刪除鈕顯隱統一交給 calSetEventFormReadonly（新增／編輯／唯讀 三態一次判完）
   elements.evFTitle.value = ev ? ev.title : '';
   elements.evFDate.value = ev ? ev.date : (defaultDate || (state.calMode === 'month' ? state.calSelectedDate : today) || today);
   elements.evFEndDate.value = ev ? (ev.endDate || '') : '';
@@ -4141,13 +4154,53 @@ function openEventForm(uid, defaultDate, pre) {
   calRenderEvTodoLinkPanel();
   if (elements.evFTodoInput) elements.evFTodoInput.value = '';
   elements.evFNotes.value = ev ? ev.notes : '';
-  elements.evFormDelete.style.display = uid ? '' : 'none';
   renderEvColorSwatches();
+  // ⚠️ 唯讀態最後才套：上面 calOnRepeatModeChange / 全天 disabled / renderEvColorSwatches 會重設或重建控件。
+  calSetEventFormReadonly(!!roEv, roEv ? (roEv.src || '') : '');
   elements.evFormOverlay.style.display = 'flex';
-  elements.evFTitle.focus();
+  if (!roEv) elements.evFTitle.focus();
   // 採集表單原始值快照——closeEventForm 前比對是否有改動
   calFormBaseline = calSnapshotEventForm();
   console.log('[openEventForm] baseline采了 len=' + calFormBaseline.length + ' dirtyNow=' + calIsEventFormDirty());
+}
+
+// 🆕 行程窗體「唯讀模式」單一可信來源（與桌面 tlSetEventFormReadonly 同口徑，2026-11-04）：
+//    被 include 的外部檔行程（ev.ro）可開窗檢視，但所有寫入口關掉。
+//    · input / select / button → disabled；textarea → readOnly（仍可選取複製、卷動）
+//    · 顏色 / 標籤 / Todo 等非表單控件 → overlay 的 .is-readonly CSS 關 pointer-events
+//    · 「關閉」鈕永不 disabled；寫入 / 刪除直接隱藏
+function calSetEventFormReadonly(ro, src) {
+  const ov = elements.evFormOverlay;
+  if (!ov) return;
+  const on = !!ro;
+  state.evFormReadonly = on;
+  ov.classList.toggle('is-readonly', on);
+  ov.querySelectorAll('input, select, textarea, button').forEach((el) => {
+    if (el.id === 'ev-form-cancel') { el.disabled = false; return; }
+    if (el.tagName === 'TEXTAREA') { el.readOnly = on; el.disabled = false; }
+    else el.disabled = on;
+  });
+  const title = elements.evFormTitle;
+  if (title) title.textContent = on ? '檢視行程（唯讀）' : (state.evFormUid ? '編輯行程' : '新增行程');
+  const banner = document.getElementById('ev-form-ro-banner');
+  if (banner) {
+    banner.style.display = on ? '' : 'none';
+    banner.textContent = on
+      ? ('🔒 唯讀 · 來自被包含的外部檔 ' + (src || 'calendar-*.md') + '（僅供檢視；如需修改請開啟該檔案）')
+      : '';
+  }
+  const hint = document.getElementById('ev-form-hint');
+  if (hint) hint.textContent = on
+    ? '此窗體不寫回任何檔案；便利貼內容仍可直接在便利貼修改並寫回來源檔。'
+    : '寫入後按頂欄「保存」，在分享面板選「儲存到檔案」→ 覆蓋原檔';
+  if (elements.evFormDelete) elements.evFormDelete.style.display = on ? 'none' : (state.evFormUid ? '' : 'none');
+  if (elements.evFormSave) elements.evFormSave.style.display = on ? 'none' : '';
+  if (elements.evFormCancel) elements.evFormCancel.textContent = on ? '關閉' : '取消';
+  // 恢復可編輯時重算「全天」對開始/結束時間的連帶 disabled
+  if (!on) {
+    elements.evFStart.disabled = elements.evFAllday.checked;
+    elements.evFEnd.disabled = elements.evFAllday.checked;
+  }
 }
 
 function renderEvColorSwatches() {
@@ -4157,6 +4210,7 @@ function renderEvColorSwatches() {
   ).join('');
   // 色板選擇（一次性委派，openEventForm 每次重建）
   elements.evFColors.onclick = (e) => {
+    if (state.evFormReadonly) return;
     const sw = e.target.closest('.sw[data-color]');
     if (!sw) return;
     state.evFormColor = sw.getAttribute('data-color');
@@ -4206,7 +4260,8 @@ function calIsEventFormDirty() {
 function closeEventForm(skipDirtyGuard) {
   // 行程表單有未保存改動 → 先確認（與便利貼編輯模式同口徑）
   console.log('[closeEventForm] called skip=' + skipDirtyGuard + ' baseline=' + (calFormBaseline ? calFormBaseline.slice(0,40) : 'null') + ' dirty=' + calIsEventFormDirty());
-  if (!skipDirtyGuard && calIsEventFormDirty()) {
+  // 🆕 唯讀窗體不做 dirty 守門：控件全 disabled，不可能有改動；也避免誤彈「先保存」把資料寫回主檔。
+  if (!skipDirtyGuard && !state.evFormReadonly && calIsEventFormDirty()) {
     const ok = window.confirm('🚨 行程內容有未保存的改動\n\n【確定】＝先保存（寫入編輯緩衝）再關閉\n【取消】＝留在表單（不丟失改動）');
     if (ok) {
       // 保存失敗（標題空、區塊位置變了等）→ 留在表單
@@ -4218,6 +4273,8 @@ function closeEventForm(skipDirtyGuard) {
   state.evFormUid = null;
   state.evFormColor = null;
   state.evFormTodoIds = [];
+  // 🆕 復位唯讀態：下一張窗體可能是主檔可編輯行程，不能帶著 disabled / 隱藏按鈕進去。
+  calSetEventFormReadonly(false, '');
 }
 
 // ===== ## EVENT(REPEAT) 表單控件 =====
@@ -4282,6 +4339,8 @@ function calNormalizeYmd(v) {
 // 表單「寫入編輯內容」：校驗 → upsert 工作副本 → 重新序列化整份 calendar.md → 寫回編輯器緩衝（isDirty = true）
 // ⚠️ 不直接落盤：iOS 無法直接寫原文件，走現有「保存」流程（分享面板 → 儲存到檔案 → 覆蓋）
 function saveEventForm(closeAfterSave = true) {
+  // 🆕 唯讀窗體硬守衛：按鈕雖已隱藏，仍擋住 onclick 直呼 / 快捷鍵旁路，絕不寫回任何檔案。
+  if (state.evFormReadonly) return false;
   const title = elements.evFTitle.value.trim();
   let date = elements.evFDate.value;
   let endDate = elements.evFEndDate.value;
@@ -4373,6 +4432,7 @@ function deleteEventByUid(uid) {
 }
 
 function deleteEventFromForm() {
+  if (state.evFormReadonly) return;   // 🆕 唯讀窗體：刪除鈕已隱藏，這裡再擋一次旁路呼叫
   if (!state.evFormUid) return;
   const uid = state.evFormUid;
   closeEventForm(true);   // 刪除 → 跳過 dirty guard（反正要丟棄）

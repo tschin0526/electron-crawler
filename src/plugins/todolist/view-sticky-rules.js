@@ -548,6 +548,25 @@
     return groups.map((g) => groupHeadMd(g.ev, deps) + (g.hits && g.hits.length ? '\n' + g.hits.map((h) => h.raw).join('\n') : '')).join('\n\n');
   }
 
+  // 从一行／一整块原文里抽取 [[cr:YYYY-MM-DD]] 建立日期标记（没有则返回 ''）。
+  //   排序用：行事件按自身 cr 日期排，没有 cr 的回退到来源行程的日期（在调用处拼）。
+  function extractCrDate(raw) {
+    const m = String(raw || '').match(/\[\[cr:(\d{4}-\d{2}-\d{2})\]\]/);
+    return m ? m[1] : '';
+  }
+  // 🆕 逐行套用「建立日／截止／完成」显示转换（跳过代码围栏），与母本
+  //   calendar-editor.js::tlRenderNoteMarkersLines 完全同口径。
+  //   deps 只提供单行的 tlRenderNoteMarkers，故在此自己逐行包一层，不要求主窗多传一个 dep。
+  //   ⚠️ 非 checkbox 单元原本只走 D.markdown(D.termDefs(chunk))，漏了这一层 →
+  //      [[cr:…]] 会以原文显示（普通便利贴走母本已正确），VIEW 投影贴因而与正式贴不一致。
+  function noteMarkersLines(text, D) {
+    let inFence = false;
+    return String(text == null ? '' : text).split('\n').map((line) => {
+      if (/^\s*(```|~~~)/.test(line)) { inFence = !inFence; return line; }
+      if (inFence) return line;
+      return D.noteMarkers(line);
+    }).join('\n');
+  }
   // ===== 分组标题（来源行程的标题）渲染成「可点整块＋📍 切换按钮」=====
   //   与标题命中项的「📍 切换回来源」同一机制：点击唤起主程式打开该来源行程表单
   //   （noteFindSameOpenSourceEvent → wake-main-from-note → tlOpenEventForm(uid)）。
@@ -565,7 +584,7 @@
     const dot = '<button type="button" class="vsr-goto-source" data-src="' + D.esc(src) +
       '" title="切换到来源：' + stitle + '"' +
       ' style="display:inline-flex;flex:none;width:13px;height:13px;padding:0;margin:0;align-items:center;justify-content:center;vertical-align:-2px;border:0;border-radius:50%;background:var(--gold,#D4AF37);color:#fff;font-size:9px;line-height:1;cursor:pointer;opacity:.85;-webkit-app-region:no-drag;">↪</button>';
-    return '<div class="vsr-group-head" data-src="' + D.esc(src) + '" title="点击切换到来源：' + stitle + '"' +
+    return '<div class="vsr-group-head" data-src="' + D.esc(src) + '" data-group-date="' + D.esc(String((ev && ev.date) || '')) + '" title="点击切换到来源：' + stitle + '"' +
       ' style="cursor:pointer;display:flex;align-items:center;gap:4px;flex-wrap:nowrap;margin:2px 0 4px;">' + dot + inner + '</div>';
   }
 
@@ -583,9 +602,12 @@
     const dot = '<button type="button" class="ev-md-edit" title="右键：复制／找出相同的项目"' +
       ' data-uid="' + D.esc(selfKey) + '" data-src="' + D.esc(h.uid || '') +
       '" data-stitle="' + stitle + '" data-line="' + h.line + '" data-text="' + D.esc(h.text) + '">\u270e</button>';
-    return m[1] + '<span class="ev-md-check' + (done ? ' done' : '') + '">' + dot +
+    const cr = extractCrDate(h.raw);
+    const sd = cr || String((ev && ev.date) || '');
+    return '<div class="vsr-sort-unit" data-sort-date="' + D.esc(sd) + '" data-cr-date="' + D.esc(cr) + '">' + m[1] +
+      '<span class="ev-md-check' + (done ? ' done' : '') + '">' + dot +
       '<span class="ev-cb">' + (done ? '\u2713' : '') + '</span>' +
-      '<span class="ev-md-check-text">' + D.inline(D.noteMarkers(m[3])) + '</span></span>';
+      '<span class="ev-md-check-text">' + D.inline(D.noteMarkers(m[3])) + '</span></span></div>';
   }
   // 非 task 行（段落／列表项／引用／标题／含 [[…]] 胶囊的行）：投影贴里同样给编辑小圆点，
   //   但「最小 MD 单元」口径必须与来源便利贴（calendar-editor.js::tlSplitMdBlocks）一致——
@@ -632,9 +654,11 @@
     // 🆕 data-start/data-end：与 tlRenderNotes 的 .md-unit 同口径（0-based 行区间），
     //    让「找出相同的项目 → 切换」能在便利贴窗里用同一个选择器定位到这个单元并闪烁。
     const last = list[list.length - 1];
-    return '<div class="md-unit" data-start="' + (first.line != null ? first.line : '') +
+    const cr = extractCrDate(chunk);
+    const sd = cr || String((ev && ev.date) || '');
+    return '<div class="vsr-sort-unit" data-sort-date="' + D.esc(sd) + '" data-cr-date="' + D.esc(cr) + '"><div class="md-unit" data-start="' + (first.line != null ? first.line : '') +
       '" data-end="' + (last.line != null ? last.line : (first.line != null ? first.line : '')) + '">' +
-      dot + D.markdown(D.termDefs(chunk)) + '</div>';
+      dot + D.markdown(D.termDefs(noteMarkersLines(chunk, D))) + '</div></div>';
   }
   function groupsToHtml(groups, selfKey, deps) {
     const D = makeDeps(deps);

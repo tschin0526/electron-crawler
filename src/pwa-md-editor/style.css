@@ -1069,6 +1069,19 @@ body {
 .ev-todo-add-row button:active { background: var(--primary); color: #fff; }
 .ev-form-actions { display: flex; align-items: center; gap: 10px; margin-top: 12px; }
 .ev-form-hint { margin-top: 10px; font-size: 11px; line-height: 1.5; color: var(--text-secondary); }
+/* 🆕 行程窗體「唯讀模式」（被 include 的外部檔）：非表單控件關點擊，文字框仍可選取複製（readOnly） */
+.ev-form-ro-banner {
+  margin: -4px 0 12px; padding: 6px 10px; border: 1px dashed #f5c518; border-radius: 8px;
+  background: rgba(245, 197, 24, .08); color: #b8860b; font-size: 12px; line-height: 1.5;
+}
+.ev-form-overlay.is-readonly .ev-f-colors,
+.ev-form-overlay.is-readonly .ev-tag-picker,
+.ev-form-overlay.is-readonly .ev-todo-link-panel,
+.ev-form-overlay.is-readonly .ev-todo-add-row { pointer-events: none; opacity: .55; }
+.ev-form-overlay.is-readonly input:disabled,
+.ev-form-overlay.is-readonly select:disabled { opacity: .72; cursor: default; }
+.ev-form-overlay.is-readonly textarea[readonly] { cursor: text; }
+.ev-form-overlay.is-readonly .ev-form-hint { color: #b8860b; }
 
 /* ===== 📊 事件統計彈層 ===== */
 .ev-stats-box { max-width: min(1080px, 96vw); }

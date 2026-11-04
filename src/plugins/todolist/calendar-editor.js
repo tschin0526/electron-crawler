@@ -79,11 +79,19 @@
     let tlUndoneScrollResult = null;   // 测试 seam：undone 勾选切换后实际滚动到的日期组（null＝无列表/无锚点）
     let tlEvFormTodoIds = [];   // 表单内「关联 Todo 卡片」临时列表（仅编辑期，不污染存档对象）
     let tlEvFormUid = null;
+    // 🆕 编辑窗体来源：true＝从桌面便利贴唤起（tlOnStickyOpenEvent 传 pre.fromNote）。
+    //    关闭窗体后必须滚动回该行程；从主画面自己点「编辑」开的窗体为 false，关闭后原地不动。
+    //    （用户 2026-11-04：主画面编辑关闭不要滚动画面；便利贴编辑关闭要滚到该行程）
+    let tlEvFormFromNote = false;
     let tlEvFormColor = null;
     let tlEvFormSticky = 0;   // 🆕 桌面便利贴 instance 数（表单临时值，不污染存档对象）
     // 🆕 新增行程的「写入目标」：'' = calendar.md（主文件，走缓冲）；否则 = 来源 include 档文件名（直接追加落盘）。
     //    只在「新增」时有意义；编辑既有行程时恒为 ''（编辑 include 行程仍未开放，见 tlOpenEventForm 的 ev.ro 拦截）。
     let tlEvFormTarget = '';
+    // 🆕 只读窗体：被 include 的外部 calendar-*.md 行程（ev.ro）可「检视」但不可写。
+    //    与 tlDiaryFormReadonly 同口径；DOM 状态统一由 tlSetEventFormReadonly 控管（开窗 / 关窗都走它）。
+    let tlEvFormReadOnly = false;
+    let tlEvFormReadOnlySrc = '';
 
     // 表单内「＋ CheckBox」按钮旁的便利贴小图标：sticky>0 才显示（开表单时载入 + sticky 字段改动时实时同步）
     function tlSyncStickyFlag() {
@@ -1290,6 +1298,26 @@
           });
         }
       });
+      // 🆕 临时便利贴：仅本会话、不落盘；右键「临时开启为便利贴」加入的普通行程（sticky=0）
+      tlTempStickyUids.forEach(function (uid) {
+        const ev = list.find(function (e) { return e && e.uid === uid; });
+        if (!ev) return;
+        if ((parseInt(ev.sticky, 10) || 0) > 0) return; // 已正式设为便利贴 → 交给上面那段
+        const key = ev.uid || ((ev.title || '') + '|' + (ev.date || ''));
+        const html = (typeof tlRenderNotes === 'function') ? tlRenderNotes(ev.notes, ev.uid || key, true, ev) : '';
+        const titleHtml = (typeof tlRenderInlineMarkdown === 'function') ? tlRenderInlineMarkdown(ev.title || '') : '';
+        const titleNode = document.createElement('div');
+        titleNode.innerHTML = titleHtml;
+        const title = (titleNode.textContent || titleNode.innerText || ev.title || '').replace(/\s+/g, ' ').trim();
+        out.push({
+          key: key, idx: 0, html: html, titleHtml: titleHtml, title: title,
+          date: ev.date || '', endDate: ev.endDate || '',
+          color: ev.color || '', done: !!ev.done, tags: Array.isArray(ev.tags) ? ev.tags : [],
+          notes: ev.notes || '',
+          src: ev.ro ? String(ev.src || '') : '',
+          temp: true
+        });
+      });
       return out;
     }
     // 🆕 主程式事件变更后，把便利贴最新状态推给主进程（再由主进程中转给便利贴窗）
@@ -1298,6 +1326,7 @@
     //      事后新增／减少的便利贴永远进不了翻页清单（症状：翻页窗「第 9 / 9 张」，
     //      而 ☰ 清单现场查询已经 12 张；点清单第 12 项才把整份重开、数字才对上）。
     let tlLastStickySet = '';   // 上次推过的便利贴集合指纹（有序 key#idx）
+    let tlTempStickyUids = new Set();   // 🆕 临时便利贴：本会话内存持有、未写入 calendar.md 的普通行程 uid 集合
     // 便利贴清单要用「实时」事件全集：行程视图没重绘过时 tlCalEvents 可能是旧快照
     //   （例如刚在 include 档里新建完，calEventsView 已关 → tlRenderEventsContent 没跑），
     //   那样 refs 里就没有新贴、指纹不变 → 主进程收不到 sync → 翻页清单永远少一张。
@@ -1351,6 +1380,157 @@
       }
       refs.forEach((ref) => { window.electronAPI.send('sticky-note-refresh', ref); });
     }
+
+    // ========== 🆕 临时便利贴：把普通行程（sticky=0）临时开成桌面便利贴，不写入 calendar.md ==========
+    function tlInjectTempStickyStyle() {
+      if (document.getElementById('tlTempStickyStyle')) return;
+      const s = document.createElement('style');
+      s.id = 'tlTempStickyStyle';
+      s.textContent =
+        // 只描「卡片容器」，不描备注子行的小圆点（.md-unit-edit / .ev-cb 等也都带 data-uid）
+        '.ev-item.tl-temp-sticky,.ev-chip.tl-temp-sticky,.ev-block.tl-temp-sticky,.tl-repeat-ov-item.tl-temp-sticky{outline:2px dashed #f5c518;outline-offset:-2px}' +
+        // 列表行标题上的「📌 临时便利贴」按钮：与既有 ev-sticky-flag 并列，虚线框＝临时
+        '.ev-item .ev-title .ev-temp-sticky-btn{display:inline-flex;align-items:center;justify-content:center;box-sizing:border-box;min-width:22px;min-height:22px;padding:2px 4px;border:1px dashed #f5c518;border-radius:999px;background:transparent;color:inherit;font-size:11px;line-height:1;cursor:pointer;opacity:.72;margin-left:2px}' +
+        '.ev-item .ev-title .ev-temp-sticky-btn:hover{opacity:1;background:rgba(245,197,24,.14)}' +
+        '.ev-item .ev-title .ev-temp-sticky-btn.active{opacity:1;background:rgba(245,197,24,.22);border-style:solid}' +
+        '.tl-event-ctx-menu{position:fixed;z-index:9999;min-width:170px;background:var(--ev-card,#1e293b);color:var(--ev-text,#e2e8f0);border:1px solid var(--ev-border,#334155);border-radius:10px;box-shadow:0 6px 24px rgba(0,0,0,.35);padding:6px;font-size:13px}' +
+        '.tl-event-ctx-menu button{display:block;width:100%;text-align:left;background:transparent;border:0;color:inherit;padding:7px 10px;border-radius:6px;cursor:pointer;font-size:13px}' +
+        '.tl-event-ctx-menu button:hover{background:var(--ev-hover,#334155)}';
+      document.head.appendChild(s);
+    }
+    // 卡片容器选择器（避开同样带 data-uid 的备注子行元素）
+    function tlTempStickyCardQuery(uid) {
+      const q = String(uid).replace(/"/g, '\\"');
+      return ['.ev-item[data-uid="' + q + '"]', '.ev-chip[data-uid="' + q + '"]',
+              '.ev-block[data-uid="' + q + '"]', '.tl-repeat-ov-item[data-uid="' + q + '"]'].join(',');
+    }
+    // 同步「临时便利贴」的视觉状态：卡片描边 + 列表行按钮文字/高亮（重绘后由 tlAfterCalRender 重刷）
+    function tlRefreshTempStickyMarks() {
+      tlInjectTempStickyStyle();
+      document.querySelectorAll('.tl-temp-sticky').forEach(function (el) { el.classList.remove('tl-temp-sticky'); });
+      document.querySelectorAll('.ev-temp-sticky-btn').forEach(function (btn) {
+        const on = tlIsTempSticky(btn.getAttribute('data-uid'));
+        btn.classList.toggle('active', on);
+        btn.title = on ? '已临时开启为便利贴 · 点击关闭（仅本会话，未写入 calendar.md）'
+                       : '临时开启为便利贴（仅本会话，未写入 calendar.md）';
+        btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+      });
+      tlTempStickyUids.forEach(function (uid) {
+        document.querySelectorAll(tlTempStickyCardQuery(uid)).forEach(function (el) {
+          if (el.classList) el.classList.add('tl-temp-sticky');
+        });
+      });
+    }
+    function tlIsTempSticky(uid) { return !!uid && tlTempStickyUids.has(uid); }
+    // 列表行 📌 按钮：已临时开启则关闭，否则开启
+    async function tlToggleTempSticky(uid) {
+      if (tlIsTempSticky(uid)) await tlCloseTempSticky(uid);
+      else await tlOpenEventAsTempSticky(uid);
+    }
+    // 临时开启为便利贴（仅本会话，不落盘）
+    async function tlOpenEventAsTempSticky(uid) {
+      if (!uid) return;
+      const ev = (typeof tlCalEvents !== 'undefined' && Array.isArray(tlCalEvents)) ? tlCalEvents.find(function (e) { return e && e.uid === uid; }) : null;
+      if (!ev) { if (typeof showToast === 'function') showToast('找不到该行程（内容可能已被修改）', 'danger'); return; }
+      if ((parseInt(ev.sticky, 10) || 0) > 0) { await tlFocusStickyNote(uid); return; } // 已是正式便利贴 → 直接跳转
+      tlTempStickyUids.add(uid);
+      if (typeof tlUpdateStickyBadge === 'function') tlUpdateStickyBadge();
+      tlRefreshTempStickyMarks();
+      let opened = (typeof tlStickyNotesOpen !== 'undefined') && tlStickyNotesOpen;
+      if (!opened) {
+        if (typeof tlOpenStickyNotes === 'function') await tlOpenStickyNotes();
+        opened = (typeof tlStickyNotesOpen !== 'undefined') && tlStickyNotesOpen;
+      } else {
+        if (typeof tlPushStickyRefreshes === 'function') tlPushStickyRefreshes(true);
+      }
+      if (opened && window.electronAPI && window.electronAPI.invoke) {
+        try { await window.electronAPI.invoke('focus-sticky-note', { key: ev.uid || uid, idx: 0 }); } catch (e) {}
+      }
+      if (typeof showToast === 'function') showToast('已临时开启为便利贴（仅本会话，未写入文件）', 'success');
+    }
+    // 关闭临时便利贴：从内存移除；翻页模式同步移除，分体模式额外发 close 关窗
+    async function tlCloseTempSticky(uid) {
+      if (!uid || !tlTempStickyUids.has(uid)) return;
+      tlTempStickyUids.delete(uid);
+      if (typeof tlUpdateStickyBadge === 'function') tlUpdateStickyBadge();
+      tlRefreshTempStickyMarks();
+      if ((typeof tlStickyNotesOpen !== 'undefined') && tlStickyNotesOpen && typeof tlPushStickyRefreshes === 'function') {
+        tlPushStickyRefreshes(true);
+      }
+      if (window.electronAPI && window.electronAPI.invoke) {
+        try { await window.electronAPI.invoke('sticky-note-close', { key: uid, idx: 0 }); } catch (e) {}
+      }
+    }
+    // 跳转到已临时开启的便利贴（不走 tlFocusStickyNote 的 sticky>0 守卫）
+    async function tlFocusTempSticky(uid) {
+      if (!window.electronAPI || !window.electronAPI.invoke) return;
+      if (!((typeof tlStickyNotesOpen !== 'undefined') && tlStickyNotesOpen)) {
+        if (typeof tlOpenStickyNotes === 'function') await tlOpenStickyNotes();
+      }
+      try { await window.electronAPI.invoke('focus-sticky-note', { key: uid, idx: 0 }); } catch (e) {}
+    }
+    // 行程卡片右键菜单
+    function tlShowEventCtxMenu(ev, x, y) {
+      let menu = document.getElementById('tlEventCtxMenu');
+      if (!menu) {
+        menu = document.createElement('div');
+        menu.id = 'tlEventCtxMenu';
+        menu.className = 'tl-event-ctx-menu';
+        menu.style.display = 'none';
+        menu.innerHTML =
+          '<button type="button" data-tl-ev-act="open-temp">📌 临时开启为便利贴</button>' +
+          '<button type="button" data-tl-ev-act="close-temp">✕ 关闭临时便利贴</button>' +
+          '<button type="button" data-tl-ev-act="focus">🔍 跳转到便利贴</button>' +
+          '<button type="button" data-tl-ev-act="edit">✎ 编辑事件</button>';
+        document.body.appendChild(menu);
+        menu.addEventListener('click', function (ce) {
+          const act = ce.target.getAttribute && ce.target.getAttribute('data-tl-ev-act');
+          if (!act) return;
+          menu.style.display = 'none';
+          const uid = menu.__uid;
+          if (act === 'open-temp') tlOpenEventAsTempSticky(uid);
+          else if (act === 'close-temp') tlCloseTempSticky(uid);
+          else if (act === 'focus') { if (tlIsTempSticky(uid)) tlFocusTempSticky(uid); else tlFocusStickyNote(uid); }
+          else if (act === 'edit') { if (typeof tlOpenEventForm === 'function') tlOpenEventForm(uid); }
+        });
+        document.addEventListener('click', function () { menu.style.display = 'none'; }, true);
+      }
+      const isSticky = (parseInt(ev.sticky, 10) || 0) > 0;
+      const temp = tlIsTempSticky(ev.uid);
+      const openItem = menu.querySelector('[data-tl-ev-act="open-temp"]');
+      const closeItem = menu.querySelector('[data-tl-ev-act="close-temp"]');
+      const focusItem = menu.querySelector('[data-tl-ev-act="focus"]');
+      if (openItem) openItem.style.display = (isSticky || temp) ? 'none' : '';
+      if (closeItem) closeItem.style.display = temp ? '' : 'none';
+      if (focusItem) focusItem.style.display = (isSticky || temp) ? '' : 'none';
+      menu.__uid = ev.uid;
+      menu.style.display = 'block';
+      const pw = menu.offsetWidth || 180, ph = menu.offsetHeight || 120;
+      let left = x, top = y;
+      if (left + pw > window.innerWidth - 8) left = window.innerWidth - pw - 8;
+      if (top + ph > window.innerHeight - 8) top = window.innerHeight - ph - 8;
+      menu.style.left = Math.max(4, left) + 'px';
+      menu.style.top = Math.max(4, top) + 'px';
+    }
+    // 行程卡片右键 → 弹出菜单（标签菜单优先；命中标签则由标签处理器处理）
+    //  ⚠️ 千萬別用 .modal 當排除條件：主視窗本身就是 <div class="modal editor-layout">，
+    //     日曆視圖整個都在它裡面 → 一排等於把所有行程行的右鍵全部擋掉（2026-11-04 實測「右鍵沒反應」根因）。
+    //     只排除「真正的表單浮層」.tl-ev-form-overlay（新增行程/編輯/統計等 overlay）。
+    document.addEventListener('contextmenu', function (e) {
+      // 每次右鍵先收掉上一次的事件選單：右鍵不觸發 click，下方 document 的 click 捕獲監聽收不到它
+      const prev = document.getElementById('tlEventCtxMenu');
+      if (prev) prev.style.display = 'none';
+      if (e.target.closest && e.target.closest('[data-tag]')) return; // 标签有独立菜单
+      if (e.target.closest && e.target.closest('.tl-ev-form-overlay')) return; // 表單浮層內不觸發
+      const evEl = e.target.closest ? e.target.closest('[data-uid]') : null;
+      if (!evEl) return;
+      const uid = evEl.getAttribute('data-uid');
+      if (!uid) return;
+      const ev = (typeof tlCalEvents !== 'undefined' && Array.isArray(tlCalEvents)) ? tlCalEvents.find(function (x) { return x && x.uid === uid; }) : null;
+      if (!ev) return;
+      e.preventDefault();
+      tlShowEventCtxMenu(ev, e.clientX, e.clientY);
+    });
     // 依据便利贴 key（= 事件 uid）找事件 uid（供桌面便利贴「在主程式打开 / 编辑回写」定位事件）
     function tlFindEventUidByKey(key) {
       const ev = tlCalEvents.find((x) => (x.uid || '') === key);
@@ -1539,7 +1719,7 @@
       const canEdit = !!(uid && event && (!event.ro || forceEditable));
       if (!canEdit) {
         const withChecks = tlNotesWithChecks(raw, uid);
-        return renderMarkdown(tlRenderTermDefs(withChecks));
+        return renderMarkdown(tlRenderTermDefs(tlRenderNoteMarkersLines(withChecks)));
       }
       const lines = raw.replace(/\r\n/g, '\n').split('\n');
       const blocks = tlSplitMdBlocks(raw);
@@ -1552,7 +1732,7 @@
           return;
         }
         const chunk = lines.slice(b.start, b.end + 1).join('\n');
-        const inner = renderMarkdown(tlRenderTermDefs(chunk));
+        const inner = renderMarkdown(tlRenderTermDefs(tlRenderNoteMarkersLines(chunk)));
         out += '<div class="md-unit"><button type="button" class="md-unit-edit" title="' + tlEditUnitTip(b.type) + '"' +
           ' data-uid="' + uidAttr + '" data-start="' + b.start + '" data-end="' + b.end + '" data-type="' + b.type + '"' +
           ' onclick="tlOpenEditBlockDialog(event,\'' + uidAttr + '\',' + b.start + ',' + b.end + ',\'' + b.type + '\')">\u270e</button>' +
@@ -1633,6 +1813,49 @@
         .replace(/\[\[(?:dl:)?(\d{4}-\d{2}-\d{2})\]\]/g, '📅 $1')
         .replace(/\[\[cp:(\d{4}-\d{2}-\d{2})\]\]/g, '✅ $1');
     }
+    // 逐行套用 cr/dl/cp 顯示轉換（跳過代碼圍欄，避免圍欄內 [[]] 被誤轉）；
+    //   讓「非 checkbox 行」也能正確渲染 [[cr:…]]→🆕、[[dl:…]]→📅、[[cp:…]]→✅（原只對 checkbox 行生效）
+    function tlRenderNoteMarkersLines(text) {
+      let inFence = false;
+      return String(text).split('\n').map(function (line) {
+        if (/^\s*(```|~~~)/.test(line)) { inFence = !inFence; return line; }
+        if (inFence) return line;
+        return tlRenderNoteMarkers(line);
+      }).join('\n');
+    }
+    // 逐「編輯小圓點單元」補 1 個 [[cr:建立日]]（不是每個自然行都加！）；與 checkbox 行 tlEnsureCrMarker 同口徑，
+    //   一個單元（tlSplitMdBlocks 的一個 block＝一個編輯小圓點）只補 1 個 cr，已含則不動、dl/cp 前插入。
+    function tlEnsureCrMarkerForBlock(blockText, todayStr) {
+      if (/\[\[cr:\d{4}-\d{2}-\d{2}\]\]/.test(blockText)) return blockText;  // 單元已含 cr：保留原值、不重複補
+      const lines = String(blockText).replace(/\r\n/g, '\n').split('\n');
+      let last = lines.length - 1;
+      while (last >= 0 && !lines[last].trim()) last--;
+      if (last < 0) return '[[cr:' + todayStr + ']]';  // 全空單元：直接給建立日標記
+      const m = lines[last].match(/\[\[(dl|cp):\d{4}-\d{2}-\d{2}\]\]/);
+      if (m && typeof m.index === 'number') {
+        lines[last] = lines[last].slice(0, m.index).replace(/\s+$/, '') + ' [[cr:' + todayStr + ']] ' + lines[last].slice(m.index);
+      } else {
+        lines[last] = lines[last].replace(/\s+$/, '') + ' [[cr:' + todayStr + ']]';
+      }
+      return lines.join('\n');
+    }
+    // 整段 notes：按「編輯小圓點單元」逐塊各補 1 個 cr（代碼圍欄 / 表格不注入，避免破壞結構）；供整份事件表單保存時使用
+    function tlEnsureCrMarkersForUnits(text, todayStr) {
+      const raw = String(text == null ? '' : text).replace(/\r\n/g, '\n');
+      const lines = raw.split('\n');
+      const blocks = tlSplitMdBlocks(raw);
+      if (!blocks.length) return raw;
+      let out = '';
+      let cursor = 0;
+      blocks.forEach((b) => {
+        while (cursor < b.start) { out += lines[cursor] + '\n'; cursor++; }
+        const blockText = lines.slice(b.start, b.end + 1).join('\n');
+        out += ((b.type === 'code' || b.type === 'table') ? blockText : tlEnsureCrMarkerForBlock(blockText, todayStr)) + '\n';
+        cursor = b.end + 1;
+      });
+      while (cursor < lines.length) { out += lines[cursor] + '\n'; cursor++; }
+      return out.replace(/\s+$/, '');
+    }
     // 🆕 術語記號解析（單一可信來源：渲染 tlRenderTermDefs 與 Glossary 術語表 tlCollectTerms 共用）：
     //   [[term]] / [[term:釋義]] / [[term:釋義:領域]] → { term, def, domain }
     //   領域＝最末一個冒號之後；釋義＝首冒號之後、末冒號之前（釋義可含冒號）。
@@ -1644,12 +1867,12 @@
       let term, rest;
       if (firstColon === -1) {
         term = full; rest = '';
-        if (term === 'dl' || term === 'cp') return null;                     // 日期標記名稱
+        if (term === 'dl' || term === 'cp' || term === 'cr') return null;                     // 日期標記名稱
         if (/^\d{4}-\d{2}-\d{2}$/.test(term)) return null;                   // 裸日期 → dl 機制
       } else {
         term = full.slice(0, firstColon).trim();
         rest = full.slice(firstColon + 1);
-        if (term === 'dl' || term === 'cp') return null;                     // 日期標記（dl:/cp: 後接日期）
+        if (term === 'dl' || term === 'cp' || term === 'cr') return null;                     // 日期標記（dl:/cp: 後接日期）
       }
       if (!term) return null;
       if (/^remind$/i.test(term)) return null;                               // 提醒標記（remind:Title:Rule），不屬術語
@@ -2266,6 +2489,48 @@
       void el.offsetWidth;  // 强制 reflow 重启动画
       el.classList.add('tl-jump-flash');
       setTimeout(() => el.classList.remove('tl-jump-flash'), 2000);
+    }
+    // 🆕 滚动定位到某行程的「单一可信来源」：便利贴菜单「滚动」、便利贴编辑窗体关闭后回到该行程共用。
+    //    两段式：① 游标／选中日／列表锚点设到该行程日期 → 各模式渲染后自动滚到该日期；
+    //            ② 渲染落地后精定位 [data-uid] 事件行（列表／明细）＋金色闪烁；年/月网格无行时退而闪日期格。
+    //    返回 true＝已发起滚动；false＝找不到行程或日期（调用方可自行提示，不产生任何卷动副作用）。
+    function tlScrollToEventByUid(uid) {
+      if (!uid) return false;
+      const txt = document.getElementById('taskText');
+      let list = [];
+      // 以「当前编辑缓冲」重新解析为准：写入编辑内容后 uid 会重新指向已落盘事件，tlCalEvents 可能还是旧快照。
+      try { list = (typeof tlAllEvents === 'function' && txt) ? tlAllEvents(txt.value) : []; }
+      catch (e) { list = []; }
+      if (!Array.isArray(list)) list = [];
+      let ev = list.find((x) => x && (x.uid || '') === uid);
+      if (!ev && Array.isArray(tlCalEvents)) ev = tlCalEvents.find((x) => x && (x.uid || '') === uid);
+      if (!ev) return false;
+      const date = (typeof tlEventDisplayDate === 'function') ? tlEventDisplayDate(ev) : (ev.date || '');
+      if (!date) return false;
+      const d = new Date(date + 'T00:00:00');
+      if (!isNaN(d.getTime())) tlCalCursor = d;
+      tlCalSelected = date;
+      tlListSel = date;
+      if (tlCalMode === 'year') tlYearAutoScrollPending = true;
+      if (tlCalMode === 'month') tlMonthAutoScrollPending = true;
+      if (tlCalMode === 'list') tlListScrollAnchorPending = true;
+      else tlDetailListScrollPending = true;
+      tlRenderEventsContent();
+      setTimeout(function () {
+        const row = document.querySelector('[data-uid="' + uid + '"]');
+        if (row && row.offsetParent) {
+          try { if (typeof tlJumpToEventCore === 'function') tlJumpToEventCore(uid); } catch (e) { /* 高亮失败不影响滚动 */ }
+          return;
+        }
+        const cell = document.querySelector('#tlEvYearGrid .ev-year-day[data-date="' + date + '"], #tlEvMonthGrid .ev-cell[data-date="' + date + '"]');
+        if (cell && cell.offsetParent) {
+          cell.classList.remove('tl-jump-flash');
+          void cell.offsetWidth;  // 强制 reflow 重启动画
+          cell.classList.add('tl-jump-flash');
+          setTimeout(function () { cell.classList.remove('tl-jump-flash'); }, 2000);
+        }
+      }, 400);
+      return true;
     }
     function tlStatsTableHtml(s) {
       const head = '<thead><tr><th>标签</th><th>主事件<br>总计</th><th>主·完成</th><th>主·未完成</th><th>子事件<br>总计</th><th>子·完成</th><th>子·未完成</th></tr></thead>';
@@ -3135,6 +3400,8 @@
         tlSubProgressBadge(ev) +
         tlSpanDisplayModeBadge(ev) +
         (ev.sticky > 0 ? '<button type="button" class="ev-sticky-flag" title="点击跳转到便利贴视窗" onclick="tlFocusStickyNote(\'' + tlEscapeHtml(ev.uid) + '\')">' + TL_STICKY_IC_SVG + '</button>' : '') +
+        // 🆕 非便利贴事件：给一个「看得见」的入口，不必猜在哪右键。📌＝临时开启（不写入 calendar.md）
+        (ev.sticky > 0 ? '' : '<button type="button" class="ev-temp-sticky-btn" data-uid="' + tlEscapeHtml(ev.uid) + '" title="临时开启为便利贴（仅本会话，未写入 calendar.md）" onclick="tlToggleTempSticky(\'' + tlEscapeHtml(ev.uid) + '\')">📌</button>') +
         // 📋 列表行「＋☐」：与编辑表单备注旁同一入口（开 CheckBox 小窗）；列表模式按「加入备注」直接存档
         (ev.ro ? '' : '<button type="button" class="ev-addcheck-btn" title="在备注末尾加入 CheckBox（加入后直接存档）" onclick="tlOpenAddCheckDialog(\'' + tlEscapeHtml(ev.uid) + '\')">＋☐</button>') +
         '<button type="button" class="ev-undone-filter-btn' + (tlEventUndoneChecksOnly(ev.uid) ? ' active' : '') + '" data-uid="' + tlEscapeHtml(ev.uid) + '" aria-pressed="' + (tlEventUndoneChecksOnly(ev.uid) ? 'true' : 'false') + '" title="' + (tlEventUndoneChecksOnly(ev.uid) ? '仅显示该事件未完成的 checkbox 子事件（点击显示全部）' : '只显示该事件未完成的 checkbox 子事件') + '">' + (tlEventUndoneChecksOnly(ev.uid) ? '☑' : '☐') + '</button>' +
@@ -3200,6 +3467,8 @@
     //    ⚠️ 只在「行程视图 + 关键词非空」时起作用，其余情况是空操作；定义在 index.html 的内联脚本里。
     function tlAfterCalRender() {
       if (typeof tlCalSearchReapply === 'function') tlCalSearchReapply();
+      // 🆕 重绘后恢复「临时便利贴」的卡片描边与 📌 按钮状态（否则一切换视图标记就丢了）
+      if (typeof tlRefreshTempStickyMarks === 'function') tlRefreshTempStickyMarks();
     }
 
     // 顶栏分类过滤：EVENT（普通行程）/ REPEAT（重复行程）
@@ -4000,8 +4269,53 @@
       setLunar('tlEvFEndDateLunar', document.getElementById('tlEvFEndDate') && document.getElementById('tlEvFEndDate').value);
     }
 
+    // 🆕 编辑行程窗体的「只读模式」单一可信来源（用户 2026-11-04）：
+    //    INCLUDE 进来的外部档行程（ev.ro）原本连窗体都打不开，现在开成「查看行程（只读）」。
+    //    · input / select / button → disabled（键盘也进不去）；textarea → readOnly（仍可选中复制、卷动、闪烁定位）
+    //    · 颜色 / 标签 / Todo 等非表单控件 → 由 overlay 的 .is-readonly CSS 关掉 pointer-events
+    //    · 「关闭」按钮永远不 disabled；保存 / 删除 / ＋CheckBox 直接隐藏
+    //    ⚠️ 必须在所有填值 + tlToggleAllDay / tlOnRepeatModeChange 之后呼叫：那些函数会重设 disabled，早设会被覆盖。
+    function tlSetEventFormReadonly(ro, src) {
+      const ov = document.getElementById('tlEvFormOverlay');
+      if (!ov) return;
+      const on = !!ro;
+      tlEvFormReadOnly = on;
+      tlEvFormReadOnlySrc = on ? String(src || '') : '';
+      ov.classList.toggle('is-readonly', on);
+      ov.querySelectorAll('input, select, textarea, button').forEach((el) => {
+        if (el.id === 'tlEvFormCancel') { el.disabled = false; return; }
+        if (el.tagName === 'TEXTAREA') { el.readOnly = on; el.disabled = false; }
+        else el.disabled = on;
+      });
+      const title = document.getElementById('tlEvFormTitle');
+      if (title) title.textContent = on ? '查看行程（只读）' : (tlEvFormUid ? '编辑行程' : '新增行程');
+      const banner = document.getElementById('tlEvFormRoBanner');
+      if (banner) {
+        banner.style.display = on ? '' : 'none';
+        banner.textContent = on
+          ? ('🔒 只读 · 来自被包含的外部档 ' + (tlEvFormReadOnlySrc || 'calendar-*.md') + '（仅供查看；如需修改请开启该档案编辑）')
+          : '';
+      }
+      const hint = document.getElementById('tlEvFormHint');
+      if (hint) hint.textContent = on
+        ? '此窗体不写回任何档案；便利贴内容仍可直接在便利贴窗修改并写回来源档。'
+        : '写入后按编辑器「保存」，把改动写回 calendar.md';
+      const del = document.getElementById('tlEvFormDelete');
+      if (del) del.style.display = on ? 'none' : (tlEvFormUid ? '' : 'none');
+      const save = document.getElementById('tlEvFormSave');
+      if (save) save.style.display = on ? 'none' : '';
+      const addCheck = document.getElementById('tlEvAddCheckBtn');
+      if (addCheck) addCheck.style.display = on ? 'none' : '';
+      const cancel = document.getElementById('tlEvFormCancel');
+      if (cancel) cancel.textContent = on ? '关闭' : '取消';
+      // 恢复可编辑时把「全天」对开始/结束时间的连带 disabled 重算回来（只读时全部被打开过）
+      if (!on && typeof tlToggleAllDay === 'function') tlToggleAllDay();
+    }
+
     function tlOpenEventForm(uid, defaultDate, pre) {
       tlHideTip();
+      // 🆕 每次开窗体都重置来源（含 early return 路径），避免上一张便利贴窗体的标记残留到下一张主画面窗体。
+      tlEvFormFromNote = !!(pre && pre.fromNote);
       if (!isCalendarMdDoc()) return;
       tlCalEvents = tlAllEvents(document.getElementById('taskText').value);
       tlRenderTagOptions();
@@ -4010,15 +4324,18 @@
       if (uid) {
         ev = tlCalEvents.find((x) => x.uid === uid);
         if (!ev) { showToast('找不到该条行程（内容可能已被修改）', 'danger'); return; }
-        if (ev.ro) { showToast('此行程来自被包含的只读文件，不可编辑', 'danger'); return; }
+        // 🆕 INCLUDE 外部档（ev.ro）不再 toast 拒绝：改成开启「只读查看」窗体（用户 2026-11-04）。
+        //    主画面「编辑」按钮、便利贴双击 / 点标题栏、找出相同→切换 都走这里，自动得到同一张只读窗体。
         tlEvFormUid = uid;
       }
+      const isRo = !!(ev && ev.ro);
+      const roSrc = isRo ? String(ev.src || '') : '';
       const p = pre || {}; // 🖱 雙擊空白快速新增時的預填：{ allDay, startTime, endTime }；📄 Include 清单「＋」另带 { target: 文件名 }
       const today = tlFmtDate(new Date());
       document.getElementById('tlEvFormTitle').textContent = uid ? '编辑行程' : '新增行程';
-      // 🆕 写入目标：只有「新增」才可换档；编辑既有行程恒为主文件（include 行程的编辑仍未开放）。
+      // 🆕 写入目标：只有「新增」才可换档；编辑既有行程恒为主文件（include 行程只开放「只读查看」，不写回）。
       //    下拉渲染完会回调 tlSyncEvTargetHint()：由它统一维护「标题 → 新增行程 / 新增行程 → xxx.md」与下方说明，
-      //    因此这里不再重复写 #tlEvFormTitle（单一可信来源）。
+      //    因此这里不再重复写 #tlEvFormTitle（单一可信来源；只读标题由 tlSetEventFormReadonly 在最后统一设）。
       tlEvFormTarget = uid ? '' : String(p.target || '').trim();
       tlRenderEvTargetSelect(tlEvFormTarget);
       const targetRow = document.getElementById('tlEvFTargetRow');
@@ -4060,13 +4377,16 @@
       document.getElementById('tlEvFTags').value = '';
       tlRenderTagPicker();
       document.getElementById('tlEvFNotes').value = ev ? ev.notes : '';
-      document.getElementById('tlEvFormDelete').style.display = uid ? '' : 'none';
+      // 删除按钮的显隐统一交给 tlSetEventFormReadonly（只读 / 新增 / 编辑 三态一次判完）
       tlEvFormTodoIds = ev ? (ev.todoIds || []).slice() : [];
       tlRenderEvTodoLinkPanel();
       tlRenderColors();
+      // ⚠️ 只读态必须最后才套：上面 tlToggleAllDay / tlOnRepeatModeChange / tlRenderColors 会重设或重建控件。
+      tlSetEventFormReadonly(isRo, roSrc);
       document.getElementById('tlEvFormOverlay').style.display = 'flex';
       tlAutoSizeNotes();
-      document.getElementById('tlEvFTitle').focus();
+      // 只读时标题已 disabled（focus 无效）；备注框仍可 focus，供「找出相同→切换」的行闪烁定位使用。
+      if (!isRo) document.getElementById('tlEvFTitle').focus();
       // 🆕 「找出相同的项目」切换定位：若带高亮行（0-based 行号区间），定位并闪烁备注框里那些行。
       //    延迟一帧确保 overlay 已显示、textarea 已渲染完成，再滚动＋选中＋金底闪烁两次。
       if (p && ((Array.isArray(p.highlightLines) && p.highlightLines.length) || p.highlightText)) {
@@ -4228,36 +4548,32 @@
       ).join('');
     }
     function tlPickColor(c) {
+      if (tlEvFormReadOnly) return;
       tlEvFormColor = c;
       tlRenderColors();
     }
 
     function tlCloseEventForm() {
-      // 🆕 关闭前记住正在编辑的 uid（清状态后用它查出事件日期，关闭后滚动到该日期）
-      //   需求：从便利贴打开某行程的编辑窗体，退出后往往不知道该行程在哪 → 关闭时自动回到它所在日期。
-      //   滚动机制复用 tlOnStickyScrollToEvent：设游标 + pending 标志 + 重渲。
-      //   删除路径（tlDeleteFromForm）会先把 tlEvFormUid 清空 → 这里 closingUid 为空 → 不滚动。
+      // 🆕 关闭编辑窗体＝**按来源决定要不要滚动**（用户 2026-11-04 两次说明后的最终规则）：
+      //   · 从便利贴唤起（pre.fromNote=true）→ 关闭后必须滚动回「该行程」的位置；
+      //   · 从主画面点「编辑」开的窗体 → 纯收起浮层，绝不动卷动位置，原来在哪里还是在哪里；
+      //   · 删除（tlDeleteFromForm 先清 tlEvFormUid）→ 不滚动（事件已不在，滚动无意义）。
+      //   写入路径：tlSaveEventForm → tlApplyEventsToBuffer() 已重绘且刻意不设锚点，主画面路径就停在原处；
+      //   便利贴路径则在下面这个统一入口补做定位，不在保存函数里各写一份。
       const closingUid = tlEvFormUid;
+      const backToNoteEvent = tlEvFormFromNote;
       const ov = document.getElementById('tlEvFormOverlay');
       if (ov) ov.style.display = 'none';
       tlEvFormUid = null;
+      tlEvFormFromNote = false;
       tlEvFormColor = null;
       tlEvFormTarget = '';
-      // 🆕 关闭后滚动到该行程所在日期（取消／写入／Esc／点遮罩 都触发）
-      if (closingUid && tlCalEvents && tlCalEvents.length) {
-        const ev = tlCalEvents.find(function (x) { return (x.uid || '') === closingUid; });
-        const date = ev ? ((typeof tlEventDisplayDate === 'function') ? tlEventDisplayDate(ev) : (ev.date || '')) : '';
-        if (date) {
-          const d = new Date(date + 'T00:00:00');
-          if (!isNaN(d.getTime())) tlCalCursor = d;
-          tlCalSelected = date;
-          tlListSel = date;
-          if (tlCalMode === 'year') tlYearAutoScrollPending = true;
-          if (tlCalMode === 'month') tlMonthAutoScrollPending = true;
-          if (tlCalMode === 'list') tlListScrollAnchorPending = true;
-          else tlDetailListScrollPending = true;
-          tlRenderEventsContent();
-        }
+      // 🆕 复位只读态：下一张窗体可能是主档可编辑行程，不能带着 disabled / 隐藏按钮进去。
+      tlSetEventFormReadonly(false, '');
+      // 定位核心（tlScrollToEventByUid）与便利贴菜单「滚动」共用，避免两份实现漂移。
+      if (backToNoteEvent && closingUid) {
+        try { tlScrollToEventByUid(closingUid); }
+        catch (e) { console.warn('[TodoList] 便利贴编辑窗体关闭后定位失败:', e); }
       }
     }
 
@@ -4280,6 +4596,9 @@
       })[type] || '编辑内容区块';
     }
     function tlOpenAddCheckDialog(uid) {
+      // 🆕 表单模式（uid 空）＝从「备注 ＋CheckBox」进入；只读窗体不开放追加子事件。
+      //    列表模式传 uid，走原有 ev.ro / tlEvFormReadOnly 判断，不受影响。
+      if (!uid && tlEvFormReadOnly) return;
       tlAddCheckTargetUid = uid || null;
       tlEditNoteCheckTarget = null;
       tlEditBlockTarget = null;
@@ -4494,7 +4813,7 @@
       if (!inp) return;
       if (tlEditBlockTarget) {
         const target = tlEditBlockTarget;
-        const blockText = inp.value.replace(/\r\n/g, '\n');
+        const blockText = tlEnsureCrMarkerForBlock(inp.value.replace(/\r\n/g, '\n'), tlFmtDate(new Date()));
         tlCalEvents = tlAllEvents(document.getElementById('taskText').value);
         const ev = tlCalEvents.find((x) => x.uid === target.uid);
         if (!ev) { tlCloseAddCheckDialog(); showToast('找不到该条行程（内容可能已被修改）', 'danger'); return; }
@@ -4597,6 +4916,8 @@
     }
 
     async function tlSaveEventForm(closeAfterSave = true) {
+      // 🆕 只读窗体硬守卫：按钮虽已隐藏，仍挡住 onclick 直呼 / 快捷键等旁路，绝不写回任何档案。
+      if (tlEvFormReadOnly) return;
       const title = document.getElementById('tlEvFTitle').value.trim();
       let date = document.getElementById('tlEvFDate').value;
       let endDate = document.getElementById('tlEvFEndDate').value;
@@ -4618,7 +4939,7 @@
         // 🆕 桌面便利贴 instance 数（0 = 不显示为便利贴）
         sticky: Math.max(0, parseInt(document.getElementById('tlEvFSticky').value, 10) || 0),
         tags: tlEvFormTags.slice(),
-        notes: document.getElementById('tlEvFNotes').value.replace(/\r\n/g, '\n'),
+        notes: tlEnsureCrMarkersForUnits(document.getElementById('tlEvFNotes').value.replace(/\r\n/g, '\n'), tlFmtDate(new Date())),
         todoIds: tlEvFormTodoIds.slice()
       };
       // ===== 重複事件：依表單寫回欄位（未勾選則清空，序列化降回 ## EVENT）=====
@@ -4723,9 +5044,10 @@
     }
 
     function tlDeleteFromForm() {
+      if (tlEvFormReadOnly) return;   // 🆕 只读窗体：删除按钮已隐藏，这里再挡一次旁路呼叫
       if (!tlEvFormUid) return;
       const uid = tlEvFormUid;
-      tlEvFormUid = null;                 // 🆕 删除前先清 uid，使 tlCloseEventForm 不做「滚动回该日期」（删除后该事件已不在，滚动无意义）
+      tlEvFormUid = null;                 // 🆕 删除前先清 uid，使 tlCloseEventForm 即使来自便利贴也不做定位（删除后该事件已不在，滚动无意义）
       tlCloseEventForm();
       tlDeleteEvent(uid);
     }

@@ -239,7 +239,206 @@ function renderMeta(ev) {
     // 🆕 VIEW 贴只读：不给「＋☐ 加入内容」，只留「只看未完成」这颗纯显示开关
     (isViewNote() ? '' :
       '<button type="button" class="note-addcheck" title="加入…（checkbox 子事件／MD 表格／自由编辑）" aria-haspopup="menu">＋☐▾</button>') +
-    undoneFilterChipHtml();
+    undoneFilterChipHtml() +
+    (isViewNote() ? viewSortSelectHtml() : '');
+  wireViewSortSelect();
+}
+// 🆕 VIEW 便利贴：行事件排序下拉（原序／升幂／降幂），紧跟「只看未完成」徽标按钮
+function viewSortSelectHtml() {
+  return '<select id="miViewSort" class="note-sort-select" title="排序：行事件按 cr 建立日期（无 cr 用事件日期）。升幂/降幂＝组内按小事件 cr 日期、组间按组内最大 cr 日期">' +
+    '<option value="orig">原序</option><option value="asc">升幂</option><option value="desc">降幂</option></select>';
+}
+function wireViewSortSelect() {
+  const sel = document.getElementById('miViewSort');
+  if (!sel) return;
+  sel.value = state.sortMode || 'orig';
+  sel.addEventListener('click', (e) => e.stopPropagation());
+  sel.addEventListener('change', (e) => {
+    e.stopPropagation();
+    const v = sel.value;
+    if (v !== 'orig' && v !== 'asc' && v !== 'desc') return;
+    if (v === state.sortMode) return;
+    state.sortMode = v;
+    persist();
+    applyViewSort();
+  });
+}
+// 🆕 VIEW 便利贴排序：小事件排序键＝自身 cr 日期（无 cr 用来源事件日期 → data-sort-date）；
+//   组（来源行程）排序键＝组内「最大 cr 日期」（组内完全无 cr 才退事件日期 → data-group-date）。
+//   原序＝还原重绘后的原始 DOM 顺序；升幂＝早的在上；降幂＝晚的在上；缺日期升幂置顶、降幂置底。
+//   ⚠️ data-sort-date / data-cr-date / data-group-date 统一由 normalizeViewSortUnits() 在「本窗重绘后」
+//      从渲染出的 🆕 建立日写入（view-sticky-rules.js 的同名属性仅作为精确来源之一，非必要依赖）。
+function isViewSortUnit(el) { return el && el.nodeType === 1 && el.classList.contains('vsr-sort-unit'); }
+// 🆕 排序键的「单一可信来源」＝便利贴窗里实际渲染出来的 🆕 建立日，而不是主窗口下发的 data-* 属性。
+//   原因：view-sticky-rules.js 由「主窗口」加载，生成的 HTML 经主进程 stickyNoteHtml Map 缓存后下发；
+//   只 Cmd+R 刷新便利贴窗（甚至只重开便利贴窗）拿到的仍是旧 HTML（没有 .vsr-sort-unit / data-sort-date），
+//   排序会全部当空日期 → 稳定排序保持原序 → 看起来「降幂没生效」。故窗内自行从 DOM 归一化，
+//   无论主窗／主进程是否已重载都能正确排序（旧 HTML 结构：.md-unit / .ev-md-check 直接子元素）。
+function crDateFromUnit(el) {
+  // ① 编辑小圆点的 data-text 存原始行文本（最可靠，含 [[cr:…]] 原文）
+  const dot = el.querySelector && el.querySelector('.ev-md-edit[data-text]');
+  if (dot) {
+    const m = String(dot.getAttribute('data-text') || '').match(/\[\[cr:(\d{4}-\d{2}-\d{2})\]\]/);
+    if (m) return m[1];
+  }
+  // ② 渲染后的可见文字「🆕 YYYY-MM-DD」（🆕 即画面上的蓝底 NEW 徽标）
+  const m2 = String(el.textContent || '').match(/\u{1F195}\s*(\d{4}-\d{2}-\d{2})/u);
+  if (m2) return m2[1];
+  // ③ 主窗下发值（新版 HTML）或 HTML 里残留的 [[cr:…]]
+  const m3 = String(el.innerHTML || '').match(/\[\[cr:(\d{4}-\d{2}-\d{2})\]\]/);
+  if (m3) return m3[1];
+  return String(el.getAttribute('data-cr-date') || '');
+}
+function groupDateFromHead(head) {
+  const d = head.getAttribute('data-group-date');
+  if (d) return d;
+  const m = String(head.textContent || '').match(/(\d{4}-\d{2}-\d{2})/);
+  return m ? m[1] : '';
+}
+// 把每个 .vsr-seg 的直接子元素归一化成可排序单元（新版 .vsr-sort-unit 原样保留；
+// 旧版 .md-unit / .ev-md-check / 含两者的包裹层补上 vsr-sort-unit class 与排序键）。
+// 只加 class 与 data-*，不改 DOM 层级 → 视觉零影响（.vsr-sort-unit 无 CSS 规则）。
+function normalizeViewSortUnits() {
+  document.querySelectorAll('#body .vsr-seg').forEach((seg) => {
+    let groupDate = '';
+    Array.from(seg.children).forEach((el) => {
+      if (el.classList.contains('vsr-group-head')) {
+        groupDate = groupDateFromHead(el);
+        el.setAttribute('data-group-date', groupDate);
+        return;
+      }
+      if (el.classList.contains('vsr-seg-hd')) return;   // 多段落的段落标题不是行事件
+      const isUnit = el.classList.contains('vsr-sort-unit') ||
+        el.classList.contains('md-unit') || el.classList.contains('ev-md-check') ||
+        !!(el.querySelector && el.querySelector('.ev-md-check, .md-unit'));
+      if (!isUnit) return;
+      el.classList.add('vsr-sort-unit');
+      const cr = crDateFromUnit(el);
+      el.setAttribute('data-cr-date', cr);
+      el.setAttribute('data-sort-date', cr || groupDate || el.getAttribute('data-sort-date') || '');
+    });
+  });
+}
+function cmpViewDate(a, b, dir) {
+  const av = a || '', bv = b || '';
+  if (av === bv) return 0;
+  if (av === '') return dir === 'asc' ? -1 : 1;
+  if (bv === '') return dir === 'asc' ? 1 : -1;
+  return dir === 'asc' ? (av < bv ? -1 : 1) : (av > bv ? -1 : 1);
+}
+function viewGroupSortDate(head, itemEls) {
+  // 组排序键＝组内「最大 cr 日期」；只有当组内没有任何 cr 时，才退回事件日期（data-group-date）。
+  // （用 data-cr-date 区隔「有 cr」与「无 cr 但 data-sort-date 退化为事件日期」两种情形，
+  //   避免「所有 cr 都早于事件日期」时被误用事件日期覆盖。）
+  const gd = head.getAttribute('data-group-date') || '';
+  let maxCr = '', hasCr = false;
+  itemEls.forEach((it) => {
+    const d = it.getAttribute('data-cr-date') || '';
+    if (d) { hasCr = true; if (maxCr === '' || d > maxCr) maxCr = d; }
+  });
+  return hasCr ? maxCr : gd;
+}
+function viewSortContainer(container, dir) {
+  if (!container) return;
+  // 收集「单元」：vsr-group-head 起一组（其后连续的 vsr-sort-unit 为子事件），其余元素原样保留
+  const tokens = [];
+  let cur = null;
+  Array.from(container.children).forEach((el) => {
+    if (el.classList.contains('vsr-group-head')) {
+      if (cur) tokens.push(cur);
+      cur = { type: 'group', head: el, items: [], gi: tokens.length };
+    } else if (isViewSortUnit(el)) {
+      const unit = { el: el, ui: 0 };
+      if (cur) { unit.ui = cur.items.length; cur.items.push(unit); }
+      else tokens.push({ type: 'unit', unit: unit });
+    } else {
+      tokens.push({ type: 'other', el: el });
+    }
+  });
+  if (cur) tokens.push(cur);
+  if (dir === 'orig') {
+    const orig = container.__origChildren || Array.from(container.children);
+    orig.forEach((c) => container.appendChild(c));
+    return;
+  }
+  // 组内小事件排序（稳定：同日期保原序）
+  tokens.forEach((t) => {
+    if (t.type !== 'group') return;
+    t.items.forEach((u, i) => { u.ui2 = i; });
+    t.items.sort((a, b) => {
+      const r = cmpViewDate(a.el.getAttribute('data-sort-date'), b.el.getAttribute('data-sort-date'), dir);
+      return r === 0 ? a.ui2 - b.ui2 : r;
+    });
+    t.sortDate = viewGroupSortDate(t.head, t.items.map((u) => u.el));
+  });
+  // 组间排序（稳定）
+  const groups = tokens.filter((t) => t.type === 'group');
+  groups.sort((a, b) => {
+    const r = cmpViewDate(a.sortDate, b.sortDate, dir);
+    return r === 0 ? a.gi - b.gi : r;
+  });
+  // 重排 DOM：把「组 token」按排序后的组顺序回填（其余 other/unit 保持原相对位置），只移动节点不重建
+  let gk = 0;
+  const ordered = tokens.map((t) => (t.type === 'group' ? groups[gk++] : t));
+  ordered.forEach((t) => {
+    if (t.type === 'group') {
+      container.appendChild(t.head);
+      t.items.forEach((u) => container.appendChild(u.el));
+    } else if (t.type === 'unit') {
+      container.appendChild(t.unit.el);
+    } else {
+      container.appendChild(t.el);
+    }
+  });
+}
+function captureViewSortOriginal() {
+  document.querySelectorAll('#body .vsr-seg').forEach((seg) => { seg.__origChildren = Array.from(seg.children); });
+}
+function applyViewSort() {
+  if (!isViewNote()) return;
+  const dir = (state.sortMode === 'asc' || state.sortMode === 'desc') ? state.sortMode : 'orig';
+  document.querySelectorAll('#body .vsr-seg').forEach((seg) => viewSortContainer(seg, dir));
+}
+// 🆕 重绘后的统一入口：**只在 innerHTML 重绘完成后**呼叫（已收口在 refreshNoteViewDisplay 末尾，
+//   覆盖初始渲染／主进程推送刷新／applyNoteContent／翻页共 4 条路径）。
+//   ⚠️ 排序模式切换（下拉 change）只走 applyViewSort()，绝不重新 capture，
+//   否则会把「已排序」的顺序误当成原序基线。
+function applyViewSortAfterRender() {
+  if (!isViewNote()) return;
+  normalizeViewNoteMarkers();   // 先补标记转换 → 排序键的「可见文字」来源才会是 🆕 日期
+  normalizeViewSortUnits();
+  captureViewSortOriginal();
+  applyViewSort();
+}
+// 🆕 VIEW 投影贴的标记兜底：主窗引擎（view-sticky-rules.js）生成的 HTML 经主进程缓存下发，
+//   只刷新便利贴窗拿到的仍是旧 HTML —— 非 checkbox 单元会把 [[cr:…]] 显示为原文。
+//   这里在重绘后把「残留的字面标记」补成与母本 tlRenderNoteMarkers 相同的 🆕/📅/✅ 显示。
+//   ⚠️ 只改「文字节点」：绝不碰属性（编辑圆点的 data-text 存原文，是排序／找出相同的依据）。
+//      跳过 code/pre（与母本「代码围栏内不转换」同口径）；主窗引擎修好后本函数自然变成 no-op（幂等）。
+function normalizeViewNoteMarkers() {
+  const body = document.getElementById('body');
+  if (!body || !body.querySelector) return;
+  const skipTags = /^(CODE|PRE|SCRIPT|STYLE|TEXTAREA)$/;
+  const SHOW_TEXT = (typeof NodeFilter !== 'undefined') ? NodeFilter.SHOW_TEXT : 4; // 4＝NodeFilter.SHOW_TEXT
+  const walker = document.createTreeWalker(body, SHOW_TEXT, null);
+  const targets = [];
+  while (walker.nextNode()) {
+    const n = walker.currentNode;
+    if (!n.nodeValue || n.nodeValue.indexOf('[[') < 0) continue;
+    let p = n.parentNode, skip = false;
+    while (p && p !== body) {
+      if (p.nodeType === 1 && skipTags.test(p.tagName)) { skip = true; break; }
+      p = p.parentNode;
+    }
+    if (!skip) targets.push(n);
+  }
+  targets.forEach((n) => {
+    const t = n.nodeValue
+      .replace(/\[\[cr:(\d{4}-\d{2}-\d{2})\]\]/g, '\u{1F195} $1')
+      .replace(/\[\[(?:dl:)?(\d{4}-\d{2}-\d{2})\]\]/g, '\u{1F4C5} $1')
+      .replace(/\[\[cp:(\d{4}-\d{2}-\d{2})\]\]/g, '\u2705 $1');
+    if (t !== n.nodeValue) n.nodeValue = t;
+  });
 }
 // 标签列表统一渲染：显示「名·子标签」
 function renderTags(ev) {
@@ -263,7 +462,7 @@ function normalizeMeteor(m) {
     flame: num(m.flame, 10, 600, 160)
   };
 }
-const state = { w: DEFAULT_W, h: DEFAULT_H, color: STICKY_DEF_BG, opacity: 100, minimized: false, minH: 0, fontScale: 1, fontColor: STICKY_DEF_FG, fontWeight: 400, undoneChecksOnly: false, scrollPos: 0, meteor: { on: false, speed: 12, size: 12, shape: 'comet', color: '#ffae00', follow: false, rainbow: false, flame: 160 } };
+const state = { w: DEFAULT_W, h: DEFAULT_H, color: STICKY_DEF_BG, opacity: 100, minimized: false, minH: 0, fontScale: 1, fontColor: STICKY_DEF_FG, fontWeight: 400, undoneChecksOnly: false, sortMode: 'orig', scrollPos: 0, meteor: { on: false, speed: 12, size: 12, shape: 'comet', color: '#ffae00', follow: false, rainbow: false, flame: 160 } };
 
 async function init() {
   if (IS_FLIP) { await initFlip(); return; }
@@ -281,6 +480,7 @@ async function init() {
     fontColor: (typeof inst.fontColor === 'string' && inst.fontColor) ? inst.fontColor : STICKY_DEF_FG,
     fontWeight: (typeof inst.fontWeight === 'number') ? inst.fontWeight : 400,
     undoneChecksOnly: !!inst.undoneChecksOnly,
+    sortMode: (inst.sortMode === 'asc' || inst.sortMode === 'desc') ? inst.sortMode : 'orig',
     scrollPos: (typeof inst.scrollPos === 'number' && isFinite(inst.scrollPos)) ? Math.max(0, inst.scrollPos) : 0,
     meteor: normalizeMeteor(inst.meteor)
   });
@@ -313,6 +513,7 @@ async function init() {
   syncUndoneChecksFilter();
   noteApplyHighlight(); // 🆕 依當前定位詞重打高亮
   refreshNoteViewDisplay(); // 🆕 多段落 VIEW 便利贴：初始渲染后套用记忆的「顺序平铺／页签方式」与 active 段落
+  // VIEW 贴排序已统一收口在 refreshNoteViewDisplay() 末尾（normalize → capture → apply）
   // 新便利贴默认淡黄纸底（仅当用户未手动改过色时）；不再继承事件色，保持纸质便利贴观感
   if (!inst.color) state.color = STICKY_DEF_BG;
   // 勾选框填充色跟随事件色（与日历渲染一致：.ev-md-check.done .ev-cb 用事件色）
@@ -434,6 +635,11 @@ function setupControls() {
   document.getElementById('miCalendar').onclick = (e) => { e.stopPropagation(); closeMenu(); ipcRenderer.invoke('activate-main-window'); };
   // 📜 滚动：唤起主程式并滚动定位到该行程（不打开编辑框）
   document.getElementById('miCalendarScroll').onclick = (e) => { e.stopPropagation(); closeMenu(); ipcRenderer.invoke('wake-main-from-note', { key: KEY, action: 'scroll' }); };
+  // ✎ 检视行程：与「双击便利贴 / 点标题栏」同一条管线（wake-main-from-note → open-sticky-event → tlOpenEventForm）。
+  //    被 include 的外部档行程（ev.ro）现在不再被主程式 toast 拒绝，会开成「查看行程（只读）」窗体。
+  //    VIEW 投影贴没有单一来源行程，该按钮由 CSS 收起（#note.view-note #miEditEvent）。
+  const editEventBtn = document.getElementById('miEditEvent');
+  if (editEventBtn) editEventBtn.onclick = (e) => { e.stopPropagation(); closeMenu(); ipcRenderer.invoke('wake-main-from-note', { key: KEY }); };
   // 🆕 ＋ 新建便利贴：在便利贴窗内直接开浮层（选 include 档 + 填标题）→ sticky-note-create 写盘。
   //    不走 Calendar 表单：用户的要求是「不要我自己再去 Calendar 建一遍」，字段框架由 Calendar 那边算。
   document.getElementById('miNewNote').onclick = (e) => {
@@ -970,7 +1176,8 @@ function toggleAddCheckMenu() {
 }
 // ===== 🆕 便利贴「＋☐」加入子事件：对齐 calendar 列表行 tlOpenAddCheckDialog =====
 // 逐行输入 → 每行列成「- [ ] 行」追加到事件备注末尾；Calendar 关闭时由主进程唤醒并交由其保存。
-// 只读包含文件（ev.ro）由主程式拦截并 toast，这里无需额外判断。
+// 被 include 的外部档行程（ev.ro）便利贴内容仍可编辑：主程式依 ref.src 把改动写回来源档，
+// 这与「编辑行程窗体」不同——后者对 ro 行程只开只读查看（2026-11-04）。
 function openAddCheck() {
   const inp = document.getElementById('addCheckInput');
   const ov = document.getElementById('addCheckOv');
@@ -1338,6 +1545,21 @@ function ensureCrMarker(text) {
     return text.slice(0, m.index).replace(/\s+$/, '') + ' ' + cr + ' ' + text.slice(m.index);
   }
   return trimmed + ' ' + cr;
+}
+// 編輯小圓點「單元」補 1 個 [[cr:建立日]]（不是每個自然行都加！）；與行事曆 tlEnsureCrMarkerForBlock 同口徑，單元只補 1 個
+function ensureCrMarkerForBlock(blockText) {
+  if (/\[\[cr:\d{4}-\d{2}-\d{2}\]\]/.test(blockText)) return blockText;  // 單元已含 cr：保留原值、不重複補
+  const lines = String(blockText).replace(/\r\n/g, '\n').split('\n');
+  let last = lines.length - 1;
+  while (last >= 0 && !lines[last].trim()) last--;
+  if (last < 0) return '[[cr:' + localDateString() + ']]';
+  const m = lines[last].match(/\[\[(dl|cp):\d{4}-\d{2}-\d{2}\]\]/);
+  if (m && typeof m.index === 'number') {
+    lines[last] = lines[last].slice(0, m.index).replace(/\s+$/, '') + ' [[cr:' + localDateString() + ']] ' + lines[last].slice(m.index);
+  } else {
+    lines[last] = lines[last].replace(/\s+$/, '') + ' [[cr:' + localDateString() + ']]';
+  }
+  return lines.join('\n');
 }
 function transformNoteCheck(line, checked) {
   const match = line.match(/^(\s*)-\s+\[([ xX])\]\s?(.*)$/);
@@ -2379,7 +2601,7 @@ async function confirmAddCheck() {
       if (await saveStickyNoteContent(lines.join('\n'), '删除区块', target.uid)) { closeEditNoteCheck(); return true; }
       return false;
     }
-    const newLines = blockText.split('\n');
+    const newLines = ensureCrMarkerForBlock(blockText).split('\n');
     lines.splice(target.start, span, ...newLines);
     // 更新区间为新区块，便于继续 ⌘S 覆写同一段
     noteBlockEditTarget = { uid: target.uid, start: target.start, end: target.start + newLines.length - 1, type: target.type };
@@ -2865,7 +3087,7 @@ function rememberRefMeta(arg) {
   //    改成「内容收敛才解除」才能真正挡住；要强制同步请按便利贴的 🔄 刷新（会显式解除）。
   const incoming = (arg.notes !== undefined && arg.notes !== null) ? String(arg.notes) : null;
   const guard = !!(prev && prev.__localWrite && incoming !== null);
-  ['notes', 'src', 'title', 'titleTip', 'date', 'endDate', 'color', 'tags'].forEach((k) => {
+  ['notes', 'src', 'title', 'titleTip', 'date', 'endDate', 'color', 'tags', 'temp'].forEach((k) => {
     if (k === 'notes' && guard) return;   // 保护期内：沿用本地刚写的版本
     if (arg[k] !== undefined && arg[k] !== null) next[k] = arg[k];
   });
@@ -2880,8 +3102,32 @@ function syncSourceFile() {
   SRC_FILE = String(meta.src || '');
   applyDocBadge();
 }
-// 文档名徽标：VIEW 便利贴（聚合视图）显示专属紫色徽标；
-//   非 VIEW 贴但有 src（include 联运文件）显示 📄 金色虚线；主档便利贴不显示。
+// 🆕 临时便利贴标记：ref.temp 由主窗口 tlTempStickyUids 产生，随整份 sticky-note-sync 下发，
+//   主进程目录（sticky-note-order 的 notes/order）原样保留该字段 → 窗内无需改主进程程式。
+//   翻页清单（renderFlipPage 的 listed）与 sticky-note-refresh 会把 temp 带进 refMeta；
+//   分体窗「刚开窗」那一帧只拿得到 sticky-note-html（不含 temp），故补一次目录查询。
+let tempProbeId = '';
+function noteFlagId(key, idx) { return String(key == null ? '' : key) + '#' + (+idx || 0); }
+function isTempNote() {
+  if (isViewNote()) return false;
+  return !!(refMeta.get(KEY) || {}).temp;
+}
+function probeTempNoteFlag() {
+  // 翻页模式的 flipOrder 本身就是权威目录（已带 temp），无需额外 IPC
+  if (IS_FLIP) return;
+  const id = noteFlagId(KEY, IDX);
+  if (tempProbeId === id || isViewNote() || isTempNote()) return;
+  tempProbeId = id;   // 每张只查一次；翻页换 key 会自然重查
+  ipcRenderer.invoke('sticky-note-order').then((res) => {
+    const notes = (res && Array.isArray(res.notes)) ? res.notes : [];
+    const hit = notes.find((n) => n && n.key === KEY && (+n.idx || 0) === (+IDX || 0));
+    // 以权威目录纠正：临时贴关闭／转正式贴后不会残留旧徽标
+    rememberRefMeta({ key: KEY, temp: !!(hit && hit.temp) });
+    if (noteFlagId(KEY, IDX) === id) applyDocBadge();
+  }).catch(() => {});
+}
+// 文档名徽标（标题行 #docBadge，与 VIEW 徽标同一个位置）：
+//   VIEW＝紫色、临时便利贴＝蓝色虚线、include 来源档＝金色虚线、主档正式贴＝不显示。
 function applyDocBadge() {
   const el = document.getElementById('docBadge');
   if (!el) return;
@@ -2889,20 +3135,30 @@ function applyDocBadge() {
   if (isViewNote()) {
     el.textContent = '👁 VIEW 便利貼';
     el.title = 'VIEW 便利贴（聚合提醒视图）\n从所有来源档自动收集符合规则的提醒项；只读显示，没有对应的单一来源档。';
-    el.classList.remove('dirty');
+    el.classList.remove('dirty', 'is-temp');
     el.classList.add('show', 'is-view');
+    return;
+  }
+  // 🆕 临时便利贴徽标：仅本会话、不写入 calendar.md；资料功能与正式贴完全相同
+  if (isTempNote()) {
+    el.textContent = '📌 临时便利贴';
+    el.title = '临时便利贴（仅本会话）\n由行程「📌 临时开启为便利贴」产生，不写入 calendar.md；重开应用即消失。\n资料维护／编辑／搜索功能与正式便利贴完全相同' +
+      (SRC_FILE ? '；内容来源：' + SRC_FILE : '') + '。';
+    el.classList.remove('dirty', 'is-view');
+    el.classList.add('show', 'is-temp');
     return;
   }
   if (SRC_FILE) {
     el.textContent = '📄 ' + SRC_FILE;
     el.title = '内容来源：' + SRC_FILE + '\n（编辑结果会写回该文件）';
+    el.classList.remove('is-view', 'is-temp');
     el.classList.add('show');
-    el.classList.remove('is-view');
   } else {
     el.textContent = '';
     el.removeAttribute('title');
-    el.classList.remove('show', 'is-view', 'dirty');
+    el.classList.remove('show', 'is-view', 'is-temp', 'dirty');
   }
+  probeTempNoteFlag();   // 分体窗首次渲染：异步补查权威目录，回来后重绘徽标
 }
 // 🆕 VIEW 便利贴徽标：点一下显示该投影贴在 JSON 里设定的抓取逻辑（关键词／标记／行型态），
 //   并在弹层里提供「前往维护作业」按钮跳到 view-sticky-rules.html。
@@ -3068,7 +3324,11 @@ ipcRenderer.on('sticky-note-apply-state', async (e, payload) => {
   state.fontColor = (typeof inst.fontColor === 'string' && inst.fontColor) ? inst.fontColor : STICKY_DEF_FG;
   state.fontWeight = (typeof inst.fontWeight === 'number') ? inst.fontWeight : 400;
   state.undoneChecksOnly = !!inst.undoneChecksOnly;
+  state.sortMode = (inst.sortMode === 'asc' || inst.sortMode === 'desc') ? inst.sortMode : 'orig';
   syncUndoneChecksFilter();
+  applyViewSort();   // 🆕 汇入可携设定后立刻按新 sortMode 重排（DOM 未重绘，无需重新 capture）
+  const vsSel = document.getElementById('miViewSort');
+  if (vsSel) vsSel.value = state.sortMode;
   // 汇入设定时若正在编辑：折叠状态跟随新设定（勾选＝折叠／未勾选＝还原全文）
   if (editMode) {
     if (state.undoneChecksOnly) applyDoneFold();
@@ -3191,10 +3451,10 @@ function persist() {
     // 几何（位置/尺寸/最小化）写翻页窗专用 id；颜色/透明度/字号按当前显示的便利贴自身状态写
     const g = geomId();
     ipcRenderer.invoke('sticky-note-set', { key: g.key, idx: g.idx, patch: { w: state.w, h: state.h, minimized: state.minimized, minH: state.minH } });
-    ipcRenderer.invoke('sticky-note-set', { key: KEY, idx: IDX, patch: { color: state.color, opacity: state.opacity, fontScale: state.fontScale, fontColor: state.fontColor, fontWeight: state.fontWeight, undoneChecksOnly: state.undoneChecksOnly, scrollPos: state.scrollPos, meteor: state.meteor } });
+    ipcRenderer.invoke('sticky-note-set', { key: KEY, idx: IDX, patch: { color: state.color, opacity: state.opacity, fontScale: state.fontScale, fontColor: state.fontColor, fontWeight: state.fontWeight, undoneChecksOnly: state.undoneChecksOnly, sortMode: state.sortMode, scrollPos: state.scrollPos, meteor: state.meteor } });
     return;
   }
-  ipcRenderer.invoke('sticky-note-set', { key: KEY, idx: IDX, patch: { w: state.w, h: state.h, color: state.color, opacity: state.opacity, minimized: state.minimized, minH: state.minH, fontScale: state.fontScale, fontColor: state.fontColor, fontWeight: state.fontWeight, undoneChecksOnly: state.undoneChecksOnly, scrollPos: state.scrollPos, meteor: state.meteor } });
+  ipcRenderer.invoke('sticky-note-set', { key: KEY, idx: IDX, patch: { w: state.w, h: state.h, color: state.color, opacity: state.opacity, minimized: state.minimized, minH: state.minH, fontScale: state.fontScale, fontColor: state.fontColor, fontWeight: state.fontWeight, undoneChecksOnly: state.undoneChecksOnly, sortMode: state.sortMode, scrollPos: state.scrollPos, meteor: state.meteor } });
 }
 
 // 依字体色亮度取反色：浅色文字 → 给标签一个深底；深色文字 → 给浅底（保证标签始终可读）
@@ -3475,6 +3735,7 @@ function refreshNoteViewDisplay() {
   bindNoteViewDisplayOnce();
   applyNoteViewDisplay();
   placeViewDisplayToggleInHeader(); // 🆕 桌面：把模式切换控件搬到标题栏下方（VIEW 徽标之下），腾出正文空间
+  applyViewSortAfterRender();       // 🆕 VIEW 贴：重绘后统一归一化排序键 → 留存原序 → 套用 sortMode
 }
 
 // 🆕 桌面专属：把正文 .vsr-display 里的 .vsr-display-toggle（顺序平铺／页签方式）搬到标题栏 #vsrHead，
@@ -4721,6 +4982,8 @@ async function renderFlipPage(i) {
   state.fontColor = (inst && typeof inst.fontColor === 'string' && inst.fontColor) ? inst.fontColor : STICKY_DEF_FG;
   state.fontWeight = (inst && typeof inst.fontWeight === 'number') ? inst.fontWeight : 400;
   state.undoneChecksOnly = !!(inst && inst.undoneChecksOnly);
+  // 🆕 翻页换到另一张便利贴：套用「该张」自己的排序偏好（须在下方 refreshNoteViewDisplay 之前设好）
+  state.sortMode = (inst && (inst.sortMode === 'asc' || inst.sortMode === 'desc')) ? inst.sortMode : 'orig';
   state.scrollPos = (inst && typeof inst.scrollPos === 'number' && isFinite(inst.scrollPos)) ? Math.max(0, inst.scrollPos) : 0;
   state.meteor = normalizeMeteor(inst && inst.meteor);
 
@@ -4743,6 +5006,7 @@ async function renderFlipPage(i) {
   noteApplyHighlight(); // 🆕 依當前定位詞重打高亮
   refreshNoteViewDisplay(); // 🆕 多段落 VIEW 便利贴：翻页重渲染后重新套用记忆的「顺序平铺／页签方式」与 active 段落
   syncUndoneChecksFilter();
+  // VIEW 贴排序已统一收口在 refreshNoteViewDisplay() 末尾（normalize → capture → apply）
   applyColor();
   applyContentFont();
   restoreScrollPos();   // 🆕 还原这一张「上次离开前」的卷动位置

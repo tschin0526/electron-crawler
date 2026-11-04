@@ -129,6 +129,11 @@
     /* VIEW 徽标可点：点开看这张投影贴的 JSON 设定逻辑（含跳转维护作业按钮） */
     .doc-badge.is-view { cursor: pointer; -webkit-app-region: no-drag; }
     .doc-badge.is-view:hover { background: rgba(139, 92, 246, .32); }
+    /* 🆕 临时便利贴专属蓝色虚线徽标（与 VIEW 紫、include 金区分）；字色沿用便利贴字体色以适配深/浅底 */
+    .doc-badge.is-temp {
+      border: 1px dashed #2563eb; background: rgba(37, 99, 235, .16);
+      color: var(--note-fg, #1d4ed8); font-style: normal;
+    }
     /* 🆕 便利贴外框流星（每贴可配置：开关 / 飞速 / 大小 / 形状 / 颜色 / 焰尾长度；默认关闭）。
        由 JS 在该贴元素挂 .meteor-on ＋ .meteor-shape-<shape>，并以 CSS 变量传入参数：
          --m-color(颜色) --m-dur(周期秒) --m-head(头角宽deg) --m-flame(亮頭+拖尾總長，由 JS 用 px 反推角度)。
@@ -285,6 +290,11 @@
     .note-undone-filter { display: inline-flex; align-items: center; justify-content: center; margin-left: 4px; min-width: 18px; padding: 0 5px; height: 16px; border-radius: 999px; border: 1px solid rgba(127,127,127,.4); background: rgba(127,127,127,.12); color: var(--note-fg, #4b5160); font-size: 11px; line-height: 1; cursor: pointer; vertical-align: middle; -webkit-app-region: no-drag; }
     .note-undone-filter:hover { background: rgba(127,127,127,.26); }
     .note-undone-filter.active { border-color: #D4AF37; background: rgba(212,175,55,.38); }
+    /* 🆕 VIEW 便利贴「排序」下拉：紧邻 undone-filter 徽标按钮，外观对齐胶囊徽标（金色选中态） */
+    .note-sort-select { display: inline-flex; align-items: center; margin-left: 4px; height: 16px; padding: 0 2px; border-radius: 999px; border: 1px solid rgba(127,127,127,.4); background: rgba(127,127,127,.12); color: var(--note-fg, #4b5160); font-size: 11px; line-height: 1; cursor: pointer; vertical-align: middle; -webkit-app-region: no-drag; -webkit-appearance: none; -moz-appearance: none; appearance: none; }
+    .note-sort-select:hover { background: rgba(127,127,127,.26); }
+    .note-sort-select:focus { outline: none; border-color: #D4AF37; }
+    .note-sort-select option { color: #222; background: #fff; }
     /* 🆕 加入子事件浮层（复用 sticky-note-edit 落盘链路；盒底色由 JS 套用与便利贴同色 tint(state.color,100)，文字用 --note-fg） */
     .addcheck-ov { position: absolute; inset: 0; z-index: 30; display: none; align-items: center; justify-content: center; padding: 10px; background: rgba(0,0,0,.2); -webkit-app-region: no-drag; overflow: auto; }
     .addcheck-ov.show { display: flex; }
@@ -502,7 +512,9 @@
     #note.view-note #noteAddCheckMenu,
     #note.view-note #miNewNote,
     #note.view-note #miDeleteNote,
-    #note.view-note #miCalendarScroll { display: none !important; }
+    #note.view-note #miCalendarScroll,
+    /* 🆕 VIEW 是聚合投影、没有单一来源行程 → 「检视行程」找不到对应事件，直接收起 */
+    #note.view-note #miEditEvent { display: none !important; }
     /* VIEW 贴没有「编辑」这件事：textarea 那层不该出现光标以外的暗示 */
     #note.view-note .editArea { caret-color: transparent; }
     .body p { margin: .3em 0; }
@@ -901,6 +913,8 @@
         <button class="mi" id="miCalendar" title="开启 Calendar（只开窗口，不导航）">📅 开启 Calendar</button>
         <button class="mi" id="miCalendarScroll" title="开启 Calendar 并滚动定位到该行程位置">📜 滚动</button>
       </div>
+      <!-- 🆕 明确入口：开启这张便利贴对应的「编辑行程」窗体（INCLUDE 外部档的行程会自动以只读模式显示） -->
+      <button class="mi" id="miEditEvent" title="在主程式开启这张便利贴对应的行程；来自被 include 的外部档时为只读查看">✎ 检视行程</button>
       <!-- 🆕 从便利贴唤起：TodoList（Gallery 独立模式）／ AI 智能控制台（主程序）。
            仅开便利贴（./start.sh --sticky）时主窗只驻 Dock；这两个按钮把主窗切到对应模式并显示。 -->
       <button class="mi" id="miOpenTodolist" title="唤起 TodoList（Gallery 独立模式，等同 ./start.sh --todolist）">📝 唤起 TodoList</button>

@@ -2624,6 +2624,19 @@
       width: auto; height: 34px; padding: 0 16px; border-radius: 8px; font-size: 13px; font-weight: 500; white-space: nowrap;
     }
     .tl-ev-form-hint { margin-top: 10px; font-size: 11px; line-height: 1.5; color: var(--ev-muted); }
+    /* 🆕 编辑行程窗体「只读模式」（INCLUDE 外部档）：非表单控件关点击、整块淡出表示不可改。
+       文字框仍可读可选可卷动（readOnly），所以不加 opacity 到 textarea。 */
+    .tl-ev-form-ro-banner {
+      margin: -4px 0 12px; padding: 6px 10px; border: 1px dashed #f5c518; border-radius: 8px;
+      background: rgba(245, 197, 24, .08); color: #f5c518; font-size: 12px; line-height: 1.5;
+    }
+    #tlEvFormOverlay.is-readonly .ev-f-colors,
+    #tlEvFormOverlay.is-readonly .tl-ev-tag-picker,
+    #tlEvFormOverlay.is-readonly .ev-todo-link-panel { pointer-events: none; opacity: .55; }
+    #tlEvFormOverlay.is-readonly input:disabled,
+    #tlEvFormOverlay.is-readonly select:disabled { opacity: .72; cursor: default; }
+    #tlEvFormOverlay.is-readonly textarea[readonly] { cursor: text; }
+    #tlEvFormOverlay.is-readonly .tl-ev-form-hint { color: #f5c518; }
 
     /* 🆕 表格网格编辑器（区块圆点 type=table 时启用）。配色一律走 --ev-* 变量：
        #tlAddCheckOverlay 已在 --ev-* 作用域清单里（见上方那条 ⚠️ 注释），亮／暗两套自动跟随。 */
@@ -5379,6 +5392,8 @@
   <div id="tlEvFormOverlay" class="tl-ev-form-overlay" style="display:none">
     <div class="tl-ev-form-box">
       <div class="tl-ev-form-title" id="tlEvFormTitle">新增行程</div>
+      <!-- 🆕 只读窗体（INCLUDE 外部档行程）：由 calendar-editor.js::tlSetEventFormReadonly 填文案与显隐 -->
+      <div class="tl-ev-form-ro-banner" id="tlEvFormRoBanner" style="display:none"></div>
       <label class="tl-ev-f-label">标题<input type="text" id="tlEvFTitle" maxlength="200" placeholder="行程标题"></label>
       <!-- 🆕 写入文件：新增时可选写入主文件或某个被 include 的同目录 calendar-*.md（追加落盘、不进缓冲） -->
       <div class="tl-ev-f-target" id="tlEvFTargetRow">
@@ -5461,10 +5476,10 @@
       <div class="tl-ev-form-actions">
         <button type="button" class="btn btn-secondary" id="tlEvFormDelete" style="display:none" onclick="tlDeleteFromForm()">删除</button>
         <span style="flex:1"></span>
-        <button type="button" class="btn btn-secondary" onclick="tlCloseEventForm()">取消</button>
-        <button type="button" class="btn btn-primary" onclick="tlSaveEventForm()">写入编辑内容</button>
+        <button type="button" class="btn btn-secondary" id="tlEvFormCancel" onclick="tlCloseEventForm()">取消</button>
+        <button type="button" class="btn btn-primary" id="tlEvFormSave" onclick="tlSaveEventForm()">写入编辑内容</button>
       </div>
-      <div class="tl-ev-form-hint">写入后按编辑器「保存」，把改动写回 calendar.md</div>
+      <div class="tl-ev-form-hint" id="tlEvFormHint">写入后按编辑器「保存」，把改动写回 calendar.md</div>
     </div>
   </div>
 
@@ -7151,7 +7166,7 @@
       if (!el) return;
       const refs = (typeof tlStickyNoteRefs === 'function') ? tlStickyNoteRefs() : [];
       // 🔔「VIEW 便利贴」是现算的投影、不占设定数 → 角标只数真正设了张数的贴
-      const n = refs.filter((r) => !r || !r.view).length;
+      const n = refs.filter((r) => !r || (!r.view && !r.temp)).length;
       el.textContent = n > 99 ? '99+' : String(n);
       el.style.display = n > 0 ? '' : 'none';
     }
@@ -7281,7 +7296,10 @@
       //    lines（0-based 行号区间）与 text（目标原文，行号缺失时按内容兜底定位）
       const hlLines = (payload && Array.isArray(payload.lines)) ? payload.lines.map((x) => +x || 0) : [];
       const hlText = (payload && payload.text) ? String(payload.text) : '';
-      const pre = (hlLines.length || hlText) ? { highlightLines: hlLines, highlightText: hlText } : undefined;
+      // 🆕 fromNote：标记「这张编辑窗体是从便利贴唤起的」——关闭后必须滚回该行程；
+      //    从主画面自己点「编辑」开的窗体没有这个标记，关闭后一律原地不动（用户 2026-11-04 要求）。
+      const pre = Object.assign({ fromNote: true },
+        (hlLines.length || hlText) ? { highlightLines: hlLines, highlightText: hlText } : {});
       try { if (typeof tlOpenEventForm === 'function') tlOpenEventForm(uid, null, pre); }
       catch (e) { console.warn('[TodoList] 打开便利贴对应行程失败:', e); }
     }
@@ -7289,10 +7307,10 @@
       window.electronAPI.onStickyOpenEvent(function (p) { tlOnStickyOpenEvent(p); });
     }
     // 🆕 便利贴菜单「滚动」：唤起主程式后滚动定位到该行程（不打开编辑框）
-    //    机制同「今天」按钮：游标/选中日/列表锚点设到该行程日期 → 各模式渲染后自动滚到该日期
-    //    （年→该日期所在月份卡片；月→该日期格；列表/明细→该日期分组；日/周→该日网格）；
-    //    渲染落地后再精定位——事件行已渲染（列表/明细，[data-uid]）→ 滚到事件行＋金色闪烁；
-    //    年/月网格无事件行 → 退而闪日期格（滚动已由 pending 标志完成）
+    //    两件事：① 用便利贴 key 解析出 uid；② 交给 calendar-editor.js::tlScrollToEventByUid 统一定位。
+    //    该核心同时服务「便利贴编辑窗体关闭后回到该行程」，是滚动行为的单一可信来源：
+    //    先把游标/选中日/列表锚点设到该行程日期并渲染，落地后再精定位 [data-uid] 事件行＋金色闪烁；
+    //    年/月网格无事件行时退而闪日期格。
     function tlOnStickyScrollToEvent(payload) {
       const key = payload && payload.key;
       if (!key) return;
@@ -7301,34 +7319,8 @@
         : tlCalEvents;
       const uid = (typeof tlFindEventUidByKey === 'function') ? tlFindEventUidByKey(key) : null;
       if (!uid) { if (typeof showToast === 'function') showToast('找不到该行程', 'danger'); return; }
-      const ev = tlCalEvents.find(function (x) { return x.uid === uid; });
-      const date = ev ? ((typeof tlEventDisplayDate === 'function') ? tlEventDisplayDate(ev) : (ev.date || '')) : '';
-      if (!date) { if (typeof showToast === 'function') showToast('找不到该行程的日期', 'danger'); return; }
-
-      const d = new Date(date + 'T00:00:00');
-      if (!isNaN(d.getTime())) tlCalCursor = d;
-      tlCalSelected = date;
-      tlListSel = date;
-      if (tlCalMode === 'year') tlYearAutoScrollPending = true;
-      if (tlCalMode === 'month') tlMonthAutoScrollPending = true;
-      if (tlCalMode === 'list') tlListScrollAnchorPending = true;
-      else tlDetailListScrollPending = true;
-      tlRenderEventsContent();
-
-      setTimeout(function () {
-        const row = document.querySelector('[data-uid="' + uid + '"]');
-        if (row && row.offsetParent) {
-          try { if (typeof tlJumpToEventCore === 'function') tlJumpToEventCore(uid); } catch (e) { /* 高亮失败不影响滚动 */ }
-          return;
-        }
-        const cell = document.querySelector('#tlEvYearGrid .ev-year-day[data-date="' + date + '"], #tlEvMonthGrid .ev-cell[data-date="' + date + '"]');
-        if (cell && cell.offsetParent) {
-          cell.classList.remove('tl-jump-flash');
-          void cell.offsetWidth;  // 强制 reflow 重启动画
-          cell.classList.add('tl-jump-flash');
-          setTimeout(function () { cell.classList.remove('tl-jump-flash'); }, 2000);
-        }
-      }, 400);
+      const ok = (typeof tlScrollToEventByUid === 'function') && tlScrollToEventByUid(uid);
+      if (!ok && typeof showToast === 'function') showToast('找不到该行程的日期', 'danger');
     }
     if (window.electronAPI && typeof window.electronAPI.onStickyScrollToEvent === 'function') {
       window.electronAPI.onStickyScrollToEvent(function (p) { tlOnStickyScrollToEvent(p); });
