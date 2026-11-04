@@ -1799,7 +1799,8 @@ async function noteFindSameOpen(e) {
   noteFindSameTarget = { uid: isView ? uid : srcUid, srcUid: srcUid, srcTitle: srcTitle, line: li, text: text, view: isView };
   const menu = document.getElementById('noteFindSameMenu');
   if (!menu) return;
-  // 🆕 投影贴＝只读投影：搬移／删除会异动资料（而且没有对应的落盘位置），菜单里直接收起
+  // 🆕 投影贴＝只读投影：搬移／删除会异动资料（而且没有对应的落盘位置），菜单里直接收起。
+  //    「📝 切换编辑行程并定位」是纯查看动作，VIEW 贴照样保留（它用 data-src 找来源行程）。
   //   ⚠️ 靠 .nami[hidden]{display:none !important}（desktop-note.html）才真的不见：
   //      单靠 hidden 属性会被 .note-addcheck-menu .nami{display:block} 压过去（2026-10-27 实测踩过）
   menu.querySelectorAll('.nami').forEach((item) => {
@@ -2195,16 +2196,31 @@ function noteFindFlashLocated(line0, text) {
 //   复用既有 wake-main-from-note（action='open'）→ 主程式 open-sticky-event → tlOnStickyOpenEvent → tlOpenEventForm(uid)。
 //   ⚠️ lines（0-based 行号区间）必须一起送：主程式据它把备注框滚动到命中行、选中并金底闪烁两次
 //      （tlFlashEventFormLines）——否则「切换过去了但找不到内容在哪」（2026-10-30 用户回报）。
-function noteFindSameOpenSourceEvent(uid, lines) {
+function noteFindSameOpenSourceEvent(uid, lines, text) {
   const ov = document.getElementById('findSameOv');
   if (ov) ov.classList.remove('show');
   if (!uid) { window.alert('找不到该行程，无法切换'); return; }
   const payload = { key: uid, action: 'open' };
   if (Array.isArray(lines) && lines.length) payload.lines = lines;
-  // 🆕 一并送目标原文：主程式在「行号对不上/被过滤」时按内容在备注框里找行（兜底定位）
-  if (noteFindSameCurText) payload.text = noteFindSameCurText;
+  // 🆕 text 可由调用方显式给（编辑小圆点右键「切换编辑行程并定位」用该小圆点自己的原文）；
+  //    未给才退回 noteFindSameCurText（「找出相同」结果窗切换的既有行为）。
+  //    ⚠️ 不能一律用全域：右键直接切换时全域可能残留上一次搜寻的文字，会把定位带去错误的行。
+  const payloadText = (typeof text === 'string') ? text : noteFindSameCurText;
+  if (payloadText) payload.text = payloadText;
   try { ipcRenderer.invoke('wake-main-from-note', payload); }
   catch (err) { window.alert('唤起主程式打开行程失败：' + (err && err.message ? err.message : err)); }
+}
+
+// 🆕 区块编辑小圆点（.md-unit-edit）没有 data-text：从渲染后的 .md-unit 取纯文字，
+//    作为主程式 tlFlashEventFormLines「行号对不上时按内容找行」的兜底（行号优先，故不要求精确）。
+function noteDotBlockText(dot) {
+  if (!dot) return '';
+  const unit = dot.closest && dot.closest('.md-unit');
+  if (!unit) return '';
+  const clone = unit.cloneNode(true);
+  const btn = clone.querySelector('.md-unit-edit, .ev-md-edit');
+  if (btn) btn.remove();
+  return String(clone.textContent || '').replace(/\s+/g, ' ').trim();
 }
 
 // 让命中的行闪烁：checkbox 行取外层 .ev-md-check（金底＋金环脉冲）；
@@ -5161,7 +5177,19 @@ document.addEventListener('keydown', (e) => {
       if (!item) return;
       e.stopPropagation();
       const act = item.getAttribute('data-act');
-      if (act === 'find') noteFindSameRun();
+      if (act === 'goto-event') {
+        // 🆕 切换到 Calendar 的编辑行程画面并把备注框滚到该小事件：三类便利贴共用同一份 target。
+        //    · 一般／include 贴：srcUid＝便利贴 key（＝事件 uid，ro-* 亦可），line＝该贴备注的 0-based 行号
+        //    · VIEW 投影贴：srcUid＝data-src（来源行程 uid），line＝来源行程备注里的行号
+        //    主程式 tlOnStickyOpenEvent 带 lines/text 开窗 → tlFlashEventFormLines 滚动＋选中＋闪烁；
+        //    ro 行程会开只读窗体（readOnly textarea 仍能 setSelectionRange 与卷动）。
+        const t = noteFindSameTarget;
+        noteFindSameClose();                 // 会清掉 target，故先存副本
+        if (!t) return;
+        noteFindSameOpenSourceEvent(t.srcUid,
+          Number.isInteger(t.line) && t.line >= 0 ? [t.line] : [], t.text || '');
+      }
+      else if (act === 'find') noteFindSameRun();
       else if (act === 'move') { const t = noteFindSameTarget; noteFindSameClose(); noteFindSameMoveCheck(t); }
       else if (act === 'copy') { const t = noteFindSameTarget; noteFindSameClose(); noteFindSameCopy(t); }
       else if (act === 'del') noteFindSameDelete();
@@ -5177,7 +5205,15 @@ document.addEventListener('keydown', (e) => {
       const act = item.getAttribute('data-act');
       const t = noteBlockMenuTarget;
       if (!t) { noteBlockMenuClose(); return; }
-      if (act === 'edit') { const tt = t; noteBlockMenuClose(); const synth = { preventDefault() {}, stopPropagation() {}, target: tt.dot }; tlOpenEditBlockDialog(synth, tt.uid, tt.start, tt.end, tt.type); }
+      if (act === 'goto-event') {
+        // 🆕 区块圆点也走同一条定位管线：data-start/data-end 是多行区块的行号区间，
+        //    主程式 tlFlashEventFormLines 会取首尾把整块选中并闪烁。
+        const tt = t;
+        const txt = noteDotBlockText(tt.dot);
+        noteBlockMenuClose();
+        noteFindSameOpenSourceEvent(tt.uid, [tt.start, tt.end], txt);
+      }
+      else if (act === 'edit') { const tt = t; noteBlockMenuClose(); const synth = { preventDefault() {}, stopPropagation() {}, target: tt.dot }; tlOpenEditBlockDialog(synth, tt.uid, tt.start, tt.end, tt.type); }
       else if (act === 'copy') { noteBlockMenuClose(); noteBlockCopy(t); }
       else if (act === 'del') { noteBlockMenuClose(); noteBlockDelete(t); }
     });

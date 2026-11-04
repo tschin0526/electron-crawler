@@ -869,8 +869,11 @@
       <button type="button" class="nami" data-act="table" role="menuitem">▦ 加入 MD 表格</button>
       <button type="button" class="nami" data-act="text" role="menuitem">✎ 自由编辑（任意文本）</button>
     </div>
-    <!-- 🆕 右键 checkbox 编辑小圆点（.ev-md-edit）→ 下拉菜单：找出相同的项目 / 搬移项目 / 复制内容 / 删除此小事件（四项独立） -->
+    <!-- 🆕 右键 checkbox 编辑小圆点（.ev-md-edit）→ 下拉菜单：切换编辑行程并定位 / 找出相同 / 搬移 / 复制 / 删除。
+         第 1 项对「一般便利贴／include 外部档便利贴／VIEW 投影贴」都可用：VIEW 用 data-src 找来源行程，
+         ro 行程由主程式开只读窗体（2026-11-05）。 -->
     <div class="note-addcheck-menu" id="noteFindSameMenu" role="menu">
+      <button type="button" class="nami" data-act="goto-event" role="menuitem" title="唤起 Calendar 开启这张便利贴对应的编辑行程画面（被 include 的外部档为只读），并把备注框滚动到该小事件所在行＋闪烁">📝 切换编辑行程并定位</button>
       <button type="button" class="nami" data-act="find" role="menuitem">🔍 找出相同的项目</button>
       <button type="button" class="nami" data-act="move" role="menuitem">📤 搬移项目</button>
       <button type="button" class="nami" data-act="copy" role="menuitem">📋 复制内容</button>
@@ -878,6 +881,7 @@
     </div>
     <!-- 🆕 右键 区块编辑小圆点（.md-unit-edit）→ 区块级下拉菜单：编辑此区块／复制整块内容／删除此区块（与 #noteFindSameMenu 平行；区块不是「小事件」，无跨张比对/搬移语义） -->
     <div class="note-addcheck-menu" id="noteBlockMenu" role="menu">
+      <button type="button" class="nami" data-act="goto-event" role="menuitem" title="唤起 Calendar 开启对应的编辑行程画面（被 include 的外部档为只读），并把备注框滚动到这个区块所在行＋闪烁">📝 切换编辑行程并定位</button>
       <button type="button" class="nami" data-act="edit" role="menuitem">✎ 编辑此区块</button>
       <button type="button" class="nami" data-act="copy" role="menuitem">📋 复制整块内容</button>
       <button type="button" class="nami" data-act="del" role="menuitem">🗑 删除此区块</button>
