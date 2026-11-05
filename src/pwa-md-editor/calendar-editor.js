@@ -251,12 +251,12 @@ function calRefreshAll() {
   const content = (elements.editor && elements.editor.value) || '';
   let events = parseCalendarEvents(content);
   let holidays = parseCalendarHolidays(content);
-  let diaries = parseCalendarDiaries(content);
+  let diaries = [];
   (state.calIncludeFiles || []).forEach((inc, fi) => {
     const p = calParseIncludeContent(inc.content, fi, inc.name, inc.dirty);
     events = events.concat(p.events);
     holidays = holidays.concat(p.holidays);
-    diaries = diaries.concat(p.diaries);
+    if (DIARY_FEATURE_ENABLED) diaries = diaries.concat(p.diaries);
   });
   state.calEvents = events;
   calHolidays = holidays;
@@ -657,6 +657,8 @@ function calNotesHint(ev, mainMsg) {
 let calHolidays = [];
 // ## DIARY 解析結果（每天一條，keyed by date）；行事曆日期旁顯示日記按鈕，有則打勾
 let calDiaries = [];
+// 日記功能已停用；後續日曆內容請使用 VIEW 便利貼承載。
+const DIARY_FEATURE_ENABLED = false;
 // ## HOLIDAY：與 ## EVENT 同一套字段（多 holidayType），僅分割符不同；複用 parseCalendarEventBlock 解析（無 title 的塊會被跳過）
 // ⚠️ 從 i=1 開始：split 後 blocks[0] 是「第一個 ## HOLIDAY 之前的所有內容」（通常含 ## EVENT 塊），
 //    那段裡的 - title 會被誤當成 holiday；holiday 必然跟在它自己的 ## HOLIDAY 標記之後，故跳過 blocks[0] 即正確。
@@ -746,6 +748,7 @@ function calDiaryToMarkdown(d) {
   return s;
 }
 function calDiaryOnDate(dateStr) {
+  if (!DIARY_FEATURE_ENABLED) return null;
   if (!calDiaries || !calDiaries.length) return null;
   return calDiaries.find((x) => x.date === dateStr) || null;
 }
@@ -3815,6 +3818,21 @@ function renderEventsContent() {
   else calRestoreScrollPositions(scrollPositions);
 }
 
+// 保存并关闭事件表单后，先切换到事件日期，再把该事件精确滚到可视区中央。
+function calScrollToEventByUid(uid) {
+  if (!uid) return;
+  const ev = parseCalendarEvents(elements.editor.value).find((item) => item.uid === uid);
+  if (!ev || !ev.date) return;
+  const date = ev.date;
+  state.calCursor = new Date(date + 'T00:00:00');
+  state.calSelectedDate = date;
+  renderEventsContent();
+  requestAnimationFrame(() => {
+    const row = document.querySelector('[data-uid="' + uid + '"]');
+    if (row && row.offsetParent) row.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' });
+  });
+}
+
 // 滾到今天的延遲版本：等真正的滾動容器 + 目標元素都就位才執行（最多 120 帧 ≈ 2s）
 function calQueueScrollActiveViewToToday() {
   let tries = 0;
@@ -4268,13 +4286,17 @@ function closeEventForm(skipDirtyGuard) {
       if (!saveEventForm(false)) return;
     } else return;
   }
+  const closingUid = state.evFormUid;
+  const scrollAfterSave = state.evFormScrollOnCloseUid === closingUid;
   calFormBaseline = null;
   if (elements.evFormOverlay) elements.evFormOverlay.style.display = 'none';
   state.evFormUid = null;
+  state.evFormScrollOnCloseUid = null;
   state.evFormColor = null;
   state.evFormTodoIds = [];
   // 🆕 復位唯讀態：下一張窗體可能是主檔可編輯行程，不能帶著 disabled / 隱藏按鈕進去。
   calSetEventFormReadonly(false, '');
+  if (scrollAfterSave) calScrollToEventByUid(closingUid);
 }
 
 // ===== ## EVENT(REPEAT) 表單控件 =====
@@ -4414,6 +4436,12 @@ function saveEventForm(closeAfterSave = true) {
   if (i >= 0) state.calEvents[i] = ev;
   else state.calEvents.push(ev);
   applyEventsToEditor();
+  // 新增事件的 uid 由解析器按位置生成；保存后重新解析，确保关闭时能精确找到新事件。
+  const saved = parseCalendarEvents(elements.editor.value);
+  const signature = (item) => [item.title, item.date, item.endDate, item.startTime, item.endTime, item.location].join('\u0001');
+  const savedEvent = saved.find((item) => item.uid === ev.uid) || saved.find((item) => signature(item) === signature(ev));
+  state.evFormUid = savedEvent ? savedEvent.uid : ev.uid;
+  state.evFormScrollOnCloseUid = state.evFormUid;
   if (closeAfterSave) closeEventForm(true);   // 已保存 → 跳過 dirty guard
   showToast(closeAfterSave
     ? '已寫入編輯內容，按頂欄「保存」存回文件'
@@ -4442,6 +4470,7 @@ function deleteEventFromForm() {
 // ===== ## DIARY 新增/編輯/刪除（寫回編輯緩衝，按頂欄「保存」落盤）=====
 let calDiaryFormDate = null;
 function openDiaryForm(date) {
+  if (!DIARY_FEATURE_ENABLED) return;
   calHideTip();
   if (!isCalendarMd()) return;
   calDiaries = parseCalendarDiaries(elements.editor.value);
@@ -4910,7 +4939,7 @@ function applyEventsToEditor() {
   const holidays = parseCalendarHolidays(elements.editor.value);
   const diaries = parseCalendarDiaries(elements.editor.value);
   calHolidays = holidays;
-  calDiaries = diaries;
+  calDiaries = [];
   // 📎 重畫後保留 ## TAGS / ## INCLUDE（避免父階標籤、Include 勾選被清掉）
   // 📎 多檔聯運安全網：state.calEvents 在此可能是「主檔＋include 併集」，
   //    但編輯緩衝只屬於主檔——絕不可把 ro（只讀來源）事件序列化寫回主檔，

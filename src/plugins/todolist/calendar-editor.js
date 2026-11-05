@@ -63,6 +63,8 @@
     //    ⚠️ 只作用于列表模式（tlRenderList）；月/週/日三种模式一律不受影响。
     let tlCalDiaryOnly = false;
     let tlDiaryOnlyLoaded = false;
+    // 日记功能已停用；后续日历内容请使用 VIEW 便利贴承载。
+    const TL_DIARY_FEATURE_ENABLED = false;
     // 📆 年视图自动滚动：切到年视图 / 点「今天」 / 首次打开行程视图时，若当前月份未完整显示，则滚动使其可见。
     //    由触发点设 tlYearAutoScrollPending=true，tlRenderYear 渲染后消费一次，避免选择日期等重绘时重复滚动。
     let tlYearAutoScrollPending = false;
@@ -79,6 +81,7 @@
     let tlUndoneScrollResult = null;   // 测试 seam：undone 勾选切换后实际滚动到的日期组（null＝无列表/无锚点）
     let tlEvFormTodoIds = [];   // 表单内「关联 Todo 卡片」临时列表（仅编辑期，不污染存档对象）
     let tlEvFormUid = null;
+    let tlEvFormScrollOnCloseUid = null;
     // 🆕 编辑窗体来源：true＝从桌面便利贴唤起（tlOnStickyOpenEvent 传 pre.fromNote）。
     //    关闭窗体后必须滚动回该行程；从主画面自己点「编辑」开的窗体为 false，关闭后原地不动。
     //    （用户 2026-11-04：主画面编辑关闭不要滚动画面；便利贴编辑关闭要滚到该行程）
@@ -92,6 +95,7 @@
     //    与 tlDiaryFormReadonly 同口径；DOM 状态统一由 tlSetEventFormReadonly 控管（开窗 / 关窗都走它）。
     let tlEvFormReadOnly = false;
     let tlEvFormReadOnlySrc = '';
+    let tlEvFormDirty = false;
 
     // 表单内「＋ CheckBox」按钮旁的便利贴小图标：sticky>0 才显示（开表单时载入 + sticky 字段改动时实时同步）
     function tlSyncStickyFlag() {
@@ -156,7 +160,10 @@
     // 📎 合并 include 进来的只读事件（渲染统一走 tlCalEvents，只读约束靠 ro 标记 + 写回过滤）
     function tlAllEvents(md) { return (tlParseEvents(md) || []).concat(tlIncludedEvents || []); }
     function tlAllHolidays(md) { return (tlParseHolidays(md) || []).concat(tlIncludedHolidays || []); }
-    function tlAllDiaries(md) { return (tlParseDiaries(md) || []).concat(tlIncludedDiaries || []); }
+    function tlAllDiaries(md) {
+      if (!TL_DIARY_FEATURE_ENABLED) return [];
+      return (tlParseDiaries(md) || []).concat(tlIncludedDiaries || []);
+    }
     // 📎 加载同目录 calendar-*.md（结构与 calendar.md 相同：EVENT / HOLIDAY / DIARY）并解析为只读数据：
     //   - 外部文件模式：目录 = externalFilePath 所在目录，读取走 readFileByPath
     //   - 内部 md 模式：目录 = TODO_DATA_DIR（getTodoDataDir），读取走 readMdFile
@@ -216,7 +223,9 @@
             merged.push(ev);
           });
           tlParseHolidays(content).forEach((h, j) => { h.ro = true; h.src = name; h.uid = 'ro-' + i + '-' + j + '-h-' + h.uid; mergedHolidays.push(h); });
-          tlParseDiaries(content).forEach((d) => { d.ro = true; d.src = name; mergedDiaries.push(d); });
+          if (TL_DIARY_FEATURE_ENABLED) {
+            tlParseDiaries(content).forEach((d) => { d.ro = true; d.src = name; mergedDiaries.push(d); });
+          }
         }
         tlIncludedEvents = merged;
         tlIncludedHolidays = mergedHolidays;
@@ -1076,6 +1085,7 @@
       return s;
     }
     function tlDiaryOnDate(dateStr) {
+      if (!TL_DIARY_FEATURE_ENABLED) return null;
       if (!tlCalDiaries || !tlCalDiaries.length) return null;
       return tlCalDiaries.find((d) => d.date === dateStr) || null;
     }
@@ -3061,7 +3071,7 @@
       const repeatMore = '<button type="button" class="ev-legend-more" title="查看全部重复事件设定" aria-label="查看全部重复事件设定" onclick="tlOpenRepeatOverview()">' + TL_REPEAT_OV_ICON + '</button>';
       html += '<span class="ev-legend-sep"></span>' + catRepeat + repeatMore;
       // 📓 「只显示日记」勾选：只在列表模式出现（月/週/日不显示，也不受其影响）
-      if (tlCalMode === 'list') {
+      if (TL_DIARY_FEATURE_ENABLED && tlCalMode === 'list') {
         tlLoadDiaryOnly();
         html += '<span class="ev-legend-sep"></span>' +
           '<label class="ev-legend-item ev-legend-cat' + (tlCalDiaryOnly ? '' : ' off') + '" title="只在列表模式生效：勾选后列表只列出有写日记的日期（行程与假日暂时隐藏）">' +
@@ -3599,6 +3609,7 @@
     // 纯 UI 偏好（内存 + localStorage，键 tlCalDiaryOnly；绝不写回 calendar.md）。只在列表模式生效。
     const TL_DIARYONLY_KEY = 'tlCalDiaryOnly';
     function tlLoadDiaryOnly() {
+      if (!TL_DIARY_FEATURE_ENABLED) return false;
       if (tlDiaryOnlyLoaded) return tlCalDiaryOnly;
       tlDiaryOnlyLoaded = true;
       let v = '';
@@ -3607,6 +3618,7 @@
       return tlCalDiaryOnly;
     }
     function tlSetDiaryOnly(on) {
+      if (!TL_DIARY_FEATURE_ENABLED) return;
       tlCalDiaryOnly = !!on;
       tlDiaryOnlyLoaded = true;
       try { localStorage.setItem(TL_DIARYONLY_KEY, tlCalDiaryOnly ? '1' : '0'); } catch (e) {}
@@ -4384,6 +4396,7 @@
       // ⚠️ 只读态必须最后才套：上面 tlToggleAllDay / tlOnRepeatModeChange / tlRenderColors 会重设或重建控件。
       tlSetEventFormReadonly(isRo, roSrc);
       document.getElementById('tlEvFormOverlay').style.display = 'flex';
+      tlEvFormDirty = false;
       tlAutoSizeNotes();
       // 只读时标题已 disabled（focus 无效）；备注框仍可 focus，供「找出相同→切换」的行闪烁定位使用。
       if (!isRo) document.getElementById('tlEvFTitle').focus();
@@ -4553,7 +4566,11 @@
       tlRenderColors();
     }
 
-    function tlCloseEventForm() {
+    function tlCloseEventForm(force = false) {
+      if (!force && tlEvFormDirty) {
+        showToast('行程编辑框有未保存内容，请按「取消」退出，或先写入编辑内容', 'danger');
+        return false;
+      }
       // 🆕 关闭编辑窗体＝**按来源决定要不要滚动**（用户 2026-11-04 两次说明后的最终规则）：
       //   · 从便利贴唤起（pre.fromNote=true）→ 关闭后必须滚动回「该行程」的位置；
       //   · 从主画面点「编辑」开的窗体 → 纯收起浮层，绝不动卷动位置，原来在哪里还是在哪里；
@@ -4562,18 +4579,21 @@
       //   便利贴路径则在下面这个统一入口补做定位，不在保存函数里各写一份。
       const closingUid = tlEvFormUid;
       const backToNoteEvent = tlEvFormFromNote;
+      const scrollAfterSave = tlEvFormScrollOnCloseUid === closingUid;
       const ov = document.getElementById('tlEvFormOverlay');
       if (ov) ov.style.display = 'none';
       tlEvFormUid = null;
+      tlEvFormScrollOnCloseUid = null;
       tlEvFormFromNote = false;
       tlEvFormColor = null;
       tlEvFormTarget = '';
+      tlEvFormDirty = false;
       // 🆕 复位只读态：下一张窗体可能是主档可编辑行程，不能带着 disabled / 隐藏按钮进去。
       tlSetEventFormReadonly(false, '');
       // 定位核心（tlScrollToEventByUid）与便利贴菜单「滚动」共用，避免两份实现漂移。
-      if (backToNoteEvent && closingUid) {
+      if ((backToNoteEvent || scrollAfterSave) && closingUid) {
         try { tlScrollToEventByUid(closingUid); }
-        catch (e) { console.warn('[TodoList] 便利贴编辑窗体关闭后定位失败:', e); }
+        catch (e) { console.warn('[TodoList] 编辑窗体关闭后定位失败:', e); }
       }
     }
 
@@ -4583,6 +4603,17 @@
     let tlAddCheckTargetUid = null;
     let tlEditNoteCheckTarget = null;
     let tlEditBlockTarget = null; // { uid, start, end, type } — 通用「最小 MD 区块」编辑区间
+    let tlAddCheckDirty = false;
+    function tlBindAddCheckDirty() {
+      const ov = document.getElementById('tlAddCheckOverlay');
+      if (!ov || ov.dataset.dirtyBound) return;
+      ov.dataset.dirtyBound = '1';
+      const markDirty = (e) => {
+        if (e.target && e.target.matches && e.target.matches('input, textarea')) tlAddCheckDirty = true;
+      };
+      ov.addEventListener('input', markDirty);
+      ov.addEventListener('change', markDirty);
+    }
     function tlBlockTypeName(type) {
       return ({ code: '代码块', table: '表格', heading: '标题', hr: '分隔线', quote: '引用', list: '列表', para: '段落' })[type] || '区块';
     }
@@ -4605,6 +4636,7 @@
       tlExitTableMode();   // 同一个浮层也用来做表格网格，进一般模式前一定复位
       const ov = document.getElementById('tlAddCheckOverlay');
       const inp = document.getElementById('tlAddCheckInput');
+      tlBindAddCheckDirty();
       const copyButton = document.getElementById('tlCopyNoteCheckButton');
       if (ov) ov.onkeydown = null;
       if (copyButton) copyButton.style.display = 'none';
@@ -4612,6 +4644,7 @@
       document.querySelector('#tlAddCheckOverlay .tl-ev-form-hint').innerHTML = '每行一个项目，保存后以 <code>- [ ] …</code> 形式追加到「备注」末尾；系统自动补上建立日标记 <code>[[cr:今天]]</code>';
       document.querySelector('#tlAddCheckOverlay .btn-primary').textContent = '加入备注';
       if (inp) inp.value = '';
+      tlAddCheckDirty = false;
       if (inp) inp.rows = 4;
       if (ov) ov.style.display = 'flex';
       if (inp) setTimeout(() => inp.focus(), 0);
@@ -4693,6 +4726,7 @@
       tlExitTableMode();   // 同上：子事件入口一律不用网格
       const ov = document.getElementById('tlAddCheckOverlay');
       const inp = document.getElementById('tlAddCheckInput');
+      tlBindAddCheckDirty();
       const copyButton = document.getElementById('tlCopyNoteCheckButton');
       document.querySelector('#tlAddCheckOverlay .tl-ev-form-title').textContent = '编辑 CheckBox 子事件';
       document.querySelector('#tlAddCheckOverlay .tl-ev-form-hint').textContent = '只修改子事件文字；勾选状态会保留，日期标记（[[cr:…]] 建立日／[[dl:…]] 预计完成／[[cp:…]] 完成日，建立日会自动补在最前面）以原文显示可直接编辑；换行（shift+enter）＝拆成多个子事件（第一行保留本条的勾选状态）；清空内容并保存＝删除该子事件（会先确认）';
@@ -4762,6 +4796,7 @@
       tlEditBlockTarget = { uid, start, end, type };
       const ov = document.getElementById('tlAddCheckOverlay');
       const inp = document.getElementById('tlAddCheckInput');
+      tlBindAddCheckDirty();
       const copyButton = document.getElementById('tlCopyNoteCheckButton');
       document.querySelector('#tlAddCheckOverlay .tl-ev-form-title').textContent = '编辑内容区块（' + tlBlockTypeName(type) + '）';
       document.querySelector('#tlAddCheckOverlay .tl-ev-form-hint').textContent = '直接编辑此区块的 Markdown 原文；⌘S 保存（不关闭，可继续编辑）· Esc 关闭；清空并保存＝删除该区块（会先确认）';
@@ -4774,6 +4809,7 @@
         if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); tlCloseAddCheckDialog(); }
       };
       if (inp) { inp.value = src; inp.rows = Math.min(18, Math.max(4, (end - start + 1) + 1)); }
+      tlAddCheckDirty = false;
       // 🆕 表格区块 → 进网格模式（解析失败仍留原文模式，不挡路）
       tlExitTableMode();
       let tableMode = false;
@@ -4800,17 +4836,23 @@
         showToast('复制子事件失败：' + (error.message || error), 'danger');
       }
     }
-    function tlCloseAddCheckDialog() {
+    function tlCloseAddCheckDialog(force = false) {
+      if (!force && tlAddCheckDirty) {
+        showToast('编辑内容区块有未保存内容，请按「取消」退出，或先保存修改', 'danger');
+        return false;
+      }
       const ov = document.getElementById('tlAddCheckOverlay');
       if (ov) ov.style.display = 'none';
       tlAddCheckTargetUid = null;
       tlEditNoteCheckTarget = null;
       tlEditBlockTarget = null;
+      tlAddCheckDirty = false;
       tlExitTableMode();   // 🆕 收掉网格模式，下次开一般对话框别残留
     }
     async function tlSaveAddCheckDialog() {
       const inp = document.getElementById('tlAddCheckInput');
       if (!inp) return;
+      tlAddCheckDirty = false;
       if (tlEditBlockTarget) {
         const target = tlEditBlockTarget;
         const blockText = tlEnsureCrMarkerForBlock(inp.value.replace(/\r\n/g, '\n'), tlFmtDate(new Date()));
@@ -4994,9 +5036,10 @@
           return;
         }
         if (!r || !r.ok) { showToast((r && r.error) || '写入 ' + target + ' 失败', 'danger'); return; }
+        tlEvFormScrollOnCloseUid = ev.uid;
         // 立即重载 INCLUDE（合并新行程 → 重绘 + 重算便利贴集合）：新便利贴会经 sticky-note-sync 自动出现
         await tlKickIncludeRefresh();
-        if (closeAfterSave) tlCloseEventForm();
+        if (closeAfterSave) { tlEvFormDirty = false; tlCloseEventForm(true); }
         tlFlashIncludedEvent(target, ev);
         showToast('已新建行程到 ' + target + '（直接落盘，无需再按「保存」）', 'success');
         return;
@@ -5026,7 +5069,8 @@
           if (m) tlEvFormUid = m.uid;
         }
       } catch (e) { /* 记回失败不影响本次保存 */ }
-      if (closeAfterSave) tlCloseEventForm();
+      tlEvFormScrollOnCloseUid = tlEvFormUid;
+      if (closeAfterSave) { tlEvFormDirty = false; tlCloseEventForm(true); }
       showToast(closeAfterSave
         ? '已写入编辑内容，按「保存」写回 calendar.md'
         : '已写入编辑内容，可继续编辑（按「保存」写回 calendar.md）', 'success');
@@ -5048,7 +5092,7 @@
       if (!tlEvFormUid) return;
       const uid = tlEvFormUid;
       tlEvFormUid = null;                 // 🆕 删除前先清 uid，使 tlCloseEventForm 即使来自便利贴也不做定位（删除后该事件已不在，滚动无意义）
-      tlCloseEventForm();
+      tlCloseEventForm(true);
       tlDeleteEvent(uid);
     }
 
@@ -5056,6 +5100,7 @@
     let tlDiaryFormDate = null;
     let tlDiaryFormReadonly = false;
     function tlOpenDiaryForm(date) {
+      if (!TL_DIARY_FEATURE_ENABLED) return;
       tlHideTip();
       if (!isCalendarMdDoc()) return;
       tlCalDiaries = tlParseDiaries(document.getElementById('taskText').value);
@@ -5256,7 +5301,7 @@
       const holidays = tlParseHolidays(ta.value);
       const diaries = tlParseDiaries(ta.value);
       tlCalHolidays = holidays;
-      tlCalDiaries = diaries;
+      tlCalDiaries = [];
       // 📎 重画后保留 ## TAGS / ## INCLUDE（避免父阶标签、Include 勾选被清掉）
       ta.value = tlPreserveMetaBlocks(ta.value, tlCalendarToMarkdown(tlCalEvents.filter((e) => !e.ro), holidays, diaries));
       if (typeof autoGrowTextarea === 'function') autoGrowTextarea(ta);
@@ -5603,6 +5648,15 @@
       });
       const ov = document.getElementById('tlEvFormOverlay');
       if (ov) ov.addEventListener('click', (e) => { if (e.target === ov) tlCloseEventForm(); });
+      if (ov) {
+        const markDirty = (e) => {
+          if (e.target && e.target.matches && e.target.matches('input, select, textarea')) {
+            if (!tlEvFormReadOnly) tlEvFormDirty = true;
+          }
+        };
+        ov.addEventListener('input', markDirty);
+        ov.addEventListener('change', markDirty);
+      }
       // ⌨️ 行程編輯表單快捷鍵：Esc＝取消關閉、Command/Ctrl+S＝寫入編輯內容
       document.addEventListener('keydown', (e) => {
         if (!ov || ov.style.display === 'none') return;

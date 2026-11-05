@@ -1808,6 +1808,13 @@ ipcMain.handle('sticky-note-bounds', (e, arg) => {
   }
   return win.getBounds();
 });
+// 编辑浮层打开时保持便利贴窗口可见，避免切回主程式后编辑框被窗口层级遮住。
+ipcMain.handle('sticky-note-editor-state', (e, arg) => {
+  const win = BrowserWindow.fromWebContents(e.sender);
+  if (!win || win.isDestroyed()) return false;
+  win.setAlwaysOnTop(!!(arg && arg.editing));
+  return true;
+});
 // 🆕 拖动用：单向、无回传（ipcRenderer.send），避免 invoke 的来回等待造成迟滞；落盘去抖见 persistPos
 ipcMain.on('sticky-note-move', (e, arg) => {
   const win = stickyNoteWindows.get(noteWinId(String(arg && arg.key), +arg.idx || 0));

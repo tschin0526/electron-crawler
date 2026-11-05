@@ -1209,6 +1209,7 @@ function openAddTable() {
   noteExitTableMode();
   if (ov) {
     ov.classList.add('show');
+    ipcRenderer.invoke('sticky-note-editor-state', { editing: true }).catch(() => {});
     ov.querySelector('.ac-title').textContent = '加入表格（MD）';
     ov.querySelector('.ac-hint').textContent = '在格子里填内容（可「＋行／＋列」增删）；⌘S 或「加入」＝追加到备注末尾（不关窗）· Esc 关闭（有改动会先问）';
   }
@@ -1254,6 +1255,7 @@ function applyAddCheckEditUi(titleText, hintText) {
   bindAddCheckTools();   // 主按钮文字：「加入」→「保存」
 }
 function closeAddCheck() {
+  ipcRenderer.invoke('sticky-note-editor-state', { editing: false }).catch(() => {});
   const ov = document.getElementById('addCheckOv');
   if (ov) ov.classList.remove('show');
   noteCheckEditTarget = null;
@@ -2571,6 +2573,7 @@ window.tlOpenEditBlockDialog = async function (event, uid, start, end, type) {
     ov.querySelector('.ac-title').textContent = '编辑内容区块（' + stickyBlockTypeName(type) + '）';
     ov.querySelector('.ac-hint').textContent = '直接编辑此区块的 Markdown 原文；⌘S 保存（不关闭，可继续编辑）· Esc 关闭（有改动会先问是否保存）；清空并保存＝删除该区块（会先确认）';
     ov.classList.add('show');
+    ipcRenderer.invoke('sticky-note-editor-state', { editing: true }).catch(() => {});
   }
   bindAddCheckTools();
   if (inp) {
@@ -4842,6 +4845,26 @@ function menuSyncLocate() {
   btn.textContent = on ? '📍 定位：開' : '📍 定位';
 }
 
+// 🆕 翻页清单「四类识别徽标」单一可信来源：
+//   主档一般（calendar.md）／外部 include 档一般／VIEW 投影／临时（仅本会话、未落盘）。
+//   判定优先级固定 VIEW → 临时 → 有 src＝include → 其余＝主档，四类互斥，一张贴只有一个徽标。
+//   资料来自 sticky-note-order 的 note（主进程 sync 时 Object.assign 原样保留 view/temp/src），
+//   refMeta 只作兜底（分体窗首帧或旧快照缺字段时）。旧版「VIEW 用斜体识别」已全面改为徽标。
+const STICKY_KIND_META = {
+  main:    { mark: '主', tip: '一般便利贴 · 主档 calendar.md' },
+  include: { mark: '外', tip: '一般便利贴 · 外部 include 档' },
+  view:    { mark: '視', tip: 'VIEW 便利贴 · 自动汇总投影' },
+  temp:    { mark: '臨', tip: '临时便利贴 · 仅本会话，未写入 calendar.md' }
+};
+function stickyKindOf(item) {
+  if (!item) return { kind: 'main', src: '' };
+  const cached = refMeta.get(item.key) || {};
+  const src = String(item.src || cached.src || '').trim();
+  if (isViewKey(item.key) || item.view) return { kind: 'view', src: '' };
+  if (item.temp || cached.temp) return { kind: 'temp', src };
+  return src ? { kind: 'include', src } : { kind: 'main', src: '' };
+}
+
 async function loadStickyMenuNotes() {
   const wrap = document.getElementById('mStickyListWrap');
   const list = document.getElementById('mStickyList');
@@ -4880,25 +4903,34 @@ async function loadStickyMenuNotes() {
     const flipFull = '翻页清单 ' + pageNotes.length + ' 张'
       + (inactiveNotes.length ? '（另有 ' + inactiveNotes.length + ' 张未开启，不计入翻页）' : '')
       + '：点击名称显示，点开 / 关切换';
+    // 徽标图例放 tooltip：清单本身窄，不额外占一行；四类含义在此一次讲清
+    const kindLegend = '｜徽标：主＝主档一般、外＝外部 include 档、視＝VIEW 投影、臨＝临时便利贴';
     listTitle.textContent = q
       ? ('符合 ' + matchCount + ' 項')
       : (mode === 'flip'
         ? '翻页清单 ' + pageNotes.length + ' 张'
           + (inactiveNotes.length ? '（另有 ' + inactiveNotes.length + ' 张未开启）' : '')
         : '已设定的便利贴');
-    listTitle.title = mode === 'flip' ? flipFull : '已设定的便利贴（点击名称显示；点击开 / 关切换）';
+    listTitle.title = (mode === 'flip' ? flipFull : '已设定的便利贴（点击名称显示；点击开 / 关切换）') + kindLegend;
     list.replaceChildren();
     const appendNoteRow = (item, index) => {
       const row = document.createElement('div');
-      // 🆕 VIEW 便利贴（key 前缀 __view__）在清单中加专属 class，CSS 用斜体＋主色与之区分，一眼可辨
-      const isView = isViewKey(item.key);
-      row.className = 'm-sticky-item' + (isView ? ' m-sticky-item-view' : '');
+      row.className = 'm-sticky-item';
       const name = String(item.title || item.key || '未命名便利贴').replace(/\s+/g, ' ').trim();
       const label = (name || '未命名便利贴') + ((+item.idx || 0) > 0 ? ' (' + ((+item.idx || 0) + 1) + ')' : '');
       const indexEl = document.createElement('span');
       indexEl.className = 'm-sticky-item-index';
       indexEl.textContent = index === null ? '' : String(index + 1) + '.';
       indexEl.setAttribute('aria-hidden', 'true');
+      // 🆕 四类识别徽标：编号之后、名称之前。名称的 ellipsis 仍由 nameEl 自己负责，徽标不参与截断
+      const kind = stickyKindOf(item);
+      const kindMeta = STICKY_KIND_META[kind.kind];
+      const kindTip = kindMeta.tip + (kind.src ? '：' + kind.src : '');
+      const kindEl = document.createElement('span');
+      kindEl.className = 'm-sticky-kind is-' + kind.kind;
+      kindEl.textContent = kindMeta.mark;
+      kindEl.title = kindTip;
+      kindEl.setAttribute('aria-label', kindTip);
       const nameEl = document.createElement('button');
       nameEl.type = 'button';
       nameEl.className = 'mi m-sticky-item-name';
@@ -4916,7 +4948,7 @@ async function loadStickyMenuNotes() {
       stateEl.textContent = item.isOpen ? '开' : '关';
       stateEl.title = item.isOpen ? '点击关闭该便利贴' : '点击开启该便利贴';
       stateEl.setAttribute('aria-label', item.isOpen ? '关闭该便利贴' : '开启该便利贴');
-      row.append(indexEl, nameEl, stateEl);
+      row.append(indexEl, kindEl, nameEl, stateEl);
       list.appendChild(row);
     };
     notesShown.forEach(appendNoteRow);

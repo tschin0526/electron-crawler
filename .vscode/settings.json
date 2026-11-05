@@ -3,6 +3,18 @@
         "/^node -e \"const fs=require\\('fs'\\),vm=require\\('vm'\\);const html=fs\\.readFileSync\\('src/plugins/todolist/index\\.html','utf8'\\);const scripts=\\[\\.\\.\\.html\\.matchAll\\(/<script\\(\\?:\\\\\\\\s\\[\\^>\\]\\*\\)\\?>\\(\\[\\\\\\\\s\\\\\\\\S\\]\\*\\?\\)<\\\\\\\\/script>/gi\\)\\]\\.map\\(m=>m\\[1\\]\\)\\.filter\\(s=>s\\.trim\\(\\)\\);scripts\\.forEach\\(\\(s,i\\)=>new vm\\.Script\\(s,\\{filename:'index\\.html#script'\\+\\(i\\+1\\)\\}\\)\\);console\\.log\\('inline scripts: syntax OK'\\)\"$/": {
             "approve": true,
             "matchCommandLine": true
+        },
+        "/^node --check src/plugins/todolist/calendar-editor\\.js && node --check src/pwa-md-editor/calendar-editor\\.js$/": {
+            "approve": true,
+            "matchCommandLine": true
+        },
+        "/^node --check src/plugins/todolist/calendar-editor\\.js && node --check src/pwa-md-editor/calendar-editor\\.js && git diff --check$/": {
+            "approve": true,
+            "matchCommandLine": true
+        },
+        "/^node --check src/plugins/todolist/calendar-editor\\.js && node --check src/plugins/todolist/desktop-note\\.js && node --check main-modules/windows\\.js && git diff --check$/": {
+            "approve": true,
+            "matchCommandLine": true
         }
     }
 }

@@ -595,10 +595,23 @@
     .m-sticky-item-name { flex: 1; min-width: 0; width: auto; overflow: hidden; text-overflow: ellipsis; }
     .m-sticky-item-state { flex: none; width: auto; min-width: 24px; text-align: right; color: var(--menu-muted, #6b7280); }
     .m-sticky-item-state.open { color: var(--menu-status-open, #15803d); }
-    /* VIEW 便利贴：下拉清单中仅用「斜体」与普通便利贴做出区隔（不改颜色，沿用一般便利贴名称的字色），使用者一眼可辨 */
-    .m-sticky-item-view { padding-left: 3px; }
-    .m-sticky-item-view .m-sticky-item-name { font-style: italic; }
-    .m-sticky-item-view .m-sticky-item-index { font-style: italic; }
+    /* 🆕 翻页清单四类识别徽标：一律用徽标（旧「VIEW 用斜体识别」已移除），四类互斥。
+       色票与标题列 #docBadge 同源 → 外＝金虚线、視＝紫实线、臨＝蓝虚线，主档＝中性灰细框。
+       非主档三类的字色随主题文字色（--note-fg），深浅底都清楚；识别靠边框＋底色。 */
+    .m-sticky-kind {
+      flex: none; box-sizing: border-box; min-width: 16px; height: 16px; padding: 0 2px;
+      display: inline-flex; align-items: center; justify-content: center;
+      border: 1px solid currentColor; border-radius: 5px;
+      color: var(--menu-muted, #6b7280); background: transparent;
+      font-size: 10px; font-weight: 700; font-style: normal; line-height: 1;
+      cursor: pointer; user-select: none; -webkit-user-select: none;
+    }
+    .m-sticky-kind.is-include, .m-sticky-kind.is-view, .m-sticky-kind.is-temp {
+      color: var(--note-fg, #33384a);
+    }
+    .m-sticky-kind.is-include { border: 1px dashed #D4AF37; background: rgba(212,175,55,.22); }
+    .m-sticky-kind.is-view    { border: 1px solid #8b5cf6; background: rgba(139,92,246,.26); }
+    .m-sticky-kind.is-temp    { border: 1px dashed #4f8cff; background: rgba(37,99,235,.24); }
     /* 菜单第一行：常用图标按钮（说明文字在title tooltip） */
     .m-actions { display: flex; align-items: center; gap: 4px; padding: 1px 2px; }
     .m-actions .m-act {

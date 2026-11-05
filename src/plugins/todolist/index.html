@@ -1981,6 +1981,8 @@
     #tlDiaryFormOverlay .tl-diary-f-content { flex: 3 1 auto; min-height: 0; display: flex; }
     #tlDiaryFormOverlay .tl-diary-f-content .tl-ev-f-label { flex: 1; display: flex; flex-direction: column; margin-bottom: 0; }
     #tlDiaryFormOverlay .tl-diary-f-content textarea { flex: 1; resize: none; min-height: 0; }
+    /* 日记功能已停用，保留旧 DOM 仅用于兼容旧页面缓存。 */
+    .ev-day-diary, .ev-diary-mark, [data-ev-diary-row], #tlDiaryFormOverlay { display: none !important; }
     /* 明细范围切换（日 <-> 月/週）：迷你分段控件，放在「＋ 此日新增」旁 / 明细顶部 */
     .ev-scope-seg { display: inline-flex; align-items: center; border: 1px solid var(--ev-border, #e5e7eb); border-radius: 6px; overflow: hidden; flex: 0 0 auto; }
     .ev-scope-seg button { border: none; background: var(--ev-card, #fff); color: var(--ev-muted, #6b7280); font-size: 11px; padding: 2px 8px; cursor: pointer; line-height: 1.4; }
@@ -5476,7 +5478,7 @@
       <div class="tl-ev-form-actions">
         <button type="button" class="btn btn-secondary" id="tlEvFormDelete" style="display:none" onclick="tlDeleteFromForm()">删除</button>
         <span style="flex:1"></span>
-        <button type="button" class="btn btn-secondary" id="tlEvFormCancel" onclick="tlCloseEventForm()">取消</button>
+        <button type="button" class="btn btn-secondary" id="tlEvFormCancel" onclick="tlCloseEventForm(true)">取消</button>
         <button type="button" class="btn btn-primary" id="tlEvFormSave" onclick="tlSaveEventForm()">写入编辑内容</button>
       </div>
       <div class="tl-ev-form-hint" id="tlEvFormHint">写入后按编辑器「保存」，把改动写回 calendar.md</div>
@@ -5508,7 +5510,7 @@
       </div>
       <div class="tl-ev-form-actions">
         <button type="button" class="btn btn-secondary" id="tlAutoTermButton" onclick="tlAutoMarkTermsInEditBox()">自动标示术语</button>
-        <button type="button" class="btn btn-secondary" onclick="tlCloseAddCheckDialog()">取消</button>
+        <button type="button" class="btn btn-secondary" onclick="tlCloseAddCheckDialog(true)">取消</button>
         <button type="button" class="btn btn-secondary" id="tlCopyNoteCheckButton" style="display:none" onclick="tlCopyNoteCheckText()">复制</button>
         <button type="button" class="btn btn-primary" onclick="tlSaveAddCheckDialog()">加入备注</button>
       </div>
