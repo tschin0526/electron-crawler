@@ -1134,9 +1134,12 @@ function showStickyNoteAt(key, idx) {
     if (!win || win.isDestroyed() || pageIndex < 0) return false;
     // 带上完整顺序＋key/idx：翻页窗的清单可能还停在开窗快照上（页次数字对不上），
     // 让它先对齐主进程的权威顺序再按 key+idx 定位，index 只作兜底
-    win.webContents.send('sticky-note-show-page', {
-      key, idx: i, index: pageIndex, order: stickyNoteOrder
-    });
+    const payload = { key, idx: i, index: pageIndex, order: stickyNoteOrder };
+    // 🆕 便利贴原本没开、由主窗「按便利贴徽标」刚唤起时窗口还在 loadFile，此刻直接 send 会丢。
+    //    与 wake-main-from-note 同口径等 did-finish-load；renderer 的 initFlip 也会暂存早到的请求。
+    const sendPage = () => { if (!win.isDestroyed()) win.webContents.send('sticky-note-show-page', payload); };
+    if (win.webContents.isLoading()) win.webContents.once('did-finish-load', sendPage);
+    else sendPage();
   } else {
     win = stickyNoteWindows.get(noteWinId(key, i));
     if (!win || win.isDestroyed()) return false;

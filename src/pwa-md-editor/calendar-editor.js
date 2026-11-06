@@ -1148,11 +1148,86 @@ function calNotesRoLocked(ev, fromSticky) {
 //   唯讀（uid=null 的節日／tooltip，或 include 進來的 ro 行程）整段渲染，與桌面 tlRenderNotes 一致。
 //   ⚠️ ro 行程在「行程檢視」只讀：不給任何 ✎，checkbox 仍渲染但點擊由 calToggleNoteCheck 兜住並提示；
 //      要改 include 備註只能到便利貼——那邊呼叫時傳 forceEditable=true。
+// ── group 標記語法（2026-11-06 寬放）：花括號內「開頭」是 gp 或 group 即算；大小寫不拘、冒號可省略 ──
+//   {gp}＝{GP}＝{GroUP}＝{group} → 無名組（key ''）；{gp:ABC}＝{gpABC}＝{GROUP:ABC} → 'ABC'；
+//   ⚠️ 位置：標記必須在行尾、或行尾 [[...]] 標記序列之前才算結構標記；行中的 {gp} 是普通文字，原樣顯示也不分組。
+//   {gp1}＝{gp:1} → '1'。前綴 group 優先於 gp；組名仍區分大小寫；三式正則與桌面／便利貼窗／VIEW 引擎同口徑。
+// 🆕 {gp} / {gp:名稱} 分組標記（與桌面 tlGpKeyOfLine / tlStripGpMarkers 同口徑）：
+//   連續且「名稱相同」的行視為一個小事件／一顆編輯小圓點；名稱不同或中間夾無標記行就斷開。
+function calGpKeyOfLine(line) {
+  const m = String(line == null ? '' : line).match(/\{[ \t]*(?:group|gp)[ \t]*:?[ \t]*([^{}]*)\}(?=[ \t]*(?:\[\[[^\]]*\]\][ \t]*)*$)/i);
+  if (!m) return null;
+  return String(m[1] || '').trim();
+}
+// 顯示層剝掉 {gp}（代碼圍欄內原樣保留）；只有真的剝到標記的那行才清尾隨空白。
+function calStripGpMarkers(text) {
+  let inFence = false;
+  return String(text == null ? '' : text).split('\n').map(function (line) {
+    if (/^\s*(```|~~~)/.test(line)) { inFence = !inFence; return line; }
+    if (inFence) return line;
+    const stripped = line.replace(/[ \t]*\{[ \t]*(?:group|gp)[ \t]*:?[ \t]*[^{}]*\}(?=[ \t]*(?:\[\[[^\]]*\]\][ \t]*)*$)/gi, '');
+    return stripped === line ? line : stripped.replace(/[ \t]+$/, '');
+  }).join('\n');
+}
+// ── 🆕 group 啟用（唯一小事件）：保存時把編輯框裡「每一行」行尾統一標成 {gp}，
+//    使 calSplitMdBlocks / view-sticky-rules 的「連續同 key 段」把整塊認成一個小事件。
+//  · 與 calStripGpMarkers 完全對稱：代碼圍欄行與圍欄內文原樣保留。
+//  · 具名組 {gp:名稱} 歸一成無名 {gp}；行數不變，保存後區塊 start/end 區間仍有效。
+//  · 三端同口徑：桌面主窗 tlApplyGroupMarkers／便利貼窗 noteApplyGroupMarkers。
+function calHasCodeFence(text) {
+  return /^\s*(```|~~~)/m.test(String(text == null ? '' : text));
+}
+//  · **純空白行保持空白**：空白行在 {gp} 規則裡是「上一行的延續」，不能被寫成內容行，
+//    否則 group 啟用保存後空行會變成 '{gp}'，段落間隔就被破壞了（2026-11-06 空白行規則）。
+function calApplyGroupMarkers(text, on) {
+  let inFence = false;
+  return String(text == null ? '' : text).replace(/\r\n/g, '\n').split('\n').map(function (line) {
+    if (/^\s*(```|~~~)/.test(line)) { inFence = !inFence; return line; }
+    if (inFence) return line;
+    if (!line.trim()) return line;
+    const stripped = line.replace(/[ \t]*\{[ \t]*(?:group|gp)[ \t]*:?[ \t]*[^{}]*\}(?=[ \t]*(?:\[\[[^\]]*\]\][ \t]*)*$)/gi, '');
+    // 沒標記的行原樣回傳（尤其 on=false）：行尾兩空格是 Markdown 換行語義，不能順手清掉
+    const clean = stripped === line ? line : stripped.replace(/[ \t]+$/, '');
+    return on ? clean + '{gp}' : clean;
+  }).join('\n');
+}
+function calIsWholeGpBlock(text) {
+  const raw = String(text == null ? '' : text).replace(/\r\n/g, '\n');
+  if (calHasCodeFence(raw)) return false;
+  const lines = raw.split('\n');
+  let key = null, seen = false;
+  for (let i = 0; i < lines.length; i++) {
+    if (!lines[i].trim()) continue;
+    const m = lines[i].match(/\{[ \t]*(?:group|gp)[ \t]*:?[ \t]*([^{}]*)\}(?=[ \t]*(?:\[\[[^\]]*\]\][ \t]*)*$)/i);
+    if (!m) return false;
+    const k = String(m[1] || '').trim();
+    if (!seen) { key = k; seen = true; }
+    else if (k !== key) return false;
+  }
+  return seen;
+}
+function calResolveGroupText(raw, checked, wasOn) {
+  if (checked) return calApplyGroupMarkers(raw, true);
+  if (wasOn) return calApplyGroupMarkers(raw, false);   // 原本整組、使用者主動取消 → 拆回多個小事件
+  return raw;                                          // 原本不是整組：手寫的 {gp} 原樣保留
+}
+function calGroupChecked() {
+  const box = calMdEditEl('calGroupEnable');
+  return !!(box && box.checked && !box.disabled);
+}
+// ＋☐ 加入 / 編輯 CheckBox 子事件共用（LITE 這兩條路徑原本就不補 cr，保持既有口徑）：
+//   勾選 → 整批逐行補 {gp}；原本整組卻取消 → 移除 {gp} 拆組；其餘走 fallback 原樣。
+function calGroupMd(rawMd, fallback) {
+  const on = calGroupChecked();
+  if (!on && !calGroupWasOn) return fallback();
+  return calResolveGroupText(rawMd, on, calGroupWasOn);
+}
 function calRenderNotes(notes, uid, forceEditable) {
   if (!notes) return '';
   const raw = String(notes).replace(/\r\n/g, '\n');
   if (!calNotesCanEdit(uid, forceEditable)) {
-    return renderMarkdown(calRenderTermDefs(calNotesWithChecks(raw, uid, false)));
+    // 🆕 唯讀整段渲染也要剝掉 {gp}（標記是結構控制，不該出現在畫面上）
+    return renderMarkdown(calRenderTermDefs(calNotesWithChecks(calStripGpMarkers(raw), uid, false)));
   }
   const lines = raw.split('\n');
   let out = '';
@@ -1162,19 +1237,32 @@ function calRenderNotes(notes, uid, forceEditable) {
       out += calNoteCheckLineHtml(lines[b.start], uid, b.start, true) + '\n';
       return;
     }
-    const chunk = lines.slice(b.start, b.end + 1).join('\n');
-    out += '<div class="md-unit"><button type="button" class="md-unit-edit" title="編輯' +
+    // 🆕 只剝「顯示副本」的 {gp}；編輯對話框讀的是 notes 原文，標記必須留著才能維持分組
+    const chunk = calStripGpMarkers(lines.slice(b.start, b.end + 1).join('\n'));
+    // 🆕 gp 組內的 - [ ] 行要比照一般 checkbox 轉成 .ev-md-check/.ev-cb，
+    //    不能直接餵 renderMarkdown（會變 <ul><li> → 多一個「.」項目符號 + 原生灰框）。
+    //    calNotesWithChecks 已自帶 marker 轉換，故 gp 分支不再重複跑 calRenderNoteMarkersLines。
+    //    baseLine＝b.start 把區塊內索引補成整份 notes 的全域行號，供 calToggleNoteCheck 回寫。
+    const prepared = (b.type === 'gp')
+      ? calNotesWithChecks(chunk, uid, false, { plain: true, baseLine: b.start })
+      : calRenderNoteMarkersLines(chunk);
+    // 🆕 小事件群（連續同組 {gp} 行＝一個編輯小圓點區塊）：只給 gp 區塊掛 is-gp，
+    //    由 CSS 畫 1px currentColor 外框；其它單元不受影響。
+    out += '<div class="md-unit' + (b.type === 'gp' ? ' is-gp' : '') + '"><button type="button" class="md-unit-edit" title="編輯' +
       calMdUnitTypeName(b.type) + '" onclick="calOpenEditBlockDialog(event,\'' + escapeHtml(uid) +
       '\',' + b.start + ',' + b.end + ',\'' + b.type + '\')">✎</button>' +
-      renderMarkdown(calRenderTermDefs(calRenderNoteMarkersLines(chunk))) + '</div>';
+      renderMarkdown(calRenderTermDefs(prepared)) + '</div>';
   });
   return out;
 }
 // 最小 MD 表達單元切分（與桌面 tlSplitMdBlocks 同演算法）：回傳 [{start,end,type}]（行索引含頭尾，end 不是開區間）。
 //   code 代碼圍欄整塊原子 / table 表格 / heading 標題 / hr 分隔線 / quote 引用 / task 勾選行（逐行）/
-//   list 普通列表（連續整段）/ para 段落。空行與空列表項只作分隔，不屬於任何區塊。
+//   list 普通列表（連續整段）/ para 段落。空行與空列表項只作分隔，不屬於任何區塊；
+//   **例外**：夾在「前後相同 {gp} 行」之間的連續空行視為上一行 {gp} 的延續，併入同一個 gp 區塊。
 function calSplitMdBlocks(text) {
   const lines = String(text == null ? '' : text).replace(/\r\n/g, '\n').split('\n');
+  const gpKey = (l) => calGpKeyOfLine(l);
+  const isGp = (l) => gpKey(l) !== null;
   const isBlank = (l) => /^\s*$/.test(l);
   const isFence = (l) => /^\s*(```|~~~)/.test(l);
   const isHeading = (l) => /^#{1,6}(\s|$)/.test(l);
@@ -1194,6 +1282,7 @@ function calSplitMdBlocks(text) {
   while (i < lines.length) {
     const line = lines[i];
     if (isBlank(line) || isEmptyListItem(line)) { i++; continue; }
+    // 代碼圍欄整塊原子優先：圍欄內的 {gp} 不解析
     if (isFence(line)) {
       const marker = line.trim().slice(0, 3);
       let j = i + 1;
@@ -1201,10 +1290,30 @@ function calSplitMdBlocks(text) {
       blocks.push({ start: i, end: Math.min(j, lines.length - 1), type: 'code' });
       i = j + 1; continue;
     }
+    // 🆕 連續且「group 名相同」的 {gp} 行＝一個小事件（一顆編輯小圓點），覆蓋 task/list/para 等型態
+    //    **例外（2026-11-06）**：純空白行（可多行連續）視為「上一行 {gp} 的延續」——
+    //    只有當空白行之後的第一行仍是同 key 的 {gp} 行，才把空白行連同後段併進同一群。
+    if (isGp(line)) {
+      const key = gpKey(line);
+      let j = i + 1;
+      while (j < lines.length && gpKey(lines[j]) === key) j++;
+      // 反覆延伸，支援「gp 段 / 空行 / gp 段 / 空行 / gp 段」；
+      // 空白行納入 [start,end]，baseLine 索引才連續、勾選回寫才不會改錯行。
+      while (j < lines.length && isBlank(lines[j])) {
+        let k = j;
+        while (k < lines.length && isBlank(lines[k])) k++;
+        if (k < lines.length && gpKey(lines[k]) === key) {
+          j = k;
+          while (j < lines.length && gpKey(lines[j]) === key) j++;
+        } else break;
+      }
+      blocks.push({ start: i, end: j - 1, type: 'gp' });
+      i = j; continue;
+    }
     if (isHeading(line)) { blocks.push({ start: i, end: i, type: 'heading' }); i++; continue; }
     if (isHr(line)) { blocks.push({ start: i, end: i, type: 'hr' }); i++; continue; }
-    if (isQuote(line)) { let j = i; while (j < lines.length && isQuote(lines[j])) j++; blocks.push({ start: i, end: j - 1, type: 'quote' }); i = j; continue; }
-    if (isTableStart(i)) { let j = i + 2; while (j < lines.length && isTableRow(lines[j]) && !isBlank(lines[j])) j++; blocks.push({ start: i, end: j - 1, type: 'table' }); i = j; continue; }
+    if (isQuote(line)) { let j = i; while (j < lines.length && isQuote(lines[j]) && !isGp(lines[j])) j++; blocks.push({ start: i, end: j - 1, type: 'quote' }); i = j; continue; }
+    if (isTableStart(i)) { let j = i + 2; while (j < lines.length && isTableRow(lines[j]) && !isBlank(lines[j]) && !isGp(lines[j])) j++; blocks.push({ start: i, end: j - 1, type: 'table' }); i = j; continue; }
     if (isTask(line)) { blocks.push({ start: i, end: i, type: 'task' }); i++; continue; }
     if (isList(line)) {
       let j = i + 1;
@@ -1212,10 +1321,10 @@ function calSplitMdBlocks(text) {
         if (isBlank(lines[j]) || isEmptyListItem(lines[j])) {
           let k = j + 1;
           while (k < lines.length && (isBlank(lines[k]) || isEmptyListItem(lines[k]))) k++;
-          if (k < lines.length && isList(lines[k])) { j = k; continue; }
+          if (k < lines.length && isList(lines[k]) && !isGp(lines[k])) { j = k; continue; }
           break;
         }
-        if (isList(lines[j])) { j++; continue; }
+        if (isList(lines[j]) && !isGp(lines[j])) { j++; continue; }
         break;
       }
       blocks.push({ start: i, end: j - 1, type: 'list' });
@@ -1223,7 +1332,7 @@ function calSplitMdBlocks(text) {
     }
     { let j = i;
       while (j < lines.length && !isBlank(lines[j]) && !isFence(lines[j]) && !isHeading(lines[j]) && !isHr(lines[j]) &&
-             !isQuote(lines[j]) && !isTask(lines[j]) && !isList(lines[j]) && !isTableStart(j)) j++;
+             !isQuote(lines[j]) && !isTask(lines[j]) && !isList(lines[j]) && !isTableStart(j) && !isGp(lines[j])) j++;
       if (j === i) j = i + 1;
       blocks.push({ start: i, end: j - 1, type: 'para' }); i = j; continue;
     }
@@ -1231,7 +1340,7 @@ function calSplitMdBlocks(text) {
   return blocks;
 }
 function calMdUnitTypeName(type) {
-  return ({ code: '代碼塊', table: '表格', heading: '標題', hr: '分隔線', quote: '引用', list: '列表', para: '段落' })[type] || '區塊';
+  return ({ code: '代碼塊', table: '表格', heading: '標題', hr: '分隔線', quote: '引用', list: '列表', para: '段落', gp: '分組' })[type] || '區塊';
 }
 // 備註 checkbox 行內的 建立日(cr) / deadline(dl) / completed(cp) 標記（顯示層轉換，不改寫源）：
 //   [[cr:...]] → 🆕（建立日）、裸日期與 [[dl:...]] → 📅、[[cp:...]] → ✅（cr 須排在最前，先轉才不會被 dl 規則吃掉）
@@ -1250,35 +1359,45 @@ function calRenderNoteMarkersLines(text) {
     return calRenderNoteMarkers(line);
   }).join('\n');
 }
-function calNoteCheckLineHtml(line, uid, i, canEdit) {
+function calNoteCheckLineHtml(line, uid, i, canEdit, opts) {
   const m = line.match(/^(\s*)-\s+\[([ xX])\]\s?(.*)$/);
   if (!m) return line;
   const done = m[2] !== ' ';
+  // 🆕 plain＝gp 組內的 checkbox：整組只有外層一顆編輯圓點 → 不掛行內 ✎，
+  //    但 checkbox 本身與一般 checkbox 一樣可勾選（2026-11-06 使用者要求 Group 與否同作用）。
+  //    外觀共用 .ev-md-check/.ev-cb，避免 renderMarkdown 產出 <ul><li> 項目符號。
+  const plain = !!(opts && opts.plain);
+  // 🆕 gp 區塊傳 baseLine＝該區塊在整份 notes 的起始行號；勾選回寫必須用全域行號。
+  const baseLine = (opts && Number.isInteger(opts.baseLine)) ? opts.baseLine : 0;
+  const lineNo = baseLine + i;
   // ✎（編輯子事件）與桌面 tlTaskLineHtml 同口徑：只有真的可編輯才給；ro 行程在行程檢視不給。
   //   canEdit 由呼叫端算好傳進來（每個事件只查一次 state.calEvents，不在行級重複 find）。
-  const editButton = canEdit
+  const editButton = (!plain && canEdit)
     ? '<button type="button" class="ev-md-edit" title="編輯 checkbox 子事件" onclick="calOpenEditNoteCheckDialog(event,\'' +
       escapeHtml(uid) + '\',' + i + ')">✎</button>'
     : '';
   // ⚠️ 勾選互動（onclick/onkeydown/role）只掛在「框框本身」.ev-cb 上，與桌面 tlTaskLineHtml 同口徑——
   //   整行（含文字 .ev-md-check-text）不再觸發，避免手機上點到文字就誤勾（原先 onclick 掛在外層 .ev-md-check 整行）。
+  // 🆕 plain 只代表「共用外層圓點、不掛行內 ✎」；勾選互動與一般 checkbox 完全相同，
+  //    data-line／onclick 一律用全域行號 lineNo（gp 區塊由 baseLine 補上偏移）。
   const cbAttr = uid
-    ? ' class="ev-cb interactive" data-uid="' + escapeHtml(uid) + '" data-line="' + i + '"' +
-      ' onclick="calToggleNoteCheck(event,\'' + escapeHtml(uid) + '\',' + i + ')"' +
-      ' onkeydown="calCalCheckKey(event,\'' + escapeHtml(uid) + '\',' + i + ')"' +
+    ? ' class="ev-cb interactive" data-uid="' + escapeHtml(uid) + '" data-line="' + lineNo + '"' +
+      ' onclick="calToggleNoteCheck(event,\'' + escapeHtml(uid) + '\',' + lineNo + ')"' +
+      ' onkeydown="calCalCheckKey(event,\'' + escapeHtml(uid) + '\',' + lineNo + ')"' +
       ' role="checkbox" aria-checked="' + (done ? 'true' : 'false') + '" tabindex="0"'
     : ' class="ev-cb"';
   return m[1] + '<span class="ev-md-check' + (done ? ' done' : '') + '">' + editButton +
     '<span' + cbAttr + '>' + (done ? '✓' : '') + '</span>' +
     '<span class="ev-md-check-text">' + calRenderInlineMarkdown(calRenderNoteMarkers(m[3])) + '</span></span>';
 }
-function calNotesWithChecks(text, uid, canEdit) {
+function calNotesWithChecks(text, uid, canEdit, opts) {
   let inFence = false;
   return text.split('\n').map((line, i) => {
     if (/^\s*```/.test(line)) { inFence = !inFence; return line; }
     if (inFence) return line;
     // checkbox 行由 calNoteCheckLineHtml 內建 cr 渲染；其餘行（段落/列表/引用…）也套用 cr/dl/cp 顯示轉換（與桌面同口徑）
-    if (/^\s*[-*+]\s+\[[ xX]\]/.test(line)) return calNoteCheckLineHtml(line, uid, i, canEdit);
+    // plain 模式靠 opts.baseLine 把局部 i 補成全域行號（勾選回寫要定位原文行）；非 plain 時 baseLine=0
+    if (/^\s*[-*+]\s+\[[ xX]\]/.test(line)) return calNoteCheckLineHtml(line, uid, i, canEdit, opts);
     return calRenderNoteMarkers(line);
   }).join('\n');
 }
@@ -4610,14 +4729,50 @@ function calCalCheckKey(e, uid, line) {
 //   uid 一律用「當下編輯緩衝重新解析」定位：evpN 是位置型 uid，重排後可能漂移，不能拿舊快取。
 let calMdEditTarget = null;
 let calMdEditBaseline = '';
+// 🆕 「group 啟用（唯一小事件）」：只在「編輯內容區塊」出現，預設不啟用；原本已整組時預勾。
+let calGroupWasOn = false;
+let calGroupBaseline = false;
 function calMdEditEl(id) { return document.getElementById(id); }
+// 單一 setter：所有對話框（add / task / block）都經 calShowMdEditDialog，這裡一次收口。
+function calSyncGroupUi(src, target, hide) {
+  const row = calMdEditEl('calGroupRow');
+  const box = calMdEditEl('calGroupEnable');
+  const label = row && row.querySelector('span');
+  // 三种模式都提供：block＝编辑内容区块／task＝编辑 CheckBox 子事件／add-check＝加入 checkbox 子事件
+  // （add-table 是格子视图、add-text 是纯文本新增，逐行 {gp} 没意义 → off）
+  const mode = (target && target.mode === 'block') ? 'block'
+             : (target && target.mode === 'task') ? 'task'
+             : (target && target.mode === 'add' && (target.add || 'check') === 'check') ? 'add'
+             : 'off';
+  const show = !hide && mode !== 'off';
+  const type = mode === 'block' ? target.type : '';
+  // 代碼區塊（或內含圍欄）不適用：圍欄行加標記會破壞 isFence，圍欄內標記又會原樣顯示
+  const enabled = show && !(mode === 'block' && type === 'code') && !calHasCodeFence(src);
+  // add 是「還沒寫入的草稿」永遠不預勾；block/task 依開框原文偵測
+  const detected = (mode === 'block' || mode === 'task') && enabled && calIsWholeGpBlock(src);
+  calGroupWasOn = !!detected;
+  if (row) {
+    row.style.display = show ? '' : 'none';
+    row.classList.toggle('is-disabled', !enabled);
+  }
+  if (label) label.textContent = enabled ? 'group 啟用（唯一小事件）' : 'group 啟用（代碼區塊不適用）';
+  if (box) {
+    box.disabled = !enabled;
+    box.checked = !!detected;
+  }
+  calGroupBaseline = !!(box && box.checked && !box.disabled);
+  return enabled;
+}
 function calMdEditIsOpen() {
   const ov = calMdEditEl('calMdEditOverlay');
   return !!ov && ov.style.display !== 'none';
 }
 function calMdEditDirty() {
   const inp = calMdEditEl('calMdEditInput');
-  return !!inp && inp.value !== calMdEditBaseline;
+  const gp = calMdEditEl('calGroupEnable');
+  // 🆕 只勾了 group 也算未保存（checkbox 不改 textarea 內容，光比文字會漏掉這個改動）
+  return (!!inp && inp.value !== calMdEditBaseline) ||
+         (!!gp && !gp.disabled && gp.checked !== calGroupBaseline);
 }
 function calLoadEventsForNotes() {
   // 📎 多檔聯運：便利貼來源需含 include 進來的只讀事件 → 用併集
@@ -4650,7 +4805,7 @@ function calTableGridInstance() {
       invalidTable: '這段 Markdown 不是合法表格（需要表頭行＋分隔行），請先修正'
     },
     onSave: calMdEditSave,
-    onClose: calMdEditRequestClose
+    onClose: () => { const inp = calMdEditEl('calMdEditInput'); if (inp) inp.focus(); }   // 🆕 網格內 Esc 也不關窗
   });
   return calTableGrid;
 }
@@ -4675,6 +4830,7 @@ function calShowMdEditDialog(title, hint, value, target) {
   if (saveBtn) saveBtn.textContent = target && target.mode === 'add' ? '加入' : '保存';
   inp.value = value;
   calMdEditBaseline = value;
+  calSyncGroupUi(value, target);   // 🆕 只有 mode=block 才顯示 group 勾選；原本已整組時預勾
   ov.style.display = 'flex';
   setTimeout(() => inp.focus(), 0);
 }
@@ -4784,6 +4940,7 @@ function calMdEditClose() {
   if (ov) ov.style.display = 'none';
   calMdEditTarget = null;
   calMdEditBaseline = '';
+  calSyncGroupUi('', null);   // 🆕 關窗一律復位，下次開任何對話框都不會殘留上次的勾選
   calExitTableMode();   // 收掉網格模式，下次開一般對話框別殘留
 }
 function calMdEditSave() {
@@ -4812,7 +4969,10 @@ function calMdEditSave() {
       showToast(calNotesHint(ev, '已刪除區塊，按「保存」存回文件'), 'success');
       return;
     }
-    const newLines = text.split('\n');
+    // 🆕 group 啟用：勾選時逐行補 {gp}（整塊＝一個小事件）；原本整組卻取消勾選＝拆組；其餘原樣
+    const gpBox = calMdEditEl('calGroupEnable');
+    const resolved = calResolveGroupText(text, !!(gpBox && gpBox.checked && !gpBox.disabled), calGroupWasOn);
+    const newLines = resolved.split('\n');
     lines.splice(target.start, span, ...newLines);
     ev.notes = lines.join('\n');
     calCommitEventNotes(ev);
@@ -4836,7 +4996,8 @@ function calMdEditSave() {
       return;
     }
     // 一行＝一個子事件：第一行繼承原勾選狀態（含使用者自己寫的 dl/cp 標記），其餘同縮進、未完成
-    const newLines = rows.map((l, i) => m[1] + '- [' + (i === 0 ? m[2] : ' ') + '] ' + l);
+    const rawMd = rows.map((l, i) => m[1] + '- [' + (i === 0 ? m[2] : ' ') + '] ' + l).join('\n');
+    const newLines = calGroupMd(rawMd, () => rawMd).split('\n');
     lines.splice(line, 1, ...newLines);
     ev.notes = lines.join('\n');
     calCommitEventNotes(ev);
@@ -4853,7 +5014,9 @@ function calMdEditSave() {
     if (kind === 'check') {
       const items = text.split('\n').map((l) => l.trim()).filter(Boolean);
       if (!items.length) { showToast('沒有可加入的內容', 'error'); return; }
-      ev.notes = (prev ? prev + '\n' : '') + items.map((l) => '- [ ] ' + l).join('\n') + '\n';
+      const rawMd = items.map((l) => '- [ ] ' + l).join('\n');
+      const md = calGroupMd(rawMd, () => rawMd);
+      ev.notes = (prev ? prev + '\n' : '') + md + '\n';
       calCommitEventNotes(ev);
       inp.value = '';
       calMdEditBaseline = '';
@@ -4893,7 +5056,13 @@ function calInitMdEditDialog() {
   const ov = calMdEditEl('calMdEditOverlay');
   if (!ov || ov.dataset.initialized === '1') return;
   ov.dataset.initialized = '1';
-  ov.addEventListener('click', (e) => { if (e.target === ov) calMdEditRequestClose(); });
+  // 🆕 誤觸背罩不關窗：只有「取消」／✕ 按鈕能關；點背罩只把焦點還給編輯框
+  ov.addEventListener('click', (e) => {
+    if (e.target !== ov) return;
+    e.stopPropagation();
+    const inp = calMdEditEl('calMdEditInput');
+    if (inp) inp.focus();
+  });
   const closeBtn = calMdEditEl('calMdEditClose');
   const cancelBtn = calMdEditEl('calMdEditCancel');
   const saveBtn = calMdEditEl('calMdEditSave');
@@ -4908,10 +5077,10 @@ function calInitMdEditDialog() {
       if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); calMdEditSave(); }
     });
   }
+  // 🆕 Esc 不關窗：只吃掉按鍵（擋住底層便利貼／翻頁快捷鍵），關窗請按「取消」／✕
   document.addEventListener('keydown', (e) => {
     if (e.key !== 'Escape' || !calMdEditIsOpen()) return;
     e.preventDefault();
-    calMdEditRequestClose();
   });
 }
 

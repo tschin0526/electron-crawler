@@ -413,7 +413,62 @@
 //       改開「檢視行程（唯讀）」：欄位 disabled／備註 readOnly、隱藏寫入與刪除、金色唯讀橫幅標來源檔；
 //       calSetEventFormReadonly 為單一可信來源，saveEventForm／deleteEventFromForm／closeEventForm 都有守衛。
 //       calendar-editor.js / index.html / style.css 改，bump + 刷新 ?v 戳讓手機重拉；APP_VERSION/manifest 1.10.17→1.10.18。
-const CACHE_NAME = 'md-editor-lite-v202';
+// v203（2026-11-06）：新增 {gp} / {gp:名稱} 分組標記 —— 連續同名標記行合併成「一個小事件／一顆編輯小圓點」。
+//       桌面 calendar-editor.js（tlSplitMdBlocks / tlStripGpMarkers / tlEnsureCrMarkerForBlock）與 LITE
+//       calendar-editor.js（calSplitMdBlocks / calStripGpMarkers）同口徑；共享引擎 view-sticky-rules.js 的
+//       groupHitsIntoUnits 也以 gp 組為 1 個 .vsr-sort-unit，VIEW 排序不會把 5 行當 5 個小事件。
+//       bump + 刷新 /vsr.js 與 calendar-editor.js 的 ?v 戳讓手機重拉；APP_VERSION/manifest 1.10.18→1.10.19。
+// v204（2026-11-06）：編輯內容區塊新增「group 啟用（唯一小事件）」勾選 —— 預設不啟用，勾選後保存時
+//       逐行行尾補 {gp}，整塊視為一個小事件；原本已整組時預勾，取消可拆組。桌面主窗／便利貼窗／LITE
+//       三端同口徑（tlApplyGroupMarkers / noteApplyGroupMarkers / calApplyGroupMarkers）。
+//       style.css / index.html / app.js / calendar-editor.js 皆有改動 → 全部 ?v 戳刷為 lite-group-20261106；
+//       APP_VERSION/manifest 1.10.19→1.10.20。
+// v205（2026-11-06）：group 啟用勾選補齊「加入子事件（CheckBox）」與「編輯子事件（CheckBox）」兩種模式
+//       （桌面主窗／便利貼窗／LITE 三端同口徑）：勾選後把整批生成的 - [ ] 行逐行補 {gp}，整批＝一個唯一小事件；
+//       原本整組預勾、取消拆組；表格網格與自由文本新增不提供。?v 戳刷為 lite-group2-20261106；
+//       APP_VERSION/manifest 1.10.20→1.10.21。
+// v206（2026-11-06）：修正「gp 群組內的 checkbox 前面多一個 . 項目符號」。根因＝可編輯分塊視圖的 gp 區塊
+//       直接把 - [ ] 原文餵 renderMarkdown（漏了 tlNotesWithChecks/calNotesWithChecks 那一層）→ GFM 產 <ul><li>
+//       ＋ .body ul li{list-style:disc}；三端（桌面主窗 tlRenderNotes／LITE calRenderNotes／VIEW 引擎
+//       nonTaskUnitHtml）都補上自訂 .ev-md-check/.ev-cb 轉換，整組仍只掛一顆編輯圓點、組內不互動。
+//       ?v 戳刷為 lite-gpcb-20261106；APP_VERSION/manifest 1.10.21→1.10.22。
+// v207（2026-11-06）：寬放 {gp} 標記語法 —— 花括號內開頭是 gp 或 group 即算、大小寫不拘、冒號可省略：
+//       {GP}＝{GroUP}＝{gp}；{gp:ABC}＝{gpABC}＝{GROUP:ABC}；{gp1}＝{gp:1}。四端（桌面主窗／LITE／
+//       便利貼窗／VIEW 引擎）的取 key／剝離／cr 定位共 14 處正則同步；前綴 group 優先於 gp，組名仍區分大小寫。
+//       ?v 戳刷為 lite-gpsyn-20261106；APP_VERSION/manifest 1.10.22→1.10.23。
+// v208（2026-11-06）：{gp} 標記「位置規則」定死 —— 只有出現在行尾、或行尾 [[...]] 標記序列之前的
+//       {gp} 才算結構標記（才隱藏、才分組）；行中出現的 {gp} 一律是普通文字，必須原樣顯示。
+//       三式正則（取 key／剝離／cr 定位）四端 14 處同步加 lookahead (?=[ \t]*(?:\[\[[^\]]*\]\][ \t]*)*$)，
+//       lookahead 不消費 [[...]]，故剝離時不會吃掉 cr/dl/cp/term。?v 戳刷為 lite-gpeol-20261106；
+//       APP_VERSION/manifest 1.10.23→1.10.24。
+// v209（2026-11-06）：「編輯內容區塊」浮層關閉路徑鎖死 —— 除了窗體下緣／標題的「關閉」「取消」「✕」按鈕，
+//       點背罩、Esc（window／textarea／表格網格）一律不關窗，避免誤觸打斷編輯；桌面主窗／便利貼窗／LITE 三端同口徑，
+//       所有「Esc 關閉」提示文案同步改為「請按下方按鈕」。?v 戳刷為 lite-noclose-20261106；
+//       APP_VERSION/manifest 1.10.24→1.10.25。
+// v210（2026-11-06）：Group（{gp} 分組）內的 checkbox 恢復可勾選 —— 之前 plain 模式連 interactive/onclick/data-line
+//       一起拿掉，點了沒反應。改為 plain 只拿掉「行內 ✎」，勾選互動與一般 checkbox 完全相同；補 opts.baseLine
+//       （＝區塊 start）把區塊內索引換成全域行號，勾選回寫才不會改錯行。順手修主窗 tlToggleNoteCheck 的
+//       showToast(done?) 未定義變數（應為 wasDone）。v209 關閉路徑鎖死規則不變。三端同口徑；VIEW 投影貼仍唯讀。
+//       ?v 戳刷為 lite-gpcheck-20261106；APP_VERSION/manifest 1.10.25→1.10.26。
+// v211（2026-11-06）：小事件群（連續同組 {gp} 行＝一個編輯小圓點區塊）顯示時加「最細 1px、與字色相同」外框。
+//       只給 gp 區塊的 .md-unit 掛 is-gp，CSS 用 border:1px solid currentColor（明暗主題自動跟隨字色），
+//       padding 只補上/右/下三邊、不動 padding-left 圓點凹槽。桌面主窗／便利貼窗／LITE 三端 CSS，
+//       來源貼 .md-unit 與 VIEW 投影貼 .vsr-sort-unit > .md-unit 共用同一個 class。?v 戳刷為 lite-gpframe-20261106；
+//       APP_VERSION/manifest 1.10.26→1.10.27。v210 的 gp 內 checkbox 可勾選與 v209 關閉路徑鎖死規則不變。
+// v212（2026-11-06）：小事件群外框改「真正最細」的 hairline —— 原本 CSS 1px 在 2x Retina 會被畫成
+//       2 個實體像素（使用者目視回報「看起來挺粗」）。三端 CSS 加 @media (min-resolution:2dppx)
+//       覆寫 border-width:.5px（＝1 個實體像素），1x 屏維持 1px；LITE 另加 -webkit-min-device-pixel-ratio
+//       相容 iOS Safari。邊框色仍是 currentColor、選擇器特異性不變、padding 凹槽不變。?v 戳刷為
+//       lite-gphair-20261106；APP_VERSION/manifest 1.10.27→1.10.28。
+// v213（2026-11-06）：{gp} 小事件群的「空白行延续」規則 —— 夾在「前後相同 {gp} 行」之間的
+//       1~n 行純空白行視為上一行標記的延續，前後兩段合併成同一個小事件群（不再拆成兩顆編輯圓點）。
+//       桌面 tlSplitMdBlocks／LITE calSplitMdBlocks 反覆延伸掃描並把空白行納入 [start,end]，
+//       VIEW 投影貼本來就只收命中行（純空白行不進 hits），被空行隔開的兩段同 key {gp} 天然相鄰、
+//       照舊合併成 1 個排序單元；虛擬分隔 h.sep 維持丟棄，不塞進 gp 單元（避免多出來源沒有的空行）。
+//       空行後是異名組或非 gp 行仍舊斷開；末尾空行不屬任何區塊。三端 *ApplyGroupMarkers 同步補
+//       「純空白行不寫 {gp}」，避免 group 啟用保存後把空行改成內容行。?v 戳刷為
+//       lite-gpblank-20261106；APP_VERSION/manifest 1.10.28→1.10.29。
+const CACHE_NAME = 'md-editor-lite-v213';
 const ASSETS = [
   './',
   './index.html',

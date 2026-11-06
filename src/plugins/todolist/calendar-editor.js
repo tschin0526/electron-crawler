@@ -97,12 +97,51 @@
     let tlEvFormReadOnlySrc = '';
     let tlEvFormDirty = false;
 
-    // 表单内「＋ CheckBox」按钮旁的便利贴小图标：sticky>0 才显示（开表单时载入 + sticky 字段改动时实时同步）
+    // 表单内「＋ CheckBox」按钮旁的便利贴小图标：sticky>0 或本会话已临时开成便利贴才显示。
+    //    2026-11-06 起可点（跳到便利贴应用、翻页模式翻到该行程那一页）。**刻意维持 <span>**：
+    //    tlSetEventFormReadonly 会把窗体内所有 <button> disabled，只读查看行程时也要能跳去便利贴改备注，
+    //    所以不能换成 <button>（沿用「取消钮是唯一 button 例外」的铁律）。
     function tlSyncStickyFlag() {
       const flag = document.getElementById('tlEvFStickyFlag');
       if (!flag) return;
       const v = parseInt((document.getElementById('tlEvFSticky') || {}).value, 10) || 0;
-      flag.style.display = v > 0 ? '' : 'none';
+      const isTemp = !!(tlEvFormUid && tlIsTempSticky(tlEvFormUid));
+      flag.style.display = (v > 0 || isTemp) ? '' : 'none';
+      flag.title = (isTemp ? '临时便利贴（仅本会话）· ' : '') +
+        '点击跳到便利贴应用；翻页模式会翻到这笔行程对应的那一页';
+      flag.setAttribute('aria-label', isTemp ? '跳到临时便利贴' : '跳到便利贴');
+    }
+
+    // 🆕 编辑行程窗体的便利贴徽标：跳到便利贴应用，并把翻页便利贴切到「这笔行程」那一页。
+    //    复用既有主窗 → 便利贴链路，不新增 IPC：
+    //      tlFocusStickyNote → focus-sticky-note → showStickyNoteAt
+    //        → sticky-note-show-page（带主进程权威 order + pageIndex）
+    //        → applyFlipOrder → renderFlipPage(target)
+    //    分体模式则由 showStickyNoteAt 直接把该张窗口 show/moveTop/focus，本来就自动适配。
+    //    key ＝ 事件 uid；idx ＝ 同事件第几张 instance，徽标统一跳第 1 张（idx=0）。
+    async function tlFocusStickyNoteFromEvForm() {
+      const toast = (msg, type) => { if (typeof showToast === 'function') showToast(msg, type || 'warning'); };
+      if (!window.electronAPI || !window.electronAPI.invoke) { toast('当前环境无法跳转便利贴'); return; }
+      const uid = tlEvFormUid;
+      // 新增行程还没落盘，主进程清单里没有这张贴 → 先存才有得跳
+      if (!uid) { toast('这是「新增行程」，请先按「写入编辑内容」保存后再跳转'); return; }
+      // 临时便利贴（sticky=0、仅本会话）走专用路径，绕过 tlFocusStickyNote 的 sticky>0 守卫
+      if (tlIsTempSticky(uid)) {
+        await tlFocusTempSticky(uid);
+        return;
+      }
+      const formSticky = parseInt((document.getElementById('tlEvFSticky') || {}).value, 10) || 0;
+      const ev = tlCalEvents.find((e) => e && e.uid === uid);
+      const savedSticky = ev ? (parseInt(ev.sticky, 10) || 0) : 0;
+      // 窗体里刚把 ×N 改成 >0 但还没按保存：tlCalEvents 里仍是旧值，focus 必然找不到 → 明说
+      if (!savedSticky) {
+        toast(formSticky > 0
+          ? '便利贴设定还没保存，请先按「写入编辑内容」再跳转'
+          : '这笔行程目前不是便利贴');
+        return;
+      }
+      if (typeof tlFocusStickyNote !== 'function') { toast('跳转便利贴功能未载入'); return; }
+      await tlFocusStickyNote(uid);
     }
 
     // 🆕 便利贴小图标：与工具栏 #tlStickyBtn 用的同一段 SVG（淡黄折叠便签造型），保证视觉一致
@@ -1714,6 +1753,93 @@
       }
       return html;
     }
+    // ── group 標記語法（2026-11-06 寬放）：花括號內「開頭」是 gp 或 group 即算；大小寫不拘、冒號可省略 ──
+    //   {gp} ＝ {GP} ＝ {GroUP} ＝ {group}               → 無名組（key ''）
+    //   {gp:ABC} ＝ {gpABC} ＝ {GROUP:ABC} ＝ {GROUPABC}  → key 'ABC'
+    //   {gp1} ＝ {gp:1} ＝ {Group:1}                     → key '1'
+    //   ⚠️ 前綴 group 必須優先於 gp，否則 {groupABC} 會被誤讀成 key 'roupABC'；
+    //      組名本身仍區分大小寫，且只比較「連續且同 key」的行（組是連續區段，不是全域合併）。
+    //   ⚠️ 位置（2026-11-06 二次定規）：標記必須在「行尾」或「行尾 [[...]] 標記序列之前」才算結構標記；
+    //      行中的 {gp} 一律是普通文字，必須原樣顯示、也不參與分組。三式正則共用 lookahead 錨定行尾，
+    //      且 lookahead 不消費 [[...]]，剝離時才不會把 cr/dl/cp 一併吃掉。
+    //   ⚠️ 三式正則（取 key / 剝離 / cr 定位）四端字面量必須完全一致，見 /tmp/gp-syntax-test.cjs。
+    //      勾選「group 啟用」寫入底稿時一律正規化成標準 {gp}（見 tlApplyGroupMarkers）。
+    // 🆕 {gp} / {gp:名稱} 分組標記：連續且「名稱相同」的行視為一個小事件（一顆編輯小圓點）。
+    //   · 回傳 null＝這行沒有標記；''＝{gp} 無名組；名稱＝{gp:名稱}。
+    //   · 名稱不同的相鄰行各自成組；同名但不連續也各自成組（組是「連續區段」，不是全域合併）。
+    //   · 標記只存在於原始 notes，顯示層由 tlStripGpMarkers 剝掉；寫入底稿一律保留原文
+    //     （tlOpenEditBlockDialog / tlSaveAddCheckDialog 直接讀寫 ev.notes 的 start..end 原文）。
+    function tlGpKeyOfLine(line) {
+      const m = String(line == null ? '' : line).match(/\{[ \t]*(?:group|gp)[ \t]*:?[ \t]*([^{}]*)\}(?=[ \t]*(?:\[\[[^\]]*\]\][ \t]*)*$)/i);
+      if (!m) return null;
+      return String(m[1] || '').trim();
+    }
+    // 顯示層剝掉 {gp} 標記（代碼圍欄內原樣保留，避免吃掉程式碼裡的字面花括號）。
+    //   只有真的剝掉標記的那一行才順手清尾隨空白，其餘行完全不動 → 不破壞 Markdown 行尾兩空格換行語義。
+    function tlStripGpMarkers(text) {
+      let inFence = false;
+      return String(text == null ? '' : text).split('\n').map(function (line) {
+        if (/^\s*(```|~~~)/.test(line)) { inFence = !inFence; return line; }
+        if (inFence) return line;
+        const stripped = line.replace(/[ \t]*\{[ \t]*(?:group|gp)[ \t]*:?[ \t]*[^{}]*\}(?=[ \t]*(?:\[\[[^\]]*\]\][ \t]*)*$)/gi, '');
+        return stripped === line ? line : stripped.replace(/[ \t]+$/, '');
+      }).join('\n');
+    }
+    // ── 🆕 group 启用（唯一小事件）：保存时把编辑框里「每一行」行尾统一标成 {gp}，
+    //    使 tlSplitMdBlocks / view-sticky-rules 的「连续同 key 段」把整块认成一个小事件。
+    //  · 与 tlStripGpMarkers 完全对称：代码围栏行与围栏内文原样保留。
+    //  · 具名组 {gp:名称} 归一成无名 {gp}；行数不变，保存后区块 start/end 区间仍有效。
+    //  · 三端同口径：便利贴窗 noteApplyGroupMarkers／LITE calApplyGroupMarkers。
+    function tlHasCodeFence(text) {
+      return /^\s*(```|~~~)/m.test(String(text == null ? '' : text));
+    }
+    //  · **纯空白行保持空白**：空白行在 {gp} 规则里是「上一行的延续」，不能被写成内容行，
+    //    否则 group 启用保存后空行会变成 '{gp}'，段落间隔就被破坏了（2026-11-06 空白行规则）。
+    function tlApplyGroupMarkers(text, on) {
+      let inFence = false;
+      return String(text == null ? '' : text).replace(/\r\n/g, '\n').split('\n').map(function (line) {
+        if (/^\s*(```|~~~)/.test(line)) { inFence = !inFence; return line; }
+        if (inFence) return line;
+        if (!line.trim()) return line;
+        const stripped = line.replace(/[ \t]*\{[ \t]*(?:group|gp)[ \t]*:?[ \t]*[^{}]*\}(?=[ \t]*(?:\[\[[^\]]*\]\][ \t]*)*$)/gi, '');
+        // 没标记的行原样回传（尤其 on=false）：行尾两空格是 Markdown 换行语义，不能顺手清掉
+        const clean = stripped === line ? line : stripped.replace(/[ \t]+$/, '');
+        return on ? clean + '{gp}' : clean;
+      }).join('\n');
+    }
+    function tlIsWholeGpBlock(text) {
+      const raw = String(text == null ? '' : text).replace(/\r\n/g, '\n');
+      if (tlHasCodeFence(raw)) return false;
+      const lines = raw.split('\n');
+      let key = null, seen = false;
+      for (let i = 0; i < lines.length; i++) {
+        if (!lines[i].trim()) continue;
+        const m = lines[i].match(/\{[ \t]*(?:group|gp)[ \t]*:?[ \t]*([^{}]*)\}(?=[ \t]*(?:\[\[[^\]]*\]\][ \t]*)*$)/i);
+        if (!m) return false;
+        const k = String(m[1] || '').trim();
+        if (!seen) { key = k; seen = true; }
+        else if (k !== key) return false;
+      }
+      return seen;
+    }
+    function tlResolveGroupText(raw, checked, wasOn) {
+      if (checked) return tlApplyGroupMarkers(raw, true);
+      if (wasOn) return tlApplyGroupMarkers(raw, false);   // 原本整组、使用者主动取消 → 拆回多个小事件
+      return raw;                                          // 原本不是整组：手写的 {gp} 原样保留
+    }
+    function tlGroupChecked() {
+      const box = document.getElementById('tlGroupEnable');
+      return !!(box && box.checked && !box.disabled);
+    }
+    // ＋☐ 加入 / 编辑 CheckBox 子事件共用：勾选 → 整批逐行补 {gp} + 整段只补 1 个 cr；
+    //   原本整组却取消 → 拆组 + 逐行补 cr；其余走 fallback（完全沿用原本逐行 cr 的写法）。
+    function tlGroupMd(rawMd, todayStr, fallback) {
+      const on = tlGroupChecked();
+      if (!on && !tlGroupWasOn) return fallback();
+      const resolved = tlResolveGroupText(rawMd, on, tlGroupWasOn);
+      if (on) return tlEnsureCrMarkerForBlock(resolved, todayStr);
+      return resolved.split('\n').map(function (l) { return tlEnsureCrMarker(l, todayStr); }).join('\n');
+    }
     // 備註渲染：uid 可編輯時依「最小 MD 表達單元」分塊，每塊非 checkbox 類型注入編輯小圓點；
     //   uid 為 null（節日 / tooltip）或唯讀事件 → 整段渲染，行為完全不變。
     //   🆕 forceEditable：便利贴层对 include(ro) 行程全開（编辑落回來源檔，见 tlSaveIncludedEventNotes），
@@ -1728,7 +1854,8 @@
       const event = evOverride || (uid ? tlCalEvents.find((x) => x.uid === uid) : null);
       const canEdit = !!(uid && event && (!event.ro || forceEditable));
       if (!canEdit) {
-        const withChecks = tlNotesWithChecks(raw, uid);
+        // 🆕 唯讀整段渲染也要剝掉 {gp}（標記是結構控制，不該出現在畫面上）
+        const withChecks = tlNotesWithChecks(tlStripGpMarkers(raw), uid);
         return renderMarkdown(tlRenderTermDefs(tlRenderNoteMarkersLines(withChecks)));
       }
       const lines = raw.replace(/\r\n/g, '\n').split('\n');
@@ -1741,9 +1868,20 @@
           out += tlRenderTermDefs(tlTaskLineHtml(lines[b.start], uid, b.start, forceEditable)) + '\n';
           return;
         }
-        const chunk = lines.slice(b.start, b.end + 1).join('\n');
-        const inner = renderMarkdown(tlRenderTermDefs(tlRenderNoteMarkersLines(chunk)));
-        out += '<div class="md-unit"><button type="button" class="md-unit-edit" title="' + tlEditUnitTip(b.type) + '"' +
+        // 🆕 只剝「顯示副本」的 {gp}；編輯對話框讀的是 ev.notes 原文，標記必須留著才能維持分組
+        const chunk = tlStripGpMarkers(lines.slice(b.start, b.end + 1).join('\n'));
+        // 🆕 gp 组内的 - [ ] 行必须先转成与一般 checkbox 相同的 .ev-md-check/.ev-cb HTML。
+        //    否则 renderMarkdown 会把它们当 GFM 任务清单 → <ul><li> → .body ul li{list-style:disc}
+        //    多出一个「.」项目符号，方框也变成浏览器原生灰框（2026-11-06 使用者回报）。
+        //    整组只挂外层这一颗圆点 → 组内 plain：不挂行内圆点，但 checkbox 仍可勾选；
+        //    baseLine＝b.start 把区块内索引补成整份 notes 的全域行号，供 tlToggleNoteCheck 回写。
+        const prepared = (b.type === 'gp')
+          ? tlNotesWithChecks(chunk, uid, { plain: true, baseLine: b.start })
+          : chunk;
+        const inner = renderMarkdown(tlRenderTermDefs(tlRenderNoteMarkersLines(prepared)));
+        // 🆕 小事件群（连续同组 {gp} 行＝一个编辑小圆点区块）：只给 gp 区块挂 is-gp，
+        //    由 CSS 画 1px currentColor 外框；task / code / table / para 等其它单元不受影响。
+        out += '<div class="md-unit' + (b.type === 'gp' ? ' is-gp' : '') + '"><button type="button" class="md-unit-edit" title="' + tlEditUnitTip(b.type) + '"' +
           ' data-uid="' + uidAttr + '" data-start="' + b.start + '" data-end="' + b.end + '" data-type="' + b.type + '"' +
           ' onclick="tlOpenEditBlockDialog(event,\'' + uidAttr + '\',' + b.start + ',' + b.end + ',\'' + b.type + '\')">\u270e</button>' +
           inner + '</div>';
@@ -1751,12 +1889,17 @@
       return out;
     }
     // 🆕「最小的 MD 表達單元」切分：回傳 [{start,end,type}]（行索引含頭尾）。
-    //   type：code 代碼圍欄（整塊原子）/ table 表格（表頭+分隔行+連續 | 行）/ heading 標題 /
-    //   hr 分隔線 / quote 引用（連續 > 行）/ task 勾選行（逐行獨立，沿用子事件編輯）/
-    //   list 普通列表（連續整段一塊）/ para 段落（連續非空、非上述起始行）。
-    //   空行僅作分隔，不屬於任何區塊。
+    //   type：gp 分組（連續同名 {gp} 標記行，整段原子，覆蓋其內的 task/list/para 等型態）/ code 代碼圍欄（整塊原子）/
+    //   table 表格 / heading 標題 / hr 分隔線 / quote 引用 / task 勾選行（逐行獨立）/ list 列表 / para 段落。
+    //   空行僅作分隔，不屬於任何區塊；**例外**：夾在「前後相同 {gp} 行」之間的連續空行，
+    //   視為上一行 {gp} 的延續，併入同一個 gp 區塊（不拆成兩個小事件群）。
+    //   ⚠️ {gp} 是硬邊界：所有「向前掃描」的 while 遇到帶標記的行就必須停，
+    //      否則 para/list/quote/table 會把下一組 {gp} 行吞進來，圓點數就錯了。
+    //      代碼圍欄是例外（整塊原子，圍欄內的 {gp} 不解析），故 gp 分支排在 isFence 之後。
     function tlSplitMdBlocks(text) {
       const lines = String(text == null ? '' : text).replace(/\r\n/g, '\n').split('\n');
+      const gpKey = (l) => tlGpKeyOfLine(l);
+      const isGp = (l) => gpKey(l) !== null;
       const isBlank = (l) => /^\s*$/.test(l);
       const isFence = (l) => /^\s*(```|~~~)/.test(l);
       const isHeading = (l) => /^#{1,6}(\s|$)/.test(l);
@@ -1784,10 +1927,31 @@
           blocks.push({ start: i, end: Math.min(j, lines.length - 1), type: 'code' });
           i = j + 1; continue;
         }
+        // 🆕 連續且「group 名相同」的 {gp} 行＝一個小事件（一顆編輯小圓點）；
+        //    名稱不同或中間夾了無標記行就斷開，同名但不連續也各自成組。
+        //    **例外（2026-11-06）**：純空白行（可多行連續）視為「上一行 {gp} 的延續」——
+        //    只有當空白行之後的第一行仍是同 key 的 {gp} 行，才把空白行連同後段併進同一群。
+        if (isGp(line)) {
+          const key = gpKey(line);
+          let j = i + 1;
+          while (j < lines.length && gpKey(lines[j]) === key) j++;
+          // 反覆延伸，支援「gp 段 / 空行 / gp 段 / 空行 / gp 段」；
+          // 空白行納入 [start,end]，baseLine 索引才連續、勾選回寫才不會改錯行。
+          while (j < lines.length && isBlank(lines[j])) {
+            let k = j;
+            while (k < lines.length && isBlank(lines[k])) k++;
+            if (k < lines.length && gpKey(lines[k]) === key) {
+              j = k;
+              while (j < lines.length && gpKey(lines[j]) === key) j++;
+            } else break;
+          }
+          blocks.push({ start: i, end: j - 1, type: 'gp' });
+          i = j; continue;
+        }
         if (isHeading(line)) { blocks.push({ start: i, end: i, type: 'heading' }); i++; continue; }
         if (isHr(line)) { blocks.push({ start: i, end: i, type: 'hr' }); i++; continue; }
-        if (isQuote(line)) { let j = i; while (j < lines.length && isQuote(lines[j])) j++; blocks.push({ start: i, end: j - 1, type: 'quote' }); i = j; continue; }
-        if (isTableStart(i)) { let j = i + 2; while (j < lines.length && isTableRow(lines[j]) && !isBlank(lines[j])) j++; blocks.push({ start: i, end: j - 1, type: 'table' }); i = j; continue; }
+        if (isQuote(line)) { let j = i; while (j < lines.length && isQuote(lines[j]) && !isGp(lines[j])) j++; blocks.push({ start: i, end: j - 1, type: 'quote' }); i = j; continue; }
+        if (isTableStart(i)) { let j = i + 2; while (j < lines.length && isTableRow(lines[j]) && !isBlank(lines[j]) && !isGp(lines[j])) j++; blocks.push({ start: i, end: j - 1, type: 'table' }); i = j; continue; }
         if (isTask(line)) { blocks.push({ start: i, end: i, type: 'task' }); i++; continue; }
         if (isList(line)) {
           // 普通列表块：允许中间有空行或空列表项（- / * / + / 1. 后无内容），直到遇到非列表、非空行、非空列表项才断开
@@ -1797,10 +1961,10 @@
               // 空行或空列表项：往后看是否有更多列表项，有则继续，无则断开
               let k = j + 1;
               while (k < lines.length && (isBlank(lines[k]) || isEmptyListItem(lines[k]))) k++;
-              if (k < lines.length && isList(lines[k])) { j = k; continue; }
+              if (k < lines.length && isList(lines[k]) && !isGp(lines[k])) { j = k; continue; }
               break;
             }
-            if (isList(lines[j])) { j++; continue; }
+            if (isList(lines[j]) && !isGp(lines[j])) { j++; continue; }
             break;
           }
           blocks.push({ start: i, end: j - 1, type: 'list' });
@@ -1808,7 +1972,7 @@
         }
         { let j = i;
           while (j < lines.length && !isBlank(lines[j]) && !isFence(lines[j]) && !isHeading(lines[j]) && !isHr(lines[j]) &&
-                 !isQuote(lines[j]) && !isTask(lines[j]) && !isList(lines[j]) && !isTableStart(j)) j++;
+                 !isQuote(lines[j]) && !isTask(lines[j]) && !isList(lines[j]) && !isTableStart(j) && !isGp(lines[j])) j++;
           if (j === i) j = i + 1;
           blocks.push({ start: i, end: j - 1, type: 'para' }); i = j; continue;
         }
@@ -1841,11 +2005,18 @@
       let last = lines.length - 1;
       while (last >= 0 && !lines[last].trim()) last--;
       if (last < 0) return '[[cr:' + todayStr + ']]';  // 全空單元：直接給建立日標記
-      const m = lines[last].match(/\[\[(dl|cp):\d{4}-\d{2}-\d{2}\]\]/);
+      const cr = '[[cr:' + todayStr + ']]';
+      const whole = lines[last];
+      // 🆕 {gp} 組的最後一行帶分組標記：cr 要插在標記「之前」，讓標記繼續留在行尾、
+      //    顯示剝離後也不會留下孤立空格。無標記時 cut＝行尾，行為與原邏輯完全一致。
+      const gp = whole.match(/\{[ \t]*(?:group|gp)[ \t]*:?[ \t]*[^{}]*\}(?=[ \t]*(?:\[\[[^\]]*\]\][ \t]*)*$)/i);
+      const cut = (gp && typeof gp.index === 'number') ? gp.index : whole.length;
+      const head = whole.slice(0, cut), tail = whole.slice(cut);
+      const m = head.match(/\[\[(dl|cp):\d{4}-\d{2}-\d{2}\]\]/);
       if (m && typeof m.index === 'number') {
-        lines[last] = lines[last].slice(0, m.index).replace(/\s+$/, '') + ' [[cr:' + todayStr + ']] ' + lines[last].slice(m.index);
+        lines[last] = head.slice(0, m.index).replace(/\s+$/, '') + ' ' + cr + ' ' + head.slice(m.index) + tail;
       } else {
-        lines[last] = lines[last].replace(/\s+$/, '') + ' [[cr:' + todayStr + ']]';
+        lines[last] = head.replace(/\s+$/, '') + ' ' + cr + tail;
       }
       return lines.join('\n');
     }
@@ -1972,19 +2143,30 @@
     }
     // 單行 checkbox → 帶編輯小圓點 + 可交互勾選框的 HTML；非 task 行原樣回傳。
     //   i 為「整段 notes 的全域行索引」（保存回寫以此為準）。
-    function tlTaskLineHtml(line, uid, i, forceEditable) {
+    function tlTaskLineHtml(line, uid, i, forceEditable, opts) {
       const m = line.match(/^(\s*)-\s+\[([ xX])\]\s?(.*)$/);
       if (!m) return line;
       const done = m[2] !== ' ';
       const event = uid && tlCalEvents.find((item) => item.uid === uid);
-      const editButton = uid && event && (!event.ro || forceEditable)
+      // 🆕 plain＝gp 组内的 checkbox：整组只有外层一颗编辑圆点，故「不挂行内 ✎」，
+      //    但 checkbox 本身与一般 checkbox 完全一样可勾选（2026-11-06 使用者要求 Group 与否同作用）。
+      //    外观共用 .ev-md-check/.ev-cb，避免被 renderMarkdown 当成 <ul><li> 多出项目符号。
+      //    勾选后 [[cp:今天]] 落在 {gp} 之后；依新位置规则（行尾 [[]] 序列前仍算结构标记）分组不受影响。
+      const plain = !!(opts && opts.plain);
+      // 🆕 gp 区块传 baseLine＝该区块在整份 notes 的起始行号；勾选回写必须用「全域行号」定位，
+      //    否则 tlToggleNoteCheck 会改到别的行。
+      const baseLine = (opts && Number.isInteger(opts.baseLine)) ? opts.baseLine : 0;
+      const lineNo = baseLine + i;
+      const editButton = !plain && uid && event && (!event.ro || forceEditable)
         ? '<button type="button" class="ev-md-edit" title="编辑 checkbox 子事件" data-uid="' + tlEscapeHtml(uid) + '" data-line="' + i + '" onclick="tlOpenEditNoteCheckDialog(event,\'' +
           tlEscapeHtml(uid) + '\',' + i + ')">\u270e</button>'
         : '';
+      // 🆕 plain 只代表「共用外层圆点、不挂行内 ✎」；勾选互动与一般 checkbox 完全相同，
+      //    data-line／onclick 一律用全域行号 lineNo（gp 区块由 baseLine 补上偏移）。
       const cbAttr = uid
-        ? ' class="ev-cb interactive" data-uid="' + tlEscapeHtml(uid) + '" data-line="' + i + '"' +
-          ' onclick="tlToggleNoteCheck(event,\'' + tlEscapeHtml(uid) + '\',' + i + ')"' +
-          ' onkeydown="tlCalCheckKey(event,\'' + tlEscapeHtml(uid) + '\',' + i + ')"' +
+        ? ' class="ev-cb interactive" data-uid="' + tlEscapeHtml(uid) + '" data-line="' + lineNo + '"' +
+          ' onclick="tlToggleNoteCheck(event,\'' + tlEscapeHtml(uid) + '\',' + lineNo + ')"' +
+          ' onkeydown="tlCalCheckKey(event,\'' + tlEscapeHtml(uid) + '\',' + lineNo + ')"' +
           ' role="checkbox" aria-checked="' + (done ? 'true' : 'false') + '" tabindex="0"'
         : ' class="ev-cb"';
       return m[1] + '<span class="ev-md-check' + (done ? ' done' : '') + '">' +
@@ -1992,12 +2174,13 @@
         '<span' + cbAttr + '>' + (done ? '\u2713' : '') + '</span>' +
         '<span class="ev-md-check-text">' + tlRenderInlineMarkdown(tlRenderNoteMarkers(m[3])) + '</span></span>';
     }
-    function tlNotesWithChecks(text, uid) {
+    function tlNotesWithChecks(text, uid, opts) {
       let inFence = false;
       return text.split('\n').map((line, i) => {
         if (/^\s*(```|~~~)/.test(line)) { inFence = !inFence; return line; }
         if (inFence) return line;
-        return tlTaskLineHtml(line, uid, i);
+        // plain 模式靠 opts.baseLine 把局部 i 补成全域行号（勾选回写要定位原文行）；非 plain 时 baseLine=0
+        return tlTaskLineHtml(line, uid, i, opts && opts.forceEditable, opts);
       }).join('\n');
     }
     // 🔁 重复事件小图标（## EVENT(REPEAT)）：双箭头环形，随文色（灰），用于月格 chip / 时间网格 / 列表行 / 悬停提示
@@ -4604,6 +4787,33 @@
     let tlEditNoteCheckTarget = null;
     let tlEditBlockTarget = null; // { uid, start, end, type } — 通用「最小 MD 区块」编辑区间
     let tlAddCheckDirty = false;
+    // 🆕 「group 启用（唯一小事件）」：只在「编辑内容区块」出现，默认不启用；原本已整组时预勾。
+    //    单一 setter：开任何对话框／关窗都走它，避免勾选状态跨模式残留。
+    let tlGroupWasOn = false;
+    function tlSyncGroupUi(src, hide) {
+      const row = document.getElementById('tlGroupRow');
+      const box = document.getElementById('tlGroupEnable');
+      const label = row && row.querySelector('span');
+      // 三种模式都提供：block＝编辑内容区块／check＝编辑 CheckBox 子事件／add＝建立 CheckBox 项目
+      const mode = tlEditBlockTarget ? 'block' : (tlEditNoteCheckTarget ? 'check' : 'add');
+      const show = !hide;
+      const type = mode === 'block' ? tlEditBlockTarget.type : '';
+      // 代码块（或内含围栏）不适用：围栏行加标记会破坏 isFence 判定，围栏内标记又会原样显示
+      const enabled = show && !(mode === 'block' && type === 'code') && !tlHasCodeFence(src);
+      // add 是「还没写入的草稿」永遠不预勾；block/check 依开框原文侦测
+      const detected = (mode === 'block' || mode === 'check') && enabled && tlIsWholeGpBlock(src);
+      tlGroupWasOn = !!detected;
+      if (row) {
+        row.style.display = show ? '' : 'none';
+        row.classList.toggle('is-disabled', !enabled);
+      }
+      if (label) label.textContent = enabled ? 'group 启用（唯一小事件）' : 'group 启用（代码块不适用）';
+      if (box) {
+        box.disabled = !enabled;
+        box.checked = !!detected;
+      }
+      return enabled;
+    }
     function tlBindAddCheckDirty() {
       const ov = document.getElementById('tlAddCheckOverlay');
       if (!ov || ov.dataset.dirtyBound) return;
@@ -4615,7 +4825,7 @@
       ov.addEventListener('change', markDirty);
     }
     function tlBlockTypeName(type) {
-      return ({ code: '代码块', table: '表格', heading: '标题', hr: '分隔线', quote: '引用', list: '列表', para: '段落' })[type] || '区块';
+      return ({ code: '代码块', table: '表格', heading: '标题', hr: '分隔线', quote: '引用', list: '列表', para: '段落', gp: '分组' })[type] || '区块';
     }
     // 🆕 编辑小圆点的悬停提示：只说「这一颗编辑的是哪一类内容」，不显示内容本身。
     //    文案是给使用者看的口径（2026-10-20 指定）：文本内容／表格内容／分隔线／checkbox 子事件…
@@ -4623,7 +4833,8 @@
     function tlEditUnitTip(type) {
       return ({
         para: '编辑文本内容', list: '编辑列表内容', table: '编辑表格内容',
-        code: '编辑代码块', heading: '编辑标题', hr: '编辑分隔线', quote: '编辑引用内容'
+        code: '编辑代码块', heading: '编辑标题', hr: '编辑分隔线', quote: '编辑引用内容',
+        gp: '编辑整个分组（连续 {gp} 行）'
       })[type] || '编辑内容区块';
     }
     function tlOpenAddCheckDialog(uid) {
@@ -4644,6 +4855,7 @@
       document.querySelector('#tlAddCheckOverlay .tl-ev-form-hint').innerHTML = '每行一个项目，保存后以 <code>- [ ] …</code> 形式追加到「备注」末尾；系统自动补上建立日标记 <code>[[cr:今天]]</code>';
       document.querySelector('#tlAddCheckOverlay .btn-primary').textContent = '加入备注';
       if (inp) inp.value = '';
+      tlSyncGroupUi('');   // 🆕 「建立 CheckBox 项目」也提供 group 勾选（草稿，默认不启用）
       tlAddCheckDirty = false;
       if (inp) inp.rows = 4;
       if (ov) ov.style.display = 'flex';
@@ -4723,6 +4935,7 @@
 
       tlAddCheckTargetUid = null;
       tlEditNoteCheckTarget = { uid, line };
+      tlEditBlockTarget = null;
       tlExitTableMode();   // 同上：子事件入口一律不用网格
       const ov = document.getElementById('tlAddCheckOverlay');
       const inp = document.getElementById('tlAddCheckInput');
@@ -4739,12 +4952,13 @@
           tlSaveAddCheckDialog();
           return;
         }
-        // 提示文案一直写着「Esc 关闭」，但这里原本只绑了 ⌘S → 便利贴有 Esc、主窗体没有（两端口径不齐）
-        if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); tlCloseAddCheckDialog(); }
+        // 🆕 只有下方「取消」按钮能关窗：Esc 一律不关闭（吃掉按键、挡住全局快捷键）
+        if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); }
       };
       if (inp) {
         // 🆕 原文保真：编辑框显示原始文本（含 [[dl:…]]/[[cp:…]] 等 [[]] 符号），不剥离、不折叠空白；保存时直接写回
         inp.value = match[3];
+        tlSyncGroupUi(match[3]);   // 🆕 编辑 CheckBox 子事件也提供 group 勾选；原文已带 {gp} 时预勾
         inp.rows = 2;
       }
       if (ov) ov.style.display = 'flex';
@@ -4780,7 +4994,7 @@
     function tlEnterTableMode(src) { const g = tlTableGridInstance(); if (!g) return false; g.bind(); return g.enter(src); }
     function tlExitTableMode() { if (tlTableGrid) tlTableGrid.exit(); }
     // 🆕 通用「最小 MD 区块」编辑对话框：编辑 notes 中 lines[start..end] 的 Markdown 原文。
-    //   ⌘S 保存（不关闭，可继续编辑）· Esc 关闭；清空并保存＝删除该区块（需确认）。
+    //   ⌘S 保存（不关闭，可继续编辑）· 关闭请按下方「取消」按钮；清空并保存＝删除该区块（需确认）。
     function tlOpenEditBlockDialog(event, uid, start, end, type) {
       if (event) { event.preventDefault(); event.stopPropagation(); }
       tlCalEvents = tlAllEvents(document.getElementById('taskText').value);
@@ -4799,16 +5013,17 @@
       tlBindAddCheckDirty();
       const copyButton = document.getElementById('tlCopyNoteCheckButton');
       document.querySelector('#tlAddCheckOverlay .tl-ev-form-title').textContent = '编辑内容区块（' + tlBlockTypeName(type) + '）';
-      document.querySelector('#tlAddCheckOverlay .tl-ev-form-hint').textContent = '直接编辑此区块的 Markdown 原文；⌘S 保存（不关闭，可继续编辑）· Esc 关闭；清空并保存＝删除该区块（会先确认）';
+      document.querySelector('#tlAddCheckOverlay .tl-ev-form-hint').textContent = '直接编辑此区块的 Markdown 原文；⌘S 保存（不关闭，可继续编辑）· 关闭请按下方「取消」按钮；清空并保存＝删除该区块（会先确认）';
       document.querySelector('#tlAddCheckOverlay .btn-primary').textContent = '保存修改';
       if (copyButton) copyButton.style.display = '';
       if (ov) ov.onkeydown = (e) => {
         if ((e.metaKey || e.ctrlKey) && !e.altKey && (e.key === 's' || e.key === 'S')) {
           e.preventDefault(); e.stopPropagation(); tlSaveAddCheckDialog(); return;
         }
-        if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); tlCloseAddCheckDialog(); }
+        if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); }
       };
       if (inp) { inp.value = src; inp.rows = Math.min(18, Math.max(4, (end - start + 1) + 1)); }
+      tlSyncGroupUi(src);   // 🆕 区块编辑才显示 group 勾选；原本已整组带 {gp} 时预勾
       tlAddCheckDirty = false;
       // 🆕 表格区块 → 进网格模式（解析失败仍留原文模式，不挡路）
       tlExitTableMode();
@@ -4816,7 +5031,7 @@
       if (type === 'table') { tlBindTableButtons(); tableMode = tlEnterTableMode(src); }
       if (tableMode) {
         document.querySelector('#tlAddCheckOverlay .tl-ev-form-title').textContent = '编辑表格内容';
-        document.querySelector('#tlAddCheckOverlay .tl-ev-form-hint').textContent = '在格子里填内容即可；「＋行／＋列」增删，或填「行×列」按「建立空白表」重画一张；⌘S 保存（不关闭，可继续编辑）· Esc 关闭；需要手写 Markdown 时按「改 Markdown 原文」切换';
+        document.querySelector('#tlAddCheckOverlay .tl-ev-form-hint').textContent = '在格子里填内容即可；「＋行／＋列」增删，或填「行×列」按「建立空白表」重画一张；⌘S 保存（不关闭，可继续编辑）· 关闭请按下方「取消」按钮；需要手写 Markdown 时按「改 Markdown 原文」切换';
       }
       if (ov) ov.style.display = 'flex';
       if (inp && !tableMode) setTimeout(() => inp.focus(), 0);
@@ -4847,6 +5062,7 @@
       tlEditNoteCheckTarget = null;
       tlEditBlockTarget = null;
       tlAddCheckDirty = false;
+      tlSyncGroupUi('', true);   // 🆕 关窗一律复位，下次开任何对话框都不会残留上次的勾选
       tlExitTableMode();   // 🆕 收掉网格模式，下次开一般对话框别残留
     }
     async function tlSaveAddCheckDialog() {
@@ -4855,7 +5071,10 @@
       tlAddCheckDirty = false;
       if (tlEditBlockTarget) {
         const target = tlEditBlockTarget;
-        const blockText = tlEnsureCrMarkerForBlock(inp.value.replace(/\r\n/g, '\n'), tlFmtDate(new Date()));
+        // 🆕 group 启用：勾选时逐行补 {gp}（整块＝一个小事件）；原本整组却取消勾选＝拆组；其余原样
+        const gpBox = document.getElementById('tlGroupEnable');
+        const grouped = tlResolveGroupText(inp.value.replace(/\r\n/g, '\n'), !!(gpBox && gpBox.checked && !gpBox.disabled), tlGroupWasOn);
+        const blockText = tlEnsureCrMarkerForBlock(grouped, tlFmtDate(new Date()));
         tlCalEvents = tlAllEvents(document.getElementById('taskText').value);
         const ev = tlCalEvents.find((x) => x.uid === target.uid);
         if (!ev) { tlCloseAddCheckDialog(); showToast('找不到该条行程（内容可能已被修改）', 'danger'); return; }
@@ -4921,7 +5140,9 @@
         // 🆕 原文保真：编辑框已是完整原文（含 [[]] 标记），保存时直接写回；并自动补建立日标记 [[cr:今天]]
         //    （已含 cr 则不動＝保留原始建立日、不重複補；若含 dl/cp 則 cr 排在最前）
         const todayCr = tlFmtDate(new Date());
-        const newLines = rows.map((l, i) => match[1] + '- [' + (i === 0 ? match[2] : ' ') + '] ' + tlEnsureCrMarker(l, todayCr));
+        const rawMd = rows.map((l, i) => match[1] + '- [' + (i === 0 ? match[2] : ' ') + '] ' + l).join('\n');
+        const mdText = tlGroupMd(rawMd, todayCr, () => rows.map((l, i) => match[1] + '- [' + (i === 0 ? match[2] : ' ') + '] ' + tlEnsureCrMarker(l, todayCr)).join('\n'));
+        const newLines = mdText.split('\n');
         lines.splice(target.line, 1, ...newLines);
         ev.notes = lines.join('\n');
         tlCloseAddCheckDialog();
@@ -4934,7 +5155,8 @@
       const lines = inp.value.replace(/\r\n/g, '\n').split('\n').map((l) => l.trim()).filter((l) => l.length);
       if (!lines.length) { tlCloseAddCheckDialog(); return; }
       const todayCr = tlFmtDate(new Date());  // 新增子事件：自動補建立日標記 [[cr:今天]]（已含則不重複補）
-      const md = lines.map((l) => '- [ ] ' + tlEnsureCrMarker(l, todayCr)).join('\n');
+      const rawMd = lines.map((l) => '- [ ] ' + l).join('\n');
+      const md = tlGroupMd(rawMd, todayCr, () => lines.map((l) => '- [ ] ' + tlEnsureCrMarker(l, todayCr)).join('\n'));
       // 列表模式：追加到目标事件备注，并直接存档（写缓冲 + saveTask 落盘），无需打开编辑表单
       if (tlAddCheckTargetUid) {
         const uid = tlAddCheckTargetUid;
@@ -5269,7 +5491,7 @@
       lines[line] = tlNoteCheckTransform(lines[line], !wasDone, tlFmtDate(new Date()));
       ev.notes = lines.join('\n');
       tlApplyEventsToBuffer(); // 序列化 + 標髒 + 重繪（多天事件多列自動同步）
-      showToast(done ? '已取消勾选，按「保存」写回 calendar.md' : '已勾选，按「保存」写回 calendar.md', 'success');
+      showToast(wasDone ? '已取消勾选，按「保存」写回 calendar.md' : '已勾选，按「保存」写回 calendar.md', 'success');
     }
     function tlCalCheckKey(e, uid, line) {
       if (e && (e.key === ' ' || e.key === 'Spacebar' || e.key === 'Enter')) {

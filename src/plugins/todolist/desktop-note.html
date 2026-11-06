@@ -304,6 +304,11 @@
     .addcheck-box textarea { width: 100%; box-sizing: border-box; height: max(36vh, 54px); resize: none; border: 1px solid #D4AF37; border-radius: 6px; padding: 6px; font: inherit; font-size: 12px; color: var(--note-fg, #33384a); background: rgba(127,127,127,.08); -webkit-app-region: no-drag; }
     .addcheck-box textarea:focus { outline: none; box-shadow: 0 0 0 1px #D4AF37; }
     .addcheck-box .ac-hint { margin-top: 6px; font-size: 10px; opacity: .65; }
+    /* 🆕 编辑内容区块：group 启用勾选（保存时逐行补 {gp}，整块视为一个小事件） */
+    .addcheck-box .ac-group-row { display: flex; align-items: center; gap: 6px; margin-top: 8px; font-size: 11px; color: var(--note-fg, #33384a); cursor: pointer; user-select: none; -webkit-user-select: none; }
+    .addcheck-box .ac-group-row input { margin: 0; width: 14px; height: 14px; accent-color: #D4AF37; cursor: pointer; }
+    .addcheck-box .ac-group-row.is-disabled { opacity: .5; cursor: default; }
+    .addcheck-box .ac-group-row.is-disabled input { cursor: default; }
     /* 🆕 发邮件浮层：便利贴标题行 + 收件人输入框（复用 addcheck-box 外观） */
     .addcheck-box .ac-note { margin-bottom: 6px; font-size: 11px; font-weight: 600; word-break: break-all; }
     .addcheck-box input[type="text"] { width: 100%; box-sizing: border-box; border: 1px solid #D4AF37; border-radius: 6px; padding: 6px; font: inherit; font-size: 12px; color: var(--note-fg, #33384a); background: rgba(127,127,127,.08); -webkit-app-region: no-drag; }
@@ -451,6 +456,15 @@
     #body .md-unit:last-child { margin-bottom: 0; }
     #body .md-unit > *:first-child { margin-top: 0; }
     #body .md-unit > *:last-child { margin-bottom: 0; }
+    /* 🆕 小事件群（{gp} 连续同组行＝一个编辑小圆点区块）：最细外框，
+       跟随 --note-fg 字色随主题变化；padding-left 的 18px 圆点凹槽保持不动。
+       同时覆盖来源便利贴与 VIEW 投影贴（两者都产出 .md-unit.is-gp）。 */
+    #body .md-unit.is-gp { border: 1px solid currentColor; padding-top: .15em; padding-right: .4em; padding-bottom: .15em; }
+    /* Retina/高 DPR：CSS 1px 在 2x 屏会画成 2 个物理像素（看起来偏粗）。
+       0.5px hairline＝1 个物理像素；选择器必须带 #body，特异性才压得住上面的简写。 */
+    @media (min-resolution: 2dppx) {
+      #body .md-unit.is-gp { border-width: .5px; }
+    }
     #body .md-unit-edit { position: absolute; left: 0; top: .15em; display: inline-flex; width: 13px; height: 13px; padding: 0; align-items: center; justify-content: center; border: 0; border-radius: 50%; background: var(--ev-primary, #d4af37); color: #fff; font-size: 9px; line-height: 1; cursor: pointer; opacity: .8; -webkit-app-region: no-drag; }
     #body .md-unit-edit:hover, #body .md-unit-edit:focus-visible { opacity: 1; outline: 2px solid var(--ev-primary, #d4af37); outline-offset: 1px; }
     /* 🆕 VIEW 投影贴非 task 行：复用 .md-unit 凹槽，把只读 .ev-md-edit 圆点定位到左侧（与 .md-unit-edit 同凹槽，dot 对齐 checkbox 行圆点） */
@@ -892,11 +906,14 @@
       <button type="button" class="nami" data-act="copy" role="menuitem">📋 复制内容</button>
       <button type="button" class="nami" data-act="del" role="menuitem">🗑 删除此小事件</button>
     </div>
-    <!-- 🆕 右键 区块编辑小圆点（.md-unit-edit）→ 区块级下拉菜单：编辑此区块／复制整块内容／删除此区块（与 #noteFindSameMenu 平行；区块不是「小事件」，无跨张比对/搬移语义） -->
+    <!-- 🆕 右键 区块编辑小圆点（.md-unit-edit）→ 区块级下拉菜单。
+         旧规则写「区块不是小事件，无搬移语义」；但 {gp} 小事件群把连续同组行整合成一个编辑小圆点，
+         语义上已经是「一个小事件」，故 type=gp 时额外开放「📤 搬移项目」（其余区块仍不给）。 -->
     <div class="note-addcheck-menu" id="noteBlockMenu" role="menu">
       <button type="button" class="nami" data-act="goto-event" role="menuitem" title="唤起 Calendar 开启对应的编辑行程画面（被 include 的外部档为只读），并把备注框滚动到这个区块所在行＋闪烁">📝 切换编辑行程并定位</button>
       <button type="button" class="nami" data-act="edit" role="menuitem">✎ 编辑此区块</button>
       <button type="button" class="nami" data-act="copy" role="menuitem">📋 复制整块内容</button>
+      <button type="button" class="nami" data-act="move" role="menuitem" hidden title="只有 {gp} 小事件群可用：整群搬移到其它便利贴（含 {gp} 标记，维持分组）">📤 搬移项目</button>
       <button type="button" class="nami" data-act="del" role="menuitem">🗑 删除此区块</button>
     </div>
     <!-- 🆕 右键 VIEW 投影贴分组标题（.vsr-group-head）的「📍 切换徽标」→ 下拉菜单：
@@ -1024,7 +1041,7 @@
         <button class="mi" id="miZoomIn" title="放大内容字体（A＋）">A＋</button>
       </div>
     </div>
-    <!-- 🆕 加入内容浮层（＋☐ 选单／编辑小圆点共用）：Enter＝换行 · ⌘S／「保存」＝加入（不关窗）· Esc＝关闭（有草稿先问） -->
+    <!-- 🆕 加入内容浮层（＋☐ 选单／编辑小圆点共用）：Enter＝换行 · ⌘S／「保存」＝加入（不关窗）· 只有下方「关闭」按钮能关窗（Esc／点背罩都不关） -->
     <div class="addcheck-ov" id="addCheckOv">
       <div class="addcheck-box" id="addCheckBox">
         <div class="ac-title">加入子事件（CheckBox）</div>
@@ -1045,7 +1062,11 @@
           </div>
           <div class="ntg-scroll" id="noteTableGridScroll"></div>
         </div>
-        <div class="ac-hint">Enter 换行（与「编辑小圆点」手感一致）· ⌘S 或「保存」加入（加入后不关闭，可继续输入下一批）· Esc 关闭（草稿未加入会先问是否保存）</div>
+        <!-- 🆕 group 启用（唯一小事件）：只在「编辑内容区块」显示，默认不勾；保存时逐行行尾补 {gp} -->
+        <label class="ac-group-row" id="noteGroupRow" style="display:none" title="启用后保存会在每一行行尾加上 {gp}，整批内容视为一个唯一小事件">
+          <input type="checkbox" id="noteGroupEnable"><span>group 启用（唯一小事件）</span>
+        </label>
+        <div class="ac-hint">Enter 换行（与「编辑小圆点」手感一致）· ⌘S 或「保存」加入（加入后不关闭，可继续输入下一批）· 关闭请按下方「关闭」按钮（草稿未加入会先问是否保存）</div>
         <div class="ac-actions">
           <button type="button" class="ac-copy" id="autoTermCheckButton">自动标示术语</button>
           <button type="button" class="ac-copy" id="copyNoteCheckButton">复制</button>
@@ -1053,7 +1074,7 @@
           <button type="button" class="ac-copy ac-primary" id="saveCheckButton">保存</button>
           <button type="button" class="ac-copy" id="closeCheckButton">关闭</button>
         </div>
-        <!-- 🆕 关闭拦截条：新增／编辑子事件／区块都适用——按 Esc／「关闭」／点背罩时若有改动或草稿未加入，就在这里三选一（默认焦点＝继续编辑，不丢内容） -->
+        <!-- 🆕 关闭拦截条：新增／编辑子事件／区块都适用——按下方「关闭」按钮时若有改动或草稿未加入，就在这里三选一（默认焦点＝继续编辑，不丢内容） -->
         <div class="ac-unsaved" id="addCheckUnsavedBar" role="alertdialog" aria-live="polite" style="display:none">
           <div class="ac-unsaved-tip">内容有改动，尚未保存。关闭前请决定：</div>
           <div class="ac-unsaved-btns">

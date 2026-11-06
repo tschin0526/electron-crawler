@@ -564,7 +564,12 @@
     return String(text == null ? '' : text).split('\n').map((line) => {
       if (/^\s*(```|~~~)/.test(line)) { inFence = !inFence; return line; }
       if (inFence) return line;
-      return D.noteMarkers(line);
+      // 🆕 {gp} 是结构控制标记，只在渲染副本里剥掉；圆点 data-text / ref.notes 仍保留原文，
+      //    供「找出相同的项目」按整块原文比对（与桌面 tlStripGpMarkers 同口径）。
+      //    只有真的剥到标记的那行才清尾随空白，避免破坏 Markdown 行尾两空格换行语义。
+      const stripped = line.replace(/[ \t]*\{[ \t]*(?:group|gp)[ \t]*:?[ \t]*[^{}]*\}(?=[ \t]*(?:\[\[[^\]]*\]\][ \t]*)*$)/gi, '');
+      const clean = stripped === line ? line : stripped.replace(/[ \t]+$/, '');
+      return D.noteMarkers(clean);
     }).join('\n');
   }
   // ===== 分组标题（来源行程的标题）渲染成「可点整块＋📍 切换按钮」=====
@@ -625,22 +630,68 @@
     // heading/hr/code/table：用行号保证每命中独立成单元（不会与相邻同类合并）
     return 'solo:' + (h.line != null ? h.line : Math.random());
   }
-  // 把一组命中切成「编辑单元」：连续同类非 task 行合并成一个单元；task 行各自独立（沿用 checkbox 行逻辑）。
+  // ── group 标记语法（2026-11-06 宽放）：花括号内「开头」是 gp 或 group 即算；大小写不拘、冒号可省略 ──
+  //   {gp}＝{GP}＝{GroUP}＝{group} → 无名组；{gp:ABC}＝{gpABC}＝{GROUP:ABC} → 'ABC'；{gp1}＝{gp:1} → '1'。
+  //   ⚠️ 位置：标记必须在行尾、或行尾 [[...]] 标记序列之前才算结构标记；行中的 {gp} 是普通文字，原样显示也不分组。
+  //   前缀 group 优先于 gp；组名仍区分大小写；正则与桌面主窗／LITE／便利贴窗同口径。
+  // 🆕 {gp} / {gp:名称} 分组标记解析（与 calendar-editor.js::tlGpKeyOfLine 同口径）。
+  //   null＝无标记；''＝{gp} 无名组；名称＝{gp:名称}。VIEW 投影贴的排序单元必须以此为准，
+  //   不能把「连续同名 {gp} 的 3 行」拆成 3 个 .vsr-sort-unit，否则排序会当 3 个小事件。
+  function gpKeyOf(raw) {
+    const m = String(raw == null ? '' : raw).match(/\{[ \t]*(?:group|gp)[ \t]*:?[ \t]*([^{}]*)\}(?=[ \t]*(?:\[\[[^\]]*\]\][ \t]*)*$)/i);
+    if (!m) return null;
+    return String(m[1] || '').trim();
+  }
+  // 把一组命中切成「编辑单元」：
+  //   ① 连续且 group 名相同的 {gp} 行 → 一个单元（覆盖 task 分支，组内 checkbox 也只算一颗圆点）；
+  //   ② 其余沿用旧口径：连续同类非 task 行合并、task 行各自独立。
+  //   名称不同 / 中间夹无标记行 / 同名但不连续 → 各自成组（组＝连续区段，不做全域合并）。
+  //   ⚠️ 空白行规则（2026-11-06）：投影贴只收「命中行」，来源的纯空白行根本不会进 hits，
+  //      因此被空白行隔开的两段同 key {gp} 在 hits 里天然相邻 → 本来就合并成 1 个排序单元。
+  //      h.sep 是「列表行后接非列表行」时插入的**虚拟**分隔，不是来源空白行，必须继续丢弃；
+  //      绝不能塞进 gp 单元，否则 data-text 与显示内容会多出一条来源没有的空行。
   function groupHitsIntoUnits(hits) {
     const units = [];
-    let cur = null;
+    let cur = null;        // 普通合并单元 {cat, task:false, hits}
+    let gpCur = null;      // {gp} 合并单元 {gp, task:false, hits}
+    const flushGp = () => { if (gpCur) { units.push(gpCur); gpCur = null; } };
     (hits || []).forEach((h) => {
-      if (h.sep) return;
+      if (h.sep) return;   // 虚拟空行只作分隔、不打断连续性（沿用旧行为）
+      const gp = gpKeyOf(h.raw);
+      if (gp !== null) {
+        if (cur) { units.push(cur); cur = null; }
+        if (gpCur && gpCur.gp === gp) gpCur.hits.push(h);
+        else { flushGp(); gpCur = { gp: gp, task: false, hits: [h] }; }
+        return;
+      }
+      flushGp();
       if (h.task) { if (cur) units.push(cur); units.push({ task: true, hits: [h] }); cur = null; return; }
       const cat = viewMergeCategory(h);
       if (cur && !cur.task && cur.cat === cat) cur.hits.push(h);
       else { if (cur) units.push(cur); cur = { cat: cat, task: false, hits: [h] }; }
     });
+    flushGp();
     if (cur) units.push(cur);
     return units;
   }
+  // 🆕 gp 单元里的 - [ ] 行：转成与一般 checkbox 相同的 .ev-md-check/.ev-cb（只读框、无圆点）。
+  //    否则 D.markdown 会把它们渲染成 <ul><li>，便利贴 CSS 的 .body ul li{list-style:disc}
+  //    就多出那个「.」项目符号，方框也变成浏览器原生灰框（与来源贴不一致）。
+  //    整组只有外层一颗圆点 → 这里不给 .ev-md-edit，也不给 interactive（投影贴本来就只读）。
+  function gpCheckboxLines(rawChunk, marked) {
+    const raws = String(rawChunk).split('\n');
+    return String(marked).split('\n').map((line, k) => {
+      const m = String(raws[k] || '').match(TASK_LINE_RE);
+      if (!m) return line;
+      const done = m[2] !== ' ';
+      const text = line.replace(/^\s*-\s+\[[ xX]\]\s?/, '');
+      return m[1] + '<span class="ev-md-check' + (done ? ' done' : '') + '">' +
+        '<span class="ev-cb">' + (done ? '\u2713' : '') + '</span>' +
+        '<span class="ev-md-check-text">' + text + '</span></span>';
+    }).join('\n');
+  }
   // 一个非 task 编辑单元（可能含 1..n 条连续同类行）：整块渲染成 1 个 .md-unit ＋ 1 颗只读圆点。
-  function nonTaskUnitHtml(hits, ev, selfKey, deps) {
+  function nonTaskUnitHtml(hits, ev, selfKey, deps, isGp) {
     const D = makeDeps(deps);
     const list = (hits && hits.length) ? hits : [];
     if (!list.length) return '';
@@ -656,9 +707,12 @@
     const last = list[list.length - 1];
     const cr = extractCrDate(chunk);
     const sd = cr || String((ev && ev.date) || '');
-    return '<div class="vsr-sort-unit" data-sort-date="' + D.esc(sd) + '" data-cr-date="' + D.esc(cr) + '"><div class="md-unit" data-start="' + (first.line != null ? first.line : '') +
+    const marked = noteMarkersLines(chunk, D);
+    const body = isGp ? gpCheckboxLines(chunk, marked) : marked;
+    // 🆕 gp 小事件群：内层 .md-unit 挂 is-gp，让投影贴也画 1px currentColor 外框（与来源贴一致）。
+    return '<div class="vsr-sort-unit" data-sort-date="' + D.esc(sd) + '" data-cr-date="' + D.esc(cr) + '"><div class="md-unit' + (isGp ? ' is-gp' : '') + '" data-start="' + (first.line != null ? first.line : '') +
       '" data-end="' + (last.line != null ? last.line : (first.line != null ? first.line : '')) + '">' +
-      dot + D.markdown(D.termDefs(noteMarkersLines(chunk, D))) + '</div></div>';
+      dot + D.markdown(D.termDefs(body)) + '</div></div>';
   }
   function groupsToHtml(groups, selfKey, deps) {
     const D = makeDeps(deps);
@@ -667,7 +721,7 @@
       out += groupHeadHtml(g.ev, D) + '\n';
       groupHitsIntoUnits(g.hits).forEach((u) => {
         out += u.task ? taskLineHtml(u.hits[0], g.ev, selfKey, D) + '\n'
-          : nonTaskUnitHtml(u.hits, g.ev, selfKey, D) + '\n';
+          : nonTaskUnitHtml(u.hits, g.ev, selfKey, D, u.gp != null) + '\n';
       });
     });
     return out;

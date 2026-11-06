@@ -800,6 +800,14 @@ body {
 .md-unit:last-child { margin-bottom: 0; }
 .md-unit > *:first-child { margin-top: 0; }
 .md-unit > *:last-child { margin-bottom: 0; }
+/* 🆕 小事件群（{gp} 連續同組行＝一個編輯小圓點區塊）：最細外框，
+   顏色跟隨字色；padding-left 的 1.7em 圓點凹槽保持不動。來源貼與 VIEW 投影貼共用。 */
+.md-unit.is-gp { border: 1px solid currentColor; padding-top: .15em; padding-right: .4em; padding-bottom: .15em; }
+/* Retina/高 DPR：CSS 1px 在 2x 屏會畫成 2 個實體像素（看起來偏粗）。
+   0.5px hairline＝1 個實體像素，才是真正最細；加 -webkit- 前綴相容 iOS Safari（PWA）。 */
+@media (-webkit-min-device-pixel-ratio: 2), (min-resolution: 2dppx) {
+  .md-unit.is-gp { border-width: .5px; }
+}
 .md-unit-edit, .ev-md-edit {
   display: inline-flex; align-items: center; justify-content: center;
   width: 1.2em; height: 1.2em; min-width: 13px; min-height: 13px; padding: 0;
@@ -2051,6 +2059,11 @@ body.dark .cal-sticky-src-badge.is-view { color: #c4b5fd; }
 .cal-md-edit-head span { flex: 1; min-width: 0; }
 .cal-md-edit-close { width: 32px; height: 32px; padding: 0; border: 1px solid var(--border); border-radius: 8px; background: transparent; color: var(--text); font-size: 15px; line-height: 1; cursor: pointer; }
 .cal-md-edit-hint { padding: 8px 12px 0; font-size: 12px; line-height: 1.65; color: var(--text-secondary); }
+/* 🆕 編輯內容區塊：group 啟用勾選（保存時逐行補 {gp}，整塊視為一個小事件） */
+.cal-group-row { flex: none; display: flex; align-items: center; gap: 8px; margin: 0 12px 8px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg); color: var(--text); font-size: 13px; line-height: 1.4; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.cal-group-row input { flex: none; width: 18px; height: 18px; margin: 0; accent-color: var(--gold); }
+.cal-group-row.is-disabled { opacity: .55; cursor: default; }
+.cal-group-row.is-disabled input { cursor: default; }
 #calMdEditInput {
   flex: 1 1 auto; min-height: 150px; margin: 8px 12px; padding: 10px;
   border: 1px solid var(--border); border-radius: 10px;

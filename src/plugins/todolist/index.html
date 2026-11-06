@@ -2049,6 +2049,7 @@
     .ev-undone-filter-btn:hover, .ev-undone-filter-btn.active { background: rgba(245,197,24,.14); color: #f5c518; border-color: #f5c518; }
     .ev-sticky-flag { flex: 0 0 auto; display: inline-flex; align-items: center; margin: 0 0 0 4px; cursor: pointer; opacity: .92; background: transparent; border: 1px solid transparent; border-radius: 4px; padding: 1px 3px; color: inherit; line-height: 1; }
     .ev-sticky-flag:hover { opacity: 1; background: rgba(245,197,24,.14); border-color: #f5c518; }
+    .ev-sticky-flag:focus-visible { outline: 2px solid #f5c518; outline-offset: 1px; }
     .ev-tag-view { display: inline-block; padding: 3px 12px; border-radius: 999px; background: #7C3AED; border: 1px solid #8B5CF6; color: #fff; font-size: 12px; line-height: 1.35; font-weight: 600; white-space: nowrap; }
     .ev-meta { margin-top: 2px; font-size: 12px; color: var(--ev-muted); }
     .ev-notes { margin-top: 4px; font-size: 12px; color: var(--ev-muted); white-space: normal; word-break: break-word; }
@@ -2339,6 +2340,15 @@
     .md-unit:last-child { margin-bottom: 0; }
     .md-unit > *:first-child { margin-top: 0; }
     .md-unit > *:last-child { margin-bottom: 0; }
+    /* 🆕 小事件群：连续同组 {gp} 行整合成的一个编辑小圆点区块 → 最细外框，
+       颜色用 currentColor 直接跟随区块字色（明暗主题自动一致）。padding 只补上/右/下三边，
+       不动 padding-left（那是编辑小圆点的 20px 凹槽）。 */
+    .md-unit.is-gp { border: 1px solid currentColor; padding-top: .15em; padding-right: .4em; padding-bottom: .15em; }
+    /* Retina/高 DPR：CSS 1px 在 2x 屏会画成 2 个物理像素（看起来偏粗）。
+       0.5px hairline＝1 个物理像素，才是真正最细；1x 屏维持 1px，避免线淡到看不见。 */
+    @media (min-resolution: 2dppx) {
+      .md-unit.is-gp { border-width: .5px; }
+    }
     .md-unit-edit { position: absolute; left: 0; top: 0.15em; display: inline-flex; width: 14px; height: 14px; padding: 0; align-items: center; justify-content: center; border: 0; border-radius: 50%; background: var(--ev-primary); color: #fff; font-size: 9px; line-height: 1; cursor: pointer; opacity: .78; }
     .md-unit-edit:hover, .md-unit-edit:focus-visible { opacity: 1; outline: 2px solid var(--ev-primary); outline-offset: 1px; }
     .ev-block.done { opacity: 0.55; }
@@ -2610,6 +2620,11 @@
     .tl-ev-f-weekdays { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 6px; }
     .tl-ev-f-wd { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; color: var(--ev-text); cursor: pointer; }
     .tl-ev-f-check { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--ev-text); margin-bottom: 10px; cursor: pointer; }
+    /* 🆕 编辑内容区块：group 启用勾选（保存时逐行补 {gp}，整块视为一个小事件） */
+    #tlGroupRow { margin: 10px 0 0; }
+    #tlGroupRow input { margin: 0; width: 15px; height: 15px; accent-color: var(--ev-primary, #7c3aed); flex: none; }
+    #tlGroupRow.is-disabled { opacity: .5; cursor: default; }
+    #tlGroupRow.is-disabled input { cursor: default; }
     .tl-ev-f-row { display: flex; gap: 10px; }
     .tl-ev-f-row .tl-ev-f-label { flex: 1; }
     .ev-f-colors { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 6px; }
@@ -5472,7 +5487,7 @@
         <div id="tlEvTodoDropdown" class="ev-todo-dropdown"></div>
       </div>
       <div class="tl-ev-f-label">备注
-        <button type="button" class="tl-ev-f-mini-btn" id="tlEvAddCheckBtn" onclick="tlOpenAddCheckDialog()" title="建立 CheckBox 项目：输入内容将以 - [ ] 形式加到备注末尾">＋ CheckBox</button><span class="ev-sticky-flag" id="tlEvFStickyFlag" title="该事件已设为便利贴（桌面可见）" style="display:none"><svg class="ev-sticky-ic" viewBox="0 0 24 24" width="13" height="13" aria-hidden="true"><rect x="2.8" y="2.8" width="18.4" height="18.4" rx="2.2" fill="#FCEFA4"/><path d="M3 18.4c0 1.5 1.2 2.8 2.8 2.8h14.4v-2.8H3Z" fill="#F7E694"/><path d="M21.2 14.8v3.6c0 1.5-1.2 2.8-2.8 2.8h-3.6l6.4-6.4Z" fill="#FDF6C8"/><path d="M21.2 14.8 14.8 21.2" stroke="#E8CE7C" stroke-width=".7" stroke-linecap="round" fill="none"/><rect x="8.6" y="6.1" width="6.8" height="1.9" rx=".95" fill="#F0C860"/><rect x="9.1" y="6.5" width="5.8" height=".8" rx=".4" fill="#FFF3C0"/><path d="M6.6 11.4h10.8M6.6 14.2h7.6" stroke="#EBD88F" stroke-width=".9" stroke-linecap="round" fill="none"/></svg></span>
+        <button type="button" class="tl-ev-f-mini-btn" id="tlEvAddCheckBtn" onclick="tlOpenAddCheckDialog()" title="建立 CheckBox 项目：输入内容将以 - [ ] 形式加到备注末尾">＋ CheckBox</button><span class="ev-sticky-flag" id="tlEvFStickyFlag" role="button" tabindex="0" aria-label="跳到便利贴" onclick="tlFocusStickyNoteFromEvForm()" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();tlFocusStickyNoteFromEvForm();}" title="点击跳到便利贴应用；翻页模式会翻到这笔行程对应的那一页" style="display:none"><svg class="ev-sticky-ic" viewBox="0 0 24 24" width="13" height="13" aria-hidden="true"><rect x="2.8" y="2.8" width="18.4" height="18.4" rx="2.2" fill="#FCEFA4"/><path d="M3 18.4c0 1.5 1.2 2.8 2.8 2.8h14.4v-2.8H3Z" fill="#F7E694"/><path d="M21.2 14.8v3.6c0 1.5-1.2 2.8-2.8 2.8h-3.6l6.4-6.4Z" fill="#FDF6C8"/><path d="M21.2 14.8 14.8 21.2" stroke="#E8CE7C" stroke-width=".7" stroke-linecap="round" fill="none"/><rect x="8.6" y="6.1" width="6.8" height="1.9" rx=".95" fill="#F0C860"/><rect x="9.1" y="6.5" width="5.8" height=".8" rx=".4" fill="#FFF3C0"/><path d="M6.6 11.4h10.8M6.6 14.2h7.6" stroke="#EBD88F" stroke-width=".9" stroke-linecap="round" fill="none"/></svg></span>
         <textarea id="tlEvFNotes" rows="3" placeholder="可留空，支持多行"></textarea>
       </div>
       <div class="tl-ev-form-actions">
@@ -5486,7 +5501,7 @@
   </div>
 
   <!-- 📋 建立 CheckBox 弹窗：输入内容以 - [ ] 形式加到备注末尾 -->
-  <div id="tlAddCheckOverlay" class="tl-ev-form-overlay" style="display:none" onclick="if(event.target===event.currentTarget) tlCloseAddCheckDialog()">
+  <div id="tlAddCheckOverlay" class="tl-ev-form-overlay" style="display:none" onclick="if(event.target===event.currentTarget) event.stopPropagation()">
     <div class="tl-ev-form-box" style="max-width:440px">
       <div class="tl-ev-form-title">建立 CheckBox 项目</div>
       <div class="tl-ev-form-hint">每行一个项目，保存后以 <code>- [ ] …</code> 形式追加到「备注」末尾</div>
@@ -5508,6 +5523,10 @@
         </div>
         <div class="tl-table-grid-scroll" id="tlTableGridScroll"></div>
       </div>
+      <!-- 🆕 group 启用（唯一小事件）：只在「编辑内容区块」显示，默认不勾；保存时逐行行尾补 {gp} -->
+      <label class="tl-ev-f-check" id="tlGroupRow" style="display:none" title="启用后保存会在每一行行尾加上 {gp}，整批内容视为一个唯一小事件">
+        <input type="checkbox" id="tlGroupEnable"><span>group 启用（唯一小事件）</span>
+      </label>
       <div class="tl-ev-form-actions">
         <button type="button" class="btn btn-secondary" id="tlAutoTermButton" onclick="tlAutoMarkTermsInEditBox()">自动标示术语</button>
         <button type="button" class="btn btn-secondary" onclick="tlCloseAddCheckDialog(true)">取消</button>
@@ -7132,19 +7151,20 @@
       }
     }
 
-    // 🆕 从日程事件行点击便利贴图标 → 跳转到便利贴视窗的对应页面（分体/翻页模式自动适配）
-    async function tlFocusStickyNote(uid) {
+    // 🆕 从日程事件行／编辑行程窗体的便利贴图标 → 跳转到便利贴视窗的对应页面（分体/翻页模式自动适配）
+    //    idx＝同事件第几张 instance（0-based）；旧调用只传 uid 时恒为 0，行为不变。
+    async function tlFocusStickyNote(uid, idx = 0) {
       if (!window.electronAPI || !window.electronAPI.invoke) return;
       const ev = tlCalEvents.find((e) => e.uid === uid);
       if (!ev || !ev.sticky) return;
       const key = ev.uid;
-      const idx = 0;
+      const pageIdx = (Number.isInteger(idx) && idx >= 0) ? idx : 0;
       if (!tlStickyNotesOpen) {
         await tlOpenStickyNotes();
         if (!tlStickyNotesOpen) return;
       }
       try {
-        const r = await window.electronAPI.invoke('focus-sticky-note', { key, idx });
+        const r = await window.electronAPI.invoke('focus-sticky-note', { key, idx: pageIdx });
         if (r && !r.success && typeof showToast === 'function') showToast('未找到对应的便利贴窗口', 'warning');
       } catch (e) { console.warn('[TodoList] 跳转便利贴失败:', e); }
     }

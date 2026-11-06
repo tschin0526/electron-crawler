@@ -168,7 +168,7 @@
           syncTextarea();
         });
       }
-      // 格子／工具列里的快捷键：⌘S 落盘、Esc 关闭（窗体没给 hook 就不绑，交给它自己的快捷键口径）
+      // 格子／工具列里的快捷键：⌘S 落盘、Esc 交给 onClose hook（各端 hook 现在只还焦点、不关窗）
       if (o.grid && (o.onSave || o.onClose)) {
         o.grid.addEventListener('keydown', (e) => {
           if ((e.metaKey || e.ctrlKey) && !e.altKey && (e.key === 's' || e.key === 'S')) {
