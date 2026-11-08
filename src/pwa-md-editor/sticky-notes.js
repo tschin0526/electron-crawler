@@ -737,8 +737,8 @@ function calStickyProgressHtml(note) {
   return '<span class="cal-sticky-progress' + (all ? ' all-done' : '') +
     '" title="子事件：' + done + ' / ' + subs.length + ' 已完成">' + done + '/' + subs.length + '</span>';
 }
-// meta 行右側兩個操作（與桌面便利貼同口徑）：＋☐▾ 加入（三模式下拉）、☐/☑ 只看未完成
-//   🆕 VIEW 貼（note.isView）只給「只看未完成」这颗纯显示开关，不给 ＋☐▾（那是异动资料）
+// meta 行右側操作（與桌面便利貼同口徑）：＋☐▾ 加入（三模式下拉）、☐/☑ 只看未完成
+//   🆕 VIEW 貼（note.isView）只給「只看未完成」＋「排序」兩顆純顯示開關，不給 ＋☐▾（那是異動資料）
 function calStickyMetaActionsHtml(prefs, note) {
   const on = !!(prefs && prefs.undoneChecksOnly);
   return '<span class="cal-sticky-meta-actions">' +
@@ -748,7 +748,8 @@ function calStickyMetaActionsHtml(prefs, note) {
     '<button type="button" class="cal-sticky-meta-btn cal-sticky-undone-toggle' + (on ? ' active' : '') + '"' +
     ' aria-pressed="' + (on ? 'true' : 'false') + '"' +
     ' title="' + (on ? '僅顯示未完成的 checkbox 子事件（點擊顯示全部）' : '只顯示未完成的 checkbox 子事件') + '"' +
-    ' onclick="calStickyToggleUndone()">' + (on ? '☑' : '☐') + '</button></span>';
+    ' onclick="calStickyToggleUndone()">' + (on ? '☑' : '☐') + '</button>' +
+    calStickyViewSortSelectHtml(note) + '</span>';
 }
 function calStickySyncMetaActions(prefs) {
   const metaEl = calStickyEl('calStickyMeta');
@@ -760,6 +761,228 @@ function calStickySyncMetaActions(prefs) {
   btn.setAttribute('aria-pressed', String(on));
   btn.title = on ? '僅顯示未完成的 checkbox 子事件（點擊顯示全部）' : '只顯示未完成的 checkbox 子事件';
 }
+// ===== 🆕 VIEW 便利貼排序（對齊桌面 desktop-note.js 的 normalizeViewSortUnits / viewSortContainer）=====
+//   · 排序鍵單一可信來源＝投影貼 DOM 裡 .ev-md-edit[data-text] 的原文（取全部 [[cr:…]]／[[cp:…]] 中較晚者），
+//     其次才是渲染後的 🆕／✅ 可見日期；/vsr.js 下發的 data-cr-date 只有 cr，不能當唯一依據。
+//     投影貼的 ✎ 圓點只是被 CSS 藏起來（.cal-sticky-view .ev-md-edit），DOM 仍在，故 data-text 可靠。
+//   · 組（來源行程）鍵＝組內最大單元日期；組內完全沒有標記日期才退 .vsr-group-head 的事件日期。
+//   · 原序＝還原「重繪當下」的 DOM 順序；升冪＝早的在上；降冪＝晚的在上；缺日期升冪置頂、降冪置底。
+//   · ⚠️ 模式切換只重排、絕不重新 capture 原序，否則會把「已排序」順序誤當成原序基線。
+//   · 模式按 identity 存 localStorage（沿用 calStickyInitViewDisplay 的 vsr-display-mode 口徑），
+//     刻意不進 calStickyNotePrefs／設定簽名／可攜 JSON，避免把純顯示偏好標成「設定未保存」。
+const CAL_STICKY_VIEW_SORT_PREFIX = 'vsr-sort-mode:';
+function calStickyViewSortMode(identity) {
+  try {
+    const v = localStorage.getItem(CAL_STICKY_VIEW_SORT_PREFIX + String(identity || ''));
+    return (v === 'asc' || v === 'desc') ? v : 'orig';
+  } catch (e) { return 'orig'; }
+}
+function calStickySetViewSortMode(identity, mode) {
+  try { localStorage.setItem(CAL_STICKY_VIEW_SORT_PREFIX + String(identity || ''), mode); } catch (e) {}
+}
+function calStickyViewSortSelectHtml(note) {
+  if (!note || !note.isView) return '';
+  const cur = calStickyViewSortMode(note.identity);
+  const opt = (v, label) => '<option value="' + v + '"' + (cur === v ? ' selected' : '') + '>' + label + '</option>';
+  return '<select class="cal-sticky-view-sort" aria-label="VIEW 便利貼排序"' +
+    ' title="排序：行事件按建立日 cr 與完成日 cp 中較晚者（兩者都沒有則用事件日期）；升冪／降冪＝組內按小事件日期、組間按組內最大日期"' +
+    ' onchange="calStickyOnViewSortChange(this, event)">' +
+    opt('orig', '原序') + opt('asc', '升冪') + opt('desc', '降冪') + '</select>';
+}
+function calStickyOnViewSortChange(sel, ev) {
+  if (ev && typeof ev.stopPropagation === 'function') ev.stopPropagation();
+  const v = sel && sel.value;
+  if (v !== 'orig' && v !== 'asc' && v !== 'desc') return;
+  if (!calStickyCurrentId) return;
+  if (v === calStickyViewSortMode(calStickyCurrentId)) return;
+  calStickySetViewSortMode(calStickyCurrentId, v);
+  calStickyApplyViewSort();   // DOM 未重繪 → 只重排，不重新 capture
+}
+// 取「所有 cr/cp 日期裡最晚的一個」（YYYY-MM-DD 字典序＝時間序）；一個 {gp} 群可能每行各有自己的 cp，故用 g 正則全掃
+// 🆕 2026-11-08：新寫入的 cr/cp 為 [[cr:YYYY-MM-DD HH:mm]]（本機 24H、無秒）。
+//   排序比較一律先正規化成 "YYYY-MM-DD HH:mm"：舊標記無時間 → 視當天 00:00；
+//   ⛔ 絕不拿原始字串直接比（'2026-11-08' 字典序會小於 '2026-11-08 00:00'，同日新舊資料會錯位）。
+//   對外回傳的仍是「原始最晚標記值」（舊資料維持純日期、新資料帶時間），既有 data-* 斷言零回歸。
+function calStickyViewSortKey(s) {
+  const m = String(s == null ? '' : s).trim().match(/^(\d{4}-\d{2}-\d{2})(?:[ T](\d{2}:\d{2}))?/);
+  return m ? m[1] + ' ' + (m[2] || '00:00') : '';
+}
+function calStickyViewSortLatestMarker(s) {
+  let best = '', bestKey = '';
+  const re = /\[\[(?:cr|cp):(\d{4}-\d{2}-\d{2})(?:[ T](\d{2}:\d{2}))?\]\]/g;
+  let m;
+  while ((m = re.exec(String(s || '')))) {
+    const raw = m[1] + (m[2] ? ' ' + m[2] : '');
+    const key = calStickyViewSortKey(raw);
+    if (!bestKey || key > bestKey) { bestKey = key; best = raw; }
+  }
+  return best;
+}
+function calStickyViewSortLatestVisible(s) {
+  let best = '', bestKey = '';
+  const re = /(?:\u{1F195}|\u2705)\s*(\d{4}-\d{2}-\d{2})(?:[ T](\d{2}:\d{2}))?/gu;   // 🆕 建立日／✅ 完成日；📅 預計完成不參與排序
+  let m;
+  while ((m = re.exec(String(s || '')))) {
+    const raw = m[1] + (m[2] ? ' ' + m[2] : '');
+    const key = calStickyViewSortKey(raw);
+    if (!bestKey || key > bestKey) { bestKey = key; best = raw; }
+  }
+  return best;
+}
+function calStickyViewSortUnitDate(el) {
+  // ① 只讀圓點的 data-text 存整塊原文（最可靠，含 [[cr:…]] / [[cp:…]]）
+  const dot = el.querySelector && el.querySelector('.ev-md-edit[data-text]');
+  if (dot) {
+    const d = calStickyViewSortLatestMarker(dot.getAttribute('data-text'));
+    if (d) return d;
+  }
+  // ①b 🆕 2026-11-08：長徽標視覺只顯示「MM-DD」，完整 date+time 存在 data-date；
+  //     補一條讀取路徑，避免沒有編輯圓點的單元退化成純日期排序。⛔ dl 不參與排序。
+  const marks = el.querySelectorAll && el.querySelectorAll('.ev-date-mark[data-date]');
+  if (marks && marks.length) {
+    let best = '', bestKey = '';
+    Array.from(marks).forEach((mk) => {
+      if (mk.classList && mk.classList.contains('ev-date-dl')) return;
+      const raw = mk.getAttribute('data-date') || '';
+      if (!raw) return;
+      const k = calStickyViewSortKey(raw);
+      if (!bestKey || k > bestKey) { bestKey = k; best = raw; }
+    });
+    if (best) return best;
+  }
+  // ② 渲染後的可見文字「🆕 YYYY-MM-DD」／「✅ YYYY-MM-DD」（舊 HTML 的純文字兜底）
+  const v = calStickyViewSortLatestVisible(el.textContent);
+  if (v) return v;
+  // ③ HTML 裡殘留的字面標記（含屬性）
+  const r = calStickyViewSortLatestMarker(el.innerHTML);
+  if (r) return r;
+  // ④ 引擎下發值（只有 cr，當相容回退；窗內會再覆蓋成新值）
+  return String(el.getAttribute('data-unit-date') || el.getAttribute('data-cr-date') || '');
+}
+function calStickyViewSortGroupDate(head) {
+  const d = head.getAttribute('data-group-date');
+  if (d) return d;
+  const m = String(head.textContent || '').match(/(\d{4}-\d{2}-\d{2})/);
+  return m ? m[1] : '';
+}
+function calStickyViewSortIsUnit(el) {
+  return !!(el && el.nodeType === 1 && el.classList.contains('vsr-sort-unit'));
+}
+function calStickyViewSortSegs(bodyEl) {
+  const body = bodyEl || calStickyEl('calStickyBody');
+  return body ? Array.from(body.querySelectorAll('.vsr-seg')) : [];
+}
+// 只加 class 與 data-*，不改 DOM 層級 → 視覺零影響（.vsr-sort-unit 無 CSS 規則）
+function calStickyNormalizeViewSortUnits(bodyEl) {
+  calStickyViewSortSegs(bodyEl).forEach((seg) => {
+    let groupDate = '';
+    Array.from(seg.children).forEach((el) => {
+      if (el.classList.contains('vsr-group-head')) {
+        groupDate = calStickyViewSortGroupDate(el);
+        el.setAttribute('data-group-date', groupDate);
+        return;
+      }
+      if (el.classList.contains('vsr-seg-hd')) return;   // 段落標題不是行事件
+      const isUnit = el.classList.contains('vsr-sort-unit') ||
+        el.classList.contains('md-unit') || el.classList.contains('ev-md-check') ||
+        !!(el.querySelector && el.querySelector('.ev-md-check, .md-unit'));
+      if (!isUnit) return;
+      el.classList.add('vsr-sort-unit');
+      const unitDate = calStickyViewSortUnitDate(el);
+      el.setAttribute('data-unit-date', unitDate);
+      el.setAttribute('data-sort-date', unitDate || groupDate || el.getAttribute('data-sort-date') || '');
+    });
+  });
+}
+function calStickyCmpViewDate(a, b, dir) {
+  // 🆕 一律先正規化成 date+time 再比：舊純日期＝當天 00:00，新格式＝實際 HH:mm，同日也能分先後。
+  const av = calStickyViewSortKey(a), bv = calStickyViewSortKey(b);
+  if (av === bv) return 0;
+  if (av === '') return dir === 'asc' ? -1 : 1;
+  if (bv === '') return dir === 'asc' ? 1 : -1;
+  return dir === 'asc' ? (av < bv ? -1 : 1) : (av > bv ? -1 : 1);
+}
+function calStickyViewGroupSortDate(head, itemEls) {
+  // 🆕 組內取最大值也要用 date+time 正規化比較，否則同日 09:00／16:00 會只看日期而誤判。
+  const gd = head.getAttribute('data-group-date') || '';
+  let maxDate = '', maxKey = '', hasDate = false;
+  itemEls.forEach((it) => {
+    const d = it.getAttribute('data-unit-date') || '';
+    if (!d) return;
+    hasDate = true;
+    const k = calStickyViewSortKey(d);
+    if (!maxKey || k > maxKey) { maxKey = k; maxDate = d; }
+  });
+  return hasDate ? maxDate : gd;
+}
+function calStickyViewSortContainer(container, dir) {
+  if (!container) return;
+  // vsr-group-head 起一組（其後連續的 vsr-sort-unit 為子事件），其餘元素原樣保留
+  const tokens = [];
+  let cur = null;
+  Array.from(container.children).forEach((el) => {
+    if (el.classList.contains('vsr-group-head')) {
+      if (cur) tokens.push(cur);
+      cur = { type: 'group', head: el, items: [], gi: tokens.length };
+    } else if (calStickyViewSortIsUnit(el)) {
+      const unit = { el: el, ui: 0 };
+      if (cur) { unit.ui = cur.items.length; cur.items.push(unit); }
+      else tokens.push({ type: 'unit', unit: unit });
+    } else {
+      tokens.push({ type: 'other', el: el });
+    }
+  });
+  if (cur) tokens.push(cur);
+  if (dir === 'orig') {
+    const orig = container.__origChildren || Array.from(container.children);
+    orig.forEach((c) => container.appendChild(c));
+    return;
+  }
+  tokens.forEach((t) => {
+    if (t.type !== 'group') return;
+    t.items.forEach((u, i) => { u.ui2 = i; });
+    t.items.sort((a, b) => {
+      const r = calStickyCmpViewDate(a.el.getAttribute('data-sort-date'), b.el.getAttribute('data-sort-date'), dir);
+      return r === 0 ? a.ui2 - b.ui2 : r;
+    });
+    t.sortDate = calStickyViewGroupSortDate(t.head, t.items.map((u) => u.el));
+  });
+  const groups = tokens.filter((t) => t.type === 'group');
+  groups.sort((a, b) => {
+    const r = calStickyCmpViewDate(a.sortDate, b.sortDate, dir);
+    return r === 0 ? a.gi - b.gi : r;
+  });
+  let gk = 0;
+  const ordered = tokens.map((t) => (t.type === 'group' ? groups[gk++] : t));
+  ordered.forEach((t) => {
+    if (t.type === 'group') {
+      container.appendChild(t.head);
+      t.items.forEach((u) => container.appendChild(u.el));
+    } else if (t.type === 'unit') {
+      container.appendChild(t.unit.el);
+    } else {
+      container.appendChild(t.el);
+    }
+  });
+}
+function calStickyCaptureViewSortOriginal(bodyEl) {
+  calStickyViewSortSegs(bodyEl).forEach((seg) => { seg.__origChildren = Array.from(seg.children); });
+}
+function calStickyApplyViewSort() {
+  if (!calStickyCurrentIsView()) return;
+  const bodyEl = calStickyEl('calStickyBody');
+  const dir = calStickyViewSortMode(calStickyCurrentId);
+  calStickyViewSortSegs(bodyEl).forEach((seg) => calStickyViewSortContainer(seg, dir));
+}
+// ⚠️ 只在 bodyEl.innerHTML 重繪完成後呼叫；收口在 calStickyRenderPage（初始／翻頁／刷新皆走它）
+function calStickyApplyViewSortAfterRender(bodyEl, note) {
+  if (!bodyEl || !note || !note.isView) return;
+  calStickyNormalizeViewSortUnits(bodyEl);
+  calStickyCaptureViewSortOriginal(bodyEl);
+  calStickyApplyViewSort();
+}
+// ===== END VIEW 便利貼排序 =====
+
 // ===== 🆕 ＋☐▾ 下拉選單（對齊桌面便利貼：checkbox 子事件／MD 表格／自由編輯）=====
 function calStickyAddCheckMenuEl() { return calStickyEl('calStickyAddCheckMenu'); }
 function calStickyAddCheckMenuOpen() {
@@ -982,6 +1205,9 @@ function calStickyRenderPage(target, options) {
       bodyEl.innerHTML = '<p style="opacity:.6">（無備註）</p>';
     }
     if (note.isView && note.html) calStickyInitViewDisplay(bodyEl, note.identity);
+    // 🆕 VIEW 貼排序：重繪後統一歸一化排序鍵 → 留存原序 → 套用該張記住的排序模式
+    //    （必須在 innerHTML 完成後；頁簽模式只切 display，不影響子節點重排）
+    calStickyApplyViewSortAfterRender(bodyEl, note);
     if (options.resetScroll !== false) bodyEl.scrollTop = 0;
   }
   // 🆕 定位高亮：渲染模式（非編輯）下，若定位開關生效，把搜尋詞以 <mark> 標示在標題與內容

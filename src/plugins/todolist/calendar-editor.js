@@ -710,48 +710,129 @@
         return a.term.localeCompare(b.term, ab ? 'en' : 'zh-Hans-CN');
       });
     }
+    // ===== 🆕 术语表文本搜索：只过滤「本次开窗收集到的」清单，不重算、不写档 =====
+    let tlGlossTerms = [];
+    function tlGlossQueryTokens() {
+      const el = document.getElementById('tlGlossarySearch');
+      return String((el && el.value) || '').trim().toLowerCase().split(/\s+/).filter(Boolean);
+    }
+    function tlGlossHaystack(t) {
+      return [t.term, t.def, t.domain]
+        .concat((t.srcs || []).map((s) => (s.title || '') + ' ' + (s.date || '')))
+        .filter(Boolean).join(' ').toLowerCase();
+    }
+    // 纯文字命中包 <mark>：先切原始字串再逐段 escape，绝不破坏 HTML 实体／属性
+    function tlGlossHl(text, tokens) {
+      const s = String(text == null ? '' : text);
+      if (!s || !tokens.length) return tlEscapeHtml(s);
+      const low = s.toLowerCase();
+      const hits = [];
+      tokens.forEach((tok) => {
+        let from = 0;
+        for (;;) {
+          const at = low.indexOf(tok, from);
+          if (at < 0) break;
+          hits.push([at, at + tok.length]);
+          from = at + tok.length;
+        }
+      });
+      if (!hits.length) return tlEscapeHtml(s);
+      hits.sort((a, b) => a[0] - b[0]);
+      const merged = [];
+      hits.forEach((h) => {
+        const last = merged[merged.length - 1];
+        if (last && h[0] <= last[1]) last[1] = Math.max(last[1], h[1]);
+        else merged.push(h.slice());
+      });
+      let out = '', pos = 0;
+      merged.forEach((h) => {
+        out += tlEscapeHtml(s.slice(pos, h[0])) + '<mark class="tl-gloss-hl">' + tlEscapeHtml(s.slice(h[0], h[1])) + '</mark>';
+        pos = h[1];
+      });
+      return out + tlEscapeHtml(s.slice(pos));
+    }
     // 胶囊 HTML（与事件渲染同款标记：.tl-term-cap 金胶囊＋内嵌 .tl-term-domain 小胶囊＋釋義 tooltip）
-    function tlGlossCapHtml(t) {
+    // tokens 只供搜索高亮，缺省＝原样输出（其它调用点零影响）
+    function tlGlossCapHtml(t, tokens) {
       const defMap = tlGetTermDefMap();
       const allDefs = [];
       if (t.def) allDefs.push(t.def);
       const globalDefs = defMap.get(t.term.toLowerCase());
       if (globalDefs) globalDefs.forEach((d) => { if (!allDefs.includes(d)) allDefs.push(d); });
       const tooltip = allDefs.join(' --- ');
+      const hl = tokens || [];
       return '<span class="tl-term"><span class="tl-term-cap"' +
         (tooltip ? ' title="' + tlEscapeHtml(tooltip) + '"' : '') + '>' +
-        tlEscapeHtml(t.term) +
-        (t.domain ? '<span class="tl-term-domain">' + tlEscapeHtml(t.domain) + '</span>' : '') +
+        tlGlossHl(t.term, hl) +
+        (t.domain ? '<span class="tl-term-domain">' + tlGlossHl(t.domain, hl) + '</span>' : '') +
         '</span></span>';
+    }
+    function tlRenderGlossary() {
+      const body = document.getElementById('tlGlossaryBody');
+      if (!body) return;
+      const input = document.getElementById('tlGlossarySearch');
+      const tokens = tlGlossQueryTokens();
+      const all = tlGlossTerms;
+      const shown = tokens.length
+        ? all.filter((t) => { const hay = tlGlossHaystack(t); return tokens.every((tok) => hay.includes(tok)); })
+        : all;
+      const countEl = document.getElementById('tlGlossarySearchCount');
+      if (countEl) countEl.textContent = tokens.length ? (shown.length + ' / ' + all.length) : '';
+      const clearEl = document.getElementById('tlGlossarySearchClear');
+      if (clearEl) clearEl.hidden = !(input && input.value);
+      if (!all.length) {
+        body.innerHTML = '<div class="tl-gloss-empty">目前没有任何 [[term]] 术语。<br>语法：<code>[[term:釋義:領域]]</code>（釋義與領域皆可省略）</div>';
+      } else if (!shown.length) {
+        body.innerHTML = '<div class="tl-gloss-noresult">没有符合「' + tlEscapeHtml(String((input && input.value) || '').trim()) + '」的术语。<br>可试试术语名、释义、领域或来源行程的关键词。</div>';
+      } else {
+        body.innerHTML = shown.map((t) => {
+          // 来源事件 chips：关弹层 → scrollIntoView 居中 → 金色描边闪 2s；标题走 MD 行内渲染，故不注入 <mark>
+          const srcHtml = (t.srcs && t.srcs.length)
+            ? '<div class="tl-gloss-srcs"><span class="tl-gloss-srcs-label">来源事件：</span>' + t.srcs.map((s) => {
+                const srcText = ((s.title || '') + ' ' + (s.date || '')).toLowerCase();
+                const hit = tokens.length > 0 && tokens.every((tok) => srcText.includes(tok));
+                return '<button type="button" class="tl-gloss-src' + (hit ? ' tl-gloss-src-hit' : '') + '" title="跳转：' + tlEscapeHtml(s.title || '') + (s.date ? '（' + tlEscapeHtml(s.date) + '）' : '') + '" onclick="tlGlossJumpToEvent(\'' + tlEscapeHtml(s.uid) + '\')">' +
+                  tlRenderInlineMarkdown(s.title || '(无标题)') +
+                  (s.date ? ' <span class="tl-gloss-src-date">' + tlEscapeHtml(s.date) + '</span>' : '') +
+                  '</button>';
+              }).join('') + '</div>'
+            : '';
+          return '<div class="tl-gloss-row">' +
+            '<div class="tl-gloss-row-head">' + tlGlossCapHtml(t, tokens) +
+            '<span class="tl-gloss-def">' + (t.def ? tlGlossHl(t.def, tokens) : '<span class="tl-gloss-nodef">（无释义）</span>') + '</span>' +
+            '<span class="tl-gloss-count" title="出现次数">×' + t.count + '</span>' +
+            '</div>' + srcHtml + '</div>';
+        }).join('');
+      }
+      body.scrollTop = 0;   // 新结果集从第一条看（与明细滚动收口同口径）
+    }
+    function tlGlossSearchClear() {
+      const input = document.getElementById('tlGlossarySearch');
+      if (!input) return;
+      input.value = '';
+      tlRenderGlossary();
+      input.focus();
+    }
+    function tlGlossSearchKeydown(e) {
+      if (e.isComposing || e.keyCode === 229) return;   // IME 组字中不拦
+      if (e.key !== 'Escape') return;
+      e.preventDefault(); e.stopPropagation();
+      // Esc 只清空查询、不关弹层（关闭仍走右上角 ✕ / 点背罩），也不让全局快捷键接手
+      const input = document.getElementById('tlGlossarySearch');
+      if (input && input.value) { input.value = ''; tlRenderGlossary(); }
     }
     function tlOpenGlossary() {
       const body = document.getElementById('tlGlossaryBody');
       if (!body) return;
       const fileEl = document.getElementById('tlGlossaryFile');
-      const terms = tlCollectTerms();
-      if (fileEl) fileEl.textContent = '共 ' + terms.length + ' 个术语';
-      if (!terms.length) {
-        body.innerHTML = '<div class="tl-gloss-empty">目前没有任何 [[term]] 术语。<br>语法：<code>[[term:釋義:領域]]</code>（釋義與領域皆可省略）</div>';
-      } else {
-        body.innerHTML = terms.map((t) => {
-          // 🆕 来源事件 chips：每个 chip 跳转到主画面对应事件（关弹层 → scrollIntoView 居中 → 金色描边闪 2s）
-          const srcHtml = (t.srcs && t.srcs.length)
-            ? '<div class="tl-gloss-srcs"><span class="tl-gloss-srcs-label">来源事件：</span>' + t.srcs.map((s) =>
-                '<button type="button" class="tl-gloss-src" title="跳转：' + tlEscapeHtml(s.title || '') + (s.date ? '（' + tlEscapeHtml(s.date) + '）' : '') + '" onclick="tlGlossJumpToEvent(\'' + tlEscapeHtml(s.uid) + '\')">' +
-                tlRenderInlineMarkdown(s.title || '(无标题)') +
-                (s.date ? ' <span class="tl-gloss-src-date">' + tlEscapeHtml(s.date) + '</span>' : '') +
-                '</button>'
-              ).join('') + '</div>'
-            : '';
-          return '<div class="tl-gloss-row">' +
-            '<div class="tl-gloss-row-head">' + tlGlossCapHtml(t) +
-            '<span class="tl-gloss-def">' + (t.def ? tlEscapeHtml(t.def) : '<span class="tl-gloss-nodef">（无释义）</span>') + '</span>' +
-            '<span class="tl-gloss-count" title="出现次数">×' + t.count + '</span>' +
-            '</div>' + srcHtml + '</div>';
-        }).join('');
-      }
+      tlGlossTerms = tlCollectTerms();
+      if (fileEl) fileEl.textContent = '共 ' + tlGlossTerms.length + ' 个术语';
+      const input = document.getElementById('tlGlossarySearch');
+      if (input) input.value = '';   // 每次开窗从干净状态开始
+      tlRenderGlossary();
       const ov = document.getElementById('tlGlossaryOverlay');
       if (ov) ov.style.display = 'flex';
+      if (input) { try { input.focus(); } catch (e) {} }
     }
     function tlCloseGlossary() {
       const ov = document.getElementById('tlGlossaryOverlay');
@@ -1215,6 +1296,11 @@
     function tlFmtDate(d) {
       return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
     }
+    // 🆕 2026-11-08：cr/cp 存檔用「本機 date + 本機 HH:mm」（24H、無秒）；
+    //   只給寫入 cr/cp 的呼叫點用，⛔ 月曆格／表單／事件 date 仍一律用 tlFmtDate 純日期。
+    function tlFmtDateTime(d) {
+      return tlFmtDate(d) + ' ' + String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+    }
     function tlTimeToMin(t) {
       const m = String(t || '').match(/^(\d{1,2}):(\d{2})/);
       return m ? (+m[1]) * 60 + (+m[2]) : 0;
@@ -1341,6 +1427,8 @@
             key, idx: i, html, titleHtml, title, date: ev.date || '', endDate: ev.endDate || '',
             color: ev.color || '', done: !!ev.done, tags: Array.isArray(ev.tags) ? ev.tags : [],
             notes: ev.notes || '',
+            // 🆕 显示方式：便利贴据此判断「显示在今天」→ meta 行改显示固定字样，不显示真实日期区间
+            spanDisplay: ev.spanDisplay || '',
             // 🆕 来源文件名（仅 INCLUDE 外部文件的事件有值）：便利贴据此显示文档名徽标、
             //    并把编辑结果写回该文件（而不是 calendar.md）
             src: ev.ro ? String(ev.src || '') : ''
@@ -1363,6 +1451,7 @@
           date: ev.date || '', endDate: ev.endDate || '',
           color: ev.color || '', done: !!ev.done, tags: Array.isArray(ev.tags) ? ev.tags : [],
           notes: ev.notes || '',
+          spanDisplay: ev.spanDisplay || '',
           src: ev.ro ? String(ev.src || '') : '',
           temp: true
         });
@@ -1511,15 +1600,57 @@
       }
     }
     // 跳转到已临时开启的便利贴（不走 tlFocusStickyNote 的 sticky>0 守卫）
-    async function tlFocusTempSticky(uid) {
+    async function tlFocusTempSticky(uid, unit) {
       if (!window.electronAPI || !window.electronAPI.invoke) return;
       if (!((typeof tlStickyNotesOpen !== 'undefined') && tlStickyNotesOpen)) {
         if (typeof tlOpenStickyNotes === 'function') await tlOpenStickyNotes();
       }
-      try { await window.electronAPI.invoke('focus-sticky-note', { key: uid, idx: 0 }); } catch (e) {}
+      try { await window.electronAPI.invoke('focus-sticky-note', { key: uid, idx: 0, focusUnit: unit || undefined }); } catch (e) {}
+    }
+    // 🆕 从右击目标反推「被右击的那笔小事件(群)」定位描述（坐标优先，文本兜底）。
+    //   与主窗卡片、便利贴正文共用同一套 tlRenderNotes → data-line / data-start+data-end 完全一致，
+    //   故可直接作为便利贴窗匹配的权威键；text 作为只读区块（无编辑按钮）的兜底匹配。
+    function tlCtxUnitOf(target) {
+      if (!target || !target.closest) return null;
+      const norm = (s) => String(s == null ? '' : s).replace(/\s+/g, ' ').trim();
+      // ① 编辑小圆点：坐标最精确
+      const editBtn = target.closest('.ev-md-edit, .md-unit-edit');
+      if (editBtn) {
+        if (editBtn.classList.contains('ev-md-edit')) {
+          const line = editBtn.getAttribute('data-line');
+          if (line != null) {
+            const c = editBtn.closest('.ev-md-check') || editBtn;
+            return { kind: 'check', line: parseInt(line, 10), text: norm(c.textContent) };
+          }
+        } else {
+          const s = editBtn.getAttribute('data-start'), e = editBtn.getAttribute('data-end'), t = editBtn.getAttribute('data-type');
+          if (s != null && e != null) {
+            const c = editBtn.closest('.md-unit') || editBtn;
+            return { kind: 'block', start: parseInt(s, 10), end: parseInt(e, 10), type: t || '', text: norm(c.textContent) };
+          }
+        }
+      }
+      // ② checkbox 行：命中文字也认得到（.ev-cb 带 data-line）
+      const checkWrap = target.closest('.ev-md-check');
+      if (checkWrap) {
+        const cb = checkWrap.querySelector('.ev-cb[data-line]');
+        if (cb) { const line = cb.getAttribute('data-line'); if (line != null) return { kind: 'check', line: parseInt(line, 10), text: norm(checkWrap.textContent) }; }
+      }
+      // ③ 区块：命中文字（.md-unit 容器，含只读 gp 外框）
+      const unitDiv = target.closest('.md-unit');
+      if (unitDiv) {
+        const btn = unitDiv.querySelector('.md-unit-edit[data-start]');
+        if (btn) {
+          const s = btn.getAttribute('data-start'), e = btn.getAttribute('data-end'), t = btn.getAttribute('data-type');
+          if (s != null && e != null) return { kind: 'block', start: parseInt(s, 10), end: parseInt(e, 10), type: t || '', text: norm(unitDiv.textContent) };
+        }
+        // 只读区块（无编辑按钮）：纯文本兜底
+        return { kind: 'block', start: -1, end: -1, type: '', text: norm(unitDiv.textContent) };
+      }
+      return null;
     }
     // 行程卡片右键菜单
-    function tlShowEventCtxMenu(ev, x, y) {
+    function tlShowEventCtxMenu(ev, x, y, unit) {
       let menu = document.getElementById('tlEventCtxMenu');
       if (!menu) {
         menu = document.createElement('div');
@@ -1539,7 +1670,7 @@
           const uid = menu.__uid;
           if (act === 'open-temp') tlOpenEventAsTempSticky(uid);
           else if (act === 'close-temp') tlCloseTempSticky(uid);
-          else if (act === 'focus') { if (tlIsTempSticky(uid)) tlFocusTempSticky(uid); else tlFocusStickyNote(uid); }
+          else if (act === 'focus') { if (tlIsTempSticky(uid)) tlFocusTempSticky(uid, menu.__unit); else tlFocusStickyNote(uid, 0, menu.__unit); }
           else if (act === 'edit') { if (typeof tlOpenEventForm === 'function') tlOpenEventForm(uid); }
         });
         document.addEventListener('click', function () { menu.style.display = 'none'; }, true);
@@ -1553,6 +1684,7 @@
       if (closeItem) closeItem.style.display = temp ? '' : 'none';
       if (focusItem) focusItem.style.display = (isSticky || temp) ? '' : 'none';
       menu.__uid = ev.uid;
+      menu.__unit = unit || null;
       menu.style.display = 'block';
       const pw = menu.offsetWidth || 180, ph = menu.offsetHeight || 120;
       let left = x, top = y;
@@ -1578,7 +1710,7 @@
       const ev = (typeof tlCalEvents !== 'undefined' && Array.isArray(tlCalEvents)) ? tlCalEvents.find(function (x) { return x && x.uid === uid; }) : null;
       if (!ev) return;
       e.preventDefault();
-      tlShowEventCtxMenu(ev, e.clientX, e.clientY);
+      tlShowEventCtxMenu(ev, e.clientX, e.clientY, tlCtxUnitOf(e.target));
     });
     // 依据便利贴 key（= 事件 uid）找事件 uid（供桌面便利贴「在主程式打开 / 编辑回写」定位事件）
     function tlFindEventUidByKey(key) {
@@ -1587,6 +1719,10 @@
     }
 
     function tlIsMultiDay(ev) { return !!(ev && ev.endDate && ev.endDate !== ev.date); }
+    // 🆕 显示方式＝「显示在今天」：真实 date/endDate 区间已被锚定到今天，不要再显示
+    //    「开始日期 – 结束日期 · 共N天」，改显示固定字样（便利贴 / LITE 三端同口径）。
+    const TL_SPAN_TODAY_TEXT = '显示在今天';
+    function tlIsSpanToday(ev) { return !!(ev && ev.spanDisplay === 'today'); }
     // ⚠️ 必须含「日」：曾漏掉 (+m[3]) → 跨天行程/假日区间显示成「2026/9 – 2026/9」（看不出是哪天）。与 LITE calMdShort 对齐。
     function tlMdShort(d) { const m = String(d || '').match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/); return m ? (+m[1]) + '/' + (+m[2]) + '/' + (+m[3]) : (d || ''); }
     function tlSpanDays(a, b) {
@@ -1731,6 +1867,8 @@
     // 「按日期分組」入口，那份資料只有 ev + 日期，沒有產生 seq）。
     // ⚠️ 只認「跨天」（date ≠ endDate）：重複事件的 idx/total 是「第幾次」而非「第幾天」，兩者不可混用。
     function tlSpanDaySuffix(item, occDate) {
+      // 🆕 显示方式＝「显示在今天」：真实区间已锚定成「今天一笔」，不再显示 (第几天/共几天)
+      if (tlIsSpanToday(item)) return '';
       if (!tlIsMultiDay(item)) return '';
       const total = tlSpanDays(item.date, item.endDate);
       if (total <= 1) return '';
@@ -1774,6 +1912,83 @@
       if (!m) return null;
       return String(m[1] || '').trim();
     }
+    // ── 🆕 塊級（圍欄式）小事件群（2026-11-08）：單獨一行 {gpX} 開啟、
+    //    單獨一行 {/gpX} 結束，兩行之間的 Markdown 整體算「一個」[[小事件群]]。 ──
+    //  · 與「行尾 {gpX}」並存：行尾寫法靠連續同 key，塊級寫法靠成對標記行，是**硬邊界**，
+    //    絕不與前後群合併；塊內各行也不必再加行尾標記。
+    //  · 標記行是結構控制行：顯示層剝成空行（行數不變 → start/end/baseLine/勾選回寫全部照舊），底稿保留原文。
+    //  · 只認「整行就是一個花括號標記」；行中的 {gpX} 仍是普通文字（沿用 11-06 位置規則）。
+    //  · 代碼圍欄內不解析；未配對／孤立標記行不形成群（容錯，完全退回既有行尾語義，零回歸）。
+    //  · 不支援巢狀：遇到第一個同名結束行即閉合。
+    function tlGpFenceOfLine(line) {
+      const s = String(line == null ? '' : line).trim();
+      let m = s.match(/^\{[ \t]*\/[ \t]*(?:group|gp)[ \t]*:?[ \t]*([^{}]*)\}[ \t]*$/i);
+      if (m) return { kind: 'close', key: String(m[1] || '').trim() };
+      m = s.match(/^\{[ \t]*(?:group|gp)[ \t]*:?[ \t]*([^{}]*)\}[ \t]*$/i);
+      if (m) return { kind: 'open', key: String(m[1] || '').trim() };
+      return null;
+    }
+    // 掃出所有「已配對」區間與其標記行行號；回傳 {ranges:[{start,end,key}], markers:[行號]}。
+    function tlGpFenceScan(lines) {
+      const ranges = [], markers = [];
+      let inFence = false, open = null;
+      for (let i = 0; i < lines.length; i++) {
+        const line = String(lines[i] == null ? '' : lines[i]);
+        if (/^\s*(```|~~~)/.test(line)) { inFence = !inFence; continue; }
+        if (inFence) continue;
+        const f = tlGpFenceOfLine(line);
+        if (!f) continue;
+        if (f.kind === 'open') { if (!open) open = { i: i, key: f.key }; continue; }
+        if (open && open.key === f.key) {
+          ranges.push({ start: open.i, end: i, key: f.key });
+          markers.push(open.i, i);
+          open = null;
+        }
+      }
+      return { ranges: ranges, markers: markers };
+    }
+    // 整段（去掉首尾純空白行後）恰好就是一個塊級群 → 回傳其資料，供 group 啟用預勾／拆組使用。
+    function tlGpFenceWrap(text) {
+      const lines = String(text == null ? '' : text).replace(/\r\n/g, '\n').split('\n');
+      let s = 0, e = lines.length - 1;
+      while (s <= e && !lines[s].trim()) s++;
+      while (e >= s && !lines[e].trim()) e--;
+      if (s > e) return null;
+      const scan = tlGpFenceScan(lines);
+      const hit = scan.ranges.find((r) => r.start === s && r.end === e);
+      return hit ? { lines: lines, start: s, end: e, key: hit.key, scan: scan } : null;
+    }
+    // ── 🆕 2026-11-08：勾選「group 啟用」按保存時一律改寫成「塊級」{gpX}…{/gpX}，不再逐行補行尾標記 ──
+    //  · 已是塊級群且沒給新標記 → 原樣保留（不無謂改名）；給了 mark → 整段改名（兩行一起改）。
+    //  · 舊的「行尾式」群 → 先剝掉每行行尾標記，再用原本的群名（沿用第一個標記字面量）包成塊級。
+    //  · mark 為空時沿用原文第一個行尾標記的字面量，避免主窗／LITE 沒有「群標記」輸入框就把 {gpA} 降成 {gp}。
+    //  · 標記行本身 ＋首尾純空白行都不進內容，故行數恆為「內容行數 + 2」。
+    function tlWrapGpFence(text, mark) {
+      const lines = String(text == null ? '' : text).replace(/\r\n/g, '\n').split('\n');
+      const wrap = (typeof tlGpFenceWrap === 'function') ? tlGpFenceWrap(text) : null;
+      if (wrap) {
+        if (!mark) return lines.join('\n');
+        const out = lines.slice();
+        out[wrap.start] = mark;
+        out[wrap.end] = '{/' + mark.slice(1);
+        return out.join('\n');
+      }
+      let open = mark || '';
+      if (!open) {
+        for (const line of lines) {
+          const m = line.match(/(\{[ \t]*(?:group|gp)[ \t]*:?[ \t]*[^{}]*\})(?=[ \t]*(?:\[\[[^\]]*\]\][ \t]*)*$)/i);
+          if (m) { open = m[1]; break; }
+        }
+      }
+      open = open || '{gp}';
+      const close = '{/' + open.slice(1);
+      const stripped = (typeof tlStripGpMarkers === 'function') ? tlStripGpMarkers(lines.join('\n')) : lines.join('\n');
+      const body = stripped.split('\n');
+      while (body.length && !body[0].trim()) body.shift();
+      while (body.length && !body[body.length - 1].trim()) body.pop();
+      if (!body.length) return '';
+      return [open].concat(body, [close]).join('\n');
+    }
     // 顯示層剝掉 {gp} 標記（代碼圍欄內原樣保留，避免吃掉程式碼裡的字面花括號）。
     //   只有真的剝掉標記的那一行才順手清尾隨空白，其餘行完全不動 → 不破壞 Markdown 行尾兩空格換行語義。
     function tlStripGpMarkers(text) {
@@ -1781,14 +1996,21 @@
       return String(text == null ? '' : text).split('\n').map(function (line) {
         if (/^\s*(```|~~~)/.test(line)) { inFence = !inFence; return line; }
         if (inFence) return line;
+        // 🆕 塊級標記行整行剝成空行（行數不變，底稿原文由對話框讀寫）。
+        //    與 tlGpFenceOfLine 同口徑但刻意內聯：顯示層純函式常被單獨抽出載入，不能依賴外部定義。
+        if (/^\{[ \t]*\/?[ \t]*(?:group|gp)[ \t]*:?[ \t]*[^{}]*\}[ \t]*$/i.test(line.trim())) return '';
         const stripped = line.replace(/[ \t]*\{[ \t]*(?:group|gp)[ \t]*:?[ \t]*[^{}]*\}(?=[ \t]*(?:\[\[[^\]]*\]\][ \t]*)*$)/gi, '');
         return stripped === line ? line : stripped.replace(/[ \t]+$/, '');
       }).join('\n');
     }
-    // ── 🆕 group 启用（唯一小事件）：保存时把编辑框里「每一行」行尾统一标成 {gp}，
+    // ── 🆕 group 启用（唯一小事件）：保存时把编辑框里「每一行」行尾标成同一个群标记，
     //    使 tlSplitMdBlocks / view-sticky-rules 的「连续同 key 段」把整块认成一个小事件。
     //  · 与 tlStripGpMarkers 完全对称：代码围栏行与围栏内文原样保留。
-    //  · 具名组 {gp:名称} 归一成无名 {gp}；行数不变，保存后区块 start/end 区间仍有效。
+    //  · 2026-11-07：既有具名组（{gp:名稱}／{gpABC}）是使用者自訂的分組邊界，**绝不改写**。
+    //    旧版一律归一成 {gp}，会让当前群与前后同为 {gp} 的群连成一片（3 群融合成 1 群）。
+    //    新口径：已有行尾标记的行原样保留；没有标记的新行补上「本块第一个标记的字面量」；
+    //    整块都没有标记才补 {gp}（保留「主动把一般文字改成唯一小事件」的既有行为）。
+    //  · 行数不变 → 保存后 tlEditBlockTarget 的 start/end 区间仍然有效。
     //  · 三端同口径：便利贴窗 noteApplyGroupMarkers／LITE calApplyGroupMarkers。
     function tlHasCodeFence(text) {
       return /^\s*(```|~~~)/m.test(String(text == null ? '' : text));
@@ -1796,19 +2018,41 @@
     //  · **纯空白行保持空白**：空白行在 {gp} 规则里是「上一行的延续」，不能被写成内容行，
     //    否则 group 启用保存后空行会变成 '{gp}'，段落间隔就被破坏了（2026-11-06 空白行规则）。
     function tlApplyGroupMarkers(text, on) {
+      const lines = String(text == null ? '' : text).replace(/\r\n/g, '\n').split('\n');
+      // 🆕 塊級群：邊界本身已經是硬分組，勾選時絕不逐行補行尾標記（會造成雙重分組／破壞原文）；
+      //    取消勾選才把兩行標記「置空」（不是刪除 → 行數不變），內容行自然散回各自的小事件。
+      const fenceScan = (typeof tlGpFenceScan === 'function') ? tlGpFenceScan(lines) : { ranges: [] };
+      if (fenceScan.ranges.length) {
+        if (on) return lines.join('\n');
+        const out = lines.slice();
+        fenceScan.ranges.forEach((r) => { out[r.start] = ''; out[r.end] = ''; });
+        return out.join('\n');
+      }
+      // 本块基准标记：只扫围栏外的行，避免把程式码里的字串当成设定
+      let baseMark = '', fence = false;
+      for (const line of lines) {
+        if (/^\s*(```|~~~)/.test(line)) { fence = !fence; continue; }
+        if (fence) continue;
+        const m = line.match(/[ \t]*(\{[ \t]*(?:group|gp)[ \t]*:?[ \t]*[^{}]*\})(?=[ \t]*(?:\[\[[^\]]*\]\][ \t]*)*$)/i);
+        if (m) { baseMark = m[1]; break; }
+      }
       let inFence = false;
-      return String(text == null ? '' : text).replace(/\r\n/g, '\n').split('\n').map(function (line) {
+      return lines.map(function (line) {
         if (/^\s*(```|~~~)/.test(line)) { inFence = !inFence; return line; }
         if (inFence) return line;
         if (!line.trim()) return line;
         const stripped = line.replace(/[ \t]*\{[ \t]*(?:group|gp)[ \t]*:?[ \t]*[^{}]*\}(?=[ \t]*(?:\[\[[^\]]*\]\][ \t]*)*$)/gi, '');
         // 没标记的行原样回传（尤其 on=false）：行尾两空格是 Markdown 换行语义，不能顺手清掉
         const clean = stripped === line ? line : stripped.replace(/[ \t]+$/, '');
-        return on ? clean + '{gp}' : clean;
+        if (!on) return clean;                  // 拆组：沿用既有行为
+        if (stripped !== line) return line;     // 已有标记：原样保留（含具名组，绝不归一）
+        return clean + (baseMark || '{gp}');    // 新行补齐成同一组
       }).join('\n');
     }
     function tlIsWholeGpBlock(text) {
       const raw = String(text == null ? '' : text).replace(/\r\n/g, '\n');
+      // 🆕 塊級群本身已是「唯一小事件」：即使內容含代碼圍欄也照樣預勾（塊級語法不逐行加標記，圍欄安全）
+      if (typeof tlGpFenceWrap === 'function' && tlGpFenceWrap(raw)) return true;
       if (tlHasCodeFence(raw)) return false;
       const lines = raw.split('\n');
       let key = null, seen = false;
@@ -1823,7 +2067,9 @@
       return seen;
     }
     function tlResolveGroupText(raw, checked, wasOn) {
-      if (checked) return tlApplyGroupMarkers(raw, true);
+      // 🆕 2026-11-08：编辑「内容区块」勾选 group 启用 → 一律改写成块级 {gpX}…{/gpX}
+      //    （旧的行尾式群会就地升级：剥掉每行行尾标记、沿用原群名包成块级）。
+      if (checked) return (typeof tlWrapGpFence === 'function') ? tlWrapGpFence(raw, '') : tlApplyGroupMarkers(raw, true);
       if (wasOn) return tlApplyGroupMarkers(raw, false);   // 原本整组、使用者主动取消 → 拆回多个小事件
       return raw;                                          // 原本不是整组：手写的 {gp} 原样保留
     }
@@ -1831,17 +2077,27 @@
       const box = document.getElementById('tlGroupEnable');
       return !!(box && box.checked && !box.disabled);
     }
-    // ＋☐ 加入 / 编辑 CheckBox 子事件共用：勾选 → 整批逐行补 {gp} + 整段只补 1 个 cr；
+    // ＋☐ 加入 / 编辑 CheckBox 子事件共用：勾选 → 整批逐行补 {gp} + 每个 checkbox 行各补 1 个 cr；
     //   原本整组却取消 → 拆组 + 逐行补 cr；其余走 fallback（完全沿用原本逐行 cr 的写法）。
-    function tlGroupMd(rawMd, todayStr, fallback) {
+    function tlGroupMd(rawMd, todayStr, fallback, fenceWrap) {
       const on = tlGroupChecked();
       if (!on && !tlGroupWasOn) return fallback();
-      const resolved = tlResolveGroupText(rawMd, on, tlGroupWasOn);
-      if (on) return tlEnsureCrMarkerForBlock(resolved, todayStr);
+      let resolved;
+      if (fenceWrap) {
+        // 🆕 新增「＋☐ 加入子事件」：整批包成一个块级小事件群
+        resolved = (typeof tlWrapGpFence === 'function')
+          ? (on ? tlWrapGpFence(rawMd, '') : (tlGroupWasOn ? tlApplyGroupMarkers(rawMd, false) : rawMd))
+          : tlResolveGroupText(rawMd, on, tlGroupWasOn);
+      } else {
+        // 编辑「单个 CheckBox 子事件」：target 只是群内局部行，包块会嵌套 → 沿用旧行尾式
+        resolved = on ? tlApplyGroupMarkers(rawMd, true)
+          : (tlGroupWasOn ? tlApplyGroupMarkers(rawMd, false) : rawMd);
+      }
+      if (on) return tlEnsureCrMarkersForCheckboxLines(resolved, todayStr);
       return resolved.split('\n').map(function (l) { return tlEnsureCrMarker(l, todayStr); }).join('\n');
     }
     // 備註渲染：uid 可編輯時依「最小 MD 表達單元」分塊，每塊非 checkbox 類型注入編輯小圓點；
-    //   uid 為 null（節日 / tooltip）或唯讀事件 → 整段渲染，行為完全不變。
+    //   唯讀事件 / uid 為 null（節日 / tooltip）→ 不掛編輯小圓點，但 gp 區塊仍包 .md-unit.is-gp 外框。
     //   🆕 forceEditable：便利贴层对 include(ro) 行程全開（编辑落回來源檔，见 tlSaveIncludedEventNotes），
     //      故便利贴渲染须传 true；行程視圖 / 事件表單維持 ro 唯讀（不顯示編輯小圓點）。
     function tlRenderNotes(notes, uid, forceEditable, evOverride) {
@@ -1854,9 +2110,27 @@
       const event = evOverride || (uid ? tlCalEvents.find((x) => x.uid === uid) : null);
       const canEdit = !!(uid && event && (!event.ro || forceEditable));
       if (!canEdit) {
-        // 🆕 唯讀整段渲染也要剝掉 {gp}（標記是結構控制，不該出現在畫面上）
-        const withChecks = tlNotesWithChecks(tlStripGpMarkers(raw), uid);
-        return renderMarkdown(tlRenderTermDefs(tlRenderNoteMarkersLines(withChecks)));
+        // 🆕 2026-11-07：唯讀（include / ro）行程也要顯示小事件群外框。
+        //   舊版這裡「整段渲染」直接 return，沒走 tlSplitMdBlocks，永遠不會產生 .md-unit.is-gp；
+        //   便利貼層傳 forceEditable=true 走分塊，所以同一份內容在便利貼有框、行程視圖沒框。
+        //   做法：用「原始底稿」的 gp 區間去切「顯示副本」（已剝 {gp}、已轉 checkbox，行數不變），
+        //   只把 type==='gp' 那段包上 .md-unit.is-gp（**不掛編輯小圓點**，維持唯讀），
+        //   其餘連續行仍照舊整段渲染；完全沒有 gp 區塊時沿用原本單次 renderMarkdown，零回歸。
+        const rawN = raw.replace(/\r\n/g, '\n');
+        const display = tlNotesWithChecks(tlStripGpMarkers(rawN), uid);
+        const renderChunk = (s) => renderMarkdown(tlRenderTermDefs(tlRenderNoteMarkersLines(s)));
+        const gpBlocks = tlSplitMdBlocks(rawN).filter((b) => b.type === 'gp');
+        if (!gpBlocks.length) return renderChunk(display);
+        const dLines = display.replace(/\r\n/g, '\n').split('\n');
+        let out = '', cursor = 0;
+        gpBlocks.forEach((b) => {
+          if (cursor < b.start) out += renderChunk(dLines.slice(cursor, b.start).join('\n'));
+          out += '<div class="md-unit is-gp">' +
+            renderChunk(dLines.slice(b.start, b.end + 1).join('\n')) + '</div>';
+          cursor = b.end + 1;
+        });
+        if (cursor < dLines.length) out += renderChunk(dLines.slice(cursor).join('\n'));
+        return out;
       }
       const lines = raw.replace(/\r\n/g, '\n').split('\n');
       const blocks = tlSplitMdBlocks(raw);
@@ -1916,6 +2190,11 @@
       const isTableDelim = (l) => /^[\s|:-]+$/.test(l) && l.includes('-') && l.includes('|');
       const isTableStart = (j) => j + 1 < lines.length && isTableRow(lines[j]) && isTableDelim(lines[j + 1]);
       const blocks = [];
+      // 🆕 塊級 {gpX}…{/gpX} 區間索引：開啟行 → 結束行，整段當一個 gp 原子區塊
+      const fenceStart = new Map();
+      const fenceInfo = (typeof tlGpFenceScan === 'function') ? tlGpFenceScan(lines) : { ranges: [], markers: [] };
+      const fenceMarkers = new Set(fenceInfo.markers);
+      fenceInfo.ranges.forEach((r) => fenceStart.set(r.start, r.end));
       let i = 0;
       while (i < lines.length) {
         const line = lines[i];
@@ -1927,6 +2206,13 @@
           blocks.push({ start: i, end: Math.min(j, lines.length - 1), type: 'code' });
           i = j + 1; continue;
         }
+        // 🆕 塊級小事件群：優先於 isGp / task / list / table 等所有分支，整段（含兩行標記）原子化。
+        //    標記行在顯示副本裡已被剝成空行，行數不變 → ro 外框與 baseLine 全部照舊。
+        if (fenceStart.has(i)) {
+          const fe = fenceStart.get(i);
+          blocks.push({ start: i, end: fe, type: 'gp' });
+          i = fe + 1; continue;
+        }
         // 🆕 連續且「group 名相同」的 {gp} 行＝一個小事件（一顆編輯小圓點）；
         //    名稱不同或中間夾了無標記行就斷開，同名但不連續也各自成組。
         //    **例外（2026-11-06）**：純空白行（可多行連續）視為「上一行 {gp} 的延續」——
@@ -1934,15 +2220,17 @@
         if (isGp(line)) {
           const key = gpKey(line);
           let j = i + 1;
-          while (j < lines.length && gpKey(lines[j]) === key) j++;
+          // 🆕 塊級標記行是硬邊界：前一個同 key 的行尾群絕對不能把它吞進來，
+          //    否則「前群{gpA} / {gpA} … {/gpA} / 後群{gpA}」會整片融合成一個群（2026-11-08）。
+          while (j < lines.length && gpKey(lines[j]) === key && !fenceMarkers.has(j)) j++;
           // 反覆延伸，支援「gp 段 / 空行 / gp 段 / 空行 / gp 段」；
           // 空白行納入 [start,end]，baseLine 索引才連續、勾選回寫才不會改錯行。
           while (j < lines.length && isBlank(lines[j])) {
             let k = j;
             while (k < lines.length && isBlank(lines[k])) k++;
-            if (k < lines.length && gpKey(lines[k]) === key) {
+            if (k < lines.length && !fenceMarkers.has(k) && gpKey(lines[k]) === key) {
               j = k;
-              while (j < lines.length && gpKey(lines[j]) === key) j++;
+              while (j < lines.length && gpKey(lines[j]) === key && !fenceMarkers.has(j)) j++;
             } else break;
           }
           blocks.push({ start: i, end: j - 1, type: 'gp' });
@@ -1981,11 +2269,20 @@
     }
     // 備註 checkbox 行內的 建立日 / deadline / completed 標記（顯示層轉換，不改寫源）：
     //   [[cr:...]] → 🆕（建立日）、裸日期與 [[dl:...]] → 📅、[[cp:...]] → ✅（cr 須排在最前，先轉才不會被 dl 規則吃掉）
+    // 🆕 2026-11-08：cr / dl / cp（含裸日期）統一渲染成「一顆長徽標」＝圖示＋月-日（小字），
+    //   完整的「日期+時間」放在 title（hover tooltip）與 data-date（給 VIEW 排序讀取）。
+    //   ⚠️ 只動顯示層，底稿 [[...]] 原文完全不改；畫面不顯示年／時間，排序仍拿得到 date+time。
+    function tlDateMarkHtml(kind, full) {
+      const meta = { cr: ['\u{1F195}', '建立日'], dl: ['\u{1F4C5}', '预计完成'], cp: ['\u2705', '完成日'] }[kind];
+      return '<span class="ev-date-mark ev-date-' + kind + '" title="' + tlEscapeHtml(meta[1] + ' ' + full) +
+        '" data-date="' + tlEscapeHtml(full) + '">' + meta[0] + ' <span class="ev-date-mark-md">' +
+        tlEscapeHtml(full.slice(5, 10)) + '</span></span>';
+    }
     function tlRenderNoteMarkers(text) {
       return String(text)
-        .replace(/\[\[cr:(\d{4}-\d{2}-\d{2})\]\]/g, '🆕 $1')
-        .replace(/\[\[(?:dl:)?(\d{4}-\d{2}-\d{2})\]\]/g, '📅 $1')
-        .replace(/\[\[cp:(\d{4}-\d{2}-\d{2})\]\]/g, '✅ $1');
+        .replace(/\[\[cr:(\d{4}-\d{2}-\d{2}(?: \d{2}:\d{2})?)\]\]/g, (m, d) => tlDateMarkHtml('cr', d))
+        .replace(/\[\[(?:dl:)?(\d{4}-\d{2}-\d{2})\]\]/g, (m, d) => tlDateMarkHtml('dl', d))
+        .replace(/\[\[cp:(\d{4}-\d{2}-\d{2}(?: \d{2}:\d{2})?)\]\]/g, (m, d) => tlDateMarkHtml('cp', d));
     }
     // 逐行套用 cr/dl/cp 顯示轉換（跳過代碼圍欄，避免圍欄內 [[]] 被誤轉）；
     //   讓「非 checkbox 行」也能正確渲染 [[cr:…]]→🆕、[[dl:…]]→📅、[[cp:…]]→✅（原只對 checkbox 行生效）
@@ -2000,7 +2297,7 @@
     // 逐「編輯小圓點單元」補 1 個 [[cr:建立日]]（不是每個自然行都加！）；與 checkbox 行 tlEnsureCrMarker 同口徑，
     //   一個單元（tlSplitMdBlocks 的一個 block＝一個編輯小圓點）只補 1 個 cr，已含則不動、dl/cp 前插入。
     function tlEnsureCrMarkerForBlock(blockText, todayStr) {
-      if (/\[\[cr:\d{4}-\d{2}-\d{2}\]\]/.test(blockText)) return blockText;  // 單元已含 cr：保留原值、不重複補
+      if (/\[\[cr:\d{4}-\d{2}-\d{2}(?: \d{2}:\d{2})?\]\]/.test(blockText)) return blockText;  // 單元已含 cr：保留原值、不重複補
       const lines = String(blockText).replace(/\r\n/g, '\n').split('\n');
       let last = lines.length - 1;
       while (last >= 0 && !lines[last].trim()) last--;
@@ -2012,13 +2309,25 @@
       const gp = whole.match(/\{[ \t]*(?:group|gp)[ \t]*:?[ \t]*[^{}]*\}(?=[ \t]*(?:\[\[[^\]]*\]\][ \t]*)*$)/i);
       const cut = (gp && typeof gp.index === 'number') ? gp.index : whole.length;
       const head = whole.slice(0, cut), tail = whole.slice(cut);
-      const m = head.match(/\[\[(dl|cp):\d{4}-\d{2}-\d{2}\]\]/);
+      const m = head.match(/\[\[(dl|cp):\d{4}-\d{2}-\d{2}(?: \d{2}:\d{2})?\]\]/);
       if (m && typeof m.index === 'number') {
         lines[last] = head.slice(0, m.index).replace(/\s+$/, '') + ' ' + cr + ' ' + head.slice(m.index) + tail;
       } else {
         lines[last] = head.replace(/\s+$/, '') + ' ' + cr + tail;
       }
       return lines.join('\n');
+    }
+    // 🆕 2026-11-07：只有「可點選完成」的 checkbox 行才需要建立日 —— 逐行各補 1 個 [[cr:…]]，
+    //   非 checkbox 行（純文字／標題／表格／程式碼）一律原樣保留；與便利貼窗 ensureCrMarkersForCheckboxLines 同口徑。
+    //   單行格式仍交給 tlEnsureCrMarkerForBlock（cr 插在 {gp} 之前、dl/cp 之前、已有 cr 不動）。
+    function tlEnsureCrMarkersForCheckboxLines(blockText, todayStr) {
+      let inFence = false;
+      return String(blockText == null ? '' : blockText).replace(/\r\n/g, '\n').split('\n').map(function (line) {
+        if (/^\s*(```|~~~)/.test(line)) { inFence = !inFence; return line; }
+        if (inFence) return line;
+        if (!/^\s*-\s+\[[ xX]\]\s?/.test(line)) return line;   // 非 checkbox：不注入 cr
+        return tlEnsureCrMarkerForBlock(line, todayStr);         // 單行＝一個單元，已有 cr 自行短路
+      }).join('\n');
     }
     // 整段 notes：按「編輯小圓點單元」逐塊各補 1 個 cr（代碼圍欄 / 表格不注入，避免破壞結構）；供整份事件表單保存時使用
     function tlEnsureCrMarkersForUnits(text, todayStr) {
@@ -2031,7 +2340,7 @@
       blocks.forEach((b) => {
         while (cursor < b.start) { out += lines[cursor] + '\n'; cursor++; }
         const blockText = lines.slice(b.start, b.end + 1).join('\n');
-        out += ((b.type === 'code' || b.type === 'table') ? blockText : tlEnsureCrMarkerForBlock(blockText, todayStr)) + '\n';
+        out += ((b.type === 'code' || b.type === 'table') ? blockText : tlEnsureCrMarkersForCheckboxLines(blockText, todayStr)) + '\n';
         cursor = b.end + 1;
       });
       while (cursor < lines.length) { out += lines[cursor] + '\n'; cursor++; }
@@ -2554,10 +2863,10 @@
         // 捕获 dl/cp 日期（裸日期视同 dl，与渲染约定一致），供统计明细显示 📅/✅
         const raw = m[3] || '';
         const dlM = raw.match(/\[\[(?:dl:)?(\d{4}-\d{2}-\d{2})\]\]/);
-        const cpM = raw.match(/\[\[cp:(\d{4}-\d{2}-\d{2})\]\]/);
+        const cpM = raw.match(/\[\[cp:(\d{4}-\d{2}-\d{2}(?: \d{2}:\d{2})?)\]\]/);
         const txt = raw
           .replace(/\[\[(?:dl:)?\d{4}-\d{2}-\d{2}\]\]/g, '')
-          .replace(/\[\[cp:\d{4}-\d{2}-\d{2}\]\]/g, '')
+          .replace(/\[\[cp:\d{4}-\d{2}-\d{2}(?: \d{2}:\d{2})?\]\]/g, '')
           .replace(/\s{2,}/g, ' ').trim();
         out.push({ text: txt, done: m[2] !== ' ', dl: dlM ? dlM[1] : '', cp: cpM ? cpM[1] : '' });
       });
@@ -3568,14 +3877,17 @@
       const effEnd = isRep ? (occDate || ev.date) : ((ev.endDate && ev.endDate !== ev.date) ? ev.endDate : ev.date);
       const past = effEnd < today;   // 等价于原「start<today 且 跨天未结束」——跨天 end<today 亦蕴含 start<today
       let time;
-      if (multi) {
+      if (tlIsSpanToday(ev)) {
+        time = TL_SPAN_TODAY_TEXT;   // 显示在今天：不显示真实日期区间
+      } else if (multi) {
         time = ev.allDay
           ? (tlRangeLabel(ev.date, ev.endDate) + ' \u00b7 \u5171' + tlSpanDays(ev.date, ev.endDate) + '\u5929')
           : tlRangeLabel(ev.date, ev.endDate, ev.startTime, ev.endTime);
       } else {
         time = ev.allDay ? '\u5168\u5929' : ((ev.startTime || '') + (ev.endTime ? '-' + ev.endTime : ''));
       }
-      const spanBadge = multi ? '<span class="ev-span-badge" title="\u8de8\u5929\u884c\u7a0b">\u2922 \u8de8' + tlSpanDays(ev.date, ev.endDate) + '\u5929</span>' : '';
+      // 🆕 显示方式＝「显示在今天」：时间行已改固定字样，跨天徽标也不该再出现
+      const spanBadge = (multi && !tlIsSpanToday(ev)) ? '<span class="ev-span-badge" title="\u8de8\u5929\u884c\u7a0b">\u2922 \u8de8' + tlSpanDays(ev.date, ev.endDate) + '\u5929</span>' : '';
       return '<div class="ev-item' + (past ? ' past' : '') + (ev.done ? ' done' : '') + (multi ? ' multi' : '') + (tlEventUndoneChecksOnly(ev.uid) ? ' only-undone-checks' : '') + '" data-uid="' + tlEscapeHtml(ev.uid) + '" data-occ-date="' + tlEscapeHtml(occDate || ev.date) + '">' +
         // 📎 只读（INCLUDE 进来的外部档）行程：完成状态同样不可改 → 直接 disabled。
         //    以前只靠 tlToggleDone 里的 ro 拦阻，但浏览器已先把勾选框翻过去、又不重绘 →
@@ -4378,6 +4690,228 @@
       tlRenderMonth(document.getElementById('taskText').value);
     }
 
+    // ===== 🛠 今日开工设定（纯函数区；回归 /tmp/start-work-test.cjs 以 slice 抽取） =====
+    // 前一天＝本地日历日回退一天（不用时间戳相减，避开 DST / 时区偏移；跨月跨年交给 Date 归一化）
+    function tlStartWorkDayBefore(todayStr) {
+      const m = String(todayStr || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+      if (!m) return '';
+      return tlFmtDate(new Date(+m[1], +m[2] - 1, +m[3] - 1));
+    }
+    // 「开始日期与结束日期都是同一天」＝没有 endDate，或 endDate 与 date 相同
+    function tlStartWorkIsSingleDay(ev) {
+      if (!ev || !ev.date) return false;
+      return !ev.endDate || ev.endDate === ev.date;
+    }
+    // 候选＝主档（tlParseEvents 不含 include 的 ro 行程）里「前一天的单日行程」。
+    // 排除重复行程：它自己会展开到今天，再复制一份只会重复显示。
+    function tlStartWorkCandidates(md, todayStr) {
+      const yesterday = tlStartWorkDayBefore(todayStr);
+      const list = tlSorted((tlParseEvents(md) || []).filter(function (ev) {
+        return ev.date === yesterday && tlStartWorkIsSingleDay(ev) && !ev.repeatMode && !ev.ro;
+      }));
+      return { today: todayStr, yesterday: yesterday, list: list };
+    }
+    // 今天已存在的标题（含跨天覆盖今天的行程）→ 避免「开工」重复建档
+    function tlStartWorkExistingTitles(md, todayStr) {
+      const set = new Set();
+      (tlParseEvents(md) || []).forEach(function (ev) {
+        const hit = ev.date === todayStr ||
+          (ev.endDate && ev.date && ev.date <= todayStr && todayStr <= ev.endDate);
+        if (hit) set.add(String(ev.title || '').trim());
+      });
+      return set;
+    }
+    // 复制成「今日行程」：日期改今天、完成状态重设为未完成、重复设定不带过来；
+    // ⚠️ 只复制「标题＋排程骨架」（时间／地点／标签／颜色／便利贴数），**备注（内容／子事件）清空**——
+    // 用户只要一个有标题的空框架，今天的明细会自己输入，不应把昨天的 checklist 一并带过来。
+    function tlStartWorkCloneEvent(ev, todayStr) {
+      return {
+        uid: tlGenId(),
+        title: ev.title || '',
+        date: todayStr,
+        endDate: '',
+        spanDisplay: (ev.spanDisplay === 'first' || ev.spanDisplay === 'last' || ev.spanDisplay === 'today') ? ev.spanDisplay : 'daily',
+        allDay: !!ev.allDay,
+        done: false,
+        startTime: ev.startTime || '',
+        endTime: ev.endTime || '',
+        location: ev.location || '',
+        color: ev.color || TL_CAL_COLORS[0],
+        sticky: Math.max(0, parseInt(ev.sticky, 10) || 0),
+        tags: Array.isArray(ev.tags) ? ev.tags.slice() : [],
+        todoIds: Array.isArray(ev.todoIds) ? ev.todoIds.slice() : [],
+        notes: '',
+        repeatMode: '', repeatInterval: '', repeatWeekDay: [], repeatMonthDay: '',
+        repeatYearMonthDay: '', repeatEndType: 'never', repeatEndValue: '', repeatExcludeDates: []
+      };
+    }
+    // ===== 🛠 今日开工设定（DOM / 交互区） =====
+    let tlStartWorkRows = [];
+    function tlStartWorkClose() {
+      const ov = document.getElementById('tlStartWorkOverlay');
+      if (ov) ov.style.display = 'none';
+      tlStartWorkRows = [];
+    }
+    function tlStartWorkMeta(ev) {
+      const bits = [];
+      if (ev.allDay) bits.push('全天');
+      else if (ev.startTime || ev.endTime) bits.push(String(ev.startTime || '') + (ev.endTime ? '–' + ev.endTime : ''));
+      if (ev.location) bits.push('📍' + ev.location);
+      if (Array.isArray(ev.tags) && ev.tags.length) bits.push(ev.tags.join(' / '));
+      if (ev.done) bits.push('已完成');
+      return bits.join(' · ');
+    }
+    function tlStartWorkUpdateCount() {
+      const boxes = Array.prototype.slice.call(document.querySelectorAll('#tlStartWorkBody .tl-sw-check'));
+      const on = boxes.filter(function (b) { return b.checked; }).length;
+      const usable = boxes.filter(function (b) { return !b.disabled; }).length;
+      const cnt = document.getElementById('tlStartWorkCount');
+      if (cnt) cnt.textContent = '已勾选 ' + on + ' / 可建立 ' + usable + ' 项';
+      const go = document.getElementById('tlStartWorkGo');
+      if (go) go.disabled = (on === 0);
+    }
+    function tlStartWorkToggleAll(on) {
+      document.querySelectorAll('#tlStartWorkBody .tl-sw-check').forEach(function (b) {
+        if (!b.disabled) b.checked = !!on;
+      });
+      tlStartWorkUpdateCount();
+    }
+    function tlStartWorkRender(md, todayStr) {
+      const body = document.getElementById('tlStartWorkBody');
+      if (!body) return;
+      const res = tlStartWorkCandidates(md, todayStr);
+      const exists = tlStartWorkExistingTitles(md, todayStr);
+      tlStartWorkRows = res.list.map(function (ev) {
+        return {
+          uid: ev.uid, title: ev.title, color: ev.color, meta: tlStartWorkMeta(ev),
+          exists: exists.has(String(ev.title || '').trim())
+        };
+      });
+      const dateEl = document.getElementById('tlStartWorkDate');
+      if (dateEl) dateEl.textContent = todayStr;
+      const sub = document.getElementById('tlStartWorkSub');
+      if (sub) sub.innerHTML = '参考 <b>' + tlEscapeHtml(res.yesterday) + '</b>（前一天）「开始与结束同一天」的行程；勾选后按「开工」，在 <b>' + tlEscapeHtml(todayStr) + '</b> 建立同样的行程并存档。重复行程、跨天行程、外部档只读行程不列入。';
+      if (!tlStartWorkRows.length) {
+        body.innerHTML = '<div class="tl-sw-empty">前一天（' + tlEscapeHtml(res.yesterday) + '）没有可参考的单日行程。<br>可先在前一天建立行程，或改用右键「＋ 新增今日行程」。</div>';
+      } else {
+        body.innerHTML = tlStartWorkRows.map(function (r, i) {
+          return '<label class="tl-sw-row' + (r.exists ? ' is-exists' : '') + '">' +
+            '<input type="checkbox" class="tl-sw-check" data-sw-i="' + i + '"' + (r.exists ? ' disabled' : '') + ' onchange="tlStartWorkUpdateCount()">' +
+            '<span class="tl-sw-dot" style="background:' + tlEscapeHtml(r.color || '#888888') + '"></span>' +
+            '<span class="tl-sw-main"><span class="tl-sw-title">' + tlEscapeHtml(r.title) + '</span>' +
+            (r.meta ? '<span class="tl-sw-meta">' + tlEscapeHtml(r.meta) + '</span>' : '') + '</span>' +
+            (r.exists ? '<span class="tl-sw-exists">今日已存在</span>' : '') +
+            '</label>';
+        }).join('');
+      }
+      tlStartWorkUpdateCount();
+    }
+    function tlStartWorkOpen() {
+      if (!isCalendarMdDoc() || !calEventsView) { showToast('请先开启 calendar.md 的行程视图', 'danger'); return; }
+      const ta = document.getElementById('taskText');
+      if (!ta) return;
+      tlStartWorkRender(ta.value, tlFmtDate(new Date()));
+      const ov = document.getElementById('tlStartWorkOverlay');
+      if (ov) ov.style.display = 'flex';
+    }
+    async function tlStartWorkApply() {
+      const picks = [];
+      document.querySelectorAll('#tlStartWorkBody .tl-sw-check:checked').forEach(function (b) {
+        const i = parseInt(b.getAttribute('data-sw-i'), 10);
+        if (tlStartWorkRows[i]) picks.push(tlStartWorkRows[i]);
+      });
+      if (!picks.length) { showToast('请先勾选要建立的行程', 'danger'); return; }
+      const ta = document.getElementById('taskText');
+      if (!ta) return;
+      const today = tlFmtDate(new Date());
+      // 开窗期间缓冲可能已被改动 → 以当下内容重新判定候选与重复，绝不盲写
+      const fresh = tlStartWorkCandidates(ta.value, today).list;
+      const exists = tlStartWorkExistingTitles(ta.value, today);
+      const chosen = picks.filter(function (p) {
+        return !exists.has(String(p.title || '').trim()) && fresh.some(function (f) { return f.uid === p.uid; });
+      });
+      if (!chosen.length) { tlStartWorkClose(); showToast('没有可建立的行程（内容已变更或今天已存在）', 'danger'); return; }
+      tlCalSelected = today;
+      tlCalEvents = tlAllEvents(ta.value);
+      chosen.forEach(function (p) {
+        const src = fresh.find(function (f) { return f.uid === p.uid; });
+        if (src) tlCalEvents.push(tlStartWorkCloneEvent(src, today));
+      });
+      tlApplyEventsToBuffer();
+      let saved = false;
+      try {
+        saved = (typeof saveTask === 'function') ? !!(await saveTask(false, true, true)) : false;
+      } catch (e) { saved = false; }
+      tlStartWorkClose();
+      showToast(saved
+        ? ('已在 ' + today + ' 建立 ' + chosen.length + ' 笔行程并存档')
+        : ('已建立 ' + chosen.length + ' 笔行程到缓冲，但尚未确认存档成功'),
+        saved ? 'success' : 'danger');
+    }
+    function tlStartWorkHideMenu() {
+      const m = document.getElementById('tlStartWorkCtxMenu');
+      if (m) m.style.display = 'none';
+    }
+    function tlStartWorkShowMenu(x, y, todayStr) {
+      let menu = document.getElementById('tlStartWorkCtxMenu');
+      if (!menu) {
+        menu = document.createElement('div');
+        menu.id = 'tlStartWorkCtxMenu';
+        menu.className = 'tl-startwork-ctx-menu';
+        menu.setAttribute('role', 'menu');
+        menu.style.display = 'none';
+        menu.innerHTML =
+          '<button type="button" data-sw-act="start" role="menuitem">1. 🛠 今日开工设定</button>' +
+          '<button type="button" data-sw-act="add" role="menuitem">2. ＋ 新增今日行程</button>' +
+          '<div class="tl-startwork-ctx-hint" id="tlStartWorkCtxHint"></div>';
+        document.body.appendChild(menu);
+        menu.addEventListener('click', function (ce) {
+          const btn = ce.target.closest ? ce.target.closest('[data-sw-act]') : null;
+          if (!btn) return;
+          menu.style.display = 'none';
+          const act = btn.getAttribute('data-sw-act');
+          if (act === 'start') tlStartWorkOpen();
+          else if (act === 'add' && typeof tlOpenEventForm === 'function') tlOpenEventForm(null, tlFmtDate(new Date()));
+        });
+      }
+      const hint = menu.querySelector('#tlStartWorkCtxHint');
+      if (hint) hint.textContent = '今天（' + todayStr + '）· 日期格或「今天」按钮右键可用';
+      menu.style.display = 'block';
+      const pw = menu.offsetWidth || 208, ph = menu.offsetHeight || 100;
+      let left = x, top = y;
+      if (left + pw > window.innerWidth - 8) left = window.innerWidth - pw - 8;
+      if (top + ph > window.innerHeight - 8) top = window.innerHeight - ph - 8;
+      menu.style.left = Math.max(4, left) + 'px';
+      menu.style.top = Math.max(4, top) + 'px';
+    }
+    // 今天的日期格 / 顶列「今天」按钮 右键 → 下拉菜单；
+    // 其它日期 / 行程卡片 / 标签 / 表单浮层一律放行给原处理器。
+    // ⚠️ 只收自己的菜单：行程卡片右键菜单由 tlShowEventCtxMenu 自己管，收掉它会让卡片右键「没反应」。
+    // ⚠️ isCalendarMdDoc() 依赖宿主 currentFileTarget，必须等命中「今天日期格或今天按钮」才呼叫（避免影响其它右键链路）。
+    // ⚠️ #tlEvTodayBtn 语义恒为今天、不带 data-date，所以只有日期格才需要比对 data-date；左键「回到今天」不受影响。
+    document.addEventListener('contextmenu', function (e) {
+      tlStartWorkHideMenu();
+      const t = e.target;
+      if (!t || !t.closest) return;
+      if (t.closest('[data-tag]') || t.closest('[data-uid]') || t.closest('.tl-ev-form-overlay')) return;
+      const todayBtn = t.closest('#tlEvTodayBtn');
+      const cell = todayBtn ? null : t.closest('.ev-cell[data-date], .ev-year-day[data-date], .ev-tg-head-cell[data-date], .ev-allday-col[data-date], .ev-tg-col[data-date]');
+      if (!todayBtn && !cell) return;
+      const today = tlFmtDate(new Date());
+      if (cell && cell.getAttribute('data-date') !== today) return;
+      if (!isCalendarMdDoc() || !calEventsView) return;
+      e.preventDefault();
+      tlStartWorkShowMenu(e.clientX, e.clientY, today);
+    });
+    document.addEventListener('click', function () { tlStartWorkHideMenu(); }, true);
+    document.addEventListener('keydown', function (e) {
+      if (e.key !== 'Escape') return;
+      const m = document.getElementById('tlStartWorkCtxMenu');
+      if (m && m.style.display !== 'none') { m.style.display = 'none'; e.preventDefault(); return; }
+      const ov = document.getElementById('tlStartWorkOverlay');
+      if (ov && ov.style.display !== 'none') { tlStartWorkClose(); e.preventDefault(); }
+    });
+
     function tlRenderDayList() {
       const list = document.getElementById('tlEvDayList');
       if (!list) return;
@@ -4799,7 +5333,9 @@
       const show = !hide;
       const type = mode === 'block' ? tlEditBlockTarget.type : '';
       // 代码块（或内含围栏）不适用：围栏行加标记会破坏 isFence 判定，围栏内标记又会原样显示
-      const enabled = show && !(mode === 'block' && type === 'code') && !tlHasCodeFence(src);
+      // 🆕 例外：整段已是「块级 {gpX}…{/gpX} 群」时不逐行加标记，围栏完全安全 → 照常启用
+      const isFenceGroup = (typeof tlGpFenceWrap === 'function') && !!tlGpFenceWrap(src);
+      const enabled = show && (isFenceGroup || (!(mode === 'block' && type === 'code') && !tlHasCodeFence(src)));
       // add 是「还没写入的草稿」永遠不预勾；block/check 依开框原文侦测
       const detected = (mode === 'block' || mode === 'check') && enabled && tlIsWholeGpBlock(src);
       tlGroupWasOn = !!detected;
@@ -5074,7 +5610,7 @@
         // 🆕 group 启用：勾选时逐行补 {gp}（整块＝一个小事件）；原本整组却取消勾选＝拆组；其余原样
         const gpBox = document.getElementById('tlGroupEnable');
         const grouped = tlResolveGroupText(inp.value.replace(/\r\n/g, '\n'), !!(gpBox && gpBox.checked && !gpBox.disabled), tlGroupWasOn);
-        const blockText = tlEnsureCrMarkerForBlock(grouped, tlFmtDate(new Date()));
+        const blockText = tlEnsureCrMarkersForCheckboxLines(grouped, tlFmtDateTime(new Date()));
         tlCalEvents = tlAllEvents(document.getElementById('taskText').value);
         const ev = tlCalEvents.find((x) => x.uid === target.uid);
         if (!ev) { tlCloseAddCheckDialog(); showToast('找不到该条行程（内容可能已被修改）', 'danger'); return; }
@@ -5099,6 +5635,9 @@
         ev.notes = lines.join('\n');
         // 更新区间为新写入的区块，便于继续 ⌘S 覆写同一段
         tlEditBlockTarget = { uid: target.uid, start: target.start, end: target.start + newLines.length - 1, type: target.type };
+        // 🆕 2026-11-08：group 启用已升级成块级 {gpX}…{/gpX}，编辑框同步显示真实底稿，
+        //    避免继续编辑旧的行尾式原文时把块级群降级回去（直接赋值不触发 input，不会误标脏）。
+        inp.value = blockText;
         tlApplyEventsToBuffer();
         const saved = typeof saveTask === 'function' ? await saveTask(false) : false;
         showToast(saved ? '区块已保存并存档' : '区块已写入行程缓冲，但尚未确认存档成功', saved ? 'success' : 'danger');
@@ -5139,7 +5678,7 @@
         }
         // 🆕 原文保真：编辑框已是完整原文（含 [[]] 标记），保存时直接写回；并自动补建立日标记 [[cr:今天]]
         //    （已含 cr 则不動＝保留原始建立日、不重複補；若含 dl/cp 則 cr 排在最前）
-        const todayCr = tlFmtDate(new Date());
+        const todayCr = tlFmtDateTime(new Date());
         const rawMd = rows.map((l, i) => match[1] + '- [' + (i === 0 ? match[2] : ' ') + '] ' + l).join('\n');
         const mdText = tlGroupMd(rawMd, todayCr, () => rows.map((l, i) => match[1] + '- [' + (i === 0 ? match[2] : ' ') + '] ' + tlEnsureCrMarker(l, todayCr)).join('\n'));
         const newLines = mdText.split('\n');
@@ -5154,9 +5693,9 @@
       }
       const lines = inp.value.replace(/\r\n/g, '\n').split('\n').map((l) => l.trim()).filter((l) => l.length);
       if (!lines.length) { tlCloseAddCheckDialog(); return; }
-      const todayCr = tlFmtDate(new Date());  // 新增子事件：自動補建立日標記 [[cr:今天]]（已含則不重複補）
+      const todayCr = tlFmtDateTime(new Date());  // 新增子事件：自動補建立日標記 [[cr:今天 HH:mm]]（已含則不重複補）
       const rawMd = lines.map((l) => '- [ ] ' + l).join('\n');
-      const md = tlGroupMd(rawMd, todayCr, () => lines.map((l) => '- [ ] ' + tlEnsureCrMarker(l, todayCr)).join('\n'));
+      const md = tlGroupMd(rawMd, todayCr, () => lines.map((l) => '- [ ] ' + tlEnsureCrMarker(l, todayCr)).join('\n'), true);
       // 列表模式：追加到目标事件备注，并直接存档（写缓冲 + saveTask 落盘），无需打开编辑表单
       if (tlAddCheckTargetUid) {
         const uid = tlAddCheckTargetUid;
@@ -5203,7 +5742,7 @@
         // 🆕 桌面便利贴 instance 数（0 = 不显示为便利贴）
         sticky: Math.max(0, parseInt(document.getElementById('tlEvFSticky').value, 10) || 0),
         tags: tlEvFormTags.slice(),
-        notes: tlEnsureCrMarkersForUnits(document.getElementById('tlEvFNotes').value.replace(/\r\n/g, '\n'), tlFmtDate(new Date())),
+        notes: tlEnsureCrMarkersForUnits(document.getElementById('tlEvFNotes').value.replace(/\r\n/g, '\n'), tlFmtDateTime(new Date())),
         todoIds: tlEvFormTodoIds.slice()
       };
       // ===== 重複事件：依表單寫回欄位（未勾選則清空，序列化降回 ## EVENT）=====
@@ -5448,11 +5987,11 @@
     // 備註 checkbox 行：確保帶有 [[cr:建立日期]] 標記（不存在才補 today；已有則不動，避免重複／改到原始建立日）。
     // 建立日期一律排在最前：若正文已有 [[dl:…]]/[[cp:…]] 則插到它們前面；否則補在行尾。純函數，不改入參。
     function tlEnsureCrMarker(body, todayStr) {
-      if (/\[\[cr:\d{4}-\d{2}-\d{2}\]\]/.test(body)) return body;  // 已有建立日：保留原值、不重複補
+      if (/\[\[cr:\d{4}-\d{2}-\d{2}(?: \d{2}:\d{2})?\]\]/.test(body)) return body;  // 已有建立日：保留原值、不重複補
       const cr = '[[cr:' + todayStr + ']]';
       const trimmed = body.replace(/\s+$/, '');
       if (!trimmed.trim()) return cr;  // 空正文：直接給建立日標記（不帶前導空白）
-      const m = body.match(/\[\[(dl|cp):\d{4}-\d{2}-\d{2}\]\]/);
+      const m = body.match(/\[\[(dl|cp):\d{4}-\d{2}-\d{2}(?: \d{2}:\d{2})?\]\]/);
       if (m && typeof m.index === 'number') {
         return body.slice(0, m.index).replace(/\s+$/, '') + ' ' + cr + ' ' + body.slice(m.index);
       }
@@ -5467,12 +6006,12 @@
         // 勾選：先把裸日期 [[YYYY-MM-DD]] 歸一為 [[dl:YYYY-MM-DD]]
         body = body.replace(/\[\[(\d{4}-\d{2}-\d{2})\]\]/g, '[[dl:$1]]');
         // 勾選一律補 [[cp:今天]]（無論有無 dl；已有 cp 則不重複）
-        if (!/\[\[cp:\d{4}-\d{2}-\d{2}\]\]/.test(body)) {
+        if (!/\[\[cp:\d{4}-\d{2}-\d{2}(?: \d{2}:\d{2})?\]\]/.test(body)) {
           body = body.replace(/\s+$/, '') + ' [[cp:' + todayStr + ']]';
         }
       } else {
         // 取消勾選：移除 cp 塊（保留 dl）
-        body = body.replace(/\s*\[\[cp:\d{4}-\d{2}-\d{2}\]\]/g, '');
+        body = body.replace(/\s*\[\[cp:\d{4}-\d{2}-\d{2}(?: \d{2}:\d{2})?\]\]/g, '');
       }
       return m[1] + '- [' + (newDone ? 'x' : ' ') + '] ' + tlEnsureCrMarker(body, todayStr);
     }
@@ -5488,7 +6027,7 @@
       const m = lines[line].match(/^(\s*)-\s+\[([ xX])\]\s?(.*)$/);
       if (!m) return; // 該行已被用戶改得不再是 checkbox，跳過以免破壞原文
       const wasDone = m[2] !== ' ';
-      lines[line] = tlNoteCheckTransform(lines[line], !wasDone, tlFmtDate(new Date()));
+      lines[line] = tlNoteCheckTransform(lines[line], !wasDone, tlFmtDateTime(new Date()));
       ev.notes = lines.join('\n');
       tlApplyEventsToBuffer(); // 序列化 + 標髒 + 重繪（多天事件多列自動同步）
       showToast(wasDone ? '已取消勾选，按「保存」写回 calendar.md' : '已勾选，按「保存」写回 calendar.md', 'success');
@@ -5549,7 +6088,8 @@
     function tlTipHtml(ev, occDate) {
       const multi = tlIsMultiDay(ev);
       let when;
-      if (multi) when = ev.allDay
+      if (tlIsSpanToday(ev)) when = TL_SPAN_TODAY_TEXT;   // 显示在今天：不显示真实日期区间
+      else if (multi) when = ev.allDay
         ? (tlRangeLabel(ev.date, ev.endDate) + ' · 共' + tlSpanDays(ev.date, ev.endDate) + '天')
         : tlRangeLabel(ev.date, ev.endDate, ev.startTime, ev.endTime);
       else when = ev.allDay ? '全天' : ((ev.startTime || '') + (ev.endTime ? '-' + ev.endTime : ''));

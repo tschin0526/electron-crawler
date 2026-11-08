@@ -573,6 +573,7 @@ function rememberStickyMeta(note) {
     titleTip: (typeof note.titleTip === 'string') ? note.titleTip : '',
     date: (typeof note.date === 'string') ? note.date : '',
     endDate: (typeof note.endDate === 'string') ? note.endDate : '',
+    spanDisplay: (typeof note.spanDisplay === 'string') ? note.spanDisplay : '',
     color: (typeof note.color === 'string') ? note.color : '',
     done: !!note.done,
     tags: Array.isArray(note.tags) ? note.tags : []
@@ -1124,7 +1125,8 @@ ipcMain.handle('sticky-note-menu-close-result', (event, payload) => {
 });
 // 把某张便利贴显示到最前：翻页模式→让它跳到该页；分体模式→显示对应窗口。返回是否成功。
 //   「下拉清单点名称」「新建便利贴后跳到新贴」共用这一处（唯一入口，避免两套显示逻辑漂移）
-function showStickyNoteAt(key, idx) {
+//   focusUnit：🆕 主窗右击某笔小事件(群)后「跳转到便利贴」顺带要滚动定位+闪烁的目标单元描述。
+function showStickyNoteAt(key, idx, focusUnit) {
   const i = +idx || 0;
   if (typeof key !== 'string' || !key) return false;
   let win;
@@ -1135,6 +1137,8 @@ function showStickyNoteAt(key, idx) {
     // 带上完整顺序＋key/idx：翻页窗的清单可能还停在开窗快照上（页次数字对不上），
     // 让它先对齐主进程的权威顺序再按 key+idx 定位，index 只作兜底
     const payload = { key, idx: i, index: pageIndex, order: stickyNoteOrder };
+    // 🆕 顺带要定位＋闪烁的小事件(群)：随翻页 payload 一并下发（便利贴窗渲染后会消费）
+    if (typeof focusUnit !== 'undefined') payload.focusUnit = focusUnit;
     // 🆕 便利贴原本没开、由主窗「按便利贴徽标」刚唤起时窗口还在 loadFile，此刻直接 send 会丢。
     //    与 wake-main-from-note 同口径等 did-finish-load；renderer 的 initFlip 也会暂存早到的请求。
     const sendPage = () => { if (!win.isDestroyed()) win.webContents.send('sticky-note-show-page', payload); };
@@ -1148,11 +1152,18 @@ function showStickyNoteAt(key, idx) {
   win.show();
   win.moveTop();
   win.focus();
+  // 🆕 分体模式：翻页走 show-page payload，分体走独立 IPC（窗口已 show，内容多半已渲染；
+  //    若刚新建还在 loadFile，等 did-finish-load 再发，renderer 会暂存早到请求）。
+  if (typeof focusUnit !== 'undefined') {
+    const sendUnit = () => { if (!win.isDestroyed()) win.webContents.send('sticky-note-focus-unit', { unit: focusUnit }); };
+    if (win.webContents.isLoading()) win.webContents.once('did-finish-load', sendUnit);
+    else sendUnit();
+  }
   return true;
 }
 ipcMain.handle('focus-sticky-note', (event, arg) => {
   if (!arg || typeof arg.key !== 'string') return { success: false };
-  return { success: showStickyNoteAt(arg.key, +arg.idx || 0) };
+  return { success: showStickyNoteAt(arg.key, +arg.idx || 0, arg.focusUnit) };
 });
 // 建完便利贴立刻「翻到那一页」：sync（更新 stickyNoteOrder）与 create-result（回包）是两条 IPC，
 //   同一渲染端保序，理论上 sync 先到；但翻页窗的重绘是异步的，且清单偶尔还在路上 →
@@ -1195,6 +1206,7 @@ ipcMain.handle('sticky-note-html', (e, arg) => {
     titleTip: (meta && typeof meta.titleTip === 'string') ? meta.titleTip : '',
     date: (meta && typeof meta.date === 'string') ? meta.date : '',
     endDate: (meta && typeof meta.endDate === 'string') ? meta.endDate : '',
+    spanDisplay: (meta && typeof meta.spanDisplay === 'string') ? meta.spanDisplay : '',
     color: (meta && typeof meta.color === 'string') ? meta.color : '',
     done: !!(meta && meta.done),
     tags: (meta && Array.isArray(meta.tags)) ? meta.tags : []
@@ -1835,31 +1847,47 @@ ipcMain.on('sticky-note-flip-position', (e, arg) => {
   if (arg && typeof arg.lastId === 'string') it.lastId = arg.lastId;
   scheduleStickyStateSave();
 });
+// 🆕「关闭当前页面」的单一可信实现：把某张自翻页清单移出，并记进 flipHidden 持久化
+//    （与 toggle-sticky-note 的隐藏半边同口径：setFlipHidden + splice + order-updated）。
+//    ⚠️ 绝不能拿 toggle-sticky-note 代替：它发现贴不在清单时会「打开」而不是关闭。
+//    关到最后一张时关掉翻页窗，但保留 stickyNoteCatalog，主窗便利贴清单仍能再开启。
+//    remember=false 供旧 sticky-note-close 用：取消便利贴设定只是本次会话移除，
+//    不写隐藏名单（否则以后同名行程重设便利贴会被默认隐藏）。
+function closeFlipNotePage(key, idx, remember) {
+  const activeIndex = stickyNoteOrder.findIndex(note => note.key === key && (+note.idx || 0) === idx);
+  if (activeIndex < 0) return { changed: false, last: stickyNoteOrder.length === 0 };
+  const note = stickyNoteOrder[activeIndex];
+  if (remember !== false) setFlipHidden(note, true);
+  stickyNoteOrder.splice(activeIndex, 1);
+  const win = stickyNoteFlipWindow;
+  if (win && !win.isDestroyed()) {
+    if (stickyNoteOrder.length) win.webContents.send('sticky-note-order-updated', { order: stickyNoteOrder });
+    else { stickyNoteFlipWindow = null; win.close(); }
+  }
+  notifyStickyNoteOpenState();
+  return { changed: true, last: stickyNoteOrder.length === 0 };
+}
 // 单张便利贴：关闭这一张（仅本次；重新开启会按 ×N 回来）。
 ipcMain.handle('sticky-note-close', (e, arg) => {
-  if (stickyNoteMode === 'flip') {
-    if (!arg || typeof arg.key !== 'string') return false;
-    const idx = +arg.idx || 0;
-    const activeIndex = stickyNoteOrder.findIndex(note => note.key === arg.key && note.idx === idx);
-    if (activeIndex < 0) return true;
-
-    stickyNoteOrder.splice(activeIndex, 1);
-    const win = stickyNoteFlipWindow;
-    if (win && !win.isDestroyed()) {
-      if (stickyNoteOrder.length) {
-        win.webContents.send('sticky-note-order-updated', { order: stickyNoteOrder });
-      } else {
-        stickyNoteFlipWindow = null;
-        win.close();
-      }
-    }
-    notifyStickyNoteOpenState();
-    return true;
-  }
-
-  const win = stickyNoteWindows.get(noteWinId(String(arg && arg.key), +arg.idx || 0));
+  if (!arg || typeof arg.key !== 'string') return false;
+  const idx = +arg.idx || 0;
+  if (stickyNoteMode === 'flip') { closeFlipNotePage(arg.key, idx, false); return true; }
+  const win = stickyNoteWindows.get(noteWinId(arg.key, idx));
   if (win && !win.isDestroyed()) win.close();
   return true;
+});
+// 🆕 顶部 × 二选一之「关闭当前页面」：翻页→隐藏这一页并由 order-updated 翻到相邻页；
+//    分体→只关这个窗口。与 close-sticky-notes（关掉全部＋清空会话）互斥；两者都不删资料。
+ipcMain.handle('sticky-note-close-page', (e, arg) => {
+  if (!arg || typeof arg.key !== 'string') return { ok: false };
+  const idx = +arg.idx || 0;
+  if (stickyNoteMode === 'flip') return Object.assign({ ok: true }, closeFlipNotePage(arg.key, idx));
+  const id = noteWinId(arg.key, idx);
+  const win = stickyNoteWindows.get(id);
+  if (win && !win.isDestroyed()) win.close();
+  stickyNoteWindows.delete(id);
+  notifyStickyNoteOpenState();
+  return { ok: true, last: !stickyNotesAreOpen() };
 });
 // 单张便利贴：唤起主程式（显示/聚焦主窗口，并让 TodoList 打开该事件）
 // action='edit'（缺省）→ 打开行程编辑框；action='scroll' → 只滚动定位到该行程（不打开编辑框）；

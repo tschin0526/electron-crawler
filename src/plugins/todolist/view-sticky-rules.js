@@ -349,11 +349,13 @@
   }
   // 🆕 日期条件匹配：小事件须是 checkbox（按 doneState 限定 未完成／已完成），且行内含 [[field:YYYY-MM-DD]]；
   //   固定模式＝该日期 比较 设定日；相对模式（kind:'age'）＝该日期 到今天 经过的天数 比较 N 天。
+  //   🆕 2026-11-08：cr/cp 新写入格式为 [[cr:YYYY-MM-DD HH:mm]]，故日期后面允许可选的本机 HH:mm；
+  //      capture 仍只取「日历日」，日期条件一律按日比较（时间只用于 VIEW 排序，见便利贴窗 viewSortKey）。
   function dateCondMatch(type, line, dc) {
     if (dc.doneState === 'undone' && type !== 'todo') return false;
     if (dc.doneState === 'done' && type !== 'done') return false;
     if (dc.doneState === 'any' && type !== 'todo' && type !== 'done') return false;
-    const m = line.match(new RegExp('\\[\\[' + dc.field + ':(\\d{4}-\\d{2}-\\d{2})\\]\\]', 'i'));
+    const m = line.match(new RegExp('\\[\\[' + dc.field + ':(\\d{4}-\\d{2}-\\d{2})(?:[ T]\\d{2}:\\d{2})?\\]\\]', 'i'));
     if (!m) return false;
     const d = m[1];
     if (dc.kind === 'age') {
@@ -475,6 +477,15 @@
       }
       const hits = [];
       let inFence = false;
+      // 🆕 块级 {gpX}…{/gpX}：标记行不进 hits，区间内的命中行统一打上同一个 blockGp，
+      //    让 groupHitsIntoUnits 把整块收成「一个」排序单元（＝一个小事件群、一颗圆点）。
+      const noteLines = String(ev.notes || '').replace(/\r\n/g, '\n').split('\n');
+      const fenceInfo = gpFenceScan(noteLines);
+      const fenceMarkers = new Set(fenceInfo.markers);
+      const fenceBlockAt = new Map();
+      fenceInfo.ranges.forEach((r, n) => {
+        for (let k = r.start + 1; k < r.end; k++) fenceBlockAt.set(k, '\u0000blk' + n);
+      });
       // 🆕 标题也纳入搜索范围：标题命中关键词／标记（不受 rowType 限制）时，这张行程也算命中，
       //    这样「便利贴标题」含关键词／标记的行程也会被收进这张 VIEW 投影贴。
       const titleRaw = String(ev.title == null ? '' : ev.title);
@@ -485,9 +496,10 @@
       //       （2026-11-02 修复：用户今日 2 笔行程都无备注 → 便利贴误报「这一天没有行程」）。
       //       故只对「行级标记日期」压抑 titleHit，ev 放行（无关键词时 lineHitsRule 恒真 → 标题必被收录；有关键词时仍按标题/正文命中过滤）。
       const titleHit = (searchTitle && titleTrim && !(cond.dateCond && cond.dateCond.field && cond.dateCond.field !== 'ev')) ? lineHitsRule(titleRaw, titleTrim, cond) : false;
-      String(ev.notes || '').replace(/\r\n/g, '\n').split('\n').forEach((line, i) => {
+      noteLines.forEach((line, i) => {
         if (FENCE_RE.test(line)) { inFence = !inFence; return; }
         if (inFence) return;
+        if (fenceMarkers.has(i)) return;    // 🆕 块级标记行是结构控制行，不收进投影贴
         const t = line.trim();
         if (!t) return;
         const type = rowTypeOf(line, t);
@@ -513,7 +525,8 @@
         if (hits.length && !LIST_ITEM_RE.test(t) && LIST_ITEM_RE.test(hits[hits.length - 1].raw)) {
           hits.push({ raw: '', sep: true });
         }
-        hits.push({ raw: t, line: i, uid: ev.uid || '', text: m ? (m[2] || '').trim() : '', task: !!m, type: type });
+        hits.push({ raw: t, line: i, uid: ev.uid || '', text: m ? (m[2] || '').trim() : '',
+          task: !!m, type: type, blockGp: fenceBlockAt.get(i) || null });
       });
       // 正文有命中行 → 照常收；正文无命中但标题命中 → 仍收这张行程（其分组标题即来源标题，
       //   可经 groupHeadHtml 的切换徽标一键跳回来源）。不再压入独立的「标题命中」单元，
@@ -551,7 +564,7 @@
   // 从一行／一整块原文里抽取 [[cr:YYYY-MM-DD]] 建立日期标记（没有则返回 ''）。
   //   排序用：行事件按自身 cr 日期排，没有 cr 的回退到来源行程的日期（在调用处拼）。
   function extractCrDate(raw) {
-    const m = String(raw || '').match(/\[\[cr:(\d{4}-\d{2}-\d{2})\]\]/);
+    const m = String(raw || '').match(/\[\[cr:(\d{4}-\d{2}-\d{2})(?: \d{2}:\d{2})?\]\]/);
     return m ? m[1] : '';
   }
   // 🆕 逐行套用「建立日／截止／完成」显示转换（跳过代码围栏），与母本
@@ -564,6 +577,8 @@
     return String(text == null ? '' : text).split('\n').map((line) => {
       if (/^\s*(```|~~~)/.test(line)) { inFence = !inFence; return line; }
       if (inFence) return line;
+      // 🆕 块级标记行整行剥成空行（与桌面 tlStripGpMarkers 同口径；hits 已排除，这里是防御）
+      if (/^\{[ \t]*\/?[ \t]*(?:group|gp)[ \t]*:?[ \t]*[^{}]*\}[ \t]*$/i.test(line.trim())) return '';
       // 🆕 {gp} 是结构控制标记，只在渲染副本里剥掉；圆点 data-text / ref.notes 仍保留原文，
       //    供「找出相同的项目」按整块原文比对（与桌面 tlStripGpMarkers 同口径）。
       //    只有真的剥到标记的那行才清尾随空白，避免破坏 Markdown 行尾两空格换行语义。
@@ -634,6 +649,35 @@
   //   {gp}＝{GP}＝{GroUP}＝{group} → 无名组；{gp:ABC}＝{gpABC}＝{GROUP:ABC} → 'ABC'；{gp1}＝{gp:1} → '1'。
   //   ⚠️ 位置：标记必须在行尾、或行尾 [[...]] 标记序列之前才算结构标记；行中的 {gp} 是普通文字，原样显示也不分组。
   //   前缀 group 优先于 gp；组名仍区分大小写；正则与桌面主窗／LITE／便利贴窗同口径。
+  // ── 🆕 块级（围栏式）小事件群（2026-11-08）：单独一行 {gpX} 开启、单独一行 {/gpX} 结束 ──
+  //  与桌面 tlGpFenceOfLine／tlGpFenceScan、LITE calGpFence*、便利贴 noteGpFence* 同口径。
+  //  投影贴的 hits 是「过滤后」的行，故必须先从原始 notes 算出区间，再把命中行打成同一个排序单元。
+  function gpFenceOfLine(line) {
+    const s = String(line == null ? '' : line).trim();
+    let m = s.match(/^\{[ \t]*\/[ \t]*(?:group|gp)[ \t]*:?[ \t]*([^{}]*)\}[ \t]*$/i);
+    if (m) return { kind: 'close', key: String(m[1] || '').trim() };
+    m = s.match(/^\{[ \t]*(?:group|gp)[ \t]*:?[ \t]*([^{}]*)\}[ \t]*$/i);
+    if (m) return { kind: 'open', key: String(m[1] || '').trim() };
+    return null;
+  }
+  function gpFenceScan(lines) {
+    const ranges = [], markers = [];
+    let inFence = false, open = null;
+    for (let i = 0; i < lines.length; i++) {
+      const line = String(lines[i] == null ? '' : lines[i]);
+      if (FENCE_RE.test(line)) { inFence = !inFence; continue; }
+      if (inFence) continue;
+      const f = gpFenceOfLine(line);
+      if (!f) continue;
+      if (f.kind === 'open') { if (!open) open = { i: i, key: f.key }; continue; }
+      if (open && open.key === f.key) {
+        ranges.push({ start: open.i, end: i, key: f.key });
+        markers.push(open.i, i);
+        open = null;
+      }
+    }
+    return { ranges: ranges, markers: markers };
+  }
   // 🆕 {gp} / {gp:名称} 分组标记解析（与 calendar-editor.js::tlGpKeyOfLine 同口径）。
   //   null＝无标记；''＝{gp} 无名组；名称＝{gp:名称}。VIEW 投影贴的排序单元必须以此为准，
   //   不能把「连续同名 {gp} 的 3 行」拆成 3 个 .vsr-sort-unit，否则排序会当 3 个小事件。
@@ -657,7 +701,9 @@
     const flushGp = () => { if (gpCur) { units.push(gpCur); gpCur = null; } };
     (hits || []).forEach((h) => {
       if (h.sep) return;   // 虚拟空行只作分隔、不打断连续性（沿用旧行为）
-      const gp = gpKeyOf(h.raw);
+      // 🆕 块级群优先：同一个 {gpX}…{/gpX} 区间的命中行共用一个虚拟 key；
+      //    前缀 '\u0000blk' 保证绝不会与任何行尾 {gpX} 的真实 key 撞名。
+      const gp = (h.blockGp != null) ? h.blockGp : gpKeyOf(h.raw);
       if (gp !== null) {
         if (cur) { units.push(cur); cur = null; }
         if (gpCur && gpCur.gp === gp) gpCur.hits.push(h);

@@ -880,6 +880,19 @@ body {
   box-shadow: 0 1px 2px rgba(0,0,0,.28), inset 0 1px 0 rgba(255,255,255,.65);
 }
 .tl-bookmark-ic { font-size: .95em; line-height: 1; display: inline-flex; align-items: center; color: #FFC107; }
+/* 🆕 2026-11-08 cr / dl / cp 日期標記：圖示＋「月-日」合成一顆長徽標（字體比正文小，日期再小一號）；
+   完整「日期+時間」放 title（hover tooltip）與 data-date（VIEW 排序讀取）。與桌面雙端對齊 */
+.ev-date-mark {
+  display: inline-flex; align-items: center; gap: .22em;
+  margin: 0 .18em; padding: 0 .45em;
+  border-radius: 999px; line-height: 1.5; font-size: .8em; font-weight: 600;
+  white-space: nowrap; cursor: help; vertical-align: baseline;
+  color: #4a3b12;
+  background: linear-gradient(180deg, #f4dc8e 0%, #e6bd52 55%, #d0a23a 100%);
+  border: 1px solid #b8893a;
+  box-shadow: 0 1px 2px rgba(0,0,0,.22), inset 0 1px 0 rgba(255,255,255,.6);
+}
+.ev-date-mark-md { font-size: .85em; font-variant-numeric: tabular-nums; opacity: .92; }
 .ev-block.done { opacity: 0.55; }
 /* ⚠️ 對齊修復（同桌面端）：column-gap 4px × 7 會累積 28px 漂移 → 全天行程「卡在兩天中間」。
    gap 歸 0 讓欄位軌道與時間網格完全一致，視覺留白改由 .ev-allday-col 的內距提供。 */
@@ -1787,6 +1800,19 @@ body.dark .cal-sticky-src-badge.is-view { color: #c4b5fd; }
 }
 .cal-sticky-meta-btn:active { background: rgba(127, 127, 127, .3); }
 .cal-sticky-undone-toggle.active { background: rgba(212, 175, 55, .4); border-color: #D4AF37; }
+/* 🆕 VIEW 便利貼「排序」下拉（原序／升冪／降冪）：與 meta 膠囊同高 24px 方便手機觸控。
+   保留原生 select 箭頭（不加 appearance:none），字色跟隨 --cal-sticky-fg；option 固定白底黑字確保下拉可讀。 */
+.cal-sticky-view-sort {
+  display: inline-flex; align-items: center;
+  min-height: 24px; max-width: 96px; padding: 0 4px 0 8px; box-sizing: border-box;
+  border: 1px solid currentColor; border-radius: 999px;
+  background: rgba(127, 127, 127, .12); color: inherit;
+  font-size: 12px; line-height: 1; white-space: nowrap; cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.cal-sticky-view-sort:active { background: rgba(127, 127, 127, .3); }
+.cal-sticky-view-sort:focus { outline: none; border-color: #D4AF37; }
+.cal-sticky-view-sort option { color: #222; background: #fff; }
 /* 🆕 ＋☐▾ 下拉選單：掛在 .cal-sticky-stage（卡片外），否則會被 .cal-sticky-note 的 overflow:hidden 裁掉。
    配色與 ☰ 清單抽屜同套（--bg-secondary ＋ 金框），深浅色都靠既有變數自動跟隨。 */
 .cal-sticky-addcheck-menu {

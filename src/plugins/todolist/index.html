@@ -916,7 +916,16 @@
     .search-highlight.current {
       background-color: #ef4444 !important;
       color: #fff !important;
-      box-shadow: 0 0 0 2px #ef4444;
+      box-shadow: 0 0 0 2px #ef4444, 0 0 8px 2px rgba(239,68,68,.55);
+      animation: tlSearchCurrentFlash .9s ease-in-out 6;
+    }
+    /* 🆕 当前命中闪烁：红底／白字带 !important（要压过 body.dark .search-highlight 的橙底），
+       动画只改 box-shadow（CSS 动画压不过 !important，改背景不会生效）→ 用金环＋外发光脉冲。
+       闪 6 次约 5.4s 后停在加强过的红底红光静态样式，不持续干扰阅读；
+       每次定位由 JS「remove → 强制重排 → add」重新播放。 */
+    @keyframes tlSearchCurrentFlash {
+      0%, 100% { box-shadow: 0 0 0 2px #ef4444, 0 0 0 0 rgba(251,191,36,0); }
+      50% { box-shadow: 0 0 0 4px #fbbf24, 0 0 14px 6px rgba(251,191,36,.9); }
     }
 
     /* 搜索导航时当前卡片的样式 */
@@ -1881,11 +1890,11 @@
     /* ===== 📅 行程视图（calendar.md 专用）：与 Lite 版同款视觉 ===== */
     /* ⚠️ .ev-tip / .ev-almanac-pop 掛載在 <body>（不在 #calEventsPane 內）→ 必須把它們一併納入 --ev-* 變數作用域，
        否則 var(--ev-card) 解析失敗 → 提示框/老黃曆彈層背景透明（使用者截圖實測，老黃曆彈層 2026-09-17 同款踩坑）。 */
-    #calEventsPane, #tlEvFormOverlay, #tlDiaryFormOverlay, #tlRepeatOverviewOverlay, #tlEvStatsOverlay, #tlIncludeListOverlay, #tlAddCheckOverlay, .ev-tip, .ev-almanac-pop {
+    #calEventsPane, #tlEvFormOverlay, #tlDiaryFormOverlay, #tlRepeatOverviewOverlay, #tlEvStatsOverlay, #tlIncludeListOverlay, #tlAddCheckOverlay, #tlStartWorkOverlay, .ev-tip, .ev-almanac-pop {
       --ev-bg: #0f172a; --ev-card: #1e293b; --ev-text: #e2e8f0;
       --ev-muted: #94a3b8; --ev-border: #334155; --ev-primary: #7c3aed;
     }
-    body:not(.dark) #calEventsPane, body:not(.dark) #tlEvFormOverlay, body:not(.dark) #tlDiaryFormOverlay, body:not(.dark) #tlRepeatOverviewOverlay, body:not(.dark) #tlEvStatsOverlay, body:not(.dark) #tlIncludeListOverlay, body:not(.dark) #tlAddCheckOverlay, body:not(.dark) .ev-tip, body:not(.dark) .ev-almanac-pop {
+    body:not(.dark) #calEventsPane, body:not(.dark) #tlEvFormOverlay, body:not(.dark) #tlDiaryFormOverlay, body:not(.dark) #tlRepeatOverviewOverlay, body:not(.dark) #tlEvStatsOverlay, body:not(.dark) #tlIncludeListOverlay, body:not(.dark) #tlAddCheckOverlay, body:not(.dark) #tlStartWorkOverlay, body:not(.dark) .ev-tip, body:not(.dark) .ev-almanac-pop {
       --ev-bg: #f8fafc; --ev-card: #ffffff; --ev-text: #1f2937;
       --ev-muted: #6b7280; --ev-border: #e5e7eb; --ev-primary: #2563eb;
     }
@@ -2111,6 +2120,19 @@
       box-shadow: 0 1px 2px rgba(0,0,0,.28), inset 0 1px 0 rgba(255,255,255,.65);
     }
     .tl-bookmark-ic { font-size: .95em; line-height: 1; display: inline-flex; align-items: center; color: #FFC107; }
+    /* 🆕 2026-11-08 cr / dl / cp 日期標記：圖示＋「月-日」合成一顆長徽標（字體比正文小，日期再小一號）；
+       完整「日期+時間」放 title（hover tooltip）與 data-date（VIEW 排序讀取）。與 term 金膠囊同款 */
+    .ev-date-mark {
+      display: inline-flex; align-items: center; gap: .22em;
+      margin: 0 .18em; padding: 0 .45em;
+      border-radius: 999px; line-height: 1.5; font-size: .8em; font-weight: 600;
+      white-space: nowrap; cursor: help; vertical-align: baseline;
+      color: #4a3b12;
+      background: linear-gradient(180deg, #f4dc8e 0%, #e6bd52 55%, #d0a23a 100%);
+      border: 1px solid #b8893a;
+      box-shadow: 0 1px 2px rgba(0,0,0,.22), inset 0 1px 0 rgba(255,255,255,.6);
+    }
+    .ev-date-mark-md { font-size: .85em; font-variant-numeric: tabular-nums; opacity: .92; }
     /* 📝 備註表格网格线：備註经 renderMarkdown 可产出 Markdown 表格（如「所有者/工具/账号/用量」），
        但 .ev-notes 此前没有任何表格边框规则 → 线条全无。浅色用 --ev-border；深色与「未勾选 checkbox 框」同款金黄 #fbbf24 */
     .ev-notes table, .ev-block .notes table, .ev-tip-notes table { border-collapse: collapse; margin: .35em 0; }
@@ -2386,6 +2408,28 @@
     /* 行程表单 */
     .tl-ev-form-overlay { position: fixed; inset: 0; z-index: 12000; background: rgba(0,0,0,0.55); display: flex; align-items: center; justify-content: center; padding: 20px; }
     .tl-ev-form-box { width: 100%; max-width: 586px; max-height: 88vh; overflow: auto; background: var(--ev-card, #1e293b); border: 1px solid var(--ev-border, #334155); border-radius: 12px; padding: 18px; }
+    /* 🛠 今日开工设定：今天日期格右键菜单 + 参考前一天单日行程的勾选弹层 */
+    .tl-startwork-ctx-menu { position: fixed; z-index: 13000; min-width: 208px; background: var(--ev-card, #1e293b); color: var(--ev-text, #e2e8f0); border: 1px solid var(--ev-border, #334155); border-radius: 10px; box-shadow: 0 6px 24px rgba(0,0,0,.35); padding: 6px; font-size: 13px; }
+    .tl-startwork-ctx-menu button { display: block; width: 100%; text-align: left; background: transparent; border: 0; color: inherit; padding: 8px 10px; border-radius: 6px; cursor: pointer; font-size: 13px; }
+    .tl-startwork-ctx-menu button:hover { background: var(--ev-hover, #334155); }
+    .tl-startwork-ctx-hint { padding: 6px 10px 2px; margin-top: 4px; border-top: 1px solid var(--ev-border, #334155); font-size: 11px; color: var(--ev-muted, #94a3b8); }
+    #tlStartWorkOverlay .tl-ev-form-box { max-width: 620px; display: flex; flex-direction: column; max-height: 86vh; overflow: hidden; }
+    .tl-sw-sub { margin: 8px 0 10px; font-size: 12px; line-height: 1.6; color: var(--ev-muted, #94a3b8); }
+    .tl-sw-bar { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+    .tl-sw-bar .btn { width: auto; height: 28px; padding: 0 10px; border-radius: 8px; font-size: 12px; white-space: nowrap; }
+    .tl-sw-count { margin-left: auto; font-size: 12px; color: var(--ev-muted, #94a3b8); }
+    .tl-sw-list { flex: 1; min-height: 80px; max-height: 52vh; overflow-y: auto; border: 1px solid var(--ev-border, #334155); border-radius: 8px; padding: 6px; }
+    .tl-sw-row { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-bottom: 1px solid var(--ev-border, #334155); border-radius: 8px; cursor: pointer; }
+    .tl-sw-row:last-child { border-bottom: 0; }
+    .tl-sw-row:hover { background: var(--ev-hover, #334155); }
+    .tl-sw-row.is-exists { opacity: .58; cursor: default; }
+    .tl-sw-row input[type="checkbox"] { flex: 0 0 auto; width: 16px; height: 16px; accent-color: var(--ev-primary, #7c3aed); cursor: inherit; }
+    .tl-sw-dot { flex: 0 0 auto; width: 10px; height: 10px; border-radius: 50%; }
+    .tl-sw-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+    .tl-sw-title { font-size: 13px; word-break: break-word; color: var(--ev-text, #e2e8f0); }
+    .tl-sw-meta { font-size: 11px; color: var(--ev-muted, #94a3b8); }
+    .tl-sw-exists { flex: 0 0 auto; font-size: 11px; color: #f5c518; }
+    .tl-sw-empty { padding: 18px 12px; text-align: center; font-size: 13px; line-height: 1.7; color: var(--ev-muted, #94a3b8); }
     /* 统计弹层：标题栏 + 筛选区固定不滚动，仅 #tlEvStatsBody 滚动 */
     #tlEvStatsOverlay .tl-ev-stats-box { display: flex; flex-direction: column; overflow: hidden; max-height: 92vh; }
     .tl-ev-stats-header { flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-bottom: 8px; border-bottom: 1px solid var(--ev-border, #334155); }
@@ -2538,6 +2582,36 @@
       color: var(--ev-text); font-size: 15px; cursor: pointer; }
     .tl-include-item .tl-include-add:hover { background: var(--ev-accent, #7c3aed); border-color: var(--ev-accent, #7c3aed); color: #fff; }
     /* ===== 📖 Glossary 术语表弹层：行＝term 胶囊（含領域小胶囊）＋釋義＋出现次数；胶囊复用 .tl-term-cap ===== */
+    /* 🆕 文本搜索：标题栏／说明／搜索条固定，只有清单滚动（与事件统计弹层同一布局口径） */
+    #tlGlossaryOverlay .tl-ev-stats-box { display: flex; flex-direction: column; overflow: hidden; max-height: 92vh; }
+    #tlGlossaryOverlay .tl-ev-stats-sub { flex-shrink: 0; margin-left: 0; margin-top: 10px; }
+    .tl-gloss-searchbar { flex-shrink: 0; display: flex; align-items: center; gap: 8px; margin: 10px 0 8px; }
+    .tl-gloss-search-icon { flex: 0 0 auto; font-size: 13px; color: var(--ev-muted); }
+    .tl-gloss-search {
+      flex: 1 1 auto; min-width: 0; box-sizing: border-box; padding: 7px 10px;
+      border: 1px solid var(--ev-border); border-radius: 8px;
+      background: var(--ev-card); color: var(--ev-text);
+      font: inherit; font-size: 13px;
+    }
+    .tl-gloss-search::placeholder { color: var(--ev-muted); opacity: .85; }
+    .tl-gloss-search:focus { outline: none; border-color: #D4AF37; }
+    .tl-gloss-search-clear {
+      flex: 0 0 auto; width: 26px; height: 26px; padding: 0; line-height: 1;
+      border: 1px solid var(--ev-border); border-radius: 6px;
+      background: transparent; color: var(--ev-muted); font-size: 13px; cursor: pointer;
+    }
+    /* ⚠️ 作者样式 display 会压过浏览器 [hidden]，必须显式收掉（同 .nami[hidden] 的坑） */
+    .tl-gloss-search-clear[hidden] { display: none !important; }
+    .tl-gloss-search-clear:hover { color: var(--ev-text); border-color: var(--ev-primary); }
+    .tl-gloss-search-count { flex: 0 0 auto; min-width: 3.5em; text-align: right; font-size: 11px; color: var(--ev-muted); white-space: nowrap; }
+    /* 命中高亮用独立 class：⛔ 不复用主窗 .search-highlight（主程搜索导航用 document.querySelectorAll 全域统计，会被术语表污染）。
+       金胶囊内改白底深棕字才看得出来；来源 chip 命中则整颗描金边（标题仍走 MD 行内渲染，不插 mark）。 */
+    .tl-gloss-hl { background: #fbbf24; color: #000; padding: 0 2px; border-radius: 2px; font-weight: 600; }
+    body.dark .tl-gloss-hl { background: #f59e0b; }
+    .tl-term-cap mark.tl-gloss-hl, .tl-term-domain mark.tl-gloss-hl { background: #fff; color: #4a3b12; box-shadow: 0 0 0 1px rgba(74,59,18,.35); }
+    .tl-gloss-src-hit { border-color: #D4AF37; background: rgba(212,175,55,.16); }
+    .tl-gloss-src-hit:hover { border-color: #D4AF37; background: rgba(212,175,55,.28); }
+    .tl-gloss-noresult { padding: 24px; color: var(--ev-muted); font-size: 13px; text-align: center; line-height: 1.8; }
     .tl-gloss-list { padding: 2px 0; }
     .tl-gloss-row { display: flex; flex-direction: column; gap: 6px; padding: 8px 10px; border-bottom: 1px solid var(--ev-border, #334155); }
     .tl-gloss-row:last-child { border-bottom: none; }
@@ -2637,7 +2711,8 @@
     #tlEvFormOverlay .tl-ev-form-actions .btn,
     #tlDiaryFormOverlay .tl-ev-form-actions .btn,
     #tlRepeatOverviewOverlay .tl-ev-form-actions .btn,
-    #tlAddCheckOverlay .tl-ev-form-actions .btn {
+    #tlAddCheckOverlay .tl-ev-form-actions .btn,
+    #tlStartWorkOverlay .tl-ev-form-actions .btn {
       width: auto; height: 34px; padding: 0 16px; border-radius: 8px; font-size: 13px; font-weight: 500; white-space: nowrap;
     }
     .tl-ev-form-hint { margin-top: 10px; font-size: 11px; line-height: 1.5; color: var(--ev-muted); }
@@ -5224,7 +5299,7 @@
             <button type="button" id="tlEvPrevMonth">‹</button>
             <span id="tlEvMonthTitle"></span>
             <button type="button" id="tlEvNextMonth">›</button>
-            <button type="button" class="ev-today-mini" id="tlEvTodayBtn">今天</button>
+            <button type="button" class="ev-today-mini" id="tlEvTodayBtn" title="左键：回到今天；右键：今日开工设定 / 新增今日行程">今天</button>
             <button type="button" class="ev-today-mini" id="tlEvMultiDayBtn" style="display:none" title="跨天行程显示方式">跨天多笔</button>
           </div>
           <div id="tlEvList" class="events-list"></div>
@@ -5606,7 +5681,37 @@
         <button type="button" class="tl-ev-stats-close" onclick="tlCloseGlossary()" aria-label="关闭">✕</button>
       </div>
       <div class="tl-ev-stats-sub">收集全部行程（标题与备注）中的 <code>[[term:釋義:領域]]</code>（釋義與領域可省略）；同名术语只显示最完整的一条，按术语排序，悬停胶囊可看完整釋義</div>
+      <!-- 🆕 文本搜索：即时过滤术语／釋義／領域／来源行程（标题＋日期），空格分隔多关键词为 AND；不写档、不重算 -->
+      <div class="tl-gloss-searchbar">
+        <span class="tl-gloss-search-icon" aria-hidden="true">🔍</span>
+        <input type="text" id="tlGlossarySearch" class="tl-gloss-search" placeholder="搜索术语、释义、领域或来源行程…" autocomplete="off" spellcheck="false" aria-label="搜索术语表" oninput="tlRenderGlossary()" onkeydown="tlGlossSearchKeydown(event)">
+        <button type="button" id="tlGlossarySearchClear" class="tl-gloss-search-clear" aria-label="清空搜索" title="清空搜索" onclick="tlGlossSearchClear()" hidden>✕</button>
+        <span class="tl-gloss-search-count" id="tlGlossarySearchCount" aria-live="polite"></span>
+      </div>
       <div id="tlGlossaryBody" class="tl-ev-stats-body tl-gloss-list"></div>
+    </div>
+  </div>
+
+  <!-- 🛠 今日开工设定（今天的日期格右键）：参考前一天「开始与结束同一天」的行程，勾选后批量建立今日行程并直接存档 -->
+  <div id="tlStartWorkOverlay" class="tl-ev-form-overlay" style="display:none" onclick="if(event.target===event.currentTarget) tlStartWorkClose()">
+    <div class="tl-ev-form-box">
+      <div class="tl-ev-stats-header">
+        <div class="tl-ev-stats-title">🛠 今日开工设定<span class="tl-ev-stats-file" id="tlStartWorkDate"></span></div>
+        <button type="button" class="tl-ev-stats-close" onclick="tlStartWorkClose()" aria-label="关闭">✕</button>
+      </div>
+      <div class="tl-sw-sub" id="tlStartWorkSub"></div>
+      <div class="tl-sw-bar">
+        <button type="button" class="btn btn-secondary" onclick="tlStartWorkToggleAll(true)">全选</button>
+        <button type="button" class="btn btn-secondary" onclick="tlStartWorkToggleAll(false)">全不选</button>
+        <span class="tl-sw-count" id="tlStartWorkCount"></span>
+      </div>
+      <div class="tl-sw-list" id="tlStartWorkBody"></div>
+      <div class="tl-ev-form-actions">
+        <span style="flex:1"></span>
+        <button type="button" class="btn btn-secondary" onclick="tlStartWorkClose()">取消</button>
+        <button type="button" class="btn btn-primary" id="tlStartWorkGo" onclick="tlStartWorkApply()">开工</button>
+      </div>
+      <div class="tl-ev-form-hint">按「开工」立即写入 calendar.md 并存档。只复制「标题＋排程骨架」（时间／地点／标签／颜色／便利贴数），**备注（内容／子事件）清空**——今天的事务你自己填；完成状态重设为未完成、重复设定不带过来。今天已有同名行程的项目会标示「今日已存在」并禁止勾选。</div>
     </div>
   </div>
 
@@ -7153,7 +7258,7 @@
 
     // 🆕 从日程事件行／编辑行程窗体的便利贴图标 → 跳转到便利贴视窗的对应页面（分体/翻页模式自动适配）
     //    idx＝同事件第几张 instance（0-based）；旧调用只传 uid 时恒为 0，行为不变。
-    async function tlFocusStickyNote(uid, idx = 0) {
+    async function tlFocusStickyNote(uid, idx = 0, unit) {
       if (!window.electronAPI || !window.electronAPI.invoke) return;
       const ev = tlCalEvents.find((e) => e.uid === uid);
       if (!ev || !ev.sticky) return;
@@ -7164,7 +7269,7 @@
         if (!tlStickyNotesOpen) return;
       }
       try {
-        const r = await window.electronAPI.invoke('focus-sticky-note', { key, idx: pageIdx });
+        const r = await window.electronAPI.invoke('focus-sticky-note', { key, idx: pageIdx, focusUnit: unit || undefined });
         if (r && !r.success && typeof showToast === 'function') showToast('未找到对应的便利贴窗口', 'warning');
       } catch (e) { console.warn('[TodoList] 跳转便利贴失败:', e); }
     }
@@ -8278,6 +8383,9 @@
       for (const m of searchMatches) m.classList.remove('current');
       const cur = searchMatches[i];
       if (!cur) return;
+      // 🆕 同一帧 remove→add 不会重播 CSS 动画：先强制重排，让每次 ◀/▶/Enter
+      //    （含又定位到同一处）都重新闪一次当前命中。
+      void cur.offsetWidth;
       cur.classList.add('current');
       if (doScroll !== false) cur.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }
@@ -8949,8 +9057,9 @@
       const currentCards = document.querySelectorAll('.todo-item.search-current');
       currentCards.forEach(c => c.classList.remove('search-current'));
       
-      // 添加当前高亮样式
+      // 添加当前高亮样式（同样先强制重排，让卡片视图的 ◀/▶ 也重播闪烁）
       clearCurrentHighlight();
+      void element.offsetWidth;
       element.classList.add('current');
       if (card) card.classList.add('search-current');
       

@@ -468,7 +468,40 @@
 //       空行後是異名組或非 gp 行仍舊斷開；末尾空行不屬任何區塊。三端 *ApplyGroupMarkers 同步補
 //       「純空白行不寫 {gp}」，避免 group 啟用保存後把空行改成內容行。?v 戳刷為
 //       lite-gpblank-20261106；APP_VERSION/manifest 1.10.28→1.10.29。
-const CACHE_NAME = 'md-editor-lite-v213';
+// v217（2026-11-08）：新增「塊級／圍欄式」{gpX}…{/gpX} 小事件群語法 —— 單獨一行 {gpX} 開啟、
+//       單獨一行 {/gpX} 結束，中間的 Markdown 整體算「一個」小事件群（一顆編輯圓點＋一個外框）。
+//       與既有「行尾 {gpX}」並存且互為硬邊界：前後即使同名也絕不融合；標記行只在顯示層剝成空行、
+//       行數不變，底稿原文保留（start/end、baseLine、勾選回寫全部照舊）。
+//       四端同步：桌面 tl*／LITE cal*／便利貼 note*／共用 /vsr.js 的 gpFenceScan + blockGp 排序單元。
+//       group 啟用對塊級群改為「保持／拆組／forceMark 整段改名」，不再逐行補行尾標記；
+//       塊級語法不逐行加標記，故含程式碼圍欄也能安全啟用 group。
+//       ?v 戳刷為 lite-gpfence-20261108；APP_VERSION/manifest 1.10.32→1.10.33。
+// v218（2026-11-08）：勾選「group 啟用」按保存時，寫入端一律改成「塊級」{gpX}…{/gpX}，
+//       不再逐行補行尾標記。新增「＋☐ 加入子事件」整批包成一個塊級群；編輯既有內容區塊時
+//       舊的行尾式群就地升級（剝掉每行行尾標記、沿用原群名包成塊級）。
+//       編輯「單個 CheckBox 子事件」維持行尾式（target 只是群內局部行，包塊會巢狀）。
+//       便利貼新增後切成「整塊編輯」並把整段原文放進編輯框，避免再按 ⌘S 把行尾標記補回來。
+//       三端 *WrapGpFence + *ResolveGroupText/*GroupMd(fenceWrap) 同步。?v 戳刷為
+//       lite-gpfence-write-20261108；APP_VERSION/manifest 1.10.33→1.10.34。
+// v219（2026-11-08）：手機 LITE 的 VIEW 便利貼補上「排序」功能（與桌面 desktop-note.js 同口徑）。
+//       sticky-notes.js 新增 VIEW 貼專屬下拉（原序／升冪／降冪）＋排序引擎：鍵＝max(cr,cp) 取最晚、
+//       組鍵＝組內最大單元日期、穩定排序、原序還原；模式按 identity 存 localStorage（不進設定簽名）。
+//       style.css 加 .cal-sticky-view-sort；⚠️ index.html 的 sticky-notes.js 是獨立 ?v 戳，必須一併刷，
+//       否則手機只會重拉四個主資源、仍用舊 sticky-notes.js。?v 戳刷為 lite-viewsort-20261108；
+//       APP_VERSION/manifest 1.10.34→1.10.35。共享 /vsr.js 零改動。
+// v220（2026-11-08）：小事件存檔 cr/cp 日期標記追加「本機 HH:mm」（24H、無秒）＋ VIEW 排序改用 date+time。
+//       三端寫入工具 tlFmtDateTime／calendarFmtDateTime／localTimeString；所有 cr/cp 正則放寬為
+//       YYYY-MM-DD(?: HH:mm)?；VIEW 規則 dateCondMatch 仍只取日曆日比較；桌面／LITE 排序鍵正規化成
+//       "YYYY-MM-DD HH:mm"（舊標記無時間＝當天 00:00），對外回傳仍保留原始標記值。⚠️ 改了
+//       sticky-notes.js 與共享 /vsr.js，故四個主 ?v 戳＋sticky-notes.js 獨立戳都要刷為
+//       lite-datetime-20261108；APP_VERSION/manifest 1.10.35→1.10.36。
+// v221（2026-11-08）：cr / dl / cp 日期標記改渲染成「一顆長徽標」＝圖示＋月-日（小字），
+//       完整「日期+時間」放 title（hover tooltip）與 data-date（VIEW 排序讀取）；底稿 [[...]] 原文零改動。
+//       三端 tlDateMarkHtml / calDateMarkHtml / noteDateMarkElement 同口徑；便利貼兜底
+//       normalizeViewNoteMarkers 改成插入 DOM 元素；三端 CSS 加 .ev-date-mark / .ev-date-mark-md；
+//       排序補一條從 .ev-date-mark[data-date] 讀完整 date+time 的路徑（dl 不參與）。
+//       ?v 戳刷為 lite-datebadge-20261108；APP_VERSION/manifest 1.10.36→1.10.37。
+const CACHE_NAME = 'md-editor-lite-v221';
 const ASSETS = [
   './',
   './index.html',

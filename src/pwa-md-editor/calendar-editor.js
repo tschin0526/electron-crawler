@@ -764,6 +764,10 @@ function calDiaryMarkHtml(date) {
 function calendarFmtDate(d) {
   return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
 }
+// 🆕 2026-11-08：cp 存檔用「本機 date + 本機 HH:mm」（24H、無秒）；只給 calNoteCheckTransform 呼叫點。
+function calendarFmtDateTime(d) {
+  return calendarFmtDate(d) + ' ' + String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+}
 
 function calendarTimeToMin(t) {
   const m = String(t || '').match(/^(\d{1,2}):(\d{2})/);
@@ -772,6 +776,10 @@ function calendarTimeToMin(t) {
 
 // ===== 跨天行程輔助 =====
 function calIsMultiDay(ev) { return !!(ev && ev.endDate && ev.endDate !== ev.date); }
+// 🆕 显示方式＝「显示在今天」：真实 date/endDate 区间已被锚定到今天，不要再显示
+//    「开始日期 – 结束日期 · 共N天」，改显示固定字样（桌面主窗 / 便利贴三端同口径）。
+const CAL_SPAN_TODAY_TEXT = '显示在今天';
+function calIsSpanToday(ev) { return !!(ev && ev.spanDisplay === 'today'); }
 function calMdShort(d) { const m = String(d || '').match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/); return m ? (+m[1]) + '/' + (+m[2]) + '/' + (+m[3]) : (d || ''); }
 function calSpanDays(a, b) {
   const d1 = new Date(a + 'T00:00:00'), d2 = new Date(b + 'T00:00:00');
@@ -947,6 +955,8 @@ function calSpanSuffix(idx, total) { return (total > 1 && idx > 0) ? ' (' + idx 
 // 「按日期分組」入口，那份資料只有 ev + 日期，沒有產生 seq）。
 // ⚠️ 只認「跨天」（date ≠ endDate）：重複事件的 idx/total 是「第幾次」而非「第幾天」，兩者不可混用。
 function calSpanDaySuffix(item, occDate) {
+  // 🆕 显示方式＝「显示在今天」：真实区间已锚定成「今天一笔」，不再显示 (第几天/共几天)
+  if (calIsSpanToday(item)) return '';
   if (!calIsMultiDay(item)) return '';
   const total = calSpanDays(item.date, item.endDate);
   if (total <= 1) return '';
@@ -1159,20 +1169,101 @@ function calGpKeyOfLine(line) {
   if (!m) return null;
   return String(m[1] || '').trim();
 }
+// ── 🆕 塊級（圍欄式）小事件群（2026-11-08）：單獨一行 {gpX} 開啟、
+//    單獨一行 {/gpX} 結束，兩行之間的 Markdown 整體算「一個」[[小事件群]]。 ──
+//  · 與「行尾 {gpX}」並存：行尾寫法靠連續同 key，塊級寫法靠成對標記行，是**硬邊界**，
+//    絕不與前後群合併；塊內各行也不必再加行尾標記。
+//  · 標記行是結構控制行：顯示層剝成空行（行數不變 → start/end/baseLine/勾選回寫全部照舊），底稿保留原文。
+//  · 只認「整行就是一個花括號標記」；行中的 {gpX} 仍是普通文字（沿用 11-06 位置規則）。
+//  · 代碼圍欄內不解析；未配對／孤立標記行不形成群（容錯，完全退回既有行尾語義，零回歸）。
+//  · 不支援巢狀：遇到第一個同名結束行即閉合。與桌面 tlGpFenceOfLine／tlGpFenceScan 同口徑。
+function calGpFenceOfLine(line) {
+  const s = String(line == null ? '' : line).trim();
+  let m = s.match(/^\{[ \t]*\/[ \t]*(?:group|gp)[ \t]*:?[ \t]*([^{}]*)\}[ \t]*$/i);
+  if (m) return { kind: 'close', key: String(m[1] || '').trim() };
+  m = s.match(/^\{[ \t]*(?:group|gp)[ \t]*:?[ \t]*([^{}]*)\}[ \t]*$/i);
+  if (m) return { kind: 'open', key: String(m[1] || '').trim() };
+  return null;
+}
+function calGpFenceScan(lines) {
+  const ranges = [], markers = [];
+  let inFence = false, open = null;
+  for (let i = 0; i < lines.length; i++) {
+    const line = String(lines[i] == null ? '' : lines[i]);
+    if (/^\s*(```|~~~)/.test(line)) { inFence = !inFence; continue; }
+    if (inFence) continue;
+    const f = calGpFenceOfLine(line);
+    if (!f) continue;
+    if (f.kind === 'open') { if (!open) open = { i: i, key: f.key }; continue; }
+    if (open && open.key === f.key) {
+      ranges.push({ start: open.i, end: i, key: f.key });
+      markers.push(open.i, i);
+      open = null;
+    }
+  }
+  return { ranges: ranges, markers: markers };
+}
+function calGpFenceWrap(text) {
+  const lines = String(text == null ? '' : text).replace(/\r\n/g, '\n').split('\n');
+  let s = 0, e = lines.length - 1;
+  while (s <= e && !lines[s].trim()) s++;
+  while (e >= s && !lines[e].trim()) e--;
+  if (s > e) return null;
+  const scan = calGpFenceScan(lines);
+  const hit = scan.ranges.find((r) => r.start === s && r.end === e);
+  return hit ? { lines: lines, start: s, end: e, key: hit.key, scan: scan } : null;
+}
+// ── 🆕 2026-11-08：勾選「group 啟用」按保存時一律改寫成「塊級」{gpX}…{/gpX}，不再逐行補行尾標記 ──
+//  · 已是塊級群且沒給新標記 → 原樣保留；給了 mark → 整段改名（兩行一起改）。
+//  · 舊「行尾式」群 → 剝掉每行行尾標記，沿用原本群名包成塊級；mark 為空時從原文取第一個標記字面量。
+//  · 與桌面 tlWrapGpFence 同口徑；標記行數恆為「內容行數 + 2」。
+function calWrapGpFence(text, mark) {
+  const lines = String(text == null ? '' : text).replace(/\r\n/g, '\n').split('\n');
+  const wrap = (typeof calGpFenceWrap === 'function') ? calGpFenceWrap(text) : null;
+  if (wrap) {
+    if (!mark) return lines.join('\n');
+    const out = lines.slice();
+    out[wrap.start] = mark;
+    out[wrap.end] = '{/' + mark.slice(1);
+    return out.join('\n');
+  }
+  let open = mark || '';
+  if (!open) {
+    for (const line of lines) {
+      const m = line.match(/(\{[ \t]*(?:group|gp)[ \t]*:?[ \t]*[^{}]*\})(?=[ \t]*(?:\[\[[^\]]*\]\][ \t]*)*$)/i);
+      if (m) { open = m[1]; break; }
+    }
+  }
+  open = open || '{gp}';
+  const close = '{/' + open.slice(1);
+  const stripped = (typeof calStripGpMarkers === 'function') ? calStripGpMarkers(lines.join('\n')) : lines.join('\n');
+  const body = stripped.split('\n');
+  while (body.length && !body[0].trim()) body.shift();
+  while (body.length && !body[body.length - 1].trim()) body.pop();
+  if (!body.length) return '';
+  return [open].concat(body, [close]).join('\n');
+}
 // 顯示層剝掉 {gp}（代碼圍欄內原樣保留）；只有真的剝到標記的那行才清尾隨空白。
 function calStripGpMarkers(text) {
   let inFence = false;
   return String(text == null ? '' : text).split('\n').map(function (line) {
     if (/^\s*(```|~~~)/.test(line)) { inFence = !inFence; return line; }
     if (inFence) return line;
+    // 🆕 塊級標記行整行剝成空行（行數不變，底稿原文由對話框讀寫）。
+    //    與 calGpFenceOfLine 同口徑但刻意內聯：顯示層純函式常被單獨抽出載入，不能依賴外部定義。
+    if (/^\{[ \t]*\/?[ \t]*(?:group|gp)[ \t]*:?[ \t]*[^{}]*\}[ \t]*$/i.test(line.trim())) return '';
     const stripped = line.replace(/[ \t]*\{[ \t]*(?:group|gp)[ \t]*:?[ \t]*[^{}]*\}(?=[ \t]*(?:\[\[[^\]]*\]\][ \t]*)*$)/gi, '');
     return stripped === line ? line : stripped.replace(/[ \t]+$/, '');
   }).join('\n');
 }
-// ── 🆕 group 啟用（唯一小事件）：保存時把編輯框裡「每一行」行尾統一標成 {gp}，
+// ── 🆕 group 啟用（唯一小事件）：保存時把編輯框裡「每一行」行尾標成同一個群標記，
 //    使 calSplitMdBlocks / view-sticky-rules 的「連續同 key 段」把整塊認成一個小事件。
 //  · 與 calStripGpMarkers 完全對稱：代碼圍欄行與圍欄內文原樣保留。
-//  · 具名組 {gp:名稱} 歸一成無名 {gp}；行數不變，保存後區塊 start/end 區間仍有效。
+//  · 2026-11-07：既有具名組（{gp:名稱}／{gpABC}）是使用者自訂的分組邊界，**絕不改寫**。
+//    舊版一律歸一成 {gp}，會讓當前群與前後同為 {gp} 的群連成一片（3 群融合成 1 群）。
+//    新口徑：已有行尾標記的行原樣保留；沒有標記的新行補上「本塊第一個標記的字面量」；
+//    整塊都沒有標記才補 {gp}（保留「主動把一般文字改成唯一小事件」的既有行為）。
+//  · 行數不變 → 保存後區塊 start/end 區間仍有效。
 //  · 三端同口徑：桌面主窗 tlApplyGroupMarkers／便利貼窗 noteApplyGroupMarkers。
 function calHasCodeFence(text) {
   return /^\s*(```|~~~)/m.test(String(text == null ? '' : text));
@@ -1180,19 +1271,41 @@ function calHasCodeFence(text) {
 //  · **純空白行保持空白**：空白行在 {gp} 規則裡是「上一行的延續」，不能被寫成內容行，
 //    否則 group 啟用保存後空行會變成 '{gp}'，段落間隔就被破壞了（2026-11-06 空白行規則）。
 function calApplyGroupMarkers(text, on) {
+  const lines = String(text == null ? '' : text).replace(/\r\n/g, '\n').split('\n');
+  // 🆕 塊級群：邊界本身已經是硬分組，勾選時絕不逐行補行尾標記；取消勾選才把兩行標記「置空」
+  //    （不是刪除 → 行數不變），內容行自然散回各自的小事件。與桌面 tlApplyGroupMarkers 同口徑。
+  const fenceScan = (typeof calGpFenceScan === 'function') ? calGpFenceScan(lines) : { ranges: [] };
+  if (fenceScan.ranges.length) {
+    if (on) return lines.join('\n');
+    const out = lines.slice();
+    fenceScan.ranges.forEach((r) => { out[r.start] = ''; out[r.end] = ''; });
+    return out.join('\n');
+  }
+  // 本塊基準標記：只掃圍欄外的行，避免把程式碼裡的字串當成設定
+  let baseMark = '', fence = false;
+  for (const line of lines) {
+    if (/^\s*(```|~~~)/.test(line)) { fence = !fence; continue; }
+    if (fence) continue;
+    const m = line.match(/[ \t]*(\{[ \t]*(?:group|gp)[ \t]*:?[ \t]*[^{}]*\})(?=[ \t]*(?:\[\[[^\]]*\]\][ \t]*)*$)/i);
+    if (m) { baseMark = m[1]; break; }
+  }
   let inFence = false;
-  return String(text == null ? '' : text).replace(/\r\n/g, '\n').split('\n').map(function (line) {
+  return lines.map(function (line) {
     if (/^\s*(```|~~~)/.test(line)) { inFence = !inFence; return line; }
     if (inFence) return line;
     if (!line.trim()) return line;
     const stripped = line.replace(/[ \t]*\{[ \t]*(?:group|gp)[ \t]*:?[ \t]*[^{}]*\}(?=[ \t]*(?:\[\[[^\]]*\]\][ \t]*)*$)/gi, '');
     // 沒標記的行原樣回傳（尤其 on=false）：行尾兩空格是 Markdown 換行語義，不能順手清掉
     const clean = stripped === line ? line : stripped.replace(/[ \t]+$/, '');
-    return on ? clean + '{gp}' : clean;
+    if (!on) return clean;                  // 拆組：沿用既有行為
+    if (stripped !== line) return line;     // 已有標記：原樣保留（含具名組，絕不歸一）
+    return clean + (baseMark || '{gp}');    // 新行補齊成同一組
   }).join('\n');
 }
 function calIsWholeGpBlock(text) {
   const raw = String(text == null ? '' : text).replace(/\r\n/g, '\n');
+  // 🆕 塊級群本身已是「唯一小事件」：即使內容含代碼圍欄也照樣預勾（不逐行加標記，圍欄安全）
+  if (typeof calGpFenceWrap === 'function' && calGpFenceWrap(raw)) return true;
   if (calHasCodeFence(raw)) return false;
   const lines = raw.split('\n');
   let key = null, seen = false;
@@ -1207,7 +1320,8 @@ function calIsWholeGpBlock(text) {
   return seen;
 }
 function calResolveGroupText(raw, checked, wasOn) {
-  if (checked) return calApplyGroupMarkers(raw, true);
+  // 🆕 2026-11-08：編輯「內容區塊」勾選 group 啟用 → 一律改寫成塊級 {gpX}…{/gpX}（舊行尾式就地升級）
+  if (checked) return (typeof calWrapGpFence === 'function') ? calWrapGpFence(raw, '') : calApplyGroupMarkers(raw, true);
   if (wasOn) return calApplyGroupMarkers(raw, false);   // 原本整組、使用者主動取消 → 拆回多個小事件
   return raw;                                          // 原本不是整組：手寫的 {gp} 原樣保留
 }
@@ -1217,17 +1331,41 @@ function calGroupChecked() {
 }
 // ＋☐ 加入 / 編輯 CheckBox 子事件共用（LITE 這兩條路徑原本就不補 cr，保持既有口徑）：
 //   勾選 → 整批逐行補 {gp}；原本整組卻取消 → 移除 {gp} 拆組；其餘走 fallback 原樣。
-function calGroupMd(rawMd, fallback) {
+function calGroupMd(rawMd, fallback, fenceWrap) {
   const on = calGroupChecked();
   if (!on && !calGroupWasOn) return fallback();
-  return calResolveGroupText(rawMd, on, calGroupWasOn);
+  if (fenceWrap) {
+    // 🆕 新增「加入子事件」：整批包成一個塊級小事件群
+    return (typeof calWrapGpFence === 'function')
+      ? (on ? calWrapGpFence(rawMd, '') : (calGroupWasOn ? calApplyGroupMarkers(rawMd, false) : rawMd))
+      : calResolveGroupText(rawMd, on, calGroupWasOn);
+  }
+  // 編輯「單個 CheckBox 子事件」：target 只是群內局部行，包塊會巢狀 → 沿用舊行尾式
+  return on ? calApplyGroupMarkers(rawMd, true)
+    : (calGroupWasOn ? calApplyGroupMarkers(rawMd, false) : rawMd);
 }
 function calRenderNotes(notes, uid, forceEditable) {
   if (!notes) return '';
   const raw = String(notes).replace(/\r\n/g, '\n');
   if (!calNotesCanEdit(uid, forceEditable)) {
-    // 🆕 唯讀整段渲染也要剝掉 {gp}（標記是結構控制，不該出現在畫面上）
-    return renderMarkdown(calRenderTermDefs(calNotesWithChecks(calStripGpMarkers(raw), uid, false)));
+    // 🆕 2026-11-07：唯讀（include / ro）行程也要顯示小事件群外框（與桌面 tlRenderNotes 同口徑）。
+    //   舊版整段渲染直接 return，沒走 calSplitMdBlocks，故不會產生 .md-unit.is-gp。
+    //   以 gp 區塊為切點：只把 type==='gp' 那段包外框（不掛編輯小圓點），其餘維持整段渲染；
+    //   沒有 gp 區塊時沿用原本單次 renderMarkdown，零回歸。
+    const display = calNotesWithChecks(calStripGpMarkers(raw), uid, false);
+    const renderChunk = (s) => renderMarkdown(calRenderTermDefs(s));
+    const gpBlocks = calSplitMdBlocks(raw).filter((b) => b.type === 'gp');
+    if (!gpBlocks.length) return renderChunk(display);
+    const dLines = display.split('\n');
+    let out = '', cursor = 0;
+    gpBlocks.forEach((b) => {
+      if (cursor < b.start) out += renderChunk(dLines.slice(cursor, b.start).join('\n'));
+      out += '<div class="md-unit is-gp">' +
+        renderChunk(dLines.slice(b.start, b.end + 1).join('\n')) + '</div>';
+      cursor = b.end + 1;
+    });
+    if (cursor < dLines.length) out += renderChunk(dLines.slice(cursor).join('\n'));
+    return out;
   }
   const lines = raw.split('\n');
   let out = '';
@@ -1278,6 +1416,11 @@ function calSplitMdBlocks(text) {
   const isTableDelim = (l) => /^[\s|:-]+$/.test(l) && l.includes('-') && l.includes('|');
   const isTableStart = (j) => j + 1 < lines.length && isTableRow(lines[j]) && isTableDelim(lines[j + 1]);
   const blocks = [];
+  // 🆕 塊級 {gpX}…{/gpX} 區間索引：開啟行 → 結束行，整段當一個 gp 原子區塊
+  const fenceStart = new Map();
+  const fenceInfo = (typeof calGpFenceScan === 'function') ? calGpFenceScan(lines) : { ranges: [], markers: [] };
+  const fenceMarkers = new Set(fenceInfo.markers);
+  fenceInfo.ranges.forEach((r) => fenceStart.set(r.start, r.end));
   let i = 0;
   while (i < lines.length) {
     const line = lines[i];
@@ -1290,21 +1433,28 @@ function calSplitMdBlocks(text) {
       blocks.push({ start: i, end: Math.min(j, lines.length - 1), type: 'code' });
       i = j + 1; continue;
     }
+    // 🆕 塊級小事件群：優先於 isGp / task / list / table 等所有分支，整段（含兩行標記）原子化。
+    if (fenceStart.has(i)) {
+      const fe = fenceStart.get(i);
+      blocks.push({ start: i, end: fe, type: 'gp' });
+      i = fe + 1; continue;
+    }
     // 🆕 連續且「group 名相同」的 {gp} 行＝一個小事件（一顆編輯小圓點），覆蓋 task/list/para 等型態
     //    **例外（2026-11-06）**：純空白行（可多行連續）視為「上一行 {gp} 的延續」——
     //    只有當空白行之後的第一行仍是同 key 的 {gp} 行，才把空白行連同後段併進同一群。
     if (isGp(line)) {
       const key = gpKey(line);
       let j = i + 1;
-      while (j < lines.length && gpKey(lines[j]) === key) j++;
+      // 🆕 塊級標記行是硬邊界：前一個同 key 的行尾群絕對不能把它吞進來（與桌面同口徑）。
+      while (j < lines.length && gpKey(lines[j]) === key && !fenceMarkers.has(j)) j++;
       // 反覆延伸，支援「gp 段 / 空行 / gp 段 / 空行 / gp 段」；
       // 空白行納入 [start,end]，baseLine 索引才連續、勾選回寫才不會改錯行。
       while (j < lines.length && isBlank(lines[j])) {
         let k = j;
         while (k < lines.length && isBlank(lines[k])) k++;
-        if (k < lines.length && gpKey(lines[k]) === key) {
+        if (k < lines.length && !fenceMarkers.has(k) && gpKey(lines[k]) === key) {
           j = k;
-          while (j < lines.length && gpKey(lines[j]) === key) j++;
+          while (j < lines.length && gpKey(lines[j]) === key && !fenceMarkers.has(j)) j++;
         } else break;
       }
       blocks.push({ start: i, end: j - 1, type: 'gp' });
@@ -1344,11 +1494,20 @@ function calMdUnitTypeName(type) {
 }
 // 備註 checkbox 行內的 建立日(cr) / deadline(dl) / completed(cp) 標記（顯示層轉換，不改寫源）：
 //   [[cr:...]] → 🆕（建立日）、裸日期與 [[dl:...]] → 📅、[[cp:...]] → ✅（cr 須排在最前，先轉才不會被 dl 規則吃掉）
+// 🆕 2026-11-08：cr / dl / cp（含裸日期）統一渲染成「一顆長徽標」＝圖示＋月-日（小字），
+//   完整「日期+時間」放 title（hover tooltip）與 data-date（VIEW 排序讀取）；底稿原文不改。
+//   與桌面 calendar-editor.js::tlDateMarkHtml 完全同口径。
+function calDateMarkHtml(kind, full) {
+  const meta = { cr: ['\u{1F195}', '建立日'], dl: ['\u{1F4C5}', '预计完成'], cp: ['\u2705', '完成日'] }[kind];
+  return '<span class="ev-date-mark ev-date-' + kind + '" title="' + escapeHtml(meta[1] + ' ' + full) +
+    '" data-date="' + escapeHtml(full) + '">' + meta[0] + ' <span class="ev-date-mark-md">' +
+    escapeHtml(full.slice(5, 10)) + '</span></span>';
+}
 function calRenderNoteMarkers(text) {
   return String(text)
-    .replace(/\[\[cr:(\d{4}-\d{2}-\d{2})\]\]/g, '🆕 $1')
-    .replace(/\[\[(?:dl:)?(\d{4}-\d{2}-\d{2})\]\]/g, '📅 $1')
-    .replace(/\[\[cp:(\d{4}-\d{2}-\d{2})\]\]/g, '✅ $1');
+    .replace(/\[\[cr:(\d{4}-\d{2}-\d{2}(?: \d{2}:\d{2})?)\]\]/g, (m, d) => calDateMarkHtml('cr', d))
+    .replace(/\[\[(?:dl:)?(\d{4}-\d{2}-\d{2})\]\]/g, (m, d) => calDateMarkHtml('dl', d))
+    .replace(/\[\[cp:(\d{4}-\d{2}-\d{2}(?: \d{2}:\d{2})?)\]\]/g, (m, d) => calDateMarkHtml('cp', d));
 }
 // 逐行套用 cr/dl/cp 顯示轉換（跳過代碼圍欄）；讓「非 checkbox 行」也能正確渲染 [[cr:…]]→🆕（與桌面 tlRenderNoteMarkersLines 同口徑）
 function calRenderNoteMarkersLines(text) {
@@ -1556,7 +1715,8 @@ function calGetTipEl() {
 function calTipHtml(ev, occDate) {
   const multi = calIsMultiDay(ev);
   let when;
-  if (multi) when = ev.allDay
+  if (calIsSpanToday(ev)) when = CAL_SPAN_TODAY_TEXT;   // 显示在今天：不显示真实日期区间
+  else if (multi) when = ev.allDay
     ? (calRangeLabel(ev.date, ev.endDate) + ' · 共' + calSpanDays(ev.date, ev.endDate) + '天')
     : calRangeLabel(ev.date, ev.endDate, ev.startTime, ev.endTime);
   else when = ev.allDay ? '全天' : ((ev.startTime || '') + (ev.endTime ? '-' + ev.endTime : ''));
@@ -1950,10 +2110,10 @@ function calParseNoteChecks(text) {
     // 捕获 dl/cp 日期（裸日期视同 dl，與渲染約定一致），供統計明細顯示 📅/✅
     const raw = m[3] || '';
     const dlM = raw.match(/\[\[(?:dl:)?(\d{4}-\d{2}-\d{2})\]\]/);
-    const cpM = raw.match(/\[\[cp:(\d{4}-\d{2}-\d{2})\]\]/);
+    const cpM = raw.match(/\[\[cp:(\d{4}-\d{2}-\d{2}(?: \d{2}:\d{2})?)\]\]/);
     const txt = raw
       .replace(/\[\[(?:dl:)?\d{4}-\d{2}-\d{2}\]\]/g, '')
-      .replace(/\[\[cp:\d{4}-\d{2}-\d{2}\]\]/g, '')
+      .replace(/\[\[cp:\d{4}-\d{2}-\d{2}(?: \d{2}:\d{2})?\]\]/g, '')
       .replace(/\s{2,}/g, ' ').trim();
     out.push({ text: txt, done: m[2] !== ' ', dl: dlM ? dlM[1] : '', cp: cpM ? cpM[1] : '' });
   });
@@ -3728,14 +3888,17 @@ function evItemHtml(ev, today, occDate) {
   const effEnd = isRep ? (occDate || ev.date) : ((ev.endDate && ev.endDate !== ev.date) ? ev.endDate : ev.date);
   const past = effEnd < today;
   let time;
-  if (multi) {
+  if (calIsSpanToday(ev)) {
+    time = CAL_SPAN_TODAY_TEXT;   // 显示在今天：不显示真实日期区间
+  } else if (multi) {
     time = ev.allDay
       ? (calRangeLabel(ev.date, ev.endDate) + ' · 共' + calSpanDays(ev.date, ev.endDate) + '天')
       : calRangeLabel(ev.date, ev.endDate, ev.startTime, ev.endTime);
   } else {
     time = ev.allDay ? '全天' : ((ev.startTime || '') + (ev.endTime ? '-' + ev.endTime : ''));
   }
-  const spanBadge = multi ? '<span class="ev-span-badge" title="跨天行程">⤢ 跨' + calSpanDays(ev.date, ev.endDate) + '天</span>' : '';
+  // 🆕 显示方式＝「显示在今天」：时间行已改固定字样，跨天徽标也不该再出现
+  const spanBadge = (multi && !calIsSpanToday(ev)) ? '<span class="ev-span-badge" title="跨天行程">⤢ 跨' + calSpanDays(ev.date, ev.endDate) + '天</span>' : '';
   return '<div class="ev-item' + (past ? ' past' : '') + (ev.done ? ' done' : '') + (multi ? ' multi' : '') + (calEventUndoneChecksOnly(ev.uid) ? ' only-undone-checks' : '') + '" data-ev-edit="' + escapeHtml(ev.uid) + '" data-occ-date="' + escapeHtml(occDate || ev.date) + '">' +
     '<input type="checkbox" class="ev-check" data-ev-done="' + escapeHtml(ev.uid) + '"' +
     (ev.done ? ' checked' : '') + (ev.ro ? ' disabled' : '') + ' title="' + (ev.ro ? '來自只讀檔案，不可修改完成狀態' : '勾選＝已完成') + '">' +
@@ -4688,11 +4851,11 @@ function calNoteCheckTransform(line, newDone, todayStr) {
   if (newDone) {
     body = body.replace(/\[\[(\d{4}-\d{2}-\d{2})\]\]/g, '[[dl:$1]]');
     // 勾選一律補 [[cp:今天]]（無論有無 dl；已有 cp 則不重複）
-    if (!/\[\[cp:\d{4}-\d{2}-\d{2}\]\]/.test(body)) {
+    if (!/\[\[cp:\d{4}-\d{2}-\d{2}(?: \d{2}:\d{2})?\]\]/.test(body)) {
       body = body.replace(/\s+$/, '') + ' [[cp:' + todayStr + ']]';
     }
   } else {
-    body = body.replace(/\s*\[\[cp:\d{4}-\d{2}-\d{2}\]\]/g, '');
+    body = body.replace(/\s*\[\[cp:\d{4}-\d{2}-\d{2}(?: \d{2}:\d{2})?\]\]/g, '');
   }
   return m[1] + '- [' + (newDone ? 'x' : ' ') + ']' + (body ? ' ' + body : '');
 }
@@ -4711,7 +4874,7 @@ function calToggleNoteCheck(e, uid, line) {
   if (!m) return; // 該行已被用戶改得不再是 checkbox，跳過以免破壞原文
   const wasDone = m[2] !== ' ';
   const nextDone = !wasDone;
-  lines[line] = calNoteCheckTransform(lines[line], nextDone, calendarFmtDate(new Date()));
+  lines[line] = calNoteCheckTransform(lines[line], nextDone, calendarFmtDateTime(new Date()));
   ev.notes = lines.join('\n');
   // 主檔→回編輯緩衝待「保存」；include→寫回來源檔那一塊（本機快取，需匯出）
   calCommitEventNotes(ev);
@@ -4747,7 +4910,9 @@ function calSyncGroupUi(src, target, hide) {
   const show = !hide && mode !== 'off';
   const type = mode === 'block' ? target.type : '';
   // 代碼區塊（或內含圍欄）不適用：圍欄行加標記會破壞 isFence，圍欄內標記又會原樣顯示
-  const enabled = show && !(mode === 'block' && type === 'code') && !calHasCodeFence(src);
+  // 🆕 例外：整段已是「塊級 {gpX}…{/gpX} 群」時不逐行加標記，圍欄完全安全 → 照常啟用
+  const isFenceGroup = (typeof calGpFenceWrap === 'function') && !!calGpFenceWrap(src);
+  const enabled = show && (isFenceGroup || (!(mode === 'block' && type === 'code') && !calHasCodeFence(src)));
   // add 是「還沒寫入的草稿」永遠不預勾；block/task 依開框原文偵測
   const detected = (mode === 'block' || mode === 'task') && enabled && calIsWholeGpBlock(src);
   calGroupWasOn = !!detected;
@@ -5015,7 +5180,7 @@ function calMdEditSave() {
       const items = text.split('\n').map((l) => l.trim()).filter(Boolean);
       if (!items.length) { showToast('沒有可加入的內容', 'error'); return; }
       const rawMd = items.map((l) => '- [ ] ' + l).join('\n');
-      const md = calGroupMd(rawMd, () => rawMd);
+      const md = calGroupMd(rawMd, () => rawMd, true);
       ev.notes = (prev ? prev + '\n' : '') + md + '\n';
       calCommitEventNotes(ev);
       inp.value = '';

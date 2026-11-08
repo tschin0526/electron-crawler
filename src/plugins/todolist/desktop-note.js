@@ -49,6 +49,10 @@ let flipTotal = 0;
 // 🆕 开窗瞬间（initFlip 还在等 sticky-note-order、flipTotal 仍是 0）就收到的跳页请求先存这里，
 //    等权威顺序回来再消费；否则「便利贴原本没开 → 主窗按徽标开启并跳页」会整包丢掉。
 let pendingShowPage = null;
+// 🆕 主窗右击某笔小事件(群)后「跳转到便利贴」顺带要滚动定位+闪烁的目标单元描述。
+//   翻页模式由 sticky-note-show-page 的 payload.focusUnit 写入；分体模式由独立 IPC sticky-note-focus-unit 写入。
+let pendingFocusUnit = null;
+let noteRendered = false;   // 正文是否已渲染过（用于判断 focus-unit 早到时要不要立刻消费）
 let stickyMenuLoadSeq = 0;
 let stickyRefreshSeq = 0;
 let activeStickyRefreshId = '';
@@ -160,6 +164,7 @@ function parseEvents(md) {
     out.push({
       title, date: get('date'), endDate: get('endDate'), color: color || '#FFCC00',
       tags: Array.isArray(tags) ? tags : [], notes, done: get('done') === 'true',
+      spanDisplay: get('spanDisplay') || '',   // 🆕 显示方式（显示在今天 → meta 行改固定字样）
       uid, key: uid
     });
   });
@@ -207,7 +212,11 @@ function spanDays(a, b) {
 //   单日＝date；跨天（endDate 存在且 ≠ date）＝「date – endDate · 共N天」
 // ⚠️ 与主程式 tlIsMultiDay / tlRangeLabel / tlSpanDays 同源同义；便利贴自身日期沿用原始 ISO 格式
 //   （与正文里 [[dl:]]/[[cp:]] 渲染出的 📅/✅ 日期标记一致，不改动既有单日显示）
+// 🆕 2026-11-08：显示方式＝「显示在今天」时，真实日期区间已锚定到今天、不该再显示，
+//    改显示固定字样「显示在今天」（与主程式 tlItemHtml / LITE evItemHtml 同口径）。
+const NOTE_SPAN_TODAY_TEXT = '显示在今天';
 function metaDateText(ev) {
+  if (ev && ev.spanDisplay === 'today') return NOTE_SPAN_TODAY_TEXT;
   const d = (ev && ev.date) || '';
   const e = (ev && ev.endDate && ev.endDate !== ev.date) ? ev.endDate : '';
   if (d && e) return d + ' – ' + e + ' · 共' + spanDays(d, e) + '天';
@@ -248,7 +257,7 @@ function renderMeta(ev) {
 }
 // 🆕 VIEW 便利贴：行事件排序下拉（原序／升幂／降幂），紧跟「只看未完成」徽标按钮
 function viewSortSelectHtml() {
-  return '<select id="miViewSort" class="note-sort-select" title="排序：行事件按 cr 建立日期（无 cr 用事件日期）。升幂/降幂＝组内按小事件 cr 日期、组间按组内最大 cr 日期">' +
+  return '<select id="miViewSort" class="note-sort-select" title="排序：行事件按「建立日 cr 与完成日 cp 中较晚者」（两者都没有则用事件日期）。升幂/降幂＝组内按小事件日期、组间按组内最大日期">' +
     '<option value="orig">原序</option><option value="asc">升幂</option><option value="desc">降幂</option></select>';
 }
 function wireViewSortSelect() {
@@ -266,31 +275,80 @@ function wireViewSortSelect() {
     applyViewSort();
   });
 }
-// 🆕 VIEW 便利贴排序：小事件排序键＝自身 cr 日期（无 cr 用来源事件日期 → data-sort-date）；
-//   组（来源行程）排序键＝组内「最大 cr 日期」（组内完全无 cr 才退事件日期 → data-group-date）。
+// 🆕 VIEW 便利贴排序：小事件排序键＝自身「建立日 cr 与完成日 cp 中较晚者」
+//   （同一单元有多个标记时取全部 cr/cp 里最晚的那个；两者都没有才退来源事件日期 → data-sort-date）。
+//   组（来源行程）排序键＝组内「最大单元日期」（组内完全没有标记日期才退事件日期 → data-group-date）。
 //   原序＝还原重绘后的原始 DOM 顺序；升幂＝早的在上；降幂＝晚的在上；缺日期升幂置顶、降幂置底。
-//   ⚠️ data-sort-date / data-cr-date / data-group-date 统一由 normalizeViewSortUnits() 在「本窗重绘后」
-//      从渲染出的 🆕 建立日写入（view-sticky-rules.js 的同名属性仅作为精确来源之一，非必要依赖）。
+//   ⚠️ data-sort-date / data-unit-date / data-group-date 统一由 normalizeViewSortUnits() 在「本窗重绘后」
+//      从渲染出的 🆕／✅ 日期写入；主窗 view-sticky-rules.js 下发的 data-cr-date 只是旧口径的兼容回退。
 function isViewSortUnit(el) { return el && el.nodeType === 1 && el.classList.contains('vsr-sort-unit'); }
-// 🆕 排序键的「单一可信来源」＝便利贴窗里实际渲染出来的 🆕 建立日，而不是主窗口下发的 data-* 属性。
+// 🆕 排序键的「单一可信来源」＝便利贴窗里实际渲染出来的 🆕 建立日／✅ 完成日，而不是主窗口下发的 data-* 属性。
 //   原因：view-sticky-rules.js 由「主窗口」加载，生成的 HTML 经主进程 stickyNoteHtml Map 缓存后下发；
 //   只 Cmd+R 刷新便利贴窗（甚至只重开便利贴窗）拿到的仍是旧 HTML（没有 .vsr-sort-unit / data-sort-date），
 //   排序会全部当空日期 → 稳定排序保持原序 → 看起来「降幂没生效」。故窗内自行从 DOM 归一化，
 //   无论主窗／主进程是否已重载都能正确排序（旧 HTML 结构：.md-unit / .ev-md-check 直接子元素）。
-function crDateFromUnit(el) {
-  // ① 编辑小圆点的 data-text 存原始行文本（最可靠，含 [[cr:…]] 原文）
+// 🆕 cr / cp 标记与可见徽标共用同一条规则：取「所有日期里最晚的一个」（YYYY-MM-DD 字典序＝时间序）。
+//   一个单元可能是多行 {gp} 小事件群（cr 整组只有 1 个、每行各有自己的 cp），故用 g 正则扫全部而非 match 第一个。
+// 🆕 2026-11-08：新写入的 cr/cp 为 [[cr:YYYY-MM-DD HH:mm]]（本机 24H、无秒）。
+//   排序比较一律先正规化成 "YYYY-MM-DD HH:mm"：旧标记没有时间 → 视当天 00:00；
+//   ⛔ 绝不拿原始字串直接比（'2026-11-08' 字典序会小于 '2026-11-08 00:00'，同日新旧资料会错位）。
+//   对外回传的仍是「原始最晚标记值」（旧资料维持纯日期、新资料带时间），既有 data-* 断言零回归。
+function viewSortKey(s) {
+  const m = String(s == null ? '' : s).trim().match(/^(\d{4}-\d{2}-\d{2})(?:[ T](\d{2}:\d{2}))?/);
+  return m ? m[1] + ' ' + (m[2] || '00:00') : '';
+}
+function viewLatestMarkerDate(s) {
+  let best = '', bestKey = '';
+  const re = /\[\[(?:cr|cp):(\d{4}-\d{2}-\d{2})(?:[ T](\d{2}:\d{2}))?\]\]/g;
+  let m;
+  while ((m = re.exec(String(s || '')))) {
+    const raw = m[1] + (m[2] ? ' ' + m[2] : '');
+    const key = viewSortKey(raw);
+    if (!bestKey || key > bestKey) { bestKey = key; best = raw; }
+  }
+  return best;
+}
+function viewLatestVisibleDate(s) {
+  let best = '', bestKey = '';
+  const re = /(?:\u{1F195}|\u2705)\s*(\d{4}-\d{2}-\d{2})(?:[ T](\d{2}:\d{2}))?/gu;   // 🆕 建立日 / ✅ 完成日；📅 预计完成不参与排序
+  let m;
+  while ((m = re.exec(String(s || '')))) {
+    const raw = m[1] + (m[2] ? ' ' + m[2] : '');
+    const key = viewSortKey(raw);
+    if (!bestKey || key > bestKey) { bestKey = key; best = raw; }
+  }
+  return best;
+}
+function unitDateFromUnit(el) {
+  // ① 编辑小圆点的 data-text 存原始行文本（最可靠，含 [[cr:…]] / [[cp:…]] 原文）
   const dot = el.querySelector && el.querySelector('.ev-md-edit[data-text]');
   if (dot) {
-    const m = String(dot.getAttribute('data-text') || '').match(/\[\[cr:(\d{4}-\d{2}-\d{2})\]\]/);
-    if (m) return m[1];
+    const d = viewLatestMarkerDate(dot.getAttribute('data-text'));
+    if (d) return d;
   }
-  // ② 渲染后的可见文字「🆕 YYYY-MM-DD」（🆕 即画面上的蓝底 NEW 徽标）
-  const m2 = String(el.textContent || '').match(/\u{1F195}\s*(\d{4}-\d{2}-\d{2})/u);
-  if (m2) return m2[1];
-  // ③ 主窗下发值（新版 HTML）或 HTML 里残留的 [[cr:…]]
-  const m3 = String(el.innerHTML || '').match(/\[\[cr:(\d{4}-\d{2}-\d{2})\]\]/);
-  if (m3) return m3[1];
-  return String(el.getAttribute('data-cr-date') || '');
+  // ①b 🆕 2026-11-08：长徽标视觉只显示「MM-DD」，完整 date+time 存在 data-date；
+  //     这里补一条读取路径，避免「没有编辑圆点」的单元因画面不显示完整日期而退化成纯日期排序。
+  //     ⛔ dl（预计完成）不参与排序，与 viewLatestMarkerDate 口径一致。
+  const marks = el.querySelectorAll && el.querySelectorAll('.ev-date-mark[data-date]');
+  if (marks && marks.length) {
+    let best = '', bestKey = '';
+    Array.from(marks).forEach((mk) => {
+      if (mk.classList && mk.classList.contains('ev-date-dl')) return;
+      const raw = mk.getAttribute('data-date') || '';
+      if (!raw) return;
+      const k = viewSortKey(raw);
+      if (!bestKey || k > bestKey) { bestKey = k; best = raw; }
+    });
+    if (best) return best;
+  }
+  // ② 渲染后的可见文字「🆕 YYYY-MM-DD」／「✅ YYYY-MM-DD」（旧 HTML 的纯文本兜底）
+  const v = viewLatestVisibleDate(el.textContent);
+  if (v) return v;
+  // ③ HTML 里残留的字面标记（含属性里的 data-text 原文）
+  const r = viewLatestMarkerDate(el.innerHTML);
+  if (r) return r;
+  // ④ 主窗下发值：新口径 data-unit-date；旧缓存 HTML 的 data-cr-date 仍可当回退（窗内会再覆盖成新值）
+  return String(el.getAttribute('data-unit-date') || el.getAttribute('data-cr-date') || '');
 }
 function groupDateFromHead(head) {
   const d = head.getAttribute('data-group-date');
@@ -316,30 +374,35 @@ function normalizeViewSortUnits() {
         !!(el.querySelector && el.querySelector('.ev-md-check, .md-unit'));
       if (!isUnit) return;
       el.classList.add('vsr-sort-unit');
-      const cr = crDateFromUnit(el);
-      el.setAttribute('data-cr-date', cr);
-      el.setAttribute('data-sort-date', cr || groupDate || el.getAttribute('data-sort-date') || '');
+      const unitDate = unitDateFromUnit(el);
+      el.setAttribute('data-unit-date', unitDate);
+      el.setAttribute('data-sort-date', unitDate || groupDate || el.getAttribute('data-sort-date') || '');
     });
   });
 }
 function cmpViewDate(a, b, dir) {
-  const av = a || '', bv = b || '';
+  // 🆕 一律先正规化成 date+time 再比：旧纯日期＝当天 00:00，新格式＝实际 HH:mm，同日也能分先后。
+  const av = viewSortKey(a), bv = viewSortKey(b);
   if (av === bv) return 0;
   if (av === '') return dir === 'asc' ? -1 : 1;
   if (bv === '') return dir === 'asc' ? 1 : -1;
   return dir === 'asc' ? (av < bv ? -1 : 1) : (av > bv ? -1 : 1);
 }
 function viewGroupSortDate(head, itemEls) {
-  // 组排序键＝组内「最大 cr 日期」；只有当组内没有任何 cr 时，才退回事件日期（data-group-date）。
-  // （用 data-cr-date 区隔「有 cr」与「无 cr 但 data-sort-date 退化为事件日期」两种情形，
-  //   避免「所有 cr 都早于事件日期」时被误用事件日期覆盖。）
+  // 组排序键＝组内「最大单元日期」（每个单元已是 cr/cp 较晚者）；组内完全没有标记日期才退回事件日期。
+  // （用 data-unit-date 区隔「有标记日期」与「无标记、data-sort-date 退化为事件日期」两种情形，
+  //   避免「所有标记日期都早于事件日期」时被误用事件日期覆盖。）
+  // 🆕 组内取最大值也要用 date+time 正规化比较，否则同日 09:00／16:00 会只看日期而误判。
   const gd = head.getAttribute('data-group-date') || '';
-  let maxCr = '', hasCr = false;
+  let maxDate = '', maxKey = '', hasDate = false;
   itemEls.forEach((it) => {
-    const d = it.getAttribute('data-cr-date') || '';
-    if (d) { hasCr = true; if (maxCr === '' || d > maxCr) maxCr = d; }
+    const d = it.getAttribute('data-unit-date') || '';
+    if (!d) return;
+    hasDate = true;
+    const k = viewSortKey(d);
+    if (!maxKey || k > maxKey) { maxKey = k; maxDate = d; }
   });
-  return hasCr ? maxCr : gd;
+  return hasDate ? maxDate : gd;
 }
 function viewSortContainer(container, dir) {
   if (!container) return;
@@ -416,8 +479,23 @@ function applyViewSortAfterRender() {
 // 🆕 VIEW 投影贴的标记兜底：主窗引擎（view-sticky-rules.js）生成的 HTML 经主进程缓存下发，
 //   只刷新便利贴窗拿到的仍是旧 HTML —— 非 checkbox 单元会把 [[cr:…]] 显示为原文。
 //   这里在重绘后把「残留的字面标记」补成与母本 tlRenderNoteMarkers 相同的 🆕/📅/✅ 显示。
-//   ⚠️ 只改「文字节点」：绝不碰属性（编辑圆点的 data-text 存原文，是排序／找出相同的依据）。
-//      跳过 code/pre（与母本「代码围栏内不转换」同口径）；主窗引擎修好后本函数自然变成 no-op（幂等）。
+//   ⚠️ 绝不碰属性（编辑圆点的 data-text 存原文，是排序／找出相同的依据）；跳过 code/pre。
+//      主窗引擎修好后本函数自然变成 no-op（幂等：已转过的徽标里不再有 [[...]] 字面标记）。
+//   🆕 2026-11-08：跟母本同步改成「一颗长徽标」＝圖示＋月-日（小字），完整日期+時間放
+//      title（hover tooltip）與 data-date（VIEW 排序讀取）；故這裡改成插入 DOM 元素，不再純改文字。
+function noteDateMarkElement(icon, kind, full) {
+  const label = { cr: '建立日', dl: '预计完成', cp: '完成日' }[kind];
+  const span = document.createElement('span');
+  span.className = 'ev-date-mark ev-date-' + kind;
+  span.setAttribute('title', label + ' ' + full);
+  span.setAttribute('data-date', full);
+  span.appendChild(document.createTextNode(icon + ' '));
+  const md = document.createElement('span');
+  md.className = 'ev-date-mark-md';
+  md.textContent = full.slice(5, 10);           // YYYY-MM-DD → MM-DD（不顯示年／時間）
+  span.appendChild(md);
+  return span;
+}
 function normalizeViewNoteMarkers() {
   const body = document.getElementById('body');
   if (!body || !body.querySelector) return;
@@ -435,12 +513,24 @@ function normalizeViewNoteMarkers() {
     }
     if (!skip) targets.push(n);
   }
+  const markRe = /\[\[cr:(\d{4}-\d{2}-\d{2}(?: \d{2}:\d{2})?)\]\]|\[\[cp:(\d{4}-\d{2}-\d{2}(?: \d{2}:\d{2})?)\]\]|\[\[(?:dl:)?(\d{4}-\d{2}-\d{2})\]\]/g;
   targets.forEach((n) => {
-    const t = n.nodeValue
-      .replace(/\[\[cr:(\d{4}-\d{2}-\d{2})\]\]/g, '\u{1F195} $1')
-      .replace(/\[\[(?:dl:)?(\d{4}-\d{2}-\d{2})\]\]/g, '\u{1F4C5} $1')
-      .replace(/\[\[cp:(\d{4}-\d{2}-\d{2})\]\]/g, '\u2705 $1');
-    if (t !== n.nodeValue) n.nodeValue = t;
+    const text = n.nodeValue;
+    markRe.lastIndex = 0;
+    const frag = document.createDocumentFragment();
+    let last = 0, m, hit = false;
+    while ((m = markRe.exec(text))) {
+      hit = true;
+      if (m.index > last) frag.appendChild(document.createTextNode(text.slice(last, m.index)));
+      const full = m[1] || m[2] || m[3];
+      const kind = m[1] ? 'cr' : (m[2] ? 'cp' : 'dl');
+      const icon = kind === 'cr' ? '\u{1F195}' : (kind === 'cp' ? '\u2705' : '\u{1F4C5}');
+      frag.appendChild(noteDateMarkElement(icon, kind, full));
+      last = markRe.lastIndex;
+    }
+    if (!hit) return;
+    if (last < text.length) frag.appendChild(document.createTextNode(text.slice(last)));
+    if (n.parentNode) n.parentNode.replaceChild(frag, n);
   });
 }
 // 标签列表统一渲染：显示「名·子标签」
@@ -524,6 +614,8 @@ async function init() {
   applyColor();
   applyContentFont();
   restoreScrollPos();   // 🆕 还原上次离开前的卷动位置（统一行为）
+  noteRendered = true;
+  consumePendingFocusUnit();   // 🆕 消费「跳转到便利贴」顺带要定位+闪烁的小事件(群)
 
   // 🆕 最小化状态：收合成小卡（重测量确保窗口高度精确贴合）
   if (state.minimized) {
@@ -537,6 +629,47 @@ async function init() {
   setupControls();
 }
 
+// 🆕 顶部 × 的「关闭选项」二选一菜单（分体/翻页共用）。
+//    菜单挂在 #note 外＋position:fixed（#note 有 overflow:hidden），坐标按视窗算并夹在窗口内。
+//    这里只收/开「关闭选项」本身，不碰「编辑内容区块」浮层的关闭路径锁定。
+function noteCloseMenuHide() {
+  const cm = document.getElementById('noteCloseMenu');
+  if (cm) cm.classList.remove('open');
+}
+function noteCloseMenuToggle() {
+  const cm = document.getElementById('noteCloseMenu');
+  const btn = document.getElementById('miClose');
+  if (!cm || !btn) return;
+  if (cm.classList.contains('open')) { noteCloseMenuHide(); return; }
+  // 同一时间只留一套浮层菜单（☰ 主菜单＋三套右键菜单）
+  const main = document.getElementById('menu');
+  if (main) main.classList.remove('open');
+  noteFindSameClose(); noteBlockMenuClose(); vsrGotoMenuClose();
+  // 🆕 配色跟「当前这张便利贴」一致：--note-bg／--note-fg 只挂在 #note（applyColor/applyContentFont），
+  //    本菜单在 #note 外继承不到 → 开窗瞬间从 #note 取一份；翻页换色后下次开窗自动跟着换。
+  //    ⚠️ 刻意不把变量提到 :root：#note 外的 viewRuleModal 等浮层有自己的深底配色，
+  //       继承便利贴字色会变成「深底深字」，不能为了一个菜单改全局主题。
+  const noteEl = document.getElementById('note');
+  if (noteEl) {
+    const bg = noteEl.style.getPropertyValue('--note-bg');
+    const fg = noteEl.style.getPropertyValue('--note-fg');
+    if (bg) cm.style.setProperty('--note-bg', bg);
+    if (fg) cm.style.setProperty('--note-fg', fg);
+  }
+  const r = btn.getBoundingClientRect();
+  cm.classList.add('open');   // 先开才量得到尺寸（base 是 display:none）
+  const mw = cm.offsetWidth || 190;
+  const mh = cm.offsetHeight || 68;
+  let left = r.left + r.width / 2 - mw / 2;
+  let top = r.bottom + 4;
+  if (left + mw > window.innerWidth - 4) left = window.innerWidth - mw - 4;
+  if (left < 4) left = 4;
+  if (top + mh > window.innerHeight - 4) top = Math.max(4, r.top - mh - 4);
+  cm.style.left = String(Math.max(4, left)) + 'px';
+  cm.style.top = String(Math.max(4, top)) + 'px';
+  armEdgeHandlesAutoHide();
+}
+
 // 右上角 ☰ 下拉菜单：收纳全部操作（翻页◀▶ / 刷新 / 打开 / 颜色·透明度 / 最小化 / 关闭）
 function setupControls() {
   const menu = document.getElementById('menu');
@@ -547,12 +680,18 @@ function setupControls() {
     e.stopPropagation();
     toggleUndoneChecksFilter();
   };
-  const confirmClose = async () => {
-    if (editMode && editDirty) {
-      const ok = window.confirm('内容有未保存的改动。\n\n确定＝保存后关闭\n取消＝不关闭');
-      if (!ok) return false;
-      if (!await saveNoteEdit()) return false;
-      return true;
+  // 🆕 关闭动作共用的「未存改动」守卫：两个选项都要先保住编辑中的内容，绝不静默丢弃。
+  const ensureSavedBeforeClose = async () => {
+    if (!(editMode && editDirty)) return true;
+    const ok = window.confirm('内容有未保存的改动。\n\n确定＝保存后关闭\n取消＝不关闭');
+    if (!ok) return false;
+    return !!(await saveNoteEdit());
+  };
+  // scope='all'＝结束整个便利贴；其余＝主程式菜单请求关闭单张时沿用原确认文案。
+  const confirmClose = async (scope) => {
+    if (!await ensureSavedBeforeClose()) return false;
+    if (scope === 'all') {
+      return window.confirm('确定要关闭整个便利贴应用吗？\n\n将关闭所有便利贴窗口并结束本次显示；主程式保留，之后仍可从便利贴按钮重新开启。');
     }
     const message = IS_FLIP
       ? '确定要关闭 翻页模式的便利贴 窗口吗？\n\n关闭后将结束当前 翻页模式的便利贴 的显示。'
@@ -600,11 +739,32 @@ function setupControls() {
     if (menu.contains(e.target) || (menuHandle && menuHandle.contains(e.target))) return;
     closeMenu();
   }, true);
-  document.getElementById('miClose').onclick = async (e) => {
+  // 🆕 顶部 × 不再直接关：先给「结束整个便利贴 / 只关当前页面」二选一。
+  //    两个选项都先 flushScrollSave，避免关掉前丢掉这一张的卷动位置。
+  document.getElementById('miClose').onclick = (e) => {
     e.stopPropagation();
-    if (!await confirmClose()) return;
-    if (IS_FLIP) ipcRenderer.invoke('close-sticky-notes');          // 翻页模式：结束整个翻页会话
-    else ipcRenderer.invoke('sticky-note-close', { key: KEY, idx: IDX });
+    noteCloseMenuToggle();
+  };
+  const closeChoiceMenu = document.getElementById('noteCloseMenu');
+  if (closeChoiceMenu) closeChoiceMenu.onclick = async (e) => {
+    const item = e.target.closest && e.target.closest('.nami[data-act]');
+    if (!item) return;
+    e.stopPropagation();
+    const act = item.getAttribute('data-act');
+    noteCloseMenuHide();
+    flushScrollSave();
+    if (act === 'close-all') {
+      if (!await confirmClose('all')) return;
+      ipcRenderer.invoke('close-sticky-notes');
+    } else if (act === 'close-page') {
+      if (!await ensureSavedBeforeClose()) return;
+      // ⚠️ 翻页窗的 order-updated 在 editMode 会刻意不重绘（避免抢画面）；但这一页已被移出，
+      //    若还停在编辑模式，画面会一直显示已经关掉的贴 → 先正规退出编辑模式再发关页请求。
+      if (IS_FLIP && editMode) await setEditMode(false);
+      // 翻页模式：主进程把这一页自 order 移出并记进 flipHidden → order-updated 自动翻到相邻页；
+      // 分体模式：只关掉这一个窗口。两者都不会删除行程资料，清单里仍可再开启。
+      ipcRenderer.invoke('sticky-note-close-page', { key: KEY, idx: IDX });
+    }
   };
   // 重新读表：请求主进程重读 calendar.md 并把最新事件内容经 sticky-note-refresh → applyNoteContent 落渲染
   function rereadStickyNoteTable() {
@@ -1143,7 +1303,7 @@ function setupControls() {
 // 原生拖拽由 OS 处理；只有「按下后未移动、松开＝点击」才会触发此 handler
 // （拖拽过程中 OS 不会派发 click），故可安全用它区分「点一下＝唤起主程式」
 function onNoteClick(e) {
-  if (e.target.closest('.iconbtn, .note-mode-handle, .note-min-handle, .note-menu-handle, .note-refresh-handle, .note-addcheck, .note-addcheck-menu, .note-undone-filter, .flip-edge, .doc-badge')) return;  // 按钮/徽标各自处理（VIEW 徽标有自己的弹层，不唤起主程式）
+  if (e.target.closest('.iconbtn, .note-mode-handle, .note-min-handle, .note-menu-handle, .note-refresh-handle, .note-addcheck, .note-addcheck-menu, .note-close-menu, #noteCloseMenu, .note-undone-filter, .flip-edge, .doc-badge')) return;  // 按钮/徽标各自处理（VIEW 徽标有自己的弹层，不唤起主程式）
   if (!e.target.closest('.bar, .head, .meta, .tags')) return; // 仅拖拽区点击＝唤起主程式
   ipcRenderer.invoke('wake-main-from-note', { key: KEY });
 }
@@ -1151,7 +1311,7 @@ function onNoteClick(e) {
 // 双击便利贴（标题栏或正文）：唤起主程式并打开该事件表单
 // 正文区是 -webkit-app-region: no-drag，双击不会触发拖动，故可安全复用「唤起+打开事件」管线
 function onNoteDblClick(e) {
-  if (e.target.closest('.iconbtn, .menu, .rz, .note-addcheck, .note-addcheck-menu, .note-undone-filter, .flip-edge, .ev-md-edit, .ev-cb, .doc-badge')) return; // 菜单/☰按钮/翻页把手/缩放把手/checkbox 控件/徽标各自处理
+  if (e.target.closest('.iconbtn, .menu, .rz, .note-addcheck, .note-addcheck-menu, .note-close-menu, #noteCloseMenu, .note-undone-filter, .flip-edge, .ev-md-edit, .ev-cb, .doc-badge')) return; // 菜单/☰按钮/翻页把手/缩放把手/checkbox 控件/徽标各自处理
   ipcRenderer.invoke('wake-main-from-note', { key: KEY });
 }
 
@@ -1163,6 +1323,7 @@ let noteAddMode = 'check';
 //    noteGroupWasOn＝开框时该区块原本就整组带同一个 {gp} key；noteGroupBaseline＝勾选状态的「脏值」基线。
 let noteGroupWasOn = false;
 let noteGroupBaseline = false;
+let noteGroupMarkBaseline = '';   // 🆕 群标记输入框的脏值基线（避免勾选即误判脏）
 function closeAddCheckMenu() {
   const menu = document.getElementById('noteAddCheckMenu');
   if (menu) menu.classList.remove('open');
@@ -1283,6 +1444,8 @@ function closeAddCheck() {
   addCheckBaseline = '';
   noteSyncGroupUi('', false, true);   // 🆕 关窗一律复位，下次开任何模式都不会残留上次的勾选
   noteExitTableMode();   // 🆕 收掉表格网格，下次开一般浮层别残留
+  const toBlockBtn = document.getElementById('noteCheckToBlockButton');
+  if (toBlockBtn) toBlockBtn.hidden = true;   // 🆕 模式切换钮一并收掉，别留到下一次开窗
   hideAddCheckUnsavedBar();
 }
 let addCheckSavePending = false;
@@ -1334,6 +1497,8 @@ function markAddCheckBaseline() {
   addCheckBaseline = inp ? inp.value : '';
   const gp = document.getElementById('noteGroupEnable');
   noteGroupBaseline = !!(gp && gp.checked && !gp.disabled);
+  const mark = document.getElementById('noteGroupMark');
+  noteGroupMarkBaseline = (gp && gp.checked && !gp.disabled && mark) ? mark.value : '';
   hideAddCheckUnsavedBar();
 }
 function addCheckEditing() {
@@ -1342,9 +1507,12 @@ function addCheckEditing() {
 function addCheckDirty() {
   const inp = document.getElementById('addCheckInput');
   const gp = document.getElementById('noteGroupEnable');
-  // 🆕 只勾了 group 也算未保存（checkbox 不改变 textarea 内容，光比文字会漏掉这个改动）
+  const mark = document.getElementById('noteGroupMark');
+  const gpOn = !!(gp && !gp.disabled && gp.checked);
+  // 🆕 只勾了 group、或改了群标记也算未保存（二者都不改 textarea 内容，光比文字会漏掉）
   return (!!inp && inp.value !== addCheckBaseline) ||
-         (!!gp && !gp.disabled && gp.checked !== noteGroupBaseline);
+         (!!gp && !gp.disabled && gp.checked !== noteGroupBaseline) ||
+         (gpOn && !!mark && mark.value !== noteGroupMarkBaseline);
 }
 function showAddCheckUnsavedBar() {
   const bar = document.getElementById('addCheckUnsavedBar');
@@ -1375,8 +1543,118 @@ function requestCloseAddCheck() {
   showAddCheckUnsavedBar();
   return false;
 }
-// ── 🆕 浮层工具按钮（三个入口共用：＋☐ 新增／子事件编辑／区块编辑）：复制 ｜ 编辑完整备注 ｜ 主按钮
-//    「编辑完整备注」也是离开本浮层，所以同样要先过「未保存改动」这道问。
+// ── 🆕 「编辑全文内容」跳转定位（2026-11-08）──────────────────────────────
+//    按「编辑全文内容」离开子事件浮层时，把当前这颗小圆点（或整个 {gp} 群）在整篇原文里的
+//    行号区间带进 #editArea：选中该段、卷到可见、金底闪烁 4 秒，避免「切过去了却找不到内容」。
+//    ⚠️ 区间必须在 closeAddCheck() 之前取好——它会清掉 noteCheckEditTarget / noteBlockEditTarget。
+function noteEditLocateRange() {
+  const b = noteBlockEditTarget;
+  if (b && Number.isInteger(b.start) && Number.isInteger(b.end)) {
+    const s = Math.max(0, b.start);
+    return [s, Math.max(s, b.end)];
+  }
+  const c = noteCheckEditTarget;
+  if (c && Number.isInteger(c.line)) {
+    const s = Math.max(0, c.line);
+    return [s, s + Math.max(1, c.count || 1) - 1];
+  }
+  return null;   // ＋☐ 新增模式：没有既有位置可定位
+}
+// 折叠「隐藏已完成」会改 #editArea 的内容 → 原文行号失效，用底稿该区块第一行文字兜底找行
+function noteEditLocateText(range) {
+  if (!Array.isArray(range) || range.length !== 2) return '';
+  const seg = String(getEventNotes() || '').split('\n').slice(range[0], range[1] + 1);
+  for (let i = 0; i < seg.length; i += 1) { if (String(seg[i]).trim()) return String(seg[i]); }
+  return '';
+}
+function notePlainForLocate(s) {
+  return String(s == null ? '' : s)
+    .replace(/!\[([^\]]*)\]\([^)]*\)/g, '$1')
+    .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
+    .replace(/\[\[[^\]]*\]\]/g, ' ')
+    .replace(/^[\s>#*+~-]+/, ' ')
+    .replace(/[*_`~]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+// 与主窗 tlFlashEventFormLines 同口径：行号 → 字符偏移 → 选中 → 卷动 → 闪烁（4 秒）
+function noteFlashEditAreaLines(range, text) {
+  const ea = document.getElementById('editArea');
+  if (!ea || !editMode || !Array.isArray(range) || range.length !== 2) return;
+  const value = String(ea.value || '');
+  const view = value.split('\n');
+  let span = Math.max(1, (+range[1] || 0) - (+range[0] || 0) + 1);
+  let start = Math.max(0, +range[0] || 0);
+  // 🆕 折叠「隐藏已完成」时 #editArea 是投影视图 → 原始行号全部错位。旧版一律退化成「按首行文字猜」，
+  //    但 plain 化会剥掉 "- [ ] "，很容易在文件前面误命中同名文字、算出 start=0 → scrollTop=0，
+  //    于是「闪了却没卷动」（2026-11-08 用户回报）。新口径：用 baseMap（视图行号→原始行号）精确反查。
+  if (doneFoldState && Array.isArray(doneFoldState.baseMap)) {
+    const from = start, to = (+range[1] || 0);
+    const mapped = [];
+    for (let i = 0; i < doneFoldState.baseMap.length; i += 1) {
+      const orig = doneFoldState.baseMap[i];
+      if (orig >= from && orig <= to) mapped.push(i);
+    }
+    if (mapped.length) {
+      start = mapped[0];
+      span = mapped[mapped.length - 1] - mapped[0] + 1;
+    } else { start = -1; }
+  } else if (start + span > view.length) {
+    start = -1;
+  }
+  if (start < 0) {
+    // 目标行被折叠隐藏／行号越界 → 内容兜底：精确相等优先，避免误命中前面的同名片段
+    const want = notePlainForLocate(text);
+    if (want.length >= 2) {
+      let exact = -1, loose = -1;
+      for (let i = 0; i < view.length; i += 1) {
+        const p = notePlainForLocate(view[i]);
+        if (p === want) { exact = i; break; }
+        if (loose < 0 && p.indexOf(want) >= 0) loose = i;
+      }
+      start = exact >= 0 ? exact : loose;
+    }
+    if (start < 0) return;
+  }
+  const end = Math.min(view.length - 1, start + span - 1);
+  function lineToOffset(targetLine) {
+    let i = 0, ln = 0;
+    while (i < value.length && ln < targetLine) { if (value[i] === '\n') ln++; i++; }
+    return i;
+  }
+  const sOff = lineToOffset(start);
+  let eOff = value.length;
+  (function () {
+    let i = sOff, ln = start;
+    while (i < value.length) {
+      if (value[i] === '\n') { if (ln === end) { eOff = i; return; } ln++; }
+      i++;
+    }
+    eOff = value.length;
+  })();
+  if (eOff < sOff) eOff = sOff;
+  try { ea.focus(); ea.setSelectionRange(sOff, eOff); } catch (e) {}
+  // 🆕 卷动改到 rAF 两帧后并连设两次：避开 display:none→block 布局未完成，
+  //    也压过 focus()/setSelectionRange() 触发的浏览器异步自动卷动（同步设会被覆盖）。
+  function applyLocateScroll() {
+    try {
+      const cs = getComputedStyle(ea);
+      const lh = parseFloat(cs.lineHeight) || (parseFloat(cs.fontSize) * 1.5) || 18;
+      ea.scrollTop = Math.max(0, start * lh - ea.clientHeight / 3);
+    } catch (e) {}
+  }
+  requestAnimationFrame(function () {
+    applyLocateScroll();
+    requestAnimationFrame(applyLocateScroll);
+  });
+  ea.classList.remove('note-edit-locate-flash');
+  void ea.offsetWidth;                       // 强制重排，连续点两次也能重播动画
+  ea.classList.add('note-edit-locate-flash');
+  setTimeout(function () { ea.classList.remove('note-edit-locate-flash'); }, 4200);
+}
+
+// ── 🆕 浮层工具按钮（三个入口共用：＋☐ 新增／子事件编辑／区块编辑）：复制 ｜ 编辑全文内容 ｜ 主按钮
+//    「编辑全文内容」也是离开本浮层，所以同样要先过「未保存改动」这道问。
 function bindAddCheckTools(saveLabel) {
   const inp = document.getElementById('addCheckInput');
   const saveButton = document.getElementById('saveCheckButton');
@@ -1402,10 +1680,43 @@ function bindAddCheckTools(saveLabel) {
   const fullBtn = document.getElementById('editFullNoteFromCheckButton');
   if (fullBtn) {
     fullBtn.style.display = '';
-    fullBtn.onclick = (event) => {
+    fullBtn.onclick = async (event) => {
       event.preventDefault();
       event.stopPropagation();
-      if (requestCloseAddCheck()) setEditMode(true);  // 有改动 → 先问，决定完才切到整篇编辑
+      // ⚠️ 先取定位资料：requestCloseAddCheck() → closeAddCheck() 会清掉编辑 target
+      const range = noteEditLocateRange();
+      const text = noteEditLocateText(range);
+      if (requestCloseAddCheck()) {
+        await setEditMode(true);   // 有改动 → 先问，决定完才切到整篇编辑
+        // 延迟一帧：等 textarea 已显示、折叠投影已套用，再卷动＋选中＋闪烁
+        if (range) setTimeout(function () { noteFlashEditAreaLines(range, text); }, 60);
+      }
+    };
+  }
+  // 🆕 双向模式切换（单一 setter）：编辑窗（有 target）与加入窗（无 target）共用同一颗按钮。
+  //    显隐／文案／分派全收在这里，开窗与每次切换后重绑即可，不需要额外状态旗标。
+  //    ⚠️ 判「编辑区块能否反切」要读 inp.value，所以区块开窗必须先写好 textarea 再 bind。
+  const toBlockBtn = document.getElementById('noteCheckToBlockButton');
+  if (toBlockBtn) {
+    const editing = !!noteCheckEditTarget || !!noteBlockEditTarget;
+    const isCheck = (!!noteCheckEditTarget && !noteBlockEditTarget) ||
+                    (!editing && noteAddMode === 'check');   // 🆕 ＋☐「加入子事件」
+    const isBlock = (!!noteBlockEditTarget && !noteCheckEditTarget &&
+                     noteStripCheckboxBlock(inp ? inp.value : '') !== null) ||
+                    (!editing && noteAddMode === 'text');    // 🆕 ＋☐「加入内容区块」
+    toBlockBtn.hidden = !(isCheck || isBlock);
+    toBlockBtn.textContent = isCheck ? '⇄ 原文模式' : '⇄ CheckBox 模式';
+    toBlockBtn.title = isCheck
+      ? '切换为原文模式：编辑既有区块会重新载入含 - [ ] 的 Markdown 原文；加入模式则改成原样加入 Markdown 区块'
+      : '切换回 CheckBox 模式：编辑模式去掉 - [ ] 前缀；加入模式改回逐行包成子事件';
+    toBlockBtn.onclick = (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      if (editing) {
+        if (noteCheckEditTarget) noteSwitchCheckToBlockMode();
+        else noteSwitchBlockToCheckMode();
+      } else if (noteAddMode === 'check') noteSwitchAddToBlockMode();
+      else noteSwitchAddToCheckMode();
     };
   }
   // 🆕 自动标示术语（便利贴窗是独立渲染进程，术语字典由主进程 sticky-note-terms 提供）
@@ -1416,6 +1727,15 @@ function bindAddCheckTools(saveLabel) {
       event.preventDefault();
       event.stopPropagation();
       noteAutoMarkTermsInEditBox();
+    };
+  }
+  // 🆕 group 启用勾选：勾上→显示群标记输入并自动给出全篇不重复的 {gp}（可改）；取消→隐藏并清空
+  const gpBox = document.getElementById('noteGroupEnable');
+  if (gpBox) {
+    gpBox.onchange = () => {
+      const on = !!(gpBox.checked && !gpBox.disabled);
+      const srcNow = (function () { const i = document.getElementById('addCheckInput'); return i ? i.value : ''; })();
+      noteShowGroupMark(on, srcNow, false);
     };
   }
   // 🆕 自动标示术语「勾选确认」浮层按钮（onclick/onchange 幂等，绑定一次即可）
@@ -1560,14 +1880,21 @@ function localDateString(date = new Date()) {
   const day = String(date.getDate()).padStart(2, '0');
   return `${year}-${month}-${day}`;
 }
+// 🆕 2026-11-08：小事件存檔的 cr/cp 標記改用「本機日期 + 本機時:分」（24H、無秒）。
+//   刻意不用 toISOString()（那是 UTC）；getHours/getMinutes 才是使用者看到的本機時間。
+//   ⚠️ 回歸腳本以 slice() 抽純函數時不會載入本函式 → 寫入點用 typeof 降級成純日期，
+//      既有「固定 TODAY」斷言零回歸；想測新格式只要額外 stub localTimeString 即可。
+function localTimeString(date = new Date()) {
+  return String(date.getHours()).padStart(2, '0') + ':' + String(date.getMinutes()).padStart(2, '0');
+}
 // 備註 checkbox 行：確保帶有 [[cr:建立日期]] 標記（不存在才補今天；已有則不動，避免重複／改到原始建立日）。
 // 建立日期一律排在最前：若正文已有 [[dl:…]]/[[cp:…]] 則插到它們前面；否則補在行尾。純函數，不改入參。
 function ensureCrMarker(text) {
-  if (/\[\[cr:\d{4}-\d{2}-\d{2}\]\]/.test(text)) return text;  // 已有建立日：保留原值、不重複補
-  const cr = '[[cr:' + localDateString() + ']]';
+  if (/\[\[cr:\d{4}-\d{2}-\d{2}(?: \d{2}:\d{2})?\]\]/.test(text)) return text;  // 已有建立日：保留原值、不重複補
+  const cr = '[[cr:' + localDateString() + (typeof localTimeString === 'function' ? ' ' + localTimeString() : '') + ']]';
   const trimmed = text.replace(/\s+$/, '');
   if (!trimmed.trim()) return cr;  // 空正文：直接給建立日標記（不帶前導空白）
-  const m = text.match(/\[\[(dl|cp):\d{4}-\d{2}-\d{2}\]\]/);
+  const m = text.match(/\[\[(dl|cp):\d{4}-\d{2}-\d{2}(?: \d{2}:\d{2})?\]\]/);
   if (m && typeof m.index === 'number') {
     return text.slice(0, m.index).replace(/\s+$/, '') + ' ' + cr + ' ' + text.slice(m.index);
   }
@@ -1577,31 +1904,233 @@ function ensureCrMarker(text) {
 //   {gp}＝{GP}＝{GroUP}＝{group} → 无名组；{gp:ABC}＝{gpABC}＝{GROUP:ABC} → 'ABC'；{gp1}＝{gp:1} → '1'。
 //   ⚠️ 位置：标记必须在行尾、或行尾 [[...]] 标记序列之前才算结构标记；行中的 {gp} 是普通文字，原样显示也不分组。
 //   前缀 group 优先于 gp；组名仍区分大小写；三式正则与桌面主窗／LITE／VIEW 引擎同口径。
-// ── 🆕 group 启用（唯一小事件）：保存时把编辑框里「每一行」行尾统一标成 {gp}，
+// ── 🆕 group 启用（唯一小事件）：保存时把编辑框里「每一行」行尾标成同一个群标记，
 //    使 tlSplitMdBlocks / view-sticky-rules 的「连续同 key 段」把整块认成一个小事件。
 //  · 与 tlStripGpMarkers 完全对称：代码围栏行与围栏内文原样保留（不解析、不污染代码内容）。
-//  · 具名组 {gp:名称} 一律归一成无名 {gp}：组名不同会拆成多个小事件，与「唯一」相悖。
+//  · 2026-11-07：既有具名组（{gp:名稱}／{gpABC}）是使用者自訂的分組邊界，**绝不改写**。
+//    旧版一律归一成 {gp}，会让当前群与前后同为 {gp} 的群连成一片（3 群融合成 1 群）。
+//    新口径：已有行尾标记的行原样保留；没有标记的新行补上「本块第一个标记的字面量」；
+//    整块都没有标记才补 {gp}（保留「主动把一般文字改成唯一小事件」的既有行为）。
 //  · 行数不变 → 保存后 noteBlockEditTarget 的 start/end 区间仍然有效。
 //  · 三端同口径：桌面主窗 tlApplyGroupMarkers／LITE calApplyGroupMarkers。
 function noteHasCodeFence(text) {
   return /^\s*(```|~~~)/m.test(String(text == null ? '' : text));
 }
+// ── 🆕 块级（围栏式）小事件群（2026-11-08）：单独一行 {gpX} 开启、
+//    单独一行 {/gpX} 结束，两行之间的 Markdown 整体算「一个」[[小事件群]]。
+//  与桌面 tlGpFenceOfLine／tlGpFenceScan、LITE calGpFenceOfLine／calGpFenceScan 同口径。
+//  便利贴窗正文 HTML 由主窗 tlRenderNotes 下发，这里只需「写入／预勾／改群标记」三件事。
+function noteGpFenceOfLine(line) {
+  const s = String(line == null ? '' : line).trim();
+  let m = s.match(/^\{[ \t]*\/[ \t]*(?:group|gp)[ \t]*:?[ \t]*([^{}]*)\}[ \t]*$/i);
+  if (m) return { kind: 'close', key: String(m[1] || '').trim() };
+  m = s.match(/^\{[ \t]*(?:group|gp)[ \t]*:?[ \t]*([^{}]*)\}[ \t]*$/i);
+  if (m) return { kind: 'open', key: String(m[1] || '').trim() };
+  return null;
+}
+function noteGpFenceScan(lines) {
+  const ranges = [], markers = [];
+  let inFence = false, open = null;
+  for (let i = 0; i < lines.length; i++) {
+    const line = String(lines[i] == null ? '' : lines[i]);
+    if (/^\s*(```|~~~)/.test(line)) { inFence = !inFence; continue; }
+    if (inFence) continue;
+    const f = noteGpFenceOfLine(line);
+    if (!f) continue;
+    if (f.kind === 'open') { if (!open) open = { i: i, key: f.key }; continue; }
+    if (open && open.key === f.key) {
+      ranges.push({ start: open.i, end: i, key: f.key });
+      markers.push(open.i, i);
+      open = null;
+    }
+  }
+  return { ranges: ranges, markers: markers };
+}
+function noteGpFenceWrap(text) {
+  const lines = String(text == null ? '' : text).replace(/\r\n/g, '\n').split('\n');
+  let s = 0, e = lines.length - 1;
+  while (s <= e && !lines[s].trim()) s++;
+  while (e >= s && !lines[e].trim()) e--;
+  if (s > e) return null;
+  const scan = noteGpFenceScan(lines);
+  const hit = scan.ranges.find((r) => r.start === s && r.end === e);
+  return hit ? { lines: lines, start: s, end: e, key: hit.key, scan: scan } : null;
+}
+// ── 🆕 2026-11-08：勾选「group 启用」按保存时一律写成块级 {gpX}…{/gpX}，不再逐行补行尾标记 ──
+//  · 已是块级群且没给新标记 → 原样保留；给了 mark（群标记输入框）→ 整段改名（两行一起改）。
+//  · 旧的「行尾式」群 → 先剥掉每行行尾标记，再沿用原本群名包成块级。
+//  · 便利贴窗没有独立的显示层剥除函数，这里用 noteApplyGroupMarkers(text,false) 剥行尾标记。
+//  · 与桌面 tlWrapGpFence／LITE calWrapGpFence 同口径；行数恒为「内容行数 + 2」。
+function noteWrapGpFence(text, mark) {
+  const canonical = (typeof noteNormalizeGpInput === 'function') ? noteNormalizeGpInput(mark || '') : (mark || '{gp}');
+  const lines = String(text == null ? '' : text).replace(/\r\n/g, '\n').split('\n');
+  const wrap = (typeof noteGpFenceWrap === 'function') ? noteGpFenceWrap(text) : null;
+  if (wrap) {
+    if (!mark) return lines.join('\n');
+    const out = lines.slice();
+    out[wrap.start] = canonical;
+    out[wrap.end] = '{/' + canonical.slice(1);
+    return out.join('\n');
+  }
+  let open = mark ? canonical : '';
+  if (!open) {
+    for (const line of lines) {
+      const m = line.match(/(\{[ \t]*(?:group|gp)[ \t]*:?[ \t]*[^{}]*\})(?=[ \t]*(?:\[\[[^\]]*\]\][ \t]*)*$)/i);
+      if (m) { open = m[1]; break; }
+    }
+  }
+  open = open || '{gp}';
+  const close = '{/' + open.slice(1);
+  const stripped = (typeof noteApplyGroupMarkers === 'function')
+    ? noteApplyGroupMarkers(lines.join('\n'), false) : lines.join('\n');
+  const body = stripped.split('\n');
+  while (body.length && !body[0].trim()) body.shift();
+  while (body.length && !body[body.length - 1].trim()) body.pop();
+  if (!body.length) return '';
+  return [open].concat(body, [close]).join('\n');
+}
+// 🆕 2026-11-07：group 启用时自动给出一个「全篇不重复」的 {gp} 标记，避免与便利贴中前后小事件群合并。
+//   · 扫描「当前便利贴」（KEY 对应的整篇 notes）里所有用过的 {gp:名称}，生成一个未占用的名称（A/B/C…）。
+//   · 若当前编辑的区块本身已是整组，且它的名称在全篇只出现一次（无冲突），则沿用该名称，避免无谓改名。
+//   · 名称大小写敏感（与切块器同口径）；标记统一规范成 {gp}（无名）或 {gp名称}（无冒号）形式。
+// 把一行里的 {gp...} 字面量解析成「名称」（''＝无名 {gp}）
+function noteParseGpName(literal) {
+  let s = String(literal == null ? '' : literal).trim();
+  s = s.replace(/^\{/, '').replace(/\}$/, '');
+  const m = s.match(/^(?:gp|group)\s*:?\s*(.*)$/i);
+  const rest = m ? m[1] : s;
+  return rest.trim().replace(/[{}]/g, '');
+}
+// 名称 → 规范标记字面量
+function noteCanonicalGp(name) {
+  const n = String(name == null ? '' : name).trim().replace(/[{}]/g, '');
+  return n === '' ? '{gp}' : '{gp' + n + '}';
+}
+// 规范化「用户输入」（可能带 / 不带花括号、可能带 gp 前缀）→ 规范标记；空 → {gp}
+function noteNormalizeGpInput(input) {
+  let s = String(input == null ? '' : input).trim();
+  s = s.replace(/^\{/, '').replace(/\}$/, '');
+  const m = s.match(/^(?:gp|group)\s*:?\s*(.*)$/i);
+  const name = (m ? m[1] : s).trim().replace(/[{}]/g, '');
+  return noteCanonicalGp(name);
+}
+// 扫描一篇 notes，返回 Map：name → 出现次数（''＝无名 {gp}），围栏内外都跳过围栏本身但保留围栏内文
+function noteScanUsedGpNames(notes) {
+  const map = new Map();
+  const lines = String(notes || '').replace(/\r\n/g, '\n').split('\n');
+  let fence = false;
+  const re = /[ \t]*(\{[ \t]*(?:group|gp)[ \t]*:?[ \t]*[^{}]*\})(?=[ \t]*(?:\[\[[^\]]*\]\][ \t]*)*$)/i;
+  for (const line of lines) {
+    if (/^\s*(```|~~~)/.test(line)) { fence = !fence; continue; }
+    if (fence) continue;
+    const m = line.match(re);
+    if (m) {
+      const name = noteParseGpName(m[1]);
+      map.set(name, (map.get(name) || 0) + 1);
+    }
+  }
+  return map;
+}
+// 给出一个全篇未占用的标记：优先沿用「当前区块自身已用的、且全篇不冲突」的名称，否则生成 A/B/C…/1/2…
+function noteSuggestGpMark(notes, blockSrc) {
+  const used = noteScanUsedGpNames(notes);
+  let blockName = null, blockCount = 0;
+  if (blockSrc != null && noteIsWholeGpBlock(blockSrc)) {
+    const ls = String(blockSrc).replace(/\r\n/g, '\n').split('\n');
+    for (const line of ls) {
+      const m = line.match(/\{[ \t]*(?:group|gp)[ \t]*:?[ \t]*([^{}]*)\}(?=[ \t]*(?:\[\[[^\]]*\]\][ \t]*)*$)/i);
+      if (m) { blockName = noteParseGpName(m[1]); break; }
+    }
+    blockCount = noteScanUsedGpNames(blockSrc).get(blockName) || 0;
+  }
+  // 「全篇不冲突」＝该名称在全篇的出现次数，扣掉「本块自身占用的次数」后仍为 0（即不在本块之外出现）
+  if (blockName !== null && (used.get(blockName) || 0) - blockCount <= 0) {
+    return noteCanonicalGp(blockName);   // 全篇只此一处（或本块独占）：安全沿用，不无谓改名
+  }
+  for (let i = 0; i < 26; i += 1) {
+    const c = String.fromCharCode(65 + i);
+    if (!used.has(c)) return '{gp' + c + '}';
+  }
+  for (let n = 1; n < 1000; n += 1) {
+    if (!used.has(String(n))) return '{gp' + n + '}';
+  }
+  return '{gpA}';
+}
+// 读取「group 标记输入框」当前值并规范化成保存用标记（空输入 → {gp}）；无输入框 → null
+function noteGroupMarkValue() {
+  const inp = document.getElementById('noteGroupMark');
+  if (!inp) return null;
+  return noteNormalizeGpInput(inp.value);
+}
+// 显示／隐藏群标记输入并给出建议（keep＝就地切模式时保留用户已填值，不重刷建议）
+function noteShowGroupMark(show, src, keep) {
+  const markRow = document.getElementById('noteGroupMarkRow');
+  const markInput = document.getElementById('noteGroupMark');
+  const markHint = document.getElementById('noteGroupMarkHint');
+  if (!markRow || !markInput) return;
+  markRow.style.display = show ? '' : 'none';
+  if (!show) { markInput.value = ''; return; }
+  if (!keep || !markInput.value.trim()) {
+    markInput.value = noteSuggestGpMark(noteCurrentNotes(), src);
+  }
+  if (markHint) markHint.textContent = '保存时整段以此标记分组，避免与前后小事件群合并（可修改）';
+  noteGroupMarkBaseline = markInput.value;   // 基线＝建议值（开框即基准，手动改才变脏）
+}
+// 当前便利贴整篇 notes（本地缓存优先，与写入安全网同口径）
+function noteCurrentNotes() {
+  const m = refMeta.get(KEY);
+  return (m && typeof m.notes === 'string') ? m.notes : '';
+}
 //  · **纯空白行保持空白**：空白行在 {gp} 规则里是「上一行的延续」，不能被写成内容行，
 //    否则 group 启用保存后空行会变成 '{gp}'，段落间隔就被破坏了（2026-11-06 空白行规则）。
-function noteApplyGroupMarkers(text, on) {
+//  · 🆕 2026-11-07：forceMark（用户指定的群标记）优先——保存时整段统一成该标记，避免与前后群合并；
+//    无 forceMark 时沿用既有口径（扫描本块第一个标记、保留既有具名组、绝不归一）。
+function noteApplyGroupMarkers(text, on, forceMark) {
+  const lines = String(text == null ? '' : text).replace(/\r\n/g, '\n').split('\n');
+  // 🆕 块级群：边界已是硬分组，勾选时绝不逐行补行尾标记（会双重分组／破坏原文）；
+  //    forceMark 则整段改名（{gpX} 与 {/gpX} 一起改）；取消勾选把两行标记「置空」拆组，行数恒不变。
+  const fenceScan = (typeof noteGpFenceScan === 'function') ? noteGpFenceScan(lines) : { ranges: [] };
+  if (fenceScan.ranges.length) {
+    if (!on) {
+      const out = lines.slice();
+      fenceScan.ranges.forEach((r) => { out[r.start] = ''; out[r.end] = ''; });
+      return out.join('\n');
+    }
+    const mark = noteNormalizeGpInput(forceMark || noteCanonicalGp(fenceScan.ranges[0].key));
+    const closeMark = '{/' + mark.slice(1);
+    const out = lines.slice();
+    fenceScan.ranges.forEach((r) => { out[r.start] = mark; out[r.end] = closeMark; });
+    return out.join('\n');
+  }
+  // 本块基准标记：forceMark 优先（用户指定的群标记，参考它保存，避免与前后群合并）；
+  // 否则只扫围栏外的行取「本块第一个标记的字面量」（沿用既有具名组，绝不归一）。
+  let baseMark = forceMark ? forceMark : '';
+  if (!forceMark) {
+    let fence = false;
+    for (const line of lines) {
+      if (/^\s*(```|~~~)/.test(line)) { fence = !fence; continue; }
+      if (fence) continue;
+      const m = line.match(/[ \t]*(\{[ \t]*(?:group|gp)[ \t]*:?[ \t]*[^{}]*\})(?=[ \t]*(?:\[\[[^\]]*\]\][ \t]*)*$)/i);
+      if (m) { baseMark = m[1]; break; }
+    }
+  }
   let inFence = false;
-  return String(text == null ? '' : text).replace(/\r\n/g, '\n').split('\n').map(function (line) {
+  return lines.map(function (line) {
     if (/^\s*(```|~~~)/.test(line)) { inFence = !inFence; return line; }
     if (inFence) return line;
     if (!line.trim()) return line;
     const stripped = line.replace(/[ \t]*\{[ \t]*(?:group|gp)[ \t]*:?[ \t]*[^{}]*\}(?=[ \t]*(?:\[\[[^\]]*\]\][ \t]*)*$)/gi, '');
     // 没标记的行必须原样回传（尤其 on=false）：行尾两空格是 Markdown 换行语义，不能顺手清掉
     const clean = stripped === line ? line : stripped.replace(/[ \t]+$/, '');
-    return on ? clean + '{gp}' : clean;
+    if (!on) return clean;                  // 拆组：沿用既有行为
+    if (!forceMark && stripped !== line) return line;  // 无 forceMark：已有标记原样保留（含具名组，绝不归一）
+    return clean + (baseMark || '{gp}');    // 新行补齐成同一组 / forceMark：整段统一成用户指定的标记
   }).join('\n');
 }
 function noteIsWholeGpBlock(text) {
   const raw = String(text == null ? '' : text).replace(/\r\n/g, '\n');
+  // 🆕 块级群本身已是「唯一小事件」：即使内容含代码围栏也照常预勾（不逐行加标记，围栏安全）
+  if (typeof noteGpFenceWrap === 'function' && noteGpFenceWrap(raw)) return true;
   if (noteHasCodeFence(raw)) return false;
   const lines = raw.split('\n');
   let key = null, seen = false;
@@ -1615,8 +2144,10 @@ function noteIsWholeGpBlock(text) {
   }
   return seen;
 }
-function noteResolveGroupText(raw, checked, wasOn) {
-  if (checked) return noteApplyGroupMarkers(raw, true);
+function noteResolveGroupText(raw, checked, wasOn, mark) {
+  // 🆕 2026-11-08：编辑「内容区块」勾选 group 启用 → 一律改写成块级 {gpX}…{/gpX}
+  //    （旧的行尾式群就地升级：剥掉每行行尾标记、沿用群标记输入框的值包成块级）。
+  if (checked) return (typeof noteWrapGpFence === 'function') ? noteWrapGpFence(raw, mark) : noteApplyGroupMarkers(raw, true, mark);
   if (wasOn) return noteApplyGroupMarkers(raw, false);   // 原本整组、使用者主动取消 → 拆回多个小事件
   return raw;                                            // 原本不是整组：使用者手写的 {gp} 原样保留
 }
@@ -1632,14 +2163,25 @@ function noteGroupChecked() {
   return !!(box && box.checked && !box.disabled);
 }
 // 把「已经包装成 Markdown 行」的整段按 group 勾选收敛（＋☐ 加入 / 编辑子事件共用）：
-//   · 勾选 → 逐行补 {gp}，整段只补 1 个 cr（＝一个小事件）
+//   · 勾选 → 逐行补 {gp}，每个 checkbox 行各自补 1 个 cr（2026-11-07：只有 checkbox 需要建立日）
 //   · 原本整组却取消 → 移除 {gp}（拆回多个小事件）＋逐行补 cr
 //   · 其余 → 直接走 fallback，完全沿用原本的逐行 cr 写法（零回归）
-function noteGroupMd(rawMd, fallback) {
+function noteGroupMd(rawMd, fallback, fenceWrap) {
   const on = noteGroupChecked();
   if (!on && !noteGroupWasOn) return fallback();
-  const resolved = noteResolveGroupText(rawMd, on, noteGroupWasOn);
-  if (on) return ensureCrMarkerForBlock(resolved);
+  const mark = on ? noteGroupMarkValue() : null;
+  let resolved;
+  if (fenceWrap) {
+    // 🆕 新增「＋☐ 加入子事件」：整批包成一个块级小事件群
+    resolved = (typeof noteWrapGpFence === 'function')
+      ? (on ? noteWrapGpFence(rawMd, mark) : (noteGroupWasOn ? noteApplyGroupMarkers(rawMd, false) : rawMd))
+      : noteResolveGroupText(rawMd, on, noteGroupWasOn, mark);
+  } else {
+    // 编辑「单个 CheckBox 子事件」：target 只是群内局部行，包块会嵌套 → 沿用旧行尾式
+    resolved = on ? noteApplyGroupMarkers(rawMd, true, mark)
+      : (noteGroupWasOn ? noteApplyGroupMarkers(rawMd, false) : rawMd);
+  }
+  if (on) return ensureCrMarkersForCheckboxLines(resolved);
   return resolved.split('\n').map(function (l) { return ensureCrMarker(l); }).join('\n');
 }
 // 单一 setter：开窗／关窗／切模式都走它，避免某一种入口把勾选状态带到下一种模式。
@@ -1652,7 +2194,9 @@ function noteSyncGroupUi(src, keep, hide) {
   const show = !hide && mode !== 'off';
   const type = mode === 'block' ? noteBlockEditTarget.type : '';
   // 代码块（或内含围栏）不适用：围栏行加标记会破坏 isFence，围栏内标记又会原样显示
-  const enabled = show && !(mode === 'block' && type === 'code') && !noteHasCodeFence(src);
+  // 🆕 例外：整段已是「块级 {gpX}…{/gpX} 群」时不逐行加标记，围栏完全安全 → 照常启用
+  const isFenceGroup = (typeof noteGpFenceWrap === 'function') && !!noteGpFenceWrap(src);
+  const enabled = show && (isFenceGroup || (!(mode === 'block' && type === 'code') && !noteHasCodeFence(src)));
   // add 是「还没写入的草稿」永遠不预勾；block/check 依开框原文侦测
   const detected = (mode === 'block' || mode === 'check') && enabled && noteIsWholeGpBlock(src);
   noteGroupWasOn = !!detected;
@@ -1667,23 +2211,26 @@ function noteSyncGroupUi(src, keep, hide) {
     box.checked = !!preset && !!enabled;   // 默认不启用；只有原本已是整组才预勾
   }
   noteGroupBaseline = !!(box && box.checked && !box.disabled);
+  // 🆕 group 标记输入：只在 group 启用勾选时显示，并自动给一个全篇不重复的 {gp} 标记（可改）
+  const showMark = !hide && enabled && !!(box && box.checked && !box.disabled);
+  noteShowGroupMark(showMark, src, keep);
   return enabled;
 }
 // 編輯小圓點「單元」補 1 個 [[cr:建立日]]（不是每個自然行都加！）；與行事曆 tlEnsureCrMarkerForBlock 同口徑，單元只補 1 個
 function ensureCrMarkerForBlock(blockText) {
-  if (/\[\[cr:\d{4}-\d{2}-\d{2}\]\]/.test(blockText)) return blockText;  // 單元已含 cr：保留原值、不重複補
+  if (/\[\[cr:\d{4}-\d{2}-\d{2}(?: \d{2}:\d{2})?\]\]/.test(blockText)) return blockText;  // 單元已含 cr：保留原值、不重複補
   const lines = String(blockText).replace(/\r\n/g, '\n').split('\n');
   let last = lines.length - 1;
   while (last >= 0 && !lines[last].trim()) last--;
-  if (last < 0) return '[[cr:' + localDateString() + ']]';
-  const cr = '[[cr:' + localDateString() + ']]';
+  if (last < 0) return '[[cr:' + localDateString() + (typeof localTimeString === 'function' ? ' ' + localTimeString() : '') + ']]';
+  const cr = '[[cr:' + localDateString() + (typeof localTimeString === 'function' ? ' ' + localTimeString() : '') + ']]';
   const whole = lines[last];
   // 🆕 {gp} 組最後一行帶分組標記：cr 插在標記之前（與主程式 tlEnsureCrMarkerForBlock 同口徑），
   //    否則標記會被 cr 擠到行中間、原檔可讀性變差。無標記時行為與舊版完全一致。
   const gp = whole.match(/\{[ \t]*(?:group|gp)[ \t]*:?[ \t]*[^{}]*\}(?=[ \t]*(?:\[\[[^\]]*\]\][ \t]*)*$)/i);
   const cut = (gp && typeof gp.index === 'number') ? gp.index : whole.length;
   const head = whole.slice(0, cut), tail = whole.slice(cut);
-  const m = head.match(/\[\[(dl|cp):\d{4}-\d{2}-\d{2}\]\]/);
+  const m = head.match(/\[\[(dl|cp):\d{4}-\d{2}-\d{2}(?: \d{2}:\d{2})?\]\]/);
   if (m && typeof m.index === 'number') {
     lines[last] = head.slice(0, m.index).replace(/\s+$/, '') + ' ' + cr + ' ' + head.slice(m.index) + tail;
   } else {
@@ -1691,17 +2238,30 @@ function ensureCrMarkerForBlock(blockText) {
   }
   return lines.join('\n');
 }
+// 🆕 2026-11-07：只有「可點選完成」的 checkbox 行才需要建立日 —— 逐行各補 1 個 [[cr:…]]，
+//   不再讓整群共用 1 個；非 checkbox 行（純文字／標題／表格／程式碼）一律原樣保留。
+//   單行格式（cr 插在 {gp} 之前、dl/cp 之前、已有 cr 不動）仍交給 ensureCrMarkerForBlock，
+//   避免兩套邏輯；代碼圍欄整段跳過，不誤改程式碼內容。
+function ensureCrMarkersForCheckboxLines(blockText) {
+  let inFence = false;
+  return String(blockText == null ? '' : blockText).replace(/\r\n/g, '\n').split('\n').map(function (line) {
+    if (/^\s*(```|~~~)/.test(line)) { inFence = !inFence; return line; }
+    if (inFence) return line;
+    if (!/^\s*-\s+\[[ xX]\]\s?/.test(line)) return line;   // 非 checkbox：不注入 cr
+    return ensureCrMarkerForBlock(line);                    // 單行＝一個單元，已有 cr 自行短路
+  }).join('\n');
+}
 function transformNoteCheck(line, checked) {
   const match = line.match(/^(\s*)-\s+\[([ xX])\]\s?(.*)$/);
   if (!match) return null;
   let text = match[3] || '';
   if (checked) {
     text = text.replace(/\[\[(\d{4}-\d{2}-\d{2})\]\]/g, '[[dl:$1]]');
-    if (!/\[\[cp:\d{4}-\d{2}-\d{2}\]\]/.test(text)) {
-      text = text.replace(/\s+$/, '') + ' [[cp:' + localDateString() + ']]';
+    if (!/\[\[cp:\d{4}-\d{2}-\d{2}(?: \d{2}:\d{2})?\]\]/.test(text)) {
+      text = text.replace(/\s+$/, '') + ' [[cp:' + localDateString() + (typeof localTimeString === 'function' ? ' ' + localTimeString() : '') + ']]';
     }
   } else {
-    text = text.replace(/\s*\[\[cp:\d{4}-\d{2}-\d{2}\]\]/g, '');
+    text = text.replace(/\s*\[\[cp:\d{4}-\d{2}-\d{2}(?: \d{2}:\d{2})?\]\]/g, '');
   }
   return match[1] + '- [' + (checked ? 'x' : ' ') + '] ' + ensureCrMarker(text);
 }
@@ -2730,6 +3290,185 @@ async function noteBlockMove(t) {
   await noteFindSameMoveCheck(target);
 }
 
+// ===== 🆕 「加入」模式的双向切换（2026-11-07） =====
+// ＋☐ 打开的空白浮层（noteCheckEditTarget / noteBlockEditTarget 皆为 null）也要能来回切：
+//   noteAddMode='check'＝逐行包成 - [ ] 子事件加入；'text'＝整段当 Markdown 区块原样加入。
+// ⚠️ 与「编辑」切换不同：这里只有草稿、没有底稿可重载 → 一律保留 textarea 内容、不弹确认、不落盘。
+// ⚠️ 绝不呼叫 markAddCheckBaseline()：新增模式的基线恒为 ''，才能维持「草稿尚未加入」的关闭拦截，
+//    否则切一次模式后按「关闭」会把已输入的草稿静默丢掉。
+function noteSwitchAddToBlockMode() {
+  if (noteCheckEditTarget || noteBlockEditTarget || addCheckSavePending) return;
+  if (noteAddMode !== 'check') return;
+  noteAddMode = 'text';
+  noteExitTableMode();
+  const ov = document.getElementById('addCheckOv');
+  const inp = document.getElementById('addCheckInput');
+  if (ov) {
+    ov.querySelector('.ac-title').textContent = '加入内容区块（Markdown 原文）';
+    ov.querySelector('.ac-hint').textContent = '直接输入任意文本／Markdown；Enter 换行；⌘S 或「加入文本」＝原样追加到备注末尾（不会包成 - [ ] 子事件，不关窗）· 关闭请按下方「关闭」按钮（草稿未加入会先问）；可按「⇄ CheckBox 模式」切回逐行加入子事件';
+  }
+  if (inp) inp.placeholder = '任意输入文本／Markdown，Enter 换行（原样加入，不会变成子事件）…';
+  bindAddCheckTools('加入文本');
+  noteSyncGroupUi(inp ? inp.value : '');   // 新增 text 模式不提供 group 勾选（与 openAddFreeText 同口径）
+  showStickyRefreshFeedback('已切换为原文模式（原样加入 Markdown，按下方「关闭」按钮离开）');
+  if (inp) setTimeout(() => inp.focus(), 0);
+}
+function noteSwitchAddToCheckMode() {
+  if (noteCheckEditTarget || noteBlockEditTarget || addCheckSavePending) return;
+  if (noteAddMode !== 'text') return;
+  noteAddMode = 'check';
+  noteExitTableMode();
+  const ov = document.getElementById('addCheckOv');
+  const inp = document.getElementById('addCheckInput');
+  if (ov) {
+    ov.querySelector('.ac-title').textContent = '加入子事件（CheckBox）';
+    ov.querySelector('.ac-hint').textContent = 'Enter 换行 · ⌘S 加入（加入后不关闭，内容留在框里可继续编辑）· 关闭请按下方「关闭」按钮（草稿未加入会先问是否保存）；可按「⇄ 原文模式」切成原样加入 Markdown 区块';
+  }
+  if (inp) inp.placeholder = '每行一个子事件；Enter 换行，⌘S 或「加入」加入…';
+  bindAddCheckTools('加入');
+  noteSyncGroupUi(inp ? inp.value : '');   // 切回来重新提供 group 勾选（默认不勾）
+  showStickyRefreshFeedback('已切换回 CheckBox 模式（逐行加入子事件，按下方「关闭」按钮离开）');
+  if (inp) setTimeout(() => inp.focus(), 0);
+}
+
+// 🆕 反向切换的结构校验：只有「每一行都是 CheckBox 行、且缩进一致」的区块才能切回 CheckBox 模式。
+//   含空行／表格／段落／缩进不齐时一律返回 null —— 否则 checkbox 保存分支会把这些行也包成子事件，
+//   或按首行缩进改写整段，等于偷偷改了资料。
+function noteStripCheckboxBlock(blockText) {
+  const lines = String(blockText == null ? '' : blockText).replace(/\r\n/g, '\n').split('\n');
+  if (!lines.length) return null;
+  let indent = null;
+  const out = [];
+  for (const line of lines) {
+    const m = line.match(/^(\s*)-\s+\[([ xX])\]\s?(.*)$/);
+    if (!m) return null;
+    if (indent === null) indent = m[1];
+    else if (m[1] !== indent) return null;   // 缩进不齐：保存时会统一成首行缩进，不能默默改
+    out.push(m[3]);
+  }
+  return out.join('\n');
+}
+
+// ===== 🆕 「编辑内容区块」→「编辑子事件（CheckBox）」反向切换（2026-11-07） =====
+// 与正向完全对称：先从权威底稿重载整段原文，校验它仍是纯 CheckBox 行，再逐行剥掉 "- [ ] " 前缀
+//   写回 textarea，并把 target 换回 noteCheckEditTarget（保存重新走逐行包 checkbox 的分支）。
+// 有未保存改动时同样先经确认才放弃（安全默认＝留在原文模式）；切换不关窗、不落盘。
+async function noteSwitchBlockToCheckMode() {
+  const target = noteBlockEditTarget;
+  if (!target || noteCheckEditTarget || addCheckSavePending) return;
+  if (addCheckDirty()) {
+    const ok = window.confirm(
+      '切换回 CheckBox 模式，会从便利贴底稿重新载入并去掉 "- [ ] " 前缀。\n\n' +
+      '目前编辑框里尚未保存的改动不会保留。\n\n' +
+      '按「确定」＝放弃未保存的改动并切换；\n' +
+      '按「取消」＝留在原文模式（可先按 ⌘S 保存后再切换）。'
+    );
+    if (!ok) return;   // 取消／Esc 一律不丢改动
+  }
+  // ① 底稿权威化：切换后的区间与原文都取自最新底稿（与正向切换、tlOpenEditBlockDialog 同口径）
+  const notes = await fetchAuthoritativeNotes(target.uid);
+  if (notes == null) {
+    window.alert('无法读取该便利贴的最新内容，为避免对错行落笔已取消切换。请重开便利贴后再试。');
+    return;
+  }
+  const lines = notes.split('\n');
+  const start = target.start, end = target.end;
+  if (!Number.isInteger(start) || !Number.isInteger(end) || start < 0 || start >= lines.length ||
+      end >= lines.length || end < start) {
+    window.alert('该区块内容已变化，请刷新便利贴后重试');
+    return;
+  }
+  const src = lines.slice(start, end + 1).join('\n');
+  const stripped = noteStripCheckboxBlock(src);
+  if (stripped == null) {
+    window.alert('此区块含有非 CheckBox 行（或各行缩进不一致），无法切回 CheckBox 模式。\n\n请留在原文模式编辑，或先把每一行整理成 "- [ ] …" 再切换。');
+    return;
+  }
+  // ② 状态切换：count＝底稿里这段原本占几行（不是编辑框当前行数），
+  //    保存时 lines.splice(line, count, …newLines) 才能正确替换，不会多删相邻行。
+  noteBlockEditTarget = null;
+  noteCheckEditTarget = { uid: target.uid, line: start, count: end - start + 1 };
+  noteAddMode = 'check';
+  noteExitTableMode();
+  const ov = document.getElementById('addCheckOv');
+  const inp = document.getElementById('addCheckInput');
+  if (ov) {
+    ov.querySelector('.ac-title').textContent = '编辑子事件（CheckBox）';
+    ov.querySelector('.ac-hint').textContent = '已从原文模式切回，编辑框显示去掉 "- [ ] " 前缀的子事件内容 · ⌘S 保存（不关闭，逐行写回 CheckBox 子事件）· 关闭请按下方「关闭」按钮（有改动会先问是否保存）；清空并保存＝删除该子事件（会先确认）；可再按「⇄ 原文模式」切回原文';
+  }
+  if (inp) {
+    inp.value = stripped;                 // 🆕 关键：去掉 - [ ] 前缀，回到 CheckBox 编辑手感
+    inp.placeholder = '输入子事件内容…';
+  }
+  bindAddCheckTools();        // 按钮文案改回「⇄ 原文模式」
+  noteSyncGroupUi(stripped);  // 依切回后的内容重新侦测 group 勾选（与 tlOpenEditNoteCheckDialog 同口径）
+  markAddCheckBaseline();     // 基线＝切回后的内容，切换本身不算「未保存改动」
+  showStickyRefreshFeedback('已切换回 CheckBox 模式（按下方「关闭」按钮离开）');
+  if (inp) setTimeout(() => { inp.focus(); inp.setSelectionRange(0, 0); }, 0);
+}
+
+// ===== 🆕 「编辑子事件（CheckBox）」→「编辑内容区块」正向切换（2026-11-07） =====
+// checkbox 模式的编辑框只显示 match[3]（"- [ ] " 前缀与缩进已被剥掉）。若只改标题／target 而不重载内容，
+//   切换后 "- [ ]" 仍然不会出现，而保存又会走 checkbox 分支再包一层前缀 —— 所以这里一律从权威底稿
+//   重新取 lines[line .. line+count-1] 的**原文**写回 textarea，并把 target 换成 noteBlockEditTarget。
+// 切换＝改状态 + 重载内容，不关窗、不落盘；有未保存改动时先经使用者明确确认才放弃（安全默认＝留在原模式）。
+// 切过去后同一颗按钮会变成「⇄ CheckBox 模式」，可经 noteSwitchBlockToCheckMode() 再切回来。
+async function noteSwitchCheckToBlockMode() {
+  const target = noteCheckEditTarget;
+  // 硬守卫：只有 checkbox 编辑中可切；区块模式／新增模式按不到这颗按钮，也不做任何动作
+  if (!target || noteBlockEditTarget || addCheckSavePending) return;
+  if (addCheckDirty()) {
+    const ok = window.confirm(
+      '切换为原文模式，会从便利贴底稿重新载入原始 Markdown（含 "- [ ]" 前缀）。\n\n' +
+      '目前编辑框里尚未保存的改动不会保留。\n\n' +
+      '按「确定」＝放弃未保存的改动并切换；\n' +
+      '按「取消」＝留在 CheckBox 模式（可先按 ⌘S 保存后再切换）。'
+    );
+    if (!ok) return;   // 取消／Esc 一律不丢改动
+  }
+  // ① 底稿权威化：切换后的区间与原文都取自最新底稿（与 tlOpenEditBlockDialog 同口径）
+  const notes = await fetchAuthoritativeNotes(target.uid);
+  if (notes == null) {
+    window.alert('无法读取该便利贴的最新内容，为避免对错行落笔已取消切换。请重开便利贴后再试。');
+    return;
+  }
+  const lines = notes.split('\n');
+  const start = target.line;
+  const span = Math.max(1, target.count || 1);
+  const end = start + span - 1;
+  if (!Number.isInteger(start) || start < 0 || start >= lines.length || end >= lines.length) {
+    window.alert('该子事件内容已变化，请刷新便利贴后重试');
+    return;
+  }
+  if (!/^(\s*)-\s+\[[ xX]\]\s?/.test(lines[start])) {
+    window.alert('该子事件内容已变化，请刷新便利贴后重试');
+    return;
+  }
+  const src = lines.slice(start, end + 1).join('\n');
+  // ② 状态切换：清掉 checkbox target → 由 noteBlockEditTarget 接管 confirmAddCheck() 的区块覆写分支
+  //    （区块分支原样写回 Markdown，不会再包 "- [ ] "，也不会重复追加）
+  noteCheckEditTarget = null;
+  noteBlockEditTarget = { uid: target.uid, start, end, type: 'list' };
+  noteAddMode = 'check';
+  noteExitTableMode();
+  const ov = document.getElementById('addCheckOv');
+  const inp = document.getElementById('addCheckInput');
+  if (ov) {
+    ov.querySelector('.ac-title').textContent = '编辑内容区块（子事件原文）';
+    ov.querySelector('.ac-hint').textContent = '已从 CheckBox 模式切换，编辑框显示底稿原始 Markdown（含 "- [ ]"）· ⌘S 保存（不关闭，以区块原文覆写同一段，不会重复包成子事件）· 关闭请按下方「关闭」按钮（有改动会先问是否保存）；清空并保存＝删除该区块（会先确认）；可按「⇄ CheckBox 模式」切回';
+    ipcRenderer.invoke('sticky-note-editor-state', { editing: true }).catch(() => {});
+  }
+  if (inp) {
+    inp.value = src;                                  // 🆕 关键：重新显示原文，"- [ ]" 才会出现
+    inp.placeholder = '编辑此区块的 Markdown 原文…';
+  }
+  bindAddCheckTools();        // 🆕 按钮原地变成「⇄ CheckBox 模式」（原文全是 CheckBox 行 → 可反切）
+  noteSyncGroupUi(src);       // 区块模式 group 勾选按原文重新侦测（原本整组带 {gp} 则预勾）
+  markAddCheckBaseline();     // 基线＝刚载入的原文，切换本身不算「未保存改动」
+  showStickyRefreshFeedback('已切换为原文模式（原文含 - [ ]，按下方「关闭」按钮离开）');
+  if (inp) setTimeout(() => { inp.focus(); inp.setSelectionRange(0, 0); }, 0);
+}
+
 // 🆕 通用「最小 MD 区块」编辑（便利贴端）：编辑 notes 中 lines[start..end] 的 Markdown 原文。
 //   区间起止由主窗渲染时嵌入 onclick；⌘S／「保存」＝只落盘不关闭 · 只有下方「关闭」按钮能关窗；清空并保存＝删除该区块（需确认）。
 window.tlOpenEditBlockDialog = async function (event, uid, start, end, type) {
@@ -2759,13 +3498,14 @@ window.tlOpenEditBlockDialog = async function (event, uid, start, end, type) {
     ov.classList.add('show');
     ipcRenderer.invoke('sticky-note-editor-state', { editing: true }).catch(() => {});
   }
-  bindAddCheckTools();
   noteSyncGroupUi(src);   // 🆕 区块编辑才显示 group 勾选；原本已整组带 {gp} 时预勾
   if (inp) {
     inp.value = src;
     inp.placeholder = '编辑此区块的 Markdown 原文…';
     markAddCheckBaseline();   // 🆕 基线＝开框原文，之后有任何差异都会在关闭前询问
   }
+  // 🆕 反切按钮的显隐要看「这段原文是不是全是 CheckBox 行」，所以必须在 inp.value 写好之后才重绑
+  bindAddCheckTools();
   // 🆕 表格区块 → 进网格模式：必须先写好 textarea 与基线再进模式（引擎不碰没编辑过的原文），
   //   认不出合法表格（缺表头＋分隔行）就退回原文模式，不挡路。
   noteExitTableMode();
@@ -2793,7 +3533,9 @@ async function confirmAddCheck() {
     // 🆕 group 启用：勾选时逐行补 {gp}（整块＝一个小事件）；原本整组却取消勾选＝拆组；其余原样保留
     const gpBox = document.getElementById('noteGroupEnable');
     const raw = inp.value.replace(/\r\n/g, '\n');
-    const blockText = noteResolveGroupText(raw, !!(gpBox && gpBox.checked && !gpBox.disabled), noteGroupWasOn);
+    const gpOn = !!(gpBox && gpBox.checked && !gpBox.disabled);
+    const mark = gpOn ? noteGroupMarkValue() : null;
+    const blockText = noteResolveGroupText(raw, gpOn, noteGroupWasOn, mark);
     // 🆕 ① 底稿权威化：整篇覆写前现拉最新底稿
     const notes = await fetchAuthoritativeNotes(target.uid);
     if (notes == null) { window.alert('无法读取该便利贴的最新内容，为避免覆盖资料已取消保存。'); return false; }
@@ -2808,11 +3550,19 @@ async function confirmAddCheck() {
       if (await saveStickyNoteContent(lines.join('\n'), '删除区块', target.uid)) { closeEditNoteCheck(); return true; }
       return false;
     }
-    const newLines = ensureCrMarkerForBlock(blockText).split('\n');
+    const newLines = ensureCrMarkersForCheckboxLines(blockText).split('\n');
     lines.splice(target.start, span, ...newLines);
     // 更新区间为新区块，便于继续 ⌘S 覆写同一段
     noteBlockEditTarget = { uid: target.uid, start: target.start, end: target.start + newLines.length - 1, type: target.type };
-    if (await saveStickyNoteContent(lines.join('\n'), '保存区块', target.uid)) { markAddCheckBaseline(); showStickyRefreshFeedback('已保存（按下方「关闭」按钮）'); return true; }
+    if (await saveStickyNoteContent(lines.join('\n'), '保存区块', target.uid)) {
+      // 🆕 2026-11-08：group 启用已把整块升级成块级 {gpX}…{/gpX}，编辑框同步显示真实底稿，
+      //    否则使用者看到旧的行尾式原文继续编辑，下一次 ⌘S 会把块级群降级回去。
+      //    markAddCheckBaseline() 会一并重设文字／勾选／群标记三条基线，不会误判成未保存。
+      inp.value = newLines.join('\n');
+      markAddCheckBaseline();
+      showStickyRefreshFeedback('已保存（按下方「关闭」按钮）');
+      return true;
+    }
     return false;
   }
   if (noteCheckEditTarget) {
@@ -2868,7 +3618,11 @@ async function confirmAddCheck() {
   //   与前文空一行隔开，保证切块器把它认成独立的 table／para（否则表格会被并进上一段）。
   if (noteAddMode === 'table' || noteAddMode === 'text') {
     if (addCheckSavePending) return false;
-    const block = inp.value.replace(/\r\n/g, '\n').replace(/^\s*\n+/, '').replace(/\s+$/, '');
+    // 2026-11-07：自由文本里若手写了 checkbox 行，加入当下就补 cr（与内容区块保存同口径），
+    //   不必等再按一次 ⌘S；表格行不是 checkbox，包装器原样回传，网格解析不受影响。
+    const block = ensureCrMarkersForCheckboxLines(
+      inp.value.replace(/\r\n/g, '\n').replace(/^\s*\n+/, '').replace(/\s+$/, '')
+    );
     if (!block) { showStickyRefreshFeedback('没有可加入的内容'); return false; }
     if (noteAddMode === 'table') {
       const parsed = window.MdTableGrid && window.MdTableGrid.parseMd(block);
@@ -2916,7 +3670,7 @@ async function confirmAddCheck() {
   const lines = inp.value.replace(/\r\n/g, '\n').split('\n').map((l) => l.trim()).filter(Boolean);
   if (!lines.length) { showStickyRefreshFeedback('没有可加入的内容'); return false; }
   const rawMd = lines.map((l) => '- [ ] ' + l).join('\n');
-  const md = noteGroupMd(rawMd, () => lines.map((l) => '- [ ] ' + ensureCrMarker(l)).join('\n'));
+  const md = noteGroupMd(rawMd, () => lines.map((l) => '- [ ] ' + ensureCrMarker(l)).join('\n'), true);
   // 🆕 ① 底稿权威化：先前加入 ABCDEF 时就是用了陈旧的 refMeta 底稿，
   //    把早已搬走的内容连着新内容一起写回，才让旧项目「复活」（2026-10-26 事故）。
   //    追加＝整篇覆写，底稿必须现拉现用。
@@ -2930,6 +3684,24 @@ async function confirmAddCheck() {
   if (await saveStickyNoteContent(notes, '保存子事件')) {
     // 这一批在备注里的行区间：prev 有内容时从 prev 的行数开始，否则从第 0 行
     const startLine = prev ? prev.split('\n').length : 0;
+    const mdLines = md.split('\n');
+    // 🆕 2026-11-08：新增的是「块级小事件群」时，切成「整块编辑」并把整段原文（含 {gpX}/{/gpX}）放进编辑框。
+    //    否则再按 ⌘S 会走「单个 CheckBox 子事件」分支：把开启标记行误判成子事件、又把行尾标记补回来。
+    const fenced = mdLines.length > lines.length &&
+      typeof noteGpFenceOfLine === 'function' &&
+      !!noteGpFenceOfLine(mdLines[0]) && !!noteGpFenceOfLine(mdLines[mdLines.length - 1]);
+    if (fenced) {
+      inp.value = md;
+      noteCheckEditTarget = null;
+      noteBlockEditTarget = { uid: KEY, start: startLine, end: startLine + mdLines.length - 1, type: 'gp' };
+      applyAddCheckEditUi('编辑内容区块（分组）',
+        '⌘S 保存（不关闭，覆写这整个块级小事件群）· 关闭请按下方「关闭」按钮（有改动会先问是否保存）');
+      noteSyncGroupUi(md, true);
+      if (typeof bindAddCheckTools === 'function') bindAddCheckTools();
+      markAddCheckBaseline();
+      showStickyRefreshFeedback('已加入 ' + lines.length + ' 项（块级小事件群，内容留在框里，⌘S 覆写这一段）');
+      return true;
+    }
     noteCheckEditTarget = { uid: KEY, line: startLine, count: lines.length };
     noteBlockEditTarget = null;
     applyAddCheckEditUi('编辑子事件（CheckBox）',
@@ -3262,7 +4034,9 @@ function applyNoteContent(arg) {
     renderMeta(Object.assign({}, ev || {}, {
       date: arg && typeof arg.date === 'string' ? arg.date : (ev && ev.date),
       done: arg && typeof arg.done === 'boolean' ? arg.done : !!(ev && ev.done),
-      tags: arg && Array.isArray(arg.tags) ? arg.tags : ((ev && ev.tags) || [])
+      tags: arg && Array.isArray(arg.tags) ? arg.tags : ((ev && ev.tags) || []),
+      // 🆕 显示方式随刷新即时生效（显示在今天 → meta 行改固定字样）
+      spanDisplay: arg && typeof arg.spanDisplay === 'string' ? arg.spanDisplay : ((ev && ev.spanDisplay) || '')
     }));
     renderTags({ tags: arg && Array.isArray(arg.tags) ? arg.tags : ((ev && ev.tags) || []) });
   }
@@ -3297,7 +4071,7 @@ function rememberRefMeta(arg) {
   //    改成「内容收敛才解除」才能真正挡住；要强制同步请按便利贴的 🔄 刷新（会显式解除）。
   const incoming = (arg.notes !== undefined && arg.notes !== null) ? String(arg.notes) : null;
   const guard = !!(prev && prev.__localWrite && incoming !== null);
-  ['notes', 'src', 'title', 'titleTip', 'date', 'endDate', 'color', 'tags', 'temp'].forEach((k) => {
+  ['notes', 'src', 'title', 'titleTip', 'date', 'endDate', 'spanDisplay', 'color', 'tags', 'temp'].forEach((k) => {
     if (k === 'notes' && guard) return;   // 保护期内：沿用本地刚写的版本
     if (arg[k] !== undefined && arg[k] !== null) next[k] = arg[k];
   });
@@ -3508,6 +4282,7 @@ function sourceEvent(key) {
   if (!meta || (!meta.src && !isViewKey(key))) return null;
   return {
     title: meta.title || '', date: meta.date || '', endDate: meta.endDate || '',
+    spanDisplay: meta.spanDisplay || '',
     color: meta.color || '#FFCC00', tags: Array.isArray(meta.tags) ? meta.tags : [],
     notes: meta.notes || '', done: !!meta.done, uid: key, key,
     titleTip: meta.titleTip || ''
@@ -3515,6 +4290,13 @@ function sourceEvent(key) {
 }
 // 监听主程式推来的刷新（自动同步）
 ipcRenderer.on('sticky-note-refresh', (e, arg) => applyNoteContent(arg));
+// 🆕 主窗「跳转到便利贴」顺带要滚动定位+闪烁的小事件(群)（分体模式专用；翻页模式走 show-page payload）。
+//   正文已渲染就立即消费；否则先存 pending，等 init/renderFlipPage 渲染完再消费（避免早到丢请求）。
+ipcRenderer.on('sticky-note-focus-unit', (e, payload) => {
+  if (!payload) return;
+  pendingFocusUnit = payload.unit || payload;
+  if (noteRendered) consumePendingFocusUnit();
+});
 // 📥 主进程载入可携设定后：重读自身状态并立即套用（只读不写回，避免覆盖刚导入的值）
 ipcRenderer.on('sticky-note-apply-state', async (e, payload) => {
   if (IS_FLIP) {
@@ -3794,6 +4576,145 @@ function scheduleScrollSave() {
 function flushScrollSave() {
   if (scrollSaveTimer) { clearTimeout(scrollSaveTimer); scrollSaveTimer = null; }
   writeScrollPos(currentScrollTop());
+}
+// ===== 🆕 主窗「跳转到便利贴」滚动定位＋闪烁 =====
+//   主窗卡片与便利贴正文共用同一套 tlRenderNotes → data-line / data-start+data-end 索引完全一致，
+//   故以坐标为权威匹配键；text 作为只读区块（无编辑按钮）的兜底匹配。
+function normalizeUnitText(s) { return String(s == null ? '' : s).replace(/\s+/g, ' ').trim(); }
+function closestUnit(el) {
+  if (!el) return null;
+  // ⚠️ tlRenderNotes 的 checkbox 行产出的是「裸 <span class="ev-md-check">」（不在 <li> 内），
+  //    它的父元素就是 #body 容器。早期版本这里爬 'li, p, div, .md-unit' → closest('div') 命中 #body，
+  //    结果把 .note-unit-flash 加在整张便利贴正文上，看起来就是「整个便利贴在闪」（2026-11-08 用户回报）。
+  //    ✅ 只认真正的列表项 <li>（GFM 渲染路径），否则就用 .ev-md-check 本身 —— 绝不爬任意 div。
+  //    闪烁改用「背景 + 外发光金环」，对 inline span 与块级 div 都可靠，且完全不改变布局。
+  const check = el.closest('.ev-md-check');
+  if (check) {
+    const li = check.parentElement && check.parentElement.closest('li');
+    return li || check;
+  }
+  return el.closest('.md-unit') || el;
+}
+function noteFindUnitElement(unit) {
+  const body = document.getElementById('body');
+  if (!body || !unit) return null;
+  // ① 坐标精确匹配（用户右击的就是「编辑小圆点」，先找它自身，最贴近目标）
+  if (unit.kind === 'check' && Number.isFinite(unit.line)) {
+    const ed = body.querySelector('.ev-md-edit[data-line="' + unit.line + '"]');
+    if (ed) return closestUnit(ed);
+    const cb = body.querySelector('.ev-cb[data-line="' + unit.line + '"]');
+    if (cb) return closestUnit(cb);
+  }
+  if (unit.kind === 'block' && Number.isFinite(unit.start) && Number.isFinite(unit.end) && unit.start >= 0) {
+    const ed = body.querySelector('.md-unit-edit[data-start="' + unit.start + '"][data-end="' + unit.end + '"]');
+    if (ed) return closestUnit(ed);
+  }
+  // ② 文本兜底：主窗与便利贴同源渲染，textContent 通常完全相等 → 精确相等优先。
+  //    ⚠️ 早期版本用「任意方向子串 + 取最短命中」：当 unit.text 是一整个群的长文本时，
+  //       会误命中某个只含一两个字的短 checkbox 行（它恰好是长文本的子串），闪错目标。
+  //       現只接受「精确相等」或「候选包含目标文本」，且候选不许是 #body 之类的大容器。
+  if (typeof unit.text === 'string' && unit.text) {
+    const want = normalizeUnitText(unit.text);
+    if (want) {
+      const cands = Array.prototype.slice.call(body.querySelectorAll('.ev-md-check, .md-unit'));
+      let exact = null, contained = null, containedLen = Infinity;
+      cands.forEach((c) => {
+        const t = normalizeUnitText(c.textContent);
+        if (!t) return;
+        if (t === want) { if (!exact) exact = c; }
+        else if (t.indexOf(want) >= 0 && want.length >= 4 && t.length < containedLen) {
+          contained = c; containedLen = t.length;
+        }
+      });
+      const hit = exact || contained;
+      if (hit) return closestUnit(hit);
+    }
+  }
+  return null;
+}
+function noteScrollToCenter(el) {
+  const body = document.getElementById('body');
+  if (!body || !el) return;
+  const bRect = body.getBoundingClientRect();
+  const eRect = el.getBoundingClientRect();
+  const delta = (eRect.top + eRect.height / 2) - (bRect.top + bRect.height / 2);
+  // 两帧后设置：避开 restoreScrollPos 的 rAF 回写（它只设一次，且先跑），确保定位不被覆盖
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => { body.scrollTop = Math.max(0, body.scrollTop + delta); });
+  });
+}
+function flashUnit(el) {
+  if (!el) return;
+  // ① 复用项目里「找出相同 → 切换」已在真机验证的闪烁（fs-found-blink：4 秒金底＋金环脉冲），DRY。
+  //    ⛔ 不再自己造 .note-unit-flash 动画：万一便利贴窗样式表没刷新/被覆盖，自造动画就会「完全看不见」。
+  if (typeof blinkFoundLineTwice === 'function') blinkFoundLineTwice(el);
+  else {
+    el.classList.remove('fs-found-blink');
+    void el.offsetWidth;
+    el.classList.add('fs-found-blink');
+    setTimeout(() => el.classList.remove('fs-found-blink'), 4200);
+  }
+  // ② Web Animations API 兜底：优先级高于所有 CSS（含 !important 之外的层叠），
+  //    直接作用于元素，不受选择器特异性／样式表版本影响；线上若 CSS 失效仍必定闪。
+  if (typeof el.animate === 'function') {
+    try {
+      el.animate([
+        { backgroundColor: 'rgba(212,175,55,0)', boxShadow: '0 0 0 0 rgba(212,175,55,0)', offset: 0 },
+        { backgroundColor: 'rgba(212,175,55,.55)', boxShadow: '0 0 0 3px rgba(212,175,55,.98)', offset: 0.25 },
+        { backgroundColor: 'rgba(212,175,55,0)', boxShadow: '0 0 0 0 rgba(212,175,55,0)', offset: 0.5 },
+        { backgroundColor: 'rgba(212,175,55,.55)', boxShadow: '0 0 0 3px rgba(212,175,55,.98)', offset: 0.75 },
+        { backgroundColor: 'rgba(212,175,55,0)', boxShadow: '0 0 0 0 rgba(212,175,55,0)', offset: 1 }
+      ], { duration: 2000, iterations: 2, easing: 'ease-in-out' });
+    } catch (e) {}
+  }
+}
+function noteFlashWholePage() {
+  const note = document.getElementById('note');
+  if (!note) return;
+  note.classList.remove('note-page-flash');
+  void note.offsetWidth;
+  note.classList.add('note-page-flash');
+  setTimeout(() => note.classList.remove('note-page-flash'), 2400);
+}
+function noteScrollFlashUnit(unit) {
+  const el = noteFindUnitElement(unit);
+  // 🆕 防回归守卫：只接受真正的「小事件(群)」单元，绝不把 #body / #note 等容器当目标。
+  //    早期 closestUnit 会爬到 #body（check.parentElement.closest('div')），结果整张便利贴一起闪。
+  const isRealUnit = !!el && el !== document.body &&
+    el.id !== 'body' && el.id !== 'note' &&
+    (el.classList.contains('ev-md-check') || el.classList.contains('md-unit') || /^LI$/i.test(el.tagName || ''));
+  if (!isRealUnit) {
+    if (typeof console !== 'undefined' && console.warn) {
+      console.warn('[便利贴] 无法定位到指定的小事件(群)，改闪整页细边提示；unit=', unit, ' 匹配到的元素=', el && (el.id || el.className || el.tagName));
+    }
+    noteFlashWholePage();
+    return;
+  }
+  noteScrollToCenter(el);
+  // ⚠️ 闪烁必须延到「滚动落地」那一帧，并**重新查一次元素**：
+  //    便利贴跳转常伴随 sticky-note-refresh / 翻页重绘竞态，旧 el 可能已被 innerHTML 换掉变成 detached——
+  //    此时 scrollTop 照常会动（使用者看到「有滚动」），但 class 加在脱离文档的节点上**完全看不见**（11-08 回报）。
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      const connected = (typeof el.isConnected === 'boolean') ? el.isConnected : document.body.contains(el);
+      const fresh = connected ? el : noteFindUnitElement(unit);
+      if (!fresh) {
+        if (typeof console !== 'undefined' && console.warn) console.warn('[便利贴] 重绘后找不到目标单元；unit=', unit);
+        noteFlashWholePage();
+        return;
+      }
+      flashUnit(fresh);
+    });
+  });
+}
+function consumePendingFocusUnit() {
+  if (!pendingFocusUnit) return;
+  const u = pendingFocusUnit;
+  pendingFocusUnit = null;
+  // 🆕 诊断：DevTools 里可确认主窗右击带来的 focusUnit 是否真的送达便利贴窗
+  if (typeof console !== 'undefined' && console.log) console.log('[便利贴] 收到 focusUnit，准备滚动+闪烁：', u);
+  // 等下一帧：确保 init/renderFlipPage 内的 restoreScrollPos 已完成，再滚动定位
+  requestAnimationFrame(() => noteScrollFlashUnit(u));
 }
 // 同步「字体颜色 / 字重」选中态（菜单内色板 + 分段按钮）
 function syncTextAppearance() {
@@ -4839,6 +5760,8 @@ async function initFlip() {
   ipcRenderer.on('sticky-note-show-page', (e, payload) => {
     if (!payload) return;
     if (Array.isArray(payload.order)) { flipOrderSeq++; applyFlipOrder(payload.order); }
+    // 🆕 顺带要定位+闪烁的小事件(群)：翻页渲染后会由 renderFlipPage 末尾消费（含 pendingShowPage 早到分支）
+    if (typeof payload.focusUnit !== 'undefined') pendingFocusUnit = payload.focusUnit;
     if (!flipTotal) { pendingShowPage = payload; return; }
     showFlipPagePayload(payload);
   });
@@ -5269,6 +6192,8 @@ async function renderFlipPage(i) {
   applyColor();
   applyContentFont();
   restoreScrollPos();   // 🆕 还原这一张「上次离开前」的卷动位置
+  noteRendered = true;
+  consumePendingFocusUnit();   // 🆕 消费「跳转到便利贴」顺带要定位+闪烁的小事件(群)
   syncTextAppearance();
   syncMeteorControls();   // 🆕 重绘当前便利贴后，把外框流星状态反映到菜单控制项
   // 透明度面板同步到当前便利贴自身状态
@@ -5395,9 +6320,17 @@ document.addEventListener('click', (e) => {
   if (bm && bm.classList.contains('open') && !(e.target.closest && e.target.closest('#noteBlockMenu'))) noteBlockMenuClose();
   const vm = document.getElementById('vsrGotoMenu');
   if (vm && vm.classList.contains('open') && !(e.target.closest && e.target.closest('#vsrGotoMenu'))) vsrGotoMenuClose();
+  // 🆕 × 的关闭选项菜单：点别处收起，但点 × 自己要留给 toggle（否则永远只能开不能关）。
+  const cm = document.getElementById('noteCloseMenu');
+  if (cm && cm.classList.contains('open')
+      && !(e.target.closest && e.target.closest('#noteCloseMenu'))
+      && !(e.target.closest && e.target.closest('#miClose'))) noteCloseMenuHide();
 }, true);
 document.addEventListener('keydown', (e) => {
   if (e.key !== 'Escape') return;
+  // 🆕 Esc 只收起「关闭选项」这一层，绝不关便利贴窗口（编辑内容区块浮层的关闭锁定不变）。
+  const cm = document.getElementById('noteCloseMenu');
+  if (cm && cm.classList.contains('open')) { noteCloseMenuHide(); return; }
   const fsm = document.getElementById('noteFindSameMenu');
   if (fsm && fsm.classList.contains('open')) { noteFindSameClose(); return; }
   const bm = document.getElementById('noteBlockMenu');
