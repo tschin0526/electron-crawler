@@ -970,8 +970,9 @@ function calSpanDaySuffix(item, occDate) {
 //   [[term]]                → 立體膠囊（term）
 //   [[term:釋義]]            → 立體膠囊(term) ＋ 釋義以 tooltip 呈現（hover）
 //   [[term:釋義:領域]]       → 立體膠囊(term) ＋ 領域為內嵌小膠囊 ＋ 釋義 tooltip
-//   領域＝最末一個冒號之後；釋義＝首冒號之後、末冒號之前（釋義可含冒號）。dl / cp 前綴（日期標記）與裸日期
-//   [[YYYY-MM-DD]] 排除（留給 📅/✅ 機制）。逐行處理並跳過代碼圍欄，避免代碼塊內 [[…]] 被誤轉。
+//   [[term:釋義:領域:發行]]  → 再加一顆「發行」小膠囊（首發／發布等創作節點，與桌面 calendar 同口徑）
+//   4 段以上：末段＝發行、倒數第二段＝領域、其餘（可含冒號）併回釋義；1~3 段沿用舊口徑（末段＝領域）。
+//   dl / cp 前綴（日期標記）與裸日期 [[YYYY-MM-DD]] 排除（留給 📅/✅ 機制）。逐行處理並跳過代碼圍欄。
 function calRenderTermDefs(text) {
   let inFence = false;
   return String(text).split('\n').map(function (line) {
@@ -1012,13 +1013,23 @@ function calRenderTermDefs(text) {
         rest = full.slice(firstColon + 1);
         if (term === 'dl' || term === 'cp') return m;                       // 日期標記（dl:/cp: 後接日期）
       }
-      const lastColon = rest.lastIndexOf(':');
-      const def = lastColon === -1 ? rest.trim() : rest.slice(0, lastColon).trim();
-      const domain = lastColon === -1 ? '' : rest.slice(lastColon + 1).trim();
+      // 4 段以上（rest 有 ≥2 個冒號）→ [[term:釋義:領域:發行]]；其餘沿用舊 1~3 段口徑。
+      const parts = rest.split(':');
+      let def, domain, release = '';
+      if (parts.length >= 3) {
+        release = parts[parts.length - 1].trim();
+        domain = parts[parts.length - 2].trim();
+        def = parts.slice(0, -2).join(':').trim();
+      } else {
+        const lastColon = rest.lastIndexOf(':');
+        def = lastColon === -1 ? rest.trim() : rest.slice(0, lastColon).trim();
+        domain = lastColon === -1 ? '' : rest.slice(lastColon + 1).trim();
+      }
       const termHtml = '<span class="tl-term-cap"' +
         (def ? ' title="' + escapeHtml(def) + '"' : '') + '>' +
         escapeHtml(term) +
         (domain ? '<span class="tl-term-domain">' + escapeHtml(domain) + '</span>' : '') +
+        (release ? '<span class="tl-term-release">' + escapeHtml(release) + '</span>' : '') +
         '</span>';
       return '<span class="tl-term">' + termHtml + '</span>';
     });
@@ -1052,8 +1063,12 @@ function calCollectTerms() {
           if (term === 'dl' || term === 'cp') return m;
         }
         if (!term) return m;
+        // 與桌面同口徑：4 段以上末段＝發行、倒數第二段＝領域、其餘併回釋義；字典只取釋義。
+        const parts = rest.split(':');
         const lastColon = rest.lastIndexOf(':');
-        const def = lastColon === -1 ? rest.trim() : rest.slice(0, lastColon).trim();
+        const def = parts.length >= 3
+          ? parts.slice(0, -2).join(':').trim()
+          : (lastColon === -1 ? rest.trim() : rest.slice(0, lastColon).trim());
         const key = term.toLowerCase();
         if (!map.has(key)) map.set(key, { term: term, def: def });
         return m;
@@ -1160,12 +1175,120 @@ function calNotesRoLocked(ev, fromSticky) {
 //      要改 include 備註只能到便利貼——那邊呼叫時傳 forceEditable=true。
 // ── group 標記語法（2026-11-06 寬放）：花括號內「開頭」是 gp 或 group 即算；大小寫不拘、冒號可省略 ──
 //   {gp}＝{GP}＝{GroUP}＝{group} → 無名組（key ''）；{gp:ABC}＝{gpABC}＝{GROUP:ABC} → 'ABC'；
+// ── 顏色名解析（2026-11-09，擴展：深/浅/淡 級別前綴） ──
+const calCN_COLORS = {
+  '红': '#e74c3c', '橙': '#e67e22', '黄': '#f1c40f', '金': '#d4af37',
+  '粉': '#ff6b9d', '紫': '#8e44ad', '蓝': '#3498db',
+  '绿': '#27ae60', '青': '#1abc9c', '灰': '#95a5a6', '黑': '#2c3e50', '白': '#ecf0f1',
+  '卡其': '#bdb76b', '棕': '#8b5a2b', '酒红': '#722f37', '米': '#f5f0dc'
+};
+function calHexToHsl(hex) {
+  const h = hex.replace('#', '');
+  const r = parseInt(h.slice(0, 2), 16) / 255;
+  const g = parseInt(h.slice(2, 4), 16) / 255;
+  const b = parseInt(h.slice(4, 6), 16) / 255;
+  const max = Math.max(r, g, b), min = Math.min(r, g, b);
+  const l = (max + min) / 2;
+  let hh, s = 0;
+  if (max !== min) {
+    const d = max - min;
+    s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+    switch (max) { case r: hh = (g - b) / d + (g < b ? 6 : 0); break; case g: hh = (b - r) / d + 2; break; default: hh = (r - g) / d + 4; }
+    hh /= 6;
+  } else hh = 0;
+  return { h: hh * 360, s: s * 100, l: l * 100 };
+}
+function calHslToHex(hsl) {
+  const h = hsl.h / 360, s = hsl.s / 100, l = hsl.l / 100;
+  function hue2rgb(p, q, t) {
+    if (t < 0) t += 1; if (t > 1) t -= 1;
+    if (t < 1/6) return p + (q - p) * 6 * t;
+    if (t < 1/2) return q;
+    if (t < 2/3) return p + (q - p) * (2/3 - t) * 6;
+    return p;
+  }
+  let r, g, b;
+  if (s === 0) { r = g = b = l; }
+  else {
+    const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+    const p = 2 * l - q;
+    r = hue2rgb(p, q, h + 1/3);
+    g = hue2rgb(p, q, h);
+    b = hue2rgb(p, q, h - 1/3);
+  }
+  const toHex = (v) => Math.round(v * 255).toString(16).padStart(2, '0');
+  return '#' + toHex(r) + toHex(g) + toHex(b);
+}
+function calShiftBrightness(baseHex, op, n) {
+  const hsl = calHexToHsl(baseHex);
+  let newL = hsl.l;
+  if (op === '+') newL = hsl.l * (1 - Math.min(10, n) / 10 * 0.75);
+  else if (op === '-') newL = hsl.l + (100 - hsl.l) * Math.min(10, n) / 10 * 0.75;
+  else if (op === '深') newL = hsl.l * 0.65;
+  else if (op === '浅') newL = hsl.l + (100 - hsl.l) * 0.28;
+  else if (op === '淡') newL = hsl.l + (100 - hsl.l) * 0.48;
+  newL = Math.max(3, Math.min(97, newL));
+  return calHslToHex({ h: hsl.h, s: hsl.s, l: newL });
+}
+function calResolveColorName(input) {
+  if (!input) return '';
+  const s = String(input).trim();
+  if (!s) return '';
+  const gm = s.match(/^渐变\s*\(\s*([^→)]+)\s*→\s*([^)]+)\s*\)$/);
+  if (gm) {
+    const a = calResolveColorName(gm[1]);
+    const b = calResolveColorName(gm[2]);
+    if (a && b) return 'linear-gradient(135deg, ' + a + ', ' + b + ')';
+  }
+  const nm = s.match(/^(.+?)\s*([+\-])\s*(\d+)$/);
+  if (nm) {
+    const base = nm[1].trim(), op = nm[2], n = parseInt(nm[3], 10);
+    const baseHex = calCN_COLORS[base];
+    if (baseHex && n >= 1 && n <= 10) return calShiftBrightness(baseHex, op, n);
+  }
+  const tm = s.match(/^(深|浅|淡)(.+)$/);
+  if (tm) {
+    const op = tm[1], base = tm[2].trim();
+    const baseHex = calCN_COLORS[base];
+    if (baseHex) return calShiftBrightness(baseHex, op);
+  }
+  if (calCN_COLORS[s]) return calCN_COLORS[s];
+  if (/^#([0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})$/i.test(s)) return s;
+  if (/^(rgb|rgba|hsl|hsla)\s*\(/i.test(s)) return s;
+  return s;
+}
+function calParseGpAttrs(raw) {
+  const s = String(raw == null ? '' : raw).trim();
+  if (!s) return { key: '', fg: '', bg: '' };
+  const pipe = s.indexOf('|');
+  const key = (pipe < 0 ? s : s.slice(0, pipe)).trim();
+  let fg = '', bg = '';
+  if (pipe >= 0) {
+    s.slice(pipe + 1).split(',').forEach((pair) => {
+      const eq = pair.indexOf('=');
+      if (eq < 0) return;
+      const k = pair.slice(0, eq).trim().toLowerCase();
+      const v = pair.slice(eq + 1).trim();
+      if (k === 'fg') fg = calResolveColorName(v);
+      else if (k === 'bg') bg = calResolveColorName(v);
+    });
+  }
+  return { key: key, fg: fg, bg: bg };
+}
+function calExtractGpAttrsFromLine(line) {
+  const s = String(line == null ? '' : line);
+  let m = s.trim().match(/^\{[ \t]*(?:group|gp)[ \t]*:?[ \t]*([^{}]*)\}[ \t]*$/i);
+  if (m) return calParseGpAttrs(m[1]);
+  m = s.match(/\{[ \t]*(?:group|gp)[ \t]*:?[ \t]*([^{}]*)\}(?=[ \t]*(?:\[\[[^\]]*\]\][ \t]*)*$)/i);
+  if (m) return calParseGpAttrs(m[1]);
+  return { key: '', fg: '', bg: '' };
+}
 //   ⚠️ 位置：標記必須在行尾、或行尾 [[...]] 標記序列之前才算結構標記；行中的 {gp} 是普通文字，原樣顯示也不分組。
 //   {gp1}＝{gp:1} → '1'。前綴 group 優先於 gp；組名仍區分大小寫；三式正則與桌面／便利貼窗／VIEW 引擎同口徑。
 // 🆕 {gp} / {gp:名稱} 分組標記（與桌面 tlGpKeyOfLine / tlStripGpMarkers 同口徑）：
 //   連續且「名稱相同」的行視為一個小事件／一顆編輯小圓點；名稱不同或中間夾無標記行就斷開。
 function calGpKeyOfLine(line) {
-  const m = String(line == null ? '' : line).match(/\{[ \t]*(?:group|gp)[ \t]*:?[ \t]*([^{}]*)\}(?=[ \t]*(?:\[\[[^\]]*\]\][ \t]*)*$)/i);
+  const m = String(line == null ? '' : line).match(/\{[ \t]*(?:group|gp)[ \t]*:?[ \t]*([^{}|]*)(?:\|[^{}]*)?\}(?=[ \t]*(?:\[\[[^\]]*\]\][ \t]*)*$)/i);
   if (!m) return null;
   return String(m[1] || '').trim();
 }
@@ -1179,9 +1302,9 @@ function calGpKeyOfLine(line) {
 //  · 不支援巢狀：遇到第一個同名結束行即閉合。與桌面 tlGpFenceOfLine／tlGpFenceScan 同口徑。
 function calGpFenceOfLine(line) {
   const s = String(line == null ? '' : line).trim();
-  let m = s.match(/^\{[ \t]*\/[ \t]*(?:group|gp)[ \t]*:?[ \t]*([^{}]*)\}[ \t]*$/i);
+  let m = s.match(/^\{[ \t]*\/[ \t]*(?:group|gp)[ \t]*:?[ \t]*([^{}|]*)(?:\|[^{}]*)?\}[ \t]*$/i);
   if (m) return { kind: 'close', key: String(m[1] || '').trim() };
-  m = s.match(/^\{[ \t]*(?:group|gp)[ \t]*:?[ \t]*([^{}]*)\}[ \t]*$/i);
+  m = s.match(/^\{[ \t]*(?:group|gp)[ \t]*:?[ \t]*([^{}|]*)(?:\|[^{}]*)?\}[ \t]*$/i);
   if (m) return { kind: 'open', key: String(m[1] || '').trim() };
   return null;
 }
@@ -1194,14 +1317,30 @@ function calGpFenceScan(lines) {
     if (inFence) continue;
     const f = calGpFenceOfLine(line);
     if (!f) continue;
-    if (f.kind === 'open') { if (!open) open = { i: i, key: f.key }; continue; }
+    if (f.kind === 'open') {
+      if (!open) {
+        const a = (typeof calExtractGpAttrsFromLine === 'function') ? calExtractGpAttrsFromLine(line) : { fg: '', bg: '' };
+        open = { i: i, key: f.key, fg: a.fg || '', bg: a.bg || '' };
+      }
+      continue;
+    }
     if (open && open.key === f.key) {
-      ranges.push({ start: open.i, end: i, key: f.key });
+      ranges.push({ start: open.i, end: i, key: f.key, fg: open.fg, bg: open.bg });
       markers.push(open.i, i);
       open = null;
     }
   }
   return { ranges: ranges, markers: markers };
+}
+// ── 從 block.fg / block.bg 生成 .md-unit.is-gp 的 inline style（2026-11-09，與桌面 tlGpInlineStyle 同口徑） ──
+function calGpInlineStyle(b) {
+  const parts = [];
+  if (b.fg) parts.push('--gp-fg:' + b.fg);
+  if (b.bg) {
+    parts.push('--gp-bg:' + b.bg);
+    if (b.fg) parts.push('--gp-border:' + b.fg);
+  }
+  return parts.length ? ' style="' + parts.join(';') + '"' : '';
 }
 function calGpFenceWrap(text) {
   const lines = String(text == null ? '' : text).replace(/\r\n/g, '\n').split('\n');
@@ -1211,37 +1350,83 @@ function calGpFenceWrap(text) {
   if (s > e) return null;
   const scan = calGpFenceScan(lines);
   const hit = scan.ranges.find((r) => r.start === s && r.end === e);
-  return hit ? { lines: lines, start: s, end: e, key: hit.key, scan: scan } : null;
+  // 🆕 2026-11-09：把 hit.fg / hit.bg 也帶出來，供 calWrapGpFence 重寫時保留 attrs
+  return hit ? { lines: lines, start: s, end: e, key: hit.key, fg: hit.fg || '', bg: hit.bg || '', scan: scan } : null;
 }
 // ── 🆕 2026-11-08：勾選「group 啟用」按保存時一律改寫成「塊級」{gpX}…{/gpX}，不再逐行補行尾標記 ──
 //  · 已是塊級群且沒給新標記 → 原樣保留；給了 mark → 整段改名（兩行一起改）。
 //  · 舊「行尾式」群 → 剝掉每行行尾標記，沿用原本群名包成塊級；mark 為空時從原文取第一個標記字面量。
-//  · 與桌面 tlWrapGpFence 同口徑；標記行數恆為「內容行數 + 2」。
+//  · 🆕 2026-11-09：attrs（fg/bg）從原文提取，保存時永不丟失。
 function calWrapGpFence(text, mark) {
   const lines = String(text == null ? '' : text).replace(/\r\n/g, '\n').split('\n');
   const wrap = (typeof calGpFenceWrap === 'function') ? calGpFenceWrap(text) : null;
   if (wrap) {
     if (!mark) return lines.join('\n');
+    // 🆕 給了新 mark → 組裝新 open 行：key 用新 mark，attrs 沿用原文
+    const newOpen = calBuildGpOpenLine(mark, wrap.fg, wrap.bg);
     const out = lines.slice();
-    out[wrap.start] = mark;
-    out[wrap.end] = '{/' + mark.slice(1);
+    out[wrap.start] = newOpen;
+    out[wrap.end] = calBuildGpCloseLine(wrap.key);  // 🆕 close 只寫 key，不帶 attrs！
     return out.join('\n');
   }
-  let open = mark || '';
-  if (!open) {
-    for (const line of lines) {
-      const m = line.match(/(\{[ \t]*(?:group|gp)[ \t]*:?[ \t]*[^{}]*\})(?=[ \t]*(?:\[\[[^\]]*\]\][ \t]*)*$)/i);
-      if (m) { open = m[1]; break; }
-    }
+  // 🆕 行尾式 → 塊級：從第一個行尾標記提取「完整字面量」（key + attrs 全都要）
+  let open = '';
+  for (const line of lines) {
+    const m = line.match(/(\{[ \t]*(?:group|gp)[ \t]*:?[ \t]*[^{}]*\})(?=[ \t]*(?:\[\[[^\]]*\]\][ \t]*)*$)/i);
+    if (m) { open = m[1]; break; }
+  }
+  // 🆕 用 mark（只有 key）組裝：attrs 沿用原文
+  if (mark) {
+    const origAttrs = (typeof calExtractGpAttrsFromLine === 'function')
+      ? calExtractGpAttrsFromLine(open || '') : { fg: '', bg: '' };
+    open = calBuildGpOpenLine(mark, origAttrs.fg, origAttrs.bg);
   }
   open = open || '{gp}';
-  const close = '{/' + open.slice(1);
+  const close = calBuildGpCloseLine(calKeyFromGpMarker(open));  // 🆕 close 只寫 key，不帶 attrs！
   const stripped = (typeof calStripGpMarkers === 'function') ? calStripGpMarkers(lines.join('\n')) : lines.join('\n');
   const body = stripped.split('\n');
   while (body.length && !body[0].trim()) body.shift();
   while (body.length && !body[body.length - 1].trim()) body.pop();
   if (!body.length) return '';
   return [open].concat(body, [close]).join('\n');
+}
+// 🆕 2026-11-09：用 key + attrs 組裝 open 行（與桌面 tlBuildGpOpenLine 同口径）
+function calBuildGpOpenLine(keyName, fg, bg) {
+  let s = String(keyName == null ? '' : keyName).trim();
+  if (!s.startsWith('{')) s = '{' + s;
+  if (!s.endsWith('}')) s = s + '}';
+  if (s.indexOf('|') >= 0) return s;
+  const parts = [];
+  if (fg) parts.push('fg=' + fg);
+  if (bg) parts.push('bg=' + bg);
+  if (!parts.length) return s;
+  return s.replace(/\}$/, '|' + parts.join(',') + '}');
+}
+// 🆕 2026-11-09：純 key 提取（從 `{gpE|bg=白}` 或 `gpE` 或 `E` 提取 `E`）
+function calKeyFromGpMarker(marker) {
+  const s = String(marker == null ? '' : marker).trim();
+  if (!s) return '';
+  // 已經是純 key（不含花括號、豎線、group/gp 前綴）→ 直接返回
+  if (!s.includes('{') && !s.includes('}') && !s.includes('|')) return s;
+  // 完整 marker → 用正則提取 key
+  const m = s.match(/\{?\s*\/?\s*(?:group|gp)\s*:?\s*([^{}|]*)/i);
+  return m ? String(m[1] || '').trim() : s;
+}
+// 🆕 2026-11-09：close 行構造 — 帶 gp/group 前綴 + key，永不帶 attrs！
+function calBuildGpCloseLine(markerOrKey) {
+  let s = String(markerOrKey == null ? '' : markerOrKey).trim();
+  if (!s) return '{/gp}';
+  if (s.includes('{')) {
+    const m = s.match(/\{[ \t]*(\/?)\s*(group|gp)\s*:?\s*([^{}|]*)/i);
+    if (m) return '{/' + m[2].toLowerCase() + String(m[3] || '').trim() + '}';
+  }
+  const prefixM = s.match(/^(gp|group)\s*:?/i);
+  if (prefixM) {
+    const prefix = prefixM[1].toLowerCase();
+    const key = s.slice(prefixM[0].length).trim();
+    return '{/' + prefix + key + '}';
+  }
+  return '{/gp' + s + '}';
 }
 // 顯示層剝掉 {gp}（代碼圍欄內原樣保留）；只有真的剝到標記的那行才清尾隨空白。
 function calStripGpMarkers(text) {
@@ -1360,7 +1545,7 @@ function calRenderNotes(notes, uid, forceEditable) {
     let out = '', cursor = 0;
     gpBlocks.forEach((b) => {
       if (cursor < b.start) out += renderChunk(dLines.slice(cursor, b.start).join('\n'));
-      out += '<div class="md-unit is-gp">' +
+      out += '<div class="md-unit is-gp"' + calGpInlineStyle(b) + '>' +
         renderChunk(dLines.slice(b.start, b.end + 1).join('\n')) + '</div>';
       cursor = b.end + 1;
     });
@@ -1386,7 +1571,10 @@ function calRenderNotes(notes, uid, forceEditable) {
       : calRenderNoteMarkersLines(chunk);
     // 🆕 小事件群（連續同組 {gp} 行＝一個編輯小圓點區塊）：只給 gp 區塊掛 is-gp，
     //    由 CSS 畫 1px currentColor 外框；其它單元不受影響。
-    out += '<div class="md-unit' + (b.type === 'gp' ? ' is-gp' : '') + '"><button type="button" class="md-unit-edit" title="編輯' +
+    //    🆕 2026-11-09：gp 區塊若有 fg/bg attrs，追加 inline style 覆蓋便利貼預設色
+    const gpCls = b.type === 'gp' ? ' is-gp' : '';
+    const gpStyle = b.type === 'gp' ? calGpInlineStyle(b) : '';
+    out += '<div class="md-unit' + gpCls + '"' + gpStyle + '><button type="button" class="md-unit-edit" title="編輯' +
       calMdUnitTypeName(b.type) + '" onclick="calOpenEditBlockDialog(event,\'' + escapeHtml(uid) +
       '\',' + b.start + ',' + b.end + ',\'' + b.type + '\')">✎</button>' +
       renderMarkdown(calRenderTermDefs(prepared)) + '</div>';
@@ -1416,11 +1604,11 @@ function calSplitMdBlocks(text) {
   const isTableDelim = (l) => /^[\s|:-]+$/.test(l) && l.includes('-') && l.includes('|');
   const isTableStart = (j) => j + 1 < lines.length && isTableRow(lines[j]) && isTableDelim(lines[j + 1]);
   const blocks = [];
-  // 🆕 塊級 {gpX}…{/gpX} 區間索引：開啟行 → 結束行，整段當一個 gp 原子區塊
+  // 🆕 塊級 {gpX}…{/gpX} 區間索引：開啟行 → 完整 range 物件（含 fg/bg），整段當一個 gp 原子區塊
   const fenceStart = new Map();
   const fenceInfo = (typeof calGpFenceScan === 'function') ? calGpFenceScan(lines) : { ranges: [], markers: [] };
   const fenceMarkers = new Set(fenceInfo.markers);
-  fenceInfo.ranges.forEach((r) => fenceStart.set(r.start, r.end));
+  fenceInfo.ranges.forEach((r) => fenceStart.set(r.start, r));
   let i = 0;
   while (i < lines.length) {
     const line = lines[i];
@@ -1436,8 +1624,8 @@ function calSplitMdBlocks(text) {
     // 🆕 塊級小事件群：優先於 isGp / task / list / table 等所有分支，整段（含兩行標記）原子化。
     if (fenceStart.has(i)) {
       const fe = fenceStart.get(i);
-      blocks.push({ start: i, end: fe, type: 'gp' });
-      i = fe + 1; continue;
+      blocks.push({ start: i, end: fe.end, type: 'gp', fg: fe.fg || '', bg: fe.bg || '' });
+      i = fe.end + 1; continue;
     }
     // 🆕 連續且「group 名相同」的 {gp} 行＝一個小事件（一顆編輯小圓點），覆蓋 task/list/para 等型態
     //    **例外（2026-11-06）**：純空白行（可多行連續）視為「上一行 {gp} 的延續」——
@@ -1457,7 +1645,10 @@ function calSplitMdBlocks(text) {
           while (j < lines.length && gpKey(lines[j]) === key && !fenceMarkers.has(j)) j++;
         } else break;
       }
-      blocks.push({ start: i, end: j - 1, type: 'gp' });
+      // 🆕 從行尾式 gp 第一行提取 fg/bg attrs（連續同名行之間 attrs 應一致；若不同，以第一行為準）
+      const headAttrs = (typeof calExtractGpAttrsFromLine === 'function')
+        ? calExtractGpAttrsFromLine(line) : { fg: '', bg: '' };
+      blocks.push({ start: i, end: j - 1, type: 'gp', fg: headAttrs.fg || '', bg: headAttrs.bg || '' });
       i = j; continue;
     }
     if (isHeading(line)) { blocks.push({ start: i, end: i, type: 'heading' }); i++; continue; }

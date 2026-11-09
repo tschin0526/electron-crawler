@@ -669,6 +669,8 @@ function calStickyApplyStyle(prefs) {
   body.style.color = prefs.fontColor;
   body.style.fontWeight = String(prefs.fontWeight || 400);
   body.classList.toggle('cal-sticky-only-undone', !!prefs.undoneChecksOnly);
+  // 🆕 gp 区块完成状态计算：「只看未完成」开启时，按 md-unit 内 checkbox 的完成情况打 class
+  calStickyApplyGpUnitDoneState(body, !!prefs.undoneChecksOnly);
   // 🆕 外框流星：開關 → 掛 .meteor-on＋形狀 class；其餘參數走 CSS 變數（--m-color/--m-dur/--m-head/--m-flame）
   const m = prefs.meteor;
   note.classList.toggle('meteor-on', !!(m && m.on));
@@ -700,6 +702,29 @@ function calStickyApplyStyle(prefs) {
     ea.style.color = prefs.fontColor;
     ea.style.fontWeight = String(prefs.fontWeight || 400);
   }
+}
+
+// 🆕 遍历便利贴 body 内所有 .md-unit，根据其内部 checkbox 完成情况打状态 class。
+//   - .gp-all-done     ＝ 区块内有 checkbox 且全部完成 → 整块隐藏（含说明行）
+//   - .gp-no-checkbox  ＝ 区块内没有 checkbox → 整块隐藏（无完成追踪意义）
+//   - .gp-has-undone   ＝ 区块内有 checkbox 且至少一个未完成 → 整块保留（含说明行）
+//   注意：:scope 只选直接子级的 .ev-md-check，不会误伤嵌套结构。
+//   与桌面端 desktop-note.js 的 applyGpUnitDoneState 同口径。
+function calStickyApplyGpUnitDoneState(body, enable) {
+  if (!body) return;
+  body.querySelectorAll('.md-unit').forEach((mu) => {
+    mu.classList.remove('gp-all-done', 'gp-no-checkbox', 'gp-has-undone');
+  });
+  if (!enable) return;
+  body.querySelectorAll('.md-unit').forEach((mu) => {
+    const checks = mu.querySelectorAll(':scope .ev-md-check');
+    if (!checks.length) {
+      mu.classList.add('gp-no-checkbox');
+      return;
+    }
+    const allDone = Array.from(checks).every((c) => c.classList.contains('done'));
+    mu.classList.add(allDone ? 'gp-all-done' : 'gp-has-undone');
+  });
 }
 
 // ===== meta / 子事件進度 =====

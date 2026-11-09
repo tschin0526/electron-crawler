@@ -667,13 +667,13 @@
     }
 
     // ========== 📖 Glossary 术语表：收集全部行程（标题＋备注）中的 [[term]]，排序去重展示 ==========
-    // 同名 term 只保留「最完整」的一条：term+釋義+領域 > term+釋義 > term；完整度并列时以先出现者为准。
-    // 跳过代码围栏（与渲染约定一致）；解析规则共用 tlParseTermToken（dl/cp/裸日期排除）。
+    // 同名 term 只保留「最完整」的一条：4 段 > 3 段 > 2 段 > 1 段；完整度并列时以先出现者为准。
+    // 跳过代码围栏（与渲染约定一致）；解析规则共用 tlParseTermToken（dl/cp/cr/裸日期排除）。
     function tlTermCompleteness(t) {
-      return (t.domain ? 2 : 0) + (t.def ? 1 : 0);
+      return (t.release ? 4 : 0) + (t.domain ? 2 : 0) + (t.def ? 1 : 0);
     }
     function tlCollectTerms() {
-      const map = new Map();   // 小写 term 为 key（大小写不同视为同一 term）→ { term, def, domain, count, srcs }
+      const map = new Map();   // 小写 term 为 key（大小写不同视为同一 term）→ { term, def, domain, release, count, srcs }
       const add = (text, ev) => {
         if (!text) return;
         let inFence = false;
@@ -686,12 +686,12 @@
               const key = t.term.toLowerCase();   // 🆕 大小写不同 → 同一 term
               let rec = map.get(key);
               if (!rec) {
-                rec = { term: t.term, def: t.def, domain: t.domain, count: 0, srcs: [] };
+                rec = { term: t.term, def: t.def, domain: t.domain, release: t.release || '', count: 0, srcs: [] };
                 map.set(key, rec);
               }
               rec.count += 1;   // 出现次数＝标题＋备注命中之和（同一事件标题与备注都命中也各计 1）
-              if (tlTermCompleteness(t) > tlTermCompleteness(rec)) { rec.def = t.def; rec.domain = t.domain; }
-              // 标签沿用「先出现者」的大小写（稳定可预测），仅合并释义/领域/计数
+              if (tlTermCompleteness(t) > tlTermCompleteness(rec)) { rec.def = t.def; rec.domain = t.domain; rec.release = t.release || ''; }
+              // 标签沿用「先出现者」的大小写（稳定可预测），仅合并释义/领域/发行/计数
               // 🆕 收集使用该 term 的「来源日程事件」（按 uid 去重），供术语表逐一跳转
               if (ev && ev.uid && !rec.srcs.some((s) => s.uid === ev.uid)) {
                 rec.srcs.push({ uid: ev.uid, title: ev.title || '', date: ev.date || '' });
@@ -717,7 +717,7 @@
       return String((el && el.value) || '').trim().toLowerCase().split(/\s+/).filter(Boolean);
     }
     function tlGlossHaystack(t) {
-      return [t.term, t.def, t.domain]
+      return [t.term, t.def, t.domain, t.release]
         .concat((t.srcs || []).map((s) => (s.title || '') + ' ' + (s.date || '')))
         .filter(Boolean).join(' ').toLowerCase();
     }
@@ -751,7 +751,7 @@
       });
       return out + tlEscapeHtml(s.slice(pos));
     }
-    // 胶囊 HTML（与事件渲染同款标记：.tl-term-cap 金胶囊＋内嵌 .tl-term-domain 小胶囊＋釋義 tooltip）
+    // 胶囊 HTML（与事件渲染同款标记：.tl-term-cap 金胶囊＋内嵌 .tl-term-domain／.tl-term-release 小胶囊＋釋義 tooltip）
     // tokens 只供搜索高亮，缺省＝原样输出（其它调用点零影响）
     function tlGlossCapHtml(t, tokens) {
       const defMap = tlGetTermDefMap();
@@ -765,6 +765,7 @@
         (tooltip ? ' title="' + tlEscapeHtml(tooltip) + '"' : '') + '>' +
         tlGlossHl(t.term, hl) +
         (t.domain ? '<span class="tl-term-domain">' + tlGlossHl(t.domain, hl) + '</span>' : '') +
+        (t.release ? '<span class="tl-term-release">' + tlGlossHl(t.release, hl) + '</span>' : '') +
         '</span></span>';
     }
     function tlRenderGlossary() {
@@ -781,9 +782,9 @@
       const clearEl = document.getElementById('tlGlossarySearchClear');
       if (clearEl) clearEl.hidden = !(input && input.value);
       if (!all.length) {
-        body.innerHTML = '<div class="tl-gloss-empty">目前没有任何 [[term]] 术语。<br>语法：<code>[[term:釋義:領域]]</code>（釋義與領域皆可省略）</div>';
+        body.innerHTML = '<div class="tl-gloss-empty">目前没有任何 [[term]] 术语。<br>语法：<code>[[term:釋義:領域:發行]]</code>（釋義／領域／發行皆可省略，發行可记「首发」等创作节点）</div>';
       } else if (!shown.length) {
-        body.innerHTML = '<div class="tl-gloss-noresult">没有符合「' + tlEscapeHtml(String((input && input.value) || '').trim()) + '」的术语。<br>可试试术语名、释义、领域或来源行程的关键词。</div>';
+        body.innerHTML = '<div class="tl-gloss-noresult">没有符合「' + tlEscapeHtml(String((input && input.value) || '').trim()) + '」的术语。<br>可试试术语名、释义、领域、发行或来源行程的关键词。</div>';
       } else {
         body.innerHTML = shown.map((t) => {
           // 来源事件 chips：关弹层 → scrollIntoView 居中 → 金色描边闪 2s；标题走 MD 行内渲染，故不注入 <mark>
@@ -1649,6 +1650,19 @@
       }
       return null;
     }
+    // 🆕 唯讀行程「編輯小圓點」左鍵：不進編輯，直接開同一套事件右鍵選單
+    //    （右鍵由全域 contextmenu 監聽處理；兩條路都帶 tlCtxUnitOf 反推的 unit → 跳轉可精確定位該筆小事件）
+    function tlOpenRoDotMenu(e) {
+      if (!e) return;
+      e.preventDefault(); e.stopPropagation();
+      const dot = e.currentTarget;
+      const uid = dot && dot.getAttribute('data-uid');
+      if (!uid) return;
+      const ev = (typeof tlCalEvents !== 'undefined' && Array.isArray(tlCalEvents))
+        ? tlCalEvents.find(function (x) { return x && x.uid === uid; }) : null;
+      if (!ev) return;
+      tlShowEventCtxMenu(ev, e.clientX || 0, e.clientY || 0, tlCtxUnitOf(dot));
+    }
     // 行程卡片右键菜单
     function tlShowEventCtxMenu(ev, x, y, unit) {
       let menu = document.getElementById('tlEventCtxMenu');
@@ -1680,9 +1694,13 @@
       const openItem = menu.querySelector('[data-tl-ev-act="open-temp"]');
       const closeItem = menu.querySelector('[data-tl-ev-act="close-temp"]');
       const focusItem = menu.querySelector('[data-tl-ev-act="focus"]');
+      const editItem = menu.querySelector('[data-tl-ev-act="edit"]');
       if (openItem) openItem.style.display = (isSticky || temp) ? 'none' : '';
       if (closeItem) closeItem.style.display = temp ? '' : 'none';
       if (focusItem) focusItem.style.display = (isSticky || temp) ? '' : 'none';
+      // 🆕 唯讀（include 外部檔）行程：只顯示非編輯功能（臨時開啟／關閉便利貼、跳轉到便利貼定位）；
+      //    「✎ 編輯事件」對唯讀事件無意義（表單會被 tlSetEventFormReadonly 全數 disabled），故收起。
+      if (editItem) editItem.style.display = ev.ro ? 'none' : '';
       menu.__uid = ev.uid;
       menu.__unit = unit || null;
       menu.style.display = 'block';
@@ -1891,6 +1909,129 @@
       }
       return html;
     }
+    // ── 顏色名解析 v2（2026-11-09 擴展：+n/-n 數字級別 + 漸變） ──
+    //   語法：
+    //     紅 / 藍 / 綠 ...       → 基礎色（16 種）
+    //     紅+1 ~ 紅+10           → 加深 1~10 級（每級 ≈ 7.5%，最多 75%）
+    //     紅-1 ~ 紅-10           → 淡化 1~10 級（向白色靠近）
+    //     深紅 / 淺紅 / 淡紅      → 文字級別（保留兼容）
+    //     漸變(白→淡藍)           → linear-gradient(135deg, #ecf0f1, #aed6f1)
+    //     #hex / rgb() / hsl()   → 原樣透傳
+    //   解析優先級：漸變 → 數字級別 → 文字級別 → 預定義全名 → hex/rgb/hsl → 原樣
+    const tlCN_COLORS = {
+      '红': '#e74c3c', '橙': '#e67e22', '黄': '#f1c40f', '金': '#d4af37',
+      '粉': '#ff6b9d', '紫': '#8e44ad', '蓝': '#3498db',
+      '绿': '#27ae60', '青': '#1abc9c', '灰': '#95a5a6', '黑': '#2c3e50', '白': '#ecf0f1',
+      '卡其': '#bdb76b', '棕': '#8b5a2b', '酒红': '#722f37', '米': '#f5f0dc'
+    };
+    function tlHexToHsl(hex) {
+      const h = hex.replace('#', '');
+      const r = parseInt(h.slice(0, 2), 16) / 255;
+      const g = parseInt(h.slice(2, 4), 16) / 255;
+      const b = parseInt(h.slice(4, 6), 16) / 255;
+      const max = Math.max(r, g, b), min = Math.min(r, g, b);
+      const l = (max + min) / 2;
+      let hh, s = 0;
+      if (max !== min) {
+        const d = max - min;
+        s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+        switch (max) { case r: hh = (g - b) / d + (g < b ? 6 : 0); break; case g: hh = (b - r) / d + 2; break; default: hh = (r - g) / d + 4; }
+        hh /= 6;
+      } else hh = 0;
+      return { h: hh * 360, s: s * 100, l: l * 100 };
+    }
+    function tlHslToHex(hsl) {
+      const h = hsl.h / 360, s = hsl.s / 100, l = hsl.l / 100;
+      function hue2rgb(p, q, t) {
+        if (t < 0) t += 1; if (t > 1) t -= 1;
+        if (t < 1/6) return p + (q - p) * 6 * t;
+        if (t < 1/2) return q;
+        if (t < 2/3) return p + (q - p) * (2/3 - t) * 6;
+        return p;
+      }
+      let r, g, b;
+      if (s === 0) { r = g = b = l; }
+      else {
+        const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+        const p = 2 * l - q;
+        r = hue2rgb(p, q, h + 1/3); g = hue2rgb(p, q, h); b = hue2rgb(p, q, h - 1/3);
+      }
+      const toHex = (v) => Math.round(v * 255).toString(16).padStart(2, '0');
+      return '#' + toHex(r) + toHex(g) + toHex(b);
+    }
+    // 通用亮度調整：baseHex + 參數
+    //   op: '+' 加深 / '-' 淡化 / '深'/'浅'/'淡' 文字級別
+    //   n:  數字級別（1~10，僅 op 為 '+'/'-' 時生效）
+    function tlShiftBrightness(baseHex, op, n) {
+      const hsl = tlHexToHsl(baseHex);
+      let newL = hsl.l;
+      if (op === '+') newL = hsl.l * (1 - Math.min(10, n) / 10 * 0.75);
+      else if (op === '-') newL = hsl.l + (100 - hsl.l) * Math.min(10, n) / 10 * 0.75;
+      else if (op === '深') newL = hsl.l * 0.65;
+      else if (op === '浅') newL = hsl.l + (100 - hsl.l) * 0.28;
+      else if (op === '淡') newL = hsl.l + (100 - hsl.l) * 0.48;
+      newL = Math.max(3, Math.min(97, newL));
+      return tlHslToHex({ h: hsl.h, s: hsl.s, l: newL });
+    }
+    function tlResolveColorName(input) {
+      if (!input) return '';
+      const s = String(input).trim();
+      if (!s) return '';
+      // ① 漸變：漸變(白→淡藍) 或 漸變(#fff→#3498db)
+      const gm = s.match(/^渐变\s*\(\s*([^→)]+)\s*→\s*([^)]+)\s*\)$/);
+      if (gm) {
+        const a = tlResolveColorName(gm[1]);
+        const b = tlResolveColorName(gm[2]);
+        if (a && b) return 'linear-gradient(135deg, ' + a + ', ' + b + ')';
+      }
+      // ② 數字級別：紅+3 / 藍-2
+      const nm = s.match(/^(.+?)\s*([+\-])\s*(\d+)$/);
+      if (nm) {
+        const base = nm[1].trim(), op = nm[2], n = parseInt(nm[3], 10);
+        const baseHex = tlCN_COLORS[base];
+        if (baseHex && n >= 1 && n <= 10) return tlShiftBrightness(baseHex, op, n);
+      }
+      // ③ 文字級別：深紅 / 淺藍 / 淡綠（保留兼容）
+      const tm = s.match(/^(深|浅|淡)(.+)$/);
+      if (tm) {
+        const op = tm[1], base = tm[2].trim();
+        const baseHex = tlCN_COLORS[base];
+        if (baseHex) return tlShiftBrightness(baseHex, op);
+      }
+      // ④ 預定義全名
+      if (tlCN_COLORS[s]) return tlCN_COLORS[s];
+      // ⑤ hex / rgb / hsl 原樣透傳
+      if (/^#([0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})$/i.test(s)) return s;
+      if (/^(rgb|rgba|hsl|hsla)\s*\(/i.test(s)) return s;
+      // ⑥ 原樣交 CSS
+      return s;
+    }
+    function tlParseGpAttrs(raw) {
+      const s = String(raw == null ? '' : raw).trim();
+      if (!s) return { key: '', fg: '', bg: '' };
+      const pipe = s.indexOf('|');
+      const key = (pipe < 0 ? s : s.slice(0, pipe)).trim();
+      let fg = '', bg = '';
+      if (pipe >= 0) {
+        s.slice(pipe + 1).split(',').forEach((pair) => {
+          const eq = pair.indexOf('=');
+          if (eq < 0) return;
+          const k = pair.slice(0, eq).trim().toLowerCase();
+          const v = pair.slice(eq + 1).trim();
+          if (k === 'fg') fg = tlResolveColorName(v);
+          else if (k === 'bg') bg = tlResolveColorName(v);
+        });
+      }
+      return { key: key, fg: fg, bg: bg };
+    }
+    function tlExtractGpAttrsFromLine(line) {
+      const s = String(line == null ? '' : line);
+      let m = s.trim().match(/^\{[ \t]*(?:group|gp)[ \t]*:?[ \t]*([^{}]*)\}[ \t]*$/i);
+      if (m) return tlParseGpAttrs(m[1]);
+      m = s.match(/\{[ \t]*(?:group|gp)[ \t]*:?[ \t]*([^{}]*)\}(?=[ \t]*(?:\[\[[^\]]*\]\][ \t]*)*$)/i);
+      if (m) return tlParseGpAttrs(m[1]);
+      return { key: '', fg: '', bg: '' };
+    }
     // ── group 標記語法（2026-11-06 寬放）：花括號內「開頭」是 gp 或 group 即算；大小寫不拘、冒號可省略 ──
     //   {gp} ＝ {GP} ＝ {GroUP} ＝ {group}               → 無名組（key ''）
     //   {gp:ABC} ＝ {gpABC} ＝ {GROUP:ABC} ＝ {GROUPABC}  → key 'ABC'
@@ -1908,7 +2049,7 @@
     //   · 標記只存在於原始 notes，顯示層由 tlStripGpMarkers 剝掉；寫入底稿一律保留原文
     //     （tlOpenEditBlockDialog / tlSaveAddCheckDialog 直接讀寫 ev.notes 的 start..end 原文）。
     function tlGpKeyOfLine(line) {
-      const m = String(line == null ? '' : line).match(/\{[ \t]*(?:group|gp)[ \t]*:?[ \t]*([^{}]*)\}(?=[ \t]*(?:\[\[[^\]]*\]\][ \t]*)*$)/i);
+      const m = String(line == null ? '' : line).match(/\{[ \t]*(?:group|gp)[ \t]*:?[ \t]*([^{}|]*)(?:\|[^{}]*)?\}(?=[ \t]*(?:\[\[[^\]]*\]\][ \t]*)*$)/i);
       if (!m) return null;
       return String(m[1] || '').trim();
     }
@@ -1922,13 +2063,13 @@
     //  · 不支援巢狀：遇到第一個同名結束行即閉合。
     function tlGpFenceOfLine(line) {
       const s = String(line == null ? '' : line).trim();
-      let m = s.match(/^\{[ \t]*\/[ \t]*(?:group|gp)[ \t]*:?[ \t]*([^{}]*)\}[ \t]*$/i);
+      let m = s.match(/^\{[ \t]*\/[ \t]*(?:group|gp)[ \t]*:?[ \t]*([^{}|]*)(?:\|[^{}]*)?\}[ \t]*$/i);
       if (m) return { kind: 'close', key: String(m[1] || '').trim() };
-      m = s.match(/^\{[ \t]*(?:group|gp)[ \t]*:?[ \t]*([^{}]*)\}[ \t]*$/i);
+      m = s.match(/^\{[ \t]*(?:group|gp)[ \t]*:?[ \t]*([^{}|]*)(?:\|[^{}]*)?\}[ \t]*$/i);
       if (m) return { kind: 'open', key: String(m[1] || '').trim() };
       return null;
     }
-    // 掃出所有「已配對」區間與其標記行行號；回傳 {ranges:[{start,end,key}], markers:[行號]}。
+    // 掃出所有「已配對」區間與其標記行行號；回傳 {ranges:[{start,end,key,fg,bg}], markers:[行號]}。
     function tlGpFenceScan(lines) {
       const ranges = [], markers = [];
       let inFence = false, open = null;
@@ -1938,9 +2079,16 @@
         if (inFence) continue;
         const f = tlGpFenceOfLine(line);
         if (!f) continue;
-        if (f.kind === 'open') { if (!open) open = { i: i, key: f.key }; continue; }
+        if (f.kind === 'open') {
+          if (!open) {
+            // 🆕 從 open 行提取 fg/bg attrs，存進 open 供關閉時寫入 range
+            const a = (typeof tlExtractGpAttrsFromLine === 'function') ? tlExtractGpAttrsFromLine(line) : { fg: '', bg: '' };
+            open = { i: i, key: f.key, fg: a.fg || '', bg: a.bg || '' };
+          }
+          continue;
+        }
         if (open && open.key === f.key) {
-          ranges.push({ start: open.i, end: i, key: f.key });
+          ranges.push({ start: open.i, end: i, key: f.key, fg: open.fg, bg: open.bg });
           markers.push(open.i, i);
           open = null;
         }
@@ -1956,38 +2104,101 @@
       if (s > e) return null;
       const scan = tlGpFenceScan(lines);
       const hit = scan.ranges.find((r) => r.start === s && r.end === e);
-      return hit ? { lines: lines, start: s, end: e, key: hit.key, scan: scan } : null;
+      // 🆕 2026-11-09：把 hit.fg / hit.bg 也帶出來，供 tlWrapGpFence 重寫時保留 attrs
+      return hit ? { lines: lines, start: s, end: e, key: hit.key, fg: hit.fg || '', bg: hit.bg || '', scan: scan } : null;
     }
     // ── 🆕 2026-11-08：勾選「group 啟用」按保存時一律改寫成「塊級」{gpX}…{/gpX}，不再逐行補行尾標記 ──
     //  · 已是塊級群且沒給新標記 → 原樣保留（不無謂改名）；給了 mark → 整段改名（兩行一起改）。
     //  · 舊的「行尾式」群 → 先剝掉每行行尾標記，再用原本的群名（沿用第一個標記字面量）包成塊級。
     //  · mark 為空時沿用原文第一個行尾標記的字面量，避免主窗／LITE 沒有「群標記」輸入框就把 {gpA} 降成 {gp}。
-    //  · 標記行本身 ＋首尾純空白行都不進內容，故行數恆為「內容行數 + 2」。
+    //  · 🆕 2026-11-09：attrs（fg/bg）從原文 open 行或行尾式第一行提取，保存時永不丟失。
     function tlWrapGpFence(text, mark) {
       const lines = String(text == null ? '' : text).replace(/\r\n/g, '\n').split('\n');
       const wrap = (typeof tlGpFenceWrap === 'function') ? tlGpFenceWrap(text) : null;
       if (wrap) {
+        // 🆕 沒給 mark（null/空/undefined）→ 原樣保留
         if (!mark) return lines.join('\n');
+        // 🆕 mark 是預設無名組 '{gp}' 且 fence 已有具名 key → 不誤改群名
+        if (mark === '{gp}' && wrap.key) return lines.join('\n');
+        // 🆕 給了新 mark → 組裝新 open 行：key 用新 mark，attrs 沿用原文
+        const newOpen = tlBuildGpOpenLine(mark, wrap.fg, wrap.bg);
         const out = lines.slice();
-        out[wrap.start] = mark;
-        out[wrap.end] = '{/' + mark.slice(1);
+        out[wrap.start] = newOpen;
+        out[wrap.end] = tlBuildGpCloseLine(wrap.key);  // 🆕 close 只寫 key，不帶 attrs！
         return out.join('\n');
       }
-      let open = mark || '';
-      if (!open) {
-        for (const line of lines) {
-          const m = line.match(/(\{[ \t]*(?:group|gp)[ \t]*:?[ \t]*[^{}]*\})(?=[ \t]*(?:\[\[[^\]]*\]\][ \t]*)*$)/i);
-          if (m) { open = m[1]; break; }
-        }
+      // 🆕 行尾式 → 塊級：從第一個行尾標記提取「完整字面量」（key + attrs 全都要）
+      let open = '';
+      for (const line of lines) {
+        const m = line.match(/(\{[ \t]*(?:group|gp)[ \t]*:?[ \t]*[^{}]*\})(?=[ \t]*(?:\[\[[^\]]*\]\][ \t]*)*$)/i);
+        if (m) { open = m[1]; break; }
+      }
+      // 🆕 用 mark（只有 key）組裝：attrs 已在 open 裡；若 mark 存在但無 attrs，保留原 attrs
+      if (mark) {
+        const origAttrs = (typeof tlExtractGpAttrsFromLine === 'function')
+          ? tlExtractGpAttrsFromLine(open || '') : { fg: '', bg: '' };
+        open = tlBuildGpOpenLine(mark, origAttrs.fg, origAttrs.bg);
       }
       open = open || '{gp}';
-      const close = '{/' + open.slice(1);
+      const close = tlBuildGpCloseLine(tlKeyFromGpMarker(open));  // 🆕 close 只寫 key，不帶 attrs！
       const stripped = (typeof tlStripGpMarkers === 'function') ? tlStripGpMarkers(lines.join('\n')) : lines.join('\n');
       const body = stripped.split('\n');
       while (body.length && !body[0].trim()) body.shift();
       while (body.length && !body[body.length - 1].trim()) body.pop();
       if (!body.length) return '';
       return [open].concat(body, [close]).join('\n');
+    }
+    // 🆕 2026-11-09：用 key + attrs 組裝 open 行（兩端共用）
+    function tlBuildGpOpenLine(keyName, fg, bg) {
+      let s = String(keyName == null ? '' : keyName).trim();
+      // mark 可能是完整 '{gpX}'（从编辑视窗输入）或只是 'gpX'
+      if (!s.startsWith('{')) s = '{' + s;
+      if (!s.endsWith('}')) s = s + '}';
+      // 若 keyName 已自带 attrs（含 |），就直接返回
+      if (s.indexOf('|') >= 0) return s;
+      const parts = [];
+      if (fg) parts.push('fg=' + fg);
+      if (bg) parts.push('bg=' + bg);
+      if (!parts.length) return s;
+      // 在 key 字符串的 '}' 之前插入 attrs
+      return s.replace(/\}$/, '|' + parts.join(',') + '}');
+    }
+    // 🆕 2026-11-09：純 key 提取（從 `{gpE|bg=白}` 或 `gpE` 或 `E` 提取 `E`），供 close 行構造
+    function tlKeyFromGpMarker(marker) {
+      const s = String(marker == null ? '' : marker).trim();
+      if (!s) return '';
+      // 已經是純 key（不含花括號、豎線、group/gp 前綴）→ 直接返回
+      if (!s.includes('{') && !s.includes('}') && !s.includes('|')) return s;
+      // 完整 marker → 用正則提取 key
+      const m = s.match(/\{?\s*\/?\s*(?:group|gp)\s*:?\s*([^{}|]*)/i);
+      return m ? String(m[1] || '').trim() : s;
+    }
+    // 🆕 2026-11-09：close 行構造 — 帶 gp/group 前綴 + key，永不帶 attrs！
+    function tlBuildGpCloseLine(markerOrKey) {
+      let s = String(markerOrKey == null ? '' : markerOrKey).trim();
+      if (!s) return '{/gp}';
+      if (s.includes('{')) {
+        const m = s.match(/\{[ \t]*(\/?)\s*(group|gp)\s*:?\s*([^{}|]*)/i);
+        if (m) return '{/' + m[2].toLowerCase() + String(m[3] || '').trim() + '}';
+      }
+      const prefixM = s.match(/^(gp|group)\s*:?/i);
+      if (prefixM) {
+        const prefix = prefixM[1].toLowerCase();
+        const key = s.slice(prefixM[0].length).trim();
+        return '{/' + prefix + key + '}';
+      }
+      return '{/gp' + s + '}';
+    }
+    // ── 從 block.fg / block.bg 生成 .md-unit.is-gp 的 inline style（2026-11-09） ──
+    //   未設定的屬性 → 回傳空字串，CSS 靠 var 兜底。
+    function tlGpInlineStyle(b) {
+      const parts = [];
+      if (b.fg) parts.push('--gp-fg:' + b.fg);
+      if (b.bg) {
+        parts.push('--gp-bg:' + b.bg);
+        if (b.fg) parts.push('--gp-border:' + b.fg);  // 有字色時邊框跟著字色
+      }
+      return parts.length ? ' style="' + parts.join(';') + '"' : '';
     }
     // 顯示層剝掉 {gp} 標記（代碼圍欄內原樣保留，避免吃掉程式碼裡的字面花括號）。
     //   只有真的剝掉標記的那一行才順手清尾隨空白，其餘行完全不動 → 不破壞 Markdown 行尾兩空格換行語義。
@@ -2117,7 +2328,12 @@
         //   只把 type==='gp' 那段包上 .md-unit.is-gp（**不掛編輯小圓點**，維持唯讀），
         //   其餘連續行仍照舊整段渲染；完全沒有 gp 區塊時沿用原本單次 renderMarkdown，零回歸。
         const rawN = raw.replace(/\r\n/g, '\n');
-        const display = tlNotesWithChecks(tlStripGpMarkers(rawN), uid);
+        // 🆕 roDot：唯讀（include 外部檔）行程仍顯示「編輯小圓點」當右鍵入口 →
+        //    「跳轉到便利貼」等非編輯功能不會因唯讀而連入口一起消失（2026-11-08 使用者回報）。
+        //    只有「有 uid、找得到事件、且 event.ro」才加；節日／tooltip（uid=null 或 event=null）維持無圓點。
+        const roDot = !!(uid && event && event.ro && !forceEditable);
+        const roOpts = roDot ? { roDot: true } : undefined;
+        const display = tlNotesWithChecks(tlStripGpMarkers(rawN), uid, roOpts);
         const renderChunk = (s) => renderMarkdown(tlRenderTermDefs(tlRenderNoteMarkersLines(s)));
         const gpBlocks = tlSplitMdBlocks(rawN).filter((b) => b.type === 'gp');
         if (!gpBlocks.length) return renderChunk(display);
@@ -2125,7 +2341,12 @@
         let out = '', cursor = 0;
         gpBlocks.forEach((b) => {
           if (cursor < b.start) out += renderChunk(dLines.slice(cursor, b.start).join('\n'));
-          out += '<div class="md-unit is-gp">' +
+          const roBtn = roDot
+            ? '<button type="button" class="md-unit-edit" data-ro="1" title="只读 · 右键可用「跳转到便利贴」等定位功能"' +
+              ' data-uid="' + tlEscapeHtml(uid) + '" data-start="' + b.start + '" data-end="' + b.end + '" data-type="' + b.type + '"' +
+              ' onclick="tlOpenRoDotMenu(event)">\u270e</button>'
+            : '';
+          out += '<div class="md-unit is-gp"' + tlGpInlineStyle(b) + '>' + roBtn +
             renderChunk(dLines.slice(b.start, b.end + 1).join('\n')) + '</div>';
           cursor = b.end + 1;
         });
@@ -2155,7 +2376,10 @@
         const inner = renderMarkdown(tlRenderTermDefs(tlRenderNoteMarkersLines(prepared)));
         // 🆕 小事件群（连续同组 {gp} 行＝一个编辑小圆点区块）：只给 gp 区块挂 is-gp，
         //    由 CSS 画 1px currentColor 外框；task / code / table / para 等其它单元不受影响。
-        out += '<div class="md-unit' + (b.type === 'gp' ? ' is-gp' : '') + '"><button type="button" class="md-unit-edit" title="' + tlEditUnitTip(b.type) + '"' +
+        //    🆕 2026-11-09：gp 区块若有 fg/bg attrs，追加 inline style 覆盖便利贴默认色
+        const gpCls = b.type === 'gp' ? ' is-gp' : '';
+        const gpStyle = b.type === 'gp' ? tlGpInlineStyle(b) : '';
+        out += '<div class="md-unit' + gpCls + '"' + gpStyle + '><button type="button" class="md-unit-edit" title="' + tlEditUnitTip(b.type) + '"' +
           ' data-uid="' + uidAttr + '" data-start="' + b.start + '" data-end="' + b.end + '" data-type="' + b.type + '"' +
           ' onclick="tlOpenEditBlockDialog(event,\'' + uidAttr + '\',' + b.start + ',' + b.end + ',\'' + b.type + '\')">\u270e</button>' +
           inner + '</div>';
@@ -2190,11 +2414,11 @@
       const isTableDelim = (l) => /^[\s|:-]+$/.test(l) && l.includes('-') && l.includes('|');
       const isTableStart = (j) => j + 1 < lines.length && isTableRow(lines[j]) && isTableDelim(lines[j + 1]);
       const blocks = [];
-      // 🆕 塊級 {gpX}…{/gpX} 區間索引：開啟行 → 結束行，整段當一個 gp 原子區塊
+      // 🆕 塊級 {gpX}…{/gpX} 區間索引：開啟行 → { end, fg, bg }（含 attrs，供渲染時透傳）
       const fenceStart = new Map();
       const fenceInfo = (typeof tlGpFenceScan === 'function') ? tlGpFenceScan(lines) : { ranges: [], markers: [] };
       const fenceMarkers = new Set(fenceInfo.markers);
-      fenceInfo.ranges.forEach((r) => fenceStart.set(r.start, r.end));
+      fenceInfo.ranges.forEach((r) => fenceStart.set(r.start, r));
       let i = 0;
       while (i < lines.length) {
         const line = lines[i];
@@ -2210,8 +2434,8 @@
         //    標記行在顯示副本裡已被剝成空行，行數不變 → ro 外框與 baseLine 全部照舊。
         if (fenceStart.has(i)) {
           const fe = fenceStart.get(i);
-          blocks.push({ start: i, end: fe, type: 'gp' });
-          i = fe + 1; continue;
+          blocks.push({ start: i, end: fe.end, type: 'gp', fg: fe.fg || '', bg: fe.bg || '' });
+          i = fe.end + 1; continue;
         }
         // 🆕 連續且「group 名相同」的 {gp} 行＝一個小事件（一顆編輯小圓點）；
         //    名稱不同或中間夾了無標記行就斷開，同名但不連續也各自成組。
@@ -2233,7 +2457,10 @@
               while (j < lines.length && gpKey(lines[j]) === key && !fenceMarkers.has(j)) j++;
             } else break;
           }
-          blocks.push({ start: i, end: j - 1, type: 'gp' });
+          // 🆕 從行尾式 gp 第一行提取 fg/bg attrs（連續同名行之間 attrs 應一致；若不同，以第一行為準）
+          const headAttrs = (typeof tlExtractGpAttrsFromLine === 'function')
+            ? tlExtractGpAttrsFromLine(line) : { fg: '', bg: '' };
+          blocks.push({ start: i, end: j - 1, type: 'gp', fg: headAttrs.fg || '', bg: headAttrs.bg || '' });
           i = j; continue;
         }
         if (isHeading(line)) { blocks.push({ start: i, end: i, type: 'heading' }); i++; continue; }
@@ -2347,9 +2574,12 @@
       return out.replace(/\s+$/, '');
     }
     // 🆕 術語記號解析（單一可信來源：渲染 tlRenderTermDefs 與 Glossary 術語表 tlCollectTerms 共用）：
-    //   [[term]] / [[term:釋義]] / [[term:釋義:領域]] → { term, def, domain }
-    //   領域＝最末一個冒號之後；釋義＝首冒號之後、末冒號之前（釋義可含冒號）。
-    //   dl / cp 前綴（日期標記）與裸日期 [[YYYY-MM-DD]] 不屬於術語 → 返回 null（留給 📅/✅ 機制）。
+    //   [[term]] / [[term:釋義]] / [[term:釋義:領域]] / [[term:釋義:領域:發行]]
+    //     → { term, def, domain } 或 { term, def, domain, release }（僅有發行時才掛第 4 欄位）
+    //   4 段以上：末段＝發行、倒數第二段＝領域、其餘（可含冒號）併回釋義。
+    //   1~3 段沿用舊口徑：末段＝領域、之前全為釋義（釋義可含冒號）→ 既有資料零回歸。
+    //   ⚠️ 舊「3 段且釋義含冒號」可用末尾空段 [[term:釋義:領域:]] 明確標成 4 段語法。
+    //   dl / cp / cr 前綴（日期標記）與裸日期 [[YYYY-MM-DD]] 不屬於術語 → 返回 null（留給 📅/✅ 機制）。
     function tlParseTermToken(inner) {
       const full = String(inner == null ? '' : inner).trim();
       if (!full) return null;
@@ -2367,10 +2597,22 @@
       if (!term) return null;
       if (/^remind$/i.test(term)) return null;                               // 提醒標記（remind:Title:Rule），不屬術語
       if (/^bookmark$/i.test(term)) return null;                             // 收藏標記（bookmark:Title:Note），不屬術語
-      const lastColon = rest.lastIndexOf(':');
-      const def = lastColon === -1 ? rest.trim() : rest.slice(0, lastColon).trim();
-      const domain = lastColon === -1 ? '' : rest.slice(lastColon + 1).trim();
-      return { term: term, def: def, domain: domain };
+      // 4 段以上（rest 有 ≥2 個冒號）→ [[term:釋義:領域:發行]]；其餘沿用舊 1~3 段口徑。
+      const parts = rest.split(':');
+      let def, domain, release = '';
+      if (parts.length >= 3) {
+        release = parts[parts.length - 1].trim();
+        domain = parts[parts.length - 2].trim();
+        def = parts.slice(0, -2).join(':').trim();   // 釋義可含冒號 → 原樣併回
+      } else {
+        const lastColon = rest.lastIndexOf(':');
+        def = lastColon === -1 ? rest.trim() : rest.slice(0, lastColon).trim();
+        domain = lastColon === -1 ? '' : rest.slice(lastColon + 1).trim();
+      }
+      const out = { term: term, def: def, domain: domain };
+      // ⛔ 無發行時不掛第 4 欄位：既有 tlParseTermToken('Apple:苹果:水果') 深比較斷言零回歸。
+      if (release) out.release = release;
+      return out;
     }
     // 🆕 全局術語釋義映射（緩存，tlCalEvents 引用變更時自動失效）：
     //   掃描所有事件 title + notes 中的 [[term:釋義]] 記號，彙整每個 term 的全部釋義。
@@ -2407,6 +2649,7 @@
     //   [[term]]                → 立體膠囊（term）＋ 若全局 Glossary 有釋義則 tooltip 顯示
     //   [[term:釋義]]            → 立體膠囊(term) ＋ 釋義以 tooltip 呈現（hover）
     //   [[term:釋義:領域]]       → 立體膠囊(term) ＋ 領域為內嵌小膠囊 ＋ 釋義 tooltip
+    //   [[term:釋義:領域:發行]]  → 再加一顆「發行」小膠囊（首發／發布等創作節點）
     //   同名術語的多個釋義以 --- 分隔全部顯示。
     //   逐行處理並跳過代碼圍欄，避免代碼塊內 [[…]] 被誤轉。解析規則見 tlParseTermToken。
     function tlRenderTermDefs(text) {
@@ -2445,6 +2688,7 @@
             (tooltip ? ' title="' + tlEscapeHtml(tooltip) + '"' : '') + '>' +
             tlEscapeHtml(t.term) +
             (t.domain ? '<span class="tl-term-domain">' + tlEscapeHtml(t.domain) + '</span>' : '') +
+            (t.release ? '<span class="tl-term-release">' + tlEscapeHtml(t.release) + '</span>' : '') +
             '</span>';
           return '<span class="tl-term">' + termHtml + '</span>';
         });
@@ -2466,10 +2710,16 @@
       //    否则 tlToggleNoteCheck 会改到别的行。
       const baseLine = (opts && Number.isInteger(opts.baseLine)) ? opts.baseLine : 0;
       const lineNo = baseLine + i;
-      const editButton = !plain && uid && event && (!event.ro || forceEditable)
-        ? '<button type="button" class="ev-md-edit" title="编辑 checkbox 子事件" data-uid="' + tlEscapeHtml(uid) + '" data-line="' + i + '" onclick="tlOpenEditNoteCheckDialog(event,\'' +
-          tlEscapeHtml(uid) + '\',' + i + ')">\u270e</button>'
-        : '';
+      // 🆕 roDot：唯讀（include 外部檔）行程也要有「編輯小圓點」當右鍵入口，
+      //    讓「跳轉到便利貼／臨時開啟」等非編輯功能仍可用，且 data-line 供 tlCtxUnitOf 精確反推該筆小事件。
+      //    ⛔ 左鍵不進編輯（唯讀），改開同一套事件右鍵選單；節日／tooltip（uid=null）不走這條。
+      const roDot = !!(opts && opts.roDot);
+      const editButton = roDot
+        ? '<button type="button" class="ev-md-edit" data-ro="1" title="只读 · 右键可用「跳转到便利贴」等定位功能" data-uid="' + tlEscapeHtml(uid) + '" data-line="' + i + '" onclick="tlOpenRoDotMenu(event)">\u270e</button>'
+        : (!plain && uid && event && (!event.ro || forceEditable)
+          ? '<button type="button" class="ev-md-edit" title="编辑 checkbox 子事件" data-uid="' + tlEscapeHtml(uid) + '" data-line="' + i + '" onclick="tlOpenEditNoteCheckDialog(event,\'' +
+            tlEscapeHtml(uid) + '\',' + i + ')">\u270e</button>'
+          : '');
       // 🆕 plain 只代表「共用外层圆点、不挂行内 ✎」；勾选互动与一般 checkbox 完全相同，
       //    data-line／onclick 一律用全域行号 lineNo（gp 区块由 baseLine 补上偏移）。
       const cbAttr = uid

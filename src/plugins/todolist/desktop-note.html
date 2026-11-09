@@ -466,6 +466,12 @@
     .ev-md-check.done .ev-cb { background: var(--ev-primary, #7c3aed); border-color: var(--ev-primary, #7c3aed); }
     .ev-md-check.done .ev-md-check-text { text-decoration: line-through; opacity: 0.75; }
     #body.only-undone-checks .ev-md-check.done { display: none !important; }
+    /* 🆕「只看未完成」时，按 md-unit 内 checkbox 完成状态决定是否隐藏整个区块：
+       - gp-all-done ＝ 区块内所有 checkbox 都完成了 → 隐藏整个块（含说明行）
+       - gp-no-checkbox ＝ 区块内根本没有 checkbox → 隐藏（无完成追踪意义）
+       - gp-has-undone ＝ 区块内还有未完成的 checkbox → 保留显示（包括里面的说明行） */
+    #body.only-undone-checks .md-unit.gp-all-done { display: none !important; }
+    #body.only-undone-checks .md-unit.gp-no-checkbox { display: none !important; }
     #body .ev-md-check + br,
     #body br:has(+ .ev-md-check) { display: none !important; }
     .ev-md-check { display: block; cursor: default; }
@@ -477,12 +483,24 @@
     #body .md-unit > *:last-child { margin-bottom: 0; }
     /* 🆕 小事件群（{gp} 连续同组行＝一个编辑小圆点区块）：最细外框，
        跟随 --note-fg 字色随主题变化；padding-left 的 18px 圆点凹槽保持不动。
-       同时覆盖来源便利贴与 VIEW 投影贴（两者都产出 .md-unit.is-gp）。 */
-    #body .md-unit.is-gp { border: 1px solid currentColor; padding-top: .15em; padding-right: .4em; padding-bottom: .15em; }
+       同时覆盖来源便利贴与 VIEW 投影贴（两者都产出 .md-unit.is-gp）。
+       🆕 2026-11-09：--gp-fg / --gp-bg / --gp-border 三組 CSS 變數，
+       由 inline style 注入（使用者在 {gpX|fg=紅,bg=淺藍} 標記裡寫的顏色）；
+       未設定時 var 兜到底（color 繼承便利貼字色、bg 透明、border 用 currentColor）。 */
+    #body .md-unit.is-gp {
+      border: 1px solid var(--gp-border, currentColor);
+      padding-top: .15em; padding-right: .4em; padding-bottom: .15em;
+      color: var(--gp-fg, inherit);
+      background: var(--gp-bg, transparent);
+    }
     /* Retina/高 DPR：CSS 1px 在 2x 屏会画成 2 个物理像素（看起来偏粗）。
        0.5px hairline＝1 个物理像素；选择器必须带 #body，特异性才压得住上面的简写。 */
     @media (min-resolution: 2dppx) {
       #body .md-unit.is-gp { border-width: .5px; }
+    }
+    /* 🆕 小事件群內 checkbox 跟著群色走（若只設 bg 沒設 fg，checkbox 仍用便利貼預設色） */
+    #body .md-unit.is-gp .ev-cb {
+      border-color: var(--gp-fg, currentColor);
     }
     #body .md-unit-edit { position: absolute; left: 0; top: .15em; display: inline-flex; width: 13px; height: 13px; padding: 0; align-items: center; justify-content: center; border: 0; border-radius: 50%; background: var(--ev-primary, #d4af37); color: #fff; font-size: 9px; line-height: 1; cursor: pointer; opacity: .8; -webkit-app-region: no-drag; }
     #body .md-unit-edit:hover, #body .md-unit-edit:focus-visible { opacity: 1; outline: 2px solid var(--ev-primary, #d4af37); outline-offset: 1px; }
@@ -506,6 +524,13 @@
       font-size: .72em; font-weight: 600; line-height: 1.3;
       border-radius: 999px; color: var(--note-fg, #33384a);
       background: rgba(0,0,0,.25); border: 1px solid rgba(212,175,55,.55);
+    }
+    /* 🆕 發行小膠囊（便利貼）：青綠描邊區分領域，字色跟著 --note-fg */
+    .tl-term-release {
+      display: inline-block; margin-left: -.05em; padding: 0 .35em;
+      font-size: .72em; font-weight: 700; line-height: 1.3;
+      border-radius: 999px; color: var(--note-fg, #33384a);
+      background: rgba(0,0,0,.28); border: 1px solid rgba(90,200,170,.8);
     }
     /* 🆕 提醒（remind）渲染：樣式與 term 金色半透明膠囊完全一致，僅「外框線改為紅色」＋ 前方加鈴鐺。
        便利貼窗用 --note-fg/--note-bg 主題變數；rule 放 title */

@@ -501,7 +501,11 @@
 //       normalizeViewNoteMarkers 改成插入 DOM 元素；三端 CSS 加 .ev-date-mark / .ev-date-mark-md；
 //       排序補一條從 .ev-date-mark[data-date] 讀完整 date+time 的路徑（dl 不參與）。
 //       ?v 戳刷為 lite-datebadge-20261108；APP_VERSION/manifest 1.10.36→1.10.37。
-const CACHE_NAME = 'md-editor-lite-v221';
+// v222（2026-11-08）：術語語法擴充 [[term:釋義:領域:發行]]，第 4 段「發行」渲染成青綠小膠囊
+//       .tl-term-release（首發／發布等創作節點，便於整理作品開發履歷）；桌面／LITE 解析與
+//       Glossary 完整度、搜尋 haystack 同步；三端 CSS 加樣式。四主 ?v 戳＋sticky-notes.js
+//       獨立戳刷為 lite-termrelease-20261108；APP_VERSION/manifest 1.10.37→1.10.38。
+const CACHE_NAME = 'md-editor-lite-v222';
 const ASSETS = [
   './',
   './index.html',

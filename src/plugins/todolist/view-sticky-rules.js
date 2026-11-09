@@ -720,6 +720,112 @@
     if (cur) units.push(cur);
     return units;
   }
+  // ── 顏色名解析（2026-11-09，擴展：深/浅/淡 級別前綴） ──
+  const CN_COLORS = {
+    '红': '#e74c3c', '橙': '#e67e22', '黄': '#f1c40f', '金': '#d4af37',
+    '粉': '#ff6b9d', '紫': '#8e44ad', '蓝': '#3498db',
+    '绿': '#27ae60', '青': '#1abc9c', '灰': '#95a5a6', '黑': '#2c3e50', '白': '#ecf0f1',
+    '卡其': '#bdb76b', '棕': '#8b5a2b', '酒红': '#722f37', '米': '#f5f0dc'
+  };
+  function _hexToHsl(hex) {
+    const h = hex.replace('#', '');
+    const r = parseInt(h.slice(0, 2), 16) / 255;
+    const g = parseInt(h.slice(2, 4), 16) / 255;
+    const b = parseInt(h.slice(4, 6), 16) / 255;
+    const max = Math.max(r, g, b), min = Math.min(r, g, b);
+    const l = (max + min) / 2;
+    let hh, s = 0;
+    if (max !== min) {
+      const d = max - min;
+      s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+      switch (max) { case r: hh = (g - b) / d + (g < b ? 6 : 0); break; case g: hh = (b - r) / d + 2; break; default: hh = (r - g) / d + 4; }
+      hh /= 6;
+    } else hh = 0;
+    return { h: hh * 360, s: s * 100, l: l * 100 };
+  }
+  function _hslToHex(hsl) {
+    const h = hsl.h / 360, s = hsl.s / 100, l = hsl.l / 100;
+    function hue2rgb(p, q, t) {
+      if (t < 0) t += 1; if (t > 1) t -= 1;
+      if (t < 1/6) return p + (q - p) * 6 * t;
+      if (t < 1/2) return q;
+      if (t < 2/3) return p + (q - p) * (2/3 - t) * 6;
+      return p;
+    }
+    let r, g, b;
+    if (s === 0) { r = g = b = l; }
+    else {
+      const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+      const p = 2 * l - q;
+      r = hue2rgb(p, q, h + 1/3); g = hue2rgb(p, q, h); b = hue2rgb(p, q, h - 1/3);
+    }
+    const toHex = (v) => Math.round(v * 255).toString(16).padStart(2, '0');
+    return '#' + toHex(r) + toHex(g) + toHex(b);
+  }
+  function _shiftBrightness(baseHex, op, n) {
+    const hsl = _hexToHsl(baseHex);
+    let newL = hsl.l;
+    if (op === '+') newL = hsl.l * (1 - Math.min(10, n) / 10 * 0.75);
+    else if (op === '-') newL = hsl.l + (100 - hsl.l) * Math.min(10, n) / 10 * 0.75;
+    else if (op === '深') newL = hsl.l * 0.65;
+    else if (op === '浅') newL = hsl.l + (100 - hsl.l) * 0.28;
+    else if (op === '淡') newL = hsl.l + (100 - hsl.l) * 0.48;
+    newL = Math.max(3, Math.min(97, newL));
+    return _hslToHex({ h: hsl.h, s: hsl.s, l: newL });
+  }
+  function resolveColorNameLocal(input) {
+    if (!input) return '';
+    const s = String(input).trim();
+    if (!s) return '';
+    const gm = s.match(/^渐变\s*\(\s*([^→)]+)\s*→\s*([^)]+)\s*\)$/);
+    if (gm) {
+      const a = resolveColorNameLocal(gm[1]);
+      const b = resolveColorNameLocal(gm[2]);
+      if (a && b) return 'linear-gradient(135deg, ' + a + ', ' + b + ')';
+    }
+    const nm = s.match(/^(.+?)\s*([+\-])\s*(\d+)$/);
+    if (nm) {
+      const base = nm[1].trim(), op = nm[2], n = parseInt(nm[3], 10);
+      const baseHex = CN_COLORS[base];
+      if (baseHex && n >= 1 && n <= 10) return _shiftBrightness(baseHex, op, n);
+    }
+    const tm = s.match(/^(深|浅|淡)(.+)$/);
+    if (tm) {
+      const op = tm[1], base = tm[2].trim();
+      const baseHex = CN_COLORS[base];
+      if (baseHex) return _shiftBrightness(baseHex, op);
+    }
+    if (CN_COLORS[s]) return CN_COLORS[s];
+    if (/^#([0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})$/i.test(s)) return s;
+    if (/^(rgb|rgba|hsl|hsla)\s*\(/i.test(s)) return s;
+    return s;
+  }
+  function extractGpAttrsLocal(line) {
+    const s = String(line == null ? '' : line);
+    let m = s.trim().match(/^\{[ \t]*(?:group|gp)[ \t]*:?[ \t]*([^{}]*)\}[ \t]*$/i);
+    if (m) return parseGpAttrLocal(m[1]);
+    m = s.match(/\{[ \t]*(?:group|gp)[ \t]*:?[ \t]*([^{}]*)\}(?=[ \t]*(?:\[\[[^\]]*\]\][ \t]*)*$)/i);
+    if (m) return parseGpAttrLocal(m[1]);
+    return { key: '', fg: '', bg: '' };
+  }
+  function parseGpAttrLocal(raw) {
+    const s = String(raw == null ? '' : raw).trim();
+    if (!s) return { key: '', fg: '', bg: '' };
+    const pipe = s.indexOf('|');
+    const key = (pipe < 0 ? s : s.slice(0, pipe)).trim();
+    let fg = '', bg = '';
+    if (pipe >= 0) {
+      s.slice(pipe + 1).split(',').forEach((pair) => {
+        const eq = pair.indexOf('=');
+        if (eq < 0) return;
+        const k = pair.slice(0, eq).trim().toLowerCase();
+        const v = pair.slice(eq + 1).trim();
+        if (k === 'fg') fg = resolveColorNameLocal(v);
+        else if (k === 'bg') bg = resolveColorNameLocal(v);
+      });
+    }
+    return { key: key, fg: fg, bg: bg };
+  }
   // 🆕 gp 单元里的 - [ ] 行：转成与一般 checkbox 相同的 .ev-md-check/.ev-cb（只读框、无圆点）。
   //    否则 D.markdown 会把它们渲染成 <ul><li>，便利贴 CSS 的 .body ul li{list-style:disc}
   //    就多出那个「.」项目符号，方框也变成浏览器原生灰框（与来源贴不一致）。
@@ -756,7 +862,18 @@
     const marked = noteMarkersLines(chunk, D);
     const body = isGp ? gpCheckboxLines(chunk, marked) : marked;
     // 🆕 gp 小事件群：内层 .md-unit 挂 is-gp，让投影贴也画 1px currentColor 外框（与来源贴一致）。
-    return '<div class="vsr-sort-unit" data-sort-date="' + D.esc(sd) + '" data-cr-date="' + D.esc(cr) + '"><div class="md-unit' + (isGp ? ' is-gp' : '') + '" data-start="' + (first.line != null ? first.line : '') +
+    //    🆕 2026-11-09：从 chunk 第一行提取 fg/bg attrs，追加 inline style
+    let gpStyle = '';
+    if (isGp) {
+      const a = extractGpAttrsLocal(String(chunk).split('\n')[0]);
+      if (a && (a.fg || a.bg)) {
+        const parts = [];
+        if (a.fg) parts.push('--gp-fg:' + a.fg);
+        if (a.bg) { parts.push('--gp-bg:' + a.bg); if (a.fg) parts.push('--gp-border:' + a.fg); }
+        gpStyle = ' style="' + parts.join(';') + '"';
+      }
+    }
+    return '<div class="vsr-sort-unit" data-sort-date="' + D.esc(sd) + '" data-cr-date="' + D.esc(cr) + '"><div class="md-unit' + (isGp ? ' is-gp' : '') + '"' + gpStyle + ' data-start="' + (first.line != null ? first.line : '') +
       '" data-end="' + (last.line != null ? last.line : (first.line != null ? first.line : '')) + '">' +
       dot + D.markdown(D.termDefs(body)) + '</div></div>';
   }

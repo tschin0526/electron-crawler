@@ -801,12 +801,24 @@ body {
 .md-unit > *:first-child { margin-top: 0; }
 .md-unit > *:last-child { margin-bottom: 0; }
 /* 🆕 小事件群（{gp} 連續同組行＝一個編輯小圓點區塊）：最細外框，
-   顏色跟隨字色；padding-left 的 1.7em 圓點凹槽保持不動。來源貼與 VIEW 投影貼共用。 */
-.md-unit.is-gp { border: 1px solid currentColor; padding-top: .15em; padding-right: .4em; padding-bottom: .15em; }
+   顏色跟隨字色；padding-left 的 1.7em 圓點凹槽保持不動。來源貼與 VIEW 投影貼共用。
+   🆕 2026-11-09：--gp-fg / --gp-bg / --gp-border 三組 CSS 變數，
+   由 inline style 注入（使用者在 {gpX|fg=紅,bg=淺藍} 標記裡寫的顏色）；
+   未設定時 var 兜到底（color 繼承便利貼字色、bg 透明、border 用 currentColor）。 */
+.md-unit.is-gp {
+  border: 1px solid var(--gp-border, currentColor);
+  padding-top: .15em; padding-right: .4em; padding-bottom: .15em;
+  color: var(--gp-fg, inherit);
+  background: var(--gp-bg, transparent);
+}
 /* Retina/高 DPR：CSS 1px 在 2x 屏會畫成 2 個實體像素（看起來偏粗）。
    0.5px hairline＝1 個實體像素，才是真正最細；加 -webkit- 前綴相容 iOS Safari（PWA）。 */
 @media (-webkit-min-device-pixel-ratio: 2), (min-resolution: 2dppx) {
   .md-unit.is-gp { border-width: .5px; }
+}
+/* 🆕 小事件群內 checkbox 跟著群色走（若只設 bg 沒設 fg，checkbox 仍用便利貼預設色） */
+.md-unit.is-gp .ev-cb {
+  border-color: var(--gp-fg, currentColor);
 }
 .md-unit-edit, .ev-md-edit {
   display: inline-flex; align-items: center; justify-content: center;
@@ -853,6 +865,13 @@ body {
   font-size: .72em; font-weight: 600; line-height: 1.15;
   border-radius: 999px; color: #4a3b12;
   background: rgba(255,255,255,.5); border: 1px solid rgba(184,137,58,.65);
+}
+/* 🆕 發行小膠囊：青綠邊＋深綠字，標記「首發／發布」等創作節點（與桌面同口徑） */
+.tl-term-release {
+  display: inline-block; margin-left: -.05em; padding: 0 .35em;
+  font-size: .72em; font-weight: 700; line-height: 1.15;
+  border-radius: 999px; color: #1d4d3a;
+  background: rgba(255,255,255,.62); border: 1px solid rgba(30,110,90,.75);
 }
 /* 🆕 提醒（remind）標記 [[remind:名稱:規則]]：與 term 同一顆金色膠囊，只把外框改成紅色＋前方鈴鐺，
    規則（rule）放 title。與桌面便利貼／calendar 雙端同口径。 */
@@ -1915,6 +1934,12 @@ body.dark .cal-sticky-src-badge.is-view { color: #c4b5fd; }
 .cal-sticky-body .ev-md-check + br, .cal-sticky-body br:has(+ .ev-md-check) { display: none !important; }
 /* 「只顯示未完成 checkbox」：整行隱藏完成的子事件（與列表 .only-undone-checks 同一口徑） */
 .cal-sticky-body.cal-sticky-only-undone .ev-md-check.done { display: none !important; }
+/* 🆕「只看未完成」时，按 md-unit 内 checkbox 完成状态决定是否隐藏整个区块：
+   - gp-all-done ＝ 区块内所有 checkbox 都完成了 → 隐藏整个块（含说明行）
+   - gp-no-checkbox ＝ 区块内根本没有 checkbox → 隐藏（无完成追踪意义）
+   - gp-has-undone ＝ 区块内还有未完成的 checkbox → 保留显示（包括里面的说明行） */
+.cal-sticky-body.cal-sticky-only-undone .md-unit.gp-all-done { display: none !important; }
+.cal-sticky-body.cal-sticky-only-undone .md-unit.gp-no-checkbox { display: none !important; }
 /* 🆕 便利貼內 checkbox：内框＝字體色、外框＝金色；兩者最細線緊密嵌套無縫隙；框＝字體大小（em 相對單位）
    （僅作用於便利貼正文 .cal-sticky-body，不動主畫面 .ev-notes 的 checkbox） */
 .cal-sticky-body .ev-cb {

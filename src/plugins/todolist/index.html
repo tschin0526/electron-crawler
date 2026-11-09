@@ -2094,6 +2094,13 @@
       border-radius: 999px; color: #4a3b12;
       background: rgba(255,255,255,.5); border: 1px solid rgba(184,137,58,.65);
     }
+    /* 🆕 發行小膠囊：與領域同尺寸，改青綠邊＋深綠字，標記「首發／發布」等創作節點 */
+    .tl-term-release {
+      display: inline-block; margin-left: -.05em; padding: 0 .4em;
+      font-size: .76em; font-weight: 700; line-height: 1.6;
+      border-radius: 999px; color: #1d4d3a;
+      background: rgba(255,255,255,.62); border: 1px solid rgba(30,110,90,.75);
+    }
     /* 🆕 提醒（remind）渲染：樣式與 term 金色立體膠囊完全一致，僅「外框線改為紅色」＋ 前方加鈴鐺。
        rule 放 title（hover）顯示 */
     .tl-remind {
@@ -2373,6 +2380,11 @@
     }
     .md-unit-edit { position: absolute; left: 0; top: 0.15em; display: inline-flex; width: 14px; height: 14px; padding: 0; align-items: center; justify-content: center; border: 0; border-radius: 50%; background: var(--ev-primary); color: #fff; font-size: 9px; line-height: 1; cursor: pointer; opacity: .78; }
     .md-unit-edit:hover, .md-unit-edit:focus-visible { opacity: 1; outline: 2px solid var(--ev-primary); outline-offset: 1px; }
+    /* 🆕 唯讀（include 外部檔）行程的「定位圓點」：與編輯圓點同位置同尺寸，但半透明＋context-menu 游標標示不可編輯；
+       右鍵／左鍵都只開事件選單（跳轉到便利貼定位、臨時開啟／關閉便利貼），不會進編輯對話框。 */
+    .ev-md-edit[data-ro="1"], .md-unit-edit[data-ro="1"] { opacity: .45; cursor: context-menu; }
+    .ev-md-edit[data-ro="1"]:hover, .ev-md-edit[data-ro="1"]:focus-visible,
+    .md-unit-edit[data-ro="1"]:hover, .md-unit-edit[data-ro="1"]:focus-visible { opacity: .9; }
     .ev-block.done { opacity: 0.55; }
     /* 🌙 黑夜模式：文字統一白色，設定的顏色只作為事件「外框」（邊框）顏色，背景改用深色面板。
        白天模式不變（顏色＝背景色塊）。跨天色條（.ev-chip.span）同理——顏色經由 --ev-color 傳入。 */
@@ -2608,7 +2620,7 @@
        金胶囊内改白底深棕字才看得出来；来源 chip 命中则整颗描金边（标题仍走 MD 行内渲染，不插 mark）。 */
     .tl-gloss-hl { background: #fbbf24; color: #000; padding: 0 2px; border-radius: 2px; font-weight: 600; }
     body.dark .tl-gloss-hl { background: #f59e0b; }
-    .tl-term-cap mark.tl-gloss-hl, .tl-term-domain mark.tl-gloss-hl { background: #fff; color: #4a3b12; box-shadow: 0 0 0 1px rgba(74,59,18,.35); }
+    .tl-term-cap mark.tl-gloss-hl, .tl-term-domain mark.tl-gloss-hl, .tl-term-release mark.tl-gloss-hl { background: #fff; color: #4a3b12; box-shadow: 0 0 0 1px rgba(74,59,18,.35); }
     .tl-gloss-src-hit { border-color: #D4AF37; background: rgba(212,175,55,.16); }
     .tl-gloss-src-hit:hover { border-color: #D4AF37; background: rgba(212,175,55,.28); }
     .tl-gloss-noresult { padding: 24px; color: var(--ev-muted); font-size: 13px; text-align: center; line-height: 1.8; }
@@ -5680,11 +5692,11 @@
         <div class="tl-ev-stats-title">📖 Glossary 术语表<span class="tl-ev-stats-file" id="tlGlossaryFile"></span></div>
         <button type="button" class="tl-ev-stats-close" onclick="tlCloseGlossary()" aria-label="关闭">✕</button>
       </div>
-      <div class="tl-ev-stats-sub">收集全部行程（标题与备注）中的 <code>[[term:釋義:領域]]</code>（釋義與領域可省略）；同名术语只显示最完整的一条，按术语排序，悬停胶囊可看完整釋義</div>
-      <!-- 🆕 文本搜索：即时过滤术语／釋義／領域／来源行程（标题＋日期），空格分隔多关键词为 AND；不写档、不重算 -->
+      <div class="tl-ev-stats-sub">收集全部行程（标题与备注）中的 <code>[[term:釋義:領域:發行]]</code>（後三段可省略；發行可记「首發」等創作節點）；同名术语只显示最完整的一条，按术语排序，悬停胶囊可看完整釋義</div>
+      <!-- 🆕 文本搜索：即时过滤术语／釋義／領域／發行／来源行程（标题＋日期），空格分隔多关键词为 AND；不写档、不重算 -->
       <div class="tl-gloss-searchbar">
         <span class="tl-gloss-search-icon" aria-hidden="true">🔍</span>
-        <input type="text" id="tlGlossarySearch" class="tl-gloss-search" placeholder="搜索术语、释义、领域或来源行程…" autocomplete="off" spellcheck="false" aria-label="搜索术语表" oninput="tlRenderGlossary()" onkeydown="tlGlossSearchKeydown(event)">
+        <input type="text" id="tlGlossarySearch" class="tl-gloss-search" placeholder="搜索术语、释义、领域、发行或来源行程…" autocomplete="off" spellcheck="false" aria-label="搜索术语表" oninput="tlRenderGlossary()" onkeydown="tlGlossSearchKeydown(event)">
         <button type="button" id="tlGlossarySearchClear" class="tl-gloss-search-clear" aria-label="清空搜索" title="清空搜索" onclick="tlGlossSearchClear()" hidden>✕</button>
         <span class="tl-gloss-search-count" id="tlGlossarySearchCount" aria-live="polite"></span>
       </div>

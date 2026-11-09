@@ -1922,9 +1922,10 @@ function noteHasCodeFence(text) {
 //  便利贴窗正文 HTML 由主窗 tlRenderNotes 下发，这里只需「写入／预勾／改群标记」三件事。
 function noteGpFenceOfLine(line) {
   const s = String(line == null ? '' : line).trim();
-  let m = s.match(/^\{[ \t]*\/[ \t]*(?:group|gp)[ \t]*:?[ \t]*([^{}]*)\}[ \t]*$/i);
+  // 🆕 2026-11-09：正则里 key 部分 ([^{}|]*) 不允许 |，attrs 部分 (?:\|[^{}]*)? 可选
+  let m = s.match(/^\{[ \t]*\/[ \t]*(?:group|gp)[ \t]*:?[ \t]*([^{}|]*)(?:\|[^{}]*)?\}[ \t]*$/i);
   if (m) return { kind: 'close', key: String(m[1] || '').trim() };
-  m = s.match(/^\{[ \t]*(?:group|gp)[ \t]*:?[ \t]*([^{}]*)\}[ \t]*$/i);
+  m = s.match(/^\{[ \t]*(?:group|gp)[ \t]*:?[ \t]*([^{}|]*)(?:\|[^{}]*)?\}[ \t]*$/i);
   if (m) return { kind: 'open', key: String(m[1] || '').trim() };
   return null;
 }
@@ -1937,9 +1938,16 @@ function noteGpFenceScan(lines) {
     if (inFence) continue;
     const f = noteGpFenceOfLine(line);
     if (!f) continue;
-    if (f.kind === 'open') { if (!open) open = { i: i, key: f.key }; continue; }
+    if (f.kind === 'open') {
+      if (!open) {
+        // 🆕 2026-11-09：从 open 行提取 fg/bg attrs
+        const a = noteExtractGpAttrs(line);
+        open = { i: i, key: f.key, fg: a.fg || '', bg: a.bg || '' };
+      }
+      continue;
+    }
     if (open && open.key === f.key) {
-      ranges.push({ start: open.i, end: i, key: f.key });
+      ranges.push({ start: open.i, end: i, key: f.key, fg: open.fg, bg: open.bg });
       markers.push(open.i, i);
       open = null;
     }
@@ -1954,33 +1962,45 @@ function noteGpFenceWrap(text) {
   if (s > e) return null;
   const scan = noteGpFenceScan(lines);
   const hit = scan.ranges.find((r) => r.start === s && r.end === e);
-  return hit ? { lines: lines, start: s, end: e, key: hit.key, scan: scan } : null;
+  // 🆕 2026-11-09：把 hit.fg / hit.bg 也带出来
+  return hit ? { lines: lines, start: s, end: e, key: hit.key, fg: hit.fg || '', bg: hit.bg || '', scan: scan } : null;
 }
 // ── 🆕 2026-11-08：勾选「group 启用」按保存时一律写成块级 {gpX}…{/gpX}，不再逐行补行尾标记 ──
 //  · 已是块级群且没给新标记 → 原样保留；给了 mark（群标记输入框）→ 整段改名（两行一起改）。
 //  · 旧的「行尾式」群 → 先剥掉每行行尾标记，再沿用原本群名包成块级。
 //  · 便利贴窗没有独立的显示层剥除函数，这里用 noteApplyGroupMarkers(text,false) 剥行尾标记。
-//  · 与桌面 tlWrapGpFence／LITE calWrapGpFence 同口径；行数恒为「内容行数 + 2」。
+//  · 🆕 2026-11-09：attrs（fg/bg）从原文提取，close 行永不带 attrs！
 function noteWrapGpFence(text, mark) {
   const canonical = (typeof noteNormalizeGpInput === 'function') ? noteNormalizeGpInput(mark || '') : (mark || '{gp}');
   const lines = String(text == null ? '' : text).replace(/\r\n/g, '\n').split('\n');
   const wrap = (typeof noteGpFenceWrap === 'function') ? noteGpFenceWrap(text) : null;
   if (wrap) {
+    // 🆕 没给 mark（null/空/undefined）→ 原样保留（最常见：用户只是改了 attrs 没改群名）
     if (!mark) return lines.join('\n');
+    // 🆕 mark 是默认无名组 '{gp}' 且 fence 已有具名 key → 用户没填群标记，不误改名
+    //    （noteGroupMarkValue 输入框空时返回 '{gp}'，但 noteShowGroupMark 会预填建议值，
+    //     此保护是防止用户手动删掉建议值后触发误改名）
+    if (mark === '{gp}' && wrap.key) return lines.join('\n');
+    // 🆕 给了新 mark → attrs 沿用原文，close 用新 mark 的 key
+    const newOpen = noteBuildGpOpenLine(mark, wrap.fg, wrap.bg);
     const out = lines.slice();
-    out[wrap.start] = canonical;
-    out[wrap.end] = '{/' + canonical.slice(1);
+    out[wrap.start] = newOpen;
+    out[wrap.end] = noteBuildGpCloseLine(noteKeyFromGpMarker(mark));  // close 用新 mark 的 key！
     return out.join('\n');
   }
-  let open = mark ? canonical : '';
-  if (!open) {
-    for (const line of lines) {
-      const m = line.match(/(\{[ \t]*(?:group|gp)[ \t]*:?[ \t]*[^{}]*\})(?=[ \t]*(?:\[\[[^\]]*\]\][ \t]*)*$)/i);
-      if (m) { open = m[1]; break; }
-    }
+  // 🆕 行尾式 → 块级：从第一行行尾标记提取完整字面量（key + attrs 全都要）
+  let open = '';
+  for (const line of lines) {
+    const m = line.match(/(\{[ \t]*(?:group|gp)[ \t]*:?[ \t]*[^{}]*\})(?=[ \t]*(?:\[\[[^\]]*\]\][ \t]*)*$)/i);
+    if (m) { open = m[1]; break; }
+  }
+  // 🆕 若 mark 存在但无 attrs → 沿用原文 attrs
+  if (mark) {
+    const origAttrs = noteExtractGpAttrs(open || '');
+    open = noteBuildGpOpenLine(mark, origAttrs.fg, origAttrs.bg);
   }
   open = open || '{gp}';
-  const close = '{/' + open.slice(1);
+  const close = noteBuildGpCloseLine(noteKeyFromGpMarker(open));  // 🆕 close 只写 key
   const stripped = (typeof noteApplyGroupMarkers === 'function')
     ? noteApplyGroupMarkers(lines.join('\n'), false) : lines.join('\n');
   const body = stripped.split('\n');
@@ -1988,6 +2008,63 @@ function noteWrapGpFence(text, mark) {
   while (body.length && !body[body.length - 1].trim()) body.pop();
   if (!body.length) return '';
   return [open].concat(body, [close]).join('\n');
+}
+
+// 🆕 2026-11-09：提取 attrs / 组装 open / close 行（与桌面 tl / LITE cal 同口径）
+function noteExtractGpAttrs(line) {
+  const s = String(line == null ? '' : line);
+  let m = s.trim().match(/^\{[ \t]*(?:group|gp)[ \t]*:?[ \t]*([^{}]*)\}[ \t]*$/i);
+  if (!m) m = s.match(/\{[ \t]*(?:group|gp)[ \t]*:?[ \t]*([^{}]*)\}(?=[ \t]*(?:\[\[[^\]]*\]\][ \t]*)*$)/i);
+  if (!m) return { fg: '', bg: '' };
+  const inner = String(m[1] || '').trim();
+  const pipe = inner.indexOf('|');
+  if (pipe < 0) return { key: inner, fg: '', bg: '' };
+  const parts = [];
+  inner.slice(pipe + 1).split(',').forEach((pair) => {
+    const eq = pair.indexOf('=');
+    if (eq < 0) return;
+    const k = pair.slice(0, eq).trim().toLowerCase();
+    const v = pair.slice(eq + 1).trim();
+    if (k === 'fg') parts.fg = v;
+    else if (k === 'bg') parts.bg = v;
+  });
+  return { fg: parts.fg || '', bg: parts.bg || '' };
+}
+function noteKeyFromGpMarker(marker) {
+  const s = String(marker == null ? '' : marker).trim();
+  if (!s) return '';
+  if (!s.includes('{') && !s.includes('}') && !s.includes('|')) return s;
+  const m = s.match(/\{?\s*\/?\s*(?:group|gp)\s*:?\s*([^{}|]*)/i);
+  return m ? String(m[1] || '').trim() : s;
+}
+function noteBuildGpCloseLine(markerOrKey) {
+  let s = String(markerOrKey == null ? '' : markerOrKey).trim();
+  if (!s) return '{/gp}';
+  // 完整含花括号的 marker：{gpE|bg=白} → {/gpE}
+  if (s.includes('{')) {
+    const m = s.match(/\{[ \t]*(\/?)\s*(group|gp)\s*:?\s*([^{}|]*)/i);
+    if (m) return '{/' + m[2].toLowerCase() + String(m[3] || '').trim() + '}';
+  }
+  // 无花括号但有 gp/group 前缀：gpE → {/gpE}
+  const prefixM = s.match(/^(gp|group)\s*:?/i);
+  if (prefixM) {
+    const prefix = prefixM[1].toLowerCase();
+    const key = s.slice(prefixM[0].length).trim();
+    return '{/' + prefix + key + '}';
+  }
+  // 纯 key → 默认 gp 前缀：E → {/gpE}
+  return '{/gp' + s + '}';
+}
+function noteBuildGpOpenLine(keyName, fg, bg) {
+  let s = String(keyName == null ? '' : keyName).trim();
+  if (!s.startsWith('{')) s = '{' + s;
+  if (!s.endsWith('}')) s = s + '}';
+  if (s.indexOf('|') >= 0) return s;
+  const parts = [];
+  if (fg) parts.push('fg=' + fg);
+  if (bg) parts.push('bg=' + bg);
+  if (!parts.length) return s;
+  return s.replace(/\}$/, '|' + parts.join(',') + '}');
 }
 // 🆕 2026-11-07：group 启用时自动给出一个「全篇不重复」的 {gp} 标记，避免与便利贴中前后小事件群合并。
 //   · 扫描「当前便利贴」（KEY 对应的整篇 notes）里所有用过的 {gp:名称}，生成一个未占用的名称（A/B/C…）。
@@ -1999,7 +2076,10 @@ function noteParseGpName(literal) {
   s = s.replace(/^\{/, '').replace(/\}$/, '');
   const m = s.match(/^(?:gp|group)\s*:?\s*(.*)$/i);
   const rest = m ? m[1] : s;
-  return rest.trim().replace(/[{}]/g, '');
+  // 🆕 2026-11-09：剥掉 |...attrs 后缀，只留纯 key
+  const pipeIdx = rest.indexOf('|');
+  const pureKey = pipeIdx >= 0 ? rest.slice(0, pipeIdx) : rest;
+  return pureKey.trim().replace(/[{}]/g, '');
 }
 // 名称 → 规范标记字面量
 function noteCanonicalGp(name) {
@@ -2096,10 +2176,16 @@ function noteApplyGroupMarkers(text, on, forceMark) {
       fenceScan.ranges.forEach((r) => { out[r.start] = ''; out[r.end] = ''; });
       return out.join('\n');
     }
-    const mark = noteNormalizeGpInput(forceMark || noteCanonicalGp(fenceScan.ranges[0].key));
-    const closeMark = '{/' + mark.slice(1);
+    // 🆕 2026-11-09：attrs 沿用原文，close 只写 key
+    const firstRange = fenceScan.ranges[0];
+    const markKey = forceMark ? noteNormalizeGpInput(forceMark) : noteCanonicalGp(firstRange.key);
+    const openMark = noteBuildGpOpenLine(markKey, firstRange.fg, firstRange.bg);
+    const closeMark = noteBuildGpCloseLine(firstRange.key);  // close 只写 key，不带 attrs！
     const out = lines.slice();
-    fenceScan.ranges.forEach((r) => { out[r.start] = mark; out[r.end] = closeMark; });
+    fenceScan.ranges.forEach((r) => {
+      out[r.start] = noteBuildGpOpenLine(markKey, r.fg, r.bg);
+      out[r.end] = noteBuildGpCloseLine(r.key);
+    });
     return out.join('\n');
   }
   // 本块基准标记：forceMark 优先（用户指定的群标记，参考它保存，避免与前后群合并）；
@@ -4427,6 +4513,30 @@ function syncUndoneChecksFilter() {
   // meta 行的「☐/☑」快捷按钮与菜单项共用同一状态；renderMeta 与这里的调用顺序不定，故重绘成同一份标记
   const chip = document.querySelector('#meta .note-undone-filter');
   if (chip) chip.outerHTML = undoneFilterChipHtml();
+  // 🆕 gp 区块完成状态计算：「只看未完成」开启时，按 md-unit 内 checkbox 的完成情况打 class，
+  //   让 CSS 决定整块隐藏还是保留。关闭时清理掉这些 class。
+  applyGpUnitDoneState(body, !!state.undoneChecksOnly);
+}
+// 🆕 遍历 body 内所有 .md-unit，根据其内部 checkbox 完成情况打状态 class。
+//   - .gp-all-done     ＝ 区块内有 checkbox 且全部完成 → 整块隐藏
+//   - .gp-no-checkbox  ＝ 区块内没有 checkbox → 整块隐藏（无完成追踪意义）
+//   - .gp-has-undone   ＝ 区块内有 checkbox 且至少一个未完成 → 整块保留（含说明行）
+//   注意：:scope 只选直接子级的 .ev-md-check，不会误伤嵌套结构。
+function applyGpUnitDoneState(body, enable) {
+  if (!body) return;
+  body.querySelectorAll('.md-unit').forEach((mu) => {
+    mu.classList.remove('gp-all-done', 'gp-no-checkbox', 'gp-has-undone');
+  });
+  if (!enable) return;
+  body.querySelectorAll('.md-unit').forEach((mu) => {
+    const checks = mu.querySelectorAll(':scope .ev-md-check');
+    if (!checks.length) {
+      mu.classList.add('gp-no-checkbox');
+      return;
+    }
+    const allDone = Array.from(checks).every((c) => c.classList.contains('done'));
+    mu.classList.add(allDone ? 'gp-all-done' : 'gp-has-undone');
+  });
 }
 function toggleUndoneChecksFilter() {
   state.undoneChecksOnly = !state.undoneChecksOnly;
