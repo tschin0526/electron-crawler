@@ -550,6 +550,91 @@
     #body .md-unit.is-gp .ev-cb {
       border-color: var(--gp-fg, currentColor);
     }
+    #body .md-unit.is-gp[data-gp-anim], #gpColorBox .gc-preview.is-gp[data-gp-anim] {
+      position: relative; isolation: isolate;
+    }
+    #body .md-unit.is-gp[data-gp-anim="pulse"], #gpColorBox .gc-preview.is-gp[data-gp-anim="pulse"] {
+      animation: gp-neon-pulse 2.4s ease-in-out infinite;
+    }
+    #body .md-unit.is-gp[data-gp-anim="scan"]::before, #gpColorBox .gc-preview.is-gp[data-gp-anim="scan"]::before,
+    #body .md-unit.is-gp[data-gp-anim="data"]::before, #gpColorBox .gc-preview.is-gp[data-gp-anim="data"]::before {
+      content: ""; position: absolute; inset: -1px; z-index: 2; border-radius: inherit; padding: 1.5px;
+      pointer-events: none; -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+      -webkit-mask-composite: xor; mask-composite: exclude;
+    }
+    #body .md-unit.is-gp[data-gp-anim="scan"]::before, #gpColorBox .gc-preview.is-gp[data-gp-anim="scan"]::before {
+      background: conic-gradient(from 0deg, transparent 0 78%, #73f5ff 88%, transparent 94% 100%);
+      animation: gp-energy-scan 2.2s linear infinite;
+    }
+    #body .md-unit.is-gp[data-gp-anim="data"]::before, #gpColorBox .gc-preview.is-gp[data-gp-anim="data"]::before {
+      background: conic-gradient(from 0deg, transparent 0 12%, #65ffe0 16%, transparent 20% 46%, #73f5ff 50%, transparent 54% 80%, #b8ff6a 84%, transparent 88% 100%);
+      animation: gp-energy-scan 3.8s linear infinite;
+    }
+    #body .md-unit.is-gp[data-gp-anim="aurora"]::before, #gpColorBox .gc-preview.is-gp[data-gp-anim="aurora"]::before,
+    #body .md-unit.is-gp[data-gp-anim="holo"]::before, #gpColorBox .gc-preview.is-gp[data-gp-anim="holo"]::before,
+    #body .md-unit.is-gp[data-gp-anim="signal"]::before, #gpColorBox .gc-preview.is-gp[data-gp-anim="signal"]::before,
+    #body .md-unit.is-gp[data-gp-anim="glitch"]::before, #gpColorBox .gc-preview.is-gp[data-gp-anim="glitch"]::before {
+      content: ""; position: absolute; inset: -1px; z-index: 2; border-radius: inherit; padding: 1.5px;
+      pointer-events: none; -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+      -webkit-mask-composite: xor; mask-composite: exclude;
+    }
+    #body .md-unit.is-gp[data-gp-anim="aurora"]::before, #gpColorBox .gc-preview.is-gp[data-gp-anim="aurora"]::before {
+      background: conic-gradient(from 0deg, #40f7d2, #4da8ff, #d66bff, #ffe66d, #40f7d2);
+      animation: gp-aurora-flow 6s linear infinite;
+    }
+    #body .md-unit.is-gp[data-gp-anim="holo"]::before, #gpColorBox .gc-preview.is-gp[data-gp-anim="holo"]::before {
+      background: conic-gradient(from 0deg, #ff4fd8, #67f6ff, #fff76a, #7d68ff, #ff4fd8);
+      animation: gp-holo-shift 4.5s linear infinite;
+    }
+    #body .md-unit.is-gp[data-gp-anim="signal"]::before, #gpColorBox .gc-preview.is-gp[data-gp-anim="signal"]::before {
+      background: repeating-conic-gradient(from 0deg, #68f7ff 0deg 7deg, transparent 7deg 20deg);
+      animation: gp-energy-scan 5s steps(24, end) infinite;
+    }
+    #body .md-unit.is-gp[data-gp-anim="glitch"]::before, #gpColorBox .gc-preview.is-gp[data-gp-anim="glitch"]::before {
+      background: conic-gradient(from 0deg, transparent 0 18%, #ff4fd8 19% 23%, transparent 24% 48%, #67f6ff 49% 53%, transparent 54% 78%, #b8ff6a 79% 83%, transparent 84%);
+      animation: gp-glitch-flash 3.2s steps(1, end) infinite;
+    }
+    #body .md-unit.is-gp[data-gp-anim="orbit"]::before, #body .md-unit.is-gp[data-gp-anim="orbit"]::after,
+    #gpColorBox .gc-preview.is-gp[data-gp-anim="orbit"]::before, #gpColorBox .gc-preview.is-gp[data-gp-anim="orbit"]::after {
+      content: ""; position: absolute; left: 0; top: 0; z-index: 2; width: 6px; height: 6px; border-radius: 50%;
+      offset-path: inset(2px round 5px); offset-distance: 0%; offset-anchor: center; offset-rotate: 0deg;
+      pointer-events: none; background: #75f7ff; box-shadow: 0 0 8px 2px #75f7ff;
+    }
+    #body .md-unit.is-gp[data-gp-anim="orbit"]::before, #gpColorBox .gc-preview.is-gp[data-gp-anim="orbit"]::before {
+      animation: gp-orbit 3s linear infinite;
+    }
+    #body .md-unit.is-gp[data-gp-anim="orbit"]::after, #gpColorBox .gc-preview.is-gp[data-gp-anim="orbit"]::after {
+      width: 4px; height: 4px; background: #f27bff; box-shadow: 0 0 7px 2px #f27bff;
+      animation: gp-orbit 3s linear infinite reverse;
+    }
+    #body .md-unit.is-gp[data-gp-anim="arc"], #gpColorBox .gc-preview.is-gp[data-gp-anim="arc"] {
+      animation: gp-electric-arc 2.8s steps(1, end) infinite;
+    }
+    @keyframes gp-neon-pulse {
+      0%, 100% { box-shadow: 0 0 2px color-mix(in srgb, var(--gp-border, currentColor) 35%, transparent); }
+      50% { box-shadow: 0 0 9px color-mix(in srgb, var(--gp-border, currentColor) 75%, transparent); }
+    }
+    @keyframes gp-energy-scan { to { transform: rotate(1turn); } }
+    @keyframes gp-aurora-flow { to { transform: rotate(1turn); filter: hue-rotate(35deg); } }
+    @keyframes gp-holo-shift { to { transform: rotate(-1turn); filter: hue-rotate(70deg); } }
+    @keyframes gp-orbit { from { offset-distance: 0%; } to { offset-distance: 100%; } }
+    @keyframes gp-electric-arc {
+      0%, 8%, 12%, 42%, 46%, 100% { box-shadow: none; filter: none; }
+      9%, 44% { box-shadow: 0 0 8px #74f7ff, inset 0 0 5px rgba(116,247,255,.35); filter: brightness(1.35); }
+      10%, 45% { box-shadow: 0 0 2px #d66bff; filter: brightness(1.05); }
+    }
+    @keyframes gp-glitch-flash {
+      0%, 86%, 89%, 100% { opacity: .25; transform: translateX(0); }
+      87% { opacity: 1; transform: translateX(2px); }
+      88% { opacity: .65; transform: translateX(-2px); }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      #body .md-unit.is-gp[data-gp-anim], #body .md-unit.is-gp[data-gp-anim]::before, #body .md-unit.is-gp[data-gp-anim]::after,
+      #gpColorBox .gc-preview.is-gp[data-gp-anim], #gpColorBox .gc-preview.is-gp[data-gp-anim]::before,
+      #gpColorBox .gc-preview.is-gp[data-gp-anim]::after {
+        animation: none !important;
+      }
+    }
     #body .md-unit-edit { position: absolute; left: 0; top: .15em; display: inline-flex; width: 13px; height: 13px; padding: 0; align-items: center; justify-content: center; border: 0; border-radius: 50%; background: var(--ev-primary, #d4af37); color: #fff; font-size: 9px; line-height: 1; cursor: pointer; opacity: .8; -webkit-app-region: no-drag; }
     #body .md-unit-edit:hover, #body .md-unit-edit:focus-visible { opacity: 1; outline: 2px solid var(--ev-primary, #d4af37); outline-offset: 1px; }
     /* 🆕 VIEW 投影贴非 task 行：复用 .md-unit 凹槽，把只读 .ev-md-edit 圆点定位到左侧（与 .md-unit-edit 同凹槽，dot 对齐 checkbox 行圆点） */
@@ -1045,7 +1130,7 @@
     <div class="note-addcheck-menu" id="noteBlockMenu" role="menu">
       <button type="button" class="nami" data-act="goto-event" role="menuitem" title="唤起 Calendar 开启对应的编辑行程画面（被 include 的外部档为只读），并把备注框滚动到这个区块所在行＋闪烁">📝 切换编辑行程并定位</button>
       <button type="button" class="nami" data-act="edit" role="menuitem">✎ 编辑此区块</button>
-      <button type="button" class="nami" data-act="color" role="menuitem" hidden title="只有 {gp} 小事件群可用：设定这个围栏的字体色／背景色／渐变色与颜色级数">🎨 设定围栏颜色</button>
+      <button type="button" class="nami" data-act="color" role="menuitem" hidden title="只有 {gp} 小事件群可用：设定字体色、背景渐变与高科技边框动画">🎨 设定围栏颜色／动画</button>
       <button type="button" class="nami" data-act="copy" role="menuitem">📋 复制整块内容</button>
       <button type="button" class="nami" data-act="move" role="menuitem" hidden title="只有 {gp} 小事件群可用：整群搬移到其它便利贴（含 {gp} 标记，维持分组）">📤 搬移项目</button>
       <button type="button" class="nami" data-act="del" role="menuitem">🗑 删除此区块</button>
@@ -1278,8 +1363,8 @@
          下拉清单＝系统 tlCN_COLORS 的 16 个中文色名；级数＝色名±1~10；渐变＝渐变(A→B)。 -->
     <div class="addcheck-ov" id="gpColorOv">
       <div class="addcheck-box" id="gpColorBox">
-        <div class="ac-title">🎨 设定围栏颜色 <span class="gc-key" id="gcKeyHint"></span></div>
-        <div class="ac-hint gc-hint">只改这个群的开栏标记 <code>{gpX|fg=…,bg=…}</code>：闭栏行、群内容与其它群都不动。下拉＝系统支持的 16 种颜色；级数 1~10（+ 加深 / - 淡化）；渐变两端用基础色名。</div>
+        <div class="ac-title">🎨 设定围栏颜色与动画 <span class="gc-key" id="gcKeyHint"></span></div>
+        <div class="ac-hint gc-hint">只改这个群的开栏标记 <code>{gpX|fg=…,bg=…,anim=scan}</code>：闭栏行、群内容与其它群都不动。颜色支持级数与渐变；动画提供霓虹呼吸、能量扫描、数据流脉冲、极光流动、轨道双光点、电弧闪烁、全息干涉、信号灯、故障像素，并尊重系统减少动态效果设置。</div>
         <div class="gc-row">
           <label class="gc-label" for="gcFg">字体颜色</label>
           <select id="gcFg"></select>
@@ -1308,7 +1393,22 @@
           <select id="gcGradFrom" aria-label="渐变起始色"></select>
           <select id="gcGradTo" aria-label="渐变结束色"></select>
         </div>
-        <div class="gc-preview" id="gcPreview">小事件群外框预览 · 文字与 CheckBox 颜色</div>
+        <div class="gc-row">
+          <label class="gc-label" for="gcAnim">边框动画</label>
+          <select id="gcAnim" aria-label="围栏边框动画模式">
+            <option value="">静态（关闭）</option>
+            <option value="pulse">霓虹呼吸</option>
+            <option value="scan">能量扫描</option>
+            <option value="data">数据流脉冲</option>
+            <option value="aurora">极光流动</option>
+            <option value="orbit">轨道双光点</option>
+            <option value="arc">电弧闪烁</option>
+            <option value="holo">全息干涉</option>
+            <option value="signal">信号灯</option>
+            <option value="glitch">故障像素</option>
+          </select>
+        </div>
+        <div class="gc-preview is-gp" id="gcPreview">小事件群外框预览 · 文字与 CheckBox 颜色</div>
         <div class="ac-hint gc-mark" id="gcMarkPreview">将写入：—</div>
         <div class="ac-actions">
           <button type="button" class="ac-copy" id="gcClearBtn">清除颜色</button>

@@ -1942,12 +1942,12 @@ function noteGpFenceScan(lines) {
       if (!open) {
         // 🆕 2026-11-09：从 open 行提取 fg/bg attrs
         const a = noteExtractGpAttrs(line);
-        open = { i: i, key: f.key, fg: a.fg || '', bg: a.bg || '' };
+        open = { i: i, key: f.key, fg: a.fg || '', bg: a.bg || '', anim: a.anim || '' };
       }
       continue;
     }
     if (open && open.key === f.key) {
-      ranges.push({ start: open.i, end: i, key: f.key, fg: open.fg, bg: open.bg });
+      ranges.push({ start: open.i, end: i, key: f.key, fg: open.fg, bg: open.bg, anim: open.anim });
       markers.push(open.i, i);
       open = null;
     }
@@ -1963,7 +1963,7 @@ function noteGpFenceWrap(text) {
   const scan = noteGpFenceScan(lines);
   const hit = scan.ranges.find((r) => r.start === s && r.end === e);
   // 🆕 2026-11-09：把 hit.fg / hit.bg 也带出来
-  return hit ? { lines: lines, start: s, end: e, key: hit.key, fg: hit.fg || '', bg: hit.bg || '', scan: scan } : null;
+  return hit ? { lines: lines, start: s, end: e, key: hit.key, fg: hit.fg || '', bg: hit.bg || '', anim: hit.anim || '', scan: scan } : null;
 }
 // ── 🆕 2026-11-08：勾选「group 启用」按保存时一律写成块级 {gpX}…{/gpX}，不再逐行补行尾标记 ──
 //  · 已是块级群且没给新标记 → 原样保留；给了 mark（群标记输入框）→ 整段改名（两行一起改）。
@@ -1982,7 +1982,7 @@ function noteWrapGpFence(text, mark) {
     //     此保护是防止用户手动删掉建议值后触发误改名）
     if (mark === '{gp}' && wrap.key) return lines.join('\n');
     // 🆕 给了新 mark → attrs 沿用原文，close 用新 mark 的 key
-    const newOpen = noteBuildGpOpenLine(mark, wrap.fg, wrap.bg);
+    const newOpen = noteBuildGpOpenLine(mark, wrap.fg, wrap.bg, wrap.anim);
     const out = lines.slice();
     out[wrap.start] = newOpen;
     out[wrap.end] = noteBuildGpCloseLine(noteKeyFromGpMarker(mark));  // close 用新 mark 的 key！
@@ -1997,7 +1997,7 @@ function noteWrapGpFence(text, mark) {
   // 🆕 若 mark 存在但无 attrs → 沿用原文 attrs
   if (mark) {
     const origAttrs = noteExtractGpAttrs(open || '');
-    open = noteBuildGpOpenLine(mark, origAttrs.fg, origAttrs.bg);
+    open = noteBuildGpOpenLine(mark, origAttrs.fg, origAttrs.bg, origAttrs.anim);
   }
   open = open || '{gp}';
   const close = noteBuildGpCloseLine(noteKeyFromGpMarker(open));  // 🆕 close 只写 key
@@ -2015,10 +2015,10 @@ function noteExtractGpAttrs(line) {
   const s = String(line == null ? '' : line);
   let m = s.trim().match(/^\{[ \t]*(?:group|gp)[ \t]*:?[ \t]*([^{}]*)\}[ \t]*$/i);
   if (!m) m = s.match(/\{[ \t]*(?:group|gp)[ \t]*:?[ \t]*([^{}]*)\}(?=[ \t]*(?:\[\[[^\]]*\]\][ \t]*)*$)/i);
-  if (!m) return { fg: '', bg: '' };
+  if (!m) return { fg: '', bg: '', anim: '' };
   const inner = String(m[1] || '').trim();
   const pipe = inner.indexOf('|');
-  if (pipe < 0) return { key: inner, fg: '', bg: '' };
+  if (pipe < 0) return { key: inner, fg: '', bg: '', anim: '' };
   const parts = [];
   inner.slice(pipe + 1).split(',').forEach((pair) => {
     const eq = pair.indexOf('=');
@@ -2027,8 +2027,9 @@ function noteExtractGpAttrs(line) {
     const v = pair.slice(eq + 1).trim();
     if (k === 'fg') parts.fg = v;
     else if (k === 'bg') parts.bg = v;
+    else if (k === 'anim' && /^(pulse|scan|data|aurora|orbit|arc|holo|signal|glitch)$/.test(v)) parts.anim = v;
   });
-  return { fg: parts.fg || '', bg: parts.bg || '' };
+  return { fg: parts.fg || '', bg: parts.bg || '', anim: parts.anim || '' };
 }
 function noteKeyFromGpMarker(marker) {
   const s = String(marker == null ? '' : marker).trim();
@@ -2055,7 +2056,7 @@ function noteBuildGpCloseLine(markerOrKey) {
   // 纯 key → 默认 gp 前缀：E → {/gpE}
   return '{/gp' + s + '}';
 }
-function noteBuildGpOpenLine(keyName, fg, bg) {
+function noteBuildGpOpenLine(keyName, fg, bg, anim) {
   let s = String(keyName == null ? '' : keyName).trim();
   if (!s.startsWith('{')) s = '{' + s;
   if (!s.endsWith('}')) s = s + '}';
@@ -2063,6 +2064,7 @@ function noteBuildGpOpenLine(keyName, fg, bg) {
   const parts = [];
   if (fg) parts.push('fg=' + fg);
   if (bg) parts.push('bg=' + bg);
+  if (anim) parts.push('anim=' + anim);
   if (!parts.length) return s;
   return s.replace(/\}$/, '|' + parts.join(',') + '}');
 }
@@ -2179,11 +2181,11 @@ function noteApplyGroupMarkers(text, on, forceMark) {
     // 🆕 2026-11-09：attrs 沿用原文，close 只写 key
     const firstRange = fenceScan.ranges[0];
     const markKey = forceMark ? noteNormalizeGpInput(forceMark) : noteCanonicalGp(firstRange.key);
-    const openMark = noteBuildGpOpenLine(markKey, firstRange.fg, firstRange.bg);
+    const openMark = noteBuildGpOpenLine(markKey, firstRange.fg, firstRange.bg, firstRange.anim);
     const closeMark = noteBuildGpCloseLine(firstRange.key);  // close 只写 key，不带 attrs！
     const out = lines.slice();
     fenceScan.ranges.forEach((r) => {
-      out[r.start] = noteBuildGpOpenLine(markKey, r.fg, r.bg);
+      out[r.start] = noteBuildGpOpenLine(markKey, r.fg, r.bg, r.anim);
       out[r.end] = noteBuildGpCloseLine(r.key);
     });
     return out.join('\n');
@@ -3446,7 +3448,8 @@ function noteGcCompose() {
   if (fg.indexOf(',') >= 0 || bg.indexOf(',') >= 0) {
     return { error: '颜色值不能含逗号（属性以逗号分隔），请改用色名或 渐变(A→B)' };
   }
-  return { fg: fg, bg: bg };
+  const anim = noteGcVal('gcAnim');
+  return { fg: fg, bg: bg, anim: /^(pulse|scan|data|aurora|orbit|arc|holo|signal|glitch)$/.test(anim) ? anim : '' };
 }
 // 预览用：把「标记值」近似成 CSS（级数用 color-mix 近似 HSL 亮度；写入仍是标记原文）
 function noteGcToCss(raw) {
@@ -3467,10 +3470,10 @@ function noteGcToCss(raw) {
   return 'color-mix(in srgb, ' + hex + ' ' + (100 - pct) + '%, ' + (m[2] === '+' ? 'black' : 'white') + ')';
 }
 // 只替换开栏行的 |attrs 段：保留原字面量（{gpE}／{group:E}／大小写）与前后空白；闭栏行永不带 attrs
-function noteGcOpenLineWithColors(rawLine, fg, bg) {
+function noteGcOpenLineWithColors(rawLine, fg, bg, anim) {
   const src = String(rawLine == null ? '' : rawLine);
   const stripped = src.replace(/(\{[ \t]*(?:group|gp)[ \t]*:?[ \t]*[^{}|]*)(?:\|[^{}]*)?(\}[ \t]*)$/i, '$1$2');
-  const built = noteBuildGpOpenLine(stripped.trim(), fg, bg);
+  const built = noteBuildGpOpenLine(stripped.trim(), fg, bg, anim);
   return (src.match(/^[ \t]*/) || [''])[0] + built;
 }
 function noteGcSyncGradRow() {
@@ -3483,12 +3486,14 @@ function noteGcUpdatePreview() {
   const t = gpColorTarget || {};
   const mark = noteGcEl('gcMarkPreview');
   if (mark) mark.textContent = '将写入：' + (c.error ? ('⚠️ ' + c.error)
-    : noteGcOpenLineWithColors(t.rawOpen || '{gp}', c.fg, c.bg));
+    : noteGcOpenLineWithColors(t.rawOpen || '{gp}', c.fg, c.bg, c.anim));
   const pv = noteGcEl('gcPreview'); if (!pv) return;
   const fgCss = c.error ? '' : noteGcToCss(c.fg), bgCss = c.error ? '' : noteGcToCss(c.bg);
   pv.style.color = fgCss || '';
   pv.style.background = bgCss || '';
   pv.style.borderColor = fgCss || '';
+  pv.classList.add('is-gp');
+  pv.dataset.gpAnim = c.error ? '' : c.anim;
 }
 function noteGcCloseDialog() {
   const ov = noteGcEl('gpColorOv'); if (ov) ov.classList.remove('show');
@@ -3505,7 +3510,7 @@ async function noteGcOpenDialog(t) {
   if (!range) { showNoteMoveToast('找不到这个群的开栏标记，请确认它已是块级围栏 {gpX}…{/gpX}', true); return; }
   const cur = noteExtractGpAttrs(lines[t.start]);
   gpColorTarget = { uid: t.uid, start: t.start, end: t.end, rawOpen: lines[t.start],
-    fg: cur.fg || '', bg: cur.bg || '', key: range.key };
+    fg: cur.fg || '', bg: cur.bg || '', anim: cur.anim || '', key: range.key };
   noteGcFillSelects();
   const f = noteGcParseValue(cur.fg), b = noteGcParseValue(cur.bg);
   noteGcSet('gcFg', f.sel, GC_KEEP); noteGcSet('gcFgDir', f.dir); noteGcSet('gcFgLevel', f.level);
@@ -3513,6 +3518,7 @@ async function noteGcOpenDialog(t) {
   const grad = noteGcEl('gcGradOn'); if (grad) grad.checked = !!b.grad;
   noteGcSet('gcGradFrom', b.grad ? b.from : '白', GC_KEEP);
   noteGcSet('gcGradTo', b.grad ? b.to : '蓝', GC_KEEP);
+  noteGcSet('gcAnim', cur.anim || '');
   const hint = noteGcEl('gcKeyHint'); if (hint) hint.textContent = lines[t.start].trim();
   noteGcSyncGradRow();
   noteGcUpdatePreview();
@@ -3522,11 +3528,13 @@ async function noteGcOpenDialog(t) {
 async function noteGcSave(clear) {
   const t = gpColorTarget;
   if (!t) return;
-  let fg = '', bg = '';
+  let fg = '', bg = '', anim = '';
   if (!clear) {
     const c = noteGcCompose();
     if (c.error) { showNoteMoveToast(c.error, true); return; }
-    fg = c.fg; bg = c.bg;
+    fg = c.fg; bg = c.bg; anim = c.anim;
+  } else {
+    anim = t.anim || '';
   }
   const notes = await fetchAuthoritativeNotes(t.uid);
   if (notes == null) { showNoteMoveToast('无法读取该便利贴的最新内容，已取消', true); return; }
@@ -3535,12 +3543,13 @@ async function noteGcSave(clear) {
   if (!range || lines[t.start] !== t.rawOpen) {
     showNoteMoveToast('围栏标记已变化，请重新右键打开设定', true); noteGcCloseDialog(); return;
   }
-  const newLine = noteGcOpenLineWithColors(lines[t.start], fg, bg);
-  if (newLine === lines[t.start]) { showNoteMoveToast('围栏颜色没有变化'); noteGcCloseDialog(); return; }
+  const newLine = noteGcOpenLineWithColors(lines[t.start], fg, bg, anim);
+  if (newLine === lines[t.start]) { showNoteMoveToast('围栏设定没有变化'); noteGcCloseDialog(); return; }
   const out = lines.slice(); out[t.start] = newLine;
   const r = await commitStickyNoteContent(out.join('\n'), t.uid, IDX, SRC_FILE, { expect: { present: [newLine.trim()] } });
   noteGcCloseDialog();
-  showNoteMoveToast(r.ok ? ('✅ 已' + (clear ? '清除' : '更新') + '围栏颜色' + (r.warn ? ('。' + r.warn) : ''))
+  showNoteMoveToast(r.ok ? (clear ? ('✅ 已清除围栏颜色，动画模式已保留' + (r.warn ? ('。' + r.warn) : ''))
+    : ('✅ 已更新围栏样式' + (r.warn ? ('。' + r.warn) : '')))
     : ('⚠️ 设定失败（' + r.error + '）'), !r.ok);
 }
 function noteGcClear() {
@@ -3548,7 +3557,7 @@ function noteGcClear() {
   if (!t) return;
   const ok = window.confirm(
     '确定要清除这个小事件群的围栏颜色设定吗？\n\n目前：fg=' + (t.fg || '无') +
-    '  bg=' + (t.bg || '无') + '\n\n只会移除开栏标记里的 fg/bg 属性，群的内容不会变动；可随时重新设定恢复。'
+    '  bg=' + (t.bg || '无') + '  anim=' + (t.anim || '静态') + '\n\n只会移除开栏标记里的 fg/bg 属性并保留动画模式；群的内容不会变动。'
   );
   if (!ok) { showNoteMoveToast('已取消清除'); return; }
   noteGcSave(true);

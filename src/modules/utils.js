@@ -43,16 +43,15 @@ function resolveColorName(input) {
   if (/^(rgb|rgba|hsl|hsla)\s*\(/i.test(s)) return s;      // 函式型
   return s;                                                  // CSS keyword 等原樣透傳
 }
-// 從 gp 標記字串裡提取 fg/bg 屬性。
-//   輸入：「鍵|fg=红,bg=浅蓝」或單純「鍵」
-//   回傳：{ key:'鍵', fg:'#e74c3c', bg:'#aed6f1' }（未設定的屬性是 ''）。
+// 從 gp 標記字串裡提取 fg/bg/anim 屬性。
+//   anim 僅接受 pulse、scan、data 三種模式；未設定的屬性是 ''。
 //   註：key 本身必須是「不含 | 的字串」，| 之後才算屬性段。
 function parseGpAttrs(raw) {
   const s = String(raw == null ? '' : raw).trim();
-  if (!s) return { key: '', fg: '', bg: '' };
+  if (!s) return { key: '', fg: '', bg: '', anim: '' };
   const pipe = s.indexOf('|');
   const key = (pipe < 0 ? s : s.slice(0, pipe)).trim();
-  let fg = '', bg = '';
+  let fg = '', bg = '', anim = '';
   if (pipe >= 0) {
     const attrStr = s.slice(pipe + 1);
     const pairs = attrStr.split(',');
@@ -63,13 +62,14 @@ function parseGpAttrs(raw) {
       const v = pair.slice(eq + 1).trim();
       if (k === 'fg') fg = resolveColorName(v);
       else if (k === 'bg') bg = resolveColorName(v);
+      else if (k === 'anim' && /^(pulse|scan|data|aurora|orbit|arc|holo|signal|glitch)$/.test(v)) anim = v;
     }
   }
-  return { key: key, fg: fg, bg: bg };
+  return { key: key, fg: fg, bg: bg, anim: anim };
 }
 // 從一整行文字裡（可能是 fence open 行，也可能是行尾 gp 行）提取 gp attrs。
 //   優先匹配「塊級」整行 {gpX|...} 標記，其次匹配行尾 {gpX|...}。
-//   回傳：{ key, fg, bg }，找不到 → 回傳 { key:'', fg:'', bg:'' }。
+//   回傳：{ key, fg, bg, anim }，找不到 → 回傳空屬性。
 function extractGpAttrsFromLine(line) {
   const s = String(line == null ? '' : line);
   // 塊級：整行就是一個 {gp...} 標記
@@ -78,7 +78,7 @@ function extractGpAttrsFromLine(line) {
   // 行尾式：{gp...} 出現在行尾（行中不算）
   m = s.match(/\{[ \t]*(?:group|gp)[ \t]*:?[ \t]*([^{}]*)\}(?=[ \t]*(?:\[\[[^\]]*\]\][ \t]*)*$)/i);
   if (m) return parseGpAttrs(m[1]);
-  return { key: '', fg: '', bg: '' };
+  return { key: '', fg: '', bg: '', anim: '' };
 }
 
 // 挂载到 window，确保 HTML onclick 和其他模组可以访问

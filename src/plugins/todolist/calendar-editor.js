@@ -2008,10 +2008,10 @@
     }
     function tlParseGpAttrs(raw) {
       const s = String(raw == null ? '' : raw).trim();
-      if (!s) return { key: '', fg: '', bg: '' };
+      if (!s) return { key: '', fg: '', bg: '', anim: '' };
       const pipe = s.indexOf('|');
       const key = (pipe < 0 ? s : s.slice(0, pipe)).trim();
-      let fg = '', bg = '';
+      let fg = '', bg = '', anim = '';
       if (pipe >= 0) {
         s.slice(pipe + 1).split(',').forEach((pair) => {
           const eq = pair.indexOf('=');
@@ -2020,9 +2020,10 @@
           const v = pair.slice(eq + 1).trim();
           if (k === 'fg') fg = tlResolveColorName(v);
           else if (k === 'bg') bg = tlResolveColorName(v);
+          else if (k === 'anim' && /^(pulse|scan|data|aurora|orbit|arc|holo|signal|glitch)$/.test(v)) anim = v;
         });
       }
-      return { key: key, fg: fg, bg: bg };
+      return { key: key, fg: fg, bg: bg, anim: anim };
     }
     function tlExtractGpAttrsFromLine(line) {
       const s = String(line == null ? '' : line);
@@ -2030,7 +2031,7 @@
       if (m) return tlParseGpAttrs(m[1]);
       m = s.match(/\{[ \t]*(?:group|gp)[ \t]*:?[ \t]*([^{}]*)\}(?=[ \t]*(?:\[\[[^\]]*\]\][ \t]*)*$)/i);
       if (m) return tlParseGpAttrs(m[1]);
-      return { key: '', fg: '', bg: '' };
+      return { key: '', fg: '', bg: '', anim: '' };
     }
     // ── group 標記語法（2026-11-06 寬放）：花括號內「開頭」是 gp 或 group 即算；大小寫不拘、冒號可省略 ──
     //   {gp} ＝ {GP} ＝ {GroUP} ＝ {group}               → 無名組（key ''）
@@ -2083,12 +2084,12 @@
           if (!open) {
             // 🆕 從 open 行提取 fg/bg attrs，存進 open 供關閉時寫入 range
             const a = (typeof tlExtractGpAttrsFromLine === 'function') ? tlExtractGpAttrsFromLine(line) : { fg: '', bg: '' };
-            open = { i: i, key: f.key, fg: a.fg || '', bg: a.bg || '' };
+            open = { i: i, key: f.key, fg: a.fg || '', bg: a.bg || '', anim: a.anim || '' };
           }
           continue;
         }
         if (open && open.key === f.key) {
-          ranges.push({ start: open.i, end: i, key: f.key, fg: open.fg, bg: open.bg });
+          ranges.push({ start: open.i, end: i, key: f.key, fg: open.fg, bg: open.bg, anim: open.anim });
           markers.push(open.i, i);
           open = null;
         }
@@ -2105,7 +2106,7 @@
       const scan = tlGpFenceScan(lines);
       const hit = scan.ranges.find((r) => r.start === s && r.end === e);
       // 🆕 2026-11-09：把 hit.fg / hit.bg 也帶出來，供 tlWrapGpFence 重寫時保留 attrs
-      return hit ? { lines: lines, start: s, end: e, key: hit.key, fg: hit.fg || '', bg: hit.bg || '', scan: scan } : null;
+      return hit ? { lines: lines, start: s, end: e, key: hit.key, fg: hit.fg || '', bg: hit.bg || '', anim: hit.anim || '', scan: scan } : null;
     }
     // ── 🆕 2026-11-08：勾選「group 啟用」按保存時一律改寫成「塊級」{gpX}…{/gpX}，不再逐行補行尾標記 ──
     //  · 已是塊級群且沒給新標記 → 原樣保留（不無謂改名）；給了 mark → 整段改名（兩行一起改）。
@@ -2121,7 +2122,7 @@
         // 🆕 mark 是預設無名組 '{gp}' 且 fence 已有具名 key → 不誤改群名
         if (mark === '{gp}' && wrap.key) return lines.join('\n');
         // 🆕 給了新 mark → 組裝新 open 行：key 用新 mark，attrs 沿用原文
-        const newOpen = tlBuildGpOpenLine(mark, wrap.fg, wrap.bg);
+        const newOpen = tlBuildGpOpenLine(mark, wrap.fg, wrap.bg, wrap.anim);
         const out = lines.slice();
         out[wrap.start] = newOpen;
         out[wrap.end] = tlBuildGpCloseLine(wrap.key);  // 🆕 close 只寫 key，不帶 attrs！
@@ -2136,8 +2137,8 @@
       // 🆕 用 mark（只有 key）組裝：attrs 已在 open 裡；若 mark 存在但無 attrs，保留原 attrs
       if (mark) {
         const origAttrs = (typeof tlExtractGpAttrsFromLine === 'function')
-          ? tlExtractGpAttrsFromLine(open || '') : { fg: '', bg: '' };
-        open = tlBuildGpOpenLine(mark, origAttrs.fg, origAttrs.bg);
+          ? tlExtractGpAttrsFromLine(open || '') : { fg: '', bg: '', anim: '' };
+        open = tlBuildGpOpenLine(mark, origAttrs.fg, origAttrs.bg, origAttrs.anim);
       }
       open = open || '{gp}';
       const close = tlBuildGpCloseLine(tlKeyFromGpMarker(open));  // 🆕 close 只寫 key，不帶 attrs！
@@ -2149,7 +2150,7 @@
       return [open].concat(body, [close]).join('\n');
     }
     // 🆕 2026-11-09：用 key + attrs 組裝 open 行（兩端共用）
-    function tlBuildGpOpenLine(keyName, fg, bg) {
+    function tlBuildGpOpenLine(keyName, fg, bg, anim) {
       let s = String(keyName == null ? '' : keyName).trim();
       // mark 可能是完整 '{gpX}'（从编辑视窗输入）或只是 'gpX'
       if (!s.startsWith('{')) s = '{' + s;
@@ -2159,6 +2160,7 @@
       const parts = [];
       if (fg) parts.push('fg=' + fg);
       if (bg) parts.push('bg=' + bg);
+      if (anim) parts.push('anim=' + anim);
       if (!parts.length) return s;
       // 在 key 字符串的 '}' 之前插入 attrs
       return s.replace(/\}$/, '|' + parts.join(',') + '}');
@@ -2365,7 +2367,7 @@
               ' data-uid="' + tlEscapeHtml(uid) + '" data-start="' + b.start + '" data-end="' + b.end + '" data-type="' + b.type + '"' +
               ' onclick="tlOpenRoDotMenu(event)">\u270e</button>'
             : '';
-          out += '<div class="md-unit is-gp"' + tlGpInlineStyle(b) + '>' + roBtn +
+          out += '<div class="md-unit is-gp"' + (b.anim ? ' data-gp-anim="' + b.anim + '"' : '') + tlGpInlineStyle(b) + '>' + roBtn +
             renderChunk(tlSeparateGpHorizontalRules(dLines.slice(b.start, b.end + 1).join('\n'))) + '</div>';
           cursor = b.end + 1;
         });
@@ -2399,7 +2401,7 @@
         //    🆕 2026-11-09：gp 区块若有 fg/bg attrs，追加 inline style 覆盖便利贴默认色
         const gpCls = b.type === 'gp' ? ' is-gp' : '';
         const gpStyle = b.type === 'gp' ? tlGpInlineStyle(b) : '';
-        out += '<div class="md-unit' + gpCls + '"' + gpStyle + '><button type="button" class="md-unit-edit" title="' + tlEditUnitTip(b.type) + '"' +
+        out += '<div class="md-unit' + gpCls + '"' + (b.type === 'gp' && b.anim ? ' data-gp-anim="' + b.anim + '"' : '') + gpStyle + '><button type="button" class="md-unit-edit" title="' + tlEditUnitTip(b.type) + '"' +
           ' data-uid="' + uidAttr + '" data-start="' + b.start + '" data-end="' + b.end + '" data-type="' + b.type + '"' +
           ' onclick="tlOpenEditBlockDialog(event,\'' + uidAttr + '\',' + b.start + ',' + b.end + ',\'' + b.type + '\')">\u270e</button>' +
           inner + '</div>';
@@ -2454,7 +2456,7 @@
         //    標記行在顯示副本裡已被剝成空行，行數不變 → ro 外框與 baseLine 全部照舊。
         if (fenceStart.has(i)) {
           const fe = fenceStart.get(i);
-          blocks.push({ start: i, end: fe.end, type: 'gp', fg: fe.fg || '', bg: fe.bg || '' });
+          blocks.push({ start: i, end: fe.end, type: 'gp', fg: fe.fg || '', bg: fe.bg || '', anim: fe.anim || '' });
           i = fe.end + 1; continue;
         }
         // 🆕 連續且「group 名相同」的 {gp} 行＝一個小事件（一顆編輯小圓點）；
@@ -2480,7 +2482,7 @@
           // 🆕 從行尾式 gp 第一行提取 fg/bg attrs（連續同名行之間 attrs 應一致；若不同，以第一行為準）
           const headAttrs = (typeof tlExtractGpAttrsFromLine === 'function')
             ? tlExtractGpAttrsFromLine(line) : { fg: '', bg: '' };
-          blocks.push({ start: i, end: j - 1, type: 'gp', fg: headAttrs.fg || '', bg: headAttrs.bg || '' });
+          blocks.push({ start: i, end: j - 1, type: 'gp', fg: headAttrs.fg || '', bg: headAttrs.bg || '', anim: headAttrs.anim || '' });
           i = j; continue;
         }
         if (isHeading(line)) { blocks.push({ start: i, end: i, type: 'heading' }); i++; continue; }

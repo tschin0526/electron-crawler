@@ -482,14 +482,14 @@
       const fenceInfo = gpFenceScan(noteLines);
       const fenceMarkers = new Set(fenceInfo.markers);
       const fenceBlockAt = new Map();
-      const rangeAttrs = new Map();   // 🆕 rangeIndex → {fg, bg}
+      const rangeAttrs = new Map();   // rangeIndex → visual attrs
       fenceInfo.ranges.forEach((r, n) => {
         const blockId = '\u0000blk' + n;
         for (let k = r.start + 1; k < r.end; k++) fenceBlockAt.set(k, blockId);
         // 🆕 从 open 行提取 fg/bg attrs
         const openLine = noteLines[r.start] || '';
         const a = extractGpAttrsLocal(openLine);
-        rangeAttrs.set(n, { fg: a && a.fg ? a.fg : '', bg: a && a.bg ? a.bg : '' });
+        rangeAttrs.set(n, { fg: a && a.fg ? a.fg : '', bg: a && a.bg ? a.bg : '', anim: a && a.anim ? a.anim : '' });
       });
       // 🆕 预扫每个 gp fence range：区间内**至少一行命中过滤条件** → 整块保留
       //    （不是只保留命中行！否则排序会把同一块内的命中行和未命中行打散到不同位置。）
@@ -536,7 +536,7 @@
           }
           hits.push({ raw: t, line: k, uid: ev.uid || '', text: m ? (m[2] || '').trim() : '',
             task: !!m, type: type, blockGp: blockId, wholeGp: true,
-            gpFg: blockAttrs.fg, gpBg: blockAttrs.bg });
+            gpFg: blockAttrs.fg, gpBg: blockAttrs.bg, gpAnim: blockAttrs.anim });
         }
       });
       // 🆕 再收非 gp fence 的命中行（排除 gp 区间内容，避免重复）
@@ -745,7 +745,7 @@
   function groupHitsIntoUnits(hits) {
     const units = [];
     let cur = null;        // 普通合并单元 {cat, task:false, hits}
-    let gpCur = null;      // {gp} 合并单元 {gp, task:false, hits, fg, bg}
+    let gpCur = null;      // {gp} 合并单元 {gp, task:false, hits, fg, bg, anim}
     const flushGp = () => { if (gpCur) { units.push(gpCur); gpCur = null; } };
     (hits || []).forEach((h) => {
       if (h.sep) return;   // 虚拟空行只作分隔、不打断连续性（沿用旧行为）
@@ -756,7 +756,7 @@
         if (cur) { units.push(cur); cur = null; }
         if (gpCur && gpCur.gp === gp) gpCur.hits.push(h);
         // 🆕 2026-11-09：gp unit 带上 attrs（fg/bg），从第一个 hit 拿（整块 hits 的 attrs 全相同）
-        else { flushGp(); gpCur = { gp: gp, task: false, hits: [h], fg: h.gpFg || '', bg: h.gpBg || '' }; }
+        else { flushGp(); gpCur = { gp: gp, task: false, hits: [h], fg: h.gpFg || '', bg: h.gpBg || '', anim: h.gpAnim || '' }; }
         return;
       }
       flushGp();
@@ -855,14 +855,14 @@
     if (m) return parseGpAttrLocal(m[1]);
     m = s.match(/\{[ \t]*(?:group|gp)[ \t]*:?[ \t]*([^{}]*)\}(?=[ \t]*(?:\[\[[^\]]*\]\][ \t]*)*$)/i);
     if (m) return parseGpAttrLocal(m[1]);
-    return { key: '', fg: '', bg: '' };
+    return { key: '', fg: '', bg: '', anim: '' };
   }
   function parseGpAttrLocal(raw) {
     const s = String(raw == null ? '' : raw).trim();
-    if (!s) return { key: '', fg: '', bg: '' };
+    if (!s) return { key: '', fg: '', bg: '', anim: '' };
     const pipe = s.indexOf('|');
     const key = (pipe < 0 ? s : s.slice(0, pipe)).trim();
-    let fg = '', bg = '';
+    let fg = '', bg = '', anim = '';
     if (pipe >= 0) {
       s.slice(pipe + 1).split(',').forEach((pair) => {
         const eq = pair.indexOf('=');
@@ -871,9 +871,10 @@
         const v = pair.slice(eq + 1).trim();
         if (k === 'fg') fg = resolveColorNameLocal(v);
         else if (k === 'bg') bg = resolveColorNameLocal(v);
+        else if (k === 'anim' && /^(pulse|scan|data|aurora|orbit|arc|holo|signal|glitch)$/.test(v)) anim = v;
       });
     }
-    return { key: key, fg: fg, bg: bg };
+    return { key: key, fg: fg, bg: bg, anim: anim };
   }
   // 🆕 gp 单元里的 - [ ] 行：转成与一般 checkbox 相同的 .ev-md-check/.ev-cb（只读框、无圆点）。
   //    否则 D.markdown 会把它们渲染成 <ul><li>，便利贴 CSS 的 .body ul li{list-style:disc}
@@ -894,7 +895,7 @@
     }).join('\n');
   }
   // 一个非 task 编辑单元（可能含 1..n 条连续同类行）：整块渲染成 1 个 .md-unit ＋ 1 颗只读圆点。
-  function nonTaskUnitHtml(hits, ev, selfKey, deps, isGp, gpFg, gpBg) {
+  function nonTaskUnitHtml(hits, ev, selfKey, deps, isGp, gpFg, gpBg, gpAnim) {
     const D = makeDeps(deps);
     const list = (hits && hits.length) ? hits : [];
     if (!list.length) return '';
@@ -928,7 +929,7 @@
         gpStyle = ' style="' + parts.join(';') + '"';
       }
     }
-    return '<div class="vsr-sort-unit" data-sort-date="' + D.esc(sd) + '" data-cr-date="' + D.esc(cr) + '"><div class="md-unit' + (isGp ? ' is-gp' : '') + '"' + gpStyle + ' data-start="' + (first.line != null ? first.line : '') +
+    return '<div class="vsr-sort-unit" data-sort-date="' + D.esc(sd) + '" data-cr-date="' + D.esc(cr) + '"><div class="md-unit' + (isGp ? ' is-gp' : '') + '"' + (isGp && /^(pulse|scan|data|aurora|orbit|arc|holo|signal|glitch)$/.test(gpAnim || '') ? ' data-gp-anim="' + gpAnim + '"' : '') + gpStyle + ' data-start="' + (first.line != null ? first.line : '') +
       '" data-end="' + (last.line != null ? last.line : (first.line != null ? first.line : '')) + '">' +
       dot + D.markdown(D.termDefs(marked)) + '</div></div>';
   }
@@ -940,7 +941,7 @@
       groupHitsIntoUnits(g.hits).forEach((u) => {
         out += u.task ? taskLineHtml(u.hits[0], g.ev, selfKey, D) + '\n'
           // 🆕 2026-11-09：gp attrs 从 unit 直接传
-          : nonTaskUnitHtml(u.hits, g.ev, selfKey, D, u.gp != null, u.fg || '', u.bg || '') + '\n';
+          : nonTaskUnitHtml(u.hits, g.ev, selfKey, D, u.gp != null, u.fg || '', u.bg || '', u.anim || '') + '\n';
       });
     });
     return out;
