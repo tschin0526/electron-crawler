@@ -3262,7 +3262,9 @@ function noteBlockMenuOpen(e) {
   // 🆕 只有 {gp} 小事件群才给搬移；投影贴只读也一并收起。
   //    靠 .nami[hidden]{display:none !important} 才真的隐藏（hidden 属性单用会被 .nami{display:block} 压过）。
   menu.querySelectorAll('.nami').forEach((item) => {
-    if (item.getAttribute('data-act') === 'move') item.hidden = (type !== 'gp' || isViewKey(uid));
+    const act = item.getAttribute('data-act');
+    // 🆕 2026-11-10：「搬移项目」与「🎨 设定围栏颜色」都只对可编辑的 {gp} 小事件群开放
+    if (act === 'move' || act === 'color') item.hidden = (type !== 'gp' || isViewKey(uid));
   });
   menu.classList.add('open');
   const r = menu.getBoundingClientRect();
@@ -3350,6 +3352,206 @@ async function noteBlockDelete(t) {
   showNoteMoveToast(r.ok
     ? ('✅ 已删除区块（' + typeName + '）' + (r.warn ? ('。' + r.warn) : ''))
     : ('⚠️ 删除失败（' + r.error + '）'), !r.ok);
+}
+// ── 🆕 2026-11-10：小事件群「设定围栏颜色」──────────────────────────────
+//  只产出既有语法：fg=色名[±级数]、bg=色名[±级数]｜渐变(起色→止色)。
+//  主窗 tlResolveColorName／LITE calResolveColorName／VIEW resolveColorNameLocal
+//  三端解析层都已支持（16 色、±1~10 亮度级数、渐变），故这里不新增语法、不改解析器。
+//  ⚠️ parseGpAttrs 用 split(',') 切属性 → 值里绝不能出现逗号（不写原生 rgba()/linear-gradient()）。
+const NOTE_GP_COLORS = {
+  '红': '#e74c3c', '橙': '#e67e22', '黄': '#f1c40f', '金': '#d4af37',
+  '粉': '#ff6b9d', '紫': '#8e44ad', '蓝': '#3498db',
+  '绿': '#27ae60', '青': '#1abc9c', '灰': '#95a5a6', '黑': '#2c3e50', '白': '#ecf0f1',
+  '卡其': '#bdb76b', '棕': '#8b5a2b', '酒红': '#722f37', '米': '#f5f0dc'
+};
+const GC_KEEP = '__keep__', GC_NONE = '__none__';
+let gpColorTarget = null;   // { uid, start, end, rawOpen, fg, bg, key }
+function noteGcEl(id) { return document.getElementById(id); }
+function noteGcVal(id, fallback) { const el = noteGcEl(id); return el ? String(el.value == null ? '' : el.value) : (fallback || ''); }
+function noteGcSet(id, v, fallback) {
+  const el = noteGcEl(id); if (!el) return;
+  el.value = v;
+  if (fallback != null && el.value !== String(v)) el.value = fallback;
+}
+function noteGcOptions(withKeep, withNone) {
+  let out = '';
+  if (withKeep) out += '<option value="' + GC_KEEP + '">保持现状</option>';
+  if (withNone) out += '<option value="' + GC_NONE + '">不设定（恢复默认）</option>';
+  Object.keys(NOTE_GP_COLORS).forEach((name) => {
+    out += '<option value="' + name + '">' + name + ' · ' + NOTE_GP_COLORS[name] + '</option>';
+  });
+  return out;
+}
+function noteGcFillSelects() {
+  ['gcFg', 'gcBg'].forEach((id) => { const el = noteGcEl(id); if (el) el.innerHTML = noteGcOptions(true, true); });
+  // 渐变端点也给「保持现状」：文字级别（浅蓝／淡绿）或 #hex 等合法但非基础色的原串要原样保留
+  ['gcGradFrom', 'gcGradTo'].forEach((id) => { const el = noteGcEl(id); if (el) el.innerHTML = noteGcOptions(true, false); });
+}
+// 把「标记里的值」拆成下拉／级数／渐变端点，供开窗回填
+function noteGcParseValue(raw) {
+  const s = String(raw == null ? '' : raw).trim();
+  const out = { sel: GC_NONE, dir: '', level: '', grad: false, from: '白', to: '蓝' };
+  if (!s) return out;
+  const gm = s.match(/^渐变\s*\(\s*([^→)]+?)\s*→\s*([^)]+?)\s*\)$/);
+  if (gm) {
+    out.grad = true; out.sel = GC_KEEP;
+    out.from = noteGcSelOfEndpoint(gm[1]); out.to = noteGcSelOfEndpoint(gm[2]);
+    return out;
+  }
+  const m = s.match(/^(.+?)\s*([+\-])\s*(\d+)$/);
+  const base = (m ? m[1] : s).trim();
+  if (!NOTE_GP_COLORS[base]) { out.sel = GC_KEEP; return out; }   // hex／CSS 自订值 → 原样保留
+  out.sel = base;
+  if (m) { out.dir = m[2]; out.level = String(Math.max(1, Math.min(10, parseInt(m[3], 10)))); }
+  return out;
+}
+// 渐变端点：只有 16 个基础色名能进下拉；「浅蓝／淡绿／#hex」等合法但非基础色 → 保持现状
+function noteGcSelOfEndpoint(raw) {
+  const s = String(raw == null ? '' : raw).trim();
+  return NOTE_GP_COLORS[s] ? s : GC_KEEP;
+}
+// 从原 bg 取回渐变端点原串（供「保持现状」原样写回，不破坏文字级别／自订色）
+function noteGcRawGradEnds(raw) {
+  const gm = String(raw == null ? '' : raw).match(/^渐变\s*\(\s*([^→)]+?)\s*→\s*([^)]+?)\s*\)$/);
+  return gm ? { from: gm[1].trim(), to: gm[2].trim() } : { from: '白', to: '蓝' };
+}
+// 控件 → 标记值：「保持现状」原样带回旧值，「不设定」写空，其余拼色名±级数
+function noteGcLevelSuffix(dirId, numId) {
+  const dir = noteGcVal(dirId);
+  if (dir !== '+' && dir !== '-') return '';
+  let n = parseInt(noteGcVal(numId), 10);
+  if (!Number.isInteger(n)) n = 1;
+  return dir + Math.max(1, Math.min(10, n));
+}
+function noteGcValue(selId, dirId, numId, current) {
+  const sel = noteGcVal(selId, GC_KEEP);
+  if (sel === GC_NONE) return '';
+  if (sel === GC_KEEP || !NOTE_GP_COLORS[sel]) return String(current || '');
+  return sel + noteGcLevelSuffix(dirId, numId);
+}
+function noteGcCompose() {
+  const t = gpColorTarget || {};
+  const fg = noteGcValue('gcFg', 'gcFgDir', 'gcFgLevel', t.fg);
+  let bg = '';
+  if ((noteGcEl('gcGradOn') || {}).checked) {
+    const orig = noteGcRawGradEnds(t.bg);
+    const aSel = noteGcVal('gcGradFrom'), bSel = noteGcVal('gcGradTo');
+    const a = aSel === GC_KEEP ? orig.from : aSel;
+    const b = bSel === GC_KEEP ? orig.to : bSel;
+    if (!a || !b || a === GC_NONE || b === GC_NONE) return { error: '请选择渐变的起始色与结束色' };
+    bg = '渐变(' + a + '→' + b + ')';
+  } else {
+    bg = noteGcValue('gcBg', 'gcBgDir', 'gcBgLevel', t.bg);
+  }
+  if (fg.indexOf(',') >= 0 || bg.indexOf(',') >= 0) {
+    return { error: '颜色值不能含逗号（属性以逗号分隔），请改用色名或 渐变(A→B)' };
+  }
+  return { fg: fg, bg: bg };
+}
+// 预览用：把「标记值」近似成 CSS（级数用 color-mix 近似 HSL 亮度；写入仍是标记原文）
+function noteGcToCss(raw) {
+  const s = String(raw == null ? '' : raw).trim();
+  if (!s) return '';
+  const gm = s.match(/^渐变\s*\(\s*([^→)]+?)\s*→\s*([^)]+?)\s*\)$/);
+  if (gm) {
+    const a = noteGcToCss(gm[1]), b = noteGcToCss(gm[2]);
+    return (a && b) ? ('linear-gradient(135deg, ' + a + ', ' + b + ')') : '';
+  }
+  const m = s.match(/^(.+?)\s*([+\-])\s*(\d+)$/);
+  const base = (m ? m[1] : s).trim();
+  const hex = NOTE_GP_COLORS[base];
+  if (!hex) return (/^#[0-9a-f]{3,8}$/i.test(s) || /^(rgb|hsl)/i.test(s)) ? s : '';
+  if (!m) return hex;
+  const n = Math.max(1, Math.min(10, parseInt(m[3], 10)));
+  const pct = Math.round(n / 10 * 75);
+  return 'color-mix(in srgb, ' + hex + ' ' + (100 - pct) + '%, ' + (m[2] === '+' ? 'black' : 'white') + ')';
+}
+// 只替换开栏行的 |attrs 段：保留原字面量（{gpE}／{group:E}／大小写）与前后空白；闭栏行永不带 attrs
+function noteGcOpenLineWithColors(rawLine, fg, bg) {
+  const src = String(rawLine == null ? '' : rawLine);
+  const stripped = src.replace(/(\{[ \t]*(?:group|gp)[ \t]*:?[ \t]*[^{}|]*)(?:\|[^{}]*)?(\}[ \t]*)$/i, '$1$2');
+  const built = noteBuildGpOpenLine(stripped.trim(), fg, bg);
+  return (src.match(/^[ \t]*/) || [''])[0] + built;
+}
+function noteGcSyncGradRow() {
+  const on = !!(noteGcEl('gcGradOn') || {}).checked;
+  const row = noteGcEl('gcGradRow'); if (row) row.hidden = !on;
+  const bgRow = noteGcEl('gcBgRow'); if (bgRow) bgRow.classList.toggle('is-muted', on);
+}
+function noteGcUpdatePreview() {
+  const c = noteGcCompose();
+  const t = gpColorTarget || {};
+  const mark = noteGcEl('gcMarkPreview');
+  if (mark) mark.textContent = '将写入：' + (c.error ? ('⚠️ ' + c.error)
+    : noteGcOpenLineWithColors(t.rawOpen || '{gp}', c.fg, c.bg));
+  const pv = noteGcEl('gcPreview'); if (!pv) return;
+  const fgCss = c.error ? '' : noteGcToCss(c.fg), bgCss = c.error ? '' : noteGcToCss(c.bg);
+  pv.style.color = fgCss || '';
+  pv.style.background = bgCss || '';
+  pv.style.borderColor = fgCss || '';
+}
+function noteGcCloseDialog() {
+  const ov = noteGcEl('gpColorOv'); if (ov) ov.classList.remove('show');
+  gpColorTarget = null;
+}
+async function noteGcOpenDialog(t) {
+  if (!t || t.type !== 'gp') return;
+  if (isViewKey(t.uid)) { showNoteMoveToast('VIEW 投影贴是自动汇总的只读投影，请到来源便利贴设定围栏颜色', true); return; }
+  const notes = await fetchAuthoritativeNotes(t.uid);
+  if (notes == null) { showNoteMoveToast('无法读取该便利贴的最新内容，已取消', true); return; }
+  const lines = notes.split('\n');
+  if (t.start < 0 || t.end >= lines.length || t.end < t.start) { showNoteMoveToast('区块内容已变化，请刷新便利贴后重试', true); return; }
+  const range = noteGpFenceScan(lines).ranges.find((r) => r.start === t.start && r.end === t.end);
+  if (!range) { showNoteMoveToast('找不到这个群的开栏标记，请确认它已是块级围栏 {gpX}…{/gpX}', true); return; }
+  const cur = noteExtractGpAttrs(lines[t.start]);
+  gpColorTarget = { uid: t.uid, start: t.start, end: t.end, rawOpen: lines[t.start],
+    fg: cur.fg || '', bg: cur.bg || '', key: range.key };
+  noteGcFillSelects();
+  const f = noteGcParseValue(cur.fg), b = noteGcParseValue(cur.bg);
+  noteGcSet('gcFg', f.sel, GC_KEEP); noteGcSet('gcFgDir', f.dir); noteGcSet('gcFgLevel', f.level);
+  noteGcSet('gcBg', b.sel, GC_KEEP); noteGcSet('gcBgDir', b.dir); noteGcSet('gcBgLevel', b.level);
+  const grad = noteGcEl('gcGradOn'); if (grad) grad.checked = !!b.grad;
+  noteGcSet('gcGradFrom', b.grad ? b.from : '白', GC_KEEP);
+  noteGcSet('gcGradTo', b.grad ? b.to : '蓝', GC_KEEP);
+  const hint = noteGcEl('gcKeyHint'); if (hint) hint.textContent = lines[t.start].trim();
+  noteGcSyncGradRow();
+  noteGcUpdatePreview();
+  const ov = noteGcEl('gpColorOv'); if (ov) ov.classList.add('show');
+  setTimeout(() => { const el = noteGcEl('gcFg'); if (el) el.focus(); }, 0);
+}
+async function noteGcSave(clear) {
+  const t = gpColorTarget;
+  if (!t) return;
+  let fg = '', bg = '';
+  if (!clear) {
+    const c = noteGcCompose();
+    if (c.error) { showNoteMoveToast(c.error, true); return; }
+    fg = c.fg; bg = c.bg;
+  }
+  const notes = await fetchAuthoritativeNotes(t.uid);
+  if (notes == null) { showNoteMoveToast('无法读取该便利贴的最新内容，已取消', true); return; }
+  const lines = notes.split('\n');
+  const range = noteGpFenceScan(lines).ranges.find((r) => r.start === t.start && r.end === t.end);
+  if (!range || lines[t.start] !== t.rawOpen) {
+    showNoteMoveToast('围栏标记已变化，请重新右键打开设定', true); noteGcCloseDialog(); return;
+  }
+  const newLine = noteGcOpenLineWithColors(lines[t.start], fg, bg);
+  if (newLine === lines[t.start]) { showNoteMoveToast('围栏颜色没有变化'); noteGcCloseDialog(); return; }
+  const out = lines.slice(); out[t.start] = newLine;
+  const r = await commitStickyNoteContent(out.join('\n'), t.uid, IDX, SRC_FILE, { expect: { present: [newLine.trim()] } });
+  noteGcCloseDialog();
+  showNoteMoveToast(r.ok ? ('✅ 已' + (clear ? '清除' : '更新') + '围栏颜色' + (r.warn ? ('。' + r.warn) : ''))
+    : ('⚠️ 设定失败（' + r.error + '）'), !r.ok);
+}
+function noteGcClear() {
+  const t = gpColorTarget;
+  if (!t) return;
+  const ok = window.confirm(
+    '确定要清除这个小事件群的围栏颜色设定吗？\n\n目前：fg=' + (t.fg || '无') +
+    '  bg=' + (t.bg || '无') + '\n\n只会移除开栏标记里的 fg/bg 属性，群的内容不会变动；可随时重新设定恢复。'
+  );
+  if (!ok) { showNoteMoveToast('已取消清除'); return; }
+  noteGcSave(true);
 }
 // 🆕 小事件群（{gp}）搬移入口：把 [start..end] 整段原文交给既有的「搬移项目」管线。
 //    ⚠️ 必须用 fetchAuthoritativeNotes 现拉原文（含 {gp}/cr/cp 标记），不能用渲染后的纯文字：
@@ -4498,6 +4700,9 @@ function applyColor() {
   // 🆕 自动标示术语确认浮层盒：同样取便利贴实色背景，与所在便利贴色调一致（否则在深色便利贴上白底+--note-fg 看不清）
   const autoTermBox = document.getElementById('autoTermBox');
   if (autoTermBox) autoTermBox.style.background = tint(state.color, 100);
+  // 🆕 小事件群「设定围栏颜色」浮层盒：同样取便利贴实色背景 + --note-fg 字色，整张弹窗跟随该便利贴配色
+  const gpColorBox = document.getElementById('gpColorBox');
+  if (gpColorBox) gpColorBox.style.background = tint(state.color, 100);
   updateMenuTheme();
   syncCustomSwatchActive();
   applyMeteor();   // 🆕 改色/透明度/字号都会重跑 applyColor，这里顺带把外框流星状态套用到 #note
@@ -6500,6 +6705,8 @@ document.addEventListener('keydown', (e) => {
         noteFindSameOpenSourceEvent(tt.uid, [tt.start, tt.end], txt);
       }
       else if (act === 'edit') { const tt = t; noteBlockMenuClose(); const synth = { preventDefault() {}, stopPropagation() {}, target: tt.dot }; tlOpenEditBlockDialog(synth, tt.uid, tt.start, tt.end, tt.type); }
+      // 🆕 2026-11-10：设定围栏颜色（只改开栏行的 fg/bg 属性段）
+      else if (act === 'color') { const tt = t; noteBlockMenuClose(); noteGcOpenDialog(tt); }
       else if (act === 'copy') { noteBlockMenuClose(); noteBlockCopy(t); }
       // 🆕 gp 小事件群：整群搬移（t 是关菜单前留下的副本，noteBlockMenuClose 清的是全域变量）
       else if (act === 'move') { noteBlockMenuClose(); noteBlockMove(t); }
@@ -6572,6 +6779,32 @@ document.addEventListener('keydown', (e) => {
   if (tc) tc.onclick = () => hideNoteMoveToast();
   // 🆕 VIEW 便利贴徽标：点开看 JSON 设定逻辑＋跳转维护作业
   setupViewBadge();
+})();
+
+// 🆕 2026-11-10：「设定围栏颜色」浮层交互（Enter 套用 · Esc 取消 · 点背罩取消）
+(function bindGpColorDialog() {
+  const ov = document.getElementById('gpColorOv');
+  if (!ov) return;
+  const bind = (id, fn) => {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener('click', (e) => { e.stopPropagation(); fn(); });
+  };
+  bind('gcApplyBtn', () => noteGcSave(false));
+  bind('gcClearBtn', noteGcClear);
+  bind('gcCancelBtn', noteGcCloseDialog);
+  ov.addEventListener('click', (e) => { if (e.target === ov) noteGcCloseDialog(); });
+  // 控件一变就重算预览与「将写入」标记（事件委托，动态填入的 <option> 也适用）
+  ['input', 'change'].forEach((evt) => ov.addEventListener(evt, (e) => {
+    if (e.target && e.target.id === 'gcGradOn') noteGcSyncGradRow();
+    noteGcUpdatePreview();
+  }));
+  ov.addEventListener('keydown', (e) => {
+    if (e.isComposing || e.keyCode === 229) return;   // IME 组字中不拦
+    if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); noteGcCloseDialog(); return; }
+    if (e.key === 'Enter' && e.target && e.target.tagName !== 'SELECT' && e.target.tagName !== 'BUTTON') {
+      e.preventDefault(); e.stopPropagation(); noteGcSave(false);
+    }
+  }, true);
 })();
 
 init();

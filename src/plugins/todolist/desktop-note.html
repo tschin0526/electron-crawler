@@ -349,6 +349,40 @@
     .addcheck-box .ac-actions .ac-copy[hidden] { display: none; }
     .addcheck-box .ac-primary { background: rgba(212,175,55,.28); border-color: #D4AF37; font-weight: 600; }
     .addcheck-box .ac-primary:hover { background: rgba(212,175,55,.45); }
+    /* 🆕 小事件群「设定围栏颜色」浮层：颜色下拉清单（系统 16 色）＋级数输入＋外框预览。
+       配色＝所在便利贴：盒底由 applyColor() 套 tint(state.color,100)（＝#note 的 --note-bg 纸张实色），
+       文字继承 --note-fg；这里再加一层 CSS fallback，避免 applyColor 未跑到时退回 .addcheck-box 白底、造成「浅字白底」。
+       原生下拉的 option 清单也显式跟随同一组变量，否则深色便利贴上会弹出系统白底＋浅金字。
+       用 #gpColorBox 前缀压过上面的 .addcheck-box select 通則（width:100% / margin-top:3px）。
+       ⚠️ 每个颜色行用两列 grid：主下拉独占第一行满宽，级数控件放第二行右对齐 ——
+          便利贴窗常只有 320px 宽，级数塞同一行会把下拉挤到 35px（Electron 真引擎实测）。 */
+    #gpColorBox { width: min(92vw, 470px); background: var(--note-bg, rgba(255,255,255,.98)); }
+    #gpColorBox select option { background: var(--note-bg, #fff); color: var(--note-fg, #33384a); }
+    .gc-key { margin-left: 4px; font-size: 10px; font-weight: 400; opacity: .85; word-break: break-all; }
+    #gpColorBox .gc-hint { margin: 0 0 8px; line-height: 1.5; opacity: .92; }
+    #gpColorBox .gc-hint code { font-size: 10px; }
+    #gpColorBox .gc-row { display: grid; grid-template-columns: 64px minmax(0, 1fr); gap: 4px 6px; align-items: center; margin-bottom: 6px; }
+    #gpColorBox .gc-row > .gc-label { grid-column: 1; grid-row: 1; font-size: 11px; opacity: .9; }
+    #gpColorBox .gc-row > select { grid-column: 2; grid-row: 1; display: block; width: 100%; min-width: 0; margin-top: 0; }
+    #gpColorBox .gc-levels { grid-column: 2; grid-row: 2; display: flex; align-items: center; justify-content: flex-end; gap: 6px; }
+    #gpColorBox .gc-levels .gc-sub-label { font-size: 10px; opacity: .85; }
+    #gpColorBox .gc-levels select.gc-dir { flex: 0 0 96px; width: 96px; margin-top: 0; }
+    #gpColorBox .gc-levels input.gc-level { flex: 0 0 58px; width: 58px; box-sizing: border-box; margin: 0; padding: 4px 6px;
+      border: 1px solid #D4AF37; border-radius: 6px; font: inherit; font-size: 12px;
+      color: var(--note-fg, #33384a); background: rgba(127,127,127,.08); -webkit-app-region: no-drag; }
+    #gpColorBox .gc-grad-toggle { display: flex; align-items: center; gap: 6px; margin: 2px 0 6px; font-size: 11px; cursor: pointer; user-select: none; -webkit-user-select: none; }
+    #gpColorBox .gc-grad-toggle input { margin: 0; width: 14px; height: 14px; accent-color: #D4AF37; cursor: pointer; }
+    #gpColorBox .gc-grad-row[hidden] { display: none; }
+    #gpColorBox .gc-grad-row { grid-template-columns: 64px minmax(0, 1fr) minmax(0, 1fr); }
+    #gpColorBox .gc-grad-row > select:nth-of-type(1) { grid-column: 2; grid-row: 1; }
+    #gpColorBox .gc-grad-row > select:nth-of-type(2) { grid-column: 3; grid-row: 1; }
+    #gpColorBox .gc-row.is-muted { opacity: .45; }
+    #gpColorBox .gc-row.is-muted select, #gpColorBox .gc-row.is-muted input { pointer-events: none; }
+    #gpColorBox .gc-preview { margin-top: 8px; padding: 8px 10px; border: 1px solid var(--gp-border, currentColor);
+      border-radius: 6px; background: var(--gp-bg, transparent); color: var(--gp-fg, inherit); line-height: 1.5; }
+    #gpColorBox .gc-mark { margin-top: 6px; font-size: 10px; word-break: break-all; opacity: .9;
+      font-family: ui-monospace, Menlo, Consolas, monospace; }
+    #gpColorBox .gc-level-note { flex: 1 1 auto; font-size: 10px; opacity: .85; }
     /* 🆕 表格网格模式（引擎＝md-table-grid.js，主窗体与便利贴共用一份）。
        .md-tg-* 那三个类别由共用引擎生成，名字两端一致 → 改类别名要两端 CSS 一起改。
        配色沿用本窗体的语汇：金框 #D4AF37 ＋ --note-fg ＋ 半透明灰（浅／深两套都靠 JS 套 tint 底色，不写死黑白）。
@@ -474,11 +508,21 @@
     #body.only-undone-checks .md-unit.gp-no-checkbox { display: none !important; }
     #body .ev-md-check + br,
     #body br:has(+ .ev-md-check) { display: none !important; }
-    .ev-md-check { display: block; cursor: default; }
+    .ev-md-check { display: block; cursor: default; font-size: inherit; }
+    .ev-md-check-text { font-size: inherit; }
     /* 🆕「最小 MD 表达单元」区块：非 checkbox 内容（表格/段落/标题/引用/代码/列表）
        左侧常驻一个编辑小圆点（✎）。便利贴为可拖拽窗体，圆点必须 no-drag 才能点击 */
     #body .md-unit { position: relative; padding-left: 18px; margin: 0 0 .45em 0; }
-    #body .md-unit:last-child { margin-bottom: 0; }
+    /* 「整段末尾不留白」只认下面三种 DOM 结构，⛔ 不能写成通用 .md-unit:last-child：
+       ① 来源便利贴：.md-unit 是 #body 的直接平级子元素，只有最后一个该清零；
+       ② VIEW 投影贴：每个 .md-unit 被排序单元 .vsr-sort-unit 单独包住，
+          → 恒为其父的 :last-child；通用写法会把「每一个」小事件群的 .45em
+          间距都清零，相邻群外框就紧贴（2026-11-10 修复）；
+       ③ 旧版 VIEW：.md-unit 直接挂在 .vsr-seg 下（normalizeViewSortUnits 会补 class）。
+       间距数值仍只由上一行的 .45em 单一来源决定。 */
+    #body > .md-unit:last-child,
+    #body .vsr-seg > .md-unit:last-child,
+    #body .vsr-seg > .vsr-sort-unit:last-child > .md-unit { margin-bottom: 0; }
     #body .md-unit > *:first-child { margin-top: 0; }
     #body .md-unit > *:last-child { margin-bottom: 0; }
     /* 🆕 小事件群（{gp} 连续同组行＝一个编辑小圆点区块）：最细外框，
@@ -492,6 +536,10 @@
       padding-top: .15em; padding-right: .4em; padding-bottom: .15em;
       color: var(--gp-fg, inherit);
       background: var(--gp-bg, transparent);
+      /* 🆕 显式锁定字号：浏览器默认 <ul>/<li>/<p> 继承 font-size 理应 OK，
+         但某些 markdown 渲染路径可能引入 em 相对单位覆盖 → 强制回父级的 12px */
+      font-size: inherit;
+      line-height: 1.5;
     }
     /* Retina/高 DPR：CSS 1px 在 2x 屏会画成 2 个物理像素（看起来偏粗）。
        0.5px hairline＝1 个物理像素；选择器必须带 #body，特异性才压得住上面的简写。 */
@@ -997,6 +1045,7 @@
     <div class="note-addcheck-menu" id="noteBlockMenu" role="menu">
       <button type="button" class="nami" data-act="goto-event" role="menuitem" title="唤起 Calendar 开启对应的编辑行程画面（被 include 的外部档为只读），并把备注框滚动到这个区块所在行＋闪烁">📝 切换编辑行程并定位</button>
       <button type="button" class="nami" data-act="edit" role="menuitem">✎ 编辑此区块</button>
+      <button type="button" class="nami" data-act="color" role="menuitem" hidden title="只有 {gp} 小事件群可用：设定这个围栏的字体色／背景色／渐变色与颜色级数">🎨 设定围栏颜色</button>
       <button type="button" class="nami" data-act="copy" role="menuitem">📋 复制整块内容</button>
       <button type="button" class="nami" data-act="move" role="menuitem" hidden title="只有 {gp} 小事件群可用：整群搬移到其它便利贴（含 {gp} 标记，维持分组）">📤 搬移项目</button>
       <button type="button" class="nami" data-act="del" role="menuitem">🗑 删除此区块</button>
@@ -1221,6 +1270,50 @@
         <div class="ac-actions">
           <button type="button" class="ac-copy ac-primary" id="nnCreateBtn">建立</button>
           <button type="button" class="ac-copy" id="nnCancelBtn">取消</button>
+        </div>
+      </div>
+    </div>
+    <!-- 🆕 小事件群「设定围栏颜色」浮层（右键编辑小圆点 → 🎨 设定围栏颜色）。
+         只重写该群「开栏行」的 |fg=,bg= 属性段；闭栏行、群内容与其它群一律不动。
+         下拉清单＝系统 tlCN_COLORS 的 16 个中文色名；级数＝色名±1~10；渐变＝渐变(A→B)。 -->
+    <div class="addcheck-ov" id="gpColorOv">
+      <div class="addcheck-box" id="gpColorBox">
+        <div class="ac-title">🎨 设定围栏颜色 <span class="gc-key" id="gcKeyHint"></span></div>
+        <div class="ac-hint gc-hint">只改这个群的开栏标记 <code>{gpX|fg=…,bg=…}</code>：闭栏行、群内容与其它群都不动。下拉＝系统支持的 16 种颜色；级数 1~10（+ 加深 / - 淡化）；渐变两端用基础色名。</div>
+        <div class="gc-row">
+          <label class="gc-label" for="gcFg">字体颜色</label>
+          <select id="gcFg"></select>
+          <div class="gc-levels">
+            <span class="gc-sub-label">颜色级数</span>
+            <select class="gc-dir" id="gcFgDir" aria-label="字体色级数方向">
+              <option value="">无级数</option><option value="+">加深 +</option><option value="-">淡化 -</option>
+            </select>
+            <input class="gc-level" id="gcFgLevel" type="number" min="1" max="10" step="1" inputmode="numeric" placeholder="级数" aria-label="字体色级数">
+          </div>
+        </div>
+        <div class="gc-row" id="gcBgRow">
+          <label class="gc-label" for="gcBg">背景颜色</label>
+          <select id="gcBg"></select>
+          <div class="gc-levels">
+            <span class="gc-sub-label">颜色级数</span>
+            <select class="gc-dir" id="gcBgDir" aria-label="背景色级数方向">
+              <option value="">无级数</option><option value="+">加深 +</option><option value="-">淡化 -</option>
+            </select>
+            <input class="gc-level" id="gcBgLevel" type="number" min="1" max="10" step="1" inputmode="numeric" placeholder="级数" aria-label="背景色级数">
+          </div>
+        </div>
+        <label class="gc-grad-toggle" for="gcGradOn"><input type="checkbox" id="gcGradOn"> 背景改用渐变色（取代上方纯背景色）</label>
+        <div class="gc-row gc-grad-row" id="gcGradRow" hidden>
+          <label class="gc-label">渐变 起 → 止</label>
+          <select id="gcGradFrom" aria-label="渐变起始色"></select>
+          <select id="gcGradTo" aria-label="渐变结束色"></select>
+        </div>
+        <div class="gc-preview" id="gcPreview">小事件群外框预览 · 文字与 CheckBox 颜色</div>
+        <div class="ac-hint gc-mark" id="gcMarkPreview">将写入：—</div>
+        <div class="ac-actions">
+          <button type="button" class="ac-copy" id="gcClearBtn">清除颜色</button>
+          <button type="button" class="ac-copy ac-primary" id="gcApplyBtn">套用</button>
+          <button type="button" class="ac-copy" id="gcCancelBtn">取消</button>
         </div>
       </div>
     </div>

@@ -2311,6 +2311,25 @@
     //   唯讀事件 / uid 為 null（節日 / tooltip）→ 不掛編輯小圓點，但 gp 區塊仍包 .md-unit.is-gp 外框。
     //   🆕 forceEditable：便利贴层对 include(ro) 行程全開（编辑落回來源檔，见 tlSaveIncludedEventNotes），
     //      故便利贴渲染须传 true；行程視圖 / 事件表單維持 ro 唯讀（不顯示編輯小圓點）。
+    function tlSeparateGpHorizontalRules(text) {
+      let inFence = false;
+      const lines = [];
+      String(text == null ? '' : text).split('\n').forEach((line) => {
+        if (/^\s*(```|~~~)/.test(line)) {
+          inFence = !inFence;
+          lines.push(line);
+          return;
+        }
+        if (!inFence && /^\s{0,3}-{3,}\s*$/.test(line)) {
+          if (lines.length && lines[lines.length - 1].trim()) lines.push('');
+          lines.push(line);
+          lines.push('');
+          return;
+        }
+        lines.push(line);
+      });
+      return lines.join('\n');
+    }
     function tlRenderNotes(notes, uid, forceEditable, evOverride) {
       if (!notes) return '';
       const raw = String(notes);
@@ -2347,7 +2366,7 @@
               ' onclick="tlOpenRoDotMenu(event)">\u270e</button>'
             : '';
           out += '<div class="md-unit is-gp"' + tlGpInlineStyle(b) + '>' + roBtn +
-            renderChunk(dLines.slice(b.start, b.end + 1).join('\n')) + '</div>';
+            renderChunk(tlSeparateGpHorizontalRules(dLines.slice(b.start, b.end + 1).join('\n'))) + '</div>';
           cursor = b.end + 1;
         });
         if (cursor < dLines.length) out += renderChunk(dLines.slice(cursor).join('\n'));
@@ -2373,7 +2392,8 @@
         const prepared = (b.type === 'gp')
           ? tlNotesWithChecks(chunk, uid, { plain: true, baseLine: b.start })
           : chunk;
-        const inner = renderMarkdown(tlRenderTermDefs(tlRenderNoteMarkersLines(prepared)));
+        const gpPrepared = b.type === 'gp' ? tlSeparateGpHorizontalRules(prepared) : prepared;
+        const inner = renderMarkdown(tlRenderTermDefs(tlRenderNoteMarkersLines(gpPrepared)));
         // 🆕 小事件群（连续同组 {gp} 行＝一个编辑小圆点区块）：只给 gp 区块挂 is-gp，
         //    由 CSS 画 1px currentColor 外框；task / code / table / para 等其它单元不受影响。
         //    🆕 2026-11-09：gp 区块若有 fg/bg attrs，追加 inline style 覆盖便利贴默认色

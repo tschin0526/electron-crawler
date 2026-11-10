@@ -2357,7 +2357,8 @@
     .ev-cb.interactive:hover { outline: 2px solid var(--ev-primary); outline-offset: 1px; }
     .ev-md-edit { display: inline-flex; width: 14px; height: 14px; padding: 0; margin: 0 4px 0 0; align-items: center; justify-content: center; vertical-align: -2px; border: 0; border-radius: 50%; background: var(--ev-primary); color: #fff; font-size: 9px; line-height: 1; cursor: pointer; opacity: .78; }
     .ev-md-edit:hover, .ev-md-edit:focus-visible { opacity: 1; outline: 2px solid var(--ev-primary); outline-offset: 1px; }
-    .ev-notes .ev-md-check { display: block; }
+    .ev-notes .ev-md-check { display: block; font-size: inherit; }
+    .ev-notes .ev-md-check-text { font-size: inherit; }
     .ev-md-check.done .ev-cb { background: var(--ev-primary); border-color: var(--ev-primary); }
     .ev-md-check.done .ev-md-check-text { text-decoration: line-through; opacity: 0.75; }
     .ev-item.only-undone-checks .ev-md-check.done { display: none !important; }
@@ -2371,12 +2372,26 @@
     .md-unit > *:last-child { margin-bottom: 0; }
     /* 🆕 小事件群：连续同组 {gp} 行整合成的一个编辑小圆点区块 → 最细外框，
        颜色用 currentColor 直接跟随区块字色（明暗主题自动一致）。padding 只补上/右/下三边，
-       不动 padding-left（那是编辑小圆点的 20px 凹槽）。 */
-    .md-unit.is-gp { border: 1px solid currentColor; padding-top: .15em; padding-right: .4em; padding-bottom: .15em; }
+       不动 padding-left（那是编辑小圆点的 20px 凹槽）。
+       🆕 2026-11-09：--gp-fg / --gp-bg / --gp-border 三組 CSS 變數，
+       由 inline style 注入（使用者在 {gpX|fg=紅,bg=淺藍} 標記裡寫的顏色）；
+       未設定時 var 兜到底（color 繼承事件字色、bg 透明、border 用 currentColor）。 */
+    .md-unit.is-gp {
+      border: 1px solid var(--gp-border, currentColor);
+      padding-top: .15em; padding-right: .4em; padding-bottom: .15em;
+      color: var(--gp-fg, inherit);
+      background: var(--gp-bg, transparent);
+      font-size: inherit;
+      line-height: 1.5;
+    }
     /* Retina/高 DPR：CSS 1px 在 2x 屏会画成 2 个物理像素（看起来偏粗）。
        0.5px hairline＝1 个物理像素，才是真正最细；1x 屏维持 1px，避免线淡到看不见。 */
     @media (min-resolution: 2dppx) {
       .md-unit.is-gp { border-width: .5px; }
+    }
+    /* 🆕 小事件群內 checkbox 跟著群色走（若只設 bg 沒設 fg，checkbox 仍用事件預設色） */
+    .md-unit.is-gp .ev-cb {
+      border-color: var(--gp-fg, currentColor);
     }
     .md-unit-edit { position: absolute; left: 0; top: 0.15em; display: inline-flex; width: 14px; height: 14px; padding: 0; align-items: center; justify-content: center; border: 0; border-radius: 50%; background: var(--ev-primary); color: #fff; font-size: 9px; line-height: 1; cursor: pointer; opacity: .78; }
     .md-unit-edit:hover, .md-unit-edit:focus-visible { opacity: 1; outline: 2px solid var(--ev-primary); outline-offset: 1px; }

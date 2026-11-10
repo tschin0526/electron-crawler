@@ -477,56 +477,84 @@
       }
       const hits = [];
       let inFence = false;
-      // 🆕 块级 {gpX}…{/gpX}：标记行不进 hits，区间内的命中行统一打上同一个 blockGp，
-      //    让 groupHitsIntoUnits 把整块收成「一个」排序单元（＝一个小事件群、一颗圆点）。
+      // 🆕 块级 {gpX}…{/gpX}：先扫 fenceInfo，再按 range 整块保留
       const noteLines = String(ev.notes || '').replace(/\r\n/g, '\n').split('\n');
       const fenceInfo = gpFenceScan(noteLines);
       const fenceMarkers = new Set(fenceInfo.markers);
       const fenceBlockAt = new Map();
+      const rangeAttrs = new Map();   // 🆕 rangeIndex → {fg, bg}
       fenceInfo.ranges.forEach((r, n) => {
-        for (let k = r.start + 1; k < r.end; k++) fenceBlockAt.set(k, '\u0000blk' + n);
+        const blockId = '\u0000blk' + n;
+        for (let k = r.start + 1; k < r.end; k++) fenceBlockAt.set(k, blockId);
+        // 🆕 从 open 行提取 fg/bg attrs
+        const openLine = noteLines[r.start] || '';
+        const a = extractGpAttrsLocal(openLine);
+        rangeAttrs.set(n, { fg: a && a.fg ? a.fg : '', bg: a && a.bg ? a.bg : '' });
       });
+      // 🆕 预扫每个 gp fence range：区间内**至少一行命中过滤条件** → 整块保留
+      //    （不是只保留命中行！否则排序会把同一块内的命中行和未命中行打散到不同位置。）
+      const gpWholeBlocks = new Set();  // rangeIndex → 整块保留
+      fenceInfo.ranges.forEach((r, n) => {
+        for (let k = r.start + 1; k < r.end; k++) {
+          if (isLineHit(noteLines[k])) { gpWholeBlocks.add(n); break; }
+        }
+      });
+      function isLineHit(line) {
+        const t = String(line == null ? '' : line).trim();
+        if (!t) return false;
+        const type = rowTypeOf(line, t);
+        if (cond.dateCond && cond.dateCond.field && cond.dateCond.field !== 'ev') {
+          if (!dateCondMatch(type, line, cond.dateCond)) return false;
+        } else if (cond.dateCond && cond.dateCond.field === 'ev' && (type === 'todo' || type === 'done')) {
+          const ds = cond.dateCond.doneState;
+          if (ds === 'undone' && type !== 'todo') return false;
+          if (ds === 'done' && type !== 'done') return false;
+        } else {
+          if (!cond.rowTypes[type]) return false;
+        }
+        return lineHitsRule(line, t, cond);
+      }
       // 🆕 标题也纳入搜索范围：标题命中关键词／标记（不受 rowType 限制）时，这张行程也算命中，
       //    这样「便利贴标题」含关键词／标记的行程也会被收进这张 VIEW 投影贴。
       const titleRaw = String(ev.title == null ? '' : ev.title);
       const titleTrim = titleRaw.trim();
-      // 🆕 日期条件只作用在行上，不作用在标题 → 行级标记日期（cr/dl/cp）不把标题命中当收录（避免没命中行的事件被标题捎带进来）。
-      //    ⚠️ 但「事件日期」(field==='ev') 例外：ev 的日期闸口已在事件级跑过（上方 line 416），命中即代表这张行程「发生在指定日」，
-      //       此时标题本就是事件的名字、理应永远显示——若仍压抑 titleHit，会让「今天日历」这类纯事件日期规则把「没有备注正文」的行程整张漏掉
-      //       （2026-11-02 修复：用户今日 2 笔行程都无备注 → 便利贴误报「这一天没有行程」）。
-      //       故只对「行级标记日期」压抑 titleHit，ev 放行（无关键词时 lineHitsRule 恒真 → 标题必被收录；有关键词时仍按标题/正文命中过滤）。
       const titleHit = (searchTitle && titleTrim && !(cond.dateCond && cond.dateCond.field && cond.dateCond.field !== 'ev')) ? lineHitsRule(titleRaw, titleTrim, cond) : false;
+      // 🆕 先收 gp fence 整块（按 range 顺序），再收非 gp 的命中行
+      fenceInfo.ranges.forEach((r, n) => {
+        if (!gpWholeBlocks.has(n)) return;
+        const blockId = '\u0000blk' + n;
+        const blockAttrs = rangeAttrs.get(n) || {};
+        for (let k = r.start + 1; k < r.end; k++) {
+          const line = noteLines[k];
+          const t = line.trim();
+          if (!t) continue;
+          if (!isLineHit(line) && !gpWholeBlocks.has(n)) continue;  // 整块模式下所有非空行都进
+          const type = rowTypeOf(line, t);
+          const m = (type === 'todo' || type === 'done') ? t.match(TASK_RE) : null;
+          if (hits.length && !LIST_ITEM_RE.test(t) && LIST_ITEM_RE.test(hits[hits.length - 1].raw)) {
+            hits.push({ raw: '', sep: true, blockGp: blockId, wholeGp: true });
+          }
+          hits.push({ raw: t, line: k, uid: ev.uid || '', text: m ? (m[2] || '').trim() : '',
+            task: !!m, type: type, blockGp: blockId, wholeGp: true,
+            gpFg: blockAttrs.fg, gpBg: blockAttrs.bg });
+        }
+      });
+      // 🆕 再收非 gp fence 的命中行（排除 gp 区间内容，避免重复）
       noteLines.forEach((line, i) => {
         if (FENCE_RE.test(line)) { inFence = !inFence; return; }
         if (inFence) return;
-        if (fenceMarkers.has(i)) return;    // 🆕 块级标记行是结构控制行，不收进投影贴
+        if (fenceMarkers.has(i)) return;    // gp 标记行跳过
+        if (fenceBlockAt.has(i)) return;    // gp 区间内已由整块模式收了
         const t = line.trim();
         if (!t) return;
+        if (!isLineHit(line)) return;
         const type = rowTypeOf(line, t);
-        // 🆕 日期条件：field 为 cr/dl/cp 时按「行内标记 + 日期比较 + 勾选状态」过滤小事件（取代行型态门槛）；
-        //    field==='ev' 已在事件级闸口处理，这里不再逐行比 [[ev:…]]（不存在），仅对 checkbox 行施加 doneState 门槛
-        //    （未完成的事件不收已勾项、反之亦然），非 checkbox 行（段落/列表/引用/标题）一律保留；其余走原行型态门槛。
-        if (cond.dateCond && cond.dateCond.field && cond.dateCond.field !== 'ev') {
-          if (!dateCondMatch(type, line, cond.dateCond)) return;
-        } else if (cond.dateCond && cond.dateCond.field === 'ev' && (type === 'todo' || type === 'done')) {
-          const ds = cond.dateCond.doneState;
-          if (ds === 'undone' && type !== 'todo') return;
-          if (ds === 'done' && type !== 'done') return;
-          if (ds === 'any' && type !== 'todo' && type !== 'done') return;
-        } else {
-          if (!cond.rowTypes[type]) return;
-        }
-        if (!lineHitsRule(line, t, cond)) return;
-        // 🆕 已完成的 checkbox（type='done'）也要當 task 行渲染。
-        //   否則 done 行會落進下面的「非 task」分支 → D.markdown(D.termDefs(raw))，
-        //   被 GFM 當成一般任務清單 → 顯示成「方形 checkbox ＋ 未解析的 [[cp:…]] 原文」，
-        //   與普通便利貼（tlTaskLineHtml：綠圓勾 ✅）不一致。見 2026-10-27 使用者回報。
         const m = (type === 'todo' || type === 'done') ? t.match(TASK_RE) : null;
         if (hits.length && !LIST_ITEM_RE.test(t) && LIST_ITEM_RE.test(hits[hits.length - 1].raw)) {
           hits.push({ raw: '', sep: true });
         }
         hits.push({ raw: t, line: i, uid: ev.uid || '', text: m ? (m[2] || '').trim() : '',
-          task: !!m, type: type, blockGp: fenceBlockAt.get(i) || null });
+          task: !!m, type: type, blockGp: null });
       });
       // 正文有命中行 → 照常收；正文无命中但标题命中 → 仍收这张行程（其分组标题即来源标题，
       //   可经 groupHeadHtml 的切换徽标一键跳回来源）。不再压入独立的「标题命中」单元，
@@ -586,6 +614,25 @@
       const clean = stripped === line ? line : stripped.replace(/[ \t]+$/, '');
       return D.noteMarkers(clean);
     }).join('\n');
+  }
+  function separateGpHorizontalRules(text) {
+    let inFence = false;
+    const lines = [];
+    String(text == null ? '' : text).split('\n').forEach((line) => {
+      if (/^\s*(```|~~~)/.test(line)) {
+        inFence = !inFence;
+        lines.push(line);
+        return;
+      }
+      if (!inFence && /^\s{0,3}-{3,}\s*$/.test(line)) {
+        if (lines.length && lines[lines.length - 1].trim()) lines.push('');
+        lines.push(line);
+        lines.push('');
+        return;
+      }
+      lines.push(line);
+    });
+    return lines.join('\n');
   }
   // ===== 分组标题（来源行程的标题）渲染成「可点整块＋📍 切换按钮」=====
   //   与标题命中项的「📍 切换回来源」同一机制：点击唤起主程式打开该来源行程表单
@@ -654,9 +701,10 @@
   //  投影贴的 hits 是「过滤后」的行，故必须先从原始 notes 算出区间，再把命中行打成同一个排序单元。
   function gpFenceOfLine(line) {
     const s = String(line == null ? '' : line).trim();
-    let m = s.match(/^\{[ \t]*\/[ \t]*(?:group|gp)[ \t]*:?[ \t]*([^{}]*)\}[ \t]*$/i);
+    // 🆕 key 部分用 [^{}|]*（不含 |），attrs 用可选 (?:\|[^{}]*)? 后缀 — 与桌面主窗 / LITE / 便利贴同口径
+    let m = s.match(/^\{[ \t]*\/[ \t]*(?:group|gp)[ \t]*:?[ \t]*([^{}|]*)(?:\|[^{}]*)?\}[ \t]*$/i);
     if (m) return { kind: 'close', key: String(m[1] || '').trim() };
-    m = s.match(/^\{[ \t]*(?:group|gp)[ \t]*:?[ \t]*([^{}]*)\}[ \t]*$/i);
+    m = s.match(/^\{[ \t]*(?:group|gp)[ \t]*:?[ \t]*([^{}|]*)(?:\|[^{}]*)?\}[ \t]*$/i);
     if (m) return { kind: 'open', key: String(m[1] || '').trim() };
     return null;
   }
@@ -697,7 +745,7 @@
   function groupHitsIntoUnits(hits) {
     const units = [];
     let cur = null;        // 普通合并单元 {cat, task:false, hits}
-    let gpCur = null;      // {gp} 合并单元 {gp, task:false, hits}
+    let gpCur = null;      // {gp} 合并单元 {gp, task:false, hits, fg, bg}
     const flushGp = () => { if (gpCur) { units.push(gpCur); gpCur = null; } };
     (hits || []).forEach((h) => {
       if (h.sep) return;   // 虚拟空行只作分隔、不打断连续性（沿用旧行为）
@@ -707,7 +755,8 @@
       if (gp !== null) {
         if (cur) { units.push(cur); cur = null; }
         if (gpCur && gpCur.gp === gp) gpCur.hits.push(h);
-        else { flushGp(); gpCur = { gp: gp, task: false, hits: [h] }; }
+        // 🆕 2026-11-09：gp unit 带上 attrs（fg/bg），从第一个 hit 拿（整块 hits 的 attrs 全相同）
+        else { flushGp(); gpCur = { gp: gp, task: false, hits: [h], fg: h.gpFg || '', bg: h.gpBg || '' }; }
         return;
       }
       flushGp();
@@ -830,26 +879,29 @@
   //    否则 D.markdown 会把它们渲染成 <ul><li>，便利贴 CSS 的 .body ul li{list-style:disc}
   //    就多出那个「.」项目符号，方框也变成浏览器原生灰框（与来源贴不一致）。
   //    整组只有外层一颗圆点 → 这里不给 .ev-md-edit，也不给 interactive（投影贴本来就只读）。
-  function gpCheckboxLines(rawChunk, marked) {
+  //    checkbox 文字沿用 tlTaskLineHtml 的行内渲染 helper，避免在 VIEW 路径使用不同的 Markdown 处理方式。
+  function gpCheckboxLines(rawChunk, deps) {
+    const D = makeDeps(deps);
     const raws = String(rawChunk).split('\n');
-    return String(marked).split('\n').map((line, k) => {
-      const m = String(raws[k] || '').match(TASK_LINE_RE);
+    return raws.map((line) => {
+      const m = String(line || '').match(TASK_LINE_RE);
       if (!m) return line;
       const done = m[2] !== ' ';
-      const text = line.replace(/^\s*-\s+\[[ xX]\]\s?/, '');
-      return m[1] + '<span class="ev-md-check' + (done ? ' done' : '') + '">' +
+      const textProcessed = D.inline(D.noteMarkers(m[3] || '')).trim();
+      return m[1] + ' <span class="ev-md-check' + (done ? ' done' : '') + '">' +
         '<span class="ev-cb">' + (done ? '\u2713' : '') + '</span>' +
-        '<span class="ev-md-check-text">' + text + '</span></span>';
+        '<span class="ev-md-check-text">' + textProcessed + '</span></span>';
     }).join('\n');
   }
   // 一个非 task 编辑单元（可能含 1..n 条连续同类行）：整块渲染成 1 个 .md-unit ＋ 1 颗只读圆点。
-  function nonTaskUnitHtml(hits, ev, selfKey, deps, isGp) {
+  function nonTaskUnitHtml(hits, ev, selfKey, deps, isGp, gpFg, gpBg) {
     const D = makeDeps(deps);
     const list = (hits && hits.length) ? hits : [];
     if (!list.length) return '';
     const first = list[0];
     const stitle = D.esc(String((ev && ev.title) || '').replace(/\s+/g, ' ').trim() || '(无标题)');
     const chunk = list.map((h) => String(h.raw || '').trim()).join('\n');   // 整块原文（多行用 \n 连接）
+    const renderChunk = isGp ? separateGpHorizontalRules(chunk) : chunk;
     const dot = '<button type="button" class="ev-md-edit" title="右键：复制／找出相同的项目"' +
       ' data-uid="' + D.esc(selfKey) + '" data-src="' + D.esc(first.uid || '') +
       '" data-stitle="' + stitle + '" data-line="' + (first.line != null ? first.line : '') +
@@ -859,23 +911,26 @@
     const last = list[list.length - 1];
     const cr = extractCrDate(chunk);
     const sd = cr || String((ev && ev.date) || '');
-    const marked = noteMarkersLines(chunk, D);
-    const body = isGp ? gpCheckboxLines(chunk, marked) : marked;
-    // 🆕 gp 小事件群：内层 .md-unit 挂 is-gp，让投影贴也画 1px currentColor 外框（与来源贴一致）。
-    //    🆕 2026-11-09：从 chunk 第一行提取 fg/bg attrs，追加 inline style
+    // 🆕 2026-11-09：对齐源便利贴 tlSplitMdBlocks 渲染顺序 ——
+    //    源便利贴 = renderMarkdown(tlRenderTermDefs(tlRenderNoteMarkersLines(prepared)))
+    //    即「先 checkbox HTML 转换 → noteMarkersLines → termDefs → renderMarkdown」，termDefs 只做一次！
+    //    🆕 昨天改坏了：把 termDefs 提到 body 变量里一次 + 外面又做一次 → 双重 termDefs！
+    const prepared = isGp ? gpCheckboxLines(renderChunk, deps) : renderChunk;
+    const marked = noteMarkersLines(prepared, D);
+    // 🆕 gp attrs 直接从参数取（由 groupHitsIntoUnits 的 unit 传入），不再从 chunk 猜
     let gpStyle = '';
     if (isGp) {
-      const a = extractGpAttrsLocal(String(chunk).split('\n')[0]);
-      if (a && (a.fg || a.bg)) {
+      const fg = gpFg || '', bg = gpBg || '';
+      if (fg || bg) {
         const parts = [];
-        if (a.fg) parts.push('--gp-fg:' + a.fg);
-        if (a.bg) { parts.push('--gp-bg:' + a.bg); if (a.fg) parts.push('--gp-border:' + a.fg); }
+        if (fg) parts.push('--gp-fg:' + fg);
+        if (bg) { parts.push('--gp-bg:' + bg); if (fg) parts.push('--gp-border:' + fg); }
         gpStyle = ' style="' + parts.join(';') + '"';
       }
     }
     return '<div class="vsr-sort-unit" data-sort-date="' + D.esc(sd) + '" data-cr-date="' + D.esc(cr) + '"><div class="md-unit' + (isGp ? ' is-gp' : '') + '"' + gpStyle + ' data-start="' + (first.line != null ? first.line : '') +
       '" data-end="' + (last.line != null ? last.line : (first.line != null ? first.line : '')) + '">' +
-      dot + D.markdown(D.termDefs(body)) + '</div></div>';
+      dot + D.markdown(D.termDefs(marked)) + '</div></div>';
   }
   function groupsToHtml(groups, selfKey, deps) {
     const D = makeDeps(deps);
@@ -884,7 +939,8 @@
       out += groupHeadHtml(g.ev, D) + '\n';
       groupHitsIntoUnits(g.hits).forEach((u) => {
         out += u.task ? taskLineHtml(u.hits[0], g.ev, selfKey, D) + '\n'
-          : nonTaskUnitHtml(u.hits, g.ev, selfKey, D, u.gp != null) + '\n';
+          // 🆕 2026-11-09：gp attrs 从 unit 直接传
+          : nonTaskUnitHtml(u.hits, g.ev, selfKey, D, u.gp != null, u.fg || '', u.bg || '') + '\n';
       });
     });
     return out;
