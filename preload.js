@@ -189,6 +189,26 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.on('sticky-note-edit', (event, payload) => callback(payload));
   },
 
+  // 行程回馈式闹铃：同步未完成提醒并接收需写回行程的操作
+  syncAlarms: (alarms) => ipcRenderer.invoke('alarm-sync', alarms),
+  alarmAction: (action, alarmId) => ipcRenderer.invoke('alarm-action', { action, alarmId }),
+  loadAlarmSettings: () => ipcRenderer.invoke('alarm-load-settings'),
+  saveAlarmSettings: (settings) => ipcRenderer.invoke('alarm-save-settings', settings),
+  onAlarmShow: (callback) => {
+    ipcRenderer.on('alarm-show', (event, payload) => callback(payload));
+  },
+  onAlarmUpdate: (callback) => {
+    ipcRenderer.on('alarm-update', (event, payload) => callback(payload));
+  },
+  onAlarmActionError: (callback) => {
+    ipcRenderer.on('alarm-action-error', (event, payload) => callback(payload));
+  },
+  onAlarmActionRequest: (callback) => {
+    ipcRenderer.on('alarm-action-request', (event, payload) => callback(payload));
+  },
+  respondToAlarmAction: (requestId, result) =>
+    ipcRenderer.invoke('alarm-action-result', { requestId, result }),
+
   // 打开 DOM 树查看器
   openDomTreeView: (data) => ipcRenderer.invoke('open-dom-tree-viewer', data),
   

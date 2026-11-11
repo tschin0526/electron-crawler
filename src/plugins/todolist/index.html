@@ -14186,6 +14186,7 @@
           // 🆕 保存成功后刷新「未保存检测」快照：此后 hasUnsavedChanges() 应为 false，
           //    页签脏标记 / 关闭问询都依赖它（否则 Cmd+S 保存后关闭还会误报未保存）。
           captureEditSnapshot();
+          if (typeof tlSyncAlarms === 'function') await tlSyncAlarms();
           if (closeAfterSave) { closeModal(undefined, undefined, true); }
           if (!silent) showToast('已保存 ' + (externalFilePath ? externalFilePath.split('/').pop() : (currentMdId + '.md')), 'success');
           return true;

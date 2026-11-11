@@ -30,6 +30,8 @@
     let tlCalScope = 'full';
     let tlCalEvents = [];
     let tlIncludedEvents = [];    // 📎 include 进来的 calendar-*.md 事件（只读，ro=true）
+    let tlAlarmSyncTimer = null;
+    let tlAlarmSyncPromise = Promise.resolve();
     let tlCalHolidays = [];    // ## HOLIDAY 解析結果（与 ## EVENT 同结构，多 holidayType 字段）；仅列表/日志视图显示，不进时间网格/月格 chip
     let tlCalDiaries = [];     // ## DIARY 解析結果（每天一条，keyed by date）；行事历日期旁显示日记按钮，有则打勾
     let tlIncludedHolidays = [];  // 📎 include 进来的只读假日
@@ -198,6 +200,219 @@
 
     // 📎 合并 include 进来的只读事件（渲染统一走 tlCalEvents，只读约束靠 ro 标记 + 写回过滤）
     function tlAllEvents(md) { return (tlParseEvents(md) || []).concat(tlIncludedEvents || []); }
+
+    function tlAlertDateTime(value) {
+      const m = String(value || '').match(/^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2})$/);
+      if (!m) return null;
+      const date = new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], 0, 0);
+      if (date.getFullYear() !== +m[1] || date.getMonth() !== +m[2] - 1 ||
+          date.getDate() !== +m[3] || date.getHours() !== +m[4] || date.getMinutes() !== +m[5]) return null;
+      return date.getTime();
+    }
+
+    function tlAlertInterval(value) {
+      const m = String(value || '').match(/^([1-9]\d*)(m|h|d)$/);
+      if (!m) return 0;
+      const scale = { m: 60000, h: 3600000, d: 86400000 }[m[2]];
+      const result = Number(m[1]) * scale;
+      return Number.isSafeInteger(result) ? result : 0;
+    }
+
+    function tlAlertMarkers(notes) {
+      const text = String(notes || '');
+      const markers = [];
+      let offset = 0, fenceChar = '', fenceLength = 0;
+      text.split(/(?<=\n)/).forEach((line) => {
+        const fence = line.match(/^[ \t]{0,3}(`{3,}|~{3,})/);
+        if (fence) {
+          const chars = fence[1][0], length = fence[1].length;
+          if (!fenceChar) { fenceChar = chars; fenceLength = length; }
+          else if (chars === fenceChar && length >= fenceLength) { fenceChar = ''; fenceLength = 0; }
+        } else if (!fenceChar) {
+          const re = /\[\[alert:([\s\S]*?):(\d{4}-\d{2}-\d{2} \d{2}:\d{2})\s*:\s*([1-9]\d*)\s*(m|h|d)(?:\s*:\s*([^\]]*))?\]\]/g;
+          let match;
+          while ((match = re.exec(line))) {
+            const dueAt = tlAlertDateTime(match[2]);
+            const intervalMs = tlAlertInterval(match[3] + match[4]);
+            if (dueAt === null || !intervalMs) continue;
+            const completed = String(match[5] || '').trim() === '是';
+            markers.push({
+              marker: match[0],
+              markerOffset: offset + match.index,
+              message: match[1].trim(),
+              dueAt,
+              intervalMs,
+              completed
+            });
+          }
+        }
+        offset += line.length;
+      });
+      return markers;
+    }
+
+    async function tlSyncAlarms() {
+      const api = window.electronAPI || {};
+      if (!api.syncAlarms || !isCalendarMdDoc()) return;
+      const textArea = document.getElementById('taskText');
+      if (!textArea) return;
+      const alarms = tlAllEvents(textArea.value).flatMap((ev) =>
+        tlAlertMarkers(ev.notes).filter((alert) => !alert.completed).map((alert) => ({
+          ...alert,
+          id: String(ev.uid) + ':' + alert.markerOffset,
+          title: ev.title,
+          eventUid: ev.uid,
+          src: ev.src || '',
+          ro: ev.ro === true,
+          date: ev.date
+        }))
+      );
+      const sync = tlAlarmSyncPromise.then(async () => {
+        const result = await api.syncAlarms(alarms);
+        if (!result || !result.ok) console.error('[calendar-editor] 闹铃清单同步失败:', result && result.error);
+      });
+      tlAlarmSyncPromise = sync.catch((error) => {
+        console.error('[calendar-editor] 闹铃清单同步失败:', error);
+      });
+      await tlAlarmSyncPromise;
+    }
+
+    function tlAlarmLocalDateTime(timestamp) {
+      const date = new Date(timestamp);
+      const pad = (value) => String(value).padStart(2, '0');
+      return date.getFullYear() + '-' + pad(date.getMonth() + 1) + '-' + pad(date.getDate()) +
+        ' ' + pad(date.getHours()) + ':' + pad(date.getMinutes());
+    }
+
+    function tlRefreshOpenBlockAfterAlarm(uid, oldMarker, newMarker) {
+      const target = tlEditBlockTarget;
+      const overlay = document.getElementById('tlAddCheckOverlay');
+      const input = document.getElementById('tlAddCheckInput');
+      if (!target || target.uid !== uid || !overlay || overlay.style.display === 'none' || !input) return;
+
+      const oldValue = String(input.value || '');
+      const markerAt = oldValue.indexOf(oldMarker);
+      if (markerAt >= 0 && oldValue.indexOf(oldMarker, markerAt + oldMarker.length) < 0) {
+        input.value = oldValue.slice(0, markerAt) + newMarker + oldValue.slice(markerAt + oldMarker.length);
+        tlSyncGroupUi(input.value);
+        return;
+      }
+
+      if (tlAddCheckDirty) {
+        showToast('提醒状态已写入，但当前区块草稿也修改了该标记；请核对后再保存，避免覆盖最新状态', 'danger');
+        return;
+      }
+
+      const textArea = document.getElementById('taskText');
+      const latest = textArea ? tlAllEvents(textArea.value).find((event) => event.uid === uid) : null;
+      if (!latest) return;
+      const lines = String(latest.notes || '').split('\n');
+      if (!(target.start >= 0 && target.end < lines.length)) return;
+      input.value = lines.slice(target.start, target.end + 1).join('\n');
+      tlSyncGroupUi(input.value);
+    }
+
+    async function tlSaveAlarmAction(request) {
+      const alarm = request && request.alarm;
+      const action = request && request.action;
+      if (!alarm || !alarm.eventUid || !alarm.marker || !['snooze', 'complete'].includes(action)) {
+        return { ok: false, error: '闹铃资料无效，未修改行程' };
+      }
+      const textArea = document.getElementById('taskText');
+      if (!textArea) return { ok: false, error: '找不到行程编辑器，未修改行程' };
+      const latestEvents = tlAllEvents(textArea.value);
+      tlCalEvents = latestEvents;
+      const ev = latestEvents.find((item) => item.uid === alarm.eventUid);
+      if (!ev) return { ok: false, error: '找不到对应行程（可能已删除或切换档案）' };
+
+      const notes = String(ev.notes || '');
+      let markerOffset = Number.isInteger(alarm.markerOffset) ? alarm.markerOffset : -1;
+      if (notes.slice(markerOffset, markerOffset + alarm.marker.length) !== alarm.marker) {
+        const foundAt = notes.indexOf(alarm.marker);
+        if (foundAt < 0 || notes.indexOf(alarm.marker, foundAt + alarm.marker.length) >= 0) {
+          return { ok: false, error: '提醒标记已被修改或重复，未写入以避免改错内容' };
+        }
+        markerOffset = foundAt;
+      }
+      const parsed = alarm.marker.match(/^\[\[alert:([\s\S]*?):(\d{4}-\d{2}-\d{2} \d{2}:\d{2})\s*:\s*([1-9]\d*)\s*(m|h|d)(?:\s*:\s*([^\]]*))?\]\]$/);
+      if (!parsed) return { ok: false, error: '提醒标记格式无效，未修改行程' };
+      let nextMarker;
+      if (action === 'complete') {
+        nextMarker = '[[alert:' + parsed[1] + ':' + parsed[2] + ':' + parsed[3] + parsed[4] + ':是]]';
+      } else {
+        const intervalMs = tlAlertInterval(parsed[3] + parsed[4]);
+        const nextAt = Math.ceil((Date.now() + intervalMs) / 60000) * 60000;
+        nextMarker = '[[alert:' + parsed[1] + ':' + tlAlarmLocalDateTime(nextAt) + ':' +
+          parsed[3] + parsed[4] + ':否]]';
+      }
+      const newNotes = notes.slice(0, markerOffset) + nextMarker + notes.slice(markerOffset + alarm.marker.length);
+
+      if (ev.ro) {
+        const result = await tlSaveIncludedEventNotes(ev.uid, newNotes, ev.src);
+        if (!result || !result.ok) return { ok: false, error: result && result.error ? result.error : '写入来源文件失败' };
+      } else {
+        const content = String(textArea.value || '');
+        const starts = [];
+        const header = /^##[ \t]*EVENT(?:\([^)]*\))?[ \t]*$/gm;
+        let match;
+        while ((match = header.exec(content))) starts.push({ start: match.index, endHeader: header.lastIndex });
+        const eventIndexMatch = String(ev.uid).match(/^evp(\d+)$/);
+        const eventIndex = eventIndexMatch ? Number(eventIndexMatch[1]) : -1;
+        const matchingStart = starts.findIndex((item, index) => {
+          if (index + 1 !== eventIndex) return false;
+          const end = index + 1 < starts.length ? starts[index + 1].start : content.length;
+          const nextHeading = content.slice(item.endHeader, end).search(/^##[ \t]/m);
+          const blockEnd = nextHeading >= 0 ? item.endHeader + nextHeading : end;
+          const block = tlParseBlock(content.slice(item.endHeader, blockEnd), eventIndex);
+          return block && block.title === ev.title && block.date === ev.date;
+        });
+        if (matchingStart < 0) return { ok: false, error: '无法安全定位行程区块，未写入' };
+        const item = starts[matchingStart];
+        let end = matchingStart + 1 < starts.length ? starts[matchingStart + 1].start : content.length;
+        const nextHeading = content.slice(item.endHeader, end).search(/^##[ \t]/m);
+        if (nextHeading >= 0) end = item.endHeader + nextHeading;
+        const updatedBlock = tlReplaceRemarkInBlock(content.slice(item.endHeader, end), newNotes);
+        textArea.value = content.slice(0, item.endHeader) + updatedBlock + content.slice(end);
+        try {
+          const saved = typeof saveTask === 'function' ? await saveTask(false, true, true) : false;
+          if (!saved) throw new Error('保存行程失败');
+        } catch (error) {
+          textArea.value = content;
+          return { ok: false, error: error.message || String(error) };
+        }
+        if (typeof autoGrowTextarea === 'function') autoGrowTextarea(textArea);
+        if (typeof tlRenderEventsContent === 'function') tlRenderEventsContent();
+      }
+
+      tlRefreshOpenBlockAfterAlarm(ev.uid, alarm.marker, nextMarker);
+      if (typeof tlPushStickyRefreshes === 'function') tlPushStickyRefreshes(true);
+      await tlSyncAlarms();
+      return { ok: true };
+    }
+
+    if (window.electronAPI && window.electronAPI.onAlarmActionRequest) {
+      window.electronAPI.onAlarmActionRequest(async (request) => {
+        let result;
+        try { result = await tlSaveAlarmAction(request); }
+        catch (error) {
+          console.error('[calendar-editor] 处理闹铃操作失败:', error);
+          result = { ok: false, error: error.message || String(error) };
+        }
+        if (request && request.requestId && window.electronAPI.respondToAlarmAction) {
+          try {
+            const response = await window.electronAPI.respondToAlarmAction(request.requestId, result);
+            if (!response || !response.ok) console.error('[calendar-editor] 回传闹铃操作结果失败:', response && response.error);
+          } catch (error) {
+            console.error('[calendar-editor] 回传闹铃操作结果失败:', error);
+          }
+        }
+      });
+    }
+    if (!tlAlarmSyncTimer && window.electronAPI && window.electronAPI.syncAlarms) {
+      tlAlarmSyncTimer = setInterval(tlSyncAlarms, 5000);
+      setTimeout(tlSyncAlarms, 1000);
+    }
+
     function tlAllHolidays(md) { return (tlParseHolidays(md) || []).concat(tlIncludedHolidays || []); }
     function tlAllDiaries(md) {
       if (!TL_DIARY_FEATURE_ENABLED) return [];

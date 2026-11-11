@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>行程提醒</title>
+  <link rel="stylesheet" href="alarm.css">
+</head>
+<body>
+  <main id="alarm" class="alarm alarm-pulse" aria-live="assertive">
+    <div class="backdrop"></div>
+    <div class="scanlines"></div>
+    <section class="dashboard">
+      <header class="dashboard-header">
+        <div class="brand">
+          <span class="live-dot"></span>
+          <div>
+            <p class="eyebrow">SCHEDULE ALERT · 行程提醒</p>
+            <h1>待处理提醒 <span id="alarm-count" class="count">0</span></h1>
+          </div>
+        </div>
+        <p class="header-hint">逐项选择「完成」或「稍后提醒」</p>
+      </header>
+
+      <div id="cards" class="cards" aria-label="待处理闹铃"></div>
+      <p id="empty" class="empty" hidden>所有提醒均已处理</p>
+      <p id="error" class="error" role="alert" aria-live="polite"></p>
+
+      <details class="preferences">
+        <summary>铃声与动画设置</summary>
+        <div class="preference-row">
+          <label for="sound">铃声</label>
+          <select id="sound">
+            <option value="classic">经典提示</option>
+            <option value="sci-fi">科幻脉冲</option>
+            <option value="chime">清脆钟声</option>
+            <option value="silent">静音</option>
+          </select>
+          <button id="preview-sound" class="preview" type="button">试听</button>
+        </div>
+        <div class="preference-row">
+          <label for="animation">动画</label>
+          <select id="animation">
+            <option value="pulse">能量脉冲</option>
+            <option value="scan">扫描环</option>
+            <option value="data">数据流</option>
+            <option value="aurora">极光流动</option>
+            <option value="orbit">轨道双光点</option>
+            <option value="arc">电弧闪烁</option>
+            <option value="holo">全息干涉</option>
+            <option value="signal">信号灯</option>
+            <option value="glitch">故障像素</option>
+          </select>
+        </div>
+        <p id="settings-status" class="settings-status"></p>
+      </details>
+    </section>
+  </main>
+  <script src="alarm.js"></script>
+</body>
+</html>

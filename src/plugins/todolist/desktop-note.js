@@ -4295,12 +4295,70 @@ async function sendStickyEmail() {
   }
 }
 
+function mergeAlertUpdatesIntoDraft(draft, previousNotes, latestNotes) {
+  const markerPattern = /\[\[alert:[^\]\r\n]*\]\]/g;
+  const parseMarker = (marker) => {
+    const match = marker.match(/^\[\[alert:([\s\S]*?):\d{4}-\d{2}-\d{2} \d{2}:\d{2}\s*:\s*([1-9]\d*)\s*(m|h|d)(?:\s*:\s*[^\]]*)?\]\]$/);
+    return match ? match[1].trim() + '\u0000' + match[2] + match[3] : '';
+  };
+  const groupMarkers = (text) => {
+    const groups = new Map();
+    const markers = String(text || '').match(markerPattern) || [];
+    markers.forEach((marker) => {
+      const key = parseMarker(marker);
+      if (!key) return;
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(marker);
+    });
+    return groups;
+  };
+  const oldGroups = groupMarkers(previousNotes);
+  const newGroups = groupMarkers(latestNotes);
+  const updates = [];
+  oldGroups.forEach((oldMarkers, key) => {
+    const newMarkers = newGroups.get(key) || [];
+    if (newMarkers.length !== oldMarkers.length) return;
+    oldMarkers.forEach((oldMarker, index) => {
+      if (oldMarker !== newMarkers[index]) updates.push([oldMarker, newMarkers[index]]);
+    });
+  });
+  let result = String(draft || '');
+  let cursor = 0;
+  updates.forEach(([oldMarker, newMarker]) => {
+    const index = result.indexOf(oldMarker, cursor);
+    if (index < 0) return;
+    result = result.slice(0, index) + newMarker + result.slice(index + oldMarker.length);
+    cursor = index + newMarker.length;
+  });
+  return result;
+}
+
 // 🆕 刷新内容：接收主程式推来的最新渲染结果（arg.{html,titleHtml}），同步标题/正文/日期/标签
 // 标题与正文来自主程式渲染（与列表行/主窗一致）；日期·完成态·标签直接回读 calendar.md 保持权威
 function applyNoteContent(arg) {
   // 翻页模式：仅当刷新的是「当前页」才重绘；其余只更新缓存（翻到该页时生效）
   if (IS_FLIP && (!arg || arg.key !== KEY || +arg.idx !== IDX)) return;
+  const previousNotes = (refMeta.get(KEY) || {}).notes;
   rememberRefMeta(arg);
+  if (editMode) {
+    const editArea = document.getElementById('editArea');
+    const latestNotes = getEventNotes();
+    if (editArea && typeof latestNotes === 'string' && editArea.value !== latestNotes) {
+      if (!editDirty) {
+        const scrollTop = editArea.scrollTop;
+        editArea.value = latestNotes;
+        resetDoneFold();
+        applyDoneFold();
+        editArea.scrollTop = scrollTop;
+      } else if (typeof previousNotes === 'string') {
+        const merged = mergeAlertUpdatesIntoDraft(editArea.value, previousNotes, latestNotes);
+        if (merged !== editArea.value) {
+          editArea.value = merged;
+          markEditDirty(true);
+        }
+      }
+    }
+  }
   syncViewNoteMode();   // 🆕 VIEW 贴＝只读投影（刷新后可能从有内容变成没内容）
   const titleEl = document.getElementById('title');
   let ev0 = null;
@@ -4368,8 +4426,12 @@ function rememberRefMeta(arg) {
   //    改成「内容收敛才解除」才能真正挡住；要强制同步请按便利贴的 🔄 刷新（会显式解除）。
   const incoming = (arg.notes !== undefined && arg.notes !== null) ? String(arg.notes) : null;
   const guard = !!(prev && prev.__localWrite && incoming !== null);
+  if (guard && incoming !== String(next.notes || '')) {
+    const merged = mergeAlertUpdatesIntoDraft(String(next.notes || ''), String(prev.notes || ''), incoming);
+    if (merged !== String(next.notes || '')) next.notes = merged;
+  }
   ['notes', 'src', 'title', 'titleTip', 'date', 'endDate', 'spanDisplay', 'color', 'tags', 'temp'].forEach((k) => {
-    if (k === 'notes' && guard) return;   // 保护期内：沿用本地刚写的版本
+    if (k === 'notes' && guard) return;   // 保护期内保留本地内容；上方只合并可识别的闹铃标记变更
     if (arg[k] !== undefined && arg[k] !== null) next[k] = arg[k];
   });
   if (guard) next.__localWrite = (incoming !== String(next.notes || ''));  // 收敛 → 解除保护
@@ -5092,6 +5154,8 @@ function syncEditSeg() {
 
 // 读取当前事件（KEY/IDX）的原始 notes（正式档直接回读 calendar.md；外部 include 文件用主程式推来的 ref）
 function getEventNotes() {
+  const meta = refMeta.get(KEY);
+  if (meta && typeof meta.notes === 'string') return meta.notes;
   const ev = sourceEvent(KEY);
   return ev ? (ev.notes || '') : '';
 }
