@@ -966,22 +966,41 @@ function calSpanDaySuffix(item, occDate) {
 // 📝 備註裡的 Markdown checkbox（- [ ] / - [x]）渲染成 ☐/☑ 樣式，且可點擊勾選/取消（寫回 notes 原文）。
 //    入參必須是「已 escape」的文本；支援任意縮進的 `- [ ]` / `- [x]` / `- [X]`。
 //    uid 為所屬行程（點擊時定位用）；fenced code block 內的行不當成 checkbox，避免誤判代碼。
-// 🆕 鬧鈴（alert）徽標渲染：[[alert:內容:下次提醒:間隔:是/否]] → ⏰ + 內容原文 +
-//   「月-日 時:分」提醒時間小膠囊 + 「☐ 未完成／☑ 已完成」小膠囊（與桌面 tlAlertBadgeHtml 同口径）。
-//   「alert」只是記號名稱、沒有資訊量；間隔與完整年份放 hover tooltip。
+// 🆕 鬧鈴（alert）徽標渲染：固定與循環標記共用提醒內容膠囊（與桌面 tlAlertBadgeHtml 同口径）。
+//   固定時間顯示「月-日 時:分」與完成狀態；每日／週間／周年循環顯示週期與時間，不顯示完成狀態。
 //   非標準格式（如 [[alert:買東西]]）仍走 ⏰ 徽標，內容照原樣顯示、不掛時間與狀態膠囊。
 function calAlertBadgeHtml(inner) {
   const body = String(inner);
-  const parsed = body.match(/^alert:([\s\S]*?):(\d{4}-\d{2}-\d{2} \d{2}:\d{2})\s*:\s*([1-9]\d*)\s*(m|h|d)(?:\s*:\s*([^\]]*))?$/i);
+  const parsed = body.match(/^alert:([\s\S]*?):((?:\d{4}-\d{2}-\d{2} \d{4})|(?:anniversary\s+\d{4}-\d{2}-\d{2}\s+\d{4})|(?:everyday\s+\d{4})|(?:w[1-7]\s*-\s*w[1-7]\s+\d{4})|(?:w[1-7](?:\s*,\s*w[1-7])+\s+\d{4}))\s*:\s*([1-9]\d*)\s*(m|h|d)(?:\s*:\s*([^\]]*))?$/i);
   const message = (parsed ? parsed[1] : body.slice(body.indexOf(':') + 1)).trim();
   const head = '<span class="tl-alert-ic">⏰</span>' + escapeHtml(message);
   if (!parsed) return '<span class="tl-alert">' + head + '</span>';
+  if (!/^\d{4}-\d{2}-\d{2} \d{4}$/.test(parsed[2])) {
+    const anniversary = parsed[2].match(/^anniversary\s+\d{4}-(\d{2})-(\d{2})\s+(\d{4})$/i);
+    const daily = parsed[2].match(/^everyday\s+(\d{4})$/i);
+    const weekdays = parsed[2].match(/^w([1-7])\s*-\s*w([1-7])\s+(\d{4})$/i);
+    const weekdayList = parsed[2].match(/^(w[1-7](?:\s*,\s*w[1-7])+) (\d{4})$/i);
+    if (!anniversary && !daily && !weekdays && !weekdayList) return '<span class="tl-alert">' + head + '</span>';
+    const weekdayNames = '一二三四五六日';
+    const time = anniversary ? anniversary[3] : (daily ? daily[1] : (weekdayList ? weekdayList[2] : weekdays[3]));
+    const weekdayDisplay = weekdayList
+      ? '每周' + weekdayList[1].match(/w[1-7]/gi).map((token) => weekdayNames[Number(token.slice(1)) - 1]).join('、')
+      : (weekdays ? '周' + weekdayNames[Number(weekdays[1]) - 1] +
+        '至周' + weekdayNames[Number(weekdays[2]) - 1] : '');
+    const displayWhen = (anniversary ? '每年 ' + anniversary[1] + '月' + anniversary[2] + '日'
+      : (daily ? '每日' : weekdayDisplay)) + ' ' + time.slice(0, 2) + ':' + time.slice(2);
+    const tooltip = ['循環提醒 ' + displayWhen,
+      '間隔 ' + parsed[3] + ({ m: '分鐘', h: '小時', d: '天' })[parsed[4]]].join(' · ');
+    return '<span class="tl-alert" title="' + escapeHtml(tooltip) + '">' + head +
+      '<span class="tl-alert-when">' + escapeHtml(displayWhen) + '</span></span>';
+  }
+  const displayWhen = parsed[2].replace(/^(\d{4}-\d{2}-\d{2} )(\d{2})(\d{2})$/, '$1$2:$3');
   const done = parsed[5] === '是';
-  const tooltip = ['下次提醒 ' + parsed[2],
+  const tooltip = ['下次提醒 ' + displayWhen,
     '間隔 ' + parsed[3] + ({ m: '分鐘', h: '小時', d: '天' })[parsed[4]],
     done ? '已完成' : '未結束'].join(' · ');
   return '<span class="tl-alert' + (done ? ' done' : '') + '" title="' + escapeHtml(tooltip) + '">' + head +
-    '<span class="tl-alert-when">' + escapeHtml(parsed[2].slice(5)) + '</span>' +
+    '<span class="tl-alert-when">' + escapeHtml(displayWhen.slice(5)) + '</span>' +
     '<span class="tl-alert-state">' + (done ? '☑ 已完成' : '☐ 未完成') + '</span></span>';
 }
 // 🆕 術語（term）渲染（立體膠囊＋tooltip 顯示釋義；與桌面 calendar 雙端對齊）：

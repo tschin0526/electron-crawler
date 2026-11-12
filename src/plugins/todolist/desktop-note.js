@@ -4321,7 +4321,7 @@ async function sendStickyEmail() {
 function mergeAlertUpdatesIntoDraft(draft, previousNotes, latestNotes) {
   const markerPattern = /\[\[alert:[^\]\r\n]*\]\]/g;
   const parseMarker = (marker) => {
-    const match = marker.match(/^\[\[alert:([\s\S]*?):\d{4}-\d{2}-\d{2} \d{2}:\d{2}\s*:\s*([1-9]\d*)\s*(m|h|d)(?:\s*:\s*[^\]]*)?\]\]$/);
+    const match = marker.match(/^\[\[alert:([\s\S]*?):\d{4}-\d{2}-\d{2} \d{4}\s*:\s*([1-9]\d*)\s*(m|h|d)(?:\s*:\s*[^\]]*)?\]\]$/);
     return match ? match[1].trim() + '\u0000' + match[2] + match[3] : '';
   };
   const groupMarkers = (text) => {
@@ -4352,6 +4352,56 @@ function mergeAlertUpdatesIntoDraft(draft, previousNotes, latestNotes) {
     if (index < 0) return;
     result = result.slice(0, index) + newMarker + result.slice(index + oldMarker.length);
     cursor = index + newMarker.length;
+  });
+
+  const recurringRecords = (text) => {
+    const lines = String(text || '').split('\n');
+    const groups = new Map();
+    for (let i = 1; i + 2 < lines.length; i++) {
+      const marker = lines[i].trim();
+      if (!/^\[\[alert:[\s\S]*?:(?:anniversary\s+\d{4}-\d{2}-\d{2}\s+\d{4}|everyday\s+\d{4}|w[1-7]\s*-\s*w[1-7]\s+\d{4}|w[1-7](?:\s*,\s*w[1-7])+\s+\d{4}):[1-9]\d*(?:m|h|d)\]\]$/i.test(marker)) continue;
+      const open = lines[i - 1].trim().match(/^\{\s*(?:group|gp)\s*:?[ \t]*([^{}]*)\}$/i);
+      if (!open || !open[1].split(/[|,]/).slice(1).some((part) => part.trim().toLowerCase() === 'alert')) continue;
+      const header = lines[i + 1].trim().replace(/^\|/, '').replace(/\|$/, '').split('|').map((cell) => cell.trim());
+      const divider = lines[i + 2].trim();
+      if (header.length !== 2 || header[0] !== '完成日期与时间' || header[1] !== '备注' ||
+          !/^[\s|:-]+$/.test(divider) || divider.indexOf('|') < 0 || divider.indexOf('-') < 0) continue;
+      let end = i + 2;
+      while (end + 1 < lines.length && lines[end + 1].trim().indexOf('|') >= 0) end++;
+      const rows = lines.slice(i + 3, end + 1);
+      if (!groups.has(marker)) groups.set(marker, []);
+      groups.get(marker).push(rows);
+    }
+    return groups;
+  };
+  const oldRecurring = recurringRecords(previousNotes);
+  const latestRecurring = recurringRecords(latestNotes);
+  latestRecurring.forEach((latestGroups, marker) => {
+    const previousGroups = oldRecurring.get(marker) || [];
+    if (previousGroups.length !== latestGroups.length) return;
+    latestGroups.forEach((latestRows, occurrence) => {
+      const additions = latestRows.filter((row) => !previousGroups[occurrence].includes(row));
+      if (!additions.length) return;
+      const lines = result.split('\n');
+      let found = -1, seen = 0;
+      for (let i = 1; i < lines.length; i++) {
+        if (lines[i].trim() !== marker) continue;
+        if (seen++ === occurrence) { found = i; break; }
+      }
+      if (found < 0) return;
+      const header = lines[found + 1] && lines[found + 1].trim().replace(/^\|/, '').replace(/\|$/, '')
+        .split('|').map((cell) => cell.trim());
+      const divider = String(lines[found + 2] || '').trim();
+      if (!header || header.length !== 2 || header[0] !== '完成日期与时间' || header[1] !== '备注' ||
+          !/^[\s|:-]+$/.test(divider) || divider.indexOf('|') < 0 || divider.indexOf('-') < 0) return;
+      let end = found + 2;
+      while (end + 1 < lines.length && lines[end + 1].trim().indexOf('|') >= 0) end++;
+      const pending = additions.filter((row) => !lines.slice(found + 3, end + 1).includes(row));
+      if (pending.length) {
+        lines.splice(end + 1, 0, ...pending);
+        result = lines.join('\n');
+      }
+    });
   });
   return result;
 }
@@ -6910,21 +6960,82 @@ document.addEventListener('keydown', (e) => {
 //   NOTE_MARKER_DEFS 是唯一可信来源：以后要加新标示，只往这里加一条
 //   { id, label, syntax, forbid, fields, build } —— 清单、表单、校验、预览、插入全部自动跟上，
 //   不必再动 desktop-note.html 的 markup（浮层骨架是固定的 #noteMarkerOv）。
+//   block=true 用于需要独占行的多行 Markdown 块，插入时自动留出段落边界；CheckBox 编辑会先切换到原文模式。
 //   fields[].type：text | textarea | datetime | number | select | interval（数字＋单位，写回 numKey/unitKey）
-//   校验：def.forbid 对所有文字栏位生效，f.forbid 是该栏位额外禁字（如术语栏禁「:」）；
+//   校验：def.forbid 对所有文字栏位生效，f.forbid 是该栏位禁字（可单独使用，如术语栏禁「:」）；
 //         def.check(values) 用来表达「跨栏位」的格式约束，回传一句要显示的错误、没问题就回空串。
 //   build(values) 回传整串标示；插入点＝#addCheckInput 的游标（有选区则取代选区）。
 const NOTE_MARKER_DEFS = [
   {
     id: 'alert', label: '⏰ 闹铃提醒', forbid: ']',
-    syntax: '[[alert:内容:YYYY-MM-DD HH:mm:间隔:否]]',
+    syntax: '[[alert:内容:YYYY-MM-DD HHmm:间隔:否]]',
     fields: [
       { key: 'msg', label: '提醒内容', type: 'text', required: true, placeholder: '要提醒什么事' },
       { key: 'when', label: '下次提醒', type: 'datetime', required: true, def: () => noteMarkerInputDateTime(Date.now() + 60000) },
       { key: 'interval', label: '重响间隔', type: 'interval', required: true, numKey: 'n', unitKey: 'unit',
         defNum: '1', defUnit: 'm', options: [['m', '分钟'], ['h', '小时'], ['d', '天']] },
     ],
-    build: (v) => '[[alert:' + v.msg + ':' + v.when.replace('T', ' ') + ':' + v.n + v.unit + ':否]]'
+    build: (v) => '[[alert:' + v.msg + ':' + v.when.replace('T', ' ').replace(':', '') + ':' + v.n + v.unit + ':否]]'
+  },
+  {
+    id: 'alert-fence', label: '⏰ Alert 围栏',
+    syntax: '{gpG|fg=黄,bg=渐变(黑→紫)|alert} + 固定日期 / everyday / w1 - w5 / w1,w3,w5 / anniversary',
+    block: true,
+    fields: [
+      { key: 'title', label: '提醒内容', type: 'text', required: true, forbid: ']', placeholder: '要提醒什么事' },
+      { key: 'schedule', label: '日期／循环规则', type: 'alert-schedule', required: true,
+        defMode: 'fixed', defDate: () => noteMarkerInputDateTime(Date.now() + 60000).slice(0, 10),
+        defTime: () => noteMarkerInputDateTime(Date.now() + 60000).slice(11) },
+      { key: 'n', label: '重响间隔', type: 'interval', required: true, numKey: 'n', unitKey: 'unit',
+        defNum: '1', defUnit: 'm', options: [['m', '分钟'], ['h', '小时'], ['d', '天']] },
+      { key: 'content', label: '提示正文', type: 'textarea', preserveWhitespace: true, rows: 5,
+        def: () => noteMarkerSelectedText(), placeholder: '可留空；选取的文字会带入提示正文' },
+    ],
+    check: (v) => {
+      const schedule = String(v.schedule || '').trim().replace(/\s+/g, ' ').toLowerCase();
+      const fixed = schedule.match(/^(\d{4})-(\d{2})-(\d{2}) (\d{4})$/);
+      const anniversary = schedule.match(/^anniversary (\d{4}-\d{2}-\d{2}) (\d{4})$/);
+      const daily = schedule.match(/^everyday (\d{4})$/);
+      const weekdays = schedule.match(/^w([1-7])\s*-\s*w([1-7]) (\d{4})$/);
+      const weekdayList = schedule.match(/^(w[1-7](?:\s*,\s*w[1-7])+) (\d{4})$/);
+      const time = fixed ? fixed[4] : (anniversary ? anniversary[2]
+        : (daily ? daily[1] : (weekdayList ? weekdayList[2] : (weekdays ? weekdays[3] : ''))));
+      if (!time || Number(time.slice(0, 2)) > 23 || Number(time.slice(2, 4)) > 59) {
+        return '请选择固定日期、每天、周一至周五、自选星期或周年日，并填写有效时间';
+      }
+      if (fixed) {
+        const date = new Date(Number(fixed[1]), Number(fixed[2]) - 1, Number(fixed[3]),
+          Number(time.slice(0, 2)), Number(time.slice(2, 4)));
+        if (date.getFullYear() !== Number(fixed[1]) || date.getMonth() !== Number(fixed[2]) - 1 ||
+            date.getDate() !== Number(fixed[3])) return '固定日期无效，请检查年月日';
+      }
+      if (anniversary) {
+        const [year, month, day] = anniversary[1].split('-').map(Number);
+        const date = new Date(year, month - 1, day);
+        if (date.getFullYear() !== year || date.getMonth() !== month - 1 || date.getDate() !== day) {
+          return '周年日期无效，请检查年月日';
+        }
+      }
+      let inCodeFence = false;
+      for (const line of String(v.content || '').split(/\r?\n/)) {
+        if (/^\s*(```|~~~)/.test(line)) { inCodeFence = !inCodeFence; continue; }
+        if (!inCodeFence && /^\s*\{\/gpG\}\s*$/i.test(line)) return '提示正文不能单独包含 {/gpG}，这会提前结束 alert 围栏';
+      }
+      return '';
+    },
+    build: (v) => {
+      const schedule = String(v.schedule).trim().replace(/\s+/g, ' ').toLowerCase();
+      const recurring = /^(?:anniversary \d{4}-\d{2}-\d{2} \d{4}|everyday \d{4}|w[1-7]\s*-\s*w[1-7] \d{4}|w[1-7](?:\s*,\s*w[1-7])+ \d{4})$/.test(schedule);
+      const marker = recurring
+        ? '[[alert:' + v.title + ':' + schedule + ':' + v.n + v.unit + ']]'
+        : '[[alert:' + v.title + ':' + schedule + ':' + v.n + v.unit + ':否]]';
+      const content = String(v.content || '').replace(/\r\n?/g, '\n').replace(/^\n+|\n+$/g, '') ||
+        '在这里填写闹铃提示内容';
+      const lines = ['{gpG|fg=黄,bg=渐变(黑→紫)|alert}', marker];
+      if (recurring) lines.push('| 完成日期与时间 | 备注 |', '| --- | --- |');
+      lines.push('', content, '{/gpG}');
+      return lines.join('\n');
+    }
   },
   {
     id: 'bookmark', label: '🌟 收藏', forbid: ']',
@@ -7033,7 +7144,7 @@ function noteMarkerSelectedText() {
   return inp.value.slice(inp.selectionStart, inp.selectionEnd);
 }
 function noteMarkerPad2(n) { return String(n).padStart(2, '0'); }
-// datetime-local 的 value 口径＝本机时间 YYYY-MM-DDTHH:mm（不含秒），存进 [[alert:]] 时再把 T 换成空格
+// datetime-local 的 value 口径＝本机时间 YYYY-MM-DDTHH:mm（不含秒）；生成 [[alert:]] 时转为空格并移除时间冒号。
 function noteMarkerInputDateTime(ts) {
   const d = new Date(ts);
   return d.getFullYear() + '-' + noteMarkerPad2(d.getMonth() + 1) + '-' + noteMarkerPad2(d.getDate()) +
@@ -7069,6 +7180,64 @@ function noteMarkerFieldSelect(f, key, options, def) {
   el.value = def;
   return el;
 }
+function noteMarkerAlertScheduleField(f, ctl) {
+  const box = document.createElement('div');
+  box.className = 'nm-schedule';
+  const mode = noteMarkerFieldSelect(f, f.key + 'Mode', [
+    ['fixed', '固定日期'],
+    ['everyday', '每天（everyday）'],
+    ['weekdays', '周一至周五（w1 - w5）'],
+    ['selected-days', '自选星期（可多选）'],
+    ['anniversary', '每年周年日（anniversary）']
+  ], f.defMode);
+  mode.classList.add('nm-wide');
+  mode.setAttribute('aria-label', '日期或循环规则');
+  box.appendChild(mode);
+
+  const values = document.createElement('div');
+  values.className = 'nm-schedule-values';
+  const dateWrap = document.createElement('span');
+  dateWrap.className = 'nm-schedule-date';
+  const date = document.createElement('input');
+  date.type = 'date';
+  date.id = 'nmf_' + f.key + 'Date';
+  date.value = typeof f.defDate === 'function' ? f.defDate() : (f.defDate || '');
+  date.setAttribute('aria-label', '提醒日期或周年日期');
+  dateWrap.appendChild(date);
+  const time = document.createElement('input');
+  time.type = 'time';
+  time.id = 'nmf_' + f.key + 'Time';
+  time.value = typeof f.defTime === 'function' ? f.defTime() : (f.defTime || '');
+  time.setAttribute('aria-label', '提醒时间');
+  values.appendChild(dateWrap);
+  values.appendChild(time);
+  box.appendChild(values);
+  const days = document.createElement('div');
+  days.className = 'nm-schedule-days';
+  '一二三四五六日'.split('').forEach((name, index) => {
+    const label = document.createElement('label');
+    const checkbox = document.createElement('input');
+    checkbox.type = 'checkbox';
+    checkbox.id = 'nmf_' + f.key + 'Day' + (index + 1);
+    checkbox.value = 'w' + (index + 1);
+    checkbox.setAttribute('aria-label', '周' + name);
+    label.appendChild(checkbox);
+    label.appendChild(document.createTextNode('周' + name));
+    days.appendChild(label);
+  });
+  box.appendChild(days);
+  ctl.appendChild(box);
+  noteMarkerSyncAlertSchedule();
+}
+function noteMarkerSyncAlertSchedule() {
+  const mode = document.getElementById('nmf_scheduleMode');
+  const date = document.getElementById('nmf_scheduleDate');
+  if (!mode || !date) return;
+  const dateWrap = date.parentElement;
+  if (dateWrap) dateWrap.hidden = ['everyday', 'weekdays', 'selected-days'].includes(mode.value);
+  const days = mode.parentElement && mode.parentElement.querySelector('.nm-schedule-days');
+  if (days) days.hidden = mode.value !== 'selected-days';
+}
 function noteMarkerShowForm(def) {
   noteMarkerDef = def;
   const list = document.getElementById('noteMarkerList');
@@ -7098,6 +7267,8 @@ function noteMarkerShowForm(def) {
       ctl.appendChild(noteMarkerFieldSelect(f, f.unitKey, f.options, f.defUnit));
     } else if (f.type === 'select') {
       ctl.appendChild(noteMarkerFieldSelect(f, f.key, f.options, f.def));
+    } else if (f.type === 'alert-schedule') {
+      noteMarkerAlertScheduleField(f, ctl);
     } else {
       const el = noteMarkerFieldInput(f);
       el.classList.add(f.type === 'number' ? 'nm-num' : 'nm-wide');
@@ -7106,6 +7277,7 @@ function noteMarkerShowForm(def) {
     row.appendChild(ctl);
     form.appendChild(row);
   });
+  noteMarkerSyncAlertSchedule();
   back.hidden = false;
   ins.hidden = false;
   noteMarkerUpdatePreview();
@@ -7176,22 +7348,43 @@ function noteMarkerReadValues(def) {
       values[f.numKey] = n; values[f.unitKey] = unit;
       return;
     }
+    if (f.type === 'alert-schedule') {
+      const mode = read(f.key + 'Mode');
+      const date = read(f.key + 'Date');
+      const time = read(f.key + 'Time');
+      const selectedDays = [];
+      for (let day = 1; day <= 7; day++) {
+        const checkbox = document.getElementById('nmf_' + f.key + 'Day' + day);
+        if (checkbox && checkbox.checked) selectedDays.push('w' + day);
+      }
+      if (f.required && !time) errors.push('「' + f.label + '」请填写提醒时间');
+      if (f.required && ['fixed', 'anniversary'].includes(mode) && !date) {
+        errors.push('「' + f.label + '」请填写日期');
+      }
+      if (f.required && mode === 'selected-days' && !selectedDays.length) {
+        errors.push('「' + f.label + '」请至少选择一个星期');
+      }
+      const hhmm = time.replace(':', '');
+      values[f.key] = mode === 'everyday' ? 'everyday ' + hhmm
+        : (mode === 'weekdays' ? 'w1 - w5 ' + hhmm
+          : (mode === 'selected-days' ? selectedDays.join(',') + ' ' + hhmm
+            : (mode === 'anniversary' ? 'anniversary ' + date + ' ' + hhmm : date + ' ' + hhmm)));
+      return;
+    }
     const v = read(f.key, !f.preserveWhitespace);
     if (f.required && !v.trim()) errors.push('「' + f.label + '」不能为空');
     if (f.type === 'datetime' && v && !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(v)) errors.push('「' + f.label + '」时间没选完整');
     values[f.key] = v;
   });
-  // 标示本体以 ]] 收尾，内容里出现 ] 会把标记截断成两段（渲染与闹铃解析都认不得）→ 挡在插入前
-  if (def.forbid) {
-    Object.keys(values).forEach((k) => {
-      const f = def.fields.find((x) => x.key === k || x.numKey === k || x.unitKey === k);
-      if (!f || f.type === 'select' || f.type === 'interval' || f.type === 'number' || f.type === 'datetime') return;
-      const ban = def.forbid + (f.forbid || '');
-      const hit = String(values[k]).split('').find((ch) => ban.indexOf(ch) >= 0);
-      if (hit) errors.push('「' + f.label + '」不能含「' + hit + '」，' +
-        (ban.indexOf(']') >= 0 && hit === ']' ? '会被截断成坏掉的标示' : '会被当成栏位分隔，后面的内容整体错位'));
-    });
-  }
+  // 标记字段中的禁字（尤其 ]）会截断标记或错拆栏位；正文栏位可单独不设禁字
+  Object.keys(values).forEach((k) => {
+    const f = def.fields.find((x) => x.key === k || x.numKey === k || x.unitKey === k);
+    if (!f || f.type === 'select' || f.type === 'interval' || f.type === 'number' || f.type === 'datetime') return;
+    const ban = (def.forbid || '') + (f.forbid || '');
+    const hit = String(values[k]).split('').find((ch) => ban.indexOf(ch) >= 0);
+    if (hit) errors.push('「' + f.label + '」不能含「' + hit + '」，' +
+      (ban.indexOf(']') >= 0 && hit === ']' ? '会被截断成坏掉的标示' : '会被当成栏位分隔，后面的内容整体错位'));
+  });
   if (def.check) {
     const msg = def.check(values);
     if (msg) errors.push(msg);
@@ -7213,13 +7406,17 @@ function noteMarkerUpdatePreview() {
   }
   if (ins) ins.disabled = !r.ok;
 }
-function noteMarkerInsertAtCursor(text) {
+function noteMarkerInsertAtCursor(text, block) {
   const inp = document.getElementById('addCheckInput');
   if (!inp) return false;
   const s = typeof inp.selectionStart === 'number' ? inp.selectionStart : inp.value.length;
   const e = typeof inp.selectionEnd === 'number' ? inp.selectionEnd : s;
-  inp.value = inp.value.slice(0, s) + text + inp.value.slice(e);
-  const caret = s + text.length;
+  const before = inp.value.slice(0, s), after = inp.value.slice(e);
+  const leading = block && before && !before.endsWith('\n\n') ? (before.endsWith('\n') ? '\n' : '\n\n') : '';
+  const trailing = block && after && !after.startsWith('\n\n') ? (after.startsWith('\n') ? '\n' : '\n\n') : '';
+  const insertion = leading + text + trailing;
+  inp.value = before + insertion + after;
+  const caret = s + insertion.length - trailing.length;
   try { inp.setSelectionRange(caret, caret); } catch (_) { /* 焦点在别处时 setSelectionRange 可能抛错，内容已写进，不影响 */ }
   return true;
 }
@@ -7306,10 +7503,62 @@ function noteMarkerDoInsert() {
   const r = noteMarkerReadValues(noteMarkerDef);
   if (!r.ok) { noteMarkerUpdatePreview(); return; }
   const text = noteMarkerDef.build(r.values);
-  if (!noteMarkerInsertAtCursor(text)) { showStickyRefreshFeedback('找不到编辑框，未插入', true); return; }
+  if (!noteMarkerInsertAtCursor(text, noteMarkerDef.block)) { showStickyRefreshFeedback('找不到编辑框，未插入', true); return; }
   const label = noteMarkerDef.label;
   noteMarkerClose(true);
   showStickyRefreshFeedback('已插入 ' + label, true);
+}
+function noteMarkerMapOffset(source, target, offset) {
+  const sourceLines = String(source).split('\n');
+  const targetLines = String(target).split('\n');
+  if (sourceLines.length !== targetLines.length) return target.length;
+  let sourceStart = 0, targetStart = 0;
+  for (let i = 0; i < sourceLines.length; i++) {
+    if (offset <= sourceStart + sourceLines[i].length) {
+      return targetStart + Math.min(offset - sourceStart, targetLines[i].length);
+    }
+    sourceStart += sourceLines[i].length + 1;
+    targetStart += targetLines[i].length + 1;
+  }
+  return target.length;
+}
+async function noteMarkerEnsureBlockMode() {
+  const inp = document.getElementById('addCheckInput');
+  if (noteCheckEditTarget) {
+    if (!inp) return false;
+    const previous = inp.value;
+    const selectionStart = inp.selectionStart;
+    const selectionEnd = inp.selectionEnd;
+    try {
+      await noteSwitchCheckToBlockMode();
+    } catch (error) {
+      console.error('[desktop-note] 无法切换到 Markdown 原文模式:', error);
+      showStickyRefreshFeedback('无法切换到 Markdown 原文模式，未插入 alert 围栏', true);
+      return false;
+    }
+    if (noteCheckEditTarget || !noteBlockEditTarget) return false;
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const raw = inp.value;
+    if (noteStripCheckboxBlock(raw) === previous) {
+      inp.setSelectionRange(
+        noteMarkerMapOffset(previous, raw, selectionStart),
+        noteMarkerMapOffset(previous, raw, selectionEnd)
+      );
+    } else {
+      inp.setSelectionRange(raw.length, raw.length);
+    }
+    return true;
+  }
+  if (!noteBlockEditTarget && noteAddMode === 'check') {
+    if (!inp) return false;
+    const selectionStart = inp.selectionStart;
+    const selectionEnd = inp.selectionEnd;
+    noteSwitchAddToBlockMode();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    if (noteAddMode !== 'text') return false;
+    inp.setSelectionRange(selectionStart, selectionEnd);
+  }
+  return true;
 }
 // 🆕 三下 Shift 叫出菜单：焦点在 ✎ 编辑框时由该 textarea 的 keydown 触发（见 bindNoteMarkerDialog）
 (function bindNoteMarkerDialog() {
@@ -7327,7 +7576,7 @@ function noteMarkerDoInsert() {
     }, true);
   }
   const list = document.getElementById('noteMarkerList');
-  if (list) list.addEventListener('click', (e) => {
+  if (list) list.addEventListener('click', async (e) => {
     const item = e.target.closest('.nm-item');
     if (!item) return;
     e.stopPropagation();
@@ -7336,9 +7585,21 @@ function noteMarkerDoInsert() {
       return;
     }
     const def = NOTE_MARKER_DEFS.find((d) => d.id === item.getAttribute('data-marker'));
-    if (def) noteMarkerShowForm(def);
+    if (def) {
+      if (def.block) {
+        if (noteBlockEditTarget && ['code', 'gp', 'table'].includes(noteBlockEditTarget.type)) {
+          showStickyRefreshFeedback('Alert 围栏不能嵌入代码块、表格或小事件群，请从普通 Markdown 内容处插入', true);
+          return;
+        }
+        if (!(await noteMarkerEnsureBlockMode())) return;
+      }
+      noteMarkerShowForm(def);
+    }
   });
-  ['input', 'change'].forEach((evt) => ov.addEventListener(evt, () => noteMarkerUpdatePreview()));
+  ['input', 'change'].forEach((evt) => ov.addEventListener(evt, () => {
+    noteMarkerSyncAlertSchedule();
+    noteMarkerUpdatePreview();
+  }));
   const ins = document.getElementById('noteMarkerInsert');
   if (ins) ins.addEventListener('click', (e) => { e.stopPropagation(); noteMarkerDoInsert(); });
   const back = document.getElementById('noteMarkerBackButton');

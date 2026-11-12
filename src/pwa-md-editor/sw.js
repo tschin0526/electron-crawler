@@ -511,7 +511,14 @@
 //       calAlertBadgeHtml（桌面 tlAlertBadgeHtml 同口径），間隔與完整年份改放 title，並把 alert 從術語
 //       字典（calCollectTerms）排除；已完成整顆徽標壓低飽和與不透明度。
 //       calendar-editor.js/style.css 改，bump 讓手機重拉；APP_VERSION/manifest 1.10.38→1.10.39。
-const CACHE_NAME = 'md-editor-lite-v223';
+// v224（2026-11-12）：alert 闹铃标记新格式将时间写为 YYYY-MM-DD HHmm（字段内不含冒号），
+//       只解析 HHmm；新建、稍后提醒和完成操作统一写 HHmm，徽标显示仍格式化为 HH:mm。
+//       calendar-editor.js 改，index.html 资源戳和 APP_VERSION/manifest 1.10.39→1.10.40。
+// v225（2026-11-12）：alert 徽标显示每日/星期循环时间；calendar-editor.js 改，缓存版本升级。
+// v226（2026-11-13）：alert 支持 anniversary YYYY-MM-DD HHmm 年度循环，徽标显示每年日期时间；
+//       calendar-editor.js 与 index.html 资源戳更新，升级缓存确保 PWA 载入新版解析器。
+// v227（2026-11-13）：alert 支持 w1,w3,w5 这类自选星期循环规则。
+const CACHE_NAME = 'md-editor-lite-v227';
 const ASSETS = [
   './',
   './index.html',

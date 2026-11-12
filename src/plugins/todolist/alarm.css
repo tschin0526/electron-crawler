@@ -143,16 +143,69 @@ h1 { margin: 0; font-size: clamp(20px, 2.2vw, 29px); font-weight: 650; letter-sp
 .card-message {
   margin: 9px 0 5px;
   color: #e4f3fa;
-  font-size: clamp(16px, 1.6vw, 21px);
+  font-size: clamp(13px, 1.1vw, 15px);
   font-weight: 620;
-  line-height: 1.38;
+  line-height: 1.45;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
 .card-title { margin: 0; color: #9fb9c8; font-size: 12px; line-height: 1.4; overflow-wrap: anywhere; }
+.card-content {
+  max-height: 42vh;
+  min-height: 0;
+  margin: 8px 0;
+  padding-right: 7px;
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-color: rgba(85, 232, 255, .4) transparent;
+  scrollbar-width: thin;
+  color: #e4f3fa;
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: normal;
+  word-break: break-word;
+}
+.card-content > :first-child { margin-top: 0; }
+.card-content > :last-child { margin-bottom: 0; }
+.card-content h1 { margin: .6em 0 .3em; font-size: 1.8em; font-weight: 700; line-height: 1.3; }
+.card-content h2 { margin: .55em 0 .3em; font-size: 1.5em; font-weight: 700; line-height: 1.35; }
+.card-content h3 { margin: .5em 0 .25em; font-size: 1.3em; font-weight: 600; line-height: 1.4; }
+.card-content h4, .card-content h5, .card-content h6 { margin: .45em 0 .2em; font-size: 1.15em; font-weight: 600; line-height: 1.4; }
+.card-content p { margin: 0 0 .35em; }
+.card-content ul, .card-content ol { margin: .25em 0; padding-left: 1.5em; }
+.card-content li { margin: .15em 0; }
+.card-content hr { margin: .45em 0; border: 0; border-top: 1px solid rgba(137, 183, 205, .35); }
+.card-content blockquote { margin: .35em 0; padding-left: .75em; border-left: 3px solid rgba(137, 183, 205, .45); color: #9fb9c8; }
+.card-content pre { margin: .35em 0; overflow-x: auto; }
+.card-content code { padding: .05em .3em; border-radius: 4px; background: rgba(127, 127, 127, .18); font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size: .92em; }
+.card-content pre code { padding: 0; background: transparent; }
+.card-content table { border-collapse: collapse; margin: .35em 0; }
+.card-content th, .card-content td { padding: .25em .55em; border: 1px solid rgba(137, 183, 205, .4); }
+.card-content th { font-weight: 600; }
+.card-content img { max-width: 100%; height: auto; }
+.card-content a { color: #8deaff; }
+.card-content .ev-md-check { display: block; font-size: inherit; }
+.card-content .ev-md-check-text { font-size: inherit; }
+.card-content .ev-cb { display: inline-block; min-width: 11px; height: 11px; margin-right: 4px; border: 1px solid rgba(159, 185, 200, .7); border-radius: 3px; vertical-align: -1px; text-align: center; font-size: 9px; line-height: 11px; color: #fff; }
+.card-content .ev-md-check.done .ev-cb { border-color: var(--accent); background: var(--accent); }
+.card-content .ev-md-check.done .ev-md-check-text { text-decoration: line-through; opacity: .75; }
 .card-when { margin: 6px 0 0; color: #7894a5; font-size: 11px; }
 .card-elapsed { margin: 4px 0 0; color: var(--accent); font-size: 12px; font-variant-numeric: tabular-nums; }
 .card-error { min-height: 16px; margin: 5px 0 0; color: #ff9a9a; font-size: 11px; }
+.card-result {
+  width: 100%;
+  min-height: 42px;
+  margin-top: 6px;
+  padding: 8px 10px;
+  resize: vertical;
+  border: 1px solid rgba(139, 184, 205, .3);
+  border-radius: 8px;
+  color: #e6f4fb;
+  background: rgba(3, 10, 18, .62);
+  font: inherit;
+  font-size: 12px;
+}
+.card-result:disabled { opacity: .58; }
 .card-actions { display: flex; gap: 9px; margin-top: auto; padding-top: 9px; }
 
 .button, .preview {
@@ -188,10 +241,10 @@ h1 { margin: 0; font-size: clamp(20px, 2.2vw, 29px); font-weight: 650; letter-sp
 
 .cards.density-5 { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 11px; }
 .density-5 .alarm-card { min-height: 190px; padding: 15px 16px 13px; }
-.density-5 .card-message { font-size: 16px; }
+.density-5 .card-message { font-size: 14px; }
 .cards.density-9 { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 9px; }
 .density-9 .alarm-card { min-height: 170px; padding: 12px 13px 11px; }
-.density-9 .card-message { font-size: 14px; }
+.density-9 .card-message { font-size: 13px; }
 .density-9 .button { padding: 8px 6px; font-size: 11px; }
 
 .alarm-pulse .dashboard { animation: pulse 2.2s ease-out infinite; }

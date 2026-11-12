@@ -11,6 +11,7 @@ const DEFAULT_SETTINGS = { sound: 'classic', animation: 'pulse' };
 let getMainWindow = () => null;
 let alarmWindow = null;
 const activeAlarms = new Map();
+const snoozedRecurringAlarms = new Map();
 let entries = new Map();
 let pollTimer = null;
 let closingForAction = false;
@@ -82,7 +83,7 @@ function sendToAlarm(channel, payload) {
   }
 }
 
-function requestAction(action, alarmId) {
+function requestAction(action, alarmId, note) {
   const win = alarmWindow;
   const parent = getMainWindow();
   const alarm = activeAlarms.get(alarmId);
@@ -104,6 +105,15 @@ function requestAction(action, alarmId) {
         pendingActions.delete(requestId);
         actionInProgress = false;
         if (result && result.ok) {
+          if (action === 'snooze' && alarm.recurring) {
+            const entry = entries.get(alarmId);
+            snoozedRecurringAlarms.set(alarmId, {
+              scheduleDueAt: entry ? entry.dueAt : alarm.dueAt,
+              until: Date.now() + alarm.intervalMs
+            });
+          } else if (action === 'complete') {
+            snoozedRecurringAlarms.delete(alarmId);
+          }
           activeAlarms.delete(alarmId);
           if (activeAlarms.size) {
             sendToAlarm('alarm-update', { alarms: Array.from(activeAlarms.values()) });
@@ -115,7 +125,7 @@ function requestAction(action, alarmId) {
         resolve(result || { ok: false, error: '日历返回了无效结果' });
       }
     });
-    parent.webContents.send('alarm-action-request', { requestId, action, alarm, alarmId });
+    parent.webContents.send('alarm-action-request', { requestId, action, alarm, alarmId, note });
   });
 }
 
@@ -200,17 +210,30 @@ function showAlarm() {
 
 function checkDue() {
   if (!entries.size) {
-    if (activeAlarms.size) showAlarm();
+    if (activeAlarms.size && (!alarmWindow || alarmWindow.isDestroyed())) showAlarm();
     return;
   }
   const now = Date.now();
-  Array.from(entries.values())
-    .filter((entry) => !entry.completed && Number.isFinite(entry.dueAt) && entry.dueAt <= now)
-    .sort((a, b) => a.dueAt - b.dueAt)
-    .forEach((entry) => {
-      if (!activeAlarms.has(entry.id)) activeAlarms.set(entry.id, entry);
-    });
-  if (activeAlarms.size) showAlarm();
+  const dueEntries = [];
+  let addedAlarm = false;
+  entries.forEach((entry) => {
+    const snooze = snoozedRecurringAlarms.get(entry.id);
+    if (snooze && (!entry.recurring || snooze.scheduleDueAt !== entry.dueAt)) {
+      snoozedRecurringAlarms.delete(entry.id);
+    }
+    const activeSnooze = snoozedRecurringAlarms.get(entry.id);
+    const dueAt = activeSnooze ? activeSnooze.until : entry.dueAt;
+    if (!entry.completed && Number.isFinite(dueAt) && dueAt <= now) {
+      dueEntries.push(dueAt === entry.dueAt ? entry : { ...entry, dueAt });
+    }
+  });
+  dueEntries.sort((a, b) => a.dueAt - b.dueAt).forEach((entry) => {
+    if (!activeAlarms.has(entry.id)) {
+      activeAlarms.set(entry.id, entry);
+      addedAlarm = true;
+    }
+  });
+  if (activeAlarms.size && (addedAlarm || !alarmWindow || alarmWindow.isDestroyed())) showAlarm();
 }
 
 function sanitizeEntries(list) {
@@ -224,11 +247,13 @@ function sanitizeEntries(list) {
       dueAt: item.dueAt,
       intervalMs: item.intervalMs,
       message: String(item.message || '').slice(0, 2000),
+      contentHtml: typeof item.contentHtml === 'string' ? item.contentHtml : '',
       title: String(item.title || '行程提醒').slice(0, 300),
       date: String(item.date || '').slice(0, 100),
       eventUid: String(item.eventUid || ''),
       marker: String(item.marker || '').slice(0, 4000),
       markerOffset: Number.isInteger(item.markerOffset) ? item.markerOffset : -1,
+      recurring: item.recurring === true,
       completed: item.completed === true
     });
   });
@@ -245,6 +270,9 @@ function init(options) {
       return { ok: false, error: '无权更新闹铃清单' };
     }
     entries = sanitizeEntries(list);
+    snoozedRecurringAlarms.forEach((_, id) => {
+      if (!entries.has(id)) snoozedRecurringAlarms.delete(id);
+    });
     checkDue();
     return { ok: true };
   });
@@ -252,10 +280,11 @@ function init(options) {
   ipcMain.handle('alarm-action', (event, payload) => {
     if (!alarmWindow || alarmWindow.isDestroyed() || event.sender.id !== alarmWindow.webContents.id ||
         !payload || typeof payload.alarmId !== 'string' || !activeAlarms.has(payload.alarmId) ||
-        !['snooze', 'complete'].includes(payload.action)) {
+        !['snooze', 'complete'].includes(payload.action) ||
+        (payload.note !== undefined && (typeof payload.note !== 'string' || payload.note.length > 500))) {
       return { ok: false, error: '闹铃操作无效或已过期' };
     }
-    return requestAction(payload.action, payload.alarmId);
+    return requestAction(payload.action, payload.alarmId, payload.note || '');
   });
 
   ipcMain.handle('alarm-action-result', (event, payload) => {

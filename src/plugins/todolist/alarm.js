@@ -8,6 +8,7 @@
   const settingsStatus = document.getElementById('settings-status');
   const alarms = new Map();
   const cardErrors = new Map();
+  const resultNotes = new Map();
   let audioContext = null;
   let ringTimer = null;
   let elapsedTimer = null;
@@ -61,7 +62,7 @@
 
   function setBusy(busy) {
     actionPending = busy;
-    cardsEl.querySelectorAll('button').forEach((button) => { button.disabled = busy; });
+    cardsEl.querySelectorAll('button, textarea').forEach((element) => { element.disabled = busy; });
   }
 
   function formatDateTime(timestamp) {
@@ -131,6 +132,12 @@
       card.appendChild(top);
       card.appendChild(createTextElement('p', 'card-message', alarm.message || '您有一项行程需要处理。'));
       card.appendChild(createTextElement('p', 'card-title', alarm.title || '行程提醒'));
+      if (alarm.contentHtml) {
+        const content = document.createElement('div');
+        content.className = 'card-content ev-notes';
+        content.innerHTML = alarm.contentHtml;
+        card.appendChild(content);
+      }
       card.appendChild(createTextElement('p', 'card-when',
         '提醒时间 · ' + formatDateTime(alarm.dueAt)));
       const elapsed = createTextElement('p', 'card-elapsed', '');
@@ -138,6 +145,19 @@
       elapsed.setAttribute('aria-label', '闹铃提醒已经过时间');
       card.appendChild(elapsed);
       card.appendChild(createTextElement('p', 'card-error', cardErrors.get(alarm.id) || ''));
+
+      if (alarm.recurring) {
+        const note = document.createElement('textarea');
+        note.className = 'card-result';
+        note.maxLength = 500;
+        note.rows = 2;
+        note.value = resultNotes.has(alarm.id) ? resultNotes.get(alarm.id) : '完成';
+        note.disabled = actionPending;
+        note.setAttribute('aria-label', '完成备注');
+        note.placeholder = '填写本次执行结果';
+        note.addEventListener('input', () => resultNotes.set(alarm.id, note.value));
+        card.appendChild(note);
+      }
 
       const actions = document.createElement('div');
       actions.className = 'card-actions';
@@ -160,17 +180,24 @@
     cardErrors.forEach((_, id) => {
       if (!alarms.has(id)) cardErrors.delete(id);
     });
+    resultNotes.forEach((_, id) => {
+      if (!alarms.has(id)) resultNotes.delete(id);
+    });
     renderAlarms();
   }
 
   async function act(action, alarmId) {
     if (actionPending || !alarms.has(alarmId) || !api || !api.alarmAction) return;
+    const card = Array.from(cardsEl.querySelectorAll('.alarm-card'))
+      .find((element) => element.dataset.alarmId === alarmId);
+    const noteField = card && card.querySelector('.card-result');
+    const note = noteField ? (String(noteField.value || '').trim() || '完成') : '';
     setBusy(true);
     errorEl.textContent = '';
     cardErrors.delete(alarmId);
     renderAlarms();
     try {
-      const result = await api.alarmAction(action, alarmId);
+      const result = await api.alarmAction(action, alarmId, note);
       if (!result || !result.ok) {
         cardErrors.set(alarmId, (result && result.error) || '操作失败，提醒仍会继续响铃');
         setBusy(false);

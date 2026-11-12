@@ -191,7 +191,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // 行程回馈式闹铃：同步未完成提醒并接收需写回行程的操作
   syncAlarms: (alarms) => ipcRenderer.invoke('alarm-sync', alarms),
-  alarmAction: (action, alarmId) => ipcRenderer.invoke('alarm-action', { action, alarmId }),
+  alarmAction: (action, alarmId, note) => ipcRenderer.invoke('alarm-action', { action, alarmId, note }),
   loadAlarmSettings: () => ipcRenderer.invoke('alarm-load-settings'),
   saveAlarmSettings: (settings) => ipcRenderer.invoke('alarm-save-settings', settings),
   onAlarmShow: (callback) => {

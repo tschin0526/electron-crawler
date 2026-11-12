@@ -202,7 +202,7 @@
     function tlAllEvents(md) { return (tlParseEvents(md) || []).concat(tlIncludedEvents || []); }
 
     function tlAlertDateTime(value) {
-      const m = String(value || '').match(/^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2})$/);
+      const m = String(value || '').match(/^(\d{4})-(\d{2})-(\d{2}) (\d{2})(\d{2})$/);
       if (!m) return null;
       const date = new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], 0, 0);
       if (date.getFullYear() !== +m[1] || date.getMonth() !== +m[2] - 1 ||
@@ -218,35 +218,156 @@
       return Number.isSafeInteger(result) ? result : 0;
     }
 
+    function tlAlertTableCells(line) {
+      if (window.MdTableGrid && typeof window.MdTableGrid.splitCells === 'function') {
+        return window.MdTableGrid.splitCells(line);
+      }
+      return String(line || '').trim().replace(/^\|/, '').replace(/\|$/, '').split('|').map((cell) => cell.trim());
+    }
+
+    function tlAlertTableInfo(lines, markerLineIndex, fenceEnd) {
+      const headerIndex = markerLineIndex + 1;
+      if (headerIndex + 1 >= fenceEnd) return null;
+      const headerLine = String(lines[headerIndex] || '').trim();
+      const dividerLine = String(lines[headerIndex + 1] || '').trim();
+      if (headerLine.indexOf('|') < 0 || !/^[\s|:-]+$/.test(dividerLine) ||
+          dividerLine.indexOf('|') < 0 || dividerLine.indexOf('-') < 0) return null;
+      const header = tlAlertTableCells(headerLine);
+      if (header.length !== 2 || header[0] !== '完成日期与时间' || header[1] !== '备注') return null;
+
+      let endLine = headerIndex + 1;
+      while (endLine + 1 < fenceEnd && String(lines[endLine + 1] || '').trim().indexOf('|') >= 0) endLine++;
+      const dates = new Set();
+      for (let i = headerIndex + 2; i <= endLine; i++) {
+        const cells = tlAlertTableCells(lines[i]);
+        if (cells.length < 2) continue;
+        const match = cells[0].match(/^(\d{4}-\d{2}-\d{2})(?:\s+\d{2}:\d{2})?$/);
+        if (match && tlAlertDateTime(match[1] + ' 0000') !== null) dates.add(match[1]);
+      }
+      return { headerIndex, endLine, dates };
+    }
+
+    function tlAlertFenceContent(lines, markerLineIndex, range, table) {
+      if (!range) return '';
+      const contentStart = table ? table.endLine + 1 : markerLineIndex + 1;
+      return lines.slice(contentStart, range.end).join('\n').replace(/\r/g, '').trim();
+    }
+
+    function tlAlertFenceContentHtml(content) {
+      if (!content) return '';
+      const prepared = tlSeparateGpHorizontalRules(tlNotesWithChecks(tlStripGpMarkers(content), null));
+      return renderMarkdown(tlRenderTermDefs(tlRenderNoteMarkersLines(prepared)));
+    }
+
+    function tlAlertRecurringDue(schedule, completedDates, now) {
+      const normalized = String(schedule || '').trim().replace(/\s+/g, ' ').toLowerCase();
+      const anniversary = normalized.match(/^anniversary (\d{4}-\d{2}-\d{2}) (\d{4})$/);
+      const daily = normalized.match(/^everyday (\d{4})$/);
+      const weekdays = normalized.match(/^w([1-7])\s*-\s*w([1-7])\s+(\d{4})$/);
+      const weekdayList = normalized.match(/^(w[1-7](?:\s*,\s*w[1-7])+) (\d{4})$/);
+      if (!anniversary && !daily && !weekdays && !weekdayList) return null;
+      const time = anniversary ? anniversary[2] : (daily ? daily[1] : (weekdayList ? weekdayList[2] : weekdays[3]));
+      const hour = Number(time.slice(0, 2)), minute = Number(time.slice(2, 4));
+      if (hour > 23 || minute > 59) return null;
+      if (anniversary) {
+        if (tlAlertDateTime(anniversary[1] + ' 0000') === null) return null;
+        const current = new Date(now);
+        const completedYears = new Set(Array.from(completedDates)
+          .map((date) => String(date).match(/^(\d{4})-/))
+          .filter(Boolean)
+          .map((match) => match[1]));
+        // A catch-up completion is logged on today's date, not the anniversary date.
+        for (let year = current.getFullYear(); year <= current.getFullYear() + 8; year++) {
+          const yearKey = String(year).padStart(4, '0');
+          const dateKey = yearKey + anniversary[1].slice(4);
+          const dueAt = tlAlertDateTime(dateKey + ' ' + time);
+          if (dueAt === null || completedYears.has(yearKey)) continue;
+          return dueAt;
+        }
+        return null;
+      }
+      const startDay = weekdays ? Number(weekdays[1]) : 1;
+      const endDay = weekdays ? Number(weekdays[2]) : 7;
+      const selectedDays = weekdayList
+        ? new Set(weekdayList[1].match(/w[1-7]/g).map((token) => Number(token.slice(1))))
+        : null;
+      const current = new Date(now);
+      for (let offset = 0; offset <= 7; offset++) {
+        const date = new Date(current.getFullYear(), current.getMonth(), current.getDate() + offset);
+        const weekday = date.getDay() || 7;
+        const matchesWeekday = weekdayList ? selectedDays.has(weekday) : (!weekdays || (startDay <= endDay
+          ? weekday >= startDay && weekday <= endDay
+          : weekday >= startDay || weekday <= endDay));
+        if (!matchesWeekday) continue;
+        const dateKey = date.getFullYear() + '-' + String(date.getMonth() + 1).padStart(2, '0') +
+          '-' + String(date.getDate()).padStart(2, '0');
+        if (completedDates.has(dateKey)) continue;
+        const dueAt = tlAlertDateTime(dateKey + ' ' + time);
+        if (dueAt !== null) return dueAt;
+      }
+      return null;
+    }
+
     function tlAlertMarkers(notes) {
       const text = String(notes || '');
       const markers = [];
+      const lines = text.split('\n');
+      const fences = (typeof tlGpFenceScan === 'function') ? tlGpFenceScan(lines).ranges : [];
       let offset = 0, fenceChar = '', fenceLength = 0;
-      text.split(/(?<=\n)/).forEach((line) => {
+      lines.forEach((line, lineIndex) => {
+        const sourceLine = line;
+        line = line.replace(/\r$/, '');
         const fence = line.match(/^[ \t]{0,3}(`{3,}|~{3,})/);
         if (fence) {
           const chars = fence[1][0], length = fence[1].length;
           if (!fenceChar) { fenceChar = chars; fenceLength = length; }
           else if (chars === fenceChar && length >= fenceLength) { fenceChar = ''; fenceLength = 0; }
         } else if (!fenceChar) {
-          const re = /\[\[alert:([\s\S]*?):(\d{4}-\d{2}-\d{2} \d{2}:\d{2})\s*:\s*([1-9]\d*)\s*(m|h|d)(?:\s*:\s*([^\]]*))?\]\]/g;
+          const re = /\[\[alert:([\s\S]*?):((?:\d{4}-\d{2}-\d{2} \d{4})|(?:anniversary\s+\d{4}-\d{2}-\d{2}\s+\d{4})|(?:everyday\s+\d{4})|(?:w[1-7]\s*-\s*w[1-7]\s+\d{4})|(?:w[1-7](?:\s*,\s*w[1-7])+\s+\d{4}))\s*:\s*([1-9]\d*)\s*(m|h|d)(?:\s*:\s*([^\]]*))?\]\]/gi;
           let match;
           while ((match = re.exec(line))) {
-            const dueAt = tlAlertDateTime(match[2]);
             const intervalMs = tlAlertInterval(match[3] + match[4]);
-            if (dueAt === null || !intervalMs) continue;
-            const completed = String(match[5] || '').trim() === '是';
+            if (!intervalMs) continue;
+            const markerOffset = offset + match.index;
+            const fixedDueAt = tlAlertDateTime(match[2]);
+            if (fixedDueAt !== null) {
+              const range = fences.find((item) => item.alert && item.start + 1 === lineIndex);
+              const table = range ? tlAlertTableInfo(lines, lineIndex, range.end) : null;
+              const content = tlAlertFenceContent(lines, lineIndex, range, table);
+              markers.push({
+                marker: match[0],
+                markerOffset,
+                message: match[1].trim(),
+                contentHtml: tlAlertFenceContentHtml(content),
+                dueAt: fixedDueAt,
+                intervalMs,
+                completed: String(match[5] || '').trim() === '是',
+                recurring: false
+              });
+              continue;
+            }
+
+            if (match[5] !== undefined || sourceLine.trim() !== match[0]) continue;
+            const range = fences.find((item) => item.alert && item.start + 1 === lineIndex);
+            if (!range) continue;
+            const table = tlAlertTableInfo(lines, lineIndex, range.end);
+            if (!table) continue;
+            const dueAt = tlAlertRecurringDue(match[2], table.dates, Date.now());
+            if (dueAt === null) continue;
+            const content = tlAlertFenceContent(lines, lineIndex, range, table);
             markers.push({
               marker: match[0],
-              markerOffset: offset + match.index,
+              markerOffset,
               message: match[1].trim(),
+              contentHtml: tlAlertFenceContentHtml(content),
               dueAt,
               intervalMs,
-              completed
+              completed: false,
+              recurring: true
             });
           }
         }
-        offset += line.length;
+        offset += sourceLine.length + 1;
       });
       return markers;
     }
@@ -281,10 +402,55 @@
       const date = new Date(timestamp);
       const pad = (value) => String(value).padStart(2, '0');
       return date.getFullYear() + '-' + pad(date.getMonth() + 1) + '-' + pad(date.getDate()) +
+        ' ' + pad(date.getHours()) + pad(date.getMinutes());
+    }
+
+    function tlAlertLocalDisplayDateTime(timestamp) {
+      const date = new Date(timestamp);
+      const pad = (value) => String(value).padStart(2, '0');
+      return date.getFullYear() + '-' + pad(date.getMonth() + 1) + '-' + pad(date.getDate()) +
         ' ' + pad(date.getHours()) + ':' + pad(date.getMinutes());
     }
 
-    function tlRefreshOpenBlockAfterAlarm(uid, oldMarker, newMarker) {
+    function tlAppendAlertHistory(notes, markerOffset, note) {
+      const text = String(notes || '');
+      const lines = text.split('\n');
+      const markerLineIndex = text.slice(0, markerOffset).split('\n').length - 1;
+      const range = tlGpFenceScan(lines).ranges.find((item) => item.alert && item.start + 1 === markerLineIndex);
+      if (!range) return null;
+      const table = tlAlertTableInfo(lines, markerLineIndex, range.end);
+      if (!table) return null;
+
+      let lineStart = 0;
+      for (let i = 0; i < table.endLine; i++) lineStart += lines[i].length + 1;
+      const lineEnd = lineStart + lines[table.endLine].length;
+      const hasLineEnding = text.charAt(lineEnd) === '\n';
+      const insertAt = lineEnd + (hasLineEnding ? 1 : 0);
+      const lineEnding = text.indexOf('\r\n') >= 0 ? '\r\n' : '\n';
+      const safeNote = String(note || '完成').replace(/[\r\n]+/g, ' ').replace(/\|/g, '\\|').trim() || '完成';
+      const row = '| ' + tlAlertLocalDisplayDateTime(Date.now()) + ' | ' + safeNote + ' |';
+      return {
+        notes: text.slice(0, insertAt) + (hasLineEnding ? row + lineEnding : lineEnding + row) + text.slice(insertAt),
+        row
+      };
+    }
+
+    function tlInsertAlertHistoryRowIntoDraft(draft, marker, row) {
+      const text = String(draft || '');
+      const lines = text.split('\n');
+      const markerLineIndex = lines.findIndex((line) => line.trim() === marker);
+      if (markerLineIndex < 1) return null;
+      const range = tlGpFenceScan(lines).ranges.find((item) =>
+        item.alert && item.start + 1 === markerLineIndex);
+      if (!range) return null;
+      const table = tlAlertTableInfo(lines, markerLineIndex, range.end);
+      if (!table) return null;
+      if (lines.slice(table.headerIndex + 2, table.endLine + 1).includes(row)) return text;
+      lines.splice(table.endLine + 1, 0, row);
+      return lines.join('\n');
+    }
+
+    function tlRefreshOpenBlockAfterAlarm(uid, oldMarker, newMarker, historyRow) {
       const target = tlEditBlockTarget;
       const overlay = document.getElementById('tlAddCheckOverlay');
       const input = document.getElementById('tlAddCheckInput');
@@ -292,14 +458,24 @@
 
       const oldValue = String(input.value || '');
       const markerAt = oldValue.indexOf(oldMarker);
-      if (markerAt >= 0 && oldValue.indexOf(oldMarker, markerAt + oldMarker.length) < 0) {
+      if (newMarker !== oldMarker && markerAt >= 0 &&
+          oldValue.indexOf(oldMarker, markerAt + oldMarker.length) < 0) {
         input.value = oldValue.slice(0, markerAt) + newMarker + oldValue.slice(markerAt + oldMarker.length);
         tlSyncGroupUi(input.value);
         return;
       }
 
+      if (historyRow && newMarker === oldMarker) {
+        const merged = tlInsertAlertHistoryRowIntoDraft(oldValue, oldMarker, historyRow);
+        if (merged !== null) {
+          input.value = merged;
+          tlSyncGroupUi(input.value);
+          return;
+        }
+      }
+
       if (tlAddCheckDirty) {
-        showToast('提醒状态已写入，但当前区块草稿也修改了该标记；请核对后再保存，避免覆盖最新状态', 'danger');
+        showToast('提醒记录已写入，但当前区块草稿有未保存修改；请核对后再保存，避免覆盖最新记录', 'danger');
         return;
       }
 
@@ -334,10 +510,23 @@
         }
         markerOffset = foundAt;
       }
-      const parsed = alarm.marker.match(/^\[\[alert:([\s\S]*?):(\d{4}-\d{2}-\d{2} \d{2}:\d{2})\s*:\s*([1-9]\d*)\s*(m|h|d)(?:\s*:\s*([^\]]*))?\]\]$/);
+      const parsed = alarm.marker.match(/^\[\[alert:([\s\S]*?):((?:\d{4}-\d{2}-\d{2} \d{4})|(?:anniversary\s+\d{4}-\d{2}-\d{2}\s+\d{4})|(?:everyday\s+\d{4})|(?:w[1-7]\s*-\s*w[1-7]\s+\d{4})|(?:w[1-7](?:\s*,\s*w[1-7])+\s+\d{4}))\s*:\s*([1-9]\d*)\s*(m|h|d)(?:\s*:\s*([^\]]*))?\]\]$/i);
       if (!parsed) return { ok: false, error: '提醒标记格式无效，未修改行程' };
       let nextMarker;
-      if (action === 'complete') {
+      let newNotes;
+      let historyRow = '';
+      const isRecurring = tlAlertDateTime(parsed[2]) === null;
+      if (isRecurring) {
+        const currentMarker = tlAlertMarkers(notes).find((item) =>
+          item.markerOffset === markerOffset && item.marker === alarm.marker && item.recurring);
+        if (!currentMarker) return { ok: false, error: '循环提醒围栏或记录表格已失效，未修改行程' };
+        if (action === 'snooze') return { ok: true };
+        const history = tlAppendAlertHistory(notes, markerOffset, request.note);
+        if (history === null) return { ok: false, error: '找不到循环提醒的记录表格，未修改行程' };
+        nextMarker = alarm.marker;
+        newNotes = history.notes;
+        historyRow = history.row;
+      } else if (action === 'complete') {
         nextMarker = '[[alert:' + parsed[1] + ':' + parsed[2] + ':' + parsed[3] + parsed[4] + ':是]]';
       } else {
         const intervalMs = tlAlertInterval(parsed[3] + parsed[4]);
@@ -345,7 +534,9 @@
         nextMarker = '[[alert:' + parsed[1] + ':' + tlAlarmLocalDateTime(nextAt) + ':' +
           parsed[3] + parsed[4] + ':否]]';
       }
-      const newNotes = notes.slice(0, markerOffset) + nextMarker + notes.slice(markerOffset + alarm.marker.length);
+      if (!isRecurring) {
+        newNotes = notes.slice(0, markerOffset) + nextMarker + notes.slice(markerOffset + alarm.marker.length);
+      }
 
       if (ev.ro) {
         const result = await tlSaveIncludedEventNotes(ev.uid, newNotes, ev.src);
@@ -384,7 +575,7 @@
         if (typeof tlRenderEventsContent === 'function') tlRenderEventsContent();
       }
 
-      tlRefreshOpenBlockAfterAlarm(ev.uid, alarm.marker, nextMarker);
+      tlRefreshOpenBlockAfterAlarm(ev.uid, alarm.marker, nextMarker, historyRow);
       if (typeof tlPushStickyRefreshes === 'function') tlPushStickyRefreshes(true);
       await tlSyncAlarms();
       return { ok: true };
@@ -2223,22 +2414,27 @@
     }
     function tlParseGpAttrs(raw) {
       const s = String(raw == null ? '' : raw).trim();
-      if (!s) return { key: '', fg: '', bg: '', anim: '' };
+      if (!s) return { key: '', fg: '', bg: '', anim: '', alert: false };
       const pipe = s.indexOf('|');
       const key = (pipe < 0 ? s : s.slice(0, pipe)).trim();
-      let fg = '', bg = '', anim = '';
+      let fg = '', bg = '', anim = '', alert = false;
       if (pipe >= 0) {
-        s.slice(pipe + 1).split(',').forEach((pair) => {
+        s.slice(pipe + 1).split(/[|,]/).forEach((pair) => {
+          const part = pair.trim();
           const eq = pair.indexOf('=');
-          if (eq < 0) return;
+          if (eq < 0) {
+            if (part.toLowerCase() === 'alert') alert = true;
+            return;
+          }
           const k = pair.slice(0, eq).trim().toLowerCase();
           const v = pair.slice(eq + 1).trim();
           if (k === 'fg') fg = tlResolveColorName(v);
           else if (k === 'bg') bg = tlResolveColorName(v);
           else if (k === 'anim' && /^(pulse|scan|data|aurora|orbit|arc|holo|signal|glitch)$/.test(v)) anim = v;
+          else if (k === 'alert') alert = v.toLowerCase() === 'true';
         });
       }
-      return { key: key, fg: fg, bg: bg, anim: anim };
+      return { key: key, fg: fg, bg: bg, anim: anim, alert: alert };
     }
     function tlExtractGpAttrsFromLine(line) {
       const s = String(line == null ? '' : line);
@@ -2246,7 +2442,7 @@
       if (m) return tlParseGpAttrs(m[1]);
       m = s.match(/\{[ \t]*(?:group|gp)[ \t]*:?[ \t]*([^{}]*)\}(?=[ \t]*(?:\[\[[^\]]*\]\][ \t]*)*$)/i);
       if (m) return tlParseGpAttrs(m[1]);
-      return { key: '', fg: '', bg: '', anim: '' };
+      return { key: '', fg: '', bg: '', anim: '', alert: false };
     }
     // ── group 標記語法（2026-11-06 寬放）：花括號內「開頭」是 gp 或 group 即算；大小寫不拘、冒號可省略 ──
     //   {gp} ＝ {GP} ＝ {GroUP} ＝ {group}               → 無名組（key ''）
@@ -2298,13 +2494,13 @@
         if (f.kind === 'open') {
           if (!open) {
             // 🆕 從 open 行提取 fg/bg attrs，存進 open 供關閉時寫入 range
-            const a = (typeof tlExtractGpAttrsFromLine === 'function') ? tlExtractGpAttrsFromLine(line) : { fg: '', bg: '' };
-            open = { i: i, key: f.key, fg: a.fg || '', bg: a.bg || '', anim: a.anim || '' };
+            const a = (typeof tlExtractGpAttrsFromLine === 'function') ? tlExtractGpAttrsFromLine(line) : { fg: '', bg: '', alert: false };
+            open = { i: i, key: f.key, fg: a.fg || '', bg: a.bg || '', anim: a.anim || '', alert: a.alert === true };
           }
           continue;
         }
         if (open && open.key === f.key) {
-          ranges.push({ start: open.i, end: i, key: f.key, fg: open.fg, bg: open.bg, anim: open.anim });
+          ranges.push({ start: open.i, end: i, key: f.key, fg: open.fg, bg: open.bg, anim: open.anim, alert: open.alert });
           markers.push(open.i, i);
           open = null;
         }
@@ -2321,7 +2517,7 @@
       const scan = tlGpFenceScan(lines);
       const hit = scan.ranges.find((r) => r.start === s && r.end === e);
       // 🆕 2026-11-09：把 hit.fg / hit.bg 也帶出來，供 tlWrapGpFence 重寫時保留 attrs
-      return hit ? { lines: lines, start: s, end: e, key: hit.key, fg: hit.fg || '', bg: hit.bg || '', anim: hit.anim || '', scan: scan } : null;
+      return hit ? { lines: lines, start: s, end: e, key: hit.key, fg: hit.fg || '', bg: hit.bg || '', anim: hit.anim || '', alert: hit.alert === true, scan: scan } : null;
     }
     // ── 🆕 2026-11-08：勾選「group 啟用」按保存時一律改寫成「塊級」{gpX}…{/gpX}，不再逐行補行尾標記 ──
     //  · 已是塊級群且沒給新標記 → 原樣保留（不無謂改名）；給了 mark → 整段改名（兩行一起改）。
@@ -2337,7 +2533,7 @@
         // 🆕 mark 是預設無名組 '{gp}' 且 fence 已有具名 key → 不誤改群名
         if (mark === '{gp}' && wrap.key) return lines.join('\n');
         // 🆕 給了新 mark → 組裝新 open 行：key 用新 mark，attrs 沿用原文
-        const newOpen = tlBuildGpOpenLine(mark, wrap.fg, wrap.bg, wrap.anim);
+        const newOpen = tlBuildGpOpenLine(mark, wrap.fg, wrap.bg, wrap.anim, wrap.alert);
         const out = lines.slice();
         out[wrap.start] = newOpen;
         out[wrap.end] = tlBuildGpCloseLine(wrap.key);  // 🆕 close 只寫 key，不帶 attrs！
@@ -2352,8 +2548,8 @@
       // 🆕 用 mark（只有 key）組裝：attrs 已在 open 裡；若 mark 存在但無 attrs，保留原 attrs
       if (mark) {
         const origAttrs = (typeof tlExtractGpAttrsFromLine === 'function')
-          ? tlExtractGpAttrsFromLine(open || '') : { fg: '', bg: '', anim: '' };
-        open = tlBuildGpOpenLine(mark, origAttrs.fg, origAttrs.bg, origAttrs.anim);
+          ? tlExtractGpAttrsFromLine(open || '') : { fg: '', bg: '', anim: '', alert: false };
+        open = tlBuildGpOpenLine(mark, origAttrs.fg, origAttrs.bg, origAttrs.anim, origAttrs.alert);
       }
       open = open || '{gp}';
       const close = tlBuildGpCloseLine(tlKeyFromGpMarker(open));  // 🆕 close 只寫 key，不帶 attrs！
@@ -2365,7 +2561,7 @@
       return [open].concat(body, [close]).join('\n');
     }
     // 🆕 2026-11-09：用 key + attrs 組裝 open 行（兩端共用）
-    function tlBuildGpOpenLine(keyName, fg, bg, anim) {
+    function tlBuildGpOpenLine(keyName, fg, bg, anim, alert) {
       let s = String(keyName == null ? '' : keyName).trim();
       // mark 可能是完整 '{gpX}'（从编辑视窗输入）或只是 'gpX'
       if (!s.startsWith('{')) s = '{' + s;
@@ -2376,6 +2572,7 @@
       if (fg) parts.push('fg=' + fg);
       if (bg) parts.push('bg=' + bg);
       if (anim) parts.push('anim=' + anim);
+      if (alert) parts.push('alert');
       if (!parts.length) return s;
       // 在 key 字符串的 '}' 之前插入 attrs
       return s.replace(/\}$/, '|' + parts.join(',') + '}');
@@ -2677,7 +2874,7 @@
         //    標記行在顯示副本裡已被剝成空行，行數不變 → ro 外框與 baseLine 全部照舊。
         if (fenceStart.has(i)) {
           const fe = fenceStart.get(i);
-          blocks.push({ start: i, end: fe.end, type: 'gp', fg: fe.fg || '', bg: fe.bg || '', anim: fe.anim || '' });
+          blocks.push({ start: i, end: fe.end, type: 'gp', fg: fe.fg || '', bg: fe.bg || '', anim: fe.anim || '', alert: fe.alert === true });
           i = fe.end + 1; continue;
         }
         // 🆕 連續且「group 名相同」的 {gp} 行＝一個小事件（一顆編輯小圓點）；
@@ -2703,7 +2900,7 @@
           // 🆕 從行尾式 gp 第一行提取 fg/bg attrs（連續同名行之間 attrs 應一致；若不同，以第一行為準）
           const headAttrs = (typeof tlExtractGpAttrsFromLine === 'function')
             ? tlExtractGpAttrsFromLine(line) : { fg: '', bg: '' };
-          blocks.push({ start: i, end: j - 1, type: 'gp', fg: headAttrs.fg || '', bg: headAttrs.bg || '', anim: headAttrs.anim || '' });
+          blocks.push({ start: i, end: j - 1, type: 'gp', fg: headAttrs.fg || '', bg: headAttrs.bg || '', anim: headAttrs.anim || '', alert: headAttrs.alert === true });
           i = j; continue;
         }
         if (isHeading(line)) { blocks.push({ start: i, end: i, type: 'heading' }); i++; continue; }
@@ -2889,22 +3086,41 @@
       _tlTermDefMapSource = tlCalEvents;
       return map;
     }
-    // 🆕 鬧鈴（alert）徽標渲染：[[alert:內容:下次提醒:間隔:是/否]] →
-    //   ⏰ + 內容原文 + 「月-日 時:分」小膠囊（提醒時間）+ 「☐ 未完成／☑ 已完成」小膠囊。
-    //   「alert」只是記號名稱、沒有資訊量，不顯示；間隔與完整年份放 hover tooltip。
+    // 🆕 鬧鈴徽標：固定模式顯示時間與狀態，循環模式顯示每日／週期／周年時間；間隔放 hover tooltip。
+    //   「alert」只是記號名稱、沒有資訊量，不顯示；非標準格式仍以原文顯示。
     //   非標準格式（如 [[alert:買東西]]）仍走 ⏰ 徽標，內容照原樣顯示、不掛時間與狀態膠囊。
     function tlAlertBadgeHtml(inner) {
       const body = String(inner);
-      const parsed = body.match(/^alert:([\s\S]*?):(\d{4}-\d{2}-\d{2} \d{2}:\d{2})\s*:\s*([1-9]\d*)\s*(m|h|d)(?:\s*:\s*([^\]]*))?$/i);
+      const parsed = body.match(/^alert:([\s\S]*?):((?:\d{4}-\d{2}-\d{2} \d{4})|(?:anniversary\s+\d{4}-\d{2}-\d{2}\s+\d{4})|(?:everyday\s+\d{4})|(?:w[1-7]\s*-\s*w[1-7]\s+\d{4})|(?:w[1-7](?:\s*,\s*w[1-7])+\s+\d{4}))\s*:\s*([1-9]\d*)\s*(m|h|d)(?:\s*:\s*([^\]]*))?$/i);
       const message = (parsed ? parsed[1] : body.slice(body.indexOf(':') + 1)).trim();
       const head = '<span class="tl-alert-ic">⏰</span>' + tlEscapeHtml(message);
       if (!parsed) return '<span class="tl-alert">' + head + '</span>';
+      if (!/^\d{4}-\d{2}-\d{2} \d{4}$/.test(parsed[2])) {
+        const anniversary = parsed[2].match(/^anniversary\s+\d{4}-(\d{2})-(\d{2})\s+(\d{4})$/i);
+        const daily = parsed[2].match(/^everyday\s+(\d{4})$/i);
+        const weekdays = parsed[2].match(/^w([1-7])\s*-\s*w([1-7])\s+(\d{4})$/i);
+        const weekdayList = parsed[2].match(/^(w[1-7](?:\s*,\s*w[1-7])+) (\d{4})$/i);
+        if (!anniversary && !daily && !weekdays && !weekdayList) return '<span class="tl-alert">' + head + '</span>';
+        const weekdayNames = '一二三四五六日';
+        const time = anniversary ? anniversary[3] : (daily ? daily[1] : (weekdayList ? weekdayList[2] : weekdays[3]));
+        const weekdayDisplay = weekdayList
+          ? '每周' + weekdayList[1].match(/w[1-7]/gi).map((token) => weekdayNames[Number(token.slice(1)) - 1]).join('、')
+          : (weekdays ? '周' + weekdayNames[Number(weekdays[1]) - 1] +
+            '至周' + weekdayNames[Number(weekdays[2]) - 1] : '');
+        const displayWhen = (anniversary ? '每年 ' + anniversary[1] + '月' + anniversary[2] + '日'
+          : (daily ? '每日' : weekdayDisplay)) + ' ' + time.slice(0, 2) + ':' + time.slice(2);
+        const tooltip = ['循環提醒 ' + displayWhen,
+          '間隔 ' + parsed[3] + ({ m: '分鐘', h: '小時', d: '天' })[parsed[4]]].join(' · ');
+        return '<span class="tl-alert" title="' + tlEscapeHtml(tooltip) + '">' + head +
+          '<span class="tl-alert-when">' + tlEscapeHtml(displayWhen) + '</span></span>';
+      }
+      const displayWhen = parsed[2].replace(/^(\d{4}-\d{2}-\d{2} )(\d{2})(\d{2})$/, '$1$2:$3');
       const done = parsed[5] === '是';
-      const tooltip = ['下次提醒 ' + parsed[2],
+      const tooltip = ['下次提醒 ' + displayWhen,
         '間隔 ' + parsed[3] + ({ m: '分鐘', h: '小時', d: '天' })[parsed[4]],
         done ? '已完成' : '未結束'].join(' · ');
       return '<span class="tl-alert' + (done ? ' done' : '') + '" title="' + tlEscapeHtml(tooltip) + '">' + head +
-        '<span class="tl-alert-when">' + tlEscapeHtml(parsed[2].slice(5)) + '</span>' +
+        '<span class="tl-alert-when">' + tlEscapeHtml(displayWhen.slice(5)) + '</span>' +
         '<span class="tl-alert-state">' + (done ? '☑ 已完成' : '☐ 未完成') + '</span></span>';
     }
     // 🆕 術語（term）渲染（立體膠囊＋tooltip 顯示釋義）：

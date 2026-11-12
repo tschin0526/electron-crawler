@@ -402,6 +402,15 @@
     #noteMarkerBox .nm-row textarea.nm-wide { min-height: 42px; resize: vertical; font-family: ui-monospace, Menlo, Consolas, monospace; line-height: 1.4; }
     #noteMarkerBox .nm-row input.nm-num { flex: none; width: 52px; }
     #noteMarkerBox .nm-row select { flex: none; width: auto; }
+    #noteMarkerBox .nm-row select.nm-wide { flex: 1 1 auto; width: 100%; }
+    #noteMarkerBox .nm-schedule { display: flex; flex: 1 1 auto; flex-direction: column; gap: 4px; min-width: 0; width: 100%; }
+    #noteMarkerBox .nm-schedule-values { display: flex; gap: 4px; min-width: 0; }
+    #noteMarkerBox .nm-schedule-values .nm-schedule-date { flex: 1 1 auto; min-width: 0; }
+    #noteMarkerBox .nm-schedule-values input[type="date"] { width: 100%; }
+    #noteMarkerBox .nm-schedule-values input[type="time"] { flex: none; width: 94px; }
+    #noteMarkerBox .nm-schedule-days { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px; }
+    #noteMarkerBox .nm-schedule-days label { display: flex; align-items: center; gap: 3px; white-space: nowrap; font-size: 11px; }
+    #noteMarkerBox .nm-schedule-days input[type="checkbox"] { width: 13px; height: 13px; margin: 0; padding: 0; accent-color: #D4AF37; }
     #noteMarkerBox .nm-preview { margin-top: 8px; padding: 6px 8px; border: 1px dashed rgba(212,175,55,.75); border-radius: 8px; background: rgba(127,127,127,.1); font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 11px; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; -webkit-user-select: text; user-select: text; }
     #noteMarkerBox .nm-preview.is-error { border-color: rgba(220,38,38,.75); color: #b91c1c; font-family: inherit; }
     #noteMarkerBox [hidden] { display: none !important; }
@@ -1479,7 +1488,7 @@
         <div class="nm-list" id="noteMarkerList"></div>
         <div class="nm-form" id="noteMarkerForm" hidden></div>
         <div class="nm-preview" id="noteMarkerPreview" hidden></div>
-        <div class="ac-hint" id="noteMarkerHint">连按三下 Shift 可叫出本菜单 · 支持专属标示、MD 表格与代码块／行内代码；插入位置＝编辑框游标（有选区则取代选区）</div>
+        <div class="ac-hint" id="noteMarkerHint">连按三下 Shift 可叫出本菜单 · 支持专属标示、Alert 围栏、MD 表格与代码块／行内代码；一般插入于游标（选区取代）；Alert 围栏为多行块，CheckBox 模式会自动切换为原文模式</div>
         <div class="ac-actions">
           <button type="button" class="ac-copy" id="noteMarkerBackButton" hidden>← 重选标示</button>
           <button type="button" class="ac-copy" id="noteMarkerCancel">取消</button>
