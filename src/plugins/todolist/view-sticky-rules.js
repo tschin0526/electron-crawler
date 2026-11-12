@@ -87,6 +87,7 @@
     { value: '', label: '不限（有命中条件就算）' },
     { value: 'remind', label: '[[remind:…]] 提醒标记' },
     { value: 'bookmark', label: '[[bookmark:…]] 收藏标记' },
+    { value: 'alert', label: '[[alert:…]] 闹铃标记' },
     { value: 'cr', label: '[[cr:…]] 建立日期标记' },
     { value: 'dl', label: '[[dl:…]] deadline 标记' },
     { value: 'cp', label: '[[cp:…]] completed 标记' }

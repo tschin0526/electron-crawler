@@ -383,6 +383,31 @@
     #gpColorBox .gc-mark { margin-top: 6px; font-size: 10px; word-break: break-all; opacity: .9;
       font-family: ui-monospace, Menlo, Consolas, monospace; }
     #gpColorBox .gc-level-note { flex: 1 1 auto; font-size: 10px; opacity: .85; }
+    /* 🆕 三下 Shift 快捷插入标示浮层（✎ 编辑浮层内）。与 #gpColorBox 同法：盒底由 applyColor() 套
+       tint(state.color,100)，这里留 CSS fallback，避免未跑到 applyColor 时退回白底＋浅金字看不清。
+       ⚠️ 每个可点控件都要 -webkit-app-region: no-drag：便利贴窗体整块是拖拽区，不声明就点不动。
+       选择器一律带 #noteMarkerBox 前缀，压过 .addcheck-box input[type="text"]／select 的 width:100% 通则。 */
+    #noteMarkerBox { width: min(92vw, 380px); background: var(--note-bg, rgba(255,255,255,.98)); }
+    #noteMarkerBox select option { background: var(--note-bg, #fff); color: var(--note-fg, #33384a); }
+    #noteMarkerBox .nm-list { display: flex; flex-direction: column; gap: 5px; }
+    #noteMarkerBox .nm-item { display: block; box-sizing: border-box; width: 100%; padding: 6px 9px; border: 1px solid rgba(212,175,55,.55); border-radius: 8px; background: rgba(212,175,55,.12); color: var(--note-fg, #33384a); font: inherit; font-size: 12px; text-align: left; cursor: pointer; -webkit-app-region: no-drag; }
+    #noteMarkerBox .nm-item:hover { background: rgba(212,175,55,.28); }
+    #noteMarkerBox .nm-item .nm-syntax { display: block; margin-top: 2px; font-size: 10px; opacity: .68; font-family: ui-monospace, Menlo, Consolas, monospace; word-break: break-all; }
+    #noteMarkerBox .nm-form { display: flex; flex-direction: column; gap: 6px; }
+    #noteMarkerBox .nm-row { display: grid; grid-template-columns: 74px minmax(0, 1fr); gap: 4px 6px; align-items: center; }
+    #noteMarkerBox .nm-row > .nm-label { font-size: 11px; opacity: .9; }
+    #noteMarkerBox .nm-row > .nm-ctl { display: flex; align-items: center; gap: 4px; min-width: 0; }
+    #noteMarkerBox .nm-row input, #noteMarkerBox .nm-row select, #noteMarkerBox .nm-row textarea { box-sizing: border-box; min-width: 0; margin: 0; padding: 4px 6px; border: 1px solid #D4AF37; border-radius: 6px; font: inherit; font-size: 12px; color: var(--note-fg, #33384a); background: rgba(127,127,127,.08); -webkit-app-region: no-drag; }
+    #noteMarkerBox .nm-row input.nm-wide, #noteMarkerBox .nm-row textarea.nm-wide { flex: 1 1 auto; width: 100%; }
+    #noteMarkerBox .nm-row textarea.nm-wide { min-height: 42px; resize: vertical; font-family: ui-monospace, Menlo, Consolas, monospace; line-height: 1.4; }
+    #noteMarkerBox .nm-row input.nm-num { flex: none; width: 52px; }
+    #noteMarkerBox .nm-row select { flex: none; width: auto; }
+    #noteMarkerBox .nm-preview { margin-top: 8px; padding: 6px 8px; border: 1px dashed rgba(212,175,55,.75); border-radius: 8px; background: rgba(127,127,127,.1); font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 11px; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; -webkit-user-select: text; user-select: text; }
+    #noteMarkerBox .nm-preview.is-error { border-color: rgba(220,38,38,.75); color: #b91c1c; font-family: inherit; }
+    #noteMarkerBox [hidden] { display: none !important; }
+    /* 表单没填完时「插入」保持禁用（预览行同时写明缺什么），避免把坏掉的标示插进编辑框 */
+    #noteMarkerBox .ac-copy:disabled { opacity: .38; cursor: default; }
+    #noteMarkerBox .ac-copy:disabled:hover { background: rgba(127,127,127,.12); }
     /* 🆕 表格网格模式（引擎＝md-table-grid.js，主窗体与便利贴共用一份）。
        .md-tg-* 那三个类别由共用引擎生成，名字两端一致 → 改类别名要两端 CSS 一起改。
        配色沿用本窗体的语汇：金框 #D4AF37 ＋ --note-fg ＋ 半透明灰（浅／深两套都靠 JS 套 tint 底色，不写死黑白）。
@@ -691,6 +716,31 @@
       box-shadow: 0 1px 2px rgba(0,0,0,.18);
     }
     .tl-bookmark-ic { font-size: .95em; line-height: 1; display: inline-flex; align-items: center; color: #FFC107; }
+    /* 🆕 鬧鈴（alert）標記：⏰ 徽標＋提醒內容原文（「alert」字樣與排程參數不再塞進正文，
+       間隔／下次提醒時間／完成狀態改放 title）。便利貼用 --note-fg 主題變數＋半透明金底；
+       內容可能是一整句 → 允許折行，圓角收小成 10px；橘色描邊與 🔔 紅、🌟 藍區分 */
+    .tl-alert {
+      display: inline-block; margin: .1em .3em .1em 0; padding: 0 .5em;
+      border-radius: 10px; line-height: 1.5; font-size: .9em; font-weight: 600;
+      white-space: normal; overflow-wrap: anywhere; cursor: help; vertical-align: baseline;
+      color: var(--note-fg, #33384a);
+      background: rgba(212,175,55,.42);
+      border: 1px solid #d97b2a;
+      box-shadow: 0 1px 2px rgba(0,0,0,.18);
+    }
+    .tl-alert-ic { margin-right: .3em; }
+    /* 鬧鈴徽標內嵌小膠囊：提醒時間（月-日 時:分）＋ 完成狀態（☐ 未完成／☑ 已完成）。
+       間隔與完整年份仍放 title（hover）。便利貼用 --note-fg 主題變數＋半透明黑底，
+       狀態改青綠描邊；已完成的整顆徽標壓低飽和與不透明度，一眼分得出還響不響。 */
+    .tl-alert-when, .tl-alert-state {
+      display: inline-block; margin-left: .35em; padding: 0 .35em;
+      font-size: .78em; font-weight: 700; line-height: 1.4;
+      border-radius: 999px; white-space: nowrap; vertical-align: baseline;
+      color: var(--note-fg, #33384a); background: rgba(0,0,0,.25);
+      border: 1px solid rgba(212,175,55,.55);
+    }
+    .tl-alert-state { background: rgba(0,0,0,.28); border-color: rgba(90,200,170,.8); }
+    .tl-alert.done { filter: saturate(.55); opacity: .72; }
     /* 🆕 2026-11-08 cr / dl / cp 日期標記：圖示＋「月-日」合成一顆長徽標（字體比正文小，日期再小一號）；
        完整「日期+時間」放 title（hover tooltip）與 data-date（VIEW 排序讀取）。
        便利貼沿用 --note-fg 與半透明金底，避免黃色便簽上金膠囊糊成一片 */
@@ -1126,13 +1176,15 @@
     </div>
     <!-- 🆕 右键 区块编辑小圆点（.md-unit-edit）→ 区块级下拉菜单。
          旧规则写「区块不是小事件，无搬移语义」；但 {gp} 小事件群把连续同组行整合成一个编辑小圆点，
-         语义上已经是「一个小事件」，故 type=gp 时额外开放「📤 搬移项目」（其余区块仍不给）。 -->
+         语义上已经是「一个小事件」，故开放「📤 搬移项目」。
+         2026-11-11：整行只有一个 [[…]] 标示的区块（闹铃／提醒／收藏／术语／日期标记）同样是一个小事件
+         （渲染时带 data-mk="1"），也开放搬移；其余纯文字／标题／分割线／程式码／表格区块仍不给。 -->
     <div class="note-addcheck-menu" id="noteBlockMenu" role="menu">
       <button type="button" class="nami" data-act="goto-event" role="menuitem" title="唤起 Calendar 开启对应的编辑行程画面（被 include 的外部档为只读），并把备注框滚动到这个区块所在行＋闪烁">📝 切换编辑行程并定位</button>
       <button type="button" class="nami" data-act="edit" role="menuitem">✎ 编辑此区块</button>
       <button type="button" class="nami" data-act="color" role="menuitem" hidden title="只有 {gp} 小事件群可用：设定字体色、背景渐变与高科技边框动画">🎨 设定围栏颜色／动画</button>
       <button type="button" class="nami" data-act="copy" role="menuitem">📋 复制整块内容</button>
-      <button type="button" class="nami" data-act="move" role="menuitem" hidden title="只有 {gp} 小事件群可用：整群搬移到其它便利贴（含 {gp} 标记，维持分组）">📤 搬移项目</button>
+      <button type="button" class="nami" data-act="move" role="menuitem" hidden title="搬移到其它便利贴：{gp} 小事件群整群搬移（含 {gp} 标记，维持分组）；整行 [[…]] 标示按一个小事件搬移">📤 搬移项目</button>
       <button type="button" class="nami" data-act="del" role="menuitem">🗑 删除此区块</button>
     </div>
     <!-- 🆕 右键 VIEW 投影贴分组标题（.vsr-group-head）的「📍 切换徽标」→ 下拉菜单：
@@ -1265,7 +1317,7 @@
       <div class="addcheck-box" id="addCheckBox">
         <div class="ac-title">加入子事件（CheckBox）</div>
         <textarea id="addCheckInput" placeholder="每行一个子事件；Enter 换行，⌘S 或「保存」加入…"></textarea>
-        <!-- 🆕 表格模式（区块圆点 type=table 才显示）：引擎＝md-table-grid.js（与主窗体同一份）。
+        <!-- 🆕 表格模式（编辑表格区块／三下 Shift 插入表格／＋☐ 加入表格）：引擎＝md-table-grid.js（与主窗体同一份）。
              格子内容即时写回上面那颗 textarea，所以 ⌘S／复制／「有改动先问」／清空＝删除 全沿用既有链路。 -->
         <div class="note-table-grid" id="noteTableGrid" style="display:none">
           <div class="ntg-bar">
@@ -1414,6 +1466,24 @@
           <button type="button" class="ac-copy" id="gcClearBtn">清除颜色</button>
           <button type="button" class="ac-copy ac-primary" id="gcApplyBtn">套用</button>
           <button type="button" class="ac-copy" id="gcCancelBtn">取消</button>
+        </div>
+      </div>
+    </div>
+    <!-- 🆕 三下 Shift 快捷插入标示浮层（在 ✎ 编辑浮层内叫出，盖在它上面、不关它）。
+         清单与表单都由 desktop-note.js 的 NOTE_MARKER_DEFS 注册表动态生成 ——
+         新增一种标示＝往注册表加一条 {label, syntax, fields, build}，不必再动这里的 markup。
+         浮层排在 #gpColorOv 之后：同为 .addcheck-ov（z-index 30），后来者自然盖在上层。 -->
+    <div class="addcheck-ov" id="noteMarkerOv">
+      <div class="addcheck-box" id="noteMarkerBox">
+        <div class="ac-title" id="noteMarkerTitle">⌨ 插入标示／Markdown</div>
+        <div class="nm-list" id="noteMarkerList"></div>
+        <div class="nm-form" id="noteMarkerForm" hidden></div>
+        <div class="nm-preview" id="noteMarkerPreview" hidden></div>
+        <div class="ac-hint" id="noteMarkerHint">连按三下 Shift 可叫出本菜单 · 支持专属标示、MD 表格与代码块／行内代码；插入位置＝编辑框游标（有选区则取代选区）</div>
+        <div class="ac-actions">
+          <button type="button" class="ac-copy" id="noteMarkerBackButton" hidden>← 重选标示</button>
+          <button type="button" class="ac-copy" id="noteMarkerCancel">取消</button>
+          <button type="button" class="ac-copy ac-primary" id="noteMarkerInsert" hidden>插入</button>
         </div>
       </div>
     </div>

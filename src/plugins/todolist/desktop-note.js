@@ -995,6 +995,12 @@ function setupControls() {
   }
   // ⌘S / Ctrl+S 手动保存（编辑模式）；＋☐ 浮层打开时＝确认加入（焦点在 textarea 时由其自身 keydown 处理，这里兜底焦点在浮层外的情况）；本窗口无应用菜单，不会被系统抢走
   window.addEventListener('keydown', (e) => {
+    // 🆕 三下 Shift 标示浮层打开中：Esc 只收回浮层（回到编辑框），⌘S／翻页等一律不下传，
+    //    否则焦点在浮栏输入框里按 ⌘S 会连带走 confirmAddCheck() 把便利贴存盘。
+    if (noteMarkerIsOpen()) {
+      if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); noteMarkerClose(true); }
+      return;
+    }
     const acMenu = document.getElementById('noteAddCheckMenu');
     if (acMenu && acMenu.classList.contains('open') && e.key === 'Escape') {
       e.preventDefault(); e.stopPropagation(); closeAddCheckMenu(); return;
@@ -1438,6 +1444,7 @@ function closeAddCheck() {
   ipcRenderer.invoke('sticky-note-editor-state', { editing: false }).catch(() => {});
   const ov = document.getElementById('addCheckOv');
   if (ov) ov.classList.remove('show');
+  noteMarkerTableInsertion = null;
   noteCheckEditTarget = null;
   noteBlockEditTarget = null;
   noteAddMode = 'check';
@@ -1455,6 +1462,7 @@ let noteBlockEditTarget = null; // { uid, start, end, type } — 通用「最小
 //  网格只把内容即时写回 #addCheckInput，落盘仍走 confirmAddCheck() 的区块区间回写；
 //  便利贴的 ⌘S／Esc 原本只绑在那颗 textarea 上，焦点在格子里时接不到 → 由 onSave／onClose 补上（onClose 现在只还焦点、不关窗）。
 let noteTableGrid = null;
+let noteMarkerTableInsertion = null;
 function noteTableGridInstance() {
   if (noteTableGrid) return noteTableGrid;
   if (!window.MdTableGrid || !document.getElementById('noteTableGrid')) return null;
@@ -3242,10 +3250,12 @@ function stickyBlockTypeName(type) {
   return ({ code: '代码块', table: '表格', heading: '标题', hr: '分隔线', quote: '引用', list: '列表', para: '段落', gp: '分组' })[type] || '区块';
 }
 // 🆕 右键 区块编辑小圆点（.md-unit-edit）→ 区块级菜单「切换／编辑／复制／删除」，
-//   🆕 例外：type=gp 的「{gp} 小事件群」语义上就是一个小事件（连续同组行＝一颗编辑圆点），
-//      故额外开放「📤 搬移项目」，与 checkbox 子事件共用搬移管线；其余区块（段落/表格/代码…）仍不给。
+//   🆕 例外：语义上「就是一个小事件」的区块额外开放「📤 搬移项目」，与 checkbox 子事件共用搬移管线：
+//      ① type=gp 的「{gp} 小事件群」＝连续同组行整合成一颗编辑圆点；
+//      ② 整行只有一个 [[…]] 标示的单元（闹铃／提醒／收藏／术语／日期标记），渲染时带 data-mk="1"。
+//      其余纯散文区块（段落/表格/代码/标题…）仍不给。
 //      旧注释「区块不是小事件，无搬移语义」在 {gp} 分组体系上线后已不成立（2026-11-06 使用者回报）。
-let noteBlockMenuTarget = null;   // { uid, start, end, type, dot }
+let noteBlockMenuTarget = null;   // { uid, start, end, type, mk, dot }
 function noteBlockMenuOpen(e) {
   const dot = e.target.closest && e.target.closest('.md-unit-edit');
   if (!dot) return;              // 不是区块把手：交给浏览器原生右键
@@ -3254,19 +3264,23 @@ function noteBlockMenuOpen(e) {
   const start = parseInt(dot.getAttribute('data-start') || '-1', 10);
   const end = parseInt(dot.getAttribute('data-end') || '-1', 10);
   const type = dot.getAttribute('data-type') || '';
+  // 🆕 2026-11-11：整行就是一个 [[…]] 标示的单元（闹铃／提醒／收藏／术语／日期标记）＝一个小事件项目
+  const isMk = dot.getAttribute('data-mk') === '1';
   if (!uid || !Number.isInteger(start) || start < 0 || !Number.isInteger(end) || end < start) {
     window.alert('该区块信息不完整，无法打开菜单'); return;
   }
-  noteBlockMenuTarget = { uid, start, end, type, dot };
+  noteBlockMenuTarget = { uid, start, end, type, mk: isMk, dot };
   noteFindSameClose();           // 关掉另一套菜单，避免重叠
   const menu = document.getElementById('noteBlockMenu');
   if (!menu) return;
-  // 🆕 只有 {gp} 小事件群才给搬移；投影贴只读也一并收起。
+  // 🆕 可搬移的区块＝{gp} 小事件群 + 整行 [[…]] 标示；投影贴只读也一并收起。
   //    靠 .nami[hidden]{display:none !important} 才真的隐藏（hidden 属性单用会被 .nami{display:block} 压过）。
   menu.querySelectorAll('.nami').forEach((item) => {
     const act = item.getAttribute('data-act');
     // 🆕 2026-11-10：「搬移项目」与「🎨 设定围栏颜色」都只对可编辑的 {gp} 小事件群开放
-    if (act === 'move' || act === 'color') item.hidden = (type !== 'gp' || isViewKey(uid));
+    // 🆕 2026-11-11：搬移再放开「整行标示」单元（它是项目，不是散文）；颜色动画仍只属 {gp}
+    if (act === 'move') item.hidden = ((type !== 'gp' && !isMk) || isViewKey(uid));
+    else if (act === 'color') item.hidden = (type !== 'gp' || isViewKey(uid));
   });
   menu.classList.add('open');
   const r = menu.getBoundingClientRect();
@@ -3562,28 +3576,33 @@ function noteGcClear() {
   if (!ok) { showNoteMoveToast('已取消清除'); return; }
   noteGcSave(true);
 }
-// 🆕 小事件群（{gp}）搬移入口：把 [start..end] 整段原文交给既有的「搬移项目」管线。
+// 🆕 区块搬移入口：把 [start..end] 整段原文交给既有的「搬移项目」管线。
+//    两种身份：{gp} 小事件群＝整段搬（block=true，段间补空行）；整行 [[…]] 标示＝单行子事件搬（不补空行）。
 //    ⚠️ 必须用 fetchAuthoritativeNotes 现拉原文（含 {gp}/cr/cp 标记），不能用渲染后的纯文字：
 //       少了行尾 {gp}，搬到目标贴后这些行不再连续同组，会散成多个小事件（分组语义丢失）。
 //    ⚠️ target.block＝true + end 让 noteFindSameMove 走「整段」分支（复制整段＋删整段）；
 //       text 是整块原文（多行），noteFindSameComputeMatches 的「整块比对」分支会据此做前置查重。
 async function noteBlockMove(t) {
-  // 硬守卫：搬移会删除整段，只有 {gp} 小事件群能走这条路（菜单显隐之外再加一道）
-  if (!t || t.type !== 'gp') { showNoteMoveToast('只有 {gp} 小事件群可以整群搬移', true); return; }
+  // 硬守卫：搬移会删除整段，只放行 {gp} 小事件群与「整行标示」单元（菜单显隐之外再加一道）
+  if (!t || (t.type !== 'gp' && !t.mk)) { showNoteMoveToast('只有 {gp} 小事件群或整行标示（[[…]]）可以搬移', true); return; }
   if (isViewKey(t.uid)) { showNoteMoveToast('预览便利贴（🔔 提醒／自订 VIEW 贴）是自动汇总的投影，请到来源行程里搬移', true); return; }
+  // 身份分开：{gp} 走「整段搬、段间补空行」；单行标示走「子事件」口径（一次搬一行、不补空行）
+  const isGroup = t.type === 'gp';
+  const what = isGroup ? '小事件群' : '小事件';
   const notes = await fetchAuthoritativeNotes(t.uid);
   if (notes == null) { showNoteMoveToast('无法读取该便利贴的最新内容，已取消搬移', true); return; }
   const lines = String(notes).split('\n');
   if (t.start < 0 || t.end >= lines.length || t.end < t.start) {
-    showNoteMoveToast('小事件群内容已变化，请刷新便利贴后重试', true); return;
+    showNoteMoveToast(what + '内容已变化，请刷新便利贴后重试', true); return;
   }
   const text = lines.slice(t.start, t.end + 1).join('\n');
-  if (!text.trim()) { showNoteMoveToast('该小事件群没有内容，无法搬移', true); return; }
+  if (!text.trim()) { showNoteMoveToast('该' + what + '没有内容，无法搬移', true); return; }
   // 与 noteFindSameTarget 同形，多了 block/end；uid＝srcUid＝这张便利贴，view=false 表示可写
   const target = {
     uid: t.uid, srcUid: t.uid, srcTitle: '', view: false,
-    line: t.start, end: t.end, block: true, text: text
+    line: t.start, text: text
   };
+  if (isGroup) { target.end = t.end; target.block = true; }
   await noteFindSameMoveCheck(target);
 }
 
@@ -3822,6 +3841,10 @@ window.tlOpenEditBlockDialog = async function (event, uid, start, end, type) {
 // 返回 true＝内容已落盘（或已按使用者同意删除并关闭）；false＝未保存（校验失败／使用者拒绝／正在保存）。
 // 「保存并关闭」按这个返回值决定要不要关窗：只有真的写成功才关，避免保存失败把改动丢掉。
 async function confirmAddCheck() {
+  if (noteMarkerTableInsertion) {
+    noteMarkerFinishTableInsertion();
+    return false;
+  }
   const inp = document.getElementById('addCheckInput');
   if (!inp) { closeAddCheck(); return false; }
   if (noteBlockEditTarget) {
@@ -4774,6 +4797,9 @@ function applyColor() {
   // 🆕 小事件群「设定围栏颜色」浮层盒：同样取便利贴实色背景 + --note-fg 字色，整张弹窗跟随该便利贴配色
   const gpColorBox = document.getElementById('gpColorBox');
   if (gpColorBox) gpColorBox.style.background = tint(state.color, 100);
+  // 🆕 三下 Shift 标示浮层盒：同样取便利贴实色背景，深色便利贴上才不会「浅字白底」
+  const noteMarkerBox = document.getElementById('noteMarkerBox');
+  if (noteMarkerBox) noteMarkerBox.style.background = tint(state.color, 100);
   updateMenuTheme();
   syncCustomSwatchActive();
   applyMeteor();   // 🆕 改色/透明度/字号都会重跑 applyColor，这里顺带把外框流星状态套用到 #note
@@ -6876,6 +6902,457 @@ document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); noteGcCloseDialog(); return; }
     if (e.key === 'Enter' && e.target && e.target.tagName !== 'SELECT' && e.target.tagName !== 'BUTTON') {
       e.preventDefault(); e.stopPropagation(); noteGcSave(false);
+    }
+  }, true);
+})();
+
+// ── 🆕 三下 Shift 快捷插入标示（便利贴 ✎ 编辑浮层内）────────────────────────
+//   NOTE_MARKER_DEFS 是唯一可信来源：以后要加新标示，只往这里加一条
+//   { id, label, syntax, forbid, fields, build } —— 清单、表单、校验、预览、插入全部自动跟上，
+//   不必再动 desktop-note.html 的 markup（浮层骨架是固定的 #noteMarkerOv）。
+//   fields[].type：text | textarea | datetime | number | select | interval（数字＋单位，写回 numKey/unitKey）
+//   校验：def.forbid 对所有文字栏位生效，f.forbid 是该栏位额外禁字（如术语栏禁「:」）；
+//         def.check(values) 用来表达「跨栏位」的格式约束，回传一句要显示的错误、没问题就回空串。
+//   build(values) 回传整串标示；插入点＝#addCheckInput 的游标（有选区则取代选区）。
+const NOTE_MARKER_DEFS = [
+  {
+    id: 'alert', label: '⏰ 闹铃提醒', forbid: ']',
+    syntax: '[[alert:内容:YYYY-MM-DD HH:mm:间隔:否]]',
+    fields: [
+      { key: 'msg', label: '提醒内容', type: 'text', required: true, placeholder: '要提醒什么事' },
+      { key: 'when', label: '下次提醒', type: 'datetime', required: true, def: () => noteMarkerInputDateTime(Date.now() + 60000) },
+      { key: 'interval', label: '重响间隔', type: 'interval', required: true, numKey: 'n', unitKey: 'unit',
+        defNum: '1', defUnit: 'm', options: [['m', '分钟'], ['h', '小时'], ['d', '天']] },
+    ],
+    build: (v) => '[[alert:' + v.msg + ':' + v.when.replace('T', ' ') + ':' + v.n + v.unit + ':否]]'
+  },
+  {
+    id: 'bookmark', label: '🌟 收藏', forbid: ']',
+    syntax: '[[bookmark:标题:备注]]',
+    fields: [
+      { key: 'title', label: '标题', type: 'text', required: true, placeholder: '收藏什么' },
+      { key: 'note', label: '备注', type: 'text', placeholder: '可留空' },
+    ],
+    build: (v) => v.note ? '[[bookmark:' + v.title + ':' + v.note + ']]' : '[[bookmark:' + v.title + ']]'
+  },
+  {
+    id: 'remind', label: '🔔 提醒规则', forbid: ']',
+    syntax: '[[remind:标题:规则]]',
+    fields: [
+      { key: 'title', label: '标题', type: 'text', required: true, placeholder: '提醒什么' },
+      { key: 'rule', label: '规则', type: 'text', placeholder: '可留空，如：每天' },
+    ],
+    build: (v) => v.rule ? '[[remind:' + v.title + ':' + v.rule + ']]' : '[[remind:' + v.title + ']]'
+  },
+  {
+    id: 'term', label: '📖 术语解释', forbid: ']',
+    syntax: '[[术语:释义:领域:发行]]',
+    fields: [
+      { key: 'term', label: '术语', type: 'text', required: true, forbid: ':', placeholder: '要解释的词，如 Apple' },
+      { key: 'def', label: '释义', type: 'text', placeholder: '这个词的意思' },
+      { key: 'domain', label: '领域', type: 'text', forbid: ':', placeholder: '可留空，如：水果' },
+      { key: 'release', label: '发行', type: 'text', forbid: ':', placeholder: '可留空，如：首发' },
+    ],
+    // 解析器按「第一个冒号前＝术语，后面依序是释义／领域／发行」定位，空栏位也要占位；
+    // 所以只把最后有内容的栏位写出来，中间留空写成空段（[[X::领域]] 这种）。
+    build: (v) => {
+      const segs = [v.def, v.domain, v.release];
+      let end = -1;
+      segs.forEach((s, i) => { if (s) end = i; });
+      return '[[' + v.term + (end < 0 ? '' : ':' + segs.slice(0, end + 1).join(':')) + ']]';
+    },
+    check: (v) => {
+      if (/^(dl|cp|cr|alert|remind|bookmark)$/i.test(v.term)) return '「术语」不能叫 dl／cp／cr／alert／remind／bookmark，这些名字另有专属含义，渲染时会被当成别的标示';
+      if (/^\d{4}-\d{2}-\d{2}$/.test(v.term)) return '「术语」不能是 YYYY-MM-DD 这种日期，会被日期标记吃掉';
+      if (v.def && v.def.indexOf(':') >= 0 && (!v.domain || !v.release)) return '「释义」里有「:」时，「领域」与「发行」要一起填，否则多出来的冒号会被拆成领域／发行';
+      return '';
+    },
+  },
+  {
+    id: 'gp', label: '🧩 小事件群', forbid: '{}|',
+    syntax: '{gp} 或 {gp:名称}',
+    fields: [
+      { key: 'name', label: '群名称', type: 'text', placeholder: '留空＝{gp}；填 A＝{gpA 群名}' },
+    ],
+    // 名称走 {gp:名称} 的开栏写法；闭栏行 {/gp...} 由保存链路按同一 key 自动补齐，这里只给开栏。
+    build: (v) => v.name ? '{gp:' + v.name + '}' : '{gp}'
+  },
+  {
+    id: 'codeblock', label: '🧑‍💻 Markdown 代码块', syntax: '```语言\\n代码内容\\n```',
+    fields: [
+      { key: 'code', label: '代码内容', type: 'textarea', required: true, preserveWhitespace: true, rows: 7,
+        def: () => noteMarkerSelectedText(), placeholder: '输入或粘贴代码；会保留缩进与空行' },
+      { key: 'language', label: '语言', type: 'select', def: '',
+        options: [['', '不标注'], ['text', '纯文本'], ['js', 'JavaScript'], ['ts', 'TypeScript'], ['py', 'Python'],
+          ['html', 'HTML'], ['css', 'CSS'], ['json', 'JSON'], ['bash', 'Bash'], ['sql', 'SQL'], ['md', 'Markdown']] },
+    ],
+    check: (v) => v.code.trim() ? '' : '代码内容不能为空',
+    build: (v) => {
+      const code = v.code.replace(/\r\n?/g, '\n');
+      const runs = code.match(/`+/g) || [];
+      const fenceLength = Math.max(3, ...runs.map((run) => run.length + 1));
+      const fence = '`'.repeat(fenceLength);
+      return fence + v.language + '\n' + code + (code.endsWith('\n') ? '' : '\n') + fence;
+    }
+  },
+  {
+    id: 'codespan', label: '⌨ 行内代码', syntax: '`代码`',
+    fields: [
+      { key: 'code', label: '代码', type: 'textarea', required: true, preserveWhitespace: true, rows: 2,
+        def: () => noteMarkerSelectedText(), placeholder: '输入一行代码，或先选取编辑框里的文字' },
+    ],
+    check: (v) => !v.code.trim() ? '代码内容不能为空' : /[\r\n]/.test(v.code) ? '行内代码不能包含换行，请改用 Markdown 代码块' : '',
+    build: (v) => {
+      const code = v.code;
+      const runs = code.match(/`+/g) || [];
+      const fence = '`'.repeat(Math.max(1, ...runs.map((run) => run.length + 1)));
+      const padding = /^`|`$/.test(code) || (/^ | $/.test(code) && /\S/.test(code)) ? ' ' : '';
+      return fence + padding + code + padding + fence;
+    }
+  },
+];
+const NOTE_MARKER_TAP_GAP = 400;      // 相邻两下 Shift 的最大间隔（ms）；超过就重新数
+const NOTE_MARKER_TAP_COUNT = 3;
+let noteMarkerTaps = [];
+let noteMarkerDef = null;
+
+function noteMarkerResetTaps() { noteMarkerTaps = []; }
+// 只数 keydown（keyup 不算），长按产生的自动重复也不数 —— 否则按住 Shift 就直接弹菜单。
+function noteMarkerTap(now) {
+  if (noteMarkerTaps.length && now - noteMarkerTaps[noteMarkerTaps.length - 1] > NOTE_MARKER_TAP_GAP) noteMarkerTaps = [];
+  noteMarkerTaps.push(now);
+  if (noteMarkerTaps.length < NOTE_MARKER_TAP_COUNT) return false;
+  noteMarkerTaps = [];
+  return true;
+}
+function noteMarkerOv() { return document.getElementById('noteMarkerOv'); }
+function noteMarkerIsOpen() { const ov = noteMarkerOv(); return !!(ov && ov.classList.contains('show')); }
+function noteMarkerSelectedText() {
+  const inp = document.getElementById('addCheckInput');
+  if (!inp || typeof inp.selectionStart !== 'number' || typeof inp.selectionEnd !== 'number') return '';
+  return inp.value.slice(inp.selectionStart, inp.selectionEnd);
+}
+function noteMarkerPad2(n) { return String(n).padStart(2, '0'); }
+// datetime-local 的 value 口径＝本机时间 YYYY-MM-DDTHH:mm（不含秒），存进 [[alert:]] 时再把 T 换成空格
+function noteMarkerInputDateTime(ts) {
+  const d = new Date(ts);
+  return d.getFullYear() + '-' + noteMarkerPad2(d.getMonth() + 1) + '-' + noteMarkerPad2(d.getDate()) +
+    'T' + noteMarkerPad2(d.getHours()) + ':' + noteMarkerPad2(d.getMinutes());
+}
+function noteMarkerClose(refocus) {
+  const ov = noteMarkerOv();
+  if (ov) ov.classList.remove('show');
+  noteMarkerDef = null;
+  noteMarkerResetTaps();
+  if (refocus) { const inp = document.getElementById('addCheckInput'); if (inp) inp.focus(); }
+}
+function noteMarkerFieldInput(f) {
+  const el = document.createElement(f.type === 'textarea' ? 'textarea' : 'input');
+  if (f.type !== 'textarea') el.type = f.type === 'datetime' ? 'datetime-local' : (f.type === 'number' ? 'number' : 'text');
+  el.id = 'nmf_' + f.key;
+  el.spellcheck = false;
+  el.autocomplete = 'off';
+  if (f.type === 'number') { el.min = String(f.min == null ? 1 : f.min); el.step = '1'; el.inputMode = 'numeric'; }
+  if (f.type === 'textarea') el.rows = f.rows || 4;
+  if (f.placeholder) el.placeholder = f.placeholder;
+  el.value = typeof f.def === 'function' ? f.def() : (f.def == null ? '' : String(f.def));
+  return el;
+}
+function noteMarkerFieldSelect(f, key, options, def) {
+  const el = document.createElement('select');
+  el.id = 'nmf_' + key;
+  options.forEach(([value, text]) => {
+    const o = document.createElement('option');
+    o.value = value; o.textContent = text;
+    el.appendChild(o);
+  });
+  el.value = def;
+  return el;
+}
+function noteMarkerShowForm(def) {
+  noteMarkerDef = def;
+  const list = document.getElementById('noteMarkerList');
+  const form = document.getElementById('noteMarkerForm');
+  const title = document.getElementById('noteMarkerTitle');
+  const back = document.getElementById('noteMarkerBackButton');
+  const ins = document.getElementById('noteMarkerInsert');
+  if (!list || !form || !title || !back || !ins) return;
+  title.textContent = def.label + ' — 填写内容';
+  list.hidden = true;
+  list.textContent = '';
+  form.hidden = false;
+  form.textContent = '';
+  def.fields.forEach((f) => {
+    const row = document.createElement('div');
+    row.className = 'nm-row';
+    const label = document.createElement('span');
+    label.className = 'nm-label';
+    label.textContent = f.label;
+    row.appendChild(label);
+    const ctl = document.createElement('span');
+    ctl.className = 'nm-ctl';
+    if (f.type === 'interval') {
+      const num = noteMarkerFieldInput({ ...f, type: 'number', key: f.numKey, def: f.defNum });
+      num.classList.add('nm-num');
+      ctl.appendChild(num);
+      ctl.appendChild(noteMarkerFieldSelect(f, f.unitKey, f.options, f.defUnit));
+    } else if (f.type === 'select') {
+      ctl.appendChild(noteMarkerFieldSelect(f, f.key, f.options, f.def));
+    } else {
+      const el = noteMarkerFieldInput(f);
+      el.classList.add(f.type === 'number' ? 'nm-num' : 'nm-wide');
+      ctl.appendChild(el);
+    }
+    row.appendChild(ctl);
+    form.appendChild(row);
+  });
+  back.hidden = false;
+  ins.hidden = false;
+  noteMarkerUpdatePreview();
+  const first = form.querySelector('textarea, input, select');
+  if (first) first.focus();
+}
+function noteMarkerShowList() {
+  noteMarkerDef = null;
+  const list = document.getElementById('noteMarkerList');
+  const form = document.getElementById('noteMarkerForm');
+  const preview = document.getElementById('noteMarkerPreview');
+  const title = document.getElementById('noteMarkerTitle');
+  const back = document.getElementById('noteMarkerBackButton');
+  const ins = document.getElementById('noteMarkerInsert');
+  if (!list || !form) return;
+  if (title) title.textContent = '⌨ 插入标示／Markdown';
+  form.hidden = true;
+  form.textContent = '';
+  if (preview) preview.hidden = true;
+  if (back) back.hidden = true;
+  if (ins) ins.hidden = true;
+  list.hidden = false;
+  list.textContent = '';
+  NOTE_MARKER_DEFS.forEach((d) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'nm-item';
+    b.setAttribute('data-marker', d.id);
+    const name = document.createElement('span');
+    name.className = 'nm-name';
+    name.textContent = d.label;
+    const syntax = document.createElement('span');
+    syntax.className = 'nm-syntax';
+    syntax.textContent = d.syntax;
+    b.appendChild(name);
+    b.appendChild(syntax);
+    list.appendChild(b);
+  });
+  if (noteBlockEditTarget) {
+    const table = document.createElement('button');
+    table.type = 'button';
+    table.className = 'nm-item';
+    table.setAttribute('data-action', 'table');
+    const name = document.createElement('span');
+    name.className = 'nm-name';
+    name.textContent = '▦ 加入 MD 表格';
+    const syntax = document.createElement('span');
+    syntax.className = 'nm-syntax';
+    syntax.textContent = '在编辑框游标处插入表格';
+    table.appendChild(name);
+    table.appendChild(syntax);
+    list.appendChild(table);
+  }
+}
+function noteMarkerReadValues(def) {
+  const values = {};
+  const errors = [];
+  const read = (key, trim) => {
+    const el = document.getElementById('nmf_' + key);
+    const value = el ? String(el.value == null ? '' : el.value) : '';
+    return trim === false ? value : value.trim();
+  };
+  def.fields.forEach((f) => {
+    if (f.type === 'interval') {
+      const n = read(f.numKey), unit = read(f.unitKey);
+      if (f.required && !n) errors.push('「' + f.label + '」要填数字');
+      else if (!/^[1-9]\d*$/.test(n)) errors.push('「' + f.label + '」必须是 1 以上的整数（格式只接受 1m／2h／3d 这种）');
+      values[f.numKey] = n; values[f.unitKey] = unit;
+      return;
+    }
+    const v = read(f.key, !f.preserveWhitespace);
+    if (f.required && !v.trim()) errors.push('「' + f.label + '」不能为空');
+    if (f.type === 'datetime' && v && !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(v)) errors.push('「' + f.label + '」时间没选完整');
+    values[f.key] = v;
+  });
+  // 标示本体以 ]] 收尾，内容里出现 ] 会把标记截断成两段（渲染与闹铃解析都认不得）→ 挡在插入前
+  if (def.forbid) {
+    Object.keys(values).forEach((k) => {
+      const f = def.fields.find((x) => x.key === k || x.numKey === k || x.unitKey === k);
+      if (!f || f.type === 'select' || f.type === 'interval' || f.type === 'number' || f.type === 'datetime') return;
+      const ban = def.forbid + (f.forbid || '');
+      const hit = String(values[k]).split('').find((ch) => ban.indexOf(ch) >= 0);
+      if (hit) errors.push('「' + f.label + '」不能含「' + hit + '」，' +
+        (ban.indexOf(']') >= 0 && hit === ']' ? '会被截断成坏掉的标示' : '会被当成栏位分隔，后面的内容整体错位'));
+    });
+  }
+  if (def.check) {
+    const msg = def.check(values);
+    if (msg) errors.push(msg);
+  }
+  return { ok: !errors.length, errors, values };
+}
+function noteMarkerUpdatePreview() {
+  const box = document.getElementById('noteMarkerPreview');
+  const ins = document.getElementById('noteMarkerInsert');
+  if (!box || !noteMarkerDef) return;
+  box.hidden = false;
+  const r = noteMarkerReadValues(noteMarkerDef);
+  if (r.ok) {
+    box.classList.remove('is-error');
+    box.textContent = '将插入：' + noteMarkerDef.build(r.values);
+  } else {
+    box.classList.add('is-error');
+    box.textContent = r.errors[0];
+  }
+  if (ins) ins.disabled = !r.ok;
+}
+function noteMarkerInsertAtCursor(text) {
+  const inp = document.getElementById('addCheckInput');
+  if (!inp) return false;
+  const s = typeof inp.selectionStart === 'number' ? inp.selectionStart : inp.value.length;
+  const e = typeof inp.selectionEnd === 'number' ? inp.selectionEnd : s;
+  inp.value = inp.value.slice(0, s) + text + inp.value.slice(e);
+  const caret = s + text.length;
+  try { inp.setSelectionRange(caret, caret); } catch (_) { /* 焦点在别处时 setSelectionRange 可能抛错，内容已写进，不影响 */ }
+  return true;
+}
+function noteMarkerStartTableInsertion() {
+  const inp = document.getElementById('addCheckInput');
+  const grid = noteTableGridInstance();
+  const ov = document.getElementById('addCheckOv');
+  if (!noteBlockEditTarget || !inp || !grid || !ov) {
+    showStickyRefreshFeedback('无法在当前编辑模式中插入表格', true);
+    return;
+  }
+  const title = ov.querySelector('.ac-title');
+  const hint = ov.querySelector('.ac-hint');
+  const save = document.getElementById('saveCheckButton');
+  const start = typeof inp.selectionStart === 'number' ? inp.selectionStart : inp.value.length;
+  const end = typeof inp.selectionEnd === 'number' ? inp.selectionEnd : start;
+  noteMarkerTableInsertion = {
+    source: inp.value,
+    start,
+    end,
+    title: title ? title.textContent : '',
+    hint: hint ? hint.textContent : '',
+    saveLabel: save ? save.textContent : '保存'
+  };
+  noteMarkerClose(false);
+  noteExitTableMode();
+  grid.bind();
+  inp.value = '';
+  grid.enterBlank(parseInt(document.getElementById('noteTableRows').value, 10),
+    parseInt(document.getElementById('noteTableCols').value, 10));
+  if (title) title.textContent = '插入 MD 表格';
+  if (hint) hint.textContent = '在格子里填写表格；按「插入表格」后会放到原文游标处，再按 ⌘S 保存区块';
+  if (save) save.textContent = '插入表格';
+  grid.focusFirstCell();
+}
+function noteMarkerFinishTableInsertion() {
+  const state = noteMarkerTableInsertion;
+  const inp = document.getElementById('addCheckInput');
+  if (!state || !inp) return false;
+  const table = inp.value.trim();
+  const parsed = window.MdTableGrid && window.MdTableGrid.parseMd(table);
+  if (!parsed) {
+    showStickyRefreshFeedback('表格内容不完整（需要表头行＋分隔行）', true);
+    return false;
+  }
+  if (![parsed.header].concat(parsed.rows).some((row) => row.some((cell) => String(cell).trim()))) {
+    showStickyRefreshFeedback('请先在格子里填内容', true);
+    return false;
+  }
+  const before = state.source.slice(0, state.start);
+  const after = state.source.slice(state.end);
+  const leading = before && !before.endsWith('\n\n') ? (before.endsWith('\n') ? '\n' : '\n\n') : '';
+  const trailing = after && !after.startsWith('\n\n') ? (after.startsWith('\n') ? '\n' : '\n\n') : '';
+  const insertion = leading + table + trailing;
+  noteMarkerTableInsertion = null;
+  noteExitTableMode();
+  inp.value = before + insertion + after;
+  const caret = before.length + leading.length + table.length;
+  try { inp.setSelectionRange(caret, caret); } catch (_) { /* textarea may not be focused yet */ }
+  const ov = document.getElementById('addCheckOv');
+  const title = ov && ov.querySelector('.ac-title');
+  const hint = ov && ov.querySelector('.ac-hint');
+  const save = document.getElementById('saveCheckButton');
+  if (title) title.textContent = state.title;
+  if (hint) hint.textContent = state.hint;
+  if (save) save.textContent = state.saveLabel;
+  inp.focus();
+  showStickyRefreshFeedback('表格已插入编辑框，按 ⌘S 保存');
+  return true;
+}
+function noteMarkerOpenList() {
+  const ov = noteMarkerOv();
+  if (!ov) return;
+  // 表格网格模式下那颗 textarea 是隐藏的，游标不在可见内容上 → 先切回原文再插，避免写进看不见的地方
+  if (noteTableGrid && noteTableGrid.isGridVisible()) {
+    showStickyRefreshFeedback('表格网格编辑中无法定位游标：请先按「改 Markdown 原文」切回文字编辑，再连按三下 Shift', true);
+    return;
+  }
+  noteMarkerShowList();
+  ov.classList.add('show');
+}
+function noteMarkerDoInsert() {
+  if (!noteMarkerDef) return;
+  const r = noteMarkerReadValues(noteMarkerDef);
+  if (!r.ok) { noteMarkerUpdatePreview(); return; }
+  const text = noteMarkerDef.build(r.values);
+  if (!noteMarkerInsertAtCursor(text)) { showStickyRefreshFeedback('找不到编辑框，未插入', true); return; }
+  const label = noteMarkerDef.label;
+  noteMarkerClose(true);
+  showStickyRefreshFeedback('已插入 ' + label, true);
+}
+// 🆕 三下 Shift 叫出菜单：焦点在 ✎ 编辑框时由该 textarea 的 keydown 触发（见 bindNoteMarkerDialog）
+(function bindNoteMarkerDialog() {
+  const ov = noteMarkerOv();
+  if (!ov) return;
+  const acInput = document.getElementById('addCheckInput');
+  if (acInput) {
+    acInput.addEventListener('keydown', (e) => {
+      if (e.isComposing || e.keyCode === 229) return;   // IME 组字中的 Shift 不算
+      if (e.key === 'Shift') {
+        if (!e.repeat && noteMarkerTap(e.timeStamp)) noteMarkerOpenList();
+        return;
+      }
+      noteMarkerResetTaps();   // 中间夹了别的键＝不是「连按三下 Shift」，重新数
+    }, true);
+  }
+  const list = document.getElementById('noteMarkerList');
+  if (list) list.addEventListener('click', (e) => {
+    const item = e.target.closest('.nm-item');
+    if (!item) return;
+    e.stopPropagation();
+    if (item.getAttribute('data-action') === 'table') {
+      noteMarkerStartTableInsertion();
+      return;
+    }
+    const def = NOTE_MARKER_DEFS.find((d) => d.id === item.getAttribute('data-marker'));
+    if (def) noteMarkerShowForm(def);
+  });
+  ['input', 'change'].forEach((evt) => ov.addEventListener(evt, () => noteMarkerUpdatePreview()));
+  const ins = document.getElementById('noteMarkerInsert');
+  if (ins) ins.addEventListener('click', (e) => { e.stopPropagation(); noteMarkerDoInsert(); });
+  const back = document.getElementById('noteMarkerBackButton');
+  if (back) back.addEventListener('click', (e) => { e.stopPropagation(); noteMarkerShowList(); });
+  const cancel = document.getElementById('noteMarkerCancel');
+  if (cancel) cancel.addEventListener('click', (e) => { e.stopPropagation(); noteMarkerClose(true); });
+  ov.addEventListener('click', (e) => { if (e.target === ov) { e.stopPropagation(); noteMarkerClose(true); } });
+  ov.addEventListener('pointerdown', (e) => e.stopPropagation());
+  ov.addEventListener('dblclick', (e) => e.stopPropagation());
+  ov.addEventListener('keydown', (e) => {
+    if (e.isComposing || e.keyCode === 229) return;
+    if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); noteMarkerClose(true); return; }
+    if (e.key === 'Enter' && e.target && e.target.tagName !== 'BUTTON') {
+      e.preventDefault(); e.stopPropagation(); noteMarkerDoInsert();
     }
   }, true);
 })();

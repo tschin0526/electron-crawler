@@ -2616,8 +2616,14 @@
         //    🆕 2026-11-09：gp 区块若有 fg/bg attrs，追加 inline style 覆盖便利贴默认色
         const gpCls = b.type === 'gp' ? ' is-gp' : '';
         const gpStyle = b.type === 'gp' ? tlGpInlineStyle(b) : '';
+        // 🆕 2026-11-11：「整行就是一个 [[…]] 标示」的单行单元（闹铃／提醒／收藏／术语／日期标记）
+        //   语义上＝一个小事件项目（闹铃还自带排程与完成状态），故便利贴右键菜单给它「📤 搬移项目」。
+        //   判定放在渲染期——这里手上有原文；便利贴窗体那颗圆点只读属性，不必为开菜单去回读底稿。
+        //   行首允许一个列表／引用符号（`- [[alert:…]]` 这种）；带 {gp} 的行已被上面剥掉标记、
+        //   且 tlSplitMdBlocks 会把它们归到 gp 区块，走既有的整群搬移，两者不会重叠。
+        const mkOne = (b.start === b.end && /^\s*(?:[-*>]\s+)?\[\[[^\]\n]+\]\]\s*$/.test(chunk)) ? ' data-mk="1"' : '';
         out += '<div class="md-unit' + gpCls + '"' + (b.type === 'gp' && b.anim ? ' data-gp-anim="' + b.anim + '"' : '') + gpStyle + '><button type="button" class="md-unit-edit" title="' + tlEditUnitTip(b.type) + '"' +
-          ' data-uid="' + uidAttr + '" data-start="' + b.start + '" data-end="' + b.end + '" data-type="' + b.type + '"' +
+          ' data-uid="' + uidAttr + '" data-start="' + b.start + '" data-end="' + b.end + '" data-type="' + b.type + '"' + mkOne +
           ' onclick="tlOpenEditBlockDialog(event,\'' + uidAttr + '\',' + b.start + ',' + b.end + ',\'' + b.type + '\')">\u270e</button>' +
           inner + '</div>';
       });
@@ -2834,6 +2840,7 @@
       if (!term) return null;
       if (/^remind$/i.test(term)) return null;                               // 提醒標記（remind:Title:Rule），不屬術語
       if (/^bookmark$/i.test(term)) return null;                             // 收藏標記（bookmark:Title:Note），不屬術語
+      if (/^alert$/i.test(term)) return null;                                // 鬧鈴標記（alert:內容:下次提醒:間隔:是/否），不屬術語
       // 4 段以上（rest 有 ≥2 個冒號）→ [[term:釋義:領域:發行]]；其餘沿用舊 1~3 段口徑。
       const parts = rest.split(':');
       let def, domain, release = '';
@@ -2882,6 +2889,24 @@
       _tlTermDefMapSource = tlCalEvents;
       return map;
     }
+    // 🆕 鬧鈴（alert）徽標渲染：[[alert:內容:下次提醒:間隔:是/否]] →
+    //   ⏰ + 內容原文 + 「月-日 時:分」小膠囊（提醒時間）+ 「☐ 未完成／☑ 已完成」小膠囊。
+    //   「alert」只是記號名稱、沒有資訊量，不顯示；間隔與完整年份放 hover tooltip。
+    //   非標準格式（如 [[alert:買東西]]）仍走 ⏰ 徽標，內容照原樣顯示、不掛時間與狀態膠囊。
+    function tlAlertBadgeHtml(inner) {
+      const body = String(inner);
+      const parsed = body.match(/^alert:([\s\S]*?):(\d{4}-\d{2}-\d{2} \d{2}:\d{2})\s*:\s*([1-9]\d*)\s*(m|h|d)(?:\s*:\s*([^\]]*))?$/i);
+      const message = (parsed ? parsed[1] : body.slice(body.indexOf(':') + 1)).trim();
+      const head = '<span class="tl-alert-ic">⏰</span>' + tlEscapeHtml(message);
+      if (!parsed) return '<span class="tl-alert">' + head + '</span>';
+      const done = parsed[5] === '是';
+      const tooltip = ['下次提醒 ' + parsed[2],
+        '間隔 ' + parsed[3] + ({ m: '分鐘', h: '小時', d: '天' })[parsed[4]],
+        done ? '已完成' : '未結束'].join(' · ');
+      return '<span class="tl-alert' + (done ? ' done' : '') + '" title="' + tlEscapeHtml(tooltip) + '">' + head +
+        '<span class="tl-alert-when">' + tlEscapeHtml(parsed[2].slice(5)) + '</span>' +
+        '<span class="tl-alert-state">' + (done ? '☑ 已完成' : '☐ 未完成') + '</span></span>';
+    }
     // 🆕 術語（term）渲染（立體膠囊＋tooltip 顯示釋義）：
     //   [[term]]                → 立體膠囊（term）＋ 若全局 Glossary 有釋義則 tooltip 顯示
     //   [[term:釋義]]            → 立體膠囊(term) ＋ 釋義以 tooltip 呈現（hover）
@@ -2914,6 +2939,8 @@
             return '<span class="tl-bookmark"' + (bNote ? ' title="' + tlEscapeHtml(bNote) + '"' : '') + '>' +
               '<span class="tl-bookmark-ic"><svg viewBox="0 0 24 24" width="1em" height="1em" focusable="false" aria-hidden="true"><path fill="currentColor" d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z"/></svg></span>' + tlEscapeHtml(bTitle) + '</span>';
           }
+          // 🆕 鬧鈴標記：[[alert:內容:下次提醒:間隔:是/否]] → ⏰ 徽標＋內容原文（排程細節放 title，不顯示「alert」字樣）
+          if (/^alert:/i.test(inner)) return tlAlertBadgeHtml(inner);
           const t = tlParseTermToken(inner);
           if (!t) return m;
           const allDefs = [];

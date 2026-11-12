@@ -969,6 +969,30 @@ body {
   box-shadow: 0 1px 2px rgba(0,0,0,.28), inset 0 1px 0 rgba(255,255,255,.65);
 }
 .tl-bookmark-ic { font-size: .95em; line-height: 1; display: inline-flex; align-items: center; color: #FFC107; }
+/* 🆕 鬧鈴（alert）標記 [[alert:內容:下次提醒:間隔:是/否]]：⏰ 徽標＋提醒內容原文，
+   間隔／下次提醒時間／完成狀態放 title（與桌面 tlAlertBadgeHtml 同口径、雙端對齊）。
+   內容可能是一整句 → 允許折行，圓角收小成 10px；橘色描邊與 🔔 紅、🌟 藍區分 */
+.tl-alert {
+  display: inline-block; margin: .1em .42em .1em 0; padding: 0 .42em;
+  border-radius: 10px; line-height: 1.5; font-size: .85em; font-weight: 600;
+  white-space: normal; overflow-wrap: anywhere; cursor: help; vertical-align: baseline;
+  color: #4a3b12;
+  background: linear-gradient(180deg, #f4dc8e 0%, #e6bd52 55%, #d0a23a 100%);
+  border: 1px solid #d97b2a;
+  box-shadow: 0 1px 2px rgba(0,0,0,.28), inset 0 1px 0 rgba(255,255,255,.65);
+}
+.tl-alert-ic { margin-right: .3em; }
+/* 鬧鈴徽標內嵌小膠囊：提醒時間（月-日 時:分）＋ 完成狀態（☐ 未完成／☑ 已完成）；
+   間隔與完整年份仍放 title（hover）。與桌面／便利貼三端同口径。 */
+.tl-alert-when, .tl-alert-state {
+  display: inline-block; margin-left: .35em; padding: 0 .35em;
+  font-size: .78em; font-weight: 700; line-height: 1.4;
+  border-radius: 999px; white-space: nowrap; vertical-align: baseline;
+  color: #4a3b12; background: rgba(255,255,255,.5);
+  border: 1px solid rgba(184,137,58,.65);
+}
+.tl-alert-state { color: #1d4d3a; background: rgba(255,255,255,.62); border-color: rgba(30,110,90,.75); }
+.tl-alert.done { filter: saturate(.55); opacity: .72; }
 /* 🆕 2026-11-08 cr / dl / cp 日期標記：圖示＋「月-日」合成一顆長徽標（字體比正文小，日期再小一號）；
    完整「日期+時間」放 title（hover tooltip）與 data-date（VIEW 排序讀取）。與桌面雙端對齊 */
 .ev-date-mark {

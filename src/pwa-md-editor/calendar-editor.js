@@ -966,6 +966,24 @@ function calSpanDaySuffix(item, occDate) {
 // 📝 備註裡的 Markdown checkbox（- [ ] / - [x]）渲染成 ☐/☑ 樣式，且可點擊勾選/取消（寫回 notes 原文）。
 //    入參必須是「已 escape」的文本；支援任意縮進的 `- [ ]` / `- [x]` / `- [X]`。
 //    uid 為所屬行程（點擊時定位用）；fenced code block 內的行不當成 checkbox，避免誤判代碼。
+// 🆕 鬧鈴（alert）徽標渲染：[[alert:內容:下次提醒:間隔:是/否]] → ⏰ + 內容原文 +
+//   「月-日 時:分」提醒時間小膠囊 + 「☐ 未完成／☑ 已完成」小膠囊（與桌面 tlAlertBadgeHtml 同口径）。
+//   「alert」只是記號名稱、沒有資訊量；間隔與完整年份放 hover tooltip。
+//   非標準格式（如 [[alert:買東西]]）仍走 ⏰ 徽標，內容照原樣顯示、不掛時間與狀態膠囊。
+function calAlertBadgeHtml(inner) {
+  const body = String(inner);
+  const parsed = body.match(/^alert:([\s\S]*?):(\d{4}-\d{2}-\d{2} \d{2}:\d{2})\s*:\s*([1-9]\d*)\s*(m|h|d)(?:\s*:\s*([^\]]*))?$/i);
+  const message = (parsed ? parsed[1] : body.slice(body.indexOf(':') + 1)).trim();
+  const head = '<span class="tl-alert-ic">⏰</span>' + escapeHtml(message);
+  if (!parsed) return '<span class="tl-alert">' + head + '</span>';
+  const done = parsed[5] === '是';
+  const tooltip = ['下次提醒 ' + parsed[2],
+    '間隔 ' + parsed[3] + ({ m: '分鐘', h: '小時', d: '天' })[parsed[4]],
+    done ? '已完成' : '未結束'].join(' · ');
+  return '<span class="tl-alert' + (done ? ' done' : '') + '" title="' + escapeHtml(tooltip) + '">' + head +
+    '<span class="tl-alert-when">' + escapeHtml(parsed[2].slice(5)) + '</span>' +
+    '<span class="tl-alert-state">' + (done ? '☑ 已完成' : '☐ 未完成') + '</span></span>';
+}
 // 🆕 術語（term）渲染（立體膠囊＋tooltip 顯示釋義；與桌面 calendar 雙端對齊）：
 //   [[term]]                → 立體膠囊（term）
 //   [[term:釋義]]            → 立體膠囊(term) ＋ 釋義以 tooltip 呈現（hover）
@@ -998,6 +1016,8 @@ function calRenderTermDefs(text) {
         return '<span class="tl-bookmark"' + (bNote ? ' title="' + escapeHtml(bNote) + '"' : '') + '>' +
           '<span class="tl-bookmark-ic"><svg viewBox="0 0 24 24" width="1em" height="1em" focusable="false" aria-hidden="true"><path fill="currentColor" d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z"/></svg></span>' + escapeHtml(bTitle) + '</span>';
       }
+      // 🆕 鬧鈴標記 [[alert:內容:下次提醒:間隔:是/否]] → ⏰ 徽標＋內容原文（不顯示「alert」字樣）
+      if (/^alert:/i.test(inner)) return calAlertBadgeHtml(inner);
       const full = inner.trim();
       if (!full) return m;
       const firstColon = full.indexOf(':');
@@ -1007,6 +1027,7 @@ function calRenderTermDefs(text) {
         if (term === 'dl' || term === 'cp') return m;                       // 日期標記名稱
         if (/^remind$/i.test(term)) return m;                                // 提醒標記字，不屬術語
         if (/^bookmark$/i.test(term)) return m;                               // 收藏標記字，不屬術語
+        if (/^alert$/i.test(term)) return m;                                  // 鬧鈴標記字，不屬術語
         if (/^\d{4}-\d{2}-\d{2}$/.test(term)) return m;                     // 裸日期 → dl 機制
       } else {
         term = full.slice(0, firstColon).trim();
@@ -1047,6 +1068,7 @@ function calCollectTerms() {
       String(line).replace(/\[\[([^\]\n]+)\]\]/g, (m, inner) => {
         if (/^remind:/i.test(inner)) return m;
         if (/^bookmark:/i.test(inner)) return m;
+        if (/^alert:/i.test(inner)) return m;
         const full = inner.trim();
         if (!full) return m;
         const firstColon = full.indexOf(':');

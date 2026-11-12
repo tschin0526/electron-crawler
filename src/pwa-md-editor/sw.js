@@ -505,7 +505,13 @@
 //       .tl-term-release（首發／發布等創作節點，便於整理作品開發履歷）；桌面／LITE 解析與
 //       Glossary 完整度、搜尋 haystack 同步；三端 CSS 加樣式。四主 ?v 戳＋sticky-notes.js
 //       獨立戳刷為 lite-termrelease-20261108；APP_VERSION/manifest 1.10.37→1.10.38。
-const CACHE_NAME = 'md-editor-lite-v222';
+// v223（2026-11-11）：鬧鈴標記 [[alert:內容:下次提醒:間隔:是/否]] 改渲染成「⏰ 徽標＋提醒內容原文＋
+//       提醒時間（月-日 時:分）＋☐未完成／☑已完成」——原本它落到術語膠囊路徑，畫面顯示成「alert 1m 是」
+//       這種記號名稱＋參數、把使用者寫的內容吞進 tooltip；現在 calRenderTermDefs 先攔 alert: 走
+//       calAlertBadgeHtml（桌面 tlAlertBadgeHtml 同口径），間隔與完整年份改放 title，並把 alert 從術語
+//       字典（calCollectTerms）排除；已完成整顆徽標壓低飽和與不透明度。
+//       calendar-editor.js/style.css 改，bump 讓手機重拉；APP_VERSION/manifest 1.10.38→1.10.39。
+const CACHE_NAME = 'md-editor-lite-v223';
 const ASSETS = [
   './',
   './index.html',
