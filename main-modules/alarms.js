@@ -12,6 +12,7 @@ let getMainWindow = () => null;
 let alarmWindow = null;
 const activeAlarms = new Map();
 const snoozedRecurringAlarms = new Map();
+const completedRecurringOccurrences = new Map();
 let entries = new Map();
 let pollTimer = null;
 let closingForAction = false;
@@ -87,6 +88,7 @@ function requestAction(action, alarmId, note) {
   const win = alarmWindow;
   const parent = getMainWindow();
   const alarm = activeAlarms.get(alarmId);
+  const entryAtAction = entries.get(alarmId);
   if (!win || win.isDestroyed() || !parent || parent.isDestroyed() || !alarm) {
     return Promise.resolve({ ok: false, error: '闹铃窗口或日历窗口已关闭' });
   }
@@ -113,6 +115,10 @@ function requestAction(action, alarmId, note) {
             });
           } else if (action === 'complete') {
             snoozedRecurringAlarms.delete(alarmId);
+            if (alarm.recurring) {
+              completedRecurringOccurrences.set(alarmId,
+                entryAtAction ? entryAtAction.dueAt : alarm.dueAt);
+            }
           }
           activeAlarms.delete(alarmId);
           if (activeAlarms.size) {
@@ -217,6 +223,11 @@ function checkDue() {
   const dueEntries = [];
   let addedAlarm = false;
   entries.forEach((entry) => {
+    const completedDueAt = completedRecurringOccurrences.get(entry.id);
+    if (completedRecurringOccurrences.has(entry.id)) {
+      if (entry.recurring && completedDueAt === entry.dueAt) return;
+      completedRecurringOccurrences.delete(entry.id);
+    }
     const snooze = snoozedRecurringAlarms.get(entry.id);
     if (snooze && (!entry.recurring || snooze.scheduleDueAt !== entry.dueAt)) {
       snoozedRecurringAlarms.delete(entry.id);
@@ -272,6 +283,9 @@ function init(options) {
     entries = sanitizeEntries(list);
     snoozedRecurringAlarms.forEach((_, id) => {
       if (!entries.has(id)) snoozedRecurringAlarms.delete(id);
+    });
+    completedRecurringOccurrences.forEach((_, id) => {
+      if (!entries.has(id)) completedRecurringOccurrences.delete(id);
     });
     checkDue();
     return { ok: true };

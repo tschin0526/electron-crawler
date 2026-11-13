@@ -30,8 +30,10 @@
     let tlCalScope = 'full';
     let tlCalEvents = [];
     let tlIncludedEvents = [];    // 📎 include 进来的 calendar-*.md 事件（只读，ro=true）
-    let tlAlarmSyncTimer = null;
     let tlAlarmSyncPromise = Promise.resolve();
+    let tlAlarmSyncSnapshot = null;
+    let tlAlarmSyncPending = null;
+    let tlAlarmIncludeRevision = 0;
     let tlCalHolidays = [];    // ## HOLIDAY 解析結果（与 ## EVENT 同结构，多 holidayType 字段）；仅列表/日志视图显示，不进时间网格/月格 chip
     let tlCalDiaries = [];     // ## DIARY 解析結果（每天一条，keyed by date）；行事历日期旁显示日记按钮，有则打勾
     let tlIncludedHolidays = [];  // 📎 include 进来的只读假日
@@ -193,6 +195,7 @@
         //    内容来自 #taskText 实时缓冲，不会丢编辑。
         setCalEventsView(true);
         tlKickIncludeRefresh(); // 📎 打开/切入 calendar.md 时，加载同目录 calendar-*.md（只读合并；加载完自动重绘）
+        tlSyncAlarms(); // 打开另一份 Calendar 时立即切换提醒来源，不等待定时轮询
       } else if (calEventsView) {
         setCalEventsView(false);
       }
@@ -377,6 +380,17 @@
       if (!api.syncAlarms || !isCalendarMdDoc()) return;
       const textArea = document.getElementById('taskText');
       if (!textArea) return;
+      const target = currentFileTarget();
+      const source = textArea.value;
+      const targetKey = target && (target.key || target.path || target.id || target.name);
+      const snapshot = { targetKey, source, includeRevision: tlAlarmIncludeRevision };
+      const matchesSnapshot = (candidate) => candidate && candidate.targetKey === targetKey &&
+        candidate.source === source && candidate.includeRevision === tlAlarmIncludeRevision;
+      if (matchesSnapshot(tlAlarmSyncSnapshot)) return;
+      if (tlAlarmSyncPending && matchesSnapshot(tlAlarmSyncPending.snapshot)) {
+        await tlAlarmSyncPending.promise;
+        return;
+      }
       const alarms = tlAllEvents(textArea.value).flatMap((ev) =>
         tlAlertMarkers(ev.notes).filter((alert) => !alert.completed).map((alert) => ({
           ...alert,
@@ -390,12 +404,19 @@
       );
       const sync = tlAlarmSyncPromise.then(async () => {
         const result = await api.syncAlarms(alarms);
-        if (!result || !result.ok) console.error('[calendar-editor] 闹铃清单同步失败:', result && result.error);
+        if (!result || !result.ok) {
+          console.error('[calendar-editor] 闹铃清单同步失败:', result && result.error);
+          return;
+        }
+        tlAlarmSyncSnapshot = snapshot;
       });
       tlAlarmSyncPromise = sync.catch((error) => {
         console.error('[calendar-editor] 闹铃清单同步失败:', error);
       });
-      await tlAlarmSyncPromise;
+      const pending = { snapshot, promise: tlAlarmSyncPromise };
+      tlAlarmSyncPending = pending;
+      await pending.promise;
+      if (tlAlarmSyncPending === pending) tlAlarmSyncPending = null;
     }
 
     function tlAlarmLocalDateTime(timestamp) {
@@ -599,8 +620,7 @@
         }
       });
     }
-    if (!tlAlarmSyncTimer && window.electronAPI && window.electronAPI.syncAlarms) {
-      tlAlarmSyncTimer = setInterval(tlSyncAlarms, 5000);
+    if (window.electronAPI && window.electronAPI.syncAlarms) {
       setTimeout(tlSyncAlarms, 1000);
     }
 
@@ -638,7 +658,12 @@
           const r = await api.getTodoDataDir();
           dir = (r && r.data) ? String(r.data) : null;
         }
-        if (!dir || !api.listAllFilesInDir) return;
+        if (!dir || !api.listAllFilesInDir) {
+          tlIncludedEvents = []; tlIncludedHolidays = []; tlIncludedDiaries = []; tlIncludedFiles = [];
+          tlAlarmIncludeRevision++;
+          await tlSyncAlarms();
+          return;
+        }
         const ls = await api.listAllFilesInDir(dir);
         const items = (((ls && ls.data) || []).map((it) => ({ name: it && it.name, size: (it && it.size) || 0 })))
           .filter((it) => it.name && /^calendar-.+\.md$/i.test(it.name) && it.name.toLowerCase() !== 'calendar.md')
@@ -678,6 +703,8 @@
       } catch (e) {
         tlIncludedEvents = []; tlIncludedHolidays = []; tlIncludedDiaries = []; tlIncludedFiles = [];
       }
+      tlAlarmIncludeRevision++;
+      await tlSyncAlarms();
       if (calEventsView) {
         tlRenderEventsContent();
         // 📎 include 加载是启动最后一步：其重渲（无「今天」pending）会把提前滚好的位置还原；
@@ -821,6 +848,8 @@
       // 收尾会按一次「今天」而把用户正在看的滚动位置拉走）
       const mem = (tlCalEvents || []).find((e) => e.uid === key);
       if (mem) mem.notes = String(notes == null ? '' : notes);
+      tlAlarmIncludeRevision++;
+      await tlSyncAlarms();
       if (typeof tlRenderEventsContent === 'function') tlRenderEventsContent();
       if (typeof tlPushStickyRefreshes === 'function') tlPushStickyRefreshes();
       return { ok: true, file: name };
