@@ -43,15 +43,16 @@ function resolveColorName(input) {
   if (/^(rgb|rgba|hsl|hsla)\s*\(/i.test(s)) return s;      // 函式型
   return s;                                                  // CSS keyword 等原樣透傳
 }
-// 從 gp 標記字串裡提取 fg/bg/anim 屬性。
-//   anim 僅接受 pulse、scan、data 三種模式；未設定的屬性是 ''。
+// 從 gp 標記字串裡提取 fg/bg/anim/rail 屬性。
+//   anim 僅接受 pulse、scan、data...glitch 九種；rail=斜栏|直栏|>形栏|圆弧栏#色A#色B。
 //   註：key 本身必須是「不含 | 的字串」，| 之後才算屬性段。
+const GP_RAIL_STYLES = ['斜栏', '直栏', '>形栏', '圆弧栏'];
 function parseGpAttrs(raw) {
   const s = String(raw == null ? '' : raw).trim();
-  if (!s) return { key: '', fg: '', bg: '', anim: '' };
+  if (!s) return { key: '', fg: '', bg: '', anim: '', railStyle: '', railA: '', railB: '' };
   const pipe = s.indexOf('|');
   const key = (pipe < 0 ? s : s.slice(0, pipe)).trim();
-  let fg = '', bg = '', anim = '';
+  let fg = '', bg = '', anim = '', railStyle = '', railA = '', railB = '';
   if (pipe >= 0) {
     const attrStr = s.slice(pipe + 1);
     const pairs = attrStr.split(',');
@@ -63,22 +64,28 @@ function parseGpAttrs(raw) {
       if (k === 'fg') fg = resolveColorName(v);
       else if (k === 'bg') bg = resolveColorName(v);
       else if (k === 'anim' && /^(pulse|scan|data|aurora|orbit|arc|holo|signal|glitch)$/.test(v)) anim = v;
+      else if (k === 'rail') {
+        const parts = v.split('#');
+        if (parts.length >= 3 && GP_RAIL_STYLES.indexOf(parts[0].trim()) >= 0) {
+          railStyle = parts[0].trim();
+          railA = resolveColorName(parts[1].trim());
+          railB = resolveColorName(parts[2].trim());
+        }
+      }
     }
   }
-  return { key: key, fg: fg, bg: bg, anim: anim };
+  return { key: key, fg: fg, bg: bg, anim: anim, railStyle: railStyle, railA: railA, railB: railB };
 }
 // 從一整行文字裡（可能是 fence open 行，也可能是行尾 gp 行）提取 gp attrs。
 //   優先匹配「塊級」整行 {gpX|...} 標記，其次匹配行尾 {gpX|...}。
-//   回傳：{ key, fg, bg, anim }，找不到 → 回傳空屬性。
+//   回傳：{ key, fg, bg, anim, railStyle, railA, railB }，找不到 → 回傳空屬性。
 function extractGpAttrsFromLine(line) {
   const s = String(line == null ? '' : line);
-  // 塊級：整行就是一個 {gp...} 標記
   let m = s.trim().match(/^\{[ \t]*(?:group|gp)[ \t]*:?[ \t]*([^{}]*)\}[ \t]*$/i);
   if (m) return parseGpAttrs(m[1]);
-  // 行尾式：{gp...} 出現在行尾（行中不算）
   m = s.match(/\{[ \t]*(?:group|gp)[ \t]*:?[ \t]*([^{}]*)\}(?=[ \t]*(?:\[\[[^\]]*\]\][ \t]*)*$)/i);
   if (m) return parseGpAttrs(m[1]);
-  return { key: '', fg: '', bg: '', anim: '' };
+  return { key: '', fg: '', bg: '', anim: '', railStyle: '', railA: '', railB: '' };
 }
 
 // 挂载到 window，确保 HTML onclick 和其他模组可以访问

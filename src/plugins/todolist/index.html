@@ -2401,6 +2401,7 @@
        由 inline style 注入（使用者在 {gpX|fg=紅,bg=淺藍} 標記裡寫的顏色）；
        未設定時 var 兜到底（color 繼承事件字色、bg 透明、border 用 currentColor）。 */
     .md-unit.is-gp {
+      position: relative;
       border: 1px solid var(--gp-border, currentColor);
       padding-top: .15em; padding-right: .4em; padding-bottom: .15em;
       color: var(--gp-fg, inherit);
@@ -2408,10 +2409,54 @@
       font-size: inherit;
       line-height: 1.5;
     }
-    /* Retina/高 DPR：CSS 1px 在 2x 屏会画成 2 个物理像素（看起来偏粗）。
-       0.5px hairline＝1 个物理像素，才是真正最细；1x 屏维持 1px，避免线淡到看不见。 */
-    @media (min-resolution: 2dppx) {
-      .md-unit.is-gp { border-width: .5px; }
+    /* 🆕 2026-11-14：gp 围栏属性徽标 — 右上角边框线，z-index 高于 anim 伪元素 */
+    .md-unit.is-gp .gp-badges {
+      position: absolute; top: -6px; right: -6px;
+      display: flex; gap: 1px; z-index: 10;
+      pointer-events: auto;
+    }
+    .md-unit.is-gp .gp-badge {
+      width: 12px; height: 12px; border-radius: 6px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 8px; line-height: 1;
+      background: var(--gp-fg, currentColor);
+      color: var(--gp-bg, #fff);
+      box-shadow: 0 1px 2px rgba(0,0,0,0.4);
+      cursor: default;
+    }
+    /* TERM / ALERT 徽标样式统一 — 跟随 --gp-fg 字色 */
+    /* 🆕 2026-11-14：gp 围栏轨道边框 — rail=斜栏|直栏|>形栏|圆弧栏#色A#色B
+       ✅ 新方案：不动原 border！用 ::after 伪元素叠加轨道 pattern。
+         原 border 保持原样 → 轨道渲染失败也不会丢边框！*/
+    .md-unit.is-gp[data-gp-rail] {
+      position: relative;
+    }
+    .md-unit.is-gp[data-gp-rail]::after {
+      content: '';
+      position: absolute;
+      top: -4px; left: -4px; right: -4px; bottom: -4px;
+      border-radius: inherit;
+      pointer-events: none;
+      z-index: 1;
+      border: 4px solid transparent;
+      -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+      -webkit-mask-composite: xor;
+      mask-composite: exclude;
+      background-image: var(--gp-rail-pattern);
+      background-clip: border-box;
+      -webkit-background-clip: border-box;
+    }
+    .md-unit.is-gp[data-gp-rail="斜栏"]::after {
+      --gp-rail-pattern: repeating-linear-gradient(45deg, var(--gp-rail-a, #fff) 0 12px, var(--gp-rail-b, #000) 12px 24px);
+    }
+    .md-unit.is-gp[data-gp-rail="直栏"]::after {
+      --gp-rail-pattern: repeating-linear-gradient(90deg, var(--gp-rail-a, #fff) 0 10px, var(--gp-rail-b, #000) 10px 20px);
+    }
+    .md-unit.is-gp[data-gp-rail=">形栏"]::after {
+      --gp-rail-pattern: repeating-linear-gradient(-45deg, var(--gp-rail-a, #fff) 0 12px, var(--gp-rail-b, #000) 12px 24px);
+    }
+    .md-unit.is-gp[data-gp-rail="圆弧栏"]::after {
+      --gp-rail-pattern: repeating-radial-gradient(circle at center, var(--gp-rail-a, #fff) 0 6px, var(--gp-rail-b, #000) 6px 12px);
     }
     /* 🆕 小事件群內 checkbox 跟著群色走（若只設 bg 沒設 fg，checkbox 仍用事件預設色） */
     .md-unit.is-gp .ev-cb {
@@ -2599,6 +2644,17 @@
     /* 跳转定位高亮（滚动到事件后短暂闪烁描边） */
     .tl-jump-flash { animation: tlJumpFlash 2s ease; }
     @keyframes tlJumpFlash { 0%, 60% { box-shadow: 0 0 0 3px rgba(245,197,24,.85); border-radius: 6px; } 100% { box-shadow: none; } }
+    /* ⏰ 闹铃定位闪烁：围栏小事件群金底＋金环脉冲（与便利贴窗 .fs-found-blink / #tlEvFNotes.tl-evf-notes-flash 同口径） */
+    .md-unit.is-gp.tl-alert-gp-flash { animation: tlEvfNotesFlash 2s ease-in-out 2; }
+    /* 🆕 与便利贴窗口 .fs-found-blink 完全同口径：金底 50% + 金环 3px 脉冲 4 秒 */
+    .fs-found-blink.md-unit, .fs-found-blink.ev-md-check, .fs-found-blink { animation: tlEvfNotesFlash 2s ease-in-out 2; }
+    /* 🆕 .md-unit 闪的时候用 transparent 替代 --ev-input-bg（它没这个变量），让原始颜色透出来 */
+    .fs-found-blink.md-unit { animation-name: tlMdUnitBlink; }
+    @keyframes tlMdUnitBlink {
+      0%, 100% { background: transparent; box-shadow: 0 0 0 0 rgba(212,175,55,0); }
+      20%, 60% { background: rgba(212,175,55,.5); box-shadow: 0 0 0 3px rgba(212,175,55,.95); }
+      40%, 80% { background: transparent; box-shadow: 0 0 0 0 rgba(212,175,55,0); }
+    }
     /* 🆕 「找出相同的项目」切换定位：事件表单备注框命中行闪烁两下金底＋金环（与便利贴窗 .fs-found-blink 同口径） */
     /* 🆕 「找出相同 → 切换」在行程表单备注框里的命中闪烁：4 秒（2s × 2 次脉冲），与便利贴窗口径一致 */
     #tlEvFNotes.tl-evf-notes-flash { animation: tlEvfNotesFlash 2s ease-in-out 2; }
@@ -5384,6 +5440,7 @@
                 <div class="ev-toolbar-combo-option"><input type="checkbox" data-toolbar-expose="stats" checked aria-label="曝露事件统计按钮"><button type="button" class="ev-toolbar-combo-action" data-toolbar-action="stats">事件统计</button></div>
                 <div class="ev-toolbar-combo-option"><input type="checkbox" data-toolbar-expose="includes" checked aria-label="曝露 Include 加载清单按钮"><button type="button" class="ev-toolbar-combo-action" data-toolbar-action="includes">Include 加载清单</button></div>
                 <div class="ev-toolbar-combo-option"><input type="checkbox" data-toolbar-expose="glossary" checked aria-label="曝露 Glossary 术语表按钮"><button type="button" class="ev-toolbar-combo-action" data-toolbar-action="glossary">Glossary 术语表</button></div>
+                <div class="ev-toolbar-combo-option" style="border-top:1px solid var(--ev-border, #334155); margin-top:6px; padding-top:6px;"><button type="button" class="ev-toolbar-combo-action" data-toolbar-action="alarms" style="width:100%">⏰ 闹铃提醒查询</button></div>
               </div>
             </div>
             <button type="button" id="tlCalLayoutBtn" class="btn ev-stats-btn" title="切换日历与行程明细的排布：上下 / 左右" onclick="tlToggleCalLayout()">▤</button>
@@ -5407,6 +5464,7 @@
             <button type="button" id="tlEvStatsBtn" class="btn ev-stats-btn" title="事件统计：主事件与备注中的子事件，按标签·完成状态统计">📊</button>
             <button type="button" id="tlIncludeListBtn" class="btn ev-stats-btn" title="Include 加载清单：列出同目录被引入的 calendar-*.md 文件及大小" onclick="tlOpenIncludeList()">📄</button>
             <button type="button" id="tlGlossaryBtn" class="btn ev-stats-btn" title="Glossary 术语表：收集全部行程（标题＋备注）中的 [[term]]，同名只显示最完整的一条，按术语排序" onclick="tlOpenGlossary()">📖</button>
+            <button type="button" id="tlAlarmPreviewBtn" style="display:none" onclick="tlOpenAlarmPreview()"></button>
             <span class="ev-toolbar-flex"></span>
             <span class="ev-hint-text">编辑后按「保存」写回 calendar.md</span>
             <button type="button" class="ev-add-btn" id="tlEvAddBtn">＋ 新增行程</button>
@@ -5810,6 +5868,23 @@
         <span class="tl-gloss-search-count" id="tlGlossarySearchCount" aria-live="polite"></span>
       </div>
       <div id="tlGlossaryBody" class="tl-ev-stats-body tl-gloss-list"></div>
+    </div>
+  </div>
+
+  <!-- ⏰ 闹铃提醒查询：两个页签「待执行」和「已结案」，都支持跳转+定位+闪烁 -->
+  <div id="tlAlarmPreviewOverlay" class="tl-ev-form-overlay" style="display:none" onclick="if(event.target===event.currentTarget) tlCloseAlarmPreview()">
+    <div class="tl-ev-form-box tl-ev-stats-box">
+      <div class="tl-ev-stats-header">
+        <div class="tl-ev-stats-title">⏰ 闹铃提醒查询</div>
+        <button type="button" class="tl-ev-stats-close" onclick="tlCloseAlarmPreview()" aria-label="关闭">✕</button>
+      </div>
+      <div class="tl-ev-stats-sub">扫描全部行程（主文件＋ include 进来的只读 calendar-*.md）中所有 <code>[[alert:...]]</code> 标记；待执行按下次触发时间排序，已结案记录历史触发/完成状态</div>
+      <!-- 🆕 页签 -->
+      <div style="display:flex;gap:6px;margin:10px 12px 0 12px;padding:4px;background:var(--ev-bg, #1a2332);border-radius:8px">
+        <button type="button" id="tlAlarmTabPending" onclick="tlAlarmSwitchTab('pending')" style="flex:1;padding:7px 0;background:var(--ev-primary);color:#fff;border:none;border-radius:6px;font-size:13px;font-weight:700;cursor:pointer">⏳ 待执行 <span id="tlAlarmCountPending" style="opacity:.7"></span></button>
+        <button type="button" id="tlAlarmTabDone" onclick="tlAlarmSwitchTab('done')" style="flex:1;padding:7px 0;background:transparent;color:var(--ev-muted);border:none;border-radius:6px;font-size:13px;font-weight:400;cursor:pointer">✅ 已结案 <span id="tlAlarmCountDone" style="opacity:.7"></span></button>
+      </div>
+      <div id="tlAlarmPreviewBody" class="tl-ev-stats-body" style="max-height:460px;overflow:auto"></div>
     </div>
   </div>
 

@@ -357,6 +357,8 @@
             if (!table) continue;
             const dueAt = tlAlertRecurringDue(match[2], table.dates, Date.now());
             if (dueAt === null) continue;
+            // 循环模式：tlAlertRecurringDue 已经跳过了表格里已完成的日期，
+            // 返回的是「下一个未触发」的时间，所以 completed 一定是 false
             const content = tlAlertFenceContent(lines, lineIndex, range, table);
             markers.push({
               marker: match[0],
@@ -1137,6 +1139,36 @@
         });
       };
       (tlCalEvents || []).forEach((ev) => { add(ev.title, ev); add(ev.notes, ev); });
+      // 🆕 2026-11-14：额外扫 gp 围栏的 TERM=xxx，把围栏内容当作该 term 的额外说明
+      // 格式：{gpX|attrs段|TERM=便利贴} → 围栏内容就是"便利贴"的说明
+      (tlCalEvents || []).forEach((ev) => {
+        if (!ev || !ev.notes) return;
+        const lines = String(ev.notes).split('\n');
+        const scan = (typeof tlGpFenceScan === 'function') ? tlGpFenceScan(lines) : { ranges: [] };
+        (scan.ranges || []).forEach((r) => {
+          if (!r.termName) return;  // 没有 TERM=xxx 的围栏跳过
+          const key = r.termName.toLowerCase();
+          let rec = map.get(key);
+          if (!rec) {
+            rec = { term: r.termName, def: '', domain: '', release: '', count: 0, srcs: [], fenceDesc: '', fenceEvUids: [], fenceRange: null };
+            map.set(key, rec);
+          }
+          // 围栏内容：start+1 到 end-1（去掉 open/close 行）
+          const fenceContent = lines.slice(r.start + 1, r.end).join('\n').trim();
+          if (fenceContent) {
+            // 取最完整的（更长的优先）
+            if (!rec.fenceDesc || fenceContent.length > rec.fenceDesc.length) {
+              rec.fenceDesc = fenceContent;
+              rec.fenceEvUids = [ev.uid || ''];
+              rec.fenceRange = { ev: ev, start: r.start, end: r.end };
+            }
+          }
+          // 来源事件
+          if (ev && ev.uid && !rec.srcs.some((s) => s.uid === ev.uid)) {
+            rec.srcs.push({ uid: ev.uid, title: ev.title || '', date: ev.date || '' });
+          }
+        });
+      });
       // 排序：英文/数字开头的术语在前（en 排序），其余按中文拼音（zh-Hans-CN）；ICU 默认会把拉丁字母排在汉字之后，显式分桶修正
       const isAscii = (s) => /^[0-9A-Za-z]/.test(s);
       return Array.from(map.values()).sort((a, b) => {
@@ -1233,11 +1265,23 @@
                   '</button>';
               }).join('') + '</div>'
             : '';
+          // 🆕 gp 围栏额外说明区域
+          const fenceHtml = t.fenceDesc
+            ? '<div class="tl-gloss-fence" style="margin-top:8px;padding:8px 10px;background:var(--ev-bg-soft,#1f2b3d);border-left:3px solid var(--ev-primary,#3b82f6);border-radius:4px">' +
+                '<div class="tl-gloss-fence-head" style="display:flex;align-items:center;gap:6px;margin-bottom:6px">' +
+                  '<span style="font-size:11px;color:var(--ev-muted);font-weight:600">📌 围栏说明</span>' +
+                  (t.fenceRange && t.fenceRange.ev && t.fenceRange.ev.uid
+                    ? '<button type="button" onclick="tlGlossJumpToFence(\'' + tlEscapeHtml(t.fenceRange.ev.uid) + '\',' + t.fenceRange.start + ',' + t.fenceRange.end + ')" style="font-size:11px;background:var(--ev-primary);color:#fff;border:none;border-radius:3px;padding:2px 8px;cursor:pointer">定位到围栏</button>'
+                    : '') +
+                '</div>' +
+                '<div class="tl-gloss-fence-body" style="font-size:12px;color:var(--ev-text);white-space:pre-wrap;max-height:160px;overflow:auto">' + tlGlossHl(t.fenceDesc, tokens) + '</div>' +
+              '</div>'
+            : '';
           return '<div class="tl-gloss-row">' +
             '<div class="tl-gloss-row-head">' + tlGlossCapHtml(t, tokens) +
             '<span class="tl-gloss-def">' + (t.def ? tlGlossHl(t.def, tokens) : '<span class="tl-gloss-nodef">（无释义）</span>') + '</span>' +
             '<span class="tl-gloss-count" title="出现次数">×' + t.count + '</span>' +
-            '</div>' + srcHtml + '</div>';
+            '</div>' + srcHtml + fenceHtml + '</div>';
         }).join('');
       }
       body.scrollTop = 0;   // 新结果集从第一条看（与明细滚动收口同口径）
@@ -1277,6 +1321,314 @@
     function tlCloseIncludeList() {
       const ov = document.getElementById('tlIncludeListOverlay');
       if (ov) ov.style.display = 'none';
+    }
+
+    // ⏰ 闹铃提醒查询：两个页签「待执行」「已结案」
+    let tlAlarmFocusUnitsPending = [];  // 待执行的 focusUnit 索引
+    let tlAlarmFocusUnitsDone = [];     // 已结案的 focusUnit 索引
+    let tlAlarmCurrentTab = 'pending';  // 当前页签
+    function tlOpenAlarmPreview() {
+      const ov = document.getElementById('tlAlarmPreviewOverlay');
+      if (!ov) return;
+      tlAlarmCurrentTab = 'pending';  // 默认打开待执行
+      // 重置 tab 按钮样式（pending active）
+      const pBtn = document.getElementById('tlAlarmTabPending');
+      const dBtn = document.getElementById('tlAlarmTabDone');
+      if (pBtn) { pBtn.style.background = 'var(--ev-primary, #3b82f6)'; pBtn.style.color = '#fff'; pBtn.style.fontWeight = '700'; }
+      if (dBtn) { dBtn.style.background = 'transparent'; dBtn.style.color = 'var(--ev-muted)'; dBtn.style.fontWeight = '400'; }
+      tlRenderAlarmPreview();
+      ov.style.display = 'flex';
+    }
+    function tlCloseAlarmPreview() {
+      const ov = document.getElementById('tlAlarmPreviewOverlay');
+      if (ov) ov.style.display = 'none';
+    }
+    // 🆕 切换页签
+    function tlAlarmSwitchTab(tab) {
+      tlAlarmCurrentTab = (tab === 'done') ? 'done' : 'pending';
+      // 更新 tab 按钮样式（active 状态：深色背景 + 白字 + 圆角，非常明显）
+      const pBtn = document.getElementById('tlAlarmTabPending');
+      const dBtn = document.getElementById('tlAlarmTabDone');
+      const isPending = tlAlarmCurrentTab === 'pending';
+      if (pBtn) {
+        pBtn.style.background = isPending ? 'var(--ev-primary, #3b82f6)' : 'transparent';
+        pBtn.style.color = isPending ? '#fff' : 'var(--ev-muted)';
+        pBtn.style.fontWeight = isPending ? '700' : '400';
+        pBtn.style.borderRadius = '6px';
+        pBtn.style.borderBottom = 'none';
+      }
+      if (dBtn) {
+        dBtn.style.background = !isPending ? 'var(--ev-primary, #3b82f6)' : 'transparent';
+        dBtn.style.color = !isPending ? '#fff' : 'var(--ev-muted)';
+        dBtn.style.fontWeight = !isPending ? '700' : '400';
+        dBtn.style.borderRadius = '6px';
+        dBtn.style.borderBottom = 'none';
+      }
+      tlRenderAlarmPreview();  // 重渲染当前 tab
+    }
+    // 🆕 给定事件 notes 和 alert message，算出 alert 所在区块的 focusUnit
+    // 与右键小圆点 tlCtxUnitOf 返回值完全同口径：{ kind, start, end, type, text }
+    function tlBuildAlarmFocusUnit(notes, message) {
+      if (!notes) return null;
+      const lines = notes.replace(/\r\n/g, '\n').split('\n');
+      const needle = '[[alert:' + String(message || '').trim();
+      // ① 先找 alert 标记在 notes 内部第几行
+      let alertLine = -1;
+      for (let i = 0; i < lines.length; i++) {
+        if (lines[i].indexOf(needle) >= 0) { alertLine = i; break; }
+      }
+      if (alertLine < 0) {
+        for (let i = 0; i < lines.length; i++) {
+          if (lines[i].indexOf('[[alert:') >= 0) { alertLine = i; break; }
+        }
+      }
+      if (alertLine < 0) return null;
+      // ② 用 tlSplitMdBlocks 找包含 alertLine 的区块（gp 围栏优先）
+      let blocks = [];
+      if (typeof tlSplitMdBlocks === 'function') blocks = tlSplitMdBlocks(notes);
+      // 优先 type='gp' 的围栏
+      let hit = null;
+      for (let i = 0; i < blocks.length; i++) {
+        const b = blocks[i];
+        if (b.start <= alertLine && alertLine <= b.end && b.type === 'gp') { hit = b; break; }
+      }
+      // 兜底：任意 type
+      if (!hit) {
+        for (let i = 0; i < blocks.length; i++) {
+          const b = blocks[i];
+          if (b.start <= alertLine && alertLine <= b.end) { hit = b; break; }
+        }
+      }
+      if (hit) {
+        const blockText = lines.slice(hit.start, hit.end + 1).join('\n');
+        return { kind: 'block', start: hit.start, end: hit.end, type: hit.type, text: blockText };
+      }
+      // 极端兜底：单行 block
+      return { kind: 'block', start: alertLine, end: alertLine, type: '', text: lines[alertLine] || '' };
+    }
+    // 跳转到指定 tab + idx 的闹铃对应的 alert 围栏
+    async function tlJumpToAlarmItem(tab, idx) {
+      const arr = (tab === 'done') ? tlAlarmFocusUnitsDone : tlAlarmFocusUnitsPending;
+      const item = arr[idx];
+      if (!item) return;
+      tlCloseAlarmPreview();
+      const ev = item.ev;
+      const uid = item.uid;
+      const focusUnit = item.focusUnit;
+      if (!ev || !uid || !focusUnit) return;
+
+      // ① ⭐ 优先便利贴（用户要求）：若事件有 sticky，先把便利贴唤起并闪到 alert 围栏
+      const stickyCount = parseInt(ev.sticky, 10) || 0;
+      if (stickyCount > 0 && typeof tlFocusStickyNote === 'function') {
+        try { await tlFocusStickyNote(uid, 0, focusUnit); }
+        catch (e) { console.warn('[AlarmPreview] 便利贴跳转失败:', e); }
+      }
+
+      // ② 主画面：用 focusUnit 的 start/end 找小圆点 → 找到那个 md-unit → 滚动 + 闪烁
+      const cardEl = document.querySelector('[data-uid="' + uid + '"]');
+      let targetUnit = null;
+      if (cardEl && cardEl.offsetParent) {
+        // 事件卡内找 .md-unit-edit[data-start=focusUnit.start][data-end=focusUnit.end]
+        const exactBtn = cardEl.querySelector(
+          '.md-unit-edit[data-start="' + focusUnit.start + '"][data-end="' + focusUnit.end + '"]'
+        );
+        if (exactBtn) targetUnit = exactBtn.closest('.md-unit');
+        // 兜底：范围匹配
+        if (!targetUnit) {
+          const btns = cardEl.querySelectorAll('.md-unit-edit[data-start][data-end]');
+          for (let i = 0; i < btns.length; i++) {
+            const s = parseInt(btns[i].getAttribute('data-start'), 10);
+            const e = parseInt(btns[i].getAttribute('data-end'), 10);
+            if (s === focusUnit.start && e === focusUnit.end) {
+              targetUnit = btns[i].closest('.md-unit'); break;
+            }
+          }
+        }
+        // 闪事件卡本身（金色描边）
+        cardEl.classList.remove('tl-jump-flash');
+        void cardEl.offsetWidth;
+        cardEl.classList.add('tl-jump-flash');
+      }
+
+      // ③ 精准闪烁目标 md-unit（和右键小圆点点击后闪烁的是同一个元素！）
+      if (targetUnit) {
+        targetUnit.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        tlBlinkFound(targetUnit);
+      }
+    }
+    // 让元素闪烁：复用便利贴的 .fs-found-blink class（blinkFoundLineTwice 同口径）
+    function tlBlinkFound(el) {
+      if (!el) return;
+      el.classList.remove('fs-found-blink');
+      void el.offsetWidth;
+      el.classList.add('fs-found-blink');
+      setTimeout(() => { el.classList.remove('fs-found-blink'); }, 4200);
+    }
+    // 🆕 重写：分 pending / done 两个 tab，两个都支持定位+闪烁
+    function tlRenderAlarmPreview() {
+      const body = document.getElementById('tlAlarmPreviewBody');
+      if (!body) return;
+      const textArea = document.getElementById('taskText');
+      if (!textArea) { body.innerHTML = '<div class="tl-ev-stats-empty">找不到编辑器</div>'; return; }
+      const events = tlAllEvents(textArea.value);
+      const now = Date.now();
+      // 扫描全部闹铃
+      let pending = [], done = [];
+      events.forEach((ev) => {
+        if (!ev || !ev.notes) return;
+        const hasSticky = parseInt(ev.sticky, 10) > 0;
+        const markers = tlAlertMarkers(ev.notes);
+        markers.forEach((a) => {
+          const focusUnit = tlBuildAlarmFocusUnit(ev.notes, a.message);
+          const row = {
+            ...a,
+            title: ev.title || '(无标题)',
+            date: ev.date || '',
+            ro: ev.ro === true,
+            src: ev.src || '',
+            hasSticky,
+            overdue: a.dueAt !== null && a.dueAt <= now,
+            eventUid: ev.uid || '',
+            ev: ev,
+            focusUnit: focusUnit
+          };
+          if (a.completed) done.push(row); else pending.push(row);
+        });
+        // 🆕 循环闹铃的历史完成记录：从表格 dates 展开到 done tab
+        // 找该事件 notes 里的所有循环 alert（通过 marker 正则扫）
+        const text = String(ev.notes || '');
+        const lines = text.split('\n');
+        const fences = (typeof tlGpFenceScan === 'function') ? tlGpFenceScan(lines).ranges : [];
+        lines.forEach((line, lineIndex) => {
+          const re = /\[\[alert:([\s\S]*?):((?:anniversary\s+\d{4}-\d{2}-\d{2}\s+\d{4})|(?:everyday\s+\d{4})|(?:w[1-7]\s*-\s*w[1-7]\s+\d{4})|(?:w[1-7](?:\s*,\s*w[1-7])+\s+\d{4}))\s*:\s*([1-9]\d*)\s*(m|h|d)\]\]/gi;
+          let m2;
+          while ((m2 = re.exec(line))) {
+            const range = fences.find((item) => item.alert && item.start + 1 === lineIndex);
+            if (!range) continue;
+            const table = tlAlertTableInfo(lines, lineIndex, range.end);
+            if (!table || !table.dates || !table.dates.length) continue;
+            // 跳过 dueAt 对应的那一条（已经在 pending 里了）
+            const dueAt = tlAlertRecurringDue(m2[2], table.dates, Date.now());
+            const dueYmd = dueAt ? (() => { const d = new Date(dueAt); return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0'); })() : '';
+            // 表格里每条完成日期都生成一个 done 项
+            table.dates.forEach((d) => {
+              const ds = String(d || '').trim();
+              if (!ds) return;
+              // 如果就是 pending 里那条 dueAt → 跳过
+              if (dueYmd && ds.indexOf(dueYmd) === 0) return;
+              // 解析日期时间
+              let ts = null;
+              const dm = ds.match(/(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{2}):(\d{2}))?/);
+              if (dm) {
+                const dt = new Date(+dm[1], +dm[2]-1, +dm[3], dm[4]?+dm[4]:0, dm[5]?+dm[5]:0);
+                ts = dt.getTime();
+              }
+              done.push({
+                message: m2[1].trim(),
+                dueAt: ts,
+                intervalMs: tlAlertInterval(m2[3] + m2[4]),
+                completed: true,
+                recurring: true,
+                title: ev.title || '(无标题)',
+                date: ev.date || '',
+                ro: ev.ro === true,
+                src: ev.src || '',
+                hasSticky,
+                overdue: false,
+                eventUid: ev.uid || '',
+                ev: ev,
+                focusUnit: null,  // 历史记录不支持定位（不是精确到某一行）
+                isHistory: true   // 🆕 标记是展开的历史
+              });
+            });
+          }
+        });
+      });
+      // 排序
+      pending.sort((a, b) => (a.dueAt ?? Infinity) - (b.dueAt ?? Infinity));
+      done.sort((a, b) => (b.dueAt ?? -Infinity) - (a.dueAt ?? -Infinity));  // 已结案按完成时间倒序
+      // 同步全局索引
+      tlAlarmFocusUnitsPending = pending.map((x) => ({ ev: x.ev, uid: x.eventUid, focusUnit: x.focusUnit }));
+      tlAlarmFocusUnitsDone = done.map((x) => ({ ev: x.ev, uid: x.eventUid, focusUnit: x.focusUnit }));
+      // 更新计数角标
+      const cP = document.getElementById('tlAlarmCountPending');
+      const cD = document.getElementById('tlAlarmCountDone');
+      if (cP) cP.textContent = pending.length ? '(' + pending.length + ')' : '';
+      if (cD) cD.textContent = done.length ? '(' + done.length + ')' : '';
+      // 格式化辅助
+      const fmtDate = (ts) => {
+        if (ts == null || !Number.isFinite(ts)) return '(时间未知)';
+        const d = new Date(ts);
+        const y = d.getFullYear(), m = String(d.getMonth() + 1).padStart(2, '0'), dd = String(d.getDate()).padStart(2, '0');
+        const h = String(d.getHours()).padStart(2, '0'), mi = String(d.getMinutes()).padStart(2, '0');
+        const today = new Date(); today.setHours(0, 0, 0, 0);
+        const dayDiff = Math.round((new Date(d.getFullYear(), d.getMonth(), d.getDate()) - today) / 86400000);
+        const dayLabel = dayDiff === 0 ? '今天' : dayDiff === 1 ? '明天' : dayDiff === -1 ? '昨天' : dayDiff > 1 ? dayDiff + ' 天后' : (-dayDiff) + ' 天前';
+        return `${y}-${m}-${dd} ${h}:${mi}（${dayLabel}）`;
+      };
+      const fmtInterval = (ms) => {
+        if (!ms) return '';
+        if (ms < 3600000) return (ms / 60000) + ' 分钟';
+        if (ms < 86400000) return (ms / 3600000) + ' 小时';
+        return (ms / 86400000) + ' 天';
+      };
+      // 渲染当前 tab
+      const isPending = tlAlarmCurrentTab !== 'done';
+      const items = isPending ? pending : done;
+      if (!items.length) {
+        body.innerHTML = '<div class="tl-ev-stats-empty">' + (isPending ? '当前没有待执行的闹铃提醒' : '当前没有已结案的闹铃提醒') + '</div>';
+        return;
+      }
+      // 表格渲染（thead 固定，tbody 滚动）
+      const dueColLabel = isPending ? '下次触发' : '设定时间';
+      const html = `
+        <div style="max-height:420px;overflow:auto;border-top:1px solid var(--ev-border)">
+        <table style="width:100%;border-collapse:collapse;font-size:12px;table-layout:fixed">
+          <thead style="position:sticky;top:0;z-index:1;background:var(--ev-bg, #1a2332)">
+            <tr style="border-bottom:2px solid var(--ev-border)">
+              <th style="padding:8px 10px;text-align:left;width:140px;color:var(--ev-muted);font-weight:600">类型</th>
+              <th style="padding:8px 10px;text-align:left;color:var(--ev-muted);font-weight:600">闹铃讯息</th>
+              <th style="padding:8px 10px;text-align:left;width:120px;color:var(--ev-muted);font-weight:600">来源行程</th>
+              <th style="padding:8px 10px;text-align:left;width:160px;color:var(--ev-muted);font-weight:600">${dueColLabel}</th>
+              <th style="padding:8px 10px;text-align:center;width:60px;color:var(--ev-muted);font-weight:600">操作</th>
+            </tr>
+          </thead>
+          <tbody>
+          ${items.map((a, idx) => {
+            let typeCell = a.recurring
+              ? '<span style="background:#7c3aed;color:#fff;border-radius:10px;padding:1px 8px;font-size:11px">🔄 循环</span>'
+              : '<span style="background:#2563eb;color:#fff;border-radius:10px;padding:1px 8px;font-size:11px">⏰ 一次性</span>';
+            if (isPending && a.overdue) typeCell += '<br><span style="background:#dc2626;color:#fff;border-radius:10px;padding:1px 8px;font-size:11px;margin-top:2px;display:inline-block">⚠️ 已过期</span>';
+            if (!isPending) typeCell += '<br><span style="background:#16a34a;color:#fff;border-radius:10px;padding:1px 8px;font-size:11px;margin-top:2px;display:inline-block">✅ 已完成</span>';
+            const roTag = a.ro ? '<span style="color:#f59e0b;margin-left:4px" title="只读 include 文件">⛔</span>' : '';
+            const stickyTag = a.hasSticky ? '<span style="color:#f0c860;margin-left:4px" title="该事件有便利贴">📌</span>' : '';
+            const histTag = a.isHistory ? '<span style="color:#64748b;margin-left:4px" title="循环闹铃历史完成记录">📜</span>' : '';
+            const canJump = a.focusUnit != null;
+            const jumpBtn = canJump
+              ? `<button type="button" data-tl-alarm-jump data-tab="${isPending ? 'pending' : 'done'}" data-idx="${idx}" style="background:var(--ev-primary);color:#fff;border:none;border-radius:4px;padding:3px 8px;font-size:11px;cursor:pointer">定位</button>`
+              : `<button type="button" disabled style="background:#475569;color:#94a3b8;border:none;border-radius:4px;padding:3px 8px;font-size:11px;cursor:not-allowed" title="历史记录不支持定位">—</button>`;
+            const timeStyle = isPending
+              ? (a.overdue ? 'color:#dc2626;font-weight:600' : a.dueAt != null && (a.dueAt - now) < 3600000 ? 'color:#f59e0b;font-weight:600' : '')
+              : 'color:#64748b';
+            const msg = tlEscapeHtml(a.message);
+            // 压缩长讯息
+            const msgShort = msg.length > 60 ? msg.slice(0, 60) + '…' : msg;
+            const title = tlEscapeHtml(a.title || '(无标题)');
+            const titleShort = title.length > 20 ? title.slice(0, 20) + '…' : title;
+            return `<tr style="border-bottom:1px solid var(--ev-border);height:40px">
+              <td style="padding:6px 10px;vertical-align:middle">${typeCell}</td>
+              <td style="padding:6px 10px;vertical-align:middle;color:var(--ev-text);font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${msg}">${msgShort}${stickyTag}${roTag}${histTag}</td>
+              <td style="padding:6px 10px;vertical-align:middle;color:var(--ev-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${title}${a.date ? '｜' + tlEscapeHtml(a.date) : ''}">${titleShort}</td>
+              <td style="padding:6px 10px;vertical-align:middle;${timeStyle}">${fmtDate(a.dueAt)}</td>
+              <td style="padding:6px 10px;vertical-align:middle;text-align:center">
+                ${jumpBtn}
+              </td>
+            </tr>`;
+          }).join('')}
+          </tbody>
+        </table>
+        </div>`;
+      body.innerHTML = html;
     }
 
     function toggleCalEventsView() {
@@ -2441,29 +2793,79 @@
       // ⑥ 原樣交 CSS
       return s;
     }
+    // 🆕 2026-11-14 升级为多 pipe 版本（与 desktop-note.js noteExtractGpAttrs 对齐）
+    // 格式：{gpX|attrs段|term段}
+    //   attrs 段用 , 分隔 fg=红,bg=黄,anim=pulse
+    //   term 段用 | 分隔 alert|TERM=便利贴
     function tlParseGpAttrs(raw) {
       const s = String(raw == null ? '' : raw).trim();
-      if (!s) return { key: '', fg: '', bg: '', anim: '', alert: false };
-      const pipe = s.indexOf('|');
-      const key = (pipe < 0 ? s : s.slice(0, pipe)).trim();
-      let fg = '', bg = '', anim = '', alert = false;
-      if (pipe >= 0) {
-        s.slice(pipe + 1).split(/[|,]/).forEach((pair) => {
-          const part = pair.trim();
-          const eq = pair.indexOf('=');
-          if (eq < 0) {
-            if (part.toLowerCase() === 'alert') alert = true;
-            return;
+      if (!s) return { key: '', fg: '', bg: '', anim: '', alert: false, extra: [], term: '', termName: '', railStyle: '', railA: '', railB: '' };
+      const pipe1 = s.indexOf('|');
+      if (pipe1 < 0) return { key: s, fg: '', bg: '', anim: '', alert: false, extra: [], term: '', termName: '', railStyle: '', railA: '', railB: '' };
+      const key = s.slice(0, pipe1).trim();
+      const rest = s.slice(pipe1 + 1);
+      const pipe2 = rest.indexOf('|');
+      const attrsPart = pipe2 >= 0 ? rest.slice(0, pipe2) : rest;
+      const termPart = pipe2 >= 0 ? rest.slice(pipe2 + 1) : '';
+      // 解析 attrs 段
+      const extra = [];
+      let fg = '', bg = '', anim = '', alert = false, termName = '', railStyle = '', railA = '', railB = '';
+      attrsPart.split(',').forEach((pair) => {
+        const p = pair.trim();
+        if (!p) return;
+        const eq = p.indexOf('=');
+        if (eq < 0) { extra.push(p); return; }
+        const k = p.slice(0, eq).trim().toLowerCase();
+        const v = p.slice(eq + 1).trim();
+        if (k === 'fg') fg = tlResolveColorName(v);
+        else if (k === 'bg') bg = tlResolveColorName(v);
+        else if (k === 'anim' && /^(pulse|scan|data|aurora|orbit|arc|holo|signal|glitch)$/.test(v)) anim = v;
+        else if (k === 'rail') {
+          const rp = v.split('#');
+          if (rp.length >= 3 && ['斜栏', '直栏', '>形栏', '圆弧栏'].indexOf(rp[0].trim()) >= 0) {
+            railStyle = rp[0].trim();
+            railA = tlResolveColorName(rp[1].trim());
+            railB = tlResolveColorName(rp[2].trim());
           }
-          const k = pair.slice(0, eq).trim().toLowerCase();
-          const v = pair.slice(eq + 1).trim();
-          if (k === 'fg') fg = tlResolveColorName(v);
-          else if (k === 'bg') bg = tlResolveColorName(v);
-          else if (k === 'anim' && /^(pulse|scan|data|aurora|orbit|arc|holo|signal|glitch)$/.test(v)) anim = v;
-          else if (k === 'alert') alert = v.toLowerCase() === 'true';
+        }
+        else extra.push(p);
+      });
+      // 兜底：attrs 段里可能有 TERM=xxx（没有第二个 pipe 的情况），移到 termName
+      const termInAttrs = extra.find((x) => /^TERM\s*=/i.test(x));
+      if (termInAttrs) {
+        termName = termInAttrs.replace(/^TERM\s*=\s*/i, '').trim();
+        const idx = extra.indexOf(termInAttrs);
+        if (idx >= 0) extra.splice(idx, 1);
+      }
+      // 解析 term 段
+      if (termPart) {
+        // 先按 | 拆分多段，每段内部再按 , 拆分（支持 TERM=xxx,rail=xxx 混写）
+        termPart.split('|').forEach((seg) => {
+          seg.split(',').forEach((item) => {
+            const segTrim = item.trim();
+            if (!segTrim) return;
+            const eq = segTrim.indexOf('=');
+            if (eq < 0) {
+              if (/^(dl|cp|cr|alert|remind|bookmark)$/i.test(segTrim)) alert = true;
+              return;
+            }
+            const k = segTrim.slice(0, eq).trim().toUpperCase();
+            const v = segTrim.slice(eq + 1).trim();
+            if (k === 'TERM' && v) termName = v;
+            else if (k === 'ALERT') alert = v.toLowerCase() === 'true';
+            // 🆕 2026-11-14：term 段兜底解析 rail（rail=斜栏#白#黑）
+            else if (k === 'RAIL') {
+              const rp = v.split('#');
+              if (rp.length >= 3 && ['斜栏', '直栏', '>形栏', '圆弧栏'].indexOf(rp[0].trim()) >= 0) {
+                railStyle = rp[0].trim();
+                railA = tlResolveColorName(rp[1].trim());
+                railB = tlResolveColorName(rp[2].trim());
+              }
+            }
+          });
         });
       }
-      return { key: key, fg: fg, bg: bg, anim: anim, alert: alert };
+      return { key: key, fg: fg, bg: bg, anim: anim, alert: alert, extra: extra, term: termPart, termName: termName, railStyle: railStyle, railA: railA, railB: railB };
     }
     function tlExtractGpAttrsFromLine(line) {
       const s = String(line == null ? '' : line);
@@ -2522,14 +2924,14 @@
         if (!f) continue;
         if (f.kind === 'open') {
           if (!open) {
-            // 🆕 從 open 行提取 fg/bg attrs，存進 open 供關閉時寫入 range
+            // 🆕 從 open 行提取 fg/bg/anim/rail attrs + termName（TERM=xxx），存進 open 供關閉時寫入 range
             const a = (typeof tlExtractGpAttrsFromLine === 'function') ? tlExtractGpAttrsFromLine(line) : { fg: '', bg: '', alert: false };
-            open = { i: i, key: f.key, fg: a.fg || '', bg: a.bg || '', anim: a.anim || '', alert: a.alert === true };
+            open = { i: i, key: f.key, fg: a.fg || '', bg: a.bg || '', anim: a.anim || '', alert: a.alert === true, term: a.term || '', termName: a.termName || '', railStyle: a.railStyle || '', railA: a.railA || '', railB: a.railB || '' };
           }
           continue;
         }
         if (open && open.key === f.key) {
-          ranges.push({ start: open.i, end: i, key: f.key, fg: open.fg, bg: open.bg, anim: open.anim, alert: open.alert });
+          ranges.push({ start: open.i, end: i, key: f.key, fg: open.fg, bg: open.bg, anim: open.anim, alert: open.alert, term: open.term || '', termName: open.termName || '', railStyle: open.railStyle || '', railA: open.railA || '', railB: open.railB || '' });
           markers.push(open.i, i);
           open = null;
         }
@@ -2546,7 +2948,7 @@
       const scan = tlGpFenceScan(lines);
       const hit = scan.ranges.find((r) => r.start === s && r.end === e);
       // 🆕 2026-11-09：把 hit.fg / hit.bg 也帶出來，供 tlWrapGpFence 重寫時保留 attrs
-      return hit ? { lines: lines, start: s, end: e, key: hit.key, fg: hit.fg || '', bg: hit.bg || '', anim: hit.anim || '', alert: hit.alert === true, scan: scan } : null;
+      return hit ? { lines: lines, start: s, end: e, key: hit.key, fg: hit.fg || '', bg: hit.bg || '', anim: hit.anim || '', alert: hit.alert === true, term: hit.term || '', termName: hit.termName || '', railStyle: hit.railStyle || '', railA: hit.railA || '', railB: hit.railB || '', scan: scan } : null;
     }
     // ── 🆕 2026-11-08：勾選「group 啟用」按保存時一律改寫成「塊級」{gpX}…{/gpX}，不再逐行補行尾標記 ──
     //  · 已是塊級群且沒給新標記 → 原樣保留（不無謂改名）；給了 mark → 整段改名（兩行一起改）。
@@ -2562,7 +2964,7 @@
         // 🆕 mark 是預設無名組 '{gp}' 且 fence 已有具名 key → 不誤改群名
         if (mark === '{gp}' && wrap.key) return lines.join('\n');
         // 🆕 給了新 mark → 組裝新 open 行：key 用新 mark，attrs 沿用原文
-        const newOpen = tlBuildGpOpenLine(mark, wrap.fg, wrap.bg, wrap.anim, wrap.alert);
+        const newOpen = tlBuildGpOpenLine(mark, wrap.fg, wrap.bg, wrap.anim, wrap.alert, wrap.railStyle || '', wrap.railA || '', wrap.railB || '');
         const out = lines.slice();
         out[wrap.start] = newOpen;
         out[wrap.end] = tlBuildGpCloseLine(wrap.key);  // 🆕 close 只寫 key，不帶 attrs！
@@ -2578,7 +2980,7 @@
       if (mark) {
         const origAttrs = (typeof tlExtractGpAttrsFromLine === 'function')
           ? tlExtractGpAttrsFromLine(open || '') : { fg: '', bg: '', anim: '', alert: false };
-        open = tlBuildGpOpenLine(mark, origAttrs.fg, origAttrs.bg, origAttrs.anim, origAttrs.alert);
+        open = tlBuildGpOpenLine(mark, origAttrs.fg, origAttrs.bg, origAttrs.anim, origAttrs.alert, origAttrs.railStyle, origAttrs.railA, origAttrs.railB);
       }
       open = open || '{gp}';
       const close = tlBuildGpCloseLine(tlKeyFromGpMarker(open));  // 🆕 close 只寫 key，不帶 attrs！
@@ -2590,7 +2992,7 @@
       return [open].concat(body, [close]).join('\n');
     }
     // 🆕 2026-11-09：用 key + attrs 組裝 open 行（兩端共用）
-    function tlBuildGpOpenLine(keyName, fg, bg, anim, alert) {
+    function tlBuildGpOpenLine(keyName, fg, bg, anim, alert, railStyle, railA, railB) {
       let s = String(keyName == null ? '' : keyName).trim();
       // mark 可能是完整 '{gpX}'（从编辑视窗输入）或只是 'gpX'
       if (!s.startsWith('{')) s = '{' + s;
@@ -2602,6 +3004,7 @@
       if (bg) parts.push('bg=' + bg);
       if (anim) parts.push('anim=' + anim);
       if (alert) parts.push('alert');
+      if (railStyle && railA && railB) parts.push('rail=' + railStyle + '#' + railA + '#' + railB);
       if (!parts.length) return s;
       // 在 key 字符串的 '}' 之前插入 attrs
       return s.replace(/\}$/, '|' + parts.join(',') + '}');
@@ -2641,7 +3044,26 @@
         parts.push('--gp-bg:' + b.bg);
         if (b.fg) parts.push('--gp-border:' + b.fg);  // 有字色時邊框跟著字色
       }
+      // 🆕 rail 轨道：--gp-rail-style 控制 background-image pattern，--gp-rail-a/b 是双色
+      if (b.railStyle) {
+        parts.push('--gp-rail-style:' + b.railStyle);
+        if (b.railA) parts.push('--gp-rail-a:' + b.railA);
+        if (b.railB) parts.push('--gp-rail-b:' + b.railB);
+      }
       return parts.length ? ' style="' + parts.join(';') + '"' : '';
+    }
+    // 🆕 2026-11-14：gp 围栏属性徽标 HTML — TERM（📌 金色）+ ALERT（🔔 红色）
+    // 位置：右上角边框线（CSS position:absolute 定位），多个徽标横向堆叠
+    function tlGpBadgesHtml(b) {
+      const badges = [];
+      if (b && b.termName) {
+        badges.push('<span class="gp-badge gp-badge-term" title="TERM=' + tlEscapeHtml(b.termName) + '">\u{1F4CC}</span>');
+      }
+      if (b && b.alert) {
+        badges.push('<span class="gp-badge gp-badge-alert" title="ALERT 闹铃">\u{1F514}</span>');
+      }
+      if (!badges.length) return '';
+      return '<span class="gp-badges">' + badges.join('') + '</span>';
     }
     // 顯示層剝掉 {gp} 標記（代碼圍欄內原樣保留，避免吃掉程式碼裡的字面花括號）。
     //   只有真的剝掉標記的那一行才順手清尾隨空白，其餘行完全不動 → 不破壞 Markdown 行尾兩空格換行語義。
@@ -2808,7 +3230,12 @@
               ' data-uid="' + tlEscapeHtml(uid) + '" data-start="' + b.start + '" data-end="' + b.end + '" data-type="' + b.type + '"' +
               ' onclick="tlOpenRoDotMenu(event)">\u270e</button>'
             : '';
-          out += '<div class="md-unit is-gp"' + (b.anim ? ' data-gp-anim="' + b.anim + '"' : '') + tlGpInlineStyle(b) + '>' + roBtn +
+          // 🆕 2026-11-14：唯讀（include / ro）行程也要掛 data-gp-rail。
+          //    軌道外框由 CSS .md-unit.is-gp[data-gp-rail]::after 的 mask trick 畫；少了這個屬性
+          //    就只剩 tlGpInlineStyle 的 fg/bg 底色，與便利貼（forceEditable 走 canEdit 分支）不一致。
+          //    ⚠️ 與下方 canEdit 分支 (b.railStyle → data-gp-rail) 完全同口徑，別只改一邊。
+          out += '<div class="md-unit is-gp"' + (b.anim ? ' data-gp-anim="' + b.anim + '"' : '') +
+            (b.railStyle ? ' data-gp-rail="' + b.railStyle + '"' : '') + tlGpInlineStyle(b) + '>' + tlGpBadgesHtml(b) + roBtn +
             renderChunk(tlSeparateGpHorizontalRules(dLines.slice(b.start, b.end + 1).join('\n'))) + '</div>';
           cursor = b.end + 1;
         });
@@ -2842,13 +3269,18 @@
         //    🆕 2026-11-09：gp 区块若有 fg/bg attrs，追加 inline style 覆盖便利贴默认色
         const gpCls = b.type === 'gp' ? ' is-gp' : '';
         const gpStyle = b.type === 'gp' ? tlGpInlineStyle(b) : '';
+        // 🆕 2026-11-14：gp 围栏属性徽标（右上角边框线）— TERM + ALERT
+        const gpBadges = (b.type === 'gp') ? tlGpBadgesHtml(b) : '';
         // 🆕 2026-11-11：「整行就是一个 [[…]] 标示」的单行单元（闹铃／提醒／收藏／术语／日期标记）
         //   语义上＝一个小事件项目（闹铃还自带排程与完成状态），故便利贴右键菜单给它「📤 搬移项目」。
         //   判定放在渲染期——这里手上有原文；便利贴窗体那颗圆点只读属性，不必为开菜单去回读底稿。
         //   行首允许一个列表／引用符号（`- [[alert:…]]` 这种）；带 {gp} 的行已被上面剥掉标记、
         //   且 tlSplitMdBlocks 会把它们归到 gp 区块，走既有的整群搬移，两者不会重叠。
         const mkOne = (b.start === b.end && /^\s*(?:[-*>]\s+)?\[\[[^\]\n]+\]\]\s*$/.test(chunk)) ? ' data-mk="1"' : '';
-        out += '<div class="md-unit' + gpCls + '"' + (b.type === 'gp' && b.anim ? ' data-gp-anim="' + b.anim + '"' : '') + gpStyle + '><button type="button" class="md-unit-edit" title="' + tlEditUnitTip(b.type) + '"' +
+        out += '<div class="md-unit' + gpCls + '"' +
+          (b.type === 'gp' && b.anim ? ' data-gp-anim="' + b.anim + '"' : '') +
+          (b.type === 'gp' && b.railStyle ? ' data-gp-rail="' + b.railStyle + '"' : '') +
+          gpStyle + '>' + gpBadges + '<button type="button" class="md-unit-edit" title="' + tlEditUnitTip(b.type) + '"' +
           ' data-uid="' + uidAttr + '" data-start="' + b.start + '" data-end="' + b.end + '" data-type="' + b.type + '"' + mkOne +
           ' onclick="tlOpenEditBlockDialog(event,\'' + uidAttr + '\',' + b.start + ',' + b.end + ',\'' + b.type + '\')">\u270e</button>' +
           inner + '</div>';
@@ -2903,7 +3335,7 @@
         //    標記行在顯示副本裡已被剝成空行，行數不變 → ro 外框與 baseLine 全部照舊。
         if (fenceStart.has(i)) {
           const fe = fenceStart.get(i);
-          blocks.push({ start: i, end: fe.end, type: 'gp', fg: fe.fg || '', bg: fe.bg || '', anim: fe.anim || '', alert: fe.alert === true });
+          blocks.push({ start: i, end: fe.end, type: 'gp', fg: fe.fg || '', bg: fe.bg || '', anim: fe.anim || '', alert: fe.alert === true, termName: fe.termName || '', railStyle: fe.railStyle || '', railA: fe.railA || '', railB: fe.railB || '' });
           i = fe.end + 1; continue;
         }
         // 🆕 連續且「group 名相同」的 {gp} 行＝一個小事件（一顆編輯小圓點）；
@@ -2929,7 +3361,7 @@
           // 🆕 從行尾式 gp 第一行提取 fg/bg attrs（連續同名行之間 attrs 應一致；若不同，以第一行為準）
           const headAttrs = (typeof tlExtractGpAttrsFromLine === 'function')
             ? tlExtractGpAttrsFromLine(line) : { fg: '', bg: '' };
-          blocks.push({ start: i, end: j - 1, type: 'gp', fg: headAttrs.fg || '', bg: headAttrs.bg || '', anim: headAttrs.anim || '', alert: headAttrs.alert === true });
+          blocks.push({ start: i, end: j - 1, type: 'gp', fg: headAttrs.fg || '', bg: headAttrs.bg || '', anim: headAttrs.anim || '', alert: headAttrs.alert === true, railStyle: headAttrs.railStyle || '', railA: headAttrs.railA || '', railB: headAttrs.railB || '' });
           i = j; continue;
         }
         if (isHeading(line)) { blocks.push({ start: i, end: i, type: 'heading' }); i++; continue; }
@@ -3740,6 +4172,65 @@
     function tlGlossJumpToEvent(uid) {
       tlCloseGlossary();
       tlJumpToEventCore(uid);
+    }
+    // 🆕 2026-11-14：Glossary 跳转到 gp 围栏
+    //   · 便利贴路径（ev.sticky > 0）→ focus-sticky-note IPC + focusUnit → 便利贴 webview 内部滚动+闪烁（追加，不 return）
+    //   · 主窗口路径 → 事件卡居中 → 精定位 .md-unit-edit[data-start,data-end] → 闪烁（两者都执行）
+    async function tlGlossJumpToFence(uid, startLine, endLine) {
+      tlCloseGlossary();
+      // ① 便利贴路径：sticky>0 的事件 → 唤起便利贴 + 内部定位闪烁
+      const ev = (tlCalEvents || []).find((e) => e && e.uid === uid);
+      const stickyCount = parseInt(ev && ev.sticky, 10) || 0;
+      if (stickyCount > 0) {
+        try {
+          await window.electronAPI.invoke('focus-sticky-note', {
+            key: uid,
+            idx: 0,
+            focusUnit: { kind: 'block', start: startLine, end: endLine }
+          });
+        } catch (err) {
+          // 便利贴唤起失败不影响主窗口路径继续执行
+          console.warn('[Glossary] 便利贴唤起失败：', err && err.message);
+        }
+      }
+      // ② 主窗口路径（始终执行）：事件卡居中 + 金色描边闪 2s
+      const cardEl = document.querySelector('[data-uid="' + uid + '"]');
+      if (!cardEl || !cardEl.offsetParent) {
+        if (stickyCount > 0) { showToast('已切换到便利贴；主窗口当前视图未显示该事件', 'info'); }
+        else { showToast('当前视图未显示该事件，请切换到包含它的视图后再试', 'danger'); }
+        return;
+      }
+      cardEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      cardEl.classList.remove('tl-jump-flash');
+      void cardEl.offsetWidth;
+      cardEl.classList.add('tl-jump-flash');
+      setTimeout(() => cardEl.classList.remove('tl-jump-flash'), 2000);
+      // ③ 精定位围栏对应的 .md-unit-edit[data-start,data-end]
+      setTimeout(() => {
+        const exactBtn = cardEl.querySelector('.md-unit-edit[data-start="' + startLine + '"][data-end="' + endLine + '"]');
+        let targetUnit = null;
+        if (exactBtn) targetUnit = exactBtn.closest('.md-unit');
+        if (!targetUnit) {
+          const btns = cardEl.querySelectorAll('.md-unit-edit[data-start][data-end]');
+          for (let i = 0; i < btns.length; i++) {
+            const s = parseInt(btns[i].getAttribute('data-start'), 10);
+            const e = parseInt(btns[i].getAttribute('data-end'), 10);
+            if (s <= startLine && e >= endLine) { targetUnit = btns[i].closest('.md-unit'); break; }
+          }
+        }
+        if (targetUnit) {
+          targetUnit.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+          if (typeof tlBlinkFound === 'function') tlBlinkFound(targetUnit);
+          else {
+            targetUnit.classList.add('fs-found-blink');
+            setTimeout(() => targetUnit.classList.remove('fs-found-blink'), 4200);
+          }
+        }
+      }, 300);
+    }
+    // 暴露到 window（HTML onclick 用）
+    if (typeof window !== 'undefined') {
+      window.tlGlossJumpToFence = tlGlossJumpToFence;
     }
     // 跳转核心：定位主画面 [data-uid] 元素 → 平滑滚动居中 → .tl-jump-flash 金色描边闪 2s
     function tlJumpToEventCore(uid) {
@@ -5344,9 +5835,12 @@
       menu.addEventListener('click', event => event.stopPropagation());
       menu.querySelectorAll('button[data-toolbar-action]').forEach(button => {
         button.addEventListener('click', () => {
-          const control = controls.get(button.getAttribute('data-toolbar-action'));
+          const key = button.getAttribute('data-toolbar-action');
           closeMenu();
-          if (control) control.click();
+          const control = controls.get(key);
+          if (control) { control.click(); return; }
+          // alarms 没进 controls（不是 checkbox toggle 按钮），直接调函数
+          if (key === 'alarms' && typeof tlOpenAlarmPreview === 'function') tlOpenAlarmPreview();
         });
       });
       checkboxes.forEach(input => input.addEventListener('change', () => {
@@ -7301,4 +7795,13 @@
           tlStatsTipHide();
         });
       }
+      // 🆕 闹铃查询：定位按钮事件委托（表格行里的「定位」是动态生成的 data-*）
+      document.addEventListener('click', (e) => {
+        const jumpBtn = e.target.closest ? e.target.closest('[data-tl-alarm-jump]') : null;
+        if (jumpBtn) {
+          const tab = jumpBtn.getAttribute('data-tab') || 'pending';
+          const idx = parseInt(jumpBtn.getAttribute('data-idx'), 10);
+          if (!isNaN(idx)) tlJumpToAlarmItem(tab, idx);
+        }
+      });
     })();

@@ -806,10 +806,59 @@ body {
    由 inline style 注入（使用者在 {gpX|fg=紅,bg=淺藍} 標記裡寫的顏色）；
    未設定時 var 兜到底（color 繼承便利貼字色、bg 透明、border 用 currentColor）。 */
 .md-unit.is-gp {
+  position: relative;
   border: 1px solid var(--gp-border, currentColor);
   padding-top: .15em; padding-right: .4em; padding-bottom: .15em;
   color: var(--gp-fg, inherit);
   background: var(--gp-bg, transparent);
+}
+/* 🆕 2026-11-14：gp 围栏属性徽标 — 右上角边框线 */
+.md-unit.is-gp .gp-badges {
+  position: absolute; top: -6px; right: -6px;
+  display: flex; gap: 1px; z-index: 10;
+  pointer-events: auto;
+}
+.md-unit.is-gp .gp-badge {
+  width: 12px; height: 12px; border-radius: 6px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 8px; line-height: 1;
+  background: var(--gp-fg, currentColor);
+  color: var(--gp-bg, #fff);
+  box-shadow: 0 1px 2px rgba(0,0,0,0.4);
+  cursor: default;
+}
+/* TERM / ALERT 徽标样式统一 — 跟随 --gp-fg 字色 */
+/* 🆕 2026-11-14：gp 围栏轨道边框 — rail=斜栏|直栏|>形栏|圆弧栏#色A#色B
+   ✅ 新方案：不动原 border！用 ::after 伪元素叠加轨道 pattern。*/
+.md-unit.is-gp[data-gp-rail] {
+  position: relative;
+}
+.md-unit.is-gp[data-gp-rail]::after {
+  content: '';
+  position: absolute;
+  top: -4px; left: -4px; right: -4px; bottom: -4px;
+  border-radius: inherit;
+  pointer-events: none;
+  z-index: 1;
+  border: 4px solid transparent;
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  background-image: var(--gp-rail-pattern);
+  background-clip: border-box;
+  -webkit-background-clip: border-box;
+}
+.md-unit.is-gp[data-gp-rail="斜栏"]::after {
+  --gp-rail-pattern: repeating-linear-gradient(45deg, var(--gp-rail-a, #fff) 0 12px, var(--gp-rail-b, #000) 12px 24px);
+}
+.md-unit.is-gp[data-gp-rail="直栏"]::after {
+  --gp-rail-pattern: repeating-linear-gradient(90deg, var(--gp-rail-a, #fff) 0 10px, var(--gp-rail-b, #000) 10px 20px);
+}
+.md-unit.is-gp[data-gp-rail=">形栏"]::after {
+  --gp-rail-pattern: repeating-linear-gradient(-45deg, var(--gp-rail-a, #fff) 0 12px, var(--gp-rail-b, #000) 12px 24px);
+}
+.md-unit.is-gp[data-gp-rail="圆弧栏"]::after {
+  --gp-rail-pattern: repeating-radial-gradient(circle at center, var(--gp-rail-a, #fff) 0 6px, var(--gp-rail-b, #000) 6px 12px);
 }
 /* Retina/高 DPR：CSS 1px 在 2x 屏會畫成 2 個實體像素（看起來偏粗）。
    0.5px hairline＝1 個實體像素，才是真正最細；加 -webkit- 前綴相容 iOS Safari（PWA）。 */

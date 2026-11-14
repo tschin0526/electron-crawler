@@ -566,6 +566,7 @@
        由 inline style 注入（使用者在 {gpX|fg=紅,bg=淺藍} 標記裡寫的顏色）；
        未設定時 var 兜到底（color 繼承便利貼字色、bg 透明、border 用 currentColor）。 */
     #body .md-unit.is-gp {
+      position: relative;
       border: 1px solid var(--gp-border, currentColor);
       padding-top: .15em; padding-right: .4em; padding-bottom: .15em;
       color: var(--gp-fg, inherit);
@@ -575,10 +576,55 @@
       font-size: inherit;
       line-height: 1.5;
     }
-    /* Retina/高 DPR：CSS 1px 在 2x 屏会画成 2 个物理像素（看起来偏粗）。
-       0.5px hairline＝1 个物理像素；选择器必须带 #body，特异性才压得住上面的简写。 */
-    @media (min-resolution: 2dppx) {
-      #body .md-unit.is-gp { border-width: .5px; }
+    /* 🆕 2026-11-14：gp 围栏属性徽标 — 右上角边框线 */
+    #body .md-unit.is-gp .gp-badges {
+      position: absolute; top: -6px; right: -6px;
+      display: flex; gap: 1px; z-index: 10;
+      pointer-events: auto;
+    }
+    #body .md-unit.is-gp .gp-badge {
+      width: 12px; height: 12px; border-radius: 6px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 8px; line-height: 1;
+      background: var(--gp-fg, currentColor);
+      color: var(--gp-bg, #fff);
+      box-shadow: 0 1px 2px rgba(0,0,0,0.4);
+      cursor: default;
+    }
+    /* TERM / ALERT 徽标样式统一 — 跟随 --gp-fg 字色 */
+    /* 🆕 2026-11-14：gp 围栏轨道边框 — rail=斜栏|直栏|>形栏|圆弧栏#色A#色B
+       ✅ 新方案：不动原 border！用 ::after 伪元素叠加轨道 pattern。
+         原 border 保持原样 → 轨道渲染失败也不会丢边框！
+         ::after 绝对定位 + inset:-2px 向外扩展 → border 区域画轨道 */
+    #body .md-unit.is-gp[data-gp-rail] {
+      position: relative;
+    }
+    #body .md-unit.is-gp[data-gp-rail]::after {
+      content: '';
+      position: absolute;
+      top: -4px; left: -4px; right: -4px; bottom: -4px;
+      border-radius: inherit;
+      pointer-events: none;
+      z-index: 1;
+      border: 4px solid transparent;
+      -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+      -webkit-mask-composite: xor;
+      mask-composite: exclude;
+      background-image: var(--gp-rail-pattern);
+      background-clip: border-box;
+      -webkit-background-clip: border-box;
+    }
+    #body .md-unit.is-gp[data-gp-rail="斜栏"]::after {
+      --gp-rail-pattern: repeating-linear-gradient(45deg, var(--gp-rail-a, #fff) 0 12px, var(--gp-rail-b, #000) 12px 24px);
+    }
+    #body .md-unit.is-gp[data-gp-rail="直栏"]::after {
+      --gp-rail-pattern: repeating-linear-gradient(90deg, var(--gp-rail-a, #fff) 0 10px, var(--gp-rail-b, #000) 10px 20px);
+    }
+    #body .md-unit.is-gp[data-gp-rail=">形栏"]::after {
+      --gp-rail-pattern: repeating-linear-gradient(-45deg, var(--gp-rail-a, #fff) 0 12px, var(--gp-rail-b, #000) 12px 24px);
+    }
+    #body .md-unit.is-gp[data-gp-rail="圆弧栏"]::after {
+      --gp-rail-pattern: repeating-radial-gradient(circle at center, var(--gp-rail-a, #fff) 0 6px, var(--gp-rail-b, #000) 6px 12px);
     }
     /* 🆕 小事件群內 checkbox 跟著群色走（若只設 bg 沒設 fg，checkbox 仍用便利貼預設色） */
     #body .md-unit.is-gp .ev-cb {
@@ -1468,6 +1514,25 @@
             <option value="signal">信号灯</option>
             <option value="glitch">故障像素</option>
           </select>
+        </div>
+        <!-- 🆕 2026-11-14：轨道边框（rail=斜栏|直栏|>形栏|圆弧栏#色A#色B） -->
+        <div class="gc-row">
+          <label class="gc-label" for="gcRailStyle">轨道边框</label>
+          <select id="gcRailStyle" aria-label="轨道边框形式">
+            <option value="">不设定（关闭轨道）</option>
+            <option value="斜栏">斜栏（45° 斜线）</option>
+            <option value="直栏">直栏（竖线）</option>
+            <option value=">形栏">&gt;形栏（反斜线）</option>
+            <option value="圆弧栏">圆弧栏（同心辐射）</option>
+          </select>
+        </div>
+        <div class="gc-row">
+          <label class="gc-label" for="gcRailA">轨道 A 色</label>
+          <select id="gcRailA" aria-label="轨道主色"></select>
+        </div>
+        <div class="gc-row">
+          <label class="gc-label" for="gcRailB">轨道 B 色</label>
+          <select id="gcRailB" aria-label="轨道副色"></select>
         </div>
         <div class="gc-preview is-gp" id="gcPreview">小事件群外框预览 · 文字与 CheckBox 颜色</div>
         <div class="ac-hint gc-mark" id="gcMarkPreview">将写入：—</div>

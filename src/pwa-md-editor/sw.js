@@ -518,7 +518,11 @@
 // v226（2026-11-13）：alert 支持 anniversary YYYY-MM-DD HHmm 年度循环，徽标显示每年日期时间；
 //       calendar-editor.js 与 index.html 资源戳更新，升级缓存确保 PWA 载入新版解析器。
 // v227（2026-11-13）：alert 支持 w1,w3,w5 这类自选星期循环规则。
-const CACHE_NAME = 'md-editor-lite-v227';
+// v228（2026-11-14）：唯讀（include / ro）行程的围栏小事件群补挂 data-gp-rail，
+//       让轨道外框（[data-gp-rail]::after mask trick）在日程事件视图与便利贴一致显示；
+//       桌面 tlRenderNotes / LITE calRenderNotes 同口径。四主 ?v 戳＋sticky-notes.js 独立戳
+//       刷为 lite-gprorail-20261114；APP_VERSION/manifest 1.10.41→1.10.42。
+const CACHE_NAME = 'md-editor-lite-v228';
 const ASSETS = [
   './',
   './index.html',

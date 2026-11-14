@@ -1298,24 +1298,77 @@ function calResolveColorName(input) {
   if (/^(rgb|rgba|hsl|hsla)\s*\(/i.test(s)) return s;
   return s;
 }
+// 🆕 2026-11-14 升级为多 pipe 版本（与 desktop-note.js noteExtractGpAttrs 对齐）
+// 格式：{gpX|attrs段|term段}
+//   attrs 段用 , 分隔 fg=红,bg=黄,anim=pulse
+//   term 段用 | 分隔 alert|TERM=便利贴
 function calParseGpAttrs(raw) {
   const s = String(raw == null ? '' : raw).trim();
-  if (!s) return { key: '', fg: '', bg: '', anim: '' };
-  const pipe = s.indexOf('|');
-  const key = (pipe < 0 ? s : s.slice(0, pipe)).trim();
-  let fg = '', bg = '', anim = '';
-  if (pipe >= 0) {
-    s.slice(pipe + 1).split(',').forEach((pair) => {
-      const eq = pair.indexOf('=');
-      if (eq < 0) return;
-      const k = pair.slice(0, eq).trim().toLowerCase();
-      const v = pair.slice(eq + 1).trim();
-      if (k === 'fg') fg = calResolveColorName(v);
-      else if (k === 'bg') bg = calResolveColorName(v);
-      else if (k === 'anim' && /^(pulse|scan|data|aurora|orbit|arc|holo|signal|glitch)$/.test(v)) anim = v;
+  if (!s) return { key: '', fg: '', bg: '', anim: '', alert: false, extra: [], term: '', termName: '', railStyle: '', railA: '', railB: '' };
+  const pipe1 = s.indexOf('|');
+  if (pipe1 < 0) return { key: s, fg: '', bg: '', anim: '', alert: false, extra: [], term: '', termName: '', railStyle: '', railA: '', railB: '' };
+  const key = s.slice(0, pipe1).trim();
+  const rest = s.slice(pipe1 + 1);
+  const pipe2 = rest.indexOf('|');
+  const attrsPart = pipe2 >= 0 ? rest.slice(0, pipe2) : rest;
+  const termPart = pipe2 >= 0 ? rest.slice(pipe2 + 1) : '';
+  // 解析 attrs 段
+  const extra = [];
+  let fg = '', bg = '', anim = '', alert = false, termName = '', railStyle = '', railA = '', railB = '';
+  attrsPart.split(',').forEach((pair) => {
+    const p = pair.trim();
+    if (!p) return;
+    const eq = p.indexOf('=');
+    if (eq < 0) { extra.push(p); return; }
+    const k = p.slice(0, eq).trim().toLowerCase();
+    const v = p.slice(eq + 1).trim();
+    if (k === 'fg') fg = calResolveColorName(v);
+    else if (k === 'bg') bg = calResolveColorName(v);
+    else if (k === 'anim' && /^(pulse|scan|data|aurora|orbit|arc|holo|signal|glitch)$/.test(v)) anim = v;
+    else if (k === 'rail') {
+      const rp = v.split('#');
+      if (rp.length >= 3 && ['斜栏', '直栏', '>形栏', '圆弧栏'].indexOf(rp[0].trim()) >= 0) {
+        railStyle = rp[0].trim();
+        railA = calResolveColorName(rp[1].trim());
+        railB = calResolveColorName(rp[2].trim());
+      }
+    }
+    else extra.push(p);
+  });
+  // 兜底：attrs 段里可能有 TERM=xxx（没有第二个 pipe 的情况），移到 termName
+  const termInAttrs = extra.find((x) => /^TERM\s*=/i.test(x));
+  if (termInAttrs) {
+    termName = termInAttrs.replace(/^TERM\s*=\s*/i, '').trim();
+    const idx = extra.indexOf(termInAttrs);
+    if (idx >= 0) extra.splice(idx, 1);
+  }
+  // 解析 term 段（支持逗号混写：TERM=xxx,rail=斜栏#白#黑）
+  if (termPart) {
+    termPart.split('|').forEach((seg) => {
+      seg.split(',').forEach((item) => {
+        const segTrim = item.trim();
+        if (!segTrim) return;
+        const eq = segTrim.indexOf('=');
+        if (eq < 0) {
+          if (/^(dl|cp|cr|alert|remind|bookmark)$/i.test(segTrim)) alert = true;
+          return;
+        }
+        const k = segTrim.slice(0, eq).trim().toUpperCase();
+        const v = segTrim.slice(eq + 1).trim();
+        if (k === 'TERM' && v) termName = v;
+        else if (k === 'ALERT') alert = v.toLowerCase() === 'true';
+        else if (k === 'RAIL') {
+          const rp = v.split('#');
+          if (rp.length >= 3 && ['斜栏', '直栏', '>形栏', '圆弧栏'].indexOf(rp[0].trim()) >= 0) {
+            railStyle = rp[0].trim();
+            railA = calResolveColorName(rp[1].trim());
+            railB = calResolveColorName(rp[2].trim());
+          }
+        }
+      });
     });
   }
-  return { key: key, fg: fg, bg: bg, anim: anim };
+  return { key: key, fg: fg, bg: bg, anim: anim, alert: alert, extra: extra, term: termPart, termName: termName, railStyle: railStyle, railA: railA, railB: railB };
 }
 function calExtractGpAttrsFromLine(line) {
   const s = String(line == null ? '' : line);
@@ -1323,7 +1376,7 @@ function calExtractGpAttrsFromLine(line) {
   if (m) return calParseGpAttrs(m[1]);
   m = s.match(/\{[ \t]*(?:group|gp)[ \t]*:?[ \t]*([^{}]*)\}(?=[ \t]*(?:\[\[[^\]]*\]\][ \t]*)*$)/i);
   if (m) return calParseGpAttrs(m[1]);
-  return { key: '', fg: '', bg: '', anim: '' };
+  return { key: '', fg: '', bg: '', anim: '', alert: false, extra: [], term: '', termName: '' };
 }
 //   ⚠️ 位置：標記必須在行尾、或行尾 [[...]] 標記序列之前才算結構標記；行中的 {gp} 是普通文字，原樣顯示也不分組。
 //   {gp1}＝{gp:1} → '1'。前綴 group 優先於 gp；組名仍區分大小寫；三式正則與桌面／便利貼窗／VIEW 引擎同口徑。
@@ -1361,13 +1414,13 @@ function calGpFenceScan(lines) {
     if (!f) continue;
     if (f.kind === 'open') {
       if (!open) {
-        const a = (typeof calExtractGpAttrsFromLine === 'function') ? calExtractGpAttrsFromLine(line) : { fg: '', bg: '' };
-        open = { i: i, key: f.key, fg: a.fg || '', bg: a.bg || '', anim: a.anim || '' };
+        const a = (typeof calExtractGpAttrsFromLine === 'function') ? calExtractGpAttrsFromLine(line) : { fg: '', bg: '', alert: false, extra: [] };
+        open = { i: i, key: f.key, fg: a.fg || '', bg: a.bg || '', anim: a.anim || '', alert: a.alert === true, extra: a.extra || [], term: a.term || '', termName: a.termName || '', railStyle: a.railStyle || '', railA: a.railA || '', railB: a.railB || '' };
       }
       continue;
     }
     if (open && open.key === f.key) {
-      ranges.push({ start: open.i, end: i, key: f.key, fg: open.fg, bg: open.bg, anim: open.anim });
+      ranges.push({ start: open.i, end: i, key: f.key, fg: open.fg, bg: open.bg, anim: open.anim, alert: open.alert, extra: open.extra || [], term: open.term || '', termName: open.termName || '', railStyle: open.railStyle || '', railA: open.railA || '', railB: open.railB || '' });
       markers.push(open.i, i);
       open = null;
     }
@@ -1382,7 +1435,25 @@ function calGpInlineStyle(b) {
     parts.push('--gp-bg:' + b.bg);
     if (b.fg) parts.push('--gp-border:' + b.fg);
   }
+  // 🆕 rail 轨道
+  if (b.railStyle) {
+    parts.push('--gp-rail-style:' + b.railStyle);
+    if (b.railA) parts.push('--gp-rail-a:' + b.railA);
+    if (b.railB) parts.push('--gp-rail-b:' + b.railB);
+  }
   return parts.length ? ' style="' + parts.join(';') + '"' : '';
+}
+// 🆕 2026-11-14：gp 围栏属性徽标 HTML — TERM（📌 金色）+ ALERT（🔔 红色）
+function calGpBadgesHtml(b) {
+  const badges = [];
+  if (b && b.termName) {
+    badges.push('<span class="gp-badge gp-badge-term" title="TERM=' + escapeHtml(b.termName) + '">\u{1F4CC}</span>');
+  }
+  if (b && b.alert) {
+    badges.push('<span class="gp-badge gp-badge-alert" title="ALERT 闹铃">\u{1F514}</span>');
+  }
+  if (!badges.length) return '';
+  return '<span class="gp-badges">' + badges.join('') + '</span>';
 }
 function calGpFenceWrap(text) {
   const lines = String(text == null ? '' : text).replace(/\r\n/g, '\n').split('\n');
@@ -1393,7 +1464,7 @@ function calGpFenceWrap(text) {
   const scan = calGpFenceScan(lines);
   const hit = scan.ranges.find((r) => r.start === s && r.end === e);
   // 🆕 2026-11-09：把 hit.fg / hit.bg 也帶出來，供 calWrapGpFence 重寫時保留 attrs
-  return hit ? { lines: lines, start: s, end: e, key: hit.key, fg: hit.fg || '', bg: hit.bg || '', anim: hit.anim || '', scan: scan } : null;
+  return hit ? { lines: lines, start: s, end: e, key: hit.key, fg: hit.fg || '', bg: hit.bg || '', anim: hit.anim || '', alert: hit.alert === true, extra: hit.extra || [], term: hit.term || '', termName: hit.termName || '', railStyle: hit.railStyle || '', railA: hit.railA || '', railB: hit.railB || '', scan: scan } : null;
 }
 // ── 🆕 2026-11-08：勾選「group 啟用」按保存時一律改寫成「塊級」{gpX}…{/gpX}，不再逐行補行尾標記 ──
 //  · 已是塊級群且沒給新標記 → 原樣保留；給了 mark → 整段改名（兩行一起改）。
@@ -1404,8 +1475,8 @@ function calWrapGpFence(text, mark) {
   const wrap = (typeof calGpFenceWrap === 'function') ? calGpFenceWrap(text) : null;
   if (wrap) {
     if (!mark) return lines.join('\n');
-    // 🆕 給了新 mark → 組裝新 open 行：key 用新 mark，attrs 沿用原文
-    const newOpen = calBuildGpOpenLine(mark, wrap.fg, wrap.bg, wrap.anim);
+    // 🆕 給了新 mark → 組裝新 open 行：key 用新 mark，attrs 沿用原文（包括 alert 等）
+    const newOpen = calBuildGpOpenLine(mark, wrap.fg, wrap.bg, wrap.anim, wrap.extra || [], wrap.alert === true, wrap.railStyle || '', wrap.railA || '', wrap.railB || '');
     const out = lines.slice();
     out[wrap.start] = newOpen;
     out[wrap.end] = calBuildGpCloseLine(wrap.key);  // 🆕 close 只寫 key，不帶 attrs！
@@ -1417,11 +1488,11 @@ function calWrapGpFence(text, mark) {
     const m = line.match(/(\{[ \t]*(?:group|gp)[ \t]*:?[ \t]*[^{}]*\})(?=[ \t]*(?:\[\[[^\]]*\]\][ \t]*)*$)/i);
     if (m) { open = m[1]; break; }
   }
-  // 🆕 用 mark（只有 key）組裝：attrs 沿用原文
+  // 🆕 用 mark（只有 key）組裝：attrs 沿用原文（包括 alert 等非 fg/bg/anim 屬性）
   if (mark) {
     const origAttrs = (typeof calExtractGpAttrsFromLine === 'function')
-      ? calExtractGpAttrsFromLine(open || '') : { fg: '', bg: '', anim: '' };
-    open = calBuildGpOpenLine(mark, origAttrs.fg, origAttrs.bg, origAttrs.anim);
+      ? calExtractGpAttrsFromLine(open || '') : { fg: '', bg: '', anim: '', alert: false, extra: [], railStyle: '', railA: '', railB: '' };
+    open = calBuildGpOpenLine(mark, origAttrs.fg, origAttrs.bg, origAttrs.anim, origAttrs.extra || [], origAttrs.alert === true, origAttrs.railStyle || '', origAttrs.railA || '', origAttrs.railB || '');
   }
   open = open || '{gp}';
   const close = calBuildGpCloseLine(calKeyFromGpMarker(open));  // 🆕 close 只寫 key，不帶 attrs！
@@ -1433,7 +1504,8 @@ function calWrapGpFence(text, mark) {
   return [open].concat(body, [close]).join('\n');
 }
 // 🆕 2026-11-09：用 key + attrs 組裝 open 行（與桌面 tlBuildGpOpenLine 同口径）
-function calBuildGpOpenLine(keyName, fg, bg, anim) {
+// 🆕 2026-11-13：加 extra 保留 alert 等非 fg/bg/anim 屬性
+function calBuildGpOpenLine(keyName, fg, bg, anim, extra, alert, railStyle, railA, railB) {
   let s = String(keyName == null ? '' : keyName).trim();
   if (!s.startsWith('{')) s = '{' + s;
   if (!s.endsWith('}')) s = s + '}';
@@ -1442,6 +1514,9 @@ function calBuildGpOpenLine(keyName, fg, bg, anim) {
   if (fg) parts.push('fg=' + fg);
   if (bg) parts.push('bg=' + bg);
   if (anim) parts.push('anim=' + anim);
+  if (Array.isArray(extra)) extra.forEach((x) => { if (x) parts.push(x); });  // 🆕 保留 alert 等
+  if (alert) parts.push('alert');
+  if (railStyle && railA && railB) parts.push('rail=' + railStyle + '#' + railA + '#' + railB);
   if (!parts.length) return s;
   return s.replace(/\}$/, '|' + parts.join(',') + '}');
 }
@@ -1588,7 +1663,10 @@ function calRenderNotes(notes, uid, forceEditable) {
     let out = '', cursor = 0;
     gpBlocks.forEach((b) => {
       if (cursor < b.start) out += renderChunk(dLines.slice(cursor, b.start).join('\n'));
-      out += '<div class="md-unit is-gp"' + (b.anim ? ' data-gp-anim="' + b.anim + '"' : '') + calGpInlineStyle(b) + '>' +
+      // 🆕 2026-11-14：與桌面 tlRenderNotes 唯讀分支、以及下方 canEdit 分支同口徑補齊 data-gp-rail，
+      //    否則唯讀行程的 gp 群只有 fg/bg 底色、沒有軌道外框（CSS 靠 [data-gp-rail]::after 畫軌道）。
+      out += '<div class="md-unit is-gp"' + (b.anim ? ' data-gp-anim="' + b.anim + '"' : '') +
+        (b.railStyle ? ' data-gp-rail="' + b.railStyle + '"' : '') + calGpInlineStyle(b) + '>' +
         renderChunk(dLines.slice(b.start, b.end + 1).join('\n')) + '</div>';
       cursor = b.end + 1;
     });
@@ -1617,7 +1695,11 @@ function calRenderNotes(notes, uid, forceEditable) {
     //    🆕 2026-11-09：gp 區塊若有 fg/bg attrs，追加 inline style 覆蓋便利貼預設色
     const gpCls = b.type === 'gp' ? ' is-gp' : '';
     const gpStyle = b.type === 'gp' ? calGpInlineStyle(b) : '';
-    out += '<div class="md-unit' + gpCls + '"' + (b.type === 'gp' && b.anim ? ' data-gp-anim="' + b.anim + '"' : '') + gpStyle + '><button type="button" class="md-unit-edit" title="編輯' +
+    const gpBadges = (b.type === 'gp') ? calGpBadgesHtml(b) : '';
+    out += '<div class="md-unit' + gpCls + '"' +
+      (b.type === 'gp' && b.anim ? ' data-gp-anim="' + b.anim + '"' : '') +
+      (b.type === 'gp' && b.railStyle ? ' data-gp-rail="' + b.railStyle + '"' : '') +
+      gpStyle + '>' + gpBadges + '<button type="button" class="md-unit-edit" title="編輯' +
       calMdUnitTypeName(b.type) + '" onclick="calOpenEditBlockDialog(event,\'' + escapeHtml(uid) +
       '\',' + b.start + ',' + b.end + ',\'' + b.type + '\')">✎</button>' +
       renderMarkdown(calRenderTermDefs(prepared)) + '</div>';
@@ -1667,7 +1749,7 @@ function calSplitMdBlocks(text) {
     // 🆕 塊級小事件群：優先於 isGp / task / list / table 等所有分支，整段（含兩行標記）原子化。
     if (fenceStart.has(i)) {
       const fe = fenceStart.get(i);
-      blocks.push({ start: i, end: fe.end, type: 'gp', fg: fe.fg || '', bg: fe.bg || '' });
+      blocks.push({ start: i, end: fe.end, type: 'gp', fg: fe.fg || '', bg: fe.bg || '', alert: fe.alert === true, termName: fe.termName || '', railStyle: fe.railStyle || '', railA: fe.railA || '', railB: fe.railB || '' });
       i = fe.end + 1; continue;
     }
     // 🆕 連續且「group 名相同」的 {gp} 行＝一個小事件（一顆編輯小圓點），覆蓋 task/list/para 等型態
@@ -1691,7 +1773,7 @@ function calSplitMdBlocks(text) {
       // 🆕 從行尾式 gp 第一行提取 fg/bg attrs（連續同名行之間 attrs 應一致；若不同，以第一行為準）
       const headAttrs = (typeof calExtractGpAttrsFromLine === 'function')
         ? calExtractGpAttrsFromLine(line) : { fg: '', bg: '' };
-      blocks.push({ start: i, end: j - 1, type: 'gp', fg: headAttrs.fg || '', bg: headAttrs.bg || '' });
+      blocks.push({ start: i, end: j - 1, type: 'gp', fg: headAttrs.fg || '', bg: headAttrs.bg || '', alert: headAttrs.alert === true, termName: headAttrs.termName || '', railStyle: headAttrs.railStyle || '', railA: headAttrs.railA || '', railB: headAttrs.railB || '' });
       i = j; continue;
     }
     if (isHeading(line)) { blocks.push({ start: i, end: i, type: 'heading' }); i++; continue; }

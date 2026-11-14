@@ -1948,14 +1948,13 @@ function noteGpFenceScan(lines) {
     if (!f) continue;
     if (f.kind === 'open') {
       if (!open) {
-        // 🆕 2026-11-09：从 open 行提取 fg/bg attrs
         const a = noteExtractGpAttrs(line);
-        open = { i: i, key: f.key, fg: a.fg || '', bg: a.bg || '', anim: a.anim || '' };
+        open = { i: i, key: f.key, fg: a.fg || '', bg: a.bg || '', anim: a.anim || '', alert: a.alert === true, extra: a.extra || [], term: a.term || '', termName: a.termName || '', railStyle: a.railStyle || '', railA: a.railA || '', railB: a.railB || '' };
       }
       continue;
     }
     if (open && open.key === f.key) {
-      ranges.push({ start: open.i, end: i, key: f.key, fg: open.fg, bg: open.bg, anim: open.anim });
+      ranges.push({ start: open.i, end: i, key: f.key, fg: open.fg, bg: open.bg, anim: open.anim, alert: open.alert, extra: open.extra || [], term: open.term || '', termName: open.termName || '', railStyle: open.railStyle || '', railA: open.railA || '', railB: open.railB || '' });
       markers.push(open.i, i);
       open = null;
     }
@@ -1971,7 +1970,7 @@ function noteGpFenceWrap(text) {
   const scan = noteGpFenceScan(lines);
   const hit = scan.ranges.find((r) => r.start === s && r.end === e);
   // 🆕 2026-11-09：把 hit.fg / hit.bg 也带出来
-  return hit ? { lines: lines, start: s, end: e, key: hit.key, fg: hit.fg || '', bg: hit.bg || '', anim: hit.anim || '', scan: scan } : null;
+  return hit ? { lines: lines, start: s, end: e, key: hit.key, fg: hit.fg || '', bg: hit.bg || '', anim: hit.anim || '', alert: hit.alert === true, extra: hit.extra || [], term: hit.term || '', termName: hit.termName || '', railStyle: hit.railStyle || '', railA: hit.railA || '', railB: hit.railB || '', scan: scan } : null;
 }
 // ── 🆕 2026-11-08：勾选「group 启用」按保存时一律写成块级 {gpX}…{/gpX}，不再逐行补行尾标记 ──
 //  · 已是块级群且没给新标记 → 原样保留；给了 mark（群标记输入框）→ 整段改名（两行一起改）。
@@ -1989,8 +1988,8 @@ function noteWrapGpFence(text, mark) {
     //    （noteGroupMarkValue 输入框空时返回 '{gp}'，但 noteShowGroupMark 会预填建议值，
     //     此保护是防止用户手动删掉建议值后触发误改名）
     if (mark === '{gp}' && wrap.key) return lines.join('\n');
-    // 🆕 给了新 mark → attrs 沿用原文，close 用新 mark 的 key
-    const newOpen = noteBuildGpOpenLine(mark, wrap.fg, wrap.bg, wrap.anim);
+    // 🆕 给了新 mark → attrs 沿用原文，term 段完整保留（alert|remind|bookmark）
+    const newOpen = noteBuildGpOpenLine(mark, wrap.fg, wrap.bg, wrap.anim, wrap.extra || [], wrap.term || '', wrap.railStyle || '', wrap.railA || '', wrap.railB || '');
     const out = lines.slice();
     out[wrap.start] = newOpen;
     out[wrap.end] = noteBuildGpCloseLine(noteKeyFromGpMarker(mark));  // close 用新 mark 的 key！
@@ -2002,10 +2001,10 @@ function noteWrapGpFence(text, mark) {
     const m = line.match(/(\{[ \t]*(?:group|gp)[ \t]*:?[ \t]*[^{}]*\})(?=[ \t]*(?:\[\[[^\]]*\]\][ \t]*)*$)/i);
     if (m) { open = m[1]; break; }
   }
-  // 🆕 若 mark 存在但无 attrs → 沿用原文 attrs
+  // 🆕 若 mark 存在但无 attrs → 沿用原文 attrs + term 段（alert|remind|bookmark）
   if (mark) {
     const origAttrs = noteExtractGpAttrs(open || '');
-    open = noteBuildGpOpenLine(mark, origAttrs.fg, origAttrs.bg, origAttrs.anim);
+    open = noteBuildGpOpenLine(mark, origAttrs.fg, origAttrs.bg, origAttrs.anim, origAttrs.extra, origAttrs.term, origAttrs.railStyle, origAttrs.railA, origAttrs.railB);
   }
   open = open || '{gp}';
   const close = noteBuildGpCloseLine(noteKeyFromGpMarker(open));  // 🆕 close 只写 key
@@ -2019,25 +2018,81 @@ function noteWrapGpFence(text, mark) {
 }
 
 // 🆕 2026-11-09：提取 attrs / 组装 open / close 行（与桌面 tl / LITE cal 同口径）
+// 🆕 2026-11-13 重大修复：gp open 行支持多 pipe 格式
+//   {gpX|attrs段|term段}
+//   attrs 段用 , 分隔 fg=红,bg=黄,anim=pulse
+//   term 段用 | 分隔 alert|TERM=便利贴|remind
+// 🆕 2026-11-14：增加 TERM=xxx 解析 → termName 字段
 function noteExtractGpAttrs(line) {
   const s = String(line == null ? '' : line);
   let m = s.trim().match(/^\{[ \t]*(?:group|gp)[ \t]*:?[ \t]*([^{}]*)\}[ \t]*$/i);
   if (!m) m = s.match(/\{[ \t]*(?:group|gp)[ \t]*:?[ \t]*([^{}]*)\}(?=[ \t]*(?:\[\[[^\]]*\]\][ \t]*)*$)/i);
-  if (!m) return { fg: '', bg: '', anim: '' };
+  if (!m) return { key: '', fg: '', bg: '', anim: '', alert: false, extra: [], term: '', termName: '' };
   const inner = String(m[1] || '').trim();
-  const pipe = inner.indexOf('|');
-  if (pipe < 0) return { key: inner, fg: '', bg: '', anim: '' };
-  const parts = [];
-  inner.slice(pipe + 1).split(',').forEach((pair) => {
-    const eq = pair.indexOf('=');
-    if (eq < 0) return;
-    const k = pair.slice(0, eq).trim().toLowerCase();
-    const v = pair.slice(eq + 1).trim();
-    if (k === 'fg') parts.fg = v;
-    else if (k === 'bg') parts.bg = v;
-    else if (k === 'anim' && /^(pulse|scan|data|aurora|orbit|arc|holo|signal|glitch)$/.test(v)) parts.anim = v;
+  const pipe1 = inner.indexOf('|');
+  if (pipe1 < 0) return { key: inner, fg: '', bg: '', anim: '', alert: false, extra: [], term: '', termName: '' };
+  const key = inner.slice(0, pipe1).trim();
+  const rest = inner.slice(pipe1 + 1);
+  const pipe2 = rest.indexOf('|');
+  const attrsPart = pipe2 >= 0 ? rest.slice(0, pipe2) : rest;
+  const termPart = pipe2 >= 0 ? rest.slice(pipe2 + 1) : '';
+  // 解析 attrs 段
+  const extra = [];
+  let fg = '', bg = '', anim = '', termName = '', railStyle = '', railA = '', railB = '';
+  attrsPart.split(',').forEach((pair) => {
+    const p = pair.trim();
+    if (!p) return;
+    const eq = p.indexOf('=');
+    if (eq < 0) { extra.push(p); return; }
+    const k = p.slice(0, eq).trim().toLowerCase();
+    const v = p.slice(eq + 1).trim();
+    if (k === 'fg') fg = v;
+    else if (k === 'bg') bg = v;
+    else if (k === 'anim' && /^(pulse|scan|data|aurora|orbit|arc|holo|signal|glitch)$/.test(v)) anim = v;
+    else if (k === 'rail') {
+      const parts = v.split('#');
+      if (parts.length >= 3 && ['斜栏', '直栏', '>形栏', '圆弧栏'].indexOf(parts[0].trim()) >= 0) {
+        railStyle = parts[0].trim(); railA = parts[1].trim(); railB = parts[2].trim();
+      }
+    }
+    else extra.push(p);
   });
-  return { fg: parts.fg || '', bg: parts.bg || '', anim: parts.anim || '' };
+  // 兜底：attrs 段里可能有 TERM=xxx（没有第二个 pipe 的情况），移到 termName
+  const termInAttrs = extra.find((x) => /^TERM\s*=/i.test(x));
+  if (termInAttrs) {
+    termName = termInAttrs.replace(/^TERM\s*=\s*/i, '').trim();
+    const idx = extra.indexOf(termInAttrs);
+    if (idx >= 0) extra.splice(idx, 1);
+  }
+  // 解析 term 段（用 | 分隔，如 alert|TERM=便利贴|remind）
+  let alert = false;
+  if (termPart) {
+    // 支持逗号混写：TERM=xxx,rail=斜栏#白#黑
+    termPart.split('|').forEach((seg) => {
+      seg.split(',').forEach((item) => {
+        const segTrim = item.trim();
+        if (!segTrim) return;
+        const eq = segTrim.indexOf('=');
+        if (eq < 0) {
+          if (/^(dl|cp|cr|alert|remind|bookmark)$/i.test(segTrim)) alert = true;
+          return;
+        }
+        const k = segTrim.slice(0, eq).trim().toUpperCase();
+        const v = segTrim.slice(eq + 1).trim();
+        if (k === 'TERM' && v) termName = v;
+        else if (k === 'ALERT') alert = v.toLowerCase() === 'true';
+        else if (k === 'RAIL') {
+          const rp = v.split('#');
+          if (rp.length >= 3 && ['斜栏', '直栏', '>形栏', '圆弧栏'].indexOf(rp[0].trim()) >= 0) {
+            railStyle = rp[0].trim();
+            railA = rp[1].trim();
+            railB = rp[2].trim();
+          }
+        }
+      });
+    });
+  }
+  return { key: key, fg: fg, bg: bg, anim: anim, alert: alert, extra: extra, term: termPart, termName: termName, railStyle: railStyle, railA: railA, railB: railB };
 }
 function noteKeyFromGpMarker(marker) {
   const s = String(marker == null ? '' : marker).trim();
@@ -2064,17 +2119,35 @@ function noteBuildGpCloseLine(markerOrKey) {
   // 纯 key → 默认 gp 前缀：E → {/gpE}
   return '{/gp' + s + '}';
 }
-function noteBuildGpOpenLine(keyName, fg, bg, anim) {
+// 🆕 2026-11-13 重大修复：支持多 pipe 重建（attrs 段 + term 段）
+//   输入：keyName（可以带/不带旧 attrs，函数先剥干净）+ fg, bg, anim, extra, term
+//   输出：{gpX|fg=红,bg=黄,anim=pulse|alert|remind}
+function noteBuildGpOpenLine(keyName, fg, bg, anim, extra, term, railStyle, railA, railB) {
   let s = String(keyName == null ? '' : keyName).trim();
-  if (!s.startsWith('{')) s = '{' + s;
-  if (!s.endsWith('}')) s = s + '}';
-  if (s.indexOf('|') >= 0) return s;
-  const parts = [];
-  if (fg) parts.push('fg=' + fg);
-  if (bg) parts.push('bg=' + bg);
-  if (anim) parts.push('anim=' + anim);
-  if (!parts.length) return s;
-  return s.replace(/\}$/, '|' + parts.join(',') + '}');
+  if (!s) s = '{gp}';
+  // 🆕 先剥干净旧 attrs 段和 term 段，只留纯净 key
+  // 匹配 {gpX} 或 {gpX|...anything...}，取第一个 pipe 之前的 key
+  let keyOnly = s;
+  const m = s.match(/^(\{[ \t]*(?:group|gp)[ \t]*:?[ \t]*[^{}|]*\})/);
+  if (m) keyOnly = m[1];
+  // 再验证：不能再有 pipe
+  keyOnly = keyOnly.replace(/\|.*/, '').trim();
+  if (!keyOnly.endsWith('}')) keyOnly = keyOnly + '}';
+  // 组装 attrs 段
+  const attrsParts = [];
+  if (fg) attrsParts.push('fg=' + fg);
+  if (bg) attrsParts.push('bg=' + bg);
+  if (anim) attrsParts.push('anim=' + anim);
+  if (railStyle && railA && railB) attrsParts.push('rail=' + railStyle + '#' + railA + '#' + railB);
+  if (Array.isArray(extra)) extra.forEach((x) => { if (x) attrsParts.push(x); });
+  // 组装 term 段（保持原样）
+  const termStr = String(term || '').trim();
+  // 拼接
+  let result = keyOnly.slice(0, -1); // 去掉最后的 }
+  if (attrsParts.length) result += '|' + attrsParts.join(',');
+  if (termStr) result += '|' + termStr;
+  result += '}';
+  return result;
 }
 // 🆕 2026-11-07：group 启用时自动给出一个「全篇不重复」的 {gp} 标记，避免与便利贴中前后小事件群合并。
 //   · 扫描「当前便利贴」（KEY 对应的整篇 notes）里所有用过的 {gp:名称}，生成一个未占用的名称（A/B/C…）。
@@ -2186,14 +2259,14 @@ function noteApplyGroupMarkers(text, on, forceMark) {
       fenceScan.ranges.forEach((r) => { out[r.start] = ''; out[r.end] = ''; });
       return out.join('\n');
     }
-    // 🆕 2026-11-09：attrs 沿用原文，close 只写 key
+    // 🆕 attrs + term 段沿用原文（alert|remind|bookmark）
     const firstRange = fenceScan.ranges[0];
     const markKey = forceMark ? noteNormalizeGpInput(forceMark) : noteCanonicalGp(firstRange.key);
-    const openMark = noteBuildGpOpenLine(markKey, firstRange.fg, firstRange.bg, firstRange.anim);
+    const openMark = noteBuildGpOpenLine(markKey, firstRange.fg, firstRange.bg, firstRange.anim, firstRange.extra || [], firstRange.term || '', firstRange.railStyle || '', firstRange.railA || '', firstRange.railB || '');
     const closeMark = noteBuildGpCloseLine(firstRange.key);  // close 只写 key，不带 attrs！
     const out = lines.slice();
     fenceScan.ranges.forEach((r) => {
-      out[r.start] = noteBuildGpOpenLine(markKey, r.fg, r.bg, r.anim);
+      out[r.start] = noteBuildGpOpenLine(markKey, r.fg, r.bg, r.anim, r.extra || [], r.term || '', r.railStyle || '', r.railA || '', r.railB || '');
       out[r.end] = noteBuildGpCloseLine(r.key);
     });
     return out.join('\n');
@@ -3402,6 +3475,8 @@ function noteGcFillSelects() {
   ['gcFg', 'gcBg'].forEach((id) => { const el = noteGcEl(id); if (el) el.innerHTML = noteGcOptions(true, true); });
   // 渐变端点也给「保持现状」：文字级别（浅蓝／淡绿）或 #hex 等合法但非基础色的原串要原样保留
   ['gcGradFrom', 'gcGradTo'].forEach((id) => { const el = noteGcEl(id); if (el) el.innerHTML = noteGcOptions(true, false); });
+  // 🆕 轨道 A/B 色下拉（16 色 + 保持现状 + 不设定）
+  ['gcRailA', 'gcRailB'].forEach((id) => { const el = noteGcEl(id); if (el) el.innerHTML = noteGcOptions(true, true); });
 }
 // 把「标记里的值」拆成下拉／级数／渐变端点，供开窗回填
 function noteGcParseValue(raw) {
@@ -3463,7 +3538,13 @@ function noteGcCompose() {
     return { error: '颜色值不能含逗号（属性以逗号分隔），请改用色名或 渐变(A→B)' };
   }
   const anim = noteGcVal('gcAnim');
-  return { fg: fg, bg: bg, anim: /^(pulse|scan|data|aurora|orbit|arc|holo|signal|glitch)$/.test(anim) ? anim : '' };
+  const railStyle = noteGcVal('gcRailStyle');
+  const railA = noteGcVal('gcRailA');
+  const railB = noteGcVal('gcRailB');
+  return { fg: fg, bg: bg, anim: /^(pulse|scan|data|aurora|orbit|arc|holo|signal|glitch)$/.test(anim) ? anim : '',
+    railStyle: ['斜栏', '直栏', '>形栏', '圆弧栏'].indexOf(railStyle) >= 0 ? railStyle : '',
+    railA: NOTE_GP_COLORS[railA] ? railA : '',
+    railB: NOTE_GP_COLORS[railB] ? railB : '' };
 }
 // 预览用：把「标记值」近似成 CSS（级数用 color-mix 近似 HSL 亮度；写入仍是标记原文）
 function noteGcToCss(raw) {
@@ -3483,11 +3564,18 @@ function noteGcToCss(raw) {
   const pct = Math.round(n / 10 * 75);
   return 'color-mix(in srgb, ' + hex + ' ' + (100 - pct) + '%, ' + (m[2] === '+' ? 'black' : 'white') + ')';
 }
-// 只替换开栏行的 |attrs 段：保留原字面量（{gpE}／{group:E}／大小写）与前后空白；闭栏行永不带 attrs
-function noteGcOpenLineWithColors(rawLine, fg, bg, anim) {
+// 🆕 2026-11-13 重大修复：多 pipe 格式处理
+//   原格式：{gpX|attrs段|term段}（term 段如 alert|remind|bookmark）
+//   保存时只替换 attrs 段，term 段完整保留
+function noteGcOpenLineWithColors(rawLine, fg, bg, anim, railStyle, railA, railB) {
   const src = String(rawLine == null ? '' : rawLine);
-  const stripped = src.replace(/(\{[ \t]*(?:group|gp)[ \t]*:?[ \t]*[^{}|]*)(?:\|[^{}]*)?(\}[ \t]*)$/i, '$1$2');
-  const built = noteBuildGpOpenLine(stripped.trim(), fg, bg, anim);
+  // 先提取原始 attrs + term
+  const origAttrs = noteExtractGpAttrs(src);
+  // stripped：只保留 {gpX} 干净 key，term 段等下一起重建
+  const stripped = src.replace(/^\s*(\{[ \t]*(?:group|gp)[ \t]*:?[ \t]*[^{}|]*\})[ \t]*$/im, '$1');
+  const keyOnly = stripped.trim();
+  // 重建：用新的 fg/bg/anim/rail + 原始 extra + 原始 term
+  const built = noteBuildGpOpenLine(keyOnly, fg, bg, anim, origAttrs.extra, origAttrs.term, railStyle, railA, railB);
   return (src.match(/^[ \t]*/) || [''])[0] + built;
 }
 function noteGcSyncGradRow() {
@@ -3500,7 +3588,7 @@ function noteGcUpdatePreview() {
   const t = gpColorTarget || {};
   const mark = noteGcEl('gcMarkPreview');
   if (mark) mark.textContent = '将写入：' + (c.error ? ('⚠️ ' + c.error)
-    : noteGcOpenLineWithColors(t.rawOpen || '{gp}', c.fg, c.bg, c.anim));
+    : noteGcOpenLineWithColors(t.rawOpen || '{gp}', c.fg, c.bg, c.anim, c.railStyle, c.railA, c.railB));
   const pv = noteGcEl('gcPreview'); if (!pv) return;
   const fgCss = c.error ? '' : noteGcToCss(c.fg), bgCss = c.error ? '' : noteGcToCss(c.bg);
   pv.style.color = fgCss || '';
@@ -3508,6 +3596,7 @@ function noteGcUpdatePreview() {
   pv.style.borderColor = fgCss || '';
   pv.classList.add('is-gp');
   pv.dataset.gpAnim = c.error ? '' : c.anim;
+  pv.dataset.gpRail = (c.error || !c.railStyle) ? '' : c.railStyle;
 }
 function noteGcCloseDialog() {
   const ov = noteGcEl('gpColorOv'); if (ov) ov.classList.remove('show');
@@ -3533,6 +3622,10 @@ async function noteGcOpenDialog(t) {
   noteGcSet('gcGradFrom', b.grad ? b.from : '白', GC_KEEP);
   noteGcSet('gcGradTo', b.grad ? b.to : '蓝', GC_KEEP);
   noteGcSet('gcAnim', cur.anim || '');
+  // 🆕 rail 轨道回填
+  noteGcSet('gcRailStyle', cur.railStyle || '');
+  noteGcSet('gcRailA', cur.railA || '');
+  noteGcSet('gcRailB', cur.railB || '');
   const hint = noteGcEl('gcKeyHint'); if (hint) hint.textContent = lines[t.start].trim();
   noteGcSyncGradRow();
   noteGcUpdatePreview();
@@ -3542,11 +3635,12 @@ async function noteGcOpenDialog(t) {
 async function noteGcSave(clear) {
   const t = gpColorTarget;
   if (!t) return;
-  let fg = '', bg = '', anim = '';
+  let fg = '', bg = '', anim = '', railStyle = '', railA = '', railB = '';
   if (!clear) {
     const c = noteGcCompose();
     if (c.error) { showNoteMoveToast(c.error, true); return; }
     fg = c.fg; bg = c.bg; anim = c.anim;
+    railStyle = c.railStyle; railA = c.railA; railB = c.railB;
   } else {
     anim = t.anim || '';
   }
@@ -3557,7 +3651,7 @@ async function noteGcSave(clear) {
   if (!range || lines[t.start] !== t.rawOpen) {
     showNoteMoveToast('围栏标记已变化，请重新右键打开设定', true); noteGcCloseDialog(); return;
   }
-  const newLine = noteGcOpenLineWithColors(lines[t.start], fg, bg, anim);
+  const newLine = noteGcOpenLineWithColors(lines[t.start], fg, bg, anim, railStyle, railA, railB);
   if (newLine === lines[t.start]) { showNoteMoveToast('围栏设定没有变化'); noteGcCloseDialog(); return; }
   const out = lines.slice(); out[t.start] = newLine;
   const r = await commitStickyNoteContent(out.join('\n'), t.uid, IDX, SRC_FILE, { expect: { present: [newLine.trim()] } });
@@ -5068,8 +5162,22 @@ function noteFindUnitElement(unit) {
     if (cb) return closestUnit(cb);
   }
   if (unit.kind === 'block' && Number.isFinite(unit.start) && Number.isFinite(unit.end) && unit.start >= 0) {
-    const ed = body.querySelector('.md-unit-edit[data-start="' + unit.start + '"][data-end="' + unit.end + '"]');
+    // ① 精确匹配：data-start/data-end 完全一致
+    let ed = body.querySelector('.md-unit-edit[data-start="' + unit.start + '"][data-end="' + unit.end + '"]');
     if (ed) return closestUnit(ed);
+    // ② 区间兜底：找包含该区间的区块（s<=start && e>=end）— 与主窗口 tlGlossJumpToFence 同口径
+    const btns = body.querySelectorAll('.md-unit-edit[data-start][data-end]');
+    for (let i = 0; i < btns.length; i++) {
+      const s = parseInt(btns[i].getAttribute('data-start'), 10);
+      const e = parseInt(btns[i].getAttribute('data-end'), 10);
+      if (s <= unit.start && e >= unit.end) return closestUnit(btns[i]);
+    }
+    // ③ .md-unit.is-gp 兜底（type=gp 的围栏区块可能没有 .md-unit-edit 小圆点但外框存在）
+    const gpCands = body.querySelectorAll('.md-unit.is-gp');
+    if (gpCands.length) {
+      // 取第一个（is-gp 外框本身就是可闪的真实单元，isRealUnit 守卫会通过）
+      return gpCands[0];
+    }
   }
   // ② 文本兜底：主窗与便利贴同源渲染，textContent 通常完全相等 → 精确相等优先。
   //    ⚠️ 早期版本用「任意方向子串 + 取最短命中」：当 unit.text 是一整个群的长文本时，

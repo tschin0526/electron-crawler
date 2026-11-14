@@ -490,7 +490,7 @@
         // 🆕 从 open 行提取 fg/bg attrs
         const openLine = noteLines[r.start] || '';
         const a = extractGpAttrsLocal(openLine);
-        rangeAttrs.set(n, { fg: a && a.fg ? a.fg : '', bg: a && a.bg ? a.bg : '', anim: a && a.anim ? a.anim : '' });
+        rangeAttrs.set(n, { fg: a && a.fg ? a.fg : '', bg: a && a.bg ? a.bg : '', anim: a && a.anim ? a.anim : '', alert: !!(a && a.alert), termName: a && a.termName ? a.termName : '', railStyle: a && a.railStyle ? a.railStyle : '', railA: a && a.railA ? a.railA : '', railB: a && a.railB ? a.railB : '' });
       });
       // 🆕 预扫每个 gp fence range：区间内**至少一行命中过滤条件** → 整块保留
       //    （不是只保留命中行！否则排序会把同一块内的命中行和未命中行打散到不同位置。）
@@ -537,7 +537,7 @@
           }
           hits.push({ raw: t, line: k, uid: ev.uid || '', text: m ? (m[2] || '').trim() : '',
             task: !!m, type: type, blockGp: blockId, wholeGp: true,
-            gpFg: blockAttrs.fg, gpBg: blockAttrs.bg, gpAnim: blockAttrs.anim });
+            gpFg: blockAttrs.fg, gpBg: blockAttrs.bg, gpAnim: blockAttrs.anim, gpAlert: blockAttrs.alert, gpTermName: blockAttrs.termName, gpRailStyle: blockAttrs.railStyle, gpRailA: blockAttrs.railA, gpRailB: blockAttrs.railB });
         }
       });
       // 🆕 再收非 gp fence 的命中行（排除 gp 区间内容，避免重复）
@@ -746,7 +746,7 @@
   function groupHitsIntoUnits(hits) {
     const units = [];
     let cur = null;        // 普通合并单元 {cat, task:false, hits}
-    let gpCur = null;      // {gp} 合并单元 {gp, task:false, hits, fg, bg, anim}
+    let gpCur = null;      // {gp} 合并单元 {gp, task:false, hits, fg, bg, anim, alert, termName}
     const flushGp = () => { if (gpCur) { units.push(gpCur); gpCur = null; } };
     (hits || []).forEach((h) => {
       if (h.sep) return;   // 虚拟空行只作分隔、不打断连续性（沿用旧行为）
@@ -757,7 +757,7 @@
         if (cur) { units.push(cur); cur = null; }
         if (gpCur && gpCur.gp === gp) gpCur.hits.push(h);
         // 🆕 2026-11-09：gp unit 带上 attrs（fg/bg），从第一个 hit 拿（整块 hits 的 attrs 全相同）
-        else { flushGp(); gpCur = { gp: gp, task: false, hits: [h], fg: h.gpFg || '', bg: h.gpBg || '', anim: h.gpAnim || '' }; }
+        else { flushGp(); gpCur = { gp: gp, task: false, hits: [h], fg: h.gpFg || '', bg: h.gpBg || '', anim: h.gpAnim || '', alert: !!h.gpAlert, termName: h.gpTermName || '', railStyle: h.gpRailStyle || '', railA: h.gpRailA || '', railB: h.gpRailB || '' }; }
         return;
       }
       flushGp();
@@ -856,26 +856,67 @@
     if (m) return parseGpAttrLocal(m[1]);
     m = s.match(/\{[ \t]*(?:group|gp)[ \t]*:?[ \t]*([^{}]*)\}(?=[ \t]*(?:\[\[[^\]]*\]\][ \t]*)*$)/i);
     if (m) return parseGpAttrLocal(m[1]);
-    return { key: '', fg: '', bg: '', anim: '' };
+    return { key: '', fg: '', bg: '', anim: '', alert: false, termName: '', railStyle: '', railA: '', railB: '' };
   }
   function parseGpAttrLocal(raw) {
     const s = String(raw == null ? '' : raw).trim();
-    if (!s) return { key: '', fg: '', bg: '', anim: '' };
-    const pipe = s.indexOf('|');
-    const key = (pipe < 0 ? s : s.slice(0, pipe)).trim();
-    let fg = '', bg = '', anim = '';
-    if (pipe >= 0) {
-      s.slice(pipe + 1).split(',').forEach((pair) => {
-        const eq = pair.indexOf('=');
-        if (eq < 0) return;
-        const k = pair.slice(0, eq).trim().toLowerCase();
-        const v = pair.slice(eq + 1).trim();
-        if (k === 'fg') fg = resolveColorNameLocal(v);
-        else if (k === 'bg') bg = resolveColorNameLocal(v);
-        else if (k === 'anim' && /^(pulse|scan|data|aurora|orbit|arc|holo|signal|glitch)$/.test(v)) anim = v;
+    if (!s) return { key: '', fg: '', bg: '', anim: '', alert: false, termName: '', railStyle: '', railA: '', railB: '' };
+    const pipe1 = s.indexOf('|');
+    if (pipe1 < 0) return { key: s, fg: '', bg: '', anim: '', alert: false, termName: '', railStyle: '', railA: '', railB: '' };
+    const key = s.slice(0, pipe1).trim();
+    const rest = s.slice(pipe1 + 1);
+    const pipe2 = rest.indexOf('|');
+    const attrsPart = pipe2 >= 0 ? rest.slice(0, pipe2) : rest;
+    const termPart = pipe2 >= 0 ? rest.slice(pipe2 + 1) : '';
+    let fg = '', bg = '', anim = '', alert = false, termName = '', railStyle = '', railA = '', railB = '';
+    // 解析 attrs 段（, 分隔）
+    attrsPart.split(',').forEach((pair) => {
+      const p = pair.trim();
+      if (!p) return;
+      const eq = p.indexOf('=');
+      if (eq < 0) return;
+      const k = p.slice(0, eq).trim().toLowerCase();
+      const v = p.slice(eq + 1).trim();
+      if (k === 'fg') fg = resolveColorNameLocal(v);
+      else if (k === 'bg') bg = resolveColorNameLocal(v);
+      else if (k === 'anim' && /^(pulse|scan|data|aurora|orbit|arc|holo|signal|glitch)$/.test(v)) anim = v;
+      else if (/^TERM\s*$/i.test(k)) termName = v;  // TERM 在 attrs 段兜底
+      else if (k === 'rail') {
+        const rp = v.split('#');
+        if (rp.length >= 3 && ['斜栏', '直栏', '>形栏', '圆弧栏'].indexOf(rp[0].trim()) >= 0) {
+          railStyle = rp[0].trim();
+          railA = resolveColorNameLocal(rp[1].trim());
+          railB = resolveColorNameLocal(rp[2].trim());
+        }
+      }
+    });
+    // 解析 term 段（支持逗号混写：TERM=xxx,rail=斜栏#白#黑）
+    if (termPart) {
+      termPart.split('|').forEach((seg) => {
+        seg.split(',').forEach((item) => {
+          const segTrim = item.trim();
+          if (!segTrim) return;
+          const eq = segTrim.indexOf('=');
+          if (eq < 0) {
+            if (/^(dl|cp|cr|alert|remind|bookmark)$/i.test(segTrim)) alert = true;
+            return;
+          }
+          const k = segTrim.slice(0, eq).trim().toUpperCase();
+          const v = segTrim.slice(eq + 1).trim();
+          if (k === 'TERM' && v) termName = v;
+          else if (k === 'ALERT') alert = v.toLowerCase() === 'true';
+          else if (k === 'RAIL') {
+            const rp = v.split('#');
+            if (rp.length >= 3 && ['斜栏', '直栏', '>形栏', '圆弧栏'].indexOf(rp[0].trim()) >= 0) {
+              railStyle = rp[0].trim();
+              railA = resolveColorNameLocal(rp[1].trim());
+              railB = resolveColorNameLocal(rp[2].trim());
+            }
+          }
+        });
       });
     }
-    return { key: key, fg: fg, bg: bg, anim: anim };
+    return { key: key, fg: fg, bg: bg, anim: anim, alert: alert, termName: termName, railStyle: railStyle, railA: railA, railB: railB };
   }
   // 🆕 gp 单元里的 - [ ] 行：转成与一般 checkbox 相同的 .ev-md-check/.ev-cb（只读框、无圆点）。
   //    否则 D.markdown 会把它们渲染成 <ul><li>，便利贴 CSS 的 .body ul li{list-style:disc}
@@ -896,7 +937,7 @@
     }).join('\n');
   }
   // 一个非 task 编辑单元（可能含 1..n 条连续同类行）：整块渲染成 1 个 .md-unit ＋ 1 颗只读圆点。
-  function nonTaskUnitHtml(hits, ev, selfKey, deps, isGp, gpFg, gpBg, gpAnim) {
+  function nonTaskUnitHtml(hits, ev, selfKey, deps, isGp, gpFg, gpBg, gpAnim, gpAlert, gpTermName, gpRailStyle, gpRailA, gpRailB) {
     const D = makeDeps(deps);
     const list = (hits && hits.length) ? hits : [];
     if (!list.length) return '';
@@ -923,16 +964,32 @@
     let gpStyle = '';
     if (isGp) {
       const fg = gpFg || '', bg = gpBg || '';
-      if (fg || bg) {
+      if (fg || bg || gpRailStyle) {
         const parts = [];
         if (fg) parts.push('--gp-fg:' + fg);
         if (bg) { parts.push('--gp-bg:' + bg); if (fg) parts.push('--gp-border:' + fg); }
+        if (gpRailStyle) {
+          parts.push('--gp-rail-style:' + gpRailStyle);
+          if (gpRailA) parts.push('--gp-rail-a:' + gpRailA);
+          if (gpRailB) parts.push('--gp-rail-b:' + gpRailB);
+        }
         gpStyle = ' style="' + parts.join(';') + '"';
       }
     }
-    return '<div class="vsr-sort-unit" data-sort-date="' + D.esc(sd) + '" data-cr-date="' + D.esc(cr) + '"><div class="md-unit' + (isGp ? ' is-gp' : '') + '"' + (isGp && /^(pulse|scan|data|aurora|orbit|arc|holo|signal|glitch)$/.test(gpAnim || '') ? ' data-gp-anim="' + gpAnim + '"' : '') + gpStyle + ' data-start="' + (first.line != null ? first.line : '') +
+    // 🆕 2026-11-14：gp 围栏属性徽标 HTML — TERM（📌）+ ALERT（🔔），与 tlGpBadgesHtml 同口径
+    let gpBadges = '';
+    if (isGp) {
+      const badges = [];
+      if (gpTermName) badges.push('<span class="gp-badge gp-badge-term" title="TERM=' + D.esc(gpTermName) + '">\u{1F4CC}</span>');
+      if (gpAlert) badges.push('<span class="gp-badge gp-badge-alert" title="ALERT 闹铃">\u{1F514}</span>');
+      if (badges.length) gpBadges = '<span class="gp-badges">' + badges.join('') + '</span>';
+    }
+    return '<div class="vsr-sort-unit" data-sort-date="' + D.esc(sd) + '" data-cr-date="' + D.esc(cr) + '"><div class="md-unit' + (isGp ? ' is-gp' : '') + '"' +
+      (isGp && /^(pulse|scan|data|aurora|orbit|arc|holo|signal|glitch)$/.test(gpAnim || '') ? ' data-gp-anim="' + gpAnim + '"' : '') +
+      (isGp && gpRailStyle ? ' data-gp-rail="' + gpRailStyle + '"' : '') +
+      gpStyle + ' data-start="' + (first.line != null ? first.line : '') +
       '" data-end="' + (last.line != null ? last.line : (first.line != null ? first.line : '')) + '">' +
-      dot + D.markdown(D.termDefs(marked)) + '</div></div>';
+      gpBadges + dot + D.markdown(D.termDefs(marked)) + '</div></div>';
   }
   function groupsToHtml(groups, selfKey, deps) {
     const D = makeDeps(deps);
@@ -942,7 +999,7 @@
       groupHitsIntoUnits(g.hits).forEach((u) => {
         out += u.task ? taskLineHtml(u.hits[0], g.ev, selfKey, D) + '\n'
           // 🆕 2026-11-09：gp attrs 从 unit 直接传
-          : nonTaskUnitHtml(u.hits, g.ev, selfKey, D, u.gp != null, u.fg || '', u.bg || '', u.anim || '') + '\n';
+          : nonTaskUnitHtml(u.hits, g.ev, selfKey, D, u.gp != null, u.fg || '', u.bg || '', u.anim || '', !!u.alert, u.termName || '', u.railStyle || '', u.railA || '', u.railB || '') + '\n';
       });
     });
     return out;
