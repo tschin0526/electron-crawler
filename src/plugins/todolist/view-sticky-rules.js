@@ -976,11 +976,12 @@
         gpStyle = ' style="' + parts.join(';') + '"';
       }
     }
-    // 🆕 2026-11-14：gp 围栏属性徽标 HTML — TERM（📌）+ ALERT（🔔），与 tlGpBadgesHtml 同口径
+    // 🆕 2026-11-14：gp 围栏属性徽标 HTML — TERM + ALERT（🔔），与 tlGpBadgesHtml 同口径
+    // 🆕 2026-11-15：TERM 那颗＝正文同款术语胶囊本体（喂 D.termDefs），尺寸由 CSS 压到徽标同高
     let gpBadges = '';
     if (isGp) {
       const badges = [];
-      if (gpTermName) badges.push('<span class="gp-badge gp-badge-term" title="TERM=' + D.esc(gpTermName) + '">\u{1F4CC}</span>');
+      if (gpTermName) badges.push(D.termDefs('[[' + gpTermName + ']]'));
       if (gpAlert) badges.push('<span class="gp-badge gp-badge-alert" title="ALERT 闹铃">\u{1F514}</span>');
       if (badges.length) gpBadges = '<span class="gp-badges">' + badges.join('') + '</span>';
     }

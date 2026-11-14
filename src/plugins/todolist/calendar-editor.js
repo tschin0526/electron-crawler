@@ -3052,12 +3052,15 @@
       }
       return parts.length ? ' style="' + parts.join(';') + '"' : '';
     }
-    // 🆕 2026-11-14：gp 围栏属性徽标 HTML — TERM（📌 金色）+ ALERT（🔔 红色）
+    // 🆕 2026-11-14：gp 围栏属性徽标 HTML — TERM + ALERT（🔔）
     // 位置：右上角边框线（CSS position:absolute 定位），多个徽标横向堆叠
+    // 🆕 2026-11-15：TERM 那颗改为「术语胶囊本体」——直接把 termName 喂给正文同款渲染器，
+    //   得到一模一样的 .tl-term/.tl-term-cap 结构（释义 tooltip 由术语库带出），
+    //   尺寸由 CSS 在 .gp-badges 作用域压到与 ALERT 徽标同高。标记文本不受影响（纯显示层）。
     function tlGpBadgesHtml(b) {
       const badges = [];
       if (b && b.termName) {
-        badges.push('<span class="gp-badge gp-badge-term" title="TERM=' + tlEscapeHtml(b.termName) + '">\u{1F4CC}</span>');
+        badges.push(tlRenderTermDefs('[[' + b.termName + ']]'));
       }
       if (b && b.alert) {
         badges.push('<span class="gp-badge gp-badge-alert" title="ALERT 闹铃">\u{1F514}</span>');

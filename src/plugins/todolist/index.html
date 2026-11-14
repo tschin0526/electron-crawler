@@ -2425,6 +2425,20 @@
       cursor: default;
     }
     /* TERM / ALERT 徽标样式统一 — 跟随 --gp-fg 字色 */
+    /* 🆕 2026-11-15：右上角 TERM 徽标＝正文同款术语胶囊本体（渲染器直接产出 .tl-term-cap）。
+       这里只压尺寸、不复制外观：胶囊的颜色／描边／圆角仍由上方 .tl-term-cap 规则负责，
+       高度用 box-sizing:border-box + height 锁死成与 .gp-badge 同级的 12px。
+       ⚠️ .gp-badges 是 flex 容器：外层 .tl-term（display:inline）会被 blockify 成 line-height 行盒（实测 18px），
+         12px 胶囊坐在基线上 → 顶边只比群框顶边高 0.5px，整颗掉到边框线下方（🔔 徽标是 5px）。
+         把外层也改成 flex 就没有行盒／基线，胶囊与徽标同顶＝水平压在边框线上。 */
+    .md-unit.is-gp .gp-badges .tl-term { display: flex; align-items: center; }
+    .md-unit.is-gp .gp-badges .tl-term-cap {
+      box-sizing: border-box; height: 12px; margin-right: 0;
+      padding: 0 .4em; font-size: 8px; line-height: 1; gap: .2em;
+    }
+    .md-unit.is-gp .gp-badges .tl-term-domain, .md-unit.is-gp .gp-badges .tl-term-release {
+      padding: 0 .3em; font-size: .72em; line-height: 1;
+    }
     /* 🆕 2026-11-14：gp 围栏轨道边框 — rail=斜栏|直栏|>形栏|圆弧栏#色A#色B
        ✅ 新方案：不动原 border！用 ::after 伪元素叠加轨道 pattern。
          原 border 保持原样 → 轨道渲染失败也不会丢边框！*/

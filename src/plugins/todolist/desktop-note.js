@@ -999,6 +999,12 @@ function setupControls() {
     //    否则焦点在浮栏输入框里按 ⌘S 会连带走 confirmAddCheck() 把便利贴存盘。
     if (noteMarkerIsOpen()) {
       if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); noteMarkerClose(true); }
+      // 🆕 清单态：↑↓ 在标示项目间移动（到端点循环）。表单态由 noteMarkerListItems() 挡掉——
+      //    那里 ↑↓ 属于 textarea／date／select 自身，抢了就变成「按上下键填不进去日期」。
+      //    守卫同翻页键口径（修饰键、输入法组字中一律不动）。
+      else if ((e.key === 'ArrowUp' || e.key === 'ArrowDown') && !e.metaKey && !e.ctrlKey && !e.altKey && !e.isComposing) {
+        if (noteMarkerStepItem(e.key === 'ArrowDown' ? 1 : -1)) { e.preventDefault(); e.stopPropagation(); }
+      }
       return;
     }
     const acMenu = document.getElementById('noteAddCheckMenu');
@@ -3597,6 +3603,11 @@ function noteGcUpdatePreview() {
   pv.classList.add('is-gp');
   pv.dataset.gpAnim = c.error ? '' : c.anim;
   pv.dataset.gpRail = (c.error || !c.railStyle) ? '' : c.railStyle;
+  // 🆕 轨道双色：railA/B 存的是中文色名（写回轨），预览属渲染轨 → 必须走 noteGcToCss 转成 CSS 值。
+  //   少了这两条 var()，CSS 只会吃到兜底的 #fff/#000，预览看不出你选的配色。
+  const hasRail = !c.error && !!c.railStyle;
+  pv.style.setProperty('--gp-rail-a', hasRail ? (noteGcToCss(c.railA) || '') : '');
+  pv.style.setProperty('--gp-rail-b', hasRail ? (noteGcToCss(c.railB) || '') : '');
 }
 function noteGcCloseDialog() {
   const ov = noteGcEl('gpColorOv'); if (ov) ov.classList.remove('show');
@@ -7595,6 +7606,28 @@ function noteMarkerFinishTableInsertion() {
   showStickyRefreshFeedback('表格已插入编辑框，按 ⌘S 保存');
   return true;
 }
+// 🆕 清单态的项目集合：noteMarkerDef 非 null＝已进表单，list.hidden＝清单被收进表单背后，
+//    两种情况都返回空数组 → 方向键交还给控件本身，绝不抢。
+function noteMarkerListItems() {
+  const list = document.getElementById('noteMarkerList');
+  if (!list || noteMarkerDef || list.hidden) return [];
+  return Array.from(list.querySelectorAll('.nm-item'));
+}
+// dir=+1／-1；焦点不在项目上（刚开菜单、或焦点在「取消」钮）时＝从首／末项进场。
+function noteMarkerStepItem(dir) {
+  const items = noteMarkerListItems();
+  if (!items.length) return false;
+  const active = document.activeElement;
+  const cur = items.indexOf(active && active.closest ? active.closest('.nm-item') : null);
+  const len = items.length;
+  const next = cur < 0 ? (dir > 0 ? 0 : len - 1) : (cur + dir + len) % len;
+  items[next].focus();
+  return true;
+}
+function noteMarkerFocusFirstItem() {
+  const items = noteMarkerListItems();
+  if (items.length) items[0].focus();
+}
 function noteMarkerOpenList() {
   const ov = noteMarkerOv();
   if (!ov) return;
@@ -7605,6 +7638,9 @@ function noteMarkerOpenList() {
   }
   noteMarkerShowList();
   ov.classList.add('show');
+  // 🆕 焦点必须等浮层显示后才给（display:none 时 focus() 是空操作）。
+  //    编辑框的游标与选区不会因焦点转移而丢，插入位置照旧走 selectionStart／End。
+  noteMarkerFocusFirstItem();
 }
 function noteMarkerDoInsert() {
   if (!noteMarkerDef) return;
@@ -7711,7 +7747,7 @@ async function noteMarkerEnsureBlockMode() {
   const ins = document.getElementById('noteMarkerInsert');
   if (ins) ins.addEventListener('click', (e) => { e.stopPropagation(); noteMarkerDoInsert(); });
   const back = document.getElementById('noteMarkerBackButton');
-  if (back) back.addEventListener('click', (e) => { e.stopPropagation(); noteMarkerShowList(); });
+  if (back) back.addEventListener('click', (e) => { e.stopPropagation(); noteMarkerShowList(); noteMarkerFocusFirstItem(); });
   const cancel = document.getElementById('noteMarkerCancel');
   if (cancel) cancel.addEventListener('click', (e) => { e.stopPropagation(); noteMarkerClose(true); });
   ov.addEventListener('click', (e) => { if (e.target === ov) { e.stopPropagation(); noteMarkerClose(true); } });

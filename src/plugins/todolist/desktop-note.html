@@ -392,6 +392,9 @@
     #noteMarkerBox .nm-list { display: flex; flex-direction: column; gap: 5px; }
     #noteMarkerBox .nm-item { display: block; box-sizing: border-box; width: 100%; padding: 6px 9px; border: 1px solid rgba(212,175,55,.55); border-radius: 8px; background: rgba(212,175,55,.12); color: var(--note-fg, #33384a); font: inherit; font-size: 12px; text-align: left; cursor: pointer; -webkit-app-region: no-drag; }
     #noteMarkerBox .nm-item:hover { background: rgba(212,175,55,.28); }
+    /* 🆕 键盘上下键选项目：焦点环同 .md-unit-edit:focus-visible 口径（金色 2px + offset 1px），底色沿用 :hover 那档，
+       这样「鼠标悬停」与「键盘选中」看起来是同一件事，不会多出一套视觉语言。 */
+    #noteMarkerBox .nm-item:focus-visible { outline: 2px solid #D4AF37; outline-offset: 1px; background: rgba(212,175,55,.28); }
     #noteMarkerBox .nm-item .nm-syntax { display: block; margin-top: 2px; font-size: 10px; opacity: .68; font-family: ui-monospace, Menlo, Consolas, monospace; word-break: break-all; }
     #noteMarkerBox .nm-form { display: flex; flex-direction: column; gap: 6px; }
     #noteMarkerBox .nm-row { display: grid; grid-template-columns: 74px minmax(0, 1fr); gap: 4px 6px; align-items: center; }
@@ -592,14 +595,33 @@
       cursor: default;
     }
     /* TERM / ALERT 徽标样式统一 — 跟随 --gp-fg 字色 */
+    /* 🆕 2026-11-15：右上角 TERM 徽标＝正文同款术语胶囊本体（主窗渲染器直接产出 .tl-term-cap，
+       本窗体的 .tl-term-cap 规则在下方「術語（term）渲染」那段，样式与正文完全同源）。
+       这里只压尺寸、不复制外观：高度用 box-sizing:border-box + height 锁死成与 .gp-badge 同级的 12px。
+       ⚠️ .gp-badges 是 flex 容器：外层 .tl-term（display:inline）会被 blockify 成 line-height 行盒（实测 18px），
+         12px 胶囊坐在基线上 → 顶边只比群框顶边高 0.5px，整颗掉到边框线下方（🔔 徽标是 5px）。
+         把外层也改成 flex 就没有行盒／基线，胶囊与徽标同顶＝水平压在边框线上。 */
+    #body .md-unit.is-gp .gp-badges .tl-term { display: flex; align-items: center; }
+    #body .md-unit.is-gp .gp-badges .tl-term-cap {
+      box-sizing: border-box; height: 12px; margin-right: 0;
+      padding: 0 .4em; font-size: 8px; line-height: 1; gap: .2em;
+      /* 本窗体正文胶囊是 rgba(212,175,55,.42)（半透明），压在围栏边框上会透出底下的群色 →
+         徽标这颗改实心金（与便利贴外框 #D4AF37 同色），正文那颗不动。 */
+      background: #D4AF37;
+    }
+    #body .md-unit.is-gp .gp-badges .tl-term-domain, #body .md-unit.is-gp .gp-badges .tl-term-release {
+      padding: 0 .3em; font-size: .72em; line-height: 1;
+    }
     /* 🆕 2026-11-14：gp 围栏轨道边框 — rail=斜栏|直栏|>形栏|圆弧栏#色A#色B
        ✅ 新方案：不动原 border！用 ::after 伪元素叠加轨道 pattern。
          原 border 保持原样 → 轨道渲染失败也不会丢边框！
-         ::after 绝对定位 + inset:-2px 向外扩展 → border 区域画轨道 */
-    #body .md-unit.is-gp[data-gp-rail] {
+         ::after 绝对定位 + inset:-2px 向外扩展 → border 区域画轨道
+       🆕 设定浮层预览框（#gcPreview）同口径：与下方 anim 规则相同，并列第二条选择器。
+         规则顺序照 body 保持「rail 在前、anim 在后」→ orbit + rail 同选时仍是 orbit 吃掉轨道。 */
+    #body .md-unit.is-gp[data-gp-rail], #gpColorBox .gc-preview.is-gp[data-gp-rail] {
       position: relative;
     }
-    #body .md-unit.is-gp[data-gp-rail]::after {
+    #body .md-unit.is-gp[data-gp-rail]::after, #gpColorBox .gc-preview.is-gp[data-gp-rail]::after {
       content: '';
       position: absolute;
       top: -4px; left: -4px; right: -4px; bottom: -4px;
@@ -614,16 +636,16 @@
       background-clip: border-box;
       -webkit-background-clip: border-box;
     }
-    #body .md-unit.is-gp[data-gp-rail="斜栏"]::after {
+    #body .md-unit.is-gp[data-gp-rail="斜栏"]::after, #gpColorBox .gc-preview.is-gp[data-gp-rail="斜栏"]::after {
       --gp-rail-pattern: repeating-linear-gradient(45deg, var(--gp-rail-a, #fff) 0 12px, var(--gp-rail-b, #000) 12px 24px);
     }
-    #body .md-unit.is-gp[data-gp-rail="直栏"]::after {
+    #body .md-unit.is-gp[data-gp-rail="直栏"]::after, #gpColorBox .gc-preview.is-gp[data-gp-rail="直栏"]::after {
       --gp-rail-pattern: repeating-linear-gradient(90deg, var(--gp-rail-a, #fff) 0 10px, var(--gp-rail-b, #000) 10px 20px);
     }
-    #body .md-unit.is-gp[data-gp-rail=">形栏"]::after {
+    #body .md-unit.is-gp[data-gp-rail=">形栏"]::after, #gpColorBox .gc-preview.is-gp[data-gp-rail=">形栏"]::after {
       --gp-rail-pattern: repeating-linear-gradient(-45deg, var(--gp-rail-a, #fff) 0 12px, var(--gp-rail-b, #000) 12px 24px);
     }
-    #body .md-unit.is-gp[data-gp-rail="圆弧栏"]::after {
+    #body .md-unit.is-gp[data-gp-rail="圆弧栏"]::after, #gpColorBox .gc-preview.is-gp[data-gp-rail="圆弧栏"]::after {
       --gp-rail-pattern: repeating-radial-gradient(circle at center, var(--gp-rail-a, #fff) 0 6px, var(--gp-rail-b, #000) 6px 12px);
     }
     /* 🆕 小事件群內 checkbox 跟著群色走（若只設 bg 沒設 fg，checkbox 仍用便利貼預設色） */
@@ -1553,7 +1575,7 @@
         <div class="nm-list" id="noteMarkerList"></div>
         <div class="nm-form" id="noteMarkerForm" hidden></div>
         <div class="nm-preview" id="noteMarkerPreview" hidden></div>
-        <div class="ac-hint" id="noteMarkerHint">连按三下 Shift 可叫出本菜单 · 支持专属标示、Alert 围栏、MD 表格与代码块／行内代码；一般插入于游标（选区取代）；Alert 围栏为多行块，CheckBox 模式会自动切换为原文模式</div>
+        <div class="ac-hint" id="noteMarkerHint">连按三下 Shift 可叫出本菜单 · ↑↓ 选项目、Enter 确认 · 支持专属标示、Alert 围栏、MD 表格与代码块／行内代码；一般插入于游标（选区取代）；Alert 围栏为多行块，CheckBox 模式会自动切换为原文模式</div>
         <div class="ac-actions">
           <button type="button" class="ac-copy" id="noteMarkerBackButton" hidden>← 重选标示</button>
           <button type="button" class="ac-copy" id="noteMarkerCancel">取消</button>

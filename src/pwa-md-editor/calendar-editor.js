@@ -1443,11 +1443,12 @@ function calGpInlineStyle(b) {
   }
   return parts.length ? ' style="' + parts.join(';') + '"' : '';
 }
-// 🆕 2026-11-14：gp 围栏属性徽标 HTML — TERM（📌 金色）+ ALERT（🔔 红色）
+// 🆕 2026-11-14：gp 围栏属性徽标 HTML — TERM + ALERT（🔔）
+// 🆕 2026-11-15：TERM 那颗改为「术语胶囊本体」，与桌面 tlGpBadgesHtml 同口径（喂 calRenderTermDefs）
 function calGpBadgesHtml(b) {
   const badges = [];
   if (b && b.termName) {
-    badges.push('<span class="gp-badge gp-badge-term" title="TERM=' + escapeHtml(b.termName) + '">\u{1F4CC}</span>');
+    badges.push(calRenderTermDefs('[[' + b.termName + ']]'));
   }
   if (b && b.alert) {
     badges.push('<span class="gp-badge gp-badge-alert" title="ALERT 闹铃">\u{1F514}</span>');
