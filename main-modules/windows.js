@@ -1005,9 +1005,56 @@ ipcMain.handle('sticky-note-order', async () => {
     : notes.filter(note => note.isOpen);
   return { mode: stickyNoteMode, order, notes, events: stickyNoteAllEvents };
 });
-// 🆕 返回全部日历事件里出现过的术语字典（{term, def}），供便利贴窗「自动标示术语」使用。
-//   字典来源＝扫描 stickyNoteAllEvents（随 sticky-note-sync 带来，结构与 tlCalEvents 一致）的 title+notes 里 [[term...]] 标记，
-//   与桌面 calendar-editor.js 的 tlCollectTerms 同口径（排除 dl/cp 日期标记、remind、裸日期）。
+// 🆕 術語記號解析：與桌面 calendar-editor.js::tlParseTermToken 逐行同口徑（主进程無法 import 瀏覽器腳本，故複刻一份）。
+//   [[term]] / [[term:釋義]] / [[term:釋義:領域]] / [[term:釋義:領域:發行]] / [[term:釋義:領域:發行:父階]]
+//   從末尾數：rest ≥4 段＝末段父階、倒二發行、倒三領域、其餘併回釋義；≥3 段＝舊發行規則；≤2 段沿用舊口徑。
+//   ⚠️ 改桌面那份時這裡必須一起改（2026-11-15 前這裡停在「lastIndexOf(':') 切釋義」的 2 欄舊版，
+//      會把 [[Apple:苹果:水果:2020:蔷薇属]] 的釋義算成「苹果:水果:2020」並寫回便利貼編輯框）。
+function parseStickyTermToken(inner) {
+  const full = String(inner == null ? '' : inner).trim();
+  if (!full) return null;
+  const firstColon = full.indexOf(':');
+  let term, rest;
+  if (firstColon === -1) {
+    term = full; rest = '';
+    if (term === 'dl' || term === 'cp' || term === 'cr') return null;
+    if (/^\d{4}-\d{2}-\d{2}$/.test(term)) return null;
+  } else {
+    term = full.slice(0, firstColon).trim();
+    rest = full.slice(firstColon + 1);
+    if (term === 'dl' || term === 'cp' || term === 'cr') return null;
+  }
+  if (!term) return null;
+  if (/^remind$/i.test(term)) return null;
+  if (/^bookmark$/i.test(term)) return null;
+  if (/^alert$/i.test(term)) return null;
+  const parts = rest.split(':');
+  let def, domain, release = '', parent = '';
+  if (parts.length >= 4) {
+    parent = parts[parts.length - 1].trim();
+    release = parts[parts.length - 2].trim();
+    domain = parts[parts.length - 3].trim();
+    def = parts.slice(0, -3).join(':').trim();
+  } else if (parts.length >= 3) {
+    release = parts[parts.length - 1].trim();
+    domain = parts[parts.length - 2].trim();
+    def = parts.slice(0, -2).join(':').trim();
+  } else {
+    const lastColon = rest.lastIndexOf(':');
+    def = lastColon === -1 ? rest.trim() : rest.slice(0, lastColon).trim();
+    domain = lastColon === -1 ? '' : rest.slice(lastColon + 1).trim();
+  }
+  return { term, def, domain, release, parent };
+}
+// 完整度權重與桌面 tlTermCompleteness 一致（父階 8 ＞ 發行 4 ＞ 領域 2 ＞ 釋義 1）
+function stickyTermCompleteness(t) {
+  return (t.parent ? 8 : 0) + (t.release ? 4 : 0) + (t.domain ? 2 : 0) + (t.def ? 1 : 0);
+}
+// 🆕 返回全部日历事件里出现过的术语字典（{term, def, domain, release, parent}），供便利贴窗
+//   「自动标示术语」与「TERM 右键菜单（子／父节点置灰判断）」使用。
+//   字典来源＝扫描 stickyNoteAllEvents（随 sticky-note-sync 带来，结构与 tlCalEvents 一致）的 title+notes 里 [[term...]] 标记。
+//   同名合併採「逐欄位 mergeTermFields」（與桌面 tlCollectTerms 同口徑）：只拿有值的一欄補／覆蓋，
+//   絕不整條替換，否則「只寫了父階」的一條會抹掉別處的釋義／領域／發行。
 ipcMain.handle('sticky-note-terms', async () => {
   const terms = new Map();
   const scan = (text) => {
@@ -1017,26 +1064,16 @@ ipcMain.handle('sticky-note-terms', async () => {
       if (/^\s*```/.test(line)) { inFence = !inFence; return; }
       if (inFence) return;
       String(line).replace(/\[\[([^\]\n]+)\]\]/g, (m, inner) => {
-        if (/^remind:/i.test(inner)) return m;
-        const full = inner.trim();
-        if (!full) return m;
-        const firstColon = full.indexOf(':');
-        let term, rest;
-        if (firstColon === -1) {
-          term = full; rest = '';
-          if (term === 'dl' || term === 'cp') return m;
-          if (/^remind$/i.test(term)) return m;
-          if (/^\d{4}-\d{2}-\d{2}$/.test(term)) return m;
-        } else {
-          term = full.slice(0, firstColon).trim();
-          rest = full.slice(firstColon + 1);
-          if (term === 'dl' || term === 'cp') return m;
-        }
-        if (!term) return m;
-        const lastColon = rest.lastIndexOf(':');
-        const def = lastColon === -1 ? rest.trim() : rest.slice(0, lastColon).trim();
-        const key = term.toLowerCase();
-        if (!terms.has(key)) terms.set(key, { term: term, def: def });
+        const t = parseStickyTermToken(inner);
+        if (!t) return m;
+        const key = t.term.toLowerCase();
+        let rec = terms.get(key);
+        if (!rec) { rec = { term: t.term, def: '', domain: '', release: '', parent: '' }; terms.set(key, rec); }
+        const better = stickyTermCompleteness(t) > stickyTermCompleteness(rec);
+        if (t.def && (better || !rec.def)) rec.def = t.def;
+        if (t.domain && (better || !rec.domain)) rec.domain = t.domain;
+        if (t.release && (better || !rec.release)) rec.release = t.release;
+        if (t.parent && (better || !rec.parent)) rec.parent = t.parent;
         return m;
       });
     });
@@ -1897,9 +1934,26 @@ ipcMain.handle('sticky-note-close-page', (e, arg) => {
 // ⚠️ 「新建便利贴」不走这里：它在便利贴窗内自己开浮层 → sticky-note-create（不必把用户带到 Calendar 表单）。
 ipcMain.handle('wake-main-from-note', (e, arg) => {
   const win = showMainWindow();
-  const channel = (arg && arg.action === 'scroll') ? 'scroll-sticky-event' : 'open-sticky-event';
+  // 🆕 action='glossary'：便利贴右键 TERM 胶囊 →「显示子／父节点」→ 主窗开 📖 术语表并套父阶过滤
+  const act = arg && arg.action;
+  const channel = act === 'scroll' ? 'scroll-sticky-event'
+    : act === 'glossary' ? 'open-term-glossary'
+    : act === 'gp-name-jump' ? 'gp-name-ref-jump'
+    : 'open-sticky-event';
   const notifySticky = () => {
-    if (!win.isDestroyed()) win.webContents.send(channel, {
+    if (channel === 'open-term-glossary') {
+      win.webContents.send(channel, {
+        term: (arg && typeof arg.term === 'string') ? arg.term : '',
+        mode: (arg && arg.mode === 'parent') ? 'parent' : 'children'
+      });
+      return;
+    }
+    // 🆕 2026-11-15：便利贴 {NAME=X} 名称胶囊点击 → 主窗全局搜索同名围栏并跳转（与 glossary 分支同口径）
+    if (channel === 'gp-name-ref-jump') {
+      win.webContents.send(channel, { name: (arg && typeof arg.name === 'string') ? arg.name : '' });
+      return;
+    }
+    win.webContents.send(channel, {
       key: (arg && arg.key) || '',
       // 🆕 「找出相同的项目」切换定位：便利贴窗传来的高亮行（0-based 行号区间）＋目标原文，转交主程式 open-sticky-event
       lines: (arg && Array.isArray(arg.lines)) ? arg.lines : [],

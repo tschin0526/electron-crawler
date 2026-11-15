@@ -150,6 +150,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.on('scroll-sticky-event', (event, payload) => callback(payload));
   },
 
+  // 🆕 桌面便利贴右键 TERM 胶囊「显示子／父节点」：主进程转发 {term, mode} → 开 📖 术语表并套父阶过滤
+  onTermGlossaryRequest: (callback) => {
+    ipcRenderer.on('open-term-glossary', (event, payload) => callback(payload));
+  },
+
+  // 🆕 桌面便利贴 {NAME=X} 名称胶囊点击：主进程转发 {name} → 主窗全局搜索同名围栏并跳转＋滚动＋闪烁
+  onGpNameRefRequest: (callback) => {
+    ipcRenderer.on('gp-name-ref-jump', (event, payload) => callback(payload));
+  },
+
   // 🆕 桌面便利贴「新建便利贴」：Calendar 渲染端接收新建请求（浮层在便利贴窗内，这里只负责收/回）
   onNewStickyNoteRequest: (callback) => {
     ipcRenderer.on('new-sticky-note-request', (event, payload) => callback(payload));

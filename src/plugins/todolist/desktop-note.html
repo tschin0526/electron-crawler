@@ -64,10 +64,14 @@
     .vsr-display-toggle {
       display: flex; gap: 4px; margin: .2em 0 .6em; -webkit-app-region: no-drag; user-select: none;
     }
-    /* 🆕 桌面专属：计数行（1/44）与模式切换控件（顺序平铺／页签方式）同行——左计数、右开关，节省纵向空间 */
-    .meta-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex: none; padding: 0 12px; -webkit-app-region: drag; }
+    /* 🆕 桌面专属：计数行（1/44）与模式切换控件（顺序平铺／页签方式）同行——左计数＋搜索胶囊、右开关，节省纵向空间。
+       justify-content 用 flex-start（不是 space-between）：#metaRow 中途插进第三项（搜索胶囊）时，
+       space-between 会把「中项」甩到正中间而不是紧贴徽标排；靠右改由 .vsr-head{margin-left:auto} 承担。
+       flex-wrap 是兜底：窗宽窄到连搜索胶囊下限都塞不进时换行，而不是被 #note{overflow:hidden} 裁掉半颗。 */
+    .meta-row { display: flex; align-items: center; justify-content: flex-start; flex-wrap: wrap; gap: 8px; flex: none; padding: 0 12px; -webkit-app-region: drag; }
     /* 模式切换控件容器：默认隐藏，有控件才显示；仅桌面专属（手机端控件留在正文） */
-    .vsr-head { display: none; flex: none; -webkit-app-region: no-drag; user-select: none; }
+    /* margin-left:auto ＝ .meta-row 改成 flex-start 后仍把 VIEW 模式控件顶到最右（与 space-between 时代同视觉） */
+    .vsr-head { display: none; flex: none; margin-left: auto; -webkit-app-region: no-drag; user-select: none; }
     .vsr-head .vsr-display-toggle { margin: 0; }
     .vsr-mode-btn {
       flex: 0 0 auto; cursor: pointer; padding: 2px 10px; border-radius: 999px;
@@ -286,6 +290,9 @@
        只改属性、画面照旧（2026-10-27 用户回馈「🔔 提醒」右键还是四项）。收起菜单项必须靠这条。 */
     .note-addcheck-menu .nami[hidden] { display: none !important; }
     .note-addcheck-menu .nami:hover { background: rgba(127,127,127,.18); }
+    /* 🆕 置灰项（TERM 右键菜单：这颗术语没有子／父节点）：不隐藏、只降透明度＋去掉 hover 反馈 */
+    .note-addcheck-menu .nami:disabled { opacity: .45; cursor: default; }
+    .note-addcheck-menu .nami:disabled:hover { background: transparent; }
     /* 🆕 顶部 × 关闭浮动按钮的二选一菜单：挂在 #note 外＋position:fixed，
        避免 #note{overflow:hidden} 把浮层裁掉；窄窗口时宽度夹在 viewport 内、文字自动换行。
        配色＝便利贴本身（--note-bg 纸张实色＋--note-fg 字色，开窗时由 noteCloseMenuToggle 从 #note 取来），
@@ -308,6 +315,21 @@
     .note-sort-select:hover { background: rgba(127,127,127,.26); }
     .note-sort-select:focus { outline: none; border-color: #D4AF37; }
     .note-sort-select option { color: #222; background: #fff; }
+    /* 🆕 本贴全文搜索（紧接「☐ 只看未完成」徽标右边的胶囊）：外观沿用徽标那一族（16px 高／radius 999／灰细边／--note-fg 字色），
+       壳内＝输入框＋计数「1/7」。弹性 flex:1 1 0（基准 0：窄贴先缩而不是先换行）＋下限 34px＋上限 168px；徽标排 flex:none 不缩，剩多少给多少。
+       ⚠️ 常驻 #metaRow、绝不放进 #meta：renderMeta() 每次刷新都整排 innerHTML 重绘，打字途中会连字带光标一起重建。
+       ⚠️ 拖拽区（.meta-row 继承 drag）里的可点控件一律要 no-drag，且还得加进 onNoteClick/onNoteDblClick 的排除名单，
+          否则点输入框＝「未拖动＝唤起主程式」。 */
+    .note-search-wrap { display: inline-flex; align-items: center; gap: 3px; box-sizing: border-box; flex: 1 1 0; min-width: 34px; max-width: 168px; height: 16px; padding: 0 4px 0 6px; border-radius: 999px; border: 1px solid rgba(127,127,127,.4); background: rgba(127,127,127,.12); color: var(--note-fg, #4b5160); font-size: 11px; line-height: 1; vertical-align: middle; -webkit-app-region: no-drag; }
+    .note-search-wrap:focus-within { border-color: #D4AF37; }
+    .note-search-wrap.disabled { opacity: .45; }
+    .note-search-wrap input.note-search { flex: 1 1 auto; width: 100%; min-width: 0; box-sizing: border-box; border: 0; outline: none; background: transparent; color: inherit; font: inherit; padding: 0; -webkit-app-region: no-drag; }
+    .note-search-wrap input.note-search::placeholder { color: var(--note-fg, #4b5160); opacity: .5; }
+    /* type=search 的原生 ✕ 会把「清空」拆成两条路（点原生 ✕ 不触发我们的收尾）→ 只留 Esc 一条 */
+    .note-search-wrap input.note-search::-webkit-search-cancel-button { -webkit-appearance: none; appearance: none; }
+    .note-search-wrap input.note-search:disabled { cursor: not-allowed; }
+    .note-search-count { flex: none; font-size: 10px; line-height: 1; opacity: .75; white-space: nowrap; }
+    .note-search-count.none { color: #e03131; opacity: 1; font-weight: 700; }
     /* 🆕 加入子事件浮层（复用 sticky-note-edit 落盘链路；盒底色由 JS 套用与便利贴同色 tint(state.color,100)，文字用 --note-fg） */
     .addcheck-ov { position: absolute; inset: 0; z-index: 30; display: none; align-items: center; justify-content: center; padding: 10px; background: rgba(0,0,0,.2); -webkit-app-region: no-drag; overflow: auto; }
     .addcheck-ov.show { display: flex; }
@@ -326,6 +348,7 @@
     .addcheck-box .ac-group-mark { display: flex; align-items: center; gap: 6px; margin-top: 6px; font-size: 11px; color: var(--note-fg, #33384a); }
     .addcheck-box .ac-group-mark .ac-gm-label { flex: none; opacity: .8; white-space: nowrap; }
     .addcheck-box .ac-group-mark input { width: 120px; margin: 0; }
+    .addcheck-box #noteGroupName { width: 220px; }
     /* 🆕 发邮件浮层：便利贴标题行 + 收件人输入框（复用 addcheck-box 外观） */
     .addcheck-box .ac-note { margin-bottom: 6px; font-size: 11px; font-weight: 600; word-break: break-all; }
     .addcheck-box input[type="text"] { width: 100%; box-sizing: border-box; border: 1px solid #D4AF37; border-radius: 6px; padding: 6px; font: inherit; font-size: 12px; color: var(--note-fg, #33384a); background: rgba(127,127,127,.08); -webkit-app-region: no-drag; }
@@ -518,6 +541,18 @@
       background: var(--note-fg, #000); color: var(--note-bg, #FFF3B0);
       padding: 0 2px; border-radius: 2px; font-weight: 700;
     }
+    /* 🆕 当前命中：复刻主窗 .search-highlight.current（红底白字带 !important ＋金环脉冲闪 6 次后停在红底）。
+       一般命中沿用上面的 reverse，与 ☰「📍 定位」看起来是同一件事；闪烁由 JS「remove → 强制重排 → add」重播，
+       动画只改 box-shadow（!important 的底纹 CSS 动画压不过，改背景不会生效）——keyframes 本窗自取一份。 */
+    .body mark.search-highlight.current, .title mark.search-highlight.current {
+      background-color: #ef4444 !important; color: #fff !important;
+      box-shadow: 0 0 0 2px #ef4444, 0 0 8px 2px rgba(239,68,68,.55);
+      animation: noteSearchCurrentFlash .9s ease-in-out 6;
+    }
+    @keyframes noteSearchCurrentFlash {
+      0%, 100% { box-shadow: 0 0 0 2px #ef4444, 0 0 0 0 rgba(251,191,36,0); }
+      50% { box-shadow: 0 0 0 4px #fbbf24, 0 0 14px 6px rgba(251,191,36,.9); }
+    }
     .body .katex { font-size: 1em; }
     /* 📝 備註 Markdown checkbox：樣式與 Calendar 對齊；只讓方框可勾選，編輯圓點獨立操作 */
     /* 🆕 便利贴内 checkbox：内框＝字体色、外框＝金色；两者最细线紧密嵌套无缝隙；框＝字体大小（em 相对单位） */
@@ -594,6 +629,25 @@
       box-shadow: 0 1px 2px rgba(0,0,0,0.4);
       cursor: default;
     }
+    /* 🆕 2026-11-15：NAME 围栏名称徽标 — 文字胶囊（auto 宽），高度与 .gp-badge 同级。
+       兜底用 TERM 膠囊同系金底棕字：無色围栏時 .gp-badge 的 background:var(--gp-fg,currentColor) 會因
+       color:var(--gp-bg,#fff) 变成白底白字（名称是文字，不像 🔔 emoji 仍可見）→ 自帶可讀兜底；有 fg/bg 仍跟隨围栏色。 */
+    #body .md-unit.is-gp .gp-badge.gp-badge-name {
+      width: auto; max-width: 160px; padding: 0 .5em;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+      background: var(--gp-fg, #e6bd52);
+      color: var(--gp-bg, #4a3b12);
+    }
+    /* 🆕 2026-11-15：{NAME=X} 围栏名称引用胶囊 — 正文内可点击跳转（金色，与名称徽标同系）。
+       正文 HTML 由主窗渲染下发，本窗体只负责显示＋点击（点击经 IPC 回主窗全局搜索）。
+       .body 已 no-drag，这里再显式声明一次；固定金色＝一眼认出是跳转链接。 */
+    #body .gp-name-ref {
+      display: inline-block; max-width: 220px; padding: 0 .5em; border-radius: 999px;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: middle;
+      background: #e6bd52; color: #4a3b12; border: 1px solid rgba(74,59,18,.35);
+      font-size: .85em; line-height: 1.2; cursor: pointer; -webkit-app-region: no-drag;
+    }
+    #body .gp-name-ref:hover { filter: brightness(1.06); }
     /* TERM / ALERT 徽标样式统一 — 跟随 --gp-fg 字色 */
     /* 🆕 2026-11-15：右上角 TERM 徽标＝正文同款术语胶囊本体（主窗渲染器直接产出 .tl-term-cap，
        本窗体的 .tl-term-cap 规则在下方「術語（term）渲染」那段，样式与正文完全同源）。
@@ -1228,6 +1282,13 @@
          控件由 JS 从正文 .vsr-display 搬到 #vsrHead，单段落／普通便利贴没有此控件时整块隐藏。仅桌面专属。 -->
     <div class="meta-row" id="metaRow">
       <div class="meta" id="meta"></div>
+      <!-- 🔎 本贴全文搜索：常驻 #metaRow、紧贴 #meta 徽标排右边（编辑模式置灰；Enter 下一处／Shift+Enter 上一处／Esc 清空）。
+           刻意不塞进 #meta：那颗每次刷新都由 renderMeta() 整排 innerHTML 重绘，打字途中会被连字带光标一起重建。 -->
+      <span class="note-search-wrap" id="noteSearchWrap">
+        <input type="search" class="note-search" id="noteSearchInput" placeholder="搜本贴" autocomplete="off" spellcheck="false"
+               title="在本贴内搜索标题与正文：Enter 下一处／Shift+Enter 上一处／Esc 清空">
+        <span class="note-search-count" id="noteSearchCount"></span>
+      </span>
       <div class="vsr-head" id="vsrHead"></div>
     </div>
     <!-- 🆕 多段落 VIEW 便利贴「段落页签」固定表头行：JS 把正文 .vsr-display 里的 .vsr-tabs 整体搬到此行，
@@ -1270,6 +1331,14 @@
     <div class="note-addcheck-menu" id="vsrGotoMenu" role="menu">
       <button type="button" class="nami" data-act="open" role="menuitem">📝 切换到日程事件编辑器</button>
       <button type="button" class="nami" data-act="scroll" role="menuitem">📍 滚动到该事件所在位置</button>
+    </div>
+    <!-- 🆕 右键正文里的 TERM 术语胶囊（.tl-term-cap[data-term]）→ 下拉菜单：
+         两项都唤起主程式开 📖 术语表并套「父阶过滤」（便利贴自己没有术语表，故走 wake-main-from-note action='glossary'）。
+         与 #noteFindSameMenu / #noteBlockMenu / #vsrGotoMenu 平行，只认术语胶囊。
+         胶囊 HTML 由主窗渲染后经 IPC 送来，data-term＝原始术语名（本窗体不自己解析 TERM）。 -->
+    <div class="note-addcheck-menu" id="noteTermMenu" role="menu">
+      <button type="button" class="nami" data-act="children" role="menuitem">⬇ 显示此 TERM 的子节点</button>
+      <button type="button" class="nami" data-act="parent" role="menuitem">⬆ 显示此 TERM 的父节点</button>
     </div>
     <div class="body" id="body"></div>
     <div class="tl-text-gutter-wrap" id="editAreaGutterWrap">
@@ -1418,6 +1487,11 @@
         <div class="ac-group-mark" id="noteGroupMarkRow" style="display:none">
           <span class="ac-gm-label">群标记</span>
           <input type="text" id="noteGroupMark" placeholder="{gp} 或 {gpA}" spellcheck="false" autocomplete="off" maxlength="40">
+        </div>
+        <!-- 🆕 围栏名称：group 启用勾选后显示，保存时写入围栏 term 段 NAME=…（右上角徽标显示）；清空＝移除名称 -->
+        <div class="ac-group-mark" id="noteGroupNameRow" style="display:none">
+          <span class="ac-gm-label">围栏名称</span>
+          <input type="text" id="noteGroupName" placeholder="名称（显示于右上角徽标）" spellcheck="false" autocomplete="off" maxlength="60">
         </div>
         <div class="ac-hint">Enter 换行（与「编辑小圆点」手感一致）· ⌘S 或「保存」加入（加入后不关闭，可继续输入下一批）· 关闭请按下方「关闭」按钮（草稿未加入会先问是否保存）</div>
         <div class="ac-actions">

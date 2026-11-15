@@ -84,6 +84,11 @@ let editDirty = false;// 编辑后是否有未保存改动（⌘S 才落盘）
 // 🆕 定位開關：當前便利貼窗的定位詞（空字串＝不高亮）。由本窗 ☰ 菜單的 combo 搜尋框（menuOnSearchInput/menuToggleLocate）驅動；
 //    刷新/翻頁只重打高亮、不改這個值（故換張或同步後高亮仍在）。
 let NOTE_HL = '';
+// 🆕 本贴全文搜索（#metaRow 那颗胶囊）的运行态：高亮本体仍由 NOTE_HL＋noteApplyHighlight 负责，
+//    这里只多三件事——「看得见的」命中清单、第几处计数、当前命中 .current。词一换序号归 0（与主窗 searchInCalendar 同口径）。
+let noteSearchMatches = [];   // 当前可见的 <mark>，阅读序：#title 在前、#body 在后
+let noteSearchIdx = -1;       // 停在第几处；-1＝无命中
+let noteSearchHlQuery = '';   // 上一轮清单所依据的词（变化＝重新搜，序号归 0）
 function geomId() { return IS_FLIP ? { key: FLIP_KEY, idx: FLIP_IDX } : { key: KEY, idx: IDX }; }
 
 let marked = null;
@@ -641,10 +646,10 @@ function noteCloseMenuToggle() {
   const btn = document.getElementById('miClose');
   if (!cm || !btn) return;
   if (cm.classList.contains('open')) { noteCloseMenuHide(); return; }
-  // 同一时间只留一套浮层菜单（☰ 主菜单＋三套右键菜单）
+  // 同一时间只留一套浮层菜单（☰ 主菜单＋四套右键菜单）
   const main = document.getElementById('menu');
   if (main) main.classList.remove('open');
-  noteFindSameClose(); noteBlockMenuClose(); vsrGotoMenuClose();
+  noteFindSameClose(); noteBlockMenuClose(); vsrGotoMenuClose(); noteTermMenuClose();
   // 🆕 配色跟「当前这张便利贴」一致：--note-bg／--note-fg 只挂在 #note（applyColor/applyContentFont），
   //    本菜单在 #note 外继承不到 → 开窗瞬间从 #note 取一份；翻页换色后下次开窗自动跟着换。
   //    ⚠️ 刻意不把变量提到 :root：#note 外的 viewRuleModal 等浮层有自己的深底配色，
@@ -720,6 +725,7 @@ function setupControls() {
       // 🆕 開菜單＝清空搜尋，定位隨之強制關閉（內容消失→關；下次輸入再預設開）
       const s = document.getElementById('mStickySearch');
       if (s) s.value = '';
+      noteSearchResetBox();      // 🔎 贴面那颗同步清：否则「框里还有字、画面已无高亮」两颗互相打脸
       menuSearchQuery = '';
       menuLocateOn = false;
       menuLastQueryEmpty = true;
@@ -1221,6 +1227,17 @@ function setupControls() {
   //     #锚点  → 不拦，留给窗内原生片段滚动。
   const bodyClickEl = document.getElementById('body');
   if (bodyClickEl) bodyClickEl.addEventListener('click', (e) => {
+    // 🆕 2026-11-15：{NAME=X} 围栏名称胶囊左键 → 回主窗全局搜索同名围栏并跳转＋滚动＋闪烁。
+    //    本窗体只负责显示＋点击（正文 HTML 由主窗渲染下发），全局索引/跳转都在主窗，故经 IPC 回去；
+    //    与 wake-main-from-note 的 glossary action 同口径。stopPropagation 只包自己这一分支。
+    const nameRef = e.target.closest && e.target.closest('.gp-name-ref[data-gp-name-ref]');
+    if (nameRef) {
+      e.preventDefault();
+      e.stopPropagation();
+      const nm = nameRef.getAttribute('data-gp-name-ref') || '';
+      if (nm) ipcRenderer.invoke('wake-main-from-note', { key: KEY, action: 'gp-name-jump', name: nm }).catch(() => {});
+      return;
+    }
     const execLink = e.target.closest && e.target.closest('a.card-exec-link');
     if (execLink) {
       e.preventDefault();
@@ -1265,6 +1282,42 @@ function setupControls() {
   const note = document.getElementById('note');
   note.addEventListener('click', onNoteClick);
   note.addEventListener('dblclick', onNoteDblClick);
+  // 🔎 本贴全文搜索那颗（常驻 #metaRow）：即时高亮＋Enter 循环＋Esc 清空。
+  //    输入法（IME）同主窗口径：组字期间不重排（否则候选字边打边被 mark 拆散、光标跳），
+  //    compositionend 再补跑一次；Enter 在组字中一律让给输入法确认候选。
+  const nsInput = document.getElementById('noteSearchInput');
+  if (nsInput) {
+    window.__imeComposing = false;
+    document.addEventListener('compositionstart', () => { window.__imeComposing = true; }, true);
+    document.addEventListener('compositionend', () => {
+      window.__imeComposing = false;
+      if (document.activeElement === nsInput) noteSearchRun();
+    }, true);
+    // 点击/双击只归这颗自己：便利贴的「未拖动点击＝唤起主程式」挂在 #note 上
+    nsInput.addEventListener('click', (e) => e.stopPropagation());
+    nsInput.addEventListener('dblclick', (e) => e.stopPropagation());
+    nsInput.addEventListener('input', () => { if (!window.__imeComposing) noteSearchRun(); });
+    nsInput.addEventListener('keydown', (e) => {
+      // ← → ↑ ↓ 是输入框内的文字操作，不许冒泡出去被翻页窗当成「上一页／下一页」
+      if (e.key === 'ArrowLeft' || e.key === 'ArrowRight' || e.key === 'ArrowUp' || e.key === 'ArrowDown') { e.stopPropagation(); return; }
+      if (e.key === 'Enter') {
+        if (e.isComposing || window.__imeComposing) return;   // 组字中：这一发 Enter 属于输入法
+        e.preventDefault();
+        e.stopPropagation();
+        noteSearchMove(e.shiftKey ? -1 : 1);
+        return;
+      }
+      if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); noteSearchClear(); }
+    });
+    // ☰ 浮层里那颗 combo 搜索框（#mStickySearch）也接同一份状态：输入即写 NOTE_HL，由 menuApplyLocate 统一收尾
+    const msInput = document.getElementById('mStickySearch');
+    if (msInput) msInput.addEventListener('keydown', (e) => {
+      if (e.key !== 'Enter' || e.isComposing || window.__imeComposing) return;
+      e.preventDefault();
+      e.stopPropagation();
+      noteSearchMove(e.shiftKey ? -1 : 1);
+    });
+  }
   note.addEventListener('pointermove', (e) => {
     pointerClientX = e.clientX;
     pointerClientY = e.clientY;
@@ -1315,7 +1368,7 @@ function setupControls() {
 // 原生拖拽由 OS 处理；只有「按下后未移动、松开＝点击」才会触发此 handler
 // （拖拽过程中 OS 不会派发 click），故可安全用它区分「点一下＝唤起主程式」
 function onNoteClick(e) {
-  if (e.target.closest('.iconbtn, .note-mode-handle, .note-min-handle, .note-menu-handle, .note-refresh-handle, .note-addcheck, .note-addcheck-menu, .note-close-menu, #noteCloseMenu, .note-undone-filter, .flip-edge, .doc-badge')) return;  // 按钮/徽标各自处理（VIEW 徽标有自己的弹层，不唤起主程式）
+  if (e.target.closest('.iconbtn, .note-mode-handle, .note-min-handle, .note-menu-handle, .note-refresh-handle, .note-addcheck, .note-addcheck-menu, .note-close-menu, #noteCloseMenu, .note-undone-filter, .note-search-wrap, .flip-edge, .doc-badge')) return;  // 按钮/徽标/搜索胶囊各自处理（VIEW 徽标有自己的弹层，不唤起主程式）
   if (!e.target.closest('.bar, .head, .meta, .tags')) return; // 仅拖拽区点击＝唤起主程式
   ipcRenderer.invoke('wake-main-from-note', { key: KEY });
 }
@@ -1323,7 +1376,7 @@ function onNoteClick(e) {
 // 双击便利贴（标题栏或正文）：唤起主程式并打开该事件表单
 // 正文区是 -webkit-app-region: no-drag，双击不会触发拖动，故可安全复用「唤起+打开事件」管线
 function onNoteDblClick(e) {
-  if (e.target.closest('.iconbtn, .menu, .rz, .note-addcheck, .note-addcheck-menu, .note-close-menu, #noteCloseMenu, .note-undone-filter, .flip-edge, .ev-md-edit, .ev-cb, .doc-badge')) return; // 菜单/☰按钮/翻页把手/缩放把手/checkbox 控件/徽标各自处理
+  if (e.target.closest('.iconbtn, .menu, .rz, .note-addcheck, .note-addcheck-menu, .note-close-menu, #noteCloseMenu, .note-undone-filter, .note-search-wrap, .flip-edge, .ev-md-edit, .ev-cb, .doc-badge')) return; // 菜单/☰按钮/翻页把手/缩放把手/checkbox 控件/徽标/搜索胶囊各自处理
   ipcRenderer.invoke('wake-main-from-note', { key: KEY });
 }
 
@@ -1336,6 +1389,7 @@ let noteAddMode = 'check';
 let noteGroupWasOn = false;
 let noteGroupBaseline = false;
 let noteGroupMarkBaseline = '';   // 🆕 群标记输入框的脏值基线（避免勾选即误判脏）
+let noteGroupNameBaseline = '';   // 🆕 围栏名称输入框的脏值基线
 function closeAddCheckMenu() {
   const menu = document.getElementById('noteAddCheckMenu');
   if (menu) menu.classList.remove('open');
@@ -1513,6 +1567,8 @@ function markAddCheckBaseline() {
   noteGroupBaseline = !!(gp && gp.checked && !gp.disabled);
   const mark = document.getElementById('noteGroupMark');
   noteGroupMarkBaseline = (gp && gp.checked && !gp.disabled && mark) ? mark.value : '';
+  const gname = document.getElementById('noteGroupName');
+  noteGroupNameBaseline = (gp && gp.checked && !gp.disabled && gname) ? gname.value : '';
   hideAddCheckUnsavedBar();
 }
 function addCheckEditing() {
@@ -1522,11 +1578,13 @@ function addCheckDirty() {
   const inp = document.getElementById('addCheckInput');
   const gp = document.getElementById('noteGroupEnable');
   const mark = document.getElementById('noteGroupMark');
+  const gname = document.getElementById('noteGroupName');
   const gpOn = !!(gp && !gp.disabled && gp.checked);
-  // 🆕 只勾了 group、或改了群标记也算未保存（二者都不改 textarea 内容，光比文字会漏掉）
+  // 🆕 只勾了 group、或改了群标记／围栏名称也算未保存（都不改 textarea 内容，光比文字会漏掉）
   return (!!inp && inp.value !== addCheckBaseline) ||
          (!!gp && !gp.disabled && gp.checked !== noteGroupBaseline) ||
-         (gpOn && !!mark && mark.value !== noteGroupMarkBaseline);
+         (gpOn && !!mark && mark.value !== noteGroupMarkBaseline) ||
+         (gpOn && !!gname && gname.value !== noteGroupNameBaseline);
 }
 function showAddCheckUnsavedBar() {
   const bar = document.getElementById('addCheckUnsavedBar');
@@ -1750,6 +1808,7 @@ function bindAddCheckTools(saveLabel) {
       const on = !!(gpBox.checked && !gpBox.disabled);
       const srcNow = (function () { const i = document.getElementById('addCheckInput'); return i ? i.value : ''; })();
       noteShowGroupMark(on, srcNow, false);
+      noteShowGroupName(on, srcNow, false);
     };
   }
   // 🆕 自动标示术语「勾选确认」浮层按钮（onclick/onchange 幂等，绑定一次即可）
@@ -1955,12 +2014,12 @@ function noteGpFenceScan(lines) {
     if (f.kind === 'open') {
       if (!open) {
         const a = noteExtractGpAttrs(line);
-        open = { i: i, key: f.key, fg: a.fg || '', bg: a.bg || '', anim: a.anim || '', alert: a.alert === true, extra: a.extra || [], term: a.term || '', termName: a.termName || '', railStyle: a.railStyle || '', railA: a.railA || '', railB: a.railB || '' };
+        open = { i: i, key: f.key, fg: a.fg || '', bg: a.bg || '', anim: a.anim || '', alert: a.alert === true, extra: a.extra || [], term: a.term || '', termName: a.termName || '', name: a.name || '', railStyle: a.railStyle || '', railA: a.railA || '', railB: a.railB || '' };
       }
       continue;
     }
     if (open && open.key === f.key) {
-      ranges.push({ start: open.i, end: i, key: f.key, fg: open.fg, bg: open.bg, anim: open.anim, alert: open.alert, extra: open.extra || [], term: open.term || '', termName: open.termName || '', railStyle: open.railStyle || '', railA: open.railA || '', railB: open.railB || '' });
+      ranges.push({ start: open.i, end: i, key: f.key, fg: open.fg, bg: open.bg, anim: open.anim, alert: open.alert, extra: open.extra || [], term: open.term || '', termName: open.termName || '', name: open.name || '', railStyle: open.railStyle || '', railA: open.railA || '', railB: open.railB || '' });
       markers.push(open.i, i);
       open = null;
     }
@@ -1976,7 +2035,7 @@ function noteGpFenceWrap(text) {
   const scan = noteGpFenceScan(lines);
   const hit = scan.ranges.find((r) => r.start === s && r.end === e);
   // 🆕 2026-11-09：把 hit.fg / hit.bg 也带出来
-  return hit ? { lines: lines, start: s, end: e, key: hit.key, fg: hit.fg || '', bg: hit.bg || '', anim: hit.anim || '', alert: hit.alert === true, extra: hit.extra || [], term: hit.term || '', termName: hit.termName || '', railStyle: hit.railStyle || '', railA: hit.railA || '', railB: hit.railB || '', scan: scan } : null;
+  return hit ? { lines: lines, start: s, end: e, key: hit.key, fg: hit.fg || '', bg: hit.bg || '', anim: hit.anim || '', alert: hit.alert === true, extra: hit.extra || [], term: hit.term || '', termName: hit.termName || '', name: hit.name || '', railStyle: hit.railStyle || '', railA: hit.railA || '', railB: hit.railB || '', scan: scan } : null;
 }
 // ── 🆕 2026-11-08：勾选「group 启用」按保存时一律写成块级 {gpX}…{/gpX}，不再逐行补行尾标记 ──
 //  · 已是块级群且没给新标记 → 原样保留；给了 mark（群标记输入框）→ 整段改名（两行一起改）。
@@ -2033,10 +2092,10 @@ function noteExtractGpAttrs(line) {
   const s = String(line == null ? '' : line);
   let m = s.trim().match(/^\{[ \t]*(?:group|gp)[ \t]*:?[ \t]*([^{}]*)\}[ \t]*$/i);
   if (!m) m = s.match(/\{[ \t]*(?:group|gp)[ \t]*:?[ \t]*([^{}]*)\}(?=[ \t]*(?:\[\[[^\]]*\]\][ \t]*)*$)/i);
-  if (!m) return { key: '', fg: '', bg: '', anim: '', alert: false, extra: [], term: '', termName: '' };
+  if (!m) return { key: '', fg: '', bg: '', anim: '', alert: false, extra: [], term: '', termName: '', name: '' };
   const inner = String(m[1] || '').trim();
   const pipe1 = inner.indexOf('|');
-  if (pipe1 < 0) return { key: inner, fg: '', bg: '', anim: '', alert: false, extra: [], term: '', termName: '' };
+  if (pipe1 < 0) return { key: inner, fg: '', bg: '', anim: '', alert: false, extra: [], term: '', termName: '', name: '' };
   const key = inner.slice(0, pipe1).trim();
   const rest = inner.slice(pipe1 + 1);
   const pipe2 = rest.indexOf('|');
@@ -2044,7 +2103,7 @@ function noteExtractGpAttrs(line) {
   const termPart = pipe2 >= 0 ? rest.slice(pipe2 + 1) : '';
   // 解析 attrs 段
   const extra = [];
-  let fg = '', bg = '', anim = '', termName = '', railStyle = '', railA = '', railB = '';
+  let fg = '', bg = '', anim = '', termName = '', name = '', railStyle = '', railA = '', railB = '';
   attrsPart.split(',').forEach((pair) => {
     const p = pair.trim();
     if (!p) return;
@@ -2061,6 +2120,7 @@ function noteExtractGpAttrs(line) {
         railStyle = parts[0].trim(); railA = parts[1].trim(); railB = parts[2].trim();
       }
     }
+    else if (k === 'name') { name = v; extra.push(p); }  // 留 extra 供写回保留
     else extra.push(p);
   });
   // 兜底：attrs 段里可能有 TERM=xxx（没有第二个 pipe 的情况），移到 termName
@@ -2086,6 +2146,7 @@ function noteExtractGpAttrs(line) {
         const k = segTrim.slice(0, eq).trim().toUpperCase();
         const v = segTrim.slice(eq + 1).trim();
         if (k === 'TERM' && v) termName = v;
+        else if (k === 'NAME' && v) name = v;
         else if (k === 'ALERT') alert = v.toLowerCase() === 'true';
         else if (k === 'RAIL') {
           const rp = v.split('#');
@@ -2098,7 +2159,7 @@ function noteExtractGpAttrs(line) {
       });
     });
   }
-  return { key: key, fg: fg, bg: bg, anim: anim, alert: alert, extra: extra, term: termPart, termName: termName, railStyle: railStyle, railA: railA, railB: railB };
+  return { key: key, fg: fg, bg: bg, anim: anim, alert: alert, extra: extra, term: termPart, termName: termName, name: name, railStyle: railStyle, railA: railA, railB: railB };
 }
 function noteKeyFromGpMarker(marker) {
   const s = String(marker == null ? '' : marker).trim();
@@ -2154,6 +2215,36 @@ function noteBuildGpOpenLine(keyName, fg, bg, anim, extra, term, railStyle, rail
   if (termStr) result += '|' + termStr;
   result += '}';
   return result;
+}
+// 🆕 2026-11-15：把「围栏名称」写进 open 行的 NAME=（canonical 放 term 段）。
+//   纯字符串手术：attrs 段原样保留（双轨制——不转色值），只清掉旧 NAME（attrs/term 两段都清）再按新值重建 term 段。
+//   name 空＝移除 NAME；非整行围栏标记＝原样返回（行尾式不适用）。三端同口径 tlGpApplyName/calGpApplyName。
+function noteGpApplyName(line, name) {
+  const src = String(line == null ? '' : line);
+  const lead = (src.match(/^[ \t]*/) || [''])[0];
+  const trimmed = src.trim();
+  if (!/^\{[ \t]*(?:group|gp)[ \t]*:?[ \t]*[^{}]*\}$/i.test(trimmed)) return src;
+  const nv = String(name == null ? '' : name).replace(/[{}|,]/g, '').trim();
+  const body = trimmed.slice(1, -1);
+  const p1 = body.indexOf('|');
+  if (p1 < 0) return lead + '{' + body + (nv ? '|NAME=' + nv : '') + '}';
+  const key = body.slice(0, p1);
+  const rest = body.slice(p1 + 1);
+  const p2 = rest.indexOf('|');
+  const attrs = p2 >= 0 ? rest.slice(0, p2) : rest;
+  const term = p2 >= 0 ? rest.slice(p2 + 1) : '';
+  const attrsClean = attrs.split(',').filter((it) => !/^\s*NAME\s*=/i.test(it)).join(',');
+  const items = [];
+  term.split('|').forEach((seg) => seg.split(',').forEach((it) => {
+    const t = it.trim();
+    if (t && !/^NAME\s*=/i.test(t)) items.push(t);
+  }));
+  if (nv) items.push('NAME=' + nv);
+  const termClean = items.join('|');
+  let out = key;
+  if (attrsClean || termClean) out += '|' + attrsClean;
+  if (termClean) out += '|' + termClean;
+  return lead + '{' + out + '}';
 }
 // 🆕 2026-11-07：group 启用时自动给出一个「全篇不重复」的 {gp} 标记，避免与便利贴中前后小事件群合并。
 //   · 扫描「当前便利贴」（KEY 对应的整篇 notes）里所有用过的 {gp:名称}，生成一个未占用的名称（A/B/C…）。
@@ -2244,6 +2335,35 @@ function noteShowGroupMark(show, src, keep) {
   }
   if (markHint) markHint.textContent = '保存时整段以此标记分组，避免与前后小事件群合并（可修改）';
   noteGroupMarkBaseline = markInput.value;   // 基线＝建议值（开框即基准，手动改才变脏）
+}
+// 🆕 围栏名称输入框：读取当前值（去结构字符与首尾空白交给 gpApplyName）；无输入框 → ''
+function noteGroupNameValue() {
+  const inp = document.getElementById('noteGroupName');
+  return inp ? inp.value : '';
+}
+// 取一段原文里第一个围栏的既有 NAME（开框时回填名称输入框）
+function noteCurrentGpName(src) {
+  const lines = String(src == null ? '' : src).replace(/\r\n/g, '\n').split('\n');
+  const scan = (typeof noteGpFenceScan === 'function') ? noteGpFenceScan(lines) : { ranges: [] };
+  return scan.ranges.length ? (scan.ranges[0].name || '') : '';
+}
+// 显示／隐藏围栏名称输入并回填既有 NAME（keep＝就地切模式时保留用户已填值）
+function noteShowGroupName(show, src, keep) {
+  const row = document.getElementById('noteGroupNameRow');
+  const inp = document.getElementById('noteGroupName');
+  if (!row || !inp) return;
+  row.style.display = show ? '' : 'none';
+  if (!show) { inp.value = ''; noteGroupNameBaseline = ''; return; }
+  if (!keep || !inp.value.trim()) inp.value = noteCurrentGpName(src);
+  noteGroupNameBaseline = inp.value;   // 基线＝开框回填值（手动改才变脏）
+}
+// 把名称写进区块里每个围栏的开启行（term 段 NAME=…）；无围栏则原样返回。清空名称＝移除 NAME。
+function noteApplyGroupNameToBlock(blockText, name) {
+  const lines = String(blockText == null ? '' : blockText).replace(/\r\n/g, '\n').split('\n');
+  const scan = (typeof noteGpFenceScan === 'function') ? noteGpFenceScan(lines) : { ranges: [] };
+  if (!scan.ranges.length) return blockText;
+  scan.ranges.forEach((r) => { lines[r.start] = noteGpApplyName(lines[r.start], name); });
+  return lines.join('\n');
 }
 // 当前便利贴整篇 notes（本地缓存优先，与写入安全网同口径）
 function noteCurrentNotes() {
@@ -2389,6 +2509,7 @@ function noteSyncGroupUi(src, keep, hide) {
   // 🆕 group 标记输入：只在 group 启用勾选时显示，并自动给一个全篇不重复的 {gp} 标记（可改）
   const showMark = !hide && enabled && !!(box && box.checked && !box.disabled);
   noteShowGroupMark(showMark, src, keep);
+  noteShowGroupName(showMark, src, keep);
   return enabled;
 }
 // 編輯小圓點「單元」補 1 個 [[cr:建立日]]（不是每個自然行都加！）；與行事曆 tlEnsureCrMarkerForBlock 同口徑，單元只補 1 個
@@ -2630,6 +2751,7 @@ async function noteFindSameOpen(e) {
   const dot = e.target.closest && e.target.closest('.ev-md-edit');
   if (!dot) return;              // 不是小圆点：不拦截，交给浏览器原生右键
   e.preventDefault();            // 阻止原生右键
+  noteTermMenuClose();           // 🆕 确认要开自己菜单后才收别套（TERM 胶囊菜单）
   const uid = dot.getAttribute('data-uid') || '';
   const line = dot.getAttribute('data-line');
   const pt = { x: e.clientX, y: e.clientY };   // await 前先留住坐标（原生事件对象不回收，但留一手更安全）
@@ -3350,6 +3472,7 @@ function noteBlockMenuOpen(e) {
   }
   noteBlockMenuTarget = { uid, start, end, type, mk: isMk, dot };
   noteFindSameClose();           // 关掉另一套菜单，避免重叠
+  noteTermMenuClose();
   const menu = document.getElementById('noteBlockMenu');
   if (!menu) return;
   // 🆕 可搬移的区块＝{gp} 小事件群 + 整行 [[…]] 标示；投影贴只读也一并收起。
@@ -3388,8 +3511,9 @@ function vsrGotoMenuOpen(e) {
   // ⚠️ 关键：关掉另两套菜单的动作必须放在「确认要开自己菜单」之后，
   //   否则本全局 contextmenu 监听会在每次右键都先跑、把 noteFindSameOpen/noteBlockMenuOpen
   //   刚打开的「编辑小圆点」菜单（#noteFindSameMenu / #noteBlockMenu）立刻关掉（2026-10-31 实测踩雷）。
-  noteFindSameClose();          // 开这套菜单前，先收掉另两套，避免重叠
+  noteFindSameClose();          // 开这套菜单前，先收掉另三套，避免重叠
   noteBlockMenuClose();
+  noteTermMenuClose();
   vsrGotoSrc = src;
   const menu = document.getElementById('vsrGotoMenu');
   if (!menu) return;
@@ -3409,6 +3533,67 @@ function vsrGotoMenuClose() {
   const menu = document.getElementById('vsrGotoMenu');
   if (menu) menu.classList.remove('open');
   vsrGotoSrc = '';
+}
+// 🆕 右键正文里的 TERM 术语胶囊（.tl-term-cap[data-term]）→ 下拉菜单「显示此 TERM 的子节点／父节点」。
+//   便利贴自己没有术语表 → 两项都唤起主程式开 📖 术语表并套父阶过滤（wake-main-from-note action='glossary'）。
+//   胶囊 HTML 由主窗渲染后经 IPC 送来，本窗体只读 data-term，不自己解析 TERM（第四份解析器只存在于主进程字典）。
+//   与 #noteFindSameMenu / #noteBlockMenu / #vsrGotoMenu 平行：只认术语胶囊，定位口径照抄 vsrGotoMenuOpen。
+let noteTermMenuName = '';
+function noteTermMenuOpen(e) {
+  const cap = e.target.closest && e.target.closest('.tl-term-cap[data-term]');
+  if (!cap) return;              // 不是术语胶囊：不拦截，交给浏览器原生右键（也避免误关其它菜单）
+  const name = cap.getAttribute('data-term') || '';
+  if (!name) return;
+  e.preventDefault();
+  // ⚠️ 关别套菜单必须在「确认要开自己菜单」之后（同 vsrGotoMenuOpen 的 2026-10-31 踩雷注释）
+  noteFindSameClose();
+  noteBlockMenuClose();
+  vsrGotoMenuClose();
+  noteTermMenuName = name;
+  const menu = document.getElementById('noteTermMenu');
+  if (!menu) return;
+  menu.querySelectorAll('.nami').forEach((item) => { item.disabled = false; item.title = ''; });
+  menu.classList.add('open');    // 先開，才量得到尺寸（base 是 display:none）
+  const noteEl = document.getElementById('note');
+  const rect = noteEl.getBoundingClientRect();
+  const mw = menu.offsetWidth || 190;
+  const mh = menu.offsetHeight || 64;
+  let left = e.clientX - rect.left;
+  let top = e.clientY - rect.top;
+  if (top + mh > rect.height - 2) top = Math.max(2, top - mh);   // 太靠下 → 往上翻
+  if (left + mw > rect.width - 2) left = Math.max(2, left - mw);  // 太靠右 → 往左翻
+  menu.style.left = String(Math.max(2, left)) + 'px';
+  menu.style.top = String(top) + 'px';
+  noteTermMenuRefreshKin(name);
+}
+function noteTermMenuClose() {
+  const menu = document.getElementById('noteTermMenu');
+  if (menu) menu.classList.remove('open');
+  noteTermMenuName = '';
+}
+// 🆕 置灰判断：查主进程术语字典，本地算「直接一层」亲属（与桌面 tlTermKin 同口径：toLowerCase 比对）。
+//   菜单先显示、查询回来才置灰：右键不该被 IPC 往返卡住；这段空窗点下去主窗会显示「暂无子节点」空态，无害。
+async function noteTermMenuRefreshKin(name) {
+  let terms = [];
+  try { terms = await ipcRenderer.invoke('sticky-note-terms'); } catch (err) { return; }
+  if (noteTermMenuName !== name) return;   // 期间已关菜单或换了目标 → 丢弃这次结果
+  const menu = document.getElementById('noteTermMenu');
+  if (!menu || !menu.classList.contains('open')) return;
+  const key = String(name).trim().toLowerCase();
+  const all = terms || [];
+  const self = all.find((t) => String(t.term || '').toLowerCase() === key);
+  const parent = (self && self.parent) || '';
+  const children = all.filter((t) => String(t.parent || '').toLowerCase() === key);
+  const cItem = menu.querySelector('.nami[data-act="children"]');
+  const pItem = menu.querySelector('.nami[data-act="parent"]');
+  if (cItem) {
+    cItem.disabled = !children.length;
+    cItem.title = children.length ? ('子节点：' + children.map((t) => t.term).join('、')) : ('没有任何术语把父阶写成「' + name + '」');
+  }
+  if (pItem) {
+    pItem.disabled = !parent;
+    pItem.title = parent ? ('父节点：' + parent) : ('「' + name + '」没有设定父阶（第 5 栏留空）');
+  }
 }
 // 🆕 复制整块内容：读权威底稿、取 [start..end] 原文写剪贴板（与 noteFindSameCopy 同源 IPC）
 async function noteBlockCopy(t) {
@@ -3960,7 +4145,12 @@ async function confirmAddCheck() {
     const raw = inp.value.replace(/\r\n/g, '\n');
     const gpOn = !!(gpBox && gpBox.checked && !gpBox.disabled);
     const mark = gpOn ? noteGroupMarkValue() : null;
-    const blockText = noteResolveGroupText(raw, gpOn, noteGroupWasOn, mark);
+    let blockText = noteResolveGroupText(raw, gpOn, noteGroupWasOn, mark);
+    // 🆕 围栏名称：输入框手动改过（脏）才写回；未脏以 textarea 原文 NAME 为准，避免旧回填值覆写新 NAME
+    if (gpOn) {
+      const gnv = noteGroupNameValue();
+      if (gnv !== noteGroupNameBaseline) blockText = noteApplyGroupNameToBlock(blockText, gnv);
+    }
     // 🆕 ① 底稿权威化：整篇覆写前现拉最新底稿
     const notes = await fetchAuthoritativeNotes(target.uid);
     if (notes == null) { window.alert('无法读取该便利贴的最新内容，为避免覆盖资料已取消保存。'); return false; }
@@ -3984,6 +4174,9 @@ async function confirmAddCheck() {
       //    否则使用者看到旧的行尾式原文继续编辑，下一次 ⌘S 会把块级群降级回去。
       //    markAddCheckBaseline() 会一并重设文字／勾选／群标记三条基线，不会误判成未保存。
       inp.value = newLines.join('\n');
+      // 🆕 名称输入框随保存后的文字回填（markAddCheckBaseline 会依它重设基线）
+      const gni = document.getElementById('noteGroupName');
+      if (gni && gpOn) gni.value = noteCurrentGpName(newLines.join('\n'));
       markAddCheckBaseline();
       showStickyRefreshFeedback('已保存（按下方「关闭」按钮）');
       return true;
@@ -4802,9 +4995,105 @@ function noteUnwrapHighlights() {
 // 依當前 NOTE_HL 重打高亮（先清再打，重複呼叫也安全）
 function noteApplyHighlight() {
   noteUnwrapHighlights();
-  if (!NOTE_HL) return;
+  if (!NOTE_HL) { noteSearchRecollect(); return; }
   noteWrapMatches(document.getElementById('body'), NOTE_HL);
   noteWrapMatches(document.getElementById('title'), NOTE_HL);
+  // 重打＝旧 <mark> 全成孤儿：清单必须由这里统一重建（六个呼叫点全是「重绘后补高亮」语义，一律不抢滚动）
+  noteSearchRecollect();
+}
+// ══════════════ 🆕 本贴全文搜索（参考 calendar：wrapMatchesInElement → gotoMatch → focusSearchMatch） ══════════════
+//   便利贴已有 ☰「📍 定位」用的同一套 mark 引擎，这里只补 calendar 有、便利贴还没有的三件事：
+//   ①「看得见」的命中清单（被「只显示未完成」display:none 挡掉的行不算命中，滚过去也看不见）
+//   ② 第几处计数「1/7」③ 当前命中 .current ＋ scrollIntoView 居中。
+function noteSearchEls() {
+  return {
+    wrap: document.getElementById('noteSearchWrap'),
+    input: document.getElementById('noteSearchInput'),
+    count: document.getElementById('noteSearchCount')
+  };
+}
+// 只收可见命中：getClientRects() 覆盖「祖先 display:none」的一切情形（含编辑模式整块隐藏 #body），不必点名 class
+function noteSearchVisibleMarks() {
+  const out = [];
+  ['title', 'body'].forEach((id) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.querySelectorAll('mark.search-highlight').forEach((m) => {
+      if (m.getClientRects().length > 0) out.push(m);
+    });
+  });
+  return out;
+}
+function noteSearchShowCount() {
+  const { count } = noteSearchEls();
+  if (!count) return;
+  const len = noteSearchMatches.length;
+  if (!len) { count.textContent = NOTE_HL ? '0/0' : ''; count.classList.toggle('none', !!NOTE_HL); return; }
+  count.textContent = (noteSearchIdx + 1) + '/' + len;
+  count.classList.remove('none');
+}
+// 「定位到第 i 处」的唯一落点（calendar focusSearchMatch 同口径）：摘 .current → 强制重排 → 加 .current → 滚到中央。
+// doScroll=false 用于「重绘后重建」：只恢复在哪一处，不抢刚落好的滚动位置。
+function noteSearchGoto(i, doScroll) {
+  const len = noteSearchMatches.length;
+  if (!len) { noteSearchIdx = -1; noteSearchShowCount(); return; }
+  noteSearchIdx = ((i % len) + len) % len;
+  for (const m of noteSearchMatches) m.classList.remove('current');
+  const cur = noteSearchMatches[noteSearchIdx];
+  if (!cur) return;
+  // 同一帧 remove→add 不会重播 CSS 动画：先读一次布局强制重排，让每次 Enter（含停在同一处）都再闪一次
+  void cur.offsetWidth;
+  cur.classList.add('current');
+  if (doScroll !== false) cur.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  noteSearchShowCount();
+}
+// 由 noteApplyHighlight 收尾调用：按当前 NOTE_HL 重建清单。词没变（刷新／翻页／编辑回写后重打）→ 留住第几处；
+// 词变了（新输入）→ 归 0。两种都只补 .current、不滚动，避免抢掉重绘刚落好的位置。
+function noteSearchRecollect() {
+  noteSearchMatches = NOTE_HL ? noteSearchVisibleMarks() : [];
+  if (noteSearchHlQuery !== NOTE_HL) { noteSearchIdx = 0; noteSearchHlQuery = NOTE_HL; }
+  if (!noteSearchMatches.length) { noteSearchIdx = -1; noteSearchShowCount(); return; }
+  if (noteSearchIdx < 0 || noteSearchIdx >= noteSearchMatches.length) noteSearchIdx = 0;
+  noteSearchGoto(noteSearchIdx, false);
+}
+// 输入即时搜：把词写进唯一状态 NOTE_HL（☰「📍 定位」那颗读同一个值）→ 重打高亮 → 滚到第一处
+function noteSearchRun(rawQuery) {
+  NOTE_HL = String(rawQuery == null ? noteSearchQuery() : rawQuery).trim().toLowerCase();
+  noteApplyHighlight();
+  if (noteSearchMatches.length) noteSearchGoto(0, true);
+}
+function noteSearchQuery() {
+  const { input } = noteSearchEls();
+  return (((input && input.value) || '').trim().toLowerCase());
+}
+// Enter／Shift+Enter 的唯一入口（calendar searchMove 同口径）
+function noteSearchMove(step) {
+  if (!noteSearchMatches.length) { if (NOTE_HL) noteSearchRun(); return; }
+  noteSearchGoto(noteSearchIdx + step, true);
+}
+// Esc：清空这一颗（词归空 → noteApplyHighlight 顺手摘掉所有 mark）
+function noteSearchClear() {
+  const { input } = noteSearchEls();
+  if (input) input.value = '';
+  noteSearchRun('');
+}
+// 开 ☰ 菜单＝清空搜索（既有语义：菜单那颗原本就会清掉自己的框）→ 贴面这颗同步清，别让「框里有字、画面无高亮」打架
+function noteSearchResetBox() {
+  const { input } = noteSearchEls();
+  if (input) input.value = '';
+}
+// ☰ 菜单里改了词 → 反映到贴面这颗（同一份词、同一个开关，不造第二套状态），让关菜单后 Enter 能直接接力导航。
+//   镜像的是 NOTE_HL（有效词）而不是菜单框里的原文：☰ 的「📍 定位」关掉时 NOTE_HL 是空，
+//   贴面这颗就该跟着空——否则「框里有字、画面无高亮」两颗互相打脸。
+function noteSearchMirrorFromMenu() {
+  const { input } = noteSearchEls();
+  if (input) input.value = NOTE_HL || '';
+}
+// 编辑模式＝正文换成 textarea，mark 无处可放 → 这一颗置灰（用户拍板，不自动退出编辑）
+function noteSearchSetEnabled(enabled) {
+  const { wrap, input } = noteSearchEls();
+  if (input) input.disabled = !enabled;
+  if (wrap) wrap.classList.toggle('disabled', !enabled);
 }
 // 当前事件对象：优先本地解析（calendar.md 正式档）；本地没有则用主程式推来的 ref
 //   ⚠️ 回退到 ref 的两种情形（其余一律当作「找不到」，宁可提示也不显示幽灵内容）：
@@ -5345,6 +5634,9 @@ function syncEditSeg() {
     handle.title = editMode ? '切换到渲染模式' : '切换到编辑模式';
     handle.setAttribute('aria-label', handle.title);
   }
+  // 🔎 编辑模式正文换成 textarea，<mark> 无处可放 → 搜索那颗置灰（词与高亮都留着，回渲染模式照旧接着用）。
+  //    挂在这里而不是 setEditMode 里：翻页 renderFlipPage 是裸改 editMode＝false，不走 setEditMode。
+  noteSearchSetEnabled(!editMode);
 }
 
 // 读取当前事件（KEY/IDX）的原始 notes（正式档直接回读 calendar.md；外部 include 文件用主程式推来的 ref）
@@ -6548,6 +6840,7 @@ function menuToggleLocate() {
 // 把目前定位狀態反映到 NOTE_HL 並重打高亮（渲染模式；編輯模式下 body 隱藏，重打也無害）
 function menuApplyLocate() {
   NOTE_HL = menuLocateEffective() ? menuGetQuery() : '';
+  noteSearchMirrorFromMenu();   // 🔎 先让贴面那颗反映同一个词，noteApplyHighlight 收尾的重建才知道「词变了、序号归 0」
   noteApplyHighlight();
 }
 // 同步定位按鈕的 disabled / aria-pressed / 文字狀態
@@ -6896,6 +7189,7 @@ function bindFlipSwipe(note) {
 document.addEventListener('contextmenu', noteFindSameOpen);
 document.addEventListener('contextmenu', noteBlockMenuOpen);
 document.addEventListener('contextmenu', vsrGotoMenuOpen);
+document.addEventListener('contextmenu', noteTermMenuOpen);
 document.addEventListener('click', (e) => {
   const fsm = document.getElementById('noteFindSameMenu');
   if (fsm && fsm.classList.contains('open') && !(e.target.closest && e.target.closest('#noteFindSameMenu'))) noteFindSameClose();
@@ -6903,6 +7197,8 @@ document.addEventListener('click', (e) => {
   if (bm && bm.classList.contains('open') && !(e.target.closest && e.target.closest('#noteBlockMenu'))) noteBlockMenuClose();
   const vm = document.getElementById('vsrGotoMenu');
   if (vm && vm.classList.contains('open') && !(e.target.closest && e.target.closest('#vsrGotoMenu'))) vsrGotoMenuClose();
+  const tm = document.getElementById('noteTermMenu');
+  if (tm && tm.classList.contains('open') && !(e.target.closest && e.target.closest('#noteTermMenu'))) noteTermMenuClose();
   // 🆕 × 的关闭选项菜单：点别处收起，但点 × 自己要留给 toggle（否则永远只能开不能关）。
   const cm = document.getElementById('noteCloseMenu');
   if (cm && cm.classList.contains('open')
@@ -6920,6 +7216,8 @@ document.addEventListener('keydown', (e) => {
   if (bm && bm.classList.contains('open')) { noteBlockMenuClose(); return; }
   const vm = document.getElementById('vsrGotoMenu');
   if (vm && vm.classList.contains('open')) { vsrGotoMenuClose(); return; }
+  const tm = document.getElementById('noteTermMenu');
+  if (tm && tm.classList.contains('open')) { noteTermMenuClose(); return; }
   const ov = document.getElementById('findSameOv');
   if (ov && ov.classList.contains('show')) { hideNoteFindSame(); return; }
   const mt = document.getElementById('noteMoveToast');
@@ -6998,6 +7296,21 @@ document.addEventListener('keydown', (e) => {
         try { ipcRenderer.invoke('wake-main-from-note', { key: src, action: 'scroll' }); }
         catch (err) { window.alert('滚动到该事件失败：' + (err && err.message ? err.message : err)); }
       }
+    });
+  }
+  const termMenu = document.getElementById('noteTermMenu');
+  if (termMenu) {
+    // 🆕 TERM 胶囊右键菜单项委托（按 data-act 分流）：children／parent → 主窗开 📖 术语表并套父阶过滤
+    termMenu.addEventListener('click', (e) => {
+      const item = e.target.closest && e.target.closest('.nami');
+      if (!item || item.disabled) return;
+      e.stopPropagation();
+      const act = item.getAttribute('data-act');
+      const name = noteTermMenuName;
+      noteTermMenuClose();          // 会清掉 name，故先存副本
+      if (!name) return;
+      try { ipcRenderer.invoke('wake-main-from-note', { key: KEY, action: 'glossary', term: name, mode: act === 'parent' ? 'parent' : 'children' }); }
+      catch (err) { window.alert('打开术语表失败：' + (err && err.message ? err.message : err)); }
     });
   }
   const fsOv = document.getElementById('findSameOv');
@@ -7176,17 +7489,19 @@ const NOTE_MARKER_DEFS = [
   },
   {
     id: 'term', label: '📖 术语解释', forbid: ']',
-    syntax: '[[术语:释义:领域:发行]]',
+    syntax: '[[术语:释义:领域:发行:父阶]]',
     fields: [
       { key: 'term', label: '术语', type: 'text', required: true, forbid: ':', placeholder: '要解释的词，如 Apple' },
       { key: 'def', label: '释义', type: 'text', placeholder: '这个词的意思' },
       { key: 'domain', label: '领域', type: 'text', forbid: ':', placeholder: '可留空，如：水果' },
       { key: 'release', label: '发行', type: 'text', forbid: ':', placeholder: '可留空，如：首发' },
+      // 🆕 第 5 栏「父阶」：不占胶囊本体，只挂进 tooltip 的「↑ 父阶：X」（渲染见 tlTermTooltip）
+      { key: 'parent', label: '父阶术语', type: 'text', forbid: ':', placeholder: '可留空，如：蔷薇属（上级术语名）' },
     ],
-    // 解析器按「第一个冒号前＝术语，后面依序是释义／领域／发行」定位，空栏位也要占位；
+    // 解析器按「第一个冒号前＝术语，后面依序是释义／领域／发行／父阶」定位，空栏位也要占位；
     // 所以只把最后有内容的栏位写出来，中间留空写成空段（[[X::领域]] 这种）。
     build: (v) => {
-      const segs = [v.def, v.domain, v.release];
+      const segs = [v.def, v.domain, v.release, v.parent];
       let end = -1;
       segs.forEach((s, i) => { if (s) end = i; });
       return '[[' + v.term + (end < 0 ? '' : ':' + segs.slice(0, end + 1).join(':')) + ']]';
@@ -7194,7 +7509,7 @@ const NOTE_MARKER_DEFS = [
     check: (v) => {
       if (/^(dl|cp|cr|alert|remind|bookmark)$/i.test(v.term)) return '「术语」不能叫 dl／cp／cr／alert／remind／bookmark，这些名字另有专属含义，渲染时会被当成别的标示';
       if (/^\d{4}-\d{2}-\d{2}$/.test(v.term)) return '「术语」不能是 YYYY-MM-DD 这种日期，会被日期标记吃掉';
-      if (v.def && v.def.indexOf(':') >= 0 && (!v.domain || !v.release)) return '「释义」里有「:」时，「领域」与「发行」要一起填，否则多出来的冒号会被拆成领域／发行';
+      if (v.def && v.def.indexOf(':') >= 0 && (!v.domain || !v.release || !v.parent)) return '「释义」里有「:」时，「领域」「发行」「父阶术语」要一起填，否则多出来的冒号会被拆成后面几栏';
       return '';
     },
   },

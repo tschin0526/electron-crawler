@@ -1890,11 +1890,11 @@
     /* ===== 📅 行程视图（calendar.md 专用）：与 Lite 版同款视觉 ===== */
     /* ⚠️ .ev-tip / .ev-almanac-pop 掛載在 <body>（不在 #calEventsPane 內）→ 必須把它們一併納入 --ev-* 變數作用域，
        否則 var(--ev-card) 解析失敗 → 提示框/老黃曆彈層背景透明（使用者截圖實測，老黃曆彈層 2026-09-17 同款踩坑）。 */
-    #calEventsPane, #tlEvFormOverlay, #tlDiaryFormOverlay, #tlRepeatOverviewOverlay, #tlEvStatsOverlay, #tlIncludeListOverlay, #tlAddCheckOverlay, #tlStartWorkOverlay, .ev-tip, .ev-almanac-pop {
+    #calEventsPane, #tlEvFormOverlay, #tlDiaryFormOverlay, #tlRepeatOverviewOverlay, #tlEvStatsOverlay, #tlIncludeListOverlay, #tlAddCheckOverlay, #tlStartWorkOverlay, #tlGlossaryOverlay, .ev-tip, .ev-almanac-pop {
       --ev-bg: #0f172a; --ev-card: #1e293b; --ev-text: #e2e8f0;
       --ev-muted: #94a3b8; --ev-border: #334155; --ev-primary: #7c3aed;
     }
-    body:not(.dark) #calEventsPane, body:not(.dark) #tlEvFormOverlay, body:not(.dark) #tlDiaryFormOverlay, body:not(.dark) #tlRepeatOverviewOverlay, body:not(.dark) #tlEvStatsOverlay, body:not(.dark) #tlIncludeListOverlay, body:not(.dark) #tlAddCheckOverlay, body:not(.dark) #tlStartWorkOverlay, body:not(.dark) .ev-tip, body:not(.dark) .ev-almanac-pop {
+    body:not(.dark) #calEventsPane, body:not(.dark) #tlEvFormOverlay, body:not(.dark) #tlDiaryFormOverlay, body:not(.dark) #tlRepeatOverviewOverlay, body:not(.dark) #tlEvStatsOverlay, body:not(.dark) #tlIncludeListOverlay, body:not(.dark) #tlAddCheckOverlay, body:not(.dark) #tlStartWorkOverlay, body:not(.dark) #tlGlossaryOverlay, body:not(.dark) .ev-tip, body:not(.dark) .ev-almanac-pop {
       --ev-bg: #f8fafc; --ev-card: #ffffff; --ev-text: #1f2937;
       --ev-muted: #6b7280; --ev-border: #e5e7eb; --ev-primary: #2563eb;
     }
@@ -2424,6 +2424,30 @@
       box-shadow: 0 1px 2px rgba(0,0,0,0.4);
       cursor: default;
     }
+    /* 🆕 2026-11-15：NAME 围栏名称徽标 — 文字胶囊（auto 宽），高度与 .gp-badge 同级。
+       兜底用 TERM 膠囊同系金底棕字：無色围栏時 .gp-badge 的 background:var(--gp-fg,currentColor) 會因
+       color:var(--gp-bg,#fff) 变成白底白字（名称是文字，不像 🔔 emoji 仍可見）→ 自帶可讀兜底；有 fg/bg 仍跟隨围栏色。 */
+    .md-unit.is-gp .gp-badge.gp-badge-name {
+      width: auto; max-width: 160px; padding: 0 .5em;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+      background: var(--gp-fg, #e6bd52);
+      color: var(--gp-bg, #4a3b12);
+    }
+    /* 🆕 2026-11-15：{NAME=X} 围栏名称引用胶囊 — 正文内可点击跳转（金色，与名称徽标同系）。
+       纯显示层；点击由 document 委托（主窗）／IPC（便利贴）处理。固定金色＝一眼认出是跳转链接，不随围栏色变。 */
+    .gp-name-ref {
+      display: inline-block; max-width: 220px; padding: 0 .5em; border-radius: 999px;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: middle;
+      background: #e6bd52; color: #4a3b12; border: 1px solid rgba(74,59,18,.35);
+      font-size: .85em; line-height: 1.2; cursor: pointer;
+    }
+    .gp-name-ref:hover { filter: brightness(1.06); }
+    /* 🆕 2026-11-15：多个同名围栏的选择清单（tlGpNamePickerOverlay 内） */
+    .tl-gpnp-row { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-bottom: 1px solid var(--ev-border, rgba(128,128,128,.2)); }
+    .tl-gpnp-label { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .tl-gpnp-date { color: var(--ev-muted, #888); font-size: .85em; margin-left: .4em; }
+    .tl-gpnp-go { flex: 0 0 auto; font-size: 11px; background: var(--ev-primary, #3b82f6); color: #fff; border: none; border-radius: 3px; padding: 2px 10px; cursor: pointer; }
+    .tl-gpnp-go:hover { filter: brightness(1.08); }
     /* TERM / ALERT 徽标样式统一 — 跟随 --gp-fg 字色 */
     /* 🆕 2026-11-15：右上角 TERM 徽标＝正文同款术语胶囊本体（渲染器直接产出 .tl-term-cap）。
        这里只压尺寸、不复制外观：胶囊的颜色／描边／圆角仍由上方 .tl-term-cap 规则负责，
@@ -2795,6 +2819,14 @@
     .tl-gloss-search-clear[hidden] { display: none !important; }
     .tl-gloss-search-clear:hover { color: var(--ev-text); border-color: var(--ev-primary); }
     .tl-gloss-search-count { flex: 0 0 auto; min-width: 3.5em; text-align: right; font-size: 11px; color: var(--ev-muted); white-space: nowrap; }
+    /* 🆕 父阶过滤横幅（右键 TERM 胶囊 →「显示子／父节点」）：金色细边＝与术语胶囊同族，深浅主题都用 var()＋半透明金。
+       固定在搜索条上方、不随清单滚动。⚠️ 作者 display:flex 会压过浏览器 [hidden]，必须显式收掉（同 .tl-gloss-search-clear[hidden]）。 */
+    .tl-gloss-kinbar { flex-shrink: 0; display: flex; align-items: center; gap: 8px; margin: 10px 0 0; padding: 6px 10px; border: 1px solid rgba(212,175,55,.55); border-radius: 8px; background: rgba(212,175,55,.12); font-size: 12px; }
+    .tl-gloss-kinbar[hidden] { display: none !important; }
+    .tl-gloss-kin-label { flex: 1 1 auto; min-width: 0; color: var(--ev-text); font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .tl-gloss-kin-count { flex: 0 0 auto; min-width: 1.6em; text-align: center; padding: 1px 7px; border-radius: 999px; background: rgba(212,175,55,.3); color: var(--ev-text); font-size: 11px; }
+    .tl-gloss-kin-clear { flex: 0 0 auto; padding: 3px 9px; border: 1px solid var(--ev-border); border-radius: 6px; background: transparent; color: var(--ev-muted); font-size: 11px; cursor: pointer; }
+    .tl-gloss-kin-clear:hover { color: var(--ev-text); border-color: #D4AF37; }
     /* 命中高亮用独立 class：⛔ 不复用主窗 .search-highlight（主程搜索导航用 document.querySelectorAll 全域统计，会被术语表污染）。
        金胶囊内改白底深棕字才看得出来；来源 chip 命中则整颗描金边（标题仍走 MD 行内渲染，不插 mark）。 */
     .tl-gloss-hl { background: #fbbf24; color: #000; padding: 0 2px; border-radius: 2px; font-weight: 600; }
@@ -5795,6 +5827,10 @@
       <label class="tl-ev-f-check" id="tlGroupRow" style="display:none" title="启用后保存会在每一行行尾加上 {gp}，整批内容视为一个唯一小事件">
         <input type="checkbox" id="tlGroupEnable"><span>group 启用（唯一小事件）</span>
       </label>
+      <!-- 🆕 围栏名称：group 启用勾选后显示，保存写入围栏 term 段 NAME=…（右上角徽标显示）；清空＝移除名称 -->
+      <label class="tl-ev-f-label" id="tlGroupNameRow" style="display:none">围栏名称
+        <input type="text" id="tlGroupName" placeholder="名称（显示于右上角徽标）" spellcheck="false" autocomplete="off" maxlength="60">
+      </label>
       <div class="tl-ev-form-actions">
         <button type="button" class="btn btn-secondary" id="tlAutoTermButton" onclick="tlAutoMarkTermsInEditBox()">自动标示术语</button>
         <button type="button" class="btn btn-secondary" onclick="tlCloseAddCheckDialog(true)">取消</button>
@@ -5873,15 +5909,29 @@
         <div class="tl-ev-stats-title">📖 Glossary 术语表<span class="tl-ev-stats-file" id="tlGlossaryFile"></span></div>
         <button type="button" class="tl-ev-stats-close" onclick="tlCloseGlossary()" aria-label="关闭">✕</button>
       </div>
-      <div class="tl-ev-stats-sub">收集全部行程（标题与备注）中的 <code>[[term:釋義:領域:發行]]</code>（後三段可省略；發行可记「首發」等創作節點）；同名术语只显示最完整的一条，按术语排序，悬停胶囊可看完整釋義</div>
-      <!-- 🆕 文本搜索：即时过滤术语／釋義／領域／發行／来源行程（标题＋日期），空格分隔多关键词为 AND；不写档、不重算 -->
+      <div class="tl-ev-stats-sub">收集全部行程（标题与备注）中的 <code>[[term:釋義:領域:發行:父阶]]</code>（後四段可省略；發行可记「首發」等創作節點，父阶只進 tooltip）；同名术语逐栏位合并成最完整的一条，按术语排序。<b>右键任一术语胶囊</b>可显示它的子节点／父节点</div>
+      <!-- 🆕 父阶过滤横幅：右键 TERM 胶囊 →「显示子／父节点」时出现；✕ 显示全部＝清掉过滤回到完整清单 -->
+      <div class="tl-gloss-kinbar" id="tlGlossaryKinBar" hidden></div>
+      <!-- 🆕 文本搜索：即时过滤术语／釋義／領域／發行／父阶／来源行程（标题＋日期），空格分隔多关键词为 AND；不写档、不重算 -->
       <div class="tl-gloss-searchbar">
         <span class="tl-gloss-search-icon" aria-hidden="true">🔍</span>
-        <input type="text" id="tlGlossarySearch" class="tl-gloss-search" placeholder="搜索术语、释义、领域、发行或来源行程…" autocomplete="off" spellcheck="false" aria-label="搜索术语表" oninput="tlRenderGlossary()" onkeydown="tlGlossSearchKeydown(event)">
+        <input type="text" id="tlGlossarySearch" class="tl-gloss-search" placeholder="搜索术语、释义、领域、发行、父阶或来源行程…" autocomplete="off" spellcheck="false" aria-label="搜索术语表" oninput="tlRenderGlossary()" onkeydown="tlGlossSearchKeydown(event)">
         <button type="button" id="tlGlossarySearchClear" class="tl-gloss-search-clear" aria-label="清空搜索" title="清空搜索" onclick="tlGlossSearchClear()" hidden>✕</button>
         <span class="tl-gloss-search-count" id="tlGlossarySearchCount" aria-live="polite"></span>
       </div>
       <div id="tlGlossaryBody" class="tl-ev-stats-body tl-gloss-list"></div>
+    </div>
+  </div>
+
+  <!-- 🆕 2026-11-15：{NAME=X} 多个同名围栏的选择清单（单一命中直接跳，多个才开这里） -->
+  <div id="tlGpNamePickerOverlay" class="tl-ev-form-overlay" style="display:none">
+    <div class="tl-ev-form-box tl-ev-stats-box">
+      <div class="tl-ev-stats-header">
+        <div class="tl-ev-stats-title" id="tlGpNamePickerTitle">🏷️ 围栏名称</div>
+        <button type="button" class="tl-ev-stats-close" onclick="tlCloseGpNamePicker()" aria-label="关闭">✕</button>
+      </div>
+      <div class="tl-ev-stats-sub">这个名称对应多个围栏小事件群，选一个跳转＋滚动＋闪烁定位。</div>
+      <div id="tlGpNamePickerBody" class="tl-ev-stats-body"></div>
     </div>
   </div>
 
@@ -7661,6 +7711,32 @@
     }
     if (window.electronAPI && typeof window.electronAPI.onStickyScrollToEvent === 'function') {
       window.electronAPI.onStickyScrollToEvent(function (p) { tlOnStickyScrollToEvent(p); });
+    }
+    // 🆕 便利贴右键 TERM 胶囊「显示此 TERM 的子／父节点」：主进程送来 {term, mode} → 开 📖 术语表并套父阶过滤。
+    //    与 tlOnStickyOpenEvent 同口径：先把 tlCalEvents 刷新成当前缓冲的最新事件，再开弹层（便利贴可能刚编辑过）。
+    function tlOnTermGlossaryRequest(payload) {
+      const term = payload && payload.term;
+      if (!term) return;
+      tlCalEvents = (typeof tlAllEvents === 'function')
+        ? tlAllEvents(document.getElementById('taskText').value)
+        : tlCalEvents;
+      if (typeof tlOpenGlossaryKin === 'function') tlOpenGlossaryKin(term, payload && payload.mode);
+    }
+    if (window.electronAPI && typeof window.electronAPI.onTermGlossaryRequest === 'function') {
+      window.electronAPI.onTermGlossaryRequest(function (p) { tlOnTermGlossaryRequest(p); });
+    }
+    // 🆕 2026-11-15：便利贴正文 {NAME=X} 名称胶囊点击 → 主进程送来 {name} → 全局搜索同名围栏并跳转。
+    //    与 tlOnTermGlossaryRequest 同口径：先刷新 tlCalEvents 成当前缓冲最新事件，再跳转（便利贴可能刚编辑过）。
+    function tlOnGpNameRefRequest(payload) {
+      const name = payload && payload.name;
+      if (!name) return;
+      tlCalEvents = (typeof tlAllEvents === 'function')
+        ? tlAllEvents(document.getElementById('taskText').value)
+        : tlCalEvents;
+      if (typeof tlJumpToGpName === 'function') tlJumpToGpName(name);
+    }
+    if (window.electronAPI && typeof window.electronAPI.onGpNameRefRequest === 'function') {
+      window.electronAPI.onGpNameRefRequest(function (p) { tlOnGpNameRefRequest(p); });
     }
     // 🆕 便利贴工具「新建便利贴」：便利贴窗收标题＋目标 include 档 → 这里负责真正建出完整 ## EVENT 块并追加落盘。
     //    便利贴窗没有解析/序列化能力（也不该有第二份），所以写盘统一回到 Calendar 这一处：

@@ -1003,13 +1003,66 @@ function calAlertBadgeHtml(inner) {
     '<span class="tl-alert-when">' + escapeHtml(displayWhen.slice(5)) + '</span>' +
     '<span class="tl-alert-state">' + (done ? '☑ 已完成' : '☐ 未完成') + '</span></span>';
 }
+// 🆕 術語記號解析（單一可信來源：渲染 calRenderTermDefs 與字典 calCollectTerms 共用；與桌面 tlParseTermToken 同口徑）：
+//   [[term]] / [[term:釋義]] / [[term:釋義:領域]] / [[term:釋義:領域:發行]] / [[term:釋義:領域:發行:父階]]
+//     → { term, def, domain }／＋release／＋parent（只在有值時才掛該欄位）
+//   從末尾數欄位：rest ≥3 個冒號＝5 段（末段＝父階）、≥2 個冒號＝4 段（末段＝發行）；1~3 段沿用舊口徑（末段＝領域）。
+//   ⚠️ 抽取前 LITE 是兩份內聯實作，且排除集與桌面略有出入：這裡照 LITE 舊口徑保留（不排 cr），
+//      唯一新增的排除＝字典那邊也會排掉裸 [[alert]]（與桌面同口徑）。
+function calParseTermToken(inner) {
+  const full = String(inner == null ? '' : inner).trim();
+  if (!full) return null;
+  const firstColon = full.indexOf(':');
+  let term, rest;
+  if (firstColon === -1) {
+    term = full; rest = '';
+    if (term === 'dl' || term === 'cp') return null;                                        // 日期標記名稱
+    if (/^remind$/i.test(term)) return null;                                               // 提醒標記字，不屬術語
+    if (/^bookmark$/i.test(term)) return null;                                              // 收藏標記字，不屬術語
+    if (/^alert$/i.test(term)) return null;                                                 // 鬧鈴標記字，不屬術語
+    if (/^\d{4}-\d{2}-\d{2}$/.test(term)) return null;                                      // 裸日期 → dl 機制
+  } else {
+    term = full.slice(0, firstColon).trim();
+    rest = full.slice(firstColon + 1);
+    if (term === 'dl' || term === 'cp') return null;                                        // 日期標記（dl:/cp: 後接日期）
+  }
+  if (!term) return null;
+  const parts = rest.split(':');
+  let def, domain, release = '', parent = '';
+  if (parts.length >= 4) {
+    parent = parts[parts.length - 1].trim();
+    release = parts[parts.length - 2].trim();
+    domain = parts[parts.length - 3].trim();
+    def = parts.slice(0, -3).join(':').trim();   // 釋義可含冒號 → 原樣併回
+  } else if (parts.length >= 3) {
+    release = parts[parts.length - 1].trim();
+    domain = parts[parts.length - 2].trim();
+    def = parts.slice(0, -2).join(':').trim();
+  } else {
+    const lastColon = rest.lastIndexOf(':');
+    def = lastColon === -1 ? rest.trim() : rest.slice(0, lastColon).trim();
+    domain = lastColon === -1 ? '' : rest.slice(lastColon + 1).trim();
+  }
+  const out = { term: term, def: def, domain: domain };
+  // ⛔ 無值時不掛該欄位：既有 calParseTermToken('Apple:苹果:水果') 深比較斷言零回歸。
+  if (release) out.release = release;
+  if (parent) out.parent = parent;
+  return out;
+}
+// 🆕 tooltip 文案（與桌面 tlTermTooltip 同口徑）：釋義用 --- 串，父階只在尾端掛「↑ 父阶：X」，不佔膠囊本體。
+function calTermTooltip(defs, t) {
+  const head = (defs || []).join(' --- ');
+  const tail = (t && t.parent) ? '↑ 父阶：' + t.parent : '';
+  if (!head) return tail;
+  return tail ? head + ' --- ' + tail : head;
+}
 // 🆕 術語（term）渲染（立體膠囊＋tooltip 顯示釋義；與桌面 calendar 雙端對齊）：
 //   [[term]]                → 立體膠囊（term）
 //   [[term:釋義]]            → 立體膠囊(term) ＋ 釋義以 tooltip 呈現（hover）
 //   [[term:釋義:領域]]       → 立體膠囊(term) ＋ 領域為內嵌小膠囊 ＋ 釋義 tooltip
 //   [[term:釋義:領域:發行]]  → 再加一顆「發行」小膠囊（首發／發布等創作節點，與桌面 calendar 同口徑）
-//   4 段以上：末段＝發行、倒數第二段＝領域、其餘（可含冒號）併回釋義；1~3 段沿用舊口徑（末段＝領域）。
-//   dl / cp 前綴（日期標記）與裸日期 [[YYYY-MM-DD]] 排除（留給 📅/✅ 機制）。逐行處理並跳過代碼圍欄。
+//   [[term:釋義:領域:發行:父階]] → 第 5 欄不加胶囊，只在 tooltip 尾端掛「↑ 父阶：X」
+//   解析規則見 calParseTermToken。逐行處理並跳過代碼圍欄。
 function calRenderTermDefs(text) {
   let inFence = false;
   return String(text).split('\n').map(function (line) {
@@ -1037,39 +1090,16 @@ function calRenderTermDefs(text) {
       }
       // 🆕 鬧鈴標記 [[alert:內容:下次提醒:間隔:是/否]] → ⏰ 徽標＋內容原文（不顯示「alert」字樣）
       if (/^alert:/i.test(inner)) return calAlertBadgeHtml(inner);
-      const full = inner.trim();
-      if (!full) return m;
-      const firstColon = full.indexOf(':');
-      let term, rest;
-      if (firstColon === -1) {
-        term = full; rest = '';
-        if (term === 'dl' || term === 'cp') return m;                       // 日期標記名稱
-        if (/^remind$/i.test(term)) return m;                                // 提醒標記字，不屬術語
-        if (/^bookmark$/i.test(term)) return m;                               // 收藏標記字，不屬術語
-        if (/^alert$/i.test(term)) return m;                                  // 鬧鈴標記字，不屬術語
-        if (/^\d{4}-\d{2}-\d{2}$/.test(term)) return m;                     // 裸日期 → dl 機制
-      } else {
-        term = full.slice(0, firstColon).trim();
-        rest = full.slice(firstColon + 1);
-        if (term === 'dl' || term === 'cp') return m;                       // 日期標記（dl:/cp: 後接日期）
-      }
-      // 4 段以上（rest 有 ≥2 個冒號）→ [[term:釋義:領域:發行]]；其餘沿用舊 1~3 段口徑。
-      const parts = rest.split(':');
-      let def, domain, release = '';
-      if (parts.length >= 3) {
-        release = parts[parts.length - 1].trim();
-        domain = parts[parts.length - 2].trim();
-        def = parts.slice(0, -2).join(':').trim();
-      } else {
-        const lastColon = rest.lastIndexOf(':');
-        def = lastColon === -1 ? rest.trim() : rest.slice(0, lastColon).trim();
-        domain = lastColon === -1 ? '' : rest.slice(lastColon + 1).trim();
-      }
+      // 🆕 解析改共用 calParseTermToken（原本這裡與 calCollectTerms 各有一份內聯實作）
+      const t = calParseTermToken(inner);
+      if (!t) return m;
+      // LITE 無全域術語字典，tooltip 只有本條釋義；父階依桌面同口徑掛在尾端
+      const tooltip = calTermTooltip(t.def ? [t.def] : [], t);
       const termHtml = '<span class="tl-term-cap"' +
-        (def ? ' title="' + escapeHtml(def) + '"' : '') + '>' +
-        escapeHtml(term) +
-        (domain ? '<span class="tl-term-domain">' + escapeHtml(domain) + '</span>' : '') +
-        (release ? '<span class="tl-term-release">' + escapeHtml(release) + '</span>' : '') +
+        (tooltip ? ' title="' + escapeHtml(tooltip) + '"' : '') + '>' +
+        escapeHtml(t.term) +
+        (t.domain ? '<span class="tl-term-domain">' + escapeHtml(t.domain) + '</span>' : '') +
+        (t.release ? '<span class="tl-term-release">' + escapeHtml(t.release) + '</span>' : '') +
         '</span>';
       return '<span class="tl-term">' + termHtml + '</span>';
     });
@@ -1085,33 +1115,13 @@ function calCollectTerms() {
       if (/^\s*```/.test(line)) { inFence = !inFence; return; }
       if (inFence) return;
       String(line).replace(/\[\[([^\]\n]+)\]\]/g, (m, inner) => {
-        if (/^remind:/i.test(inner)) return m;
-        if (/^bookmark:/i.test(inner)) return m;
-        if (/^alert:/i.test(inner)) return m;
-        const full = inner.trim();
-        if (!full) return m;
-        const firstColon = full.indexOf(':');
-        let term, rest;
-        if (firstColon === -1) {
-          term = full; rest = '';
-          if (term === 'dl' || term === 'cp') return m;
-          if (/^remind$/i.test(term)) return m;
-          if (/^bookmark$/i.test(term)) return m;
-          if (/^\d{4}-\d{2}-\d{2}$/.test(term)) return m;
-        } else {
-          term = full.slice(0, firstColon).trim();
-          rest = full.slice(firstColon + 1);
-          if (term === 'dl' || term === 'cp') return m;
-        }
-        if (!term) return m;
-        // 與桌面同口徑：4 段以上末段＝發行、倒數第二段＝領域、其餘併回釋義；字典只取釋義。
-        const parts = rest.split(':');
-        const lastColon = rest.lastIndexOf(':');
-        const def = parts.length >= 3
-          ? parts.slice(0, -2).join(':').trim()
-          : (lastColon === -1 ? rest.trim() : rest.slice(0, lastColon).trim());
-        const key = term.toLowerCase();
-        if (!map.has(key)) map.set(key, { term: term, def: def });
+        // 🆕 解析改共用 calParseTermToken（原本这裡與 calRenderTermDefs 各有一份內聯實作）。
+        //    排除集因此與渲染路徑完全一致：裸 [[alert]] 以前會被收進字典，現在排掉（與桌面同口徑）。
+        //    字典只取「術語名＋釋義」供編輯框自動標示，所以 5 段的領域／發行／父階自然不参与。
+        const t = calParseTermToken(inner);
+        if (!t) return m;
+        const key = t.term.toLowerCase();
+        if (!map.has(key)) map.set(key, { term: t.term, def: t.def });
         return m;
       });
     });
@@ -1304,9 +1314,9 @@ function calResolveColorName(input) {
 //   term 段用 | 分隔 alert|TERM=便利贴
 function calParseGpAttrs(raw) {
   const s = String(raw == null ? '' : raw).trim();
-  if (!s) return { key: '', fg: '', bg: '', anim: '', alert: false, extra: [], term: '', termName: '', railStyle: '', railA: '', railB: '' };
+  if (!s) return { key: '', fg: '', bg: '', anim: '', alert: false, extra: [], term: '', termName: '', name: '', railStyle: '', railA: '', railB: '' };
   const pipe1 = s.indexOf('|');
-  if (pipe1 < 0) return { key: s, fg: '', bg: '', anim: '', alert: false, extra: [], term: '', termName: '', railStyle: '', railA: '', railB: '' };
+  if (pipe1 < 0) return { key: s, fg: '', bg: '', anim: '', alert: false, extra: [], term: '', termName: '', name: '', railStyle: '', railA: '', railB: '' };
   const key = s.slice(0, pipe1).trim();
   const rest = s.slice(pipe1 + 1);
   const pipe2 = rest.indexOf('|');
@@ -1314,7 +1324,7 @@ function calParseGpAttrs(raw) {
   const termPart = pipe2 >= 0 ? rest.slice(pipe2 + 1) : '';
   // 解析 attrs 段
   const extra = [];
-  let fg = '', bg = '', anim = '', alert = false, termName = '', railStyle = '', railA = '', railB = '';
+  let fg = '', bg = '', anim = '', alert = false, termName = '', name = '', railStyle = '', railA = '', railB = '';
   attrsPart.split(',').forEach((pair) => {
     const p = pair.trim();
     if (!p) return;
@@ -1333,6 +1343,7 @@ function calParseGpAttrs(raw) {
         railB = calResolveColorName(rp[2].trim());
       }
     }
+    else if (k === 'name') { name = v; extra.push(p); }  // 留 extra 供写回保留
     else extra.push(p);
   });
   // 兜底：attrs 段里可能有 TERM=xxx（没有第二个 pipe 的情况），移到 termName
@@ -1356,6 +1367,7 @@ function calParseGpAttrs(raw) {
         const k = segTrim.slice(0, eq).trim().toUpperCase();
         const v = segTrim.slice(eq + 1).trim();
         if (k === 'TERM' && v) termName = v;
+        else if (k === 'NAME' && v) name = v;
         else if (k === 'ALERT') alert = v.toLowerCase() === 'true';
         else if (k === 'RAIL') {
           const rp = v.split('#');
@@ -1368,7 +1380,7 @@ function calParseGpAttrs(raw) {
       });
     });
   }
-  return { key: key, fg: fg, bg: bg, anim: anim, alert: alert, extra: extra, term: termPart, termName: termName, railStyle: railStyle, railA: railA, railB: railB };
+  return { key: key, fg: fg, bg: bg, anim: anim, alert: alert, extra: extra, term: termPart, termName: termName, name: name, railStyle: railStyle, railA: railA, railB: railB };
 }
 function calExtractGpAttrsFromLine(line) {
   const s = String(line == null ? '' : line);
@@ -1415,12 +1427,12 @@ function calGpFenceScan(lines) {
     if (f.kind === 'open') {
       if (!open) {
         const a = (typeof calExtractGpAttrsFromLine === 'function') ? calExtractGpAttrsFromLine(line) : { fg: '', bg: '', alert: false, extra: [] };
-        open = { i: i, key: f.key, fg: a.fg || '', bg: a.bg || '', anim: a.anim || '', alert: a.alert === true, extra: a.extra || [], term: a.term || '', termName: a.termName || '', railStyle: a.railStyle || '', railA: a.railA || '', railB: a.railB || '' };
+        open = { i: i, key: f.key, fg: a.fg || '', bg: a.bg || '', anim: a.anim || '', alert: a.alert === true, extra: a.extra || [], term: a.term || '', termName: a.termName || '', name: a.name || '', railStyle: a.railStyle || '', railA: a.railA || '', railB: a.railB || '' };
       }
       continue;
     }
     if (open && open.key === f.key) {
-      ranges.push({ start: open.i, end: i, key: f.key, fg: open.fg, bg: open.bg, anim: open.anim, alert: open.alert, extra: open.extra || [], term: open.term || '', termName: open.termName || '', railStyle: open.railStyle || '', railA: open.railA || '', railB: open.railB || '' });
+      ranges.push({ start: open.i, end: i, key: f.key, fg: open.fg, bg: open.bg, anim: open.anim, alert: open.alert, extra: open.extra || [], term: open.term || '', termName: open.termName || '', name: open.name || '', railStyle: open.railStyle || '', railA: open.railA || '', railB: open.railB || '' });
       markers.push(open.i, i);
       open = null;
     }
@@ -1447,6 +1459,9 @@ function calGpInlineStyle(b) {
 // 🆕 2026-11-15：TERM 那颗改为「术语胶囊本体」，与桌面 tlGpBadgesHtml 同口径（喂 calRenderTermDefs）
 function calGpBadgesHtml(b) {
   const badges = [];
+  if (b && b.name) {
+    badges.push('<span class="gp-badge gp-badge-name" title="围栏名称">\u{1F3F7}️ ' + escapeHtml(b.name) + '</span>');
+  }
   if (b && b.termName) {
     badges.push(calRenderTermDefs('[[' + b.termName + ']]'));
   }
@@ -1465,7 +1480,7 @@ function calGpFenceWrap(text) {
   const scan = calGpFenceScan(lines);
   const hit = scan.ranges.find((r) => r.start === s && r.end === e);
   // 🆕 2026-11-09：把 hit.fg / hit.bg 也帶出來，供 calWrapGpFence 重寫時保留 attrs
-  return hit ? { lines: lines, start: s, end: e, key: hit.key, fg: hit.fg || '', bg: hit.bg || '', anim: hit.anim || '', alert: hit.alert === true, extra: hit.extra || [], term: hit.term || '', termName: hit.termName || '', railStyle: hit.railStyle || '', railA: hit.railA || '', railB: hit.railB || '', scan: scan } : null;
+  return hit ? { lines: lines, start: s, end: e, key: hit.key, fg: hit.fg || '', bg: hit.bg || '', anim: hit.anim || '', alert: hit.alert === true, extra: hit.extra || [], term: hit.term || '', termName: hit.termName || '', name: hit.name || '', railStyle: hit.railStyle || '', railA: hit.railA || '', railB: hit.railB || '', scan: scan } : null;
 }
 // ── 🆕 2026-11-08：勾選「group 啟用」按保存時一律改寫成「塊級」{gpX}…{/gpX}，不再逐行補行尾標記 ──
 //  · 已是塊級群且沒給新標記 → 原樣保留；給了 mark → 整段改名（兩行一起改）。
@@ -1477,10 +1492,10 @@ function calWrapGpFence(text, mark) {
   if (wrap) {
     if (!mark) return lines.join('\n');
     // 🆕 給了新 mark → 組裝新 open 行：key 用新 mark，attrs 沿用原文（包括 alert 等）
-    const newOpen = calBuildGpOpenLine(mark, wrap.fg, wrap.bg, wrap.anim, wrap.extra || [], wrap.alert === true, wrap.railStyle || '', wrap.railA || '', wrap.railB || '');
+    const newOpen = calBuildGpOpenLine(mark, wrap.fg, wrap.bg, wrap.anim, wrap.extra || [], wrap.term || '', wrap.railStyle || '', wrap.railA || '', wrap.railB || '');
     const out = lines.slice();
     out[wrap.start] = newOpen;
-    out[wrap.end] = calBuildGpCloseLine(wrap.key);  // 🆕 close 只寫 key，不帶 attrs！
+    out[wrap.end] = calBuildGpCloseLine(calKeyFromGpMarker(mark));  // 🆕 close 用新 mark 的 key（與 note 同口径），不帶 attrs！
     return out.join('\n');
   }
   // 🆕 行尾式 → 塊級：從第一個行尾標記提取「完整字面量」（key + attrs 全都要）
@@ -1492,8 +1507,8 @@ function calWrapGpFence(text, mark) {
   // 🆕 用 mark（只有 key）組裝：attrs 沿用原文（包括 alert 等非 fg/bg/anim 屬性）
   if (mark) {
     const origAttrs = (typeof calExtractGpAttrsFromLine === 'function')
-      ? calExtractGpAttrsFromLine(open || '') : { fg: '', bg: '', anim: '', alert: false, extra: [], railStyle: '', railA: '', railB: '' };
-    open = calBuildGpOpenLine(mark, origAttrs.fg, origAttrs.bg, origAttrs.anim, origAttrs.extra || [], origAttrs.alert === true, origAttrs.railStyle || '', origAttrs.railA || '', origAttrs.railB || '');
+      ? calExtractGpAttrsFromLine(open || '') : { fg: '', bg: '', anim: '', alert: false, extra: [], term: '', railStyle: '', railA: '', railB: '' };
+    open = calBuildGpOpenLine(mark, origAttrs.fg, origAttrs.bg, origAttrs.anim, origAttrs.extra || [], origAttrs.term || '', origAttrs.railStyle || '', origAttrs.railA || '', origAttrs.railB || '');
   }
   open = open || '{gp}';
   const close = calBuildGpCloseLine(calKeyFromGpMarker(open));  // 🆕 close 只寫 key，不帶 attrs！
@@ -1506,20 +1521,53 @@ function calWrapGpFence(text, mark) {
 }
 // 🆕 2026-11-09：用 key + attrs 組裝 open 行（與桌面 tlBuildGpOpenLine 同口径）
 // 🆕 2026-11-13：加 extra 保留 alert 等非 fg/bg/anim 屬性
-function calBuildGpOpenLine(keyName, fg, bg, anim, extra, alert, railStyle, railA, railB) {
+// 🆕 2026-11-15：與 noteBuildGpOpenLine 同口径——alert 布尔改为 raw term，term 段原样保留（TERM/NAME/rail 不丢）
+function calBuildGpOpenLine(keyName, fg, bg, anim, extra, term, railStyle, railA, railB) {
   let s = String(keyName == null ? '' : keyName).trim();
+  if (!s) s = '{gp}';
   if (!s.startsWith('{')) s = '{' + s;
-  if (!s.endsWith('}')) s = s + '}';
-  if (s.indexOf('|') >= 0) return s;
+  let keyOnly = s.replace(/\|.*$/, '').trim();
+  if (!keyOnly.endsWith('}')) keyOnly = keyOnly + '}';
   const parts = [];
   if (fg) parts.push('fg=' + fg);
   if (bg) parts.push('bg=' + bg);
   if (anim) parts.push('anim=' + anim);
-  if (Array.isArray(extra)) extra.forEach((x) => { if (x) parts.push(x); });  // 🆕 保留 alert 等
-  if (alert) parts.push('alert');
   if (railStyle && railA && railB) parts.push('rail=' + railStyle + '#' + railA + '#' + railB);
-  if (!parts.length) return s;
-  return s.replace(/\}$/, '|' + parts.join(',') + '}');
+  if (Array.isArray(extra)) extra.forEach((x) => { if (x) parts.push(x); });
+  const termStr = String(term || '').trim();
+  let result = keyOnly.slice(0, -1);
+  if (parts.length) result += '|' + parts.join(',');
+  if (termStr) result += '|' + termStr;
+  return result + '}';
+}
+// 🆕 2026-11-15：把「围栏名称」写进 open 行的 NAME=（canonical 放 term 段）。三端同口径 noteGpApplyName/tlGpApplyName。
+//   attrs 段原样保留（双轨制），只清旧 NAME（attrs/term 两段）再按新值重建 term 段；name 空＝移除。
+function calGpApplyName(line, name) {
+  const src = String(line == null ? '' : line);
+  const lead = (src.match(/^[ \t]*/) || [''])[0];
+  const trimmed = src.trim();
+  if (!/^\{[ \t]*(?:group|gp)[ \t]*:?[ \t]*[^{}]*\}$/i.test(trimmed)) return src;
+  const nv = String(name == null ? '' : name).replace(/[{}|,]/g, '').trim();
+  const body = trimmed.slice(1, -1);
+  const p1 = body.indexOf('|');
+  if (p1 < 0) return lead + '{' + body + (nv ? '|NAME=' + nv : '') + '}';
+  const key = body.slice(0, p1);
+  const rest = body.slice(p1 + 1);
+  const p2 = rest.indexOf('|');
+  const attrs = p2 >= 0 ? rest.slice(0, p2) : rest;
+  const term = p2 >= 0 ? rest.slice(p2 + 1) : '';
+  const attrsClean = attrs.split(',').filter((it) => !/^\s*NAME\s*=/i.test(it)).join(',');
+  const items = [];
+  term.split('|').forEach((seg) => seg.split(',').forEach((it) => {
+    const t = it.trim();
+    if (t && !/^NAME\s*=/i.test(t)) items.push(t);
+  }));
+  if (nv) items.push('NAME=' + nv);
+  const termClean = items.join('|');
+  let out = key;
+  if (attrsClean || termClean) out += '|' + attrsClean;
+  if (termClean) out += '|' + termClean;
+  return lead + '{' + out + '}';
 }
 // 🆕 2026-11-09：純 key 提取（從 `{gpE|bg=白}` 或 `gpE` 或 `E` 提取 `E`）
 function calKeyFromGpMarker(marker) {
@@ -1750,7 +1798,7 @@ function calSplitMdBlocks(text) {
     // 🆕 塊級小事件群：優先於 isGp / task / list / table 等所有分支，整段（含兩行標記）原子化。
     if (fenceStart.has(i)) {
       const fe = fenceStart.get(i);
-      blocks.push({ start: i, end: fe.end, type: 'gp', fg: fe.fg || '', bg: fe.bg || '', alert: fe.alert === true, termName: fe.termName || '', railStyle: fe.railStyle || '', railA: fe.railA || '', railB: fe.railB || '' });
+      blocks.push({ start: i, end: fe.end, type: 'gp', fg: fe.fg || '', bg: fe.bg || '', alert: fe.alert === true, termName: fe.termName || '', name: fe.name || '', railStyle: fe.railStyle || '', railA: fe.railA || '', railB: fe.railB || '' });
       i = fe.end + 1; continue;
     }
     // 🆕 連續且「group 名相同」的 {gp} 行＝一個小事件（一顆編輯小圓點），覆蓋 task/list/para 等型態
@@ -1774,7 +1822,7 @@ function calSplitMdBlocks(text) {
       // 🆕 從行尾式 gp 第一行提取 fg/bg attrs（連續同名行之間 attrs 應一致；若不同，以第一行為準）
       const headAttrs = (typeof calExtractGpAttrsFromLine === 'function')
         ? calExtractGpAttrsFromLine(line) : { fg: '', bg: '' };
-      blocks.push({ start: i, end: j - 1, type: 'gp', fg: headAttrs.fg || '', bg: headAttrs.bg || '', alert: headAttrs.alert === true, termName: headAttrs.termName || '', railStyle: headAttrs.railStyle || '', railA: headAttrs.railA || '', railB: headAttrs.railB || '' });
+      blocks.push({ start: i, end: j - 1, type: 'gp', fg: headAttrs.fg || '', bg: headAttrs.bg || '', alert: headAttrs.alert === true, termName: headAttrs.termName || '', name: headAttrs.name || '', railStyle: headAttrs.railStyle || '', railA: headAttrs.railA || '', railB: headAttrs.railB || '' });
       i = j; continue;
     }
     if (isHeading(line)) { blocks.push({ start: i, end: i, type: 'heading' }); i++; continue; }
@@ -5212,7 +5260,36 @@ let calMdEditBaseline = '';
 // 🆕 「group 啟用（唯一小事件）」：只在「編輯內容區塊」出現，預設不啟用；原本已整組時預勾。
 let calGroupWasOn = false;
 let calGroupBaseline = false;
+let calGroupNameBaseline = '';   // 🆕 圍欄名稱輸入框的髒值基線
 function calMdEditEl(id) { return document.getElementById(id); }
+// 🆕 圍欄名稱輸入框：讀取當前值；無輸入框 → ''
+function calGroupNameValue() {
+  const inp = calMdEditEl('calGroupName');
+  return inp ? inp.value : '';
+}
+// 取一段原文裡第一個圍欄的既有 NAME（開框時回填名稱輸入框）
+function calCurrentGpName(src) {
+  const lines = String(src == null ? '' : src).replace(/\r\n/g, '\n').split('\n');
+  const scan = (typeof calGpFenceScan === 'function') ? calGpFenceScan(lines) : { ranges: [] };
+  return scan.ranges.length ? (scan.ranges[0].name || '') : '';
+}
+// 顯示／隱藏圍欄名稱輸入並回填既有 NAME
+function calShowGroupName(show, src) {
+  const row = calMdEditEl('calGroupNameRow');
+  const inp = calMdEditEl('calGroupName');
+  if (!row || !inp) return;
+  row.style.display = show ? '' : 'none';
+  inp.value = show ? calCurrentGpName(src) : '';
+  calGroupNameBaseline = inp.value;
+}
+// 把名稱寫進區塊裡每個圍欄的開啟行（term 段 NAME=…）；無圍欄則原樣返回。清空名稱＝移除 NAME。
+function calApplyGroupNameToBlock(blockText, name) {
+  const lines = String(blockText == null ? '' : blockText).replace(/\r\n/g, '\n').split('\n');
+  const scan = (typeof calGpFenceScan === 'function') ? calGpFenceScan(lines) : { ranges: [] };
+  if (!scan.ranges.length) return blockText;
+  scan.ranges.forEach((r) => { lines[r.start] = calGpApplyName(lines[r.start], name); });
+  return lines.join('\n');
+}
 // 單一 setter：所有對話框（add / task / block）都經 calShowMdEditDialog，這裡一次收口。
 function calSyncGroupUi(src, target, hide) {
   const row = calMdEditEl('calGroupRow');
@@ -5243,6 +5320,8 @@ function calSyncGroupUi(src, target, hide) {
     box.checked = !!detected;
   }
   calGroupBaseline = !!(box && box.checked && !box.disabled);
+  // 🆕 圍欄名稱輸入：只在 group 啟用勾選時顯示，並回填既有 NAME
+  calShowGroupName(enabled && !!(box && box.checked && !box.disabled), src);
   return enabled;
 }
 function calMdEditIsOpen() {
@@ -5252,9 +5331,12 @@ function calMdEditIsOpen() {
 function calMdEditDirty() {
   const inp = calMdEditEl('calMdEditInput');
   const gp = calMdEditEl('calGroupEnable');
-  // 🆕 只勾了 group 也算未保存（checkbox 不改 textarea 內容，光比文字會漏掉這個改動）
+  const gname = calMdEditEl('calGroupName');
+  const gpOn = !!(gp && !gp.disabled && gp.checked);
+  // 🆕 只勾了 group、或改了圍欄名稱也算未保存（都不改 textarea 內容，光比文字會漏掉）
   return (!!inp && inp.value !== calMdEditBaseline) ||
-         (!!gp && !gp.disabled && gp.checked !== calGroupBaseline);
+         (!!gp && !gp.disabled && gp.checked !== calGroupBaseline) ||
+         (gpOn && !!gname && gname.value !== calGroupNameBaseline);
 }
 function calLoadEventsForNotes() {
   // 📎 多檔聯運：便利貼來源需含 include 進來的只讀事件 → 用併集
@@ -5313,6 +5395,12 @@ function calShowMdEditDialog(title, hint, value, target) {
   inp.value = value;
   calMdEditBaseline = value;
   calSyncGroupUi(value, target);   // 🆕 只有 mode=block 才顯示 group 勾選；原本已整組時預勾
+  // 🆕 group 勾選切換：勾上→顯示圍欄名稱輸入並回填；取消→隱藏並清空
+  const gpBox = calMdEditEl('calGroupEnable');
+  if (gpBox) gpBox.onchange = () => {
+    const on = !!(gpBox.checked && !gpBox.disabled);
+    calShowGroupName(on, inp.value);
+  };
   ov.style.display = 'flex';
   setTimeout(() => inp.focus(), 0);
 }
@@ -5453,7 +5541,13 @@ function calMdEditSave() {
     }
     // 🆕 group 啟用：勾選時逐行補 {gp}（整塊＝一個小事件）；原本整組卻取消勾選＝拆組；其餘原樣
     const gpBox = calMdEditEl('calGroupEnable');
-    const resolved = calResolveGroupText(text, !!(gpBox && gpBox.checked && !gpBox.disabled), calGroupWasOn);
+    const gpOn = !!(gpBox && gpBox.checked && !gpBox.disabled);
+    let resolved = calResolveGroupText(text, gpOn, calGroupWasOn);
+    // 🆕 圍欄名稱：輸入框手動改過（髒）才寫回；未髒以 textarea 原文 NAME 為準，避免舊回填值覆寫新 NAME
+    if (gpOn) {
+      const gnv = calGroupNameValue();
+      if (gnv !== calGroupNameBaseline) resolved = calApplyGroupNameToBlock(resolved, gnv);
+    }
     const newLines = resolved.split('\n');
     lines.splice(target.start, span, ...newLines);
     ev.notes = lines.join('\n');

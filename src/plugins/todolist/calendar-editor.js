@@ -1104,13 +1104,27 @@
     }
 
     // ========== 📖 Glossary 术语表：收集全部行程（标题＋备注）中的 [[term]]，排序去重展示 ==========
-    // 同名 term 只保留「最完整」的一条：4 段 > 3 段 > 2 段 > 1 段；完整度并列时以先出现者为准。
+    // 同名 term 只保留「最完整」的一条：5 段 > 4 段 > 3 段 > 2 段 > 1 段；完整度并列时以先出现者为准。
     // 跳过代码围栏（与渲染约定一致）；解析规则共用 tlParseTermToken（dl/cp/cr/裸日期排除）。
+    // ⚠️ 权重是「越靠后的栏位越重」（父阶 8 ＞ 发行 4 ＞ 领域 2 ＞ 释义 1），所以完整度只用来决定
+    //    「哪一栏的新值值得覆盖旧值」；栏位一律逐格合并（mergeTermFields），否则「只写了父阶」的
+    //    一条会整条抹掉别处「释义＋领域＋发行」的内容。
     function tlTermCompleteness(t) {
-      return (t.release ? 4 : 0) + (t.domain ? 2 : 0) + (t.def ? 1 : 0);
+      return (t.parent ? 8 : 0) + (t.release ? 4 : 0) + (t.domain ? 2 : 0) + (t.def ? 1 : 0);
     }
     function tlCollectTerms() {
-      const map = new Map();   // 小写 term 为 key（大小写不同视为同一 term）→ { term, def, domain, release, count, srcs }
+      const map = new Map();   // 小写 term 为 key（大小写不同视为同一 term）→ { term, def, domain, release, parent, count, srcs }
+      // 逐栏位合并：只拿「有值」的一栏去补／覆盖，绝不整条替换。
+      //   ⚠️ 父阶权重 8 大于释义＋领域＋发行的 7，若沿用旧的「完整度高就整条覆盖」，
+      //      「只写了父阶」的一条会把别处的释义／领域／发行抹掉（术语表内容丢失）。
+      //   覆盖方向仍倾向更完整的那条：该栏有新值且新来源完整度更高 → 用新值；否则只在空格时补上。
+      const mergeTermFields = (rec, t) => {
+        const better = tlTermCompleteness(t) > tlTermCompleteness(rec);
+        if (t.def && (better || !rec.def)) rec.def = t.def;
+        if (t.domain && (better || !rec.domain)) rec.domain = t.domain;
+        if (t.release && (better || !rec.release)) rec.release = t.release;
+        if (t.parent && (better || !rec.parent)) rec.parent = t.parent;
+      };
       const add = (text, ev) => {
         if (!text) return;
         let inFence = false;
@@ -1123,12 +1137,12 @@
               const key = t.term.toLowerCase();   // 🆕 大小写不同 → 同一 term
               let rec = map.get(key);
               if (!rec) {
-                rec = { term: t.term, def: t.def, domain: t.domain, release: t.release || '', count: 0, srcs: [] };
+                rec = { term: t.term, def: t.def, domain: t.domain, release: t.release || '', parent: t.parent || '', count: 0, srcs: [] };
                 map.set(key, rec);
               }
               rec.count += 1;   // 出现次数＝标题＋备注命中之和（同一事件标题与备注都命中也各计 1）
-              if (tlTermCompleteness(t) > tlTermCompleteness(rec)) { rec.def = t.def; rec.domain = t.domain; rec.release = t.release || ''; }
-              // 标签沿用「先出现者」的大小写（稳定可预测），仅合并释义/领域/发行/计数
+              // 标签沿用「先出现者」的大小写（稳定可预测），栏位逐格合并（释义/领域/发行/父阶/计数）
+              mergeTermFields(rec, t);
               // 🆕 收集使用该 term 的「来源日程事件」（按 uid 去重），供术语表逐一跳转
               if (ev && ev.uid && !rec.srcs.some((s) => s.uid === ev.uid)) {
                 rec.srcs.push({ uid: ev.uid, title: ev.title || '', date: ev.date || '' });
@@ -1150,7 +1164,7 @@
           const key = r.termName.toLowerCase();
           let rec = map.get(key);
           if (!rec) {
-            rec = { term: r.termName, def: '', domain: '', release: '', count: 0, srcs: [], fenceDesc: '', fenceEvUids: [], fenceRange: null };
+            rec = { term: r.termName, def: '', domain: '', release: '', parent: '', count: 0, srcs: [], fenceDesc: '', fenceEvUids: [], fenceRange: null };
             map.set(key, rec);
           }
           // 围栏内容：start+1 到 end-1（去掉 open/close 行）
@@ -1177,14 +1191,31 @@
         return a.term.localeCompare(b.term, ab ? 'en' : 'zh-Hans-CN');
       });
     }
+    // ===== 🆕 TERM 父階親屬：只取「直接一層」，與標籤樹 tlTagParent／tlTagChildren 同口徑 =====
+    //   子＝parent 正好等於它的那些術語；父＝它自己的 parent（一個名字，可能尚未被定義成術語）。
+    //   比對一律 toLowerCase（與 tlCollectTerms 的字典 key 同口徑）；回傳值用字典裡的原始字串（先出現者的大小寫）。
+    //   每次重算 tlCollectTerms()：右鍵選單要反映「剛編輯完还没开术语表」的最新資料，不吃 tlGlossTerms 快照。
+    function tlTermKin(name) {
+      const key = String(name == null ? '' : name).trim().toLowerCase();
+      if (!key) return { parent: '', children: [] };
+      const all = tlCollectTerms();
+      const self = all.find((t) => t.term.toLowerCase() === key);
+      return {
+        parent: (self && self.parent) || '',
+        children: all.filter((t) => (t.parent || '').toLowerCase() === key).map((t) => t.term)
+      };
+    }
     // ===== 🆕 术语表文本搜索：只过滤「本次开窗收集到的」清单，不重算、不写档 =====
     let tlGlossTerms = [];
+    // 🆕 父階過濾（右鍵 TERM 膠囊→「顯示子／父節點」）：null＝全部；{ mode:'children'|'parent', name }
+    //   與文本搜索並存：先套父階過濾得到 base，再套關鍵詞 AND（搜索只在親屬範圍內筛）。
+    let tlGlossKin = null;
     function tlGlossQueryTokens() {
       const el = document.getElementById('tlGlossarySearch');
       return String((el && el.value) || '').trim().toLowerCase().split(/\s+/).filter(Boolean);
     }
     function tlGlossHaystack(t) {
-      return [t.term, t.def, t.domain, t.release]
+      return [t.term, t.def, t.domain, t.release, t.parent]
         .concat((t.srcs || []).map((s) => (s.title || '') + ' ' + (s.date || '')))
         .filter(Boolean).join(' ').toLowerCase();
     }
@@ -1226,9 +1257,10 @@
       if (t.def) allDefs.push(t.def);
       const globalDefs = defMap.get(t.term.toLowerCase());
       if (globalDefs) globalDefs.forEach((d) => { if (!allDefs.includes(d)) allDefs.push(d); });
-      const tooltip = allDefs.join(' --- ');
+      const tooltip = tlTermTooltip(allDefs, t);
       const hl = tokens || [];
       return '<span class="tl-term"><span class="tl-term-cap"' +
+        ' data-term="' + tlEscapeHtml(t.term) + '"' +
         (tooltip ? ' title="' + tlEscapeHtml(tooltip) + '"' : '') + '>' +
         tlGlossHl(t.term, hl) +
         (t.domain ? '<span class="tl-term-domain">' + tlGlossHl(t.domain, hl) + '</span>' : '') +
@@ -1241,17 +1273,21 @@
       const input = document.getElementById('tlGlossarySearch');
       const tokens = tlGlossQueryTokens();
       const all = tlGlossTerms;
+      const base = tlGlossKinBase(all);
       const shown = tokens.length
-        ? all.filter((t) => { const hay = tlGlossHaystack(t); return tokens.every((tok) => hay.includes(tok)); })
-        : all;
+        ? base.filter((t) => { const hay = tlGlossHaystack(t); return tokens.every((tok) => hay.includes(tok)); })
+        : base;
+      tlRenderGlossKinBar(base.length);
       const countEl = document.getElementById('tlGlossarySearchCount');
       if (countEl) countEl.textContent = tokens.length ? (shown.length + ' / ' + all.length) : '';
       const clearEl = document.getElementById('tlGlossarySearchClear');
       if (clearEl) clearEl.hidden = !(input && input.value);
       if (!all.length) {
-        body.innerHTML = '<div class="tl-gloss-empty">目前没有任何 [[term]] 术语。<br>语法：<code>[[term:釋義:領域:發行]]</code>（釋義／領域／發行皆可省略，發行可记「首发」等创作节点）</div>';
+        body.innerHTML = '<div class="tl-gloss-empty">目前没有任何 [[term]] 术语。<br>语法：<code>[[term:釋義:領域:發行:父阶]]</code>（釋義／領域／發行／父阶皆可省略；發行可记「首发」等创作节点，父阶显示在 tooltip 的「↑ 父阶：」）</div>';
+      } else if (tlGlossKin && !base.length) {
+        body.innerHTML = '<div class="tl-gloss-empty">' + tlGlossKinEmptyText(all) + '</div>';
       } else if (!shown.length) {
-        body.innerHTML = '<div class="tl-gloss-noresult">没有符合「' + tlEscapeHtml(String((input && input.value) || '').trim()) + '」的术语。<br>可试试术语名、释义、领域、发行或来源行程的关键词。</div>';
+        body.innerHTML = '<div class="tl-gloss-noresult">没有符合「' + tlEscapeHtml(String((input && input.value) || '').trim()) + '」的术语。<br>可试试术语名、释义、领域、发行、父阶或来源行程的关键词。</div>';
       } else {
         body.innerHTML = shown.map((t) => {
           // 来源事件 chips：关弹层 → scrollIntoView 居中 → 金色描边闪 2s；标题走 MD 行内渲染，故不注入 <mark>
@@ -1301,18 +1337,61 @@
       const input = document.getElementById('tlGlossarySearch');
       if (input && input.value) { input.value = ''; tlRenderGlossary(); }
     }
-    function tlOpenGlossary() {
+    // 🆕 父階過濾：先算出親屬範圍 base，文本搜索再在 base 內筛（兩者可並存）
+    function tlGlossKinBase(all) {
+      if (!tlGlossKin) return all;
+      const key = tlGlossKin.name.toLowerCase();
+      if (tlGlossKin.mode !== 'parent') return all.filter((t) => (t.parent || '').toLowerCase() === key);
+      // 父節點＝顯示「它父階那顆術語」的列，不是它自己；父階留空或尚未被定義 → 0 列（走親屬空態說明）
+      const self = all.find((t) => t.term.toLowerCase() === key);
+      const p = ((self && self.parent) || '').toLowerCase();
+      return p ? all.filter((t) => t.term.toLowerCase() === p) : [];
+    }
+    function tlGlossKinEmptyText(all) {
+      const name = tlEscapeHtml(tlGlossKin.name);
+      if (tlGlossKin.mode === 'children') {
+        return '「' + name + '」目前没有子节点。<br>没有任何术语把第 5 栏父阶写成「' + name + '」。语法：<code>[[子术语:释义:领域:发行:' + name + ']]</code>';
+      }
+      const key = tlGlossKin.name.toLowerCase();
+      const self = all.find((t) => t.term.toLowerCase() === key);
+      const p = (self && self.parent) || '';
+      return p
+        ? '「' + name + '」的父阶是「' + tlEscapeHtml(p) + '」，但它尚未被定义为术语。<br>在任意行程写一条 <code>[[' + tlEscapeHtml(p) + ':释义]]</code> 就会出现在这里。'
+        : '「' + name + '」没有设定父阶（第 5 栏留空）。<br>语法：<code>[[' + name + ':释义:领域:发行:父阶术语]]</code>';
+    }
+    function tlRenderGlossKinBar(n) {
+      const bar = document.getElementById('tlGlossaryKinBar');
+      if (!bar) return;
+      if (!tlGlossKin) { bar.hidden = true; bar.innerHTML = ''; return; }
+      const isParent = tlGlossKin.mode === 'parent';
+      bar.hidden = false;
+      bar.innerHTML = '<span class="tl-gloss-kin-label">' + (isParent ? '⬆' : '⬇') + ' 「' + tlEscapeHtml(tlGlossKin.name) + '」的' + (isParent ? '父节点' : '子节点') + '</span>' +
+        '<span class="tl-gloss-kin-count">' + n + '</span>' +
+        '<button type="button" class="tl-gloss-kin-clear" onclick="tlGlossKinClear()" title="清除父阶过滤，显示全部术语">✕ 显示全部</button>';
+    }
+    function tlGlossKinClear() {
+      tlGlossKin = null;
+      tlRenderGlossary();
+    }
+    // 🆕 右鍵 TERM 膠囊／便利貼 IPC 的入口：開術語表並直接套上父階過濾
+    function tlOpenGlossaryKin(name, mode) {
+      const n = String(name == null ? '' : name).trim();
+      if (!n) return;
+      tlOpenGlossary({ mode: mode === 'parent' ? 'parent' : 'children', name: n });
+    }
+    function tlOpenGlossary(kin) {
       const body = document.getElementById('tlGlossaryBody');
       if (!body) return;
       const fileEl = document.getElementById('tlGlossaryFile');
       tlGlossTerms = tlCollectTerms();
+      tlGlossKin = kin || null;   // 📖 工具列按钮不传参＝清掉上一次的父阶过滤
       if (fileEl) fileEl.textContent = '共 ' + tlGlossTerms.length + ' 个术语';
       const input = document.getElementById('tlGlossarySearch');
       if (input) input.value = '';   // 每次开窗从干净状态开始
       tlRenderGlossary();
       const ov = document.getElementById('tlGlossaryOverlay');
       if (ov) ov.style.display = 'flex';
-      if (input) { try { input.focus(); } catch (e) {} }
+      if (input && !tlGlossKin) { try { input.focus(); } catch (e) {} }   // 過濾態不搶焦點：先讓使用者看親屬清單
     }
     function tlCloseGlossary() {
       const ov = document.getElementById('tlGlossaryOverlay');
@@ -2507,6 +2586,7 @@
       const prev = document.getElementById('tlEventCtxMenu');
       if (prev) prev.style.display = 'none';
       if (e.target.closest && e.target.closest('[data-tag]')) return; // 标签有独立菜单
+      if (e.target.closest && e.target.closest('.tl-term-cap[data-term]')) return; // 🆕 TERM 胶囊有独立菜单（子／父节点）
       if (e.target.closest && e.target.closest('.tl-ev-form-overlay')) return; // 表單浮層內不觸發
       const evEl = e.target.closest ? e.target.closest('[data-uid]') : null;
       if (!evEl) return;
@@ -2799,9 +2879,9 @@
     //   term 段用 | 分隔 alert|TERM=便利贴
     function tlParseGpAttrs(raw) {
       const s = String(raw == null ? '' : raw).trim();
-      if (!s) return { key: '', fg: '', bg: '', anim: '', alert: false, extra: [], term: '', termName: '', railStyle: '', railA: '', railB: '' };
+      if (!s) return { key: '', fg: '', bg: '', anim: '', alert: false, extra: [], term: '', termName: '', name: '', railStyle: '', railA: '', railB: '' };
       const pipe1 = s.indexOf('|');
-      if (pipe1 < 0) return { key: s, fg: '', bg: '', anim: '', alert: false, extra: [], term: '', termName: '', railStyle: '', railA: '', railB: '' };
+      if (pipe1 < 0) return { key: s, fg: '', bg: '', anim: '', alert: false, extra: [], term: '', termName: '', name: '', railStyle: '', railA: '', railB: '' };
       const key = s.slice(0, pipe1).trim();
       const rest = s.slice(pipe1 + 1);
       const pipe2 = rest.indexOf('|');
@@ -2809,7 +2889,7 @@
       const termPart = pipe2 >= 0 ? rest.slice(pipe2 + 1) : '';
       // 解析 attrs 段
       const extra = [];
-      let fg = '', bg = '', anim = '', alert = false, termName = '', railStyle = '', railA = '', railB = '';
+      let fg = '', bg = '', anim = '', alert = false, termName = '', name = '', railStyle = '', railA = '', railB = '';
       attrsPart.split(',').forEach((pair) => {
         const p = pair.trim();
         if (!p) return;
@@ -2828,6 +2908,7 @@
             railB = tlResolveColorName(rp[2].trim());
           }
         }
+        else if (k === 'name') { name = v; extra.push(p); }  // 留 extra 供写回保留
         else extra.push(p);
       });
       // 兜底：attrs 段里可能有 TERM=xxx（没有第二个 pipe 的情况），移到 termName
@@ -2852,6 +2933,7 @@
             const k = segTrim.slice(0, eq).trim().toUpperCase();
             const v = segTrim.slice(eq + 1).trim();
             if (k === 'TERM' && v) termName = v;
+            else if (k === 'NAME' && v) name = v;
             else if (k === 'ALERT') alert = v.toLowerCase() === 'true';
             // 🆕 2026-11-14：term 段兜底解析 rail（rail=斜栏#白#黑）
             else if (k === 'RAIL') {
@@ -2865,7 +2947,7 @@
           });
         });
       }
-      return { key: key, fg: fg, bg: bg, anim: anim, alert: alert, extra: extra, term: termPart, termName: termName, railStyle: railStyle, railA: railA, railB: railB };
+      return { key: key, fg: fg, bg: bg, anim: anim, alert: alert, extra: extra, term: termPart, termName: termName, name: name, railStyle: railStyle, railA: railA, railB: railB };
     }
     function tlExtractGpAttrsFromLine(line) {
       const s = String(line == null ? '' : line);
@@ -2926,12 +3008,12 @@
           if (!open) {
             // 🆕 從 open 行提取 fg/bg/anim/rail attrs + termName（TERM=xxx），存進 open 供關閉時寫入 range
             const a = (typeof tlExtractGpAttrsFromLine === 'function') ? tlExtractGpAttrsFromLine(line) : { fg: '', bg: '', alert: false };
-            open = { i: i, key: f.key, fg: a.fg || '', bg: a.bg || '', anim: a.anim || '', alert: a.alert === true, term: a.term || '', termName: a.termName || '', railStyle: a.railStyle || '', railA: a.railA || '', railB: a.railB || '' };
+            open = { i: i, key: f.key, fg: a.fg || '', bg: a.bg || '', anim: a.anim || '', alert: a.alert === true, extra: a.extra || [], term: a.term || '', termName: a.termName || '', name: a.name || '', railStyle: a.railStyle || '', railA: a.railA || '', railB: a.railB || '' };
           }
           continue;
         }
         if (open && open.key === f.key) {
-          ranges.push({ start: open.i, end: i, key: f.key, fg: open.fg, bg: open.bg, anim: open.anim, alert: open.alert, term: open.term || '', termName: open.termName || '', railStyle: open.railStyle || '', railA: open.railA || '', railB: open.railB || '' });
+          ranges.push({ start: open.i, end: i, key: f.key, fg: open.fg, bg: open.bg, anim: open.anim, alert: open.alert, extra: open.extra || [], term: open.term || '', termName: open.termName || '', name: open.name || '', railStyle: open.railStyle || '', railA: open.railA || '', railB: open.railB || '' });
           markers.push(open.i, i);
           open = null;
         }
@@ -2948,7 +3030,7 @@
       const scan = tlGpFenceScan(lines);
       const hit = scan.ranges.find((r) => r.start === s && r.end === e);
       // 🆕 2026-11-09：把 hit.fg / hit.bg 也帶出來，供 tlWrapGpFence 重寫時保留 attrs
-      return hit ? { lines: lines, start: s, end: e, key: hit.key, fg: hit.fg || '', bg: hit.bg || '', anim: hit.anim || '', alert: hit.alert === true, term: hit.term || '', termName: hit.termName || '', railStyle: hit.railStyle || '', railA: hit.railA || '', railB: hit.railB || '', scan: scan } : null;
+      return hit ? { lines: lines, start: s, end: e, key: hit.key, fg: hit.fg || '', bg: hit.bg || '', anim: hit.anim || '', alert: hit.alert === true, extra: hit.extra || [], term: hit.term || '', termName: hit.termName || '', name: hit.name || '', railStyle: hit.railStyle || '', railA: hit.railA || '', railB: hit.railB || '', scan: scan } : null;
     }
     // ── 🆕 2026-11-08：勾選「group 啟用」按保存時一律改寫成「塊級」{gpX}…{/gpX}，不再逐行補行尾標記 ──
     //  · 已是塊級群且沒給新標記 → 原樣保留（不無謂改名）；給了 mark → 整段改名（兩行一起改）。
@@ -2964,10 +3046,10 @@
         // 🆕 mark 是預設無名組 '{gp}' 且 fence 已有具名 key → 不誤改群名
         if (mark === '{gp}' && wrap.key) return lines.join('\n');
         // 🆕 給了新 mark → 組裝新 open 行：key 用新 mark，attrs 沿用原文
-        const newOpen = tlBuildGpOpenLine(mark, wrap.fg, wrap.bg, wrap.anim, wrap.alert, wrap.railStyle || '', wrap.railA || '', wrap.railB || '');
+        const newOpen = tlBuildGpOpenLine(mark, wrap.fg, wrap.bg, wrap.anim, wrap.extra || [], wrap.term || '', wrap.railStyle || '', wrap.railA || '', wrap.railB || '');
         const out = lines.slice();
         out[wrap.start] = newOpen;
-        out[wrap.end] = tlBuildGpCloseLine(wrap.key);  // 🆕 close 只寫 key，不帶 attrs！
+        out[wrap.end] = tlBuildGpCloseLine(tlKeyFromGpMarker(mark));  // 🆕 close 用新 mark 的 key（與 note 同口径），不帶 attrs！
         return out.join('\n');
       }
       // 🆕 行尾式 → 塊級：從第一個行尾標記提取「完整字面量」（key + attrs 全都要）
@@ -2979,8 +3061,8 @@
       // 🆕 用 mark（只有 key）組裝：attrs 已在 open 裡；若 mark 存在但無 attrs，保留原 attrs
       if (mark) {
         const origAttrs = (typeof tlExtractGpAttrsFromLine === 'function')
-          ? tlExtractGpAttrsFromLine(open || '') : { fg: '', bg: '', anim: '', alert: false };
-        open = tlBuildGpOpenLine(mark, origAttrs.fg, origAttrs.bg, origAttrs.anim, origAttrs.alert, origAttrs.railStyle, origAttrs.railA, origAttrs.railB);
+          ? tlExtractGpAttrsFromLine(open || '') : { fg: '', bg: '', anim: '', alert: false, extra: [], term: '' };
+        open = tlBuildGpOpenLine(mark, origAttrs.fg, origAttrs.bg, origAttrs.anim, origAttrs.extra || [], origAttrs.term || '', origAttrs.railStyle, origAttrs.railA, origAttrs.railB);
       }
       open = open || '{gp}';
       const close = tlBuildGpCloseLine(tlKeyFromGpMarker(open));  // 🆕 close 只寫 key，不帶 attrs！
@@ -2992,22 +3074,84 @@
       return [open].concat(body, [close]).join('\n');
     }
     // 🆕 2026-11-09：用 key + attrs 組裝 open 行（兩端共用）
-    function tlBuildGpOpenLine(keyName, fg, bg, anim, alert, railStyle, railA, railB) {
+    // 🆕 2026-11-15：與 noteBuildGpOpenLine 同口径——接收 extra + raw term，term 段原样保留。
+    //   旧版只收 alert 布尔、重建时丢整个 term 段（TERM/NAME/rail 全死）；改为原样带回 term。
+    function tlBuildGpOpenLine(keyName, fg, bg, anim, extra, term, railStyle, railA, railB) {
       let s = String(keyName == null ? '' : keyName).trim();
-      // mark 可能是完整 '{gpX}'（从编辑视窗输入）或只是 'gpX'
+      if (!s) s = '{gp}';
       if (!s.startsWith('{')) s = '{' + s;
-      if (!s.endsWith('}')) s = s + '}';
-      // 若 keyName 已自带 attrs（含 |），就直接返回
-      if (s.indexOf('|') >= 0) return s;
+      // 剥干净旧 attrs/term 段，只留纯 key（第一个 | 之后全部去掉）
+      let keyOnly = s.replace(/\|.*$/, '').trim();
+      if (!keyOnly.endsWith('}')) keyOnly = keyOnly + '}';
       const parts = [];
       if (fg) parts.push('fg=' + fg);
       if (bg) parts.push('bg=' + bg);
       if (anim) parts.push('anim=' + anim);
-      if (alert) parts.push('alert');
       if (railStyle && railA && railB) parts.push('rail=' + railStyle + '#' + railA + '#' + railB);
-      if (!parts.length) return s;
-      // 在 key 字符串的 '}' 之前插入 attrs
-      return s.replace(/\}$/, '|' + parts.join(',') + '}');
+      if (Array.isArray(extra)) extra.forEach((x) => { if (x) parts.push(x); });
+      const termStr = String(term || '').trim();
+      let result = keyOnly.slice(0, -1);
+      if (parts.length) result += '|' + parts.join(',');
+      if (termStr) result += '|' + termStr;
+      return result + '}';
+    }
+    // 🆕 2026-11-15：把「围栏名称」写进 open 行的 NAME=（canonical 放 term 段）。三端同口径 noteGpApplyName/calGpApplyName。
+    //   attrs 段原样保留（双轨制），只清旧 NAME（attrs/term 两段）再按新值重建 term 段；name 空＝移除。
+    function tlGpApplyName(line, name) {
+      const src = String(line == null ? '' : line);
+      const lead = (src.match(/^[ \t]*/) || [''])[0];
+      const trimmed = src.trim();
+      if (!/^\{[ \t]*(?:group|gp)[ \t]*:?[ \t]*[^{}]*\}$/i.test(trimmed)) return src;
+      const nv = String(name == null ? '' : name).replace(/[{}|,]/g, '').trim();
+      const body = trimmed.slice(1, -1);
+      const p1 = body.indexOf('|');
+      if (p1 < 0) return lead + '{' + body + (nv ? '|NAME=' + nv : '') + '}';
+      const key = body.slice(0, p1);
+      const rest = body.slice(p1 + 1);
+      const p2 = rest.indexOf('|');
+      const attrs = p2 >= 0 ? rest.slice(0, p2) : rest;
+      const term = p2 >= 0 ? rest.slice(p2 + 1) : '';
+      const attrsClean = attrs.split(',').filter((it) => !/^\s*NAME\s*=/i.test(it)).join(',');
+      const items = [];
+      term.split('|').forEach((seg) => seg.split(',').forEach((it) => {
+        const t = it.trim();
+        if (t && !/^NAME\s*=/i.test(t)) items.push(t);
+      }));
+      if (nv) items.push('NAME=' + nv);
+      const termClean = items.join('|');
+      let out = key;
+      if (attrsClean || termClean) out += '|' + attrsClean;
+      if (termClean) out += '|' + termClean;
+      return lead + '{' + out + '}';
+    }
+    let tlGroupNameBaseline = '';   // 🆕 围栏名称输入框脏值基线：开框回填值，手动改才变脏
+    // 🆕 围栏名称输入框：读取当前值；无输入框 → ''
+    function tlGroupNameValue() {
+      const inp = document.getElementById('tlGroupName');
+      return inp ? inp.value : '';
+    }
+    // 取一段原文里第一个围栏的既有 NAME（开框时回填名称输入框）
+    function tlCurrentGpName(src) {
+      const lines = String(src == null ? '' : src).replace(/\r\n/g, '\n').split('\n');
+      const scan = (typeof tlGpFenceScan === 'function') ? tlGpFenceScan(lines) : { ranges: [] };
+      return scan.ranges.length ? (scan.ranges[0].name || '') : '';
+    }
+    // 显示／隐藏围栏名称输入并回填既有 NAME
+    function tlShowGroupName(show, src) {
+      const row = document.getElementById('tlGroupNameRow');
+      const inp = document.getElementById('tlGroupName');
+      if (!row || !inp) return;
+      row.style.display = show ? '' : 'none';
+      inp.value = show ? tlCurrentGpName(src) : '';
+      tlGroupNameBaseline = inp.value;
+    }
+    // 把名称写进区块里每个围栏的开启行（term 段 NAME=…）；无围栏则原样返回。清空名称＝移除 NAME。
+    function tlApplyGroupNameToBlock(blockText, name) {
+      const lines = String(blockText == null ? '' : blockText).replace(/\r\n/g, '\n').split('\n');
+      const scan = (typeof tlGpFenceScan === 'function') ? tlGpFenceScan(lines) : { ranges: [] };
+      if (!scan.ranges.length) return blockText;
+      scan.ranges.forEach((r) => { lines[r.start] = tlGpApplyName(lines[r.start], name); });
+      return lines.join('\n');
     }
     // 🆕 2026-11-09：純 key 提取（從 `{gpE|bg=白}` 或 `gpE` 或 `E` 提取 `E`），供 close 行構造
     function tlKeyFromGpMarker(marker) {
@@ -3059,6 +3203,9 @@
     //   尺寸由 CSS 在 .gp-badges 作用域压到与 ALERT 徽标同高。标记文本不受影响（纯显示层）。
     function tlGpBadgesHtml(b) {
       const badges = [];
+      if (b && b.name) {
+        badges.push('<span class="gp-badge gp-badge-name" title="围栏名称">\u{1F3F7}️ ' + tlEscapeHtml(b.name) + '</span>');
+      }
       if (b && b.termName) {
         badges.push(tlRenderTermDefs('[[' + b.termName + ']]'));
       }
@@ -3221,7 +3368,7 @@
         const roDot = !!(uid && event && event.ro && !forceEditable);
         const roOpts = roDot ? { roDot: true } : undefined;
         const display = tlNotesWithChecks(tlStripGpMarkers(rawN), uid, roOpts);
-        const renderChunk = (s) => renderMarkdown(tlRenderTermDefs(tlRenderNoteMarkersLines(s)));
+        const renderChunk = (s) => renderMarkdown(tlRenderNameRefs(tlRenderTermDefs(tlRenderNoteMarkersLines(s))));
         const gpBlocks = tlSplitMdBlocks(rawN).filter((b) => b.type === 'gp');
         if (!gpBlocks.length) return renderChunk(display);
         const dLines = display.replace(/\r\n/g, '\n').split('\n');
@@ -3238,7 +3385,8 @@
           //    就只剩 tlGpInlineStyle 的 fg/bg 底色，與便利貼（forceEditable 走 canEdit 分支）不一致。
           //    ⚠️ 與下方 canEdit 分支 (b.railStyle → data-gp-rail) 完全同口徑，別只改一邊。
           out += '<div class="md-unit is-gp"' + (b.anim ? ' data-gp-anim="' + b.anim + '"' : '') +
-            (b.railStyle ? ' data-gp-rail="' + b.railStyle + '"' : '') + tlGpInlineStyle(b) + '>' + tlGpBadgesHtml(b) + roBtn +
+            (b.railStyle ? ' data-gp-rail="' + b.railStyle + '"' : '') +
+            (b.name ? ' data-gp-name="' + tlEscapeHtml(b.name) + '"' : '') + tlGpInlineStyle(b) + '>' + tlGpBadgesHtml(b) + roBtn +
             renderChunk(tlSeparateGpHorizontalRules(dLines.slice(b.start, b.end + 1).join('\n'))) + '</div>';
           cursor = b.end + 1;
         });
@@ -3252,7 +3400,7 @@
       blocks.forEach((b) => {
         if (b.type === 'task') {
           // checkbox 行：保留既有「行內編輯小圓點」（編輯子事件），不加外層區塊圓點
-          out += tlRenderTermDefs(tlTaskLineHtml(lines[b.start], uid, b.start, forceEditable)) + '\n';
+          out += tlRenderNameRefs(tlRenderTermDefs(tlTaskLineHtml(lines[b.start], uid, b.start, forceEditable))) + '\n';
           return;
         }
         // 🆕 只剝「顯示副本」的 {gp}；編輯對話框讀的是 ev.notes 原文，標記必須留著才能維持分組
@@ -3266,7 +3414,7 @@
           ? tlNotesWithChecks(chunk, uid, { plain: true, baseLine: b.start })
           : chunk;
         const gpPrepared = b.type === 'gp' ? tlSeparateGpHorizontalRules(prepared) : prepared;
-        const inner = renderMarkdown(tlRenderTermDefs(tlRenderNoteMarkersLines(gpPrepared)));
+        const inner = renderMarkdown(tlRenderNameRefs(tlRenderTermDefs(tlRenderNoteMarkersLines(gpPrepared))));
         // 🆕 小事件群（连续同组 {gp} 行＝一个编辑小圆点区块）：只给 gp 区块挂 is-gp，
         //    由 CSS 画 1px currentColor 外框；task / code / table / para 等其它单元不受影响。
         //    🆕 2026-11-09：gp 区块若有 fg/bg attrs，追加 inline style 覆盖便利贴默认色
@@ -3283,6 +3431,7 @@
         out += '<div class="md-unit' + gpCls + '"' +
           (b.type === 'gp' && b.anim ? ' data-gp-anim="' + b.anim + '"' : '') +
           (b.type === 'gp' && b.railStyle ? ' data-gp-rail="' + b.railStyle + '"' : '') +
+          (b.type === 'gp' && b.name ? ' data-gp-name="' + tlEscapeHtml(b.name) + '"' : '') +
           gpStyle + '>' + gpBadges + '<button type="button" class="md-unit-edit" title="' + tlEditUnitTip(b.type) + '"' +
           ' data-uid="' + uidAttr + '" data-start="' + b.start + '" data-end="' + b.end + '" data-type="' + b.type + '"' + mkOne +
           ' onclick="tlOpenEditBlockDialog(event,\'' + uidAttr + '\',' + b.start + ',' + b.end + ',\'' + b.type + '\')">\u270e</button>' +
@@ -3338,7 +3487,7 @@
         //    標記行在顯示副本裡已被剝成空行，行數不變 → ro 外框與 baseLine 全部照舊。
         if (fenceStart.has(i)) {
           const fe = fenceStart.get(i);
-          blocks.push({ start: i, end: fe.end, type: 'gp', fg: fe.fg || '', bg: fe.bg || '', anim: fe.anim || '', alert: fe.alert === true, termName: fe.termName || '', railStyle: fe.railStyle || '', railA: fe.railA || '', railB: fe.railB || '' });
+          blocks.push({ start: i, end: fe.end, type: 'gp', fg: fe.fg || '', bg: fe.bg || '', anim: fe.anim || '', alert: fe.alert === true, termName: fe.termName || '', name: fe.name || '', railStyle: fe.railStyle || '', railA: fe.railA || '', railB: fe.railB || '' });
           i = fe.end + 1; continue;
         }
         // 🆕 連續且「group 名相同」的 {gp} 行＝一個小事件（一顆編輯小圓點）；
@@ -3364,7 +3513,7 @@
           // 🆕 從行尾式 gp 第一行提取 fg/bg attrs（連續同名行之間 attrs 應一致；若不同，以第一行為準）
           const headAttrs = (typeof tlExtractGpAttrsFromLine === 'function')
             ? tlExtractGpAttrsFromLine(line) : { fg: '', bg: '' };
-          blocks.push({ start: i, end: j - 1, type: 'gp', fg: headAttrs.fg || '', bg: headAttrs.bg || '', anim: headAttrs.anim || '', alert: headAttrs.alert === true, railStyle: headAttrs.railStyle || '', railA: headAttrs.railA || '', railB: headAttrs.railB || '' });
+          blocks.push({ start: i, end: j - 1, type: 'gp', fg: headAttrs.fg || '', bg: headAttrs.bg || '', anim: headAttrs.anim || '', alert: headAttrs.alert === true, termName: headAttrs.termName || '', name: headAttrs.name || '', railStyle: headAttrs.railStyle || '', railA: headAttrs.railA || '', railB: headAttrs.railB || '' });
           i = j; continue;
         }
         if (isHeading(line)) { blocks.push({ start: i, end: i, type: 'heading' }); i++; continue; }
@@ -3478,10 +3627,13 @@
       return out.replace(/\s+$/, '');
     }
     // 🆕 術語記號解析（單一可信來源：渲染 tlRenderTermDefs 與 Glossary 術語表 tlCollectTerms 共用）：
-    //   [[term]] / [[term:釋義]] / [[term:釋義:領域]] / [[term:釋義:領域:發行]]
-    //     → { term, def, domain } 或 { term, def, domain, release }（僅有發行時才掛第 4 欄位）
-    //   4 段以上：末段＝發行、倒數第二段＝領域、其餘（可含冒號）併回釋義。
+    //   [[term]] / [[term:釋義]] / [[term:釋義:領域]] / [[term:釋義:領域:發行]] / [[term:釋義:領域:發行:父階]]
+    //     → { term, def, domain }／＋release／＋parent（只在有值時才掛該欄位）
+    //   5 段以上：末段＝父階、倒數第二段＝發行、倒數第三段＝領域、其餘（可含冒號）併回釋義。
+    //   4 段：末段＝發行、倒數第二段＝領域、其餘併回釋義。
     //   1~3 段沿用舊口徑：末段＝領域、之前全為釋義（釋義可含冒號）→ 既有資料零回歸。
+    //   ⚠️ 與當年加「發行」同一類取捨：從末尾數，所以「釋義含冒號 ＋ 領域 ＋ 發行 ＋ 父階」要四欄一起填，
+    //      少填一欄多出來的冒號就會被拆成後面幾欄（表單 check() 會擋）。
     //   ⚠️ 舊「3 段且釋義含冒號」可用末尾空段 [[term:釋義:領域:]] 明確標成 4 段語法。
     //   dl / cp / cr 前綴（日期標記）與裸日期 [[YYYY-MM-DD]] 不屬於術語 → 返回 null（留給 📅/✅ 機制）。
     function tlParseTermToken(inner) {
@@ -3502,10 +3654,15 @@
       if (/^remind$/i.test(term)) return null;                               // 提醒標記（remind:Title:Rule），不屬術語
       if (/^bookmark$/i.test(term)) return null;                             // 收藏標記（bookmark:Title:Note），不屬術語
       if (/^alert$/i.test(term)) return null;                                // 鬧鈴標記（alert:內容:下次提醒:間隔:是/否），不屬術語
-      // 4 段以上（rest 有 ≥2 個冒號）→ [[term:釋義:領域:發行]]；其餘沿用舊 1~3 段口徑。
+      // 從末尾數欄位：rest 有 ≥3 個冒號＝5 段（含父階）；≥2 個冒號＝4 段（含發行）；其餘沿用舊 1~3 段口徑。
       const parts = rest.split(':');
-      let def, domain, release = '';
-      if (parts.length >= 3) {
+      let def, domain, release = '', parent = '';
+      if (parts.length >= 4) {
+        parent = parts[parts.length - 1].trim();
+        release = parts[parts.length - 2].trim();
+        domain = parts[parts.length - 3].trim();
+        def = parts.slice(0, -3).join(':').trim();   // 釋義可含冒號 → 原樣併回
+      } else if (parts.length >= 3) {
         release = parts[parts.length - 1].trim();
         domain = parts[parts.length - 2].trim();
         def = parts.slice(0, -2).join(':').trim();   // 釋義可含冒號 → 原樣併回
@@ -3515,9 +3672,19 @@
         domain = lastColon === -1 ? '' : rest.slice(lastColon + 1).trim();
       }
       const out = { term: term, def: def, domain: domain };
-      // ⛔ 無發行時不掛第 4 欄位：既有 tlParseTermToken('Apple:苹果:水果') 深比較斷言零回歸。
+      // ⛔ 無值時不掛該欄位：既有 tlParseTermToken('Apple:苹果:水果') 深比較斷言零回歸。
       if (release) out.release = release;
+      if (parent) out.parent = parent;
       return out;
+    }
+    // 🆕 術語膠囊 tooltip 文案（唯一可信來源：事件正文 tlRenderTermDefs 與術語表 tlGlossCapHtml 共用）。
+    //   釋義列表照舊用 --- 串；第 5 欄「父階」不佔膠囊本體，只在尾端掛「↑ 父阶：X」，
+    //   免得被誤讀成另一條釋義（也避免正文膠囊因多一顆小胶囊而變寬/變高）。
+    function tlTermTooltip(defs, t) {
+      const head = (defs || []).join(' --- ');
+      const tail = (t && t.parent) ? '↑ 父阶：' + t.parent : '';
+      if (!head) return tail;
+      return tail ? head + ' --- ' + tail : head;
     }
     // 🆕 全局術語釋義映射（緩存，tlCalEvents 引用變更時自動失效）：
     //   掃描所有事件 title + notes 中的 [[term:釋義]] 記號，彙整每個 term 的全部釋義。
@@ -3592,7 +3759,9 @@
     //   [[term:釋義]]            → 立體膠囊(term) ＋ 釋義以 tooltip 呈現（hover）
     //   [[term:釋義:領域]]       → 立體膠囊(term) ＋ 領域為內嵌小膠囊 ＋ 釋義 tooltip
     //   [[term:釋義:領域:發行]]  → 再加一顆「發行」小膠囊（首發／發布等創作節點）
+    //   [[term:釋義:領域:發行:父階]] → 第 5 欄不加胶囊，只在 tooltip 尾端掛「↑ 父阶：X」
     //   同名術語的多個釋義以 --- 分隔全部顯示。
+    //   膠囊一律帶 data-term＝原始術語名（右鍵選單的識別鍵；雙軌制：識別用原始值，不用渲染後字串）。
     //   逐行處理並跳過代碼圍欄，避免代碼塊內 [[…]] 被誤轉。解析規則見 tlParseTermToken。
     function tlRenderTermDefs(text) {
       const defMap = tlGetTermDefMap();
@@ -3627,14 +3796,33 @@
           if (t.def) allDefs.push(t.def);
           const globalDefs = defMap.get(t.term.toLowerCase());
           if (globalDefs) globalDefs.forEach((d) => { if (!allDefs.includes(d)) allDefs.push(d); });
-          const tooltip = allDefs.join(' --- ');
+          const tooltip = tlTermTooltip(allDefs, t);
           const termHtml = '<span class="tl-term-cap"' +
+            ' data-term="' + tlEscapeHtml(t.term) + '"' +
             (tooltip ? ' title="' + tlEscapeHtml(tooltip) + '"' : '') + '>' +
             tlEscapeHtml(t.term) +
             (t.domain ? '<span class="tl-term-domain">' + tlEscapeHtml(t.domain) + '</span>' : '') +
             (t.release ? '<span class="tl-term-release">' + tlEscapeHtml(t.release) + '</span>' : '') +
             '</span>';
           return '<span class="tl-term">' + termHtml + '</span>';
+        });
+      }).join('\n');
+    }
+    // 🆕 2026-11-15：围栏名称引用 {NAME=围栏名称} → 金色名称胶囊（可点击跳转到该名称的围栏小事件群）。
+    //   与 tlRenderTermDefs 同层管线、同口径：逐行处理、跳过代码围栏；纯显示层，底稿原文不动。
+    //   正则要求 '{' 紧邻 NAME= → 不会误中围栏开行 '{gpX|…|NAME=…}'（那里 NAME 前是 '|' 不是 '{'）。
+    //   点击由各窗体委托处理（主窗 tlJumpToGpName／便利贴经 IPC 回主窗），这里只产出 data-gp-name-ref。
+    //   三端同口径：VIEW 引擎 D.nameRefs（view-sticky-rules.js）；便利贴窗只收 HTML 不自己渲染。
+    function tlRenderNameRefs(text) {
+      let inFence = false;
+      return String(text).split('\n').map(function (line) {
+        if (/^\s*(```|~~~)/.test(line)) { inFence = !inFence; return line; }
+        if (inFence) return line;
+        return line.replace(/\{NAME=([^{}\n]+)\}/g, function (m, name) {
+          const nm = String(name).trim();
+          if (!nm) return m;
+          return '<span class="gp-name-ref" data-gp-name-ref="' + tlEscapeHtml(nm) + '"' +
+            ' title="跳转到围栏：' + tlEscapeHtml(nm) + '">\u{1F3F7}\uFE0F ' + tlEscapeHtml(nm) + '</span>';
         });
       }).join('\n');
     }
@@ -3943,6 +4131,11 @@
         '.tl-tag-ctx-menu{position:fixed;z-index:9999;min-width:150px;background:var(--ev-card,#1e293b);color:var(--ev-text,#e2e8f0);border:1px solid var(--ev-border,#334155);border-radius:10px;box-shadow:0 6px 24px rgba(0,0,0,.35);padding:6px;font-size:13px}',
         '.tl-tag-ctx-menu button{display:block;width:100%;text-align:left;background:none;border:0;color:inherit;padding:8px 10px;border-radius:6px;cursor:pointer;font-size:13px}',
         '.tl-tag-ctx-menu button:hover{background:var(--ev-hover,#334155)}',
+        '.tl-tag-ctx-menu button:disabled{opacity:.42;cursor:default}',
+        '.tl-tag-ctx-menu button:disabled:hover{background:none}',
+        // TERM 選單要在術語表彈層（.tl-ev-form-overlay z12000）之上：殼的 9999 會被背罩蓋住 → 彈層內右鍵等於沒選單。
+        //   13000 與 .tl-startwork-ctx-menu 同口徑（既有「選單壓過彈層」的先例）；只抬這顆 ID，不動共用殼。
+        '#tlTermCtxMenu{z-index:13000}',
         '#tlTagEditOverlay{position:fixed;inset:0;z-index:9000;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,.45)}',
         '#tlTagEditOverlay .tl-tag-edit-box{background:var(--ev-card,#1e293b);color:var(--ev-text,#e2e8f0);border:1px solid var(--ev-border,#334155);border-radius:14px;box-shadow:0 10px 40px rgba(0,0,0,.45);width:min(440px,92vw);max-height:86vh;overflow:auto;padding:18px 20px}',
         '#tlTagEditOverlay h3{margin:0 0 4px;font-size:16px}',
@@ -4042,6 +4235,62 @@
       if (!tagEl) return;
       e.preventDefault();
       tlShowTagCtxMenu(tagEl.getAttribute('data-tag'), e.clientX, e.clientY);
+    });
+    // ===== 🆕 TERM 膠囊右鍵選單：「顯示此 TERM 的子節點／父節點」→ 開 📖 術語表並套父階過濾 =====
+    //   外殼／定位／關閉口徑完全沿用標籤右鍵選單（.tl-tag-ctx-menu ＋ tlShowTagCtxMenu），不另造一套 CSS。
+    //   無子／無父時該項置灰（disabled＋title 說明原因），不隱藏：讓使用者知道功能存在、只是這顆沒有親屬。
+    function tlEnsureTermCtxMenu() {
+      let menu = document.getElementById('tlTermCtxMenu');
+      if (menu) return menu;
+      tlInjectTagTreeStyle();
+      menu = document.createElement('div');
+      menu.id = 'tlTermCtxMenu';
+      menu.className = 'tl-tag-ctx-menu';
+      menu.style.display = 'none';
+      menu.innerHTML =
+        '<button type="button" data-tl-term-act="children">⬇ 显示此 TERM 的子节点</button>' +
+        '<button type="button" data-tl-term-act="parent">⬆ 显示此 TERM 的父节点</button>';
+      document.body.appendChild(menu);
+      menu.addEventListener('click', (ev) => {
+        const btn = ev.target.closest && ev.target.closest('[data-tl-term-act]');
+        if (!btn || btn.disabled) return;
+        menu.style.display = 'none';
+        tlOpenGlossaryKin(menu.__term, btn.getAttribute('data-tl-term-act'));
+      });
+      document.addEventListener('click', () => { menu.style.display = 'none'; }, true);
+      return menu;
+    }
+    function tlShowTermCtxMenu(name, x, y) {
+      const menu = tlEnsureTermCtxMenu();
+      const kin = tlTermKin(name);
+      menu.__term = name;
+      const cItem = menu.querySelector('[data-tl-term-act="children"]');
+      const pItem = menu.querySelector('[data-tl-term-act="parent"]');
+      cItem.disabled = !kin.children.length;
+      cItem.title = kin.children.length ? ('子节点：' + kin.children.join('、')) : ('没有任何术语把父阶写成「' + name + '」');
+      pItem.disabled = !kin.parent;
+      pItem.title = kin.parent ? ('父节点：' + kin.parent) : ('「' + name + '」没有设定父阶（第 5 栏留空）');
+      // 右鍵不觸發 click → 另兩套選單的 click 捕獲收不到它，這裡自己收（避免疊在一起）
+      const tagMenu = document.getElementById('tlTagCtxMenu');
+      if (tagMenu) tagMenu.style.display = 'none';
+      const evMenu = document.getElementById('tlEventCtxMenu');
+      if (evMenu) evMenu.style.display = 'none';
+      menu.style.display = 'block';
+      const pw = menu.offsetWidth || 200, ph = menu.offsetHeight || 76;
+      let left = x, top = y;
+      if (left + pw > window.innerWidth - 8) left = window.innerWidth - pw - 8;
+      if (top + ph > window.innerHeight - 8) top = window.innerHeight - ph - 8;
+      menu.style.left = Math.max(4, left) + 'px';
+      menu.style.top = Math.max(4, top) + 'px';
+    }
+    // TERM 膠囊（事件正文／標題／gp 右上角徽標／術語表行）右鍵 → 子／父節點選單。
+    //   與標籤選單同款「獨立委託監聽」，覆盖重绘后的新节点；事件卡片選單已對 [data-term] 讓位。
+    //   刻意不排除 .tl-ev-form-overlay：術語表彈層裡的膠囊也能右鍵繼續往上／往下鑽。
+    document.addEventListener('contextmenu', (e) => {
+      const cap = e.target.closest && e.target.closest('.tl-term-cap[data-term]');
+      if (!cap) return;
+      e.preventDefault();
+      tlShowTermCtxMenu(cap.getAttribute('data-term'), e.clientX, e.clientY);
     });
     // ========== 📊 事件统计：主事件 × 备注子事件（- [ ]），按标签·完成状态分类 ==========
     // 解析备注中的 Markdown checkbox 行 → 子事件数组 [{text, done}]
@@ -4234,6 +4483,86 @@
     // 暴露到 window（HTML onclick 用）
     if (typeof window !== 'undefined') {
       window.tlGlossJumpToFence = tlGlossJumpToFence;
+    }
+    // ========== 🆕 2026-11-15：围栏名称引用 {NAME=X} 全局跳转 ==========
+    // 全局索引：扫全部行程 notes 的 gp 围栏 NAME（复用 tlGpFenceScan，与 tlCollectTerms 的围栏扫描同口径）。
+    //   key 小写（大小写视为同名）；每个名称收集所有命中来源 [{uid,title,date,name,start,end}]，供「多个同名弹清单」。
+    function tlCollectGpNames() {
+      const map = new Map();
+      (tlCalEvents || []).forEach((ev) => {
+        if (!ev || !ev.notes) return;
+        const lines = String(ev.notes).replace(/\r\n/g, '\n').split('\n');
+        const scan = (typeof tlGpFenceScan === 'function') ? tlGpFenceScan(lines) : { ranges: [] };
+        (scan.ranges || []).forEach((r) => {
+          const nm = String(r.name || '').trim();
+          if (!nm) return;
+          const key = nm.toLowerCase();
+          let arr = map.get(key);
+          if (!arr) { arr = []; map.set(key, arr); }
+          arr.push({ uid: ev.uid || '', title: ev.title || '', date: ev.date || '', name: nm, start: r.start, end: r.end });
+        });
+      });
+      return map;
+    }
+    // 跳转入口（主窗内联点击／便利贴经 IPC 都走这里）：0→toast；1→直接跳；多→弹清单让使用者选。
+    function tlJumpToGpName(name) {
+      const nm = String(name == null ? '' : name).trim();
+      if (!nm) return;
+      const matches = tlCollectGpNames().get(nm.toLowerCase()) || [];
+      if (!matches.length) { showToast('找不到围栏名称：' + nm, 'danger'); return; }
+      if (matches.length === 1) {
+        const m = matches[0];
+        tlGlossJumpToFence(m.uid, m.start, m.end);
+        return;
+      }
+      tlOpenGpNamePicker(nm, matches);
+    }
+    function tlCloseGpNamePicker() {
+      const ov = document.getElementById('tlGpNamePickerOverlay');
+      if (ov) ov.style.display = 'none';
+    }
+    // 多个同名围栏的清单弹层（镜像 tlOpenGlossary 的弹层结构）：每行＝行程标题＋日期＋「定位」按钮。
+    function tlOpenGpNamePicker(name, matches) {
+      const ov = document.getElementById('tlGpNamePickerOverlay');
+      const body = document.getElementById('tlGpNamePickerBody');
+      if (!ov || !body) { const m = matches[0]; tlGlossJumpToFence(m.uid, m.start, m.end); return; }
+      const titleEl = document.getElementById('tlGpNamePickerTitle');
+      if (titleEl) titleEl.textContent = '\u{1F3F7}\uFE0F ' + name + '（' + matches.length + ' 个同名围栏）';
+      body.innerHTML = matches.map((m) => {
+        const label = tlEscapeHtml(m.title || '(无标题)') +
+          (m.date ? ' <span class="tl-gpnp-date">' + tlEscapeHtml(m.date) + '</span>' : '');
+        return '<div class="tl-gpnp-row"><span class="tl-gpnp-label">' + label + '</span>' +
+          '<button type="button" class="tl-gpnp-go" data-uid="' + tlEscapeHtml(m.uid) + '"' +
+          ' data-start="' + m.start + '" data-end="' + m.end + '">定位</button></div>';
+      }).join('');
+      body.querySelectorAll('.tl-gpnp-go').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          const uid = btn.getAttribute('data-uid');
+          const s = parseInt(btn.getAttribute('data-start'), 10);
+          const e = parseInt(btn.getAttribute('data-end'), 10);
+          tlCloseGpNamePicker();
+          tlGlossJumpToFence(uid, s, e);
+        });
+      });
+      ov.onclick = (e) => { if (e.target === ov) tlCloseGpNamePicker(); };
+      ov.style.display = 'flex';
+    }
+    // 主窗正文名称胶囊左键委托（便利贴窗经 IPC 回主窗走 tlJumpToGpName 同一入口）。
+    if (typeof document !== 'undefined') {
+      document.addEventListener('click', function (e) {
+        const ref = e.target && e.target.closest && e.target.closest('.gp-name-ref[data-gp-name-ref]');
+        if (!ref) return;
+        e.preventDefault();
+        e.stopPropagation();
+        tlJumpToGpName(ref.getAttribute('data-gp-name-ref'));
+      });
+    }
+    if (typeof window !== 'undefined') {
+      window.tlRenderNameRefs = tlRenderNameRefs;
+      window.tlCollectGpNames = tlCollectGpNames;
+      window.tlJumpToGpName = tlJumpToGpName;
+      window.tlOpenGpNamePicker = tlOpenGpNamePicker;
+      window.tlCloseGpNamePicker = tlCloseGpNamePicker;
     }
     // 跳转核心：定位主画面 [data-uid] 元素 → 平滑滚动居中 → .tl-jump-flash 金色描边闪 2s
     function tlJumpToEventCore(uid) {
@@ -6604,6 +6933,8 @@
         box.disabled = !enabled;
         box.checked = !!detected;
       }
+      // 🆕 围栏名称输入：只在 group 启用勾选时显示，并回填既有 NAME
+      tlShowGroupName(enabled && !!(box && box.checked && !box.disabled), src);
       return enabled;
     }
     function tlBindAddCheckDirty() {
@@ -6615,6 +6946,13 @@
       };
       ov.addEventListener('input', markDirty);
       ov.addEventListener('change', markDirty);
+      // 🆕 group 勾选切换：勾上→显示围栏名称输入并回填；取消→隐藏并清空
+      const gpBox = document.getElementById('tlGroupEnable');
+      if (gpBox) gpBox.onchange = () => {
+        const on = !!(gpBox.checked && !gpBox.disabled);
+        const i = document.getElementById('tlAddCheckInput');
+        tlShowGroupName(on, i ? i.value : '');
+      };
     }
     function tlBlockTypeName(type) {
       return ({ code: '代码块', table: '表格', heading: '标题', hr: '分隔线', quote: '引用', list: '列表', para: '段落', gp: '分组' })[type] || '区块';
@@ -6865,8 +7203,19 @@
         const target = tlEditBlockTarget;
         // 🆕 group 启用：勾选时逐行补 {gp}（整块＝一个小事件）；原本整组却取消勾选＝拆组；其余原样
         const gpBox = document.getElementById('tlGroupEnable');
-        const grouped = tlResolveGroupText(inp.value.replace(/\r\n/g, '\n'), !!(gpBox && gpBox.checked && !gpBox.disabled), tlGroupWasOn);
+        const gpOn = !!(gpBox && gpBox.checked && !gpBox.disabled);
+        let grouped = tlResolveGroupText(inp.value.replace(/\r\n/g, '\n'), gpOn, tlGroupWasOn);
+        // 🆕 围栏名称：输入框手动改过（脏）才写回；未脏以 textarea 原文 NAME 为准，避免旧回填值覆写新 NAME
+        if (gpOn) {
+          const gnv = tlGroupNameValue();
+          if (gnv !== tlGroupNameBaseline) grouped = tlApplyGroupNameToBlock(grouped, gnv);
+        }
         const blockText = tlEnsureCrMarkersForCheckboxLines(grouped, tlFmtDateTime(new Date()));
+        // 🆕 保存后输入框＋基线随保存后的文字回填，两个输入源保持一致
+        if (gpOn) {
+          const gni = document.getElementById('tlGroupName');
+          if (gni) { gni.value = tlCurrentGpName(blockText); tlGroupNameBaseline = gni.value; }
+        }
         tlCalEvents = tlAllEvents(document.getElementById('taskText').value);
         const ev = tlCalEvents.find((x) => x.uid === target.uid);
         if (!ev) { tlCloseAddCheckDialog(); showToast('找不到该条行程（内容可能已被修改）', 'danger'); return; }

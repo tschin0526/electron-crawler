@@ -522,7 +522,21 @@
 //       让轨道外框（[data-gp-rail]::after mask trick）在日程事件视图与便利贴一致显示；
 //       桌面 tlRenderNotes / LITE calRenderNotes 同口径。四主 ?v 戳＋sticky-notes.js 独立戳
 //       刷为 lite-gprorail-20261114；APP_VERSION/manifest 1.10.41→1.10.42。
-const CACHE_NAME = 'md-editor-lite-v228';
+// v229（2026-11-15）：術語語法擴充到第 5 段「父阶」——[[term:釋義:領域:發行:父阶]]，解析改成
+//       一律從末尾數（≥4 段＝末段父阶／倒二發行／倒三領域／其餘併回釋義；≤3 段沿用舊口徑零回歸）。
+//       父阶不佔膠囊本體（不加第三顆小膠囊），只在 tooltip 尾端掛「↑ 父阶：X」，避免被誤讀成另一條釋義。
+//       LITE 順手把 calRenderTermDefs 與 calCollectTerms 兩份內聯解析抽成單一 calParseTermToken
+//       （對齊桌面 tlParseTermToken 的單一可信來源）；副作用一則：字典不再收裸 [[alert]]（與桌面同口徑）。
+//       桌面側同步 tlTermCompleteness（父阶權重 8）＋ tlCollectTerms 改成「逐欄位補，不整條覆蓋」
+//       （否則只寫父阶的一條會抹掉別處的釋義／領域／發行）＋ tlGlossHaystack 併入父阶（搜得上）＋
+//       便利貼 SHIFT「📖 術語解釋」表單加第 5 欄。CSS 三端零改動。calendar-editor.js 改，bump 讓手機重拉。
+// v230（2026-11-15）：围栏小事件群支援「名稱屬性」NAME=…——五族解析器（utils/tl/cal/note/view）attrs 段與
+//       term 段都收 NAME，右上角徽標區多一顆 🏷️ 名稱膠囊（.gp-badge-name）；编辑内容区块對話框新增「圍欄名稱」
+//       輸入框（group 啟用勾選後顯示，回填既有 NAME，保存寫入 term 段、清空＝移除）。順手修復 tl/cal group 保存
+//       會丟掉整個 term 段（TERM+NAME）的既有 bug：BuildGpOpenLine 三端對齊保留 raw term，close 行同步新 key。
+//       雙軌制：gpApplyName 純字串手術，attrs 段中文色名原样保留不轉色。calendar-editor.js/index.html/style.css 改，
+//       四主 ?v 戳刷为 lite-gpname-20261115，bump 讓手機重拉。
+const CACHE_NAME = 'md-editor-lite-v230';
 const ASSETS = [
   './',
   './index.html',

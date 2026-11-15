@@ -827,6 +827,15 @@ body {
   box-shadow: 0 1px 2px rgba(0,0,0,0.4);
   cursor: default;
 }
+/* 🆕 2026-11-15：NAME 围栏名称徽标 — 文字胶囊（auto 宽），高度与 .gp-badge 同级。
+   兜底用 TERM 膠囊同系金底棕字：無色围栏時 .gp-badge 的 background:var(--gp-fg,currentColor) 會因
+   color:var(--gp-bg,#fff) 变成白底白字（名称是文字，不像 🔔 emoji 仍可見）→ 自帶可讀兜底；有 fg/bg 仍跟隨围栏色。 */
+.md-unit.is-gp .gp-badge.gp-badge-name {
+  width: auto; max-width: 160px; padding: 0 .5em;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  background: var(--gp-fg, #e6bd52);
+  color: var(--gp-bg, #4a3b12);
+}
 /* TERM / ALERT 徽标样式统一 — 跟随 --gp-fg 字色 */
 /* 🆕 2026-11-15：右上角 TERM 徽标＝正文同款术语胶囊本体（calRenderTermDefs 直接产出 .tl-term-cap）。
    这里只压尺寸、不复制外观：高度用 box-sizing:border-box + height 锁死成与 .gp-badge 同级的 12px。
@@ -2271,6 +2280,10 @@ body.dark .cal-sticky-src-badge.is-view { color: #c4b5fd; }
 .cal-group-row input { flex: none; width: 18px; height: 18px; margin: 0; accent-color: var(--gold); }
 .cal-group-row.is-disabled { opacity: .55; cursor: default; }
 .cal-group-row.is-disabled input { cursor: default; }
+/* 🆕 圍欄名稱輸入（group 啟用勾選後顯示，保存寫入围欄 term 段 NAME=…，右上角徽標顯示） */
+.cal-group-name { flex: none; display: flex; align-items: center; gap: 8px; margin: 0 12px 8px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg); color: var(--text); font-size: 13px; line-height: 1.4; }
+.cal-group-name .cal-gn-label { flex: none; opacity: .8; white-space: nowrap; }
+.cal-group-name input { flex: 1; min-width: 0; margin: 0; padding: 4px 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--text); font-size: 13px; }
 #calMdEditInput {
   flex: 1 1 auto; min-height: 150px; margin: 8px 12px; padding: 10px;
   border: 1px solid var(--border); border-radius: 10px;

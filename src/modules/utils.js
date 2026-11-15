@@ -49,10 +49,10 @@ function resolveColorName(input) {
 const GP_RAIL_STYLES = ['斜栏', '直栏', '>形栏', '圆弧栏'];
 function parseGpAttrs(raw) {
   const s = String(raw == null ? '' : raw).trim();
-  if (!s) return { key: '', fg: '', bg: '', anim: '', railStyle: '', railA: '', railB: '' };
+  if (!s) return { key: '', fg: '', bg: '', anim: '', name: '', railStyle: '', railA: '', railB: '' };
   const pipe = s.indexOf('|');
   const key = (pipe < 0 ? s : s.slice(0, pipe)).trim();
-  let fg = '', bg = '', anim = '', railStyle = '', railA = '', railB = '';
+  let fg = '', bg = '', anim = '', name = '', railStyle = '', railA = '', railB = '';
   if (pipe >= 0) {
     const attrStr = s.slice(pipe + 1);
     const pairs = attrStr.split(',');
@@ -72,9 +72,10 @@ function parseGpAttrs(raw) {
           railB = resolveColorName(parts[2].trim());
         }
       }
+      else if (k === 'name') name = v;
     }
   }
-  return { key: key, fg: fg, bg: bg, anim: anim, railStyle: railStyle, railA: railA, railB: railB };
+  return { key: key, fg: fg, bg: bg, anim: anim, name: name, railStyle: railStyle, railA: railA, railB: railB };
 }
 // 從一整行文字裡（可能是 fence open 行，也可能是行尾 gp 行）提取 gp attrs。
 //   優先匹配「塊級」整行 {gpX|...} 標記，其次匹配行尾 {gpX|...}。
@@ -85,7 +86,7 @@ function extractGpAttrsFromLine(line) {
   if (m) return parseGpAttrs(m[1]);
   m = s.match(/\{[ \t]*(?:group|gp)[ \t]*:?[ \t]*([^{}]*)\}(?=[ \t]*(?:\[\[[^\]]*\]\][ \t]*)*$)/i);
   if (m) return parseGpAttrs(m[1]);
-  return { key: '', fg: '', bg: '', anim: '', railStyle: '', railA: '', railB: '' };
+  return { key: '', fg: '', bg: '', anim: '', name: '', railStyle: '', railA: '', railB: '' };
 }
 
 // 挂载到 window，确保 HTML onclick 和其他模组可以访问

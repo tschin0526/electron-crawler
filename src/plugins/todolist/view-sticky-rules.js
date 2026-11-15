@@ -286,6 +286,7 @@
       inline: pick('tlRenderInlineMarkdown', (s) => String(s == null ? '' : s)),
       noteMarkers: pick('tlRenderNoteMarkers', (s) => String(s == null ? '' : s)),
       termDefs: pick('tlRenderTermDefs', (s) => String(s == null ? '' : s)),
+      nameRefs: pick('tlRenderNameRefs', (s) => String(s == null ? '' : s)),
       markdown: pick('renderMarkdown', (s) => String(s == null ? '' : s)),
       shortDate: pick('tlMdShort', (s) => String(s == null ? '' : s))
     };
@@ -490,7 +491,7 @@
         // 🆕 从 open 行提取 fg/bg attrs
         const openLine = noteLines[r.start] || '';
         const a = extractGpAttrsLocal(openLine);
-        rangeAttrs.set(n, { fg: a && a.fg ? a.fg : '', bg: a && a.bg ? a.bg : '', anim: a && a.anim ? a.anim : '', alert: !!(a && a.alert), termName: a && a.termName ? a.termName : '', railStyle: a && a.railStyle ? a.railStyle : '', railA: a && a.railA ? a.railA : '', railB: a && a.railB ? a.railB : '' });
+        rangeAttrs.set(n, { fg: a && a.fg ? a.fg : '', bg: a && a.bg ? a.bg : '', anim: a && a.anim ? a.anim : '', alert: !!(a && a.alert), termName: a && a.termName ? a.termName : '', name: a && a.name ? a.name : '', railStyle: a && a.railStyle ? a.railStyle : '', railA: a && a.railA ? a.railA : '', railB: a && a.railB ? a.railB : '' });
       });
       // 🆕 预扫每个 gp fence range：区间内**至少一行命中过滤条件** → 整块保留
       //    （不是只保留命中行！否则排序会把同一块内的命中行和未命中行打散到不同位置。）
@@ -537,7 +538,7 @@
           }
           hits.push({ raw: t, line: k, uid: ev.uid || '', text: m ? (m[2] || '').trim() : '',
             task: !!m, type: type, blockGp: blockId, wholeGp: true,
-            gpFg: blockAttrs.fg, gpBg: blockAttrs.bg, gpAnim: blockAttrs.anim, gpAlert: blockAttrs.alert, gpTermName: blockAttrs.termName, gpRailStyle: blockAttrs.railStyle, gpRailA: blockAttrs.railA, gpRailB: blockAttrs.railB });
+            gpFg: blockAttrs.fg, gpBg: blockAttrs.bg, gpAnim: blockAttrs.anim, gpAlert: blockAttrs.alert, gpTermName: blockAttrs.termName, gpName: blockAttrs.name, gpRailStyle: blockAttrs.railStyle, gpRailA: blockAttrs.railA, gpRailB: blockAttrs.railB });
         }
       });
       // 🆕 再收非 gp fence 的命中行（排除 gp 区间内容，避免重复）
@@ -675,7 +676,7 @@
     return '<div class="vsr-sort-unit" data-sort-date="' + D.esc(sd) + '" data-cr-date="' + D.esc(cr) + '">' + m[1] +
       '<span class="ev-md-check' + (done ? ' done' : '') + '">' + dot +
       '<span class="ev-cb">' + (done ? '\u2713' : '') + '</span>' +
-      '<span class="ev-md-check-text">' + D.inline(D.noteMarkers(m[3])) + '</span></span></div>';
+      '<span class="ev-md-check-text">' + D.nameRefs(D.inline(D.noteMarkers(m[3]))) + '</span></span></div>';
   }
   // 非 task 行（段落／列表项／引用／标题／含 [[…]] 胶囊的行）：投影贴里同样给编辑小圆点，
   //   但「最小 MD 单元」口径必须与来源便利贴（calendar-editor.js::tlSplitMdBlocks）一致——
@@ -757,7 +758,7 @@
         if (cur) { units.push(cur); cur = null; }
         if (gpCur && gpCur.gp === gp) gpCur.hits.push(h);
         // 🆕 2026-11-09：gp unit 带上 attrs（fg/bg），从第一个 hit 拿（整块 hits 的 attrs 全相同）
-        else { flushGp(); gpCur = { gp: gp, task: false, hits: [h], fg: h.gpFg || '', bg: h.gpBg || '', anim: h.gpAnim || '', alert: !!h.gpAlert, termName: h.gpTermName || '', railStyle: h.gpRailStyle || '', railA: h.gpRailA || '', railB: h.gpRailB || '' }; }
+        else { flushGp(); gpCur = { gp: gp, task: false, hits: [h], fg: h.gpFg || '', bg: h.gpBg || '', anim: h.gpAnim || '', alert: !!h.gpAlert, termName: h.gpTermName || '', name: h.gpName || '', railStyle: h.gpRailStyle || '', railA: h.gpRailA || '', railB: h.gpRailB || '' }; }
         return;
       }
       flushGp();
@@ -856,19 +857,19 @@
     if (m) return parseGpAttrLocal(m[1]);
     m = s.match(/\{[ \t]*(?:group|gp)[ \t]*:?[ \t]*([^{}]*)\}(?=[ \t]*(?:\[\[[^\]]*\]\][ \t]*)*$)/i);
     if (m) return parseGpAttrLocal(m[1]);
-    return { key: '', fg: '', bg: '', anim: '', alert: false, termName: '', railStyle: '', railA: '', railB: '' };
+    return { key: '', fg: '', bg: '', anim: '', alert: false, termName: '', name: '', railStyle: '', railA: '', railB: '' };
   }
   function parseGpAttrLocal(raw) {
     const s = String(raw == null ? '' : raw).trim();
-    if (!s) return { key: '', fg: '', bg: '', anim: '', alert: false, termName: '', railStyle: '', railA: '', railB: '' };
+    if (!s) return { key: '', fg: '', bg: '', anim: '', alert: false, termName: '', name: '', railStyle: '', railA: '', railB: '' };
     const pipe1 = s.indexOf('|');
-    if (pipe1 < 0) return { key: s, fg: '', bg: '', anim: '', alert: false, termName: '', railStyle: '', railA: '', railB: '' };
+    if (pipe1 < 0) return { key: s, fg: '', bg: '', anim: '', alert: false, termName: '', name: '', railStyle: '', railA: '', railB: '' };
     const key = s.slice(0, pipe1).trim();
     const rest = s.slice(pipe1 + 1);
     const pipe2 = rest.indexOf('|');
     const attrsPart = pipe2 >= 0 ? rest.slice(0, pipe2) : rest;
     const termPart = pipe2 >= 0 ? rest.slice(pipe2 + 1) : '';
-    let fg = '', bg = '', anim = '', alert = false, termName = '', railStyle = '', railA = '', railB = '';
+    let fg = '', bg = '', anim = '', alert = false, termName = '', name = '', railStyle = '', railA = '', railB = '';
     // 解析 attrs 段（, 分隔）
     attrsPart.split(',').forEach((pair) => {
       const p = pair.trim();
@@ -881,6 +882,7 @@
       else if (k === 'bg') bg = resolveColorNameLocal(v);
       else if (k === 'anim' && /^(pulse|scan|data|aurora|orbit|arc|holo|signal|glitch)$/.test(v)) anim = v;
       else if (/^TERM\s*$/i.test(k)) termName = v;  // TERM 在 attrs 段兜底
+      else if (k === 'name') name = v;
       else if (k === 'rail') {
         const rp = v.split('#');
         if (rp.length >= 3 && ['斜栏', '直栏', '>形栏', '圆弧栏'].indexOf(rp[0].trim()) >= 0) {
@@ -904,6 +906,7 @@
           const k = segTrim.slice(0, eq).trim().toUpperCase();
           const v = segTrim.slice(eq + 1).trim();
           if (k === 'TERM' && v) termName = v;
+          else if (k === 'NAME' && v) name = v;
           else if (k === 'ALERT') alert = v.toLowerCase() === 'true';
           else if (k === 'RAIL') {
             const rp = v.split('#');
@@ -916,7 +919,7 @@
         });
       });
     }
-    return { key: key, fg: fg, bg: bg, anim: anim, alert: alert, termName: termName, railStyle: railStyle, railA: railA, railB: railB };
+    return { key: key, fg: fg, bg: bg, anim: anim, alert: alert, termName: termName, name: name, railStyle: railStyle, railA: railA, railB: railB };
   }
   // 🆕 gp 单元里的 - [ ] 行：转成与一般 checkbox 相同的 .ev-md-check/.ev-cb（只读框、无圆点）。
   //    否则 D.markdown 会把它们渲染成 <ul><li>，便利贴 CSS 的 .body ul li{list-style:disc}
@@ -937,7 +940,7 @@
     }).join('\n');
   }
   // 一个非 task 编辑单元（可能含 1..n 条连续同类行）：整块渲染成 1 个 .md-unit ＋ 1 颗只读圆点。
-  function nonTaskUnitHtml(hits, ev, selfKey, deps, isGp, gpFg, gpBg, gpAnim, gpAlert, gpTermName, gpRailStyle, gpRailA, gpRailB) {
+  function nonTaskUnitHtml(hits, ev, selfKey, deps, isGp, gpFg, gpBg, gpAnim, gpAlert, gpTermName, gpRailStyle, gpRailA, gpRailB, gpName) {
     const D = makeDeps(deps);
     const list = (hits && hits.length) ? hits : [];
     if (!list.length) return '';
@@ -981,6 +984,7 @@
     let gpBadges = '';
     if (isGp) {
       const badges = [];
+      if (gpName) badges.push('<span class="gp-badge gp-badge-name" title="围栏名称">\u{1F3F7}️ ' + D.esc(gpName) + '</span>');
       if (gpTermName) badges.push(D.termDefs('[[' + gpTermName + ']]'));
       if (gpAlert) badges.push('<span class="gp-badge gp-badge-alert" title="ALERT 闹铃">\u{1F514}</span>');
       if (badges.length) gpBadges = '<span class="gp-badges">' + badges.join('') + '</span>';
@@ -988,9 +992,10 @@
     return '<div class="vsr-sort-unit" data-sort-date="' + D.esc(sd) + '" data-cr-date="' + D.esc(cr) + '"><div class="md-unit' + (isGp ? ' is-gp' : '') + '"' +
       (isGp && /^(pulse|scan|data|aurora|orbit|arc|holo|signal|glitch)$/.test(gpAnim || '') ? ' data-gp-anim="' + gpAnim + '"' : '') +
       (isGp && gpRailStyle ? ' data-gp-rail="' + gpRailStyle + '"' : '') +
+      (isGp && gpName ? ' data-gp-name="' + D.esc(gpName) + '"' : '') +
       gpStyle + ' data-start="' + (first.line != null ? first.line : '') +
       '" data-end="' + (last.line != null ? last.line : (first.line != null ? first.line : '')) + '">' +
-      gpBadges + dot + D.markdown(D.termDefs(marked)) + '</div></div>';
+      gpBadges + dot + D.markdown(D.nameRefs(D.termDefs(marked))) + '</div></div>';
   }
   function groupsToHtml(groups, selfKey, deps) {
     const D = makeDeps(deps);
@@ -1000,7 +1005,7 @@
       groupHitsIntoUnits(g.hits).forEach((u) => {
         out += u.task ? taskLineHtml(u.hits[0], g.ev, selfKey, D) + '\n'
           // 🆕 2026-11-09：gp attrs 从 unit 直接传
-          : nonTaskUnitHtml(u.hits, g.ev, selfKey, D, u.gp != null, u.fg || '', u.bg || '', u.anim || '', !!u.alert, u.termName || '', u.railStyle || '', u.railA || '', u.railB || '') + '\n';
+          : nonTaskUnitHtml(u.hits, g.ev, selfKey, D, u.gp != null, u.fg || '', u.bg || '', u.anim || '', !!u.alert, u.termName || '', u.railStyle || '', u.railA || '', u.railB || '', u.name || '') + '\n';
       });
     });
     return out;
