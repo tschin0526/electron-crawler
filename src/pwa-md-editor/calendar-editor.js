@@ -1460,7 +1460,7 @@ function calGpInlineStyle(b) {
 function calGpBadgesHtml(b) {
   const badges = [];
   if (b && b.name) {
-    badges.push('<span class="gp-badge gp-badge-name" title="围栏名称">\u{1F3F7}️ ' + escapeHtml(b.name) + '</span>');
+    badges.push('<span class="gp-badge gp-badge-name" title="围栏名称：' + escapeHtml(b.name) + '">\u{1F3F7}️ ' + escapeHtml(b.name) + '</span>');
   }
   if (b && b.termName) {
     badges.push(calRenderTermDefs('[[' + b.termName + ']]'));

@@ -3204,7 +3204,7 @@
     function tlGpBadgesHtml(b) {
       const badges = [];
       if (b && b.name) {
-        badges.push('<span class="gp-badge gp-badge-name" title="围栏名称">\u{1F3F7}️ ' + tlEscapeHtml(b.name) + '</span>');
+        badges.push('<span class="gp-badge gp-badge-name" title="围栏名称：' + tlEscapeHtml(b.name) + '">\u{1F3F7}️ ' + tlEscapeHtml(b.name) + '</span>');
       }
       if (b && b.termName) {
         badges.push(tlRenderTermDefs('[[' + b.termName + ']]'));

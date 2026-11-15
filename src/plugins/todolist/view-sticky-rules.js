@@ -984,7 +984,7 @@
     let gpBadges = '';
     if (isGp) {
       const badges = [];
-      if (gpName) badges.push('<span class="gp-badge gp-badge-name" title="围栏名称">\u{1F3F7}️ ' + D.esc(gpName) + '</span>');
+      if (gpName) badges.push('<span class="gp-badge gp-badge-name" title="围栏名称：' + D.esc(gpName) + '">\u{1F3F7}️ ' + D.esc(gpName) + '</span>');
       if (gpTermName) badges.push(D.termDefs('[[' + gpTermName + ']]'));
       if (gpAlert) badges.push('<span class="gp-badge gp-badge-alert" title="ALERT 闹铃">\u{1F514}</span>');
       if (badges.length) gpBadges = '<span class="gp-badges">' + badges.join('') + '</span>';
