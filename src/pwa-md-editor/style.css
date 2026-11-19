@@ -792,6 +792,28 @@ body {
 .ev-cb.interactive { cursor: pointer; } /* 只有框框本身可點擊勾選（與桌面一致）；整行文字不再觸發，避免手機誤觸 */
 .ev-md-check.done .ev-cb { background: var(--primary); border-color: var(--primary); }
 .ev-md-check.done .ev-md-check-text { text-decoration: line-through; opacity: 0.75; }
+/* 🆕 2026-11-16：{include} 插入內容外框 —— 淡化虛線框，與主體內容視覺區隔；inline span 內 display:block 換行顯示 */
+.gp-include-box { display: block; margin: .4em 0; padding: .35em .7em; border: 1px dashed rgba(127,127,127,.5); border-radius: 8px; background: rgba(127,127,127,.05); min-width: 0; }
+.gp-include-box > .gp-include-body > p { margin: 0; }
+.gp-include-box > .gp-include-label { display: inline-flex; align-items: center; gap: .35em; padding: 0 .45em; margin-left: -.15em; font-size: .85em; line-height: 1.2; color: var(--ev-muted, #888); font-weight: 600; }
+/* include 徽标常显（与 showLabel 无关）：TERM 📖 书 / NAME 🏷️ 标签牌。裸徽标、无底色按钮框。 */
+.gp-include-badge { display: inline-flex; align-items: center; font-size: .95em; line-height: 1; }
+.gp-include-box > .gp-include-directive { margin: 0 0 .4em; padding: .15em .45em; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .82em; line-height: 1.35; color: var(--ev-muted, #888); white-space: pre-wrap; word-break: break-word; background: rgba(127,127,127,.08); border-radius: 4px; }
+/* 🆕 折叠：默认展开；只折叠 .gp-include-body，徽标/名称/directive 永不折叠。纯 CSS、零 JS。 */
+.gp-include-fold { display: inline-flex; align-items: center; justify-content: center; cursor: pointer; user-select: none; margin-right: .05em; }
+.gp-include-fold-cb { position: absolute; width: 1px; height: 1px; opacity: 0; margin: 0; }
+.gp-include-fold-ico { display: inline-block; font-size: .8em; line-height: 1; color: var(--ev-muted, #888); transition: transform .15s ease; }
+.gp-include-fold:hover .gp-include-fold-ico { color: var(--ev-text, #333); }
+.gp-include-box:has(> .gp-include-label .gp-include-fold-cb:checked) > .gp-include-body { display: none; }
+.gp-include-box:has(> .gp-include-label .gp-include-fold-cb:checked) .gp-include-fold-ico { transform: rotate(-90deg); }
+/* 🆕 2026-11-18：{NAME=X} 围栏名称引用胶囊（与桌面同款）——金色圆角标签。 */
+.gp-name-ref {
+  display: inline-block; max-width: 220px; padding: 0 .5em; border-radius: 999px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: middle;
+  background: #e6bd52; color: #4a3b12; border: 1px solid rgba(74,59,18,.35);
+  font-size: .85em; line-height: 1.2;
+}
+.gp-name-ref:hover { filter: brightness(1.06); }
 /* 可編輯備註：每行 checkbox 自成一行（舊版靠 marked 的 <br> 分行，改成分塊渲染後由這裡保證） */
 .ev-notes .ev-md-check, .cal-sticky-body .ev-md-check { display: block; }
 .ev-notes .ev-md-check + br, .ev-notes br:has(+ .ev-md-check) { display: none !important; }
@@ -812,12 +834,20 @@ body {
   color: var(--gp-fg, inherit);
   background: var(--gp-bg, transparent);
 }
-/* 🆕 2026-11-14：gp 围栏属性徽标 — 右上角边框线 */
-.md-unit.is-gp .gp-badges {
-  position: absolute; top: -6px; right: -6px;
-  display: flex; gap: 1px; z-index: 10;
-  pointer-events: auto;
+/* 🆕 2026-11-16：名称胶囊改到上边框正中央且比内容大一号 → 向上／向下各突出约 .75em。
+   上方补 margin-top 避免压到前一个区块／上一行；框内补 padding-top 让第一行内容下移。
+   只作用于「真的有 NAME」的围栏（:has），其余 gp 区块间距零改。 */
+.md-unit.is-gp:has(.gp-badge-name) {
+  margin-top: 1.2em; padding-top: 1.1em;
 }
+/* 🆕 gp 围栏属性徽标：容器横跨整个上边框（left/right:0 → left:50% 才是框线正中央），
+   TERM／ALERT 仍靠右；容器本身不吃点击，徽标逐个还原。 */
+.md-unit.is-gp .gp-badges {
+  position: absolute; top: -6px; left: 0; right: 0;
+  display: flex; justify-content: flex-end; gap: 1px; z-index: 10;
+  pointer-events: none;
+}
+.md-unit.is-gp .gp-badges > * { pointer-events: auto; }
 .md-unit.is-gp .gp-badge {
   width: 12px; height: 12px; border-radius: 6px;
   display: flex; align-items: center; justify-content: center;
@@ -827,10 +857,15 @@ body {
   box-shadow: 0 1px 2px rgba(0,0,0,0.4);
   cursor: default;
 }
-/* 🆕 配色与 .tl-term-cap TERM 胶囊一致：不再跟围栏色（bg 为渐变时 --gp-bg 非合法色值，
-   color 于 computed-value 阶段退回 inherit → 字看不见）；字号／高度维持徽标级 8px/12px，border-box 吸收边框。 */
+/* 🆕 2026-11-16：名称胶囊＝上边框正中央＋比内容大一号（1.15em）；
+   top:50% 相对 12px 高的 .gp-badges（top:-6px）→ 胶囊中心 y=0 正好骑在框线上。
+   ⛔ 不用 background 简写塞 var()（Chromium 不认），渐变只用既有 hex 字面量。 */
 .md-unit.is-gp .gp-badge.gp-badge-name {
-  width: auto; max-width: 160px; padding: 0 .5em;
+  position: absolute; left: 50%; top: 50%;
+  transform: translate(-50%, -50%);
+  width: auto; max-width: 80%; height: auto;
+  padding: .1em .6em;
+  font-size: 1.15em; line-height: 1.15;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   box-sizing: border-box;
   color: #4a3b12;
@@ -1066,17 +1101,18 @@ body {
 }
 .tl-alert-state { color: #1d4d3a; background: rgba(255,255,255,.62); border-color: rgba(30,110,90,.75); }
 .tl-alert.done { filter: saturate(.55); opacity: .72; }
-/* 🆕 2026-11-08 cr / dl / cp 日期標記：圖示＋「月-日」合成一顆長徽標（字體比正文小，日期再小一號）；
-   完整「日期+時間」放 title（hover tooltip）與 data-date（VIEW 排序讀取）。與桌面雙端對齊 */
+/* cr / dl / cp 日期標記：徽標＋日期套一圈虛線外框（同 .gp-include-box 的 1px dashed 口徑）。
+   ⚠️ 刻意不設背景色 → 露出便利貼紙色；{gp} 圍欄內露出 .md-unit.is-gp 的 var(--gp-bg, transparent)。
+   color: inherit 跟隨 .cal-sticky-body 的 var(--cal-sticky-fg)，圍欄內跟隨 var(--gp-fg, inherit)；
+   border: 1px dashed currentColor 讓框線色與字色一致，深淺主題自動適配。
+   完整「日期+時間」仍放 title 與 data-date（VIEW 排序讀取）。 */
 .ev-date-mark {
   display: inline-flex; align-items: center; gap: .22em;
-  margin: 0 .18em; padding: 0 .45em;
-  border-radius: 999px; line-height: 1.5; font-size: .8em; font-weight: 600;
+  margin: 0 .18em; padding: .05em .3em;
+  border: 1px dashed currentColor; border-radius: 3px;
+  line-height: 1.5; font-size: .8em; font-weight: 600;
   white-space: nowrap; cursor: help; vertical-align: baseline;
-  color: #4a3b12;
-  background: linear-gradient(180deg, #f4dc8e 0%, #e6bd52 55%, #d0a23a 100%);
-  border: 1px solid #b8893a;
-  box-shadow: 0 1px 2px rgba(0,0,0,.22), inset 0 1px 0 rgba(255,255,255,.6);
+  color: inherit;
 }
 .ev-date-mark-md { font-size: .85em; font-variant-numeric: tabular-nums; opacity: .92; }
 .ev-block.done { opacity: 0.55; }

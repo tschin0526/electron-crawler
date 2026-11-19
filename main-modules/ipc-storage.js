@@ -3,7 +3,7 @@
  * 从 main.js 拆分而来
  * 包含：书签存储、插件数据、排程数据、折叠状态、文件对话框、网页预览窗口等
  */
-const { ipcMain, dialog, BrowserWindow, app, shell } = require('electron');
+const { ipcMain, dialog, BrowserWindow, app, shell, session } = require('electron');
 const fs = require('fs');
 const path = require('path');
 const http = require('http');
@@ -1422,9 +1422,42 @@ function init(shared) {
   });
 
   // ========== 网页预览新窗口 ==========
+  // 预览窗 webview 专属 session：仅对本地回环放行自签证书（mkcert），外网仍走严格校验。
+  // 用独立 partition 避免污染主程序默认 session 的证书策略。
+  const PREVIEW_WEBVIEW_PARTITION = 'preview-local-cert';
+  function isLocalPreviewHost(host) {
+    try {
+      const h = String(host).toLowerCase();
+      return h === 'localhost' || h === '::1' || h === '[::1]' ||
+             /^127\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(h);
+    } catch (e) {
+      return false;
+    }
+  }
+
   ipcMain.handle('open-web-preview', async (event, url) => {
     try {
       console.log('[Main] 打开网页预览窗口:', url);
+
+      // ⚠️ session.fromPartition() 只能在 app ready 之后调用；handler 被触发时 app 必已 ready。
+      //    幂等：只在首次设置校验钩子。
+      const previewSession = session.fromPartition(PREVIEW_WEBVIEW_PARTITION);
+      if (!previewSession.__previewCertHookInstalled) {
+        previewSession.setCertificateVerifyProc((request, callback) => {
+          // callback 只接受数字：0=信任, -2=被权威拒绝, -3=其它错误。
+          // request.verificationResult 是字符串（'OK'/'CERT_REVOKED'/...），不能直接回传。
+          if (isLocalPreviewHost(request.hostname)) {
+            console.log('[Main] 预览窗放行本地自签证书:', request.hostname);
+            callback(0); // 0 = 信任，放行握手
+          } else {
+            // 外网维持系统默认校验：可信→0，不可信→-3
+            const trusted = request.verificationResult === 'OK';
+            if (!trusted) console.warn('[Main] 预览窗拒绝证书:', request.hostname, request.verificationResult);
+            callback(trusted ? 0 : -3);
+          }
+        });
+        previewSession.__previewCertHookInstalled = true;
+      }
 
       // 创建新窗口（使用 frameless + 自定义标题栏）
       const previewWindow = new BrowserWindow({
@@ -1513,6 +1546,7 @@ function init(shared) {
         <webview
           id="content-area"
           src="${url}"
+          partition="${PREVIEW_WEBVIEW_PARTITION}"
           allowpopups
           enableblinkfeatures=AutomationControlled
           disablewebsecurity

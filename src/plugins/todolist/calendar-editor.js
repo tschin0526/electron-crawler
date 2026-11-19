@@ -1289,7 +1289,7 @@
       } else if (!shown.length) {
         body.innerHTML = '<div class="tl-gloss-noresult">没有符合「' + tlEscapeHtml(String((input && input.value) || '').trim()) + '」的术语。<br>可试试术语名、释义、领域、发行、父阶或来源行程的关键词。</div>';
       } else {
-        body.innerHTML = shown.map((t) => {
+        body.innerHTML = shown.map((t, i) => {
           // 来源事件 chips：关弹层 → scrollIntoView 居中 → 金色描边闪 2s；标题走 MD 行内渲染，故不注入 <mark>
           const srcHtml = (t.srcs && t.srcs.length)
             ? '<div class="tl-gloss-srcs"><span class="tl-gloss-srcs-label">来源事件：</span>' + t.srcs.map((s) => {
@@ -1312,9 +1312,14 @@
                 '</div>' +
                 '<div class="tl-gloss-fence-body" style="font-size:12px;color:var(--ev-text);white-space:pre-wrap;max-height:160px;overflow:auto">' + tlGlossHl(t.fenceDesc, tokens) + '</div>' +
               '</div>'
-            : '';
+            : (tlGlossKin && tlGlossKin.mode === 'detail'
+                ? '<div style="margin-top:8px"><span class="tl-gloss-nodef">没有找到 TERM=' + tlEscapeHtml(t.term) + ' 的围栏说明；在任意便利贴写 {gpX|…|TERM=' + tlEscapeHtml(t.term) + '}，围栏内容即详细说明。</span></div>'
+                : '');
+          // 项次栏：与事件统计明细表 tlStatsDetailHtml 的 d-no 同口径＝当前显示顺序连续编号 1..N
+          //   （搜索／父阶过滤后重新编号，不保留全表原号）；纯显示层，不写回 calendar.md。
+          const glossNo = i + 1;
           return '<div class="tl-gloss-row">' +
-            '<div class="tl-gloss-row-head">' + tlGlossCapHtml(t, tokens) +
+            '<div class="tl-gloss-row-head"><span class="tl-gloss-idx" data-idx="' + glossNo + '" title="项次 ' + glossNo + '">' + glossNo + '</span>' + tlGlossCapHtml(t, tokens) +
             '<span class="tl-gloss-def">' + (t.def ? tlGlossHl(t.def, tokens) : '<span class="tl-gloss-nodef">（无释义）</span>') + '</span>' +
             '<span class="tl-gloss-count" title="出现次数">×' + t.count + '</span>' +
             '</div>' + srcHtml + fenceHtml + '</div>';
@@ -1341,6 +1346,12 @@
     function tlGlossKinBase(all) {
       if (!tlGlossKin) return all;
       const key = tlGlossKin.name.toLowerCase();
+      // 🆕 2026-11-16 详细说明模式（便利贴 TERM 右键第 3 项）：只留该术语本身，
+      //   fenceDesc（围栏 TERM=NAME 的内容）由 tlCollectTerms 扫描得到，渲染层原样输出，不做父阶过滤。
+      if (tlGlossKin.mode === 'detail') {
+        const self = all.find((t) => t.term.toLowerCase() === key);
+        return self ? [self] : [];
+      }
       if (tlGlossKin.mode !== 'parent') return all.filter((t) => (t.parent || '').toLowerCase() === key);
       // 父節點＝顯示「它父階那顆術語」的列，不是它自己；父階留空或尚未被定義 → 0 列（走親屬空態說明）
       const self = all.find((t) => t.term.toLowerCase() === key);
@@ -1349,6 +1360,9 @@
     }
     function tlGlossKinEmptyText(all) {
       const name = tlEscapeHtml(tlGlossKin.name);
+      if (tlGlossKin.mode === 'detail') {
+        return '「' + name + '」还没有定义。<br>在任意便利贴写一条围栏 <code>{gpX|…|TERM=' + name + '}</code>，围栏内容就会作为它的详细说明出现在这里。';
+      }
       if (tlGlossKin.mode === 'children') {
         return '「' + name + '」目前没有子节点。<br>没有任何术语把第 5 栏父阶写成「' + name + '」。语法：<code>[[子术语:释义:领域:发行:' + name + ']]</code>';
       }
@@ -1364,20 +1378,21 @@
       if (!bar) return;
       if (!tlGlossKin) { bar.hidden = true; bar.innerHTML = ''; return; }
       const isParent = tlGlossKin.mode === 'parent';
+      const isDetail = tlGlossKin.mode === 'detail';
       bar.hidden = false;
-      bar.innerHTML = '<span class="tl-gloss-kin-label">' + (isParent ? '⬆' : '⬇') + ' 「' + tlEscapeHtml(tlGlossKin.name) + '」的' + (isParent ? '父节点' : '子节点') + '</span>' +
+      bar.innerHTML = '<span class="tl-gloss-kin-label">' + (isDetail ? '📖' : (isParent ? '⬆' : '⬇')) + ' 「' + tlEscapeHtml(tlGlossKin.name) + '」的' + (isDetail ? '详细说明' : (isParent ? '父节点' : '子节点')) + '</span>' +
         '<span class="tl-gloss-kin-count">' + n + '</span>' +
-        '<button type="button" class="tl-gloss-kin-clear" onclick="tlGlossKinClear()" title="清除父阶过滤，显示全部术语">✕ 显示全部</button>';
+        '<button type="button" class="tl-gloss-kin-clear" onclick="tlGlossKinClear()" title="清除过滤，显示全部术语">✕ 显示全部</button>';
     }
     function tlGlossKinClear() {
       tlGlossKin = null;
       tlRenderGlossary();
     }
-    // 🆕 右鍵 TERM 膠囊／便利貼 IPC 的入口：開術語表並直接套上父階過濾
+    // 🆕 右鍵 TERM 膠囊／便利貼 IPC 的入口：開術語表；parent／children 套父階過濾，detail 只看該術語的圍欄說明
     function tlOpenGlossaryKin(name, mode) {
       const n = String(name == null ? '' : name).trim();
       if (!n) return;
-      tlOpenGlossary({ mode: mode === 'parent' ? 'parent' : 'children', name: n });
+      tlOpenGlossary({ mode: (mode === 'parent' || mode === 'detail') ? mode : 'children', name: n });
     }
     function tlOpenGlossary(kin) {
       const body = document.getElementById('tlGlossaryBody');
@@ -2873,10 +2888,24 @@
       // ⑥ 原樣交 CSS
       return s;
     }
+    // 2026-11-18：名称类参数恢复兼容读取（ASCII 双引号 / 单引号 / 中文弯引号 / 裸值皆可），
+    //   避免用户既有资料全部失效；写回仍统一输出 NAME="X"（渐进规范化）。布尔参数不受约束。
+    function tlQuotedVal(raw) {
+      const s = String(raw == null ? '' : raw).trim();
+      if (!s) return '';
+      // 兼容读取：任意成对/混搭引号（ASCII " '、中文 “ ” ‘ ’、直角 「 」 『 』、全角 ＂・）一律剥离；裸值原样返回。
+      //   写回仍统一输出 NAME="X"（渐进规范化）。旧正则只认 4 种配对，直角/全角/混搭会落裸值兜底→引号残留（2026-11-18 修复）。
+      const OPEN = '"\'“‘「『＂﹁﹃';
+      const CLOSE = '"\'”’」』＂﹂﹄';
+      if (s.length >= 2 && OPEN.indexOf(s[0]) >= 0 && CLOSE.indexOf(s[s.length - 1]) >= 0) {
+        return s.slice(1, -1).trim();
+      }
+      return s;
+    }
     // 🆕 2026-11-14 升级为多 pipe 版本（与 desktop-note.js noteExtractGpAttrs 对齐）
     // 格式：{gpX|attrs段|term段}
     //   attrs 段用 , 分隔 fg=红,bg=黄,anim=pulse
-    //   term 段用 | 分隔 alert|TERM=便利贴
+    //   term 段用 | 分隔 alert|TERM="便利贴"
     function tlParseGpAttrs(raw) {
       const s = String(raw == null ? '' : raw).trim();
       if (!s) return { key: '', fg: '', bg: '', anim: '', alert: false, extra: [], term: '', termName: '', name: '', railStyle: '', railA: '', railB: '' };
@@ -2908,13 +2937,14 @@
             railB = tlResolveColorName(rp[2].trim());
           }
         }
-        else if (k === 'name') { name = v; extra.push(p); }  // 留 extra 供写回保留
+        else if (k === 'name') { const q = tlQuotedVal(v); if (q) name = q; extra.push(p); }  // 裸值无效；仍留 extra 供写回保留原文
         else extra.push(p);
       });
-      // 兜底：attrs 段里可能有 TERM=xxx（没有第二个 pipe 的情况），移到 termName
+      // 兜底：attrs 段里可能有 TERM="xxx"（没有第二个 pipe 的情况），移到 termName
       const termInAttrs = extra.find((x) => /^TERM\s*=/i.test(x));
       if (termInAttrs) {
-        termName = termInAttrs.replace(/^TERM\s*=\s*/i, '').trim();
+        const q = tlQuotedVal(termInAttrs.replace(/^TERM\s*=\s*/i, ''));
+        if (q) termName = q;
         const idx = extra.indexOf(termInAttrs);
         if (idx >= 0) extra.splice(idx, 1);
       }
@@ -2932,8 +2962,8 @@
             }
             const k = segTrim.slice(0, eq).trim().toUpperCase();
             const v = segTrim.slice(eq + 1).trim();
-            if (k === 'TERM' && v) termName = v;
-            else if (k === 'NAME' && v) name = v;
+            if (k === 'TERM') { const q = tlQuotedVal(v); if (q) termName = q; }
+            else if (k === 'NAME') { const q = tlQuotedVal(v); if (q) name = q; }
             else if (k === 'ALERT') alert = v.toLowerCase() === 'true';
             // 🆕 2026-11-14：term 段兜底解析 rail（rail=斜栏#白#黑）
             else if (k === 'RAIL') {
@@ -3102,10 +3132,10 @@
       const lead = (src.match(/^[ \t]*/) || [''])[0];
       const trimmed = src.trim();
       if (!/^\{[ \t]*(?:group|gp)[ \t]*:?[ \t]*[^{}]*\}$/i.test(trimmed)) return src;
-      const nv = String(name == null ? '' : name).replace(/[{}|,]/g, '').trim();
+      const nv = String(name == null ? '' : name).replace(/[{}|,"'\u201c\u201d\u2018\u2019]/g, '').trim();
       const body = trimmed.slice(1, -1);
       const p1 = body.indexOf('|');
-      if (p1 < 0) return lead + '{' + body + (nv ? '|NAME=' + nv : '') + '}';
+      if (p1 < 0) return lead + '{' + body + (nv ? '|NAME="' + nv + '"' : '') + '}';
       const key = body.slice(0, p1);
       const rest = body.slice(p1 + 1);
       const p2 = rest.indexOf('|');
@@ -3117,7 +3147,7 @@
         const t = it.trim();
         if (t && !/^NAME\s*=/i.test(t)) items.push(t);
       }));
-      if (nv) items.push('NAME=' + nv);
+      if (nv) items.push('NAME="' + nv + '"');
       const termClean = items.join('|');
       let out = key;
       if (attrsClean || termClean) out += '|' + attrsClean;
@@ -3348,6 +3378,8 @@
     function tlRenderNotes(notes, uid, forceEditable, evOverride) {
       if (!notes) return '';
       const raw = String(notes);
+      // 🆕 2026-11-16：整份 notes 只建一次 {include} 索引，供所有 chunk 共用；无语法时不扫描。
+      const gpIncludeIndex = /\{include\s+(?:name|TERM)\s*=/i.test(raw) ? tlCollectGpIncludeIndex() : null;
       // 🆕 evOverride：调用方手上已有 event 对象时直接传进来，不再回查 tlCalEvents。
       //    ⚠️ 便利贴窗正文走 tlStickyNoteRefs（下方 line ~1255），那时 tlCalEvents 可能尚未刷新/不含该 uid，
       //    回查失败 → event=null → canEdit=false → 整段渲染（没有 .md-unit 区块），
@@ -3368,7 +3400,9 @@
         const roDot = !!(uid && event && event.ro && !forceEditable);
         const roOpts = roDot ? { roDot: true } : undefined;
         const display = tlNotesWithChecks(tlStripGpMarkers(rawN), uid, roOpts);
-        const renderChunk = (s) => renderMarkdown(tlRenderNameRefs(tlRenderTermDefs(tlRenderNoteMarkersLines(s))));
+        // 🆕 2026-11-16：{include name="NAME"} 在分块之后、renderMarkdown 之前就地展开 →
+        //   原始 data-start/end 行号不受影响；插入内容不经过 tlNotesWithChecks → GFM checkbox 天然 disabled（只读）。
+        const renderChunk = (s) => tlRenderWithIncludes(s, gpIncludeIndex);
         const gpBlocks = tlSplitMdBlocks(rawN).filter((b) => b.type === 'gp');
         if (!gpBlocks.length) return renderChunk(display);
         const dLines = display.replace(/\r\n/g, '\n').split('\n');
@@ -3400,7 +3434,7 @@
       blocks.forEach((b) => {
         if (b.type === 'task') {
           // checkbox 行：保留既有「行內編輯小圓點」（編輯子事件），不加外層區塊圓點
-          out += tlRenderNameRefs(tlRenderTermDefs(tlTaskLineHtml(lines[b.start], uid, b.start, forceEditable))) + '\n';
+          out += tlRenderNameRefs(tlRenderTermDefs(tlTaskLineWithIncludes(lines[b.start], gpIncludeIndex, uid, b.start, forceEditable))) + '\n';
           return;
         }
         // 🆕 只剝「顯示副本」的 {gp}；編輯對話框讀的是 ev.notes 原文，標記必須留著才能維持分組
@@ -3414,7 +3448,7 @@
           ? tlNotesWithChecks(chunk, uid, { plain: true, baseLine: b.start })
           : chunk;
         const gpPrepared = b.type === 'gp' ? tlSeparateGpHorizontalRules(prepared) : prepared;
-        const inner = renderMarkdown(tlRenderNameRefs(tlRenderTermDefs(tlRenderNoteMarkersLines(gpPrepared))));
+        const inner = tlRenderWithIncludes(gpPrepared, gpIncludeIndex);
         // 🆕 小事件群（连续同组 {gp} 行＝一个编辑小圆点区块）：只给 gp 区块挂 is-gp，
         //    由 CSS 画 1px currentColor 外框；task / code / table / para 等其它单元不受影响。
         //    🆕 2026-11-09：gp 区块若有 fg/bg attrs，追加 inline style 覆盖便利贴默认色
@@ -3818,13 +3852,201 @@
       return String(text).split('\n').map(function (line) {
         if (/^\s*(```|~~~)/.test(line)) { inFence = !inFence; return line; }
         if (inFence) return line;
-        return line.replace(/\{NAME=([^{}\n]+)\}/g, function (m, name) {
-          const nm = String(name).trim();
+        // 名称引用兼容读取：{NAME="X"} / {NAME='X'} / {NAME=“X”} / {NAME=X} 皆可（旧资料不失效）。
+        return line.replace(/\{NAME=(?:"([^"\n]*)"|'([^'\n]*)'|“([^”\n]*)”|‘([^’\n]*)’|([^{}\n]+))\}/g, function (m, a, b, c, d, e) {
+          const name = [a, b, c, d, e].find((x) => x != null);
+          const nm = String(name == null ? '' : name).trim();
           if (!nm) return m;
           return '<span class="gp-name-ref" data-gp-name-ref="' + tlEscapeHtml(nm) + '"' +
             ' title="跳转到围栏：' + tlEscapeHtml(nm) + '">\u{1F3F7}\uFE0F ' + tlEscapeHtml(nm) + '</span>';
         });
       }).join('\n');
+    }
+    // ========== 🆕 2026-11-16：{include name="NAME"} 围栏内容插入（只读 · 纯显示层） ==========
+    // 语义：在语法「所在位置」就地插入「所有 NAME=NAME 的围栏内部内容」（依底稿出现顺序全部插入）。
+    //   ⚠️ 2026-11-16 修正：原本把插入内容 append 到整行结尾 → 视觉上跑到便利贴末尾；
+    //      改为 line.replace() 就地替换 → 紧跟在「如:」之后（可换行）。
+    //   · 底稿原文不动；插入内容由 renderInsert 预渲染成只读 HTML（不挂 uid/data-line/onclick）＋虚线外框。
+    //   · 递归展开内层 include，深度上限 8；当前链上同名不再展开（防环）。找不到名称 → 保留原字面量。
+    //   · 代码围栏内不解析（与 tlRenderNameRefs / tlRenderTermDefs 同口径）。
+    //   index：Map<lowercaseName, Array<rawInnerText>>，一次建好供整份 notes 的所有 chunk 共用。
+    //   renderInsert(raw, name)：把围栏内部 markdown 预渲染成带 .gp-include-box 外框的 HTML；缺省原样回传。
+    // 解析单个 {include …} token：三种来源 ——
+    //   · name="X"（或 'X'）→ 插 NAME=X 的围栏内容，lookupKey = x（裸小写，旧口径）
+    //   · TERM=X（可带引号）→ 插 TERM=X 的围栏内容（TERM 详细说明），lookupKey = 'term:'+x
+    //   · picture="X"（可带引号/裸值）→ 插 calendar.md 同目录图片 X，lookupKey = 'picture:'+x（不查围栏索引）
+    //   showLabel／showDirective 可选（=true/on/1/yes 为真，默认 false）；参数顺序无关、大小写不敏感。
+    function tlParseIncludeToken(token) {
+      const s = String(token == null ? '' : token);
+      // 取第一个非 null 捕获组（布尔参数仍兼容中文引号，不属名称类不受新规则约束）
+      const readVal = (m) => {
+        if (!m) return '';
+        for (let i = 1; i < m.length; i++) if (m[i] != null) return String(m[i]).trim();
+        return '';
+      };
+      // 名称类参数兼容读取（ASCII 双引号 / 单引号 / 中文弯引号 / 裸值），旧资料继续可用。
+      const nmVal = readVal(s.match(/(?:^|\s)name\s*=\s*(?:"([^"\n]*)"|'([^'\n]*)'|“([^”\n]*)”|‘([^’\n]*)’|([^\s}]+))/i));
+      const tmVal = readVal(s.match(/(?:^|\s)TERM\s*=\s*(?:"([^"\n]*)"|'([^'\n]*)'|“([^”\n]*)”|‘([^’\n]*)’|([^\s}]+))/i));
+      const picVal = readVal(s.match(/(?:^|\s)picture\s*=\s*(?:"([^"\n]*)"|'([^'\n]*)'|“([^”\n]*)”|‘([^’\n]*)’|([^\s}]+))/i));
+      const isTerm = !nmVal && !!tmVal;
+      const isPicture = !nmVal && !tmVal && !!picVal;
+      const name = isTerm ? tmVal : (isPicture ? picVal : nmVal);
+      const kind = isTerm ? 'term' : (isPicture ? 'picture' : 'name');
+      const lookupKey = isTerm ? ('term:' + tmVal.toLowerCase())
+        : isPicture ? ('picture:' + picVal.toLowerCase()) : nmVal.toLowerCase();
+      const truthy = (key) => {
+        const m = s.match(new RegExp('(?:^|\\s)' + key + '\\s*=\\s*(?:"([^"]*)"|\'([^\']*)\'|“([^”]*)”|‘([^’]*)’|([^\\s}]+))', 'i'));
+        if (!m) return false;
+        const v = readVal(m).toLowerCase();
+        return v === 'true' || v === 'on' || v === '1' || v === 'yes';
+      };
+      return { name, kind, lookupKey, showLabel: truthy('showLabel'), showDirective: truthy('showDirective') };
+    }
+    function tlExpandGpIncludes(text, index, renderInsert) {
+      const src = String(text == null ? '' : text);
+      // picture= 不依赖围栏索引：即使 index 为空也要展开。
+      if (!src || (!index || !index.size) && !/\{include\s+picture\s*=/.test(src)) return src;
+      const RE_ANY = /\{include\s[^}]*\}/i;
+      const RE_ONE = /\{include\s[^}]*\}/gi;
+      const MAX_DEPTH = 8;
+      const render = typeof renderInsert === 'function' ? renderInsert : (raw) => raw;
+      const expand = (s, depth, chain) => {
+        if (depth > MAX_DEPTH) return s;
+        let inFence = false;
+        return String(s).split('\n').map((line) => {
+          if (/^\s*(```|~~~)/.test(line)) { inFence = !inFence; return line; }
+          if (inFence || !RE_ANY.test(line)) return line;
+          return line.replace(RE_ONE, function (m) {
+            const p = tlParseIncludeToken(m);
+            const nm = p.name;
+            if (!nm) return m;
+            // picture= 不查围栏索引：直接产出占位，由后续路径解析填入真实图片 src。
+            if (p.kind === 'picture') return render('', nm, p.showLabel, m, p.showDirective, p.kind);
+            const key = p.lookupKey;                        // name= → 裸小写；TERM= → 'term:' 前缀
+            if (chain.has(key)) return '';                  // 环：吞掉标记，不再展开
+            const contents = index.get(key);
+            if (!contents || !contents.length) return m;     // 找不到：保留原字面量
+            return contents.map((raw) => {
+              const sub = expand(raw, depth + 1, new Set(chain).add(key));
+              return render(sub, nm, p.showLabel, m, p.showDirective, p.kind);
+            }).join('');
+          });
+        }).join('\n');
+      };
+      return expand(src, 0, new Set());
+    }
+    // 把 {include} 命中的围栏内部 markdown 预渲染成「只读 HTML ＋ 淡化虚线外框」。
+    //   · checkbox 行 → tlTaskLineHtml(uid=null) 只读 .ev-md-check（不挂编辑圆点、不挂 onclick）。
+    //   · 其余行 → 走与外层相同的 term/marker/nameRef/markdown 管线，术语胶囊与日期标记一致。
+    //   · 整包塞进 <div class="gp-include-box">（块级！能合法包住 <p>/<ul>；用 <span> 会被浏览器把块级内容挤出框外），
+    //     CSS display:block ＋ dashed 边框做视觉区隔。
+    function tlGpIncludeBoxHtml(raw, name, showLabel, directive, showDirective, kind) {
+      // picture=：图片走独立路径，不跑 markdown/term/marker 管线（避免文件名被当术语或链接解析）。
+      //   <img> 只带 data-gp-pic 文件名，真实 src 由各端「同目录路径解析」注入（见 noteResolveIncludePictures / tlHydrateIncludePictures）。
+      const isPicture = kind === 'picture' || /\{include\s+picture\s*=/i.test(directive || '');
+      let html;
+      if (isPicture) {
+        const pic = tlEscapeHtml(name || '');
+        html = '<img class="gp-include-picture" data-gp-pic="' + pic + '" alt="' + pic + '">';
+      } else {
+        const CHK_RE = /^\s*-\s+\[[ xX]\]\s?/;
+        const prepared = String(raw == null ? '' : raw).split('\n').map((l) =>
+          (CHK_RE.test(l) && typeof tlTaskLineHtml === 'function')
+            ? tlTaskLineHtml(l, null, 0, false, {}) : l).join('\n');
+        html = renderMarkdown(tlRenderNameRefs(tlRenderTermDefs(tlRenderNoteMarkersLines(prepared))));
+        // 剥掉「单一段落」最外层 <p>（避免仅一行时框内多余空行）；多段 <p>+<ul> 不剥，交给块级 fieldset 承载。
+        if (/^<p>[\s\S]*<\/p>$/.test(html) && !/<\/p>\s*<p>/.test(html) && !/<ul[\s>]/.test(html) && !/<ol[\s>]/.test(html)) {
+          html = html.replace(/^<p>([\s\S]*?)<\/p>\s*$/, '$1').trim();
+        }
+      }
+      // <fieldset> 的 <legend> 天然骑在虚线边框顶部左上角。
+      //   用 div 时 legend 无效，故整包改用 fieldset（display:block，能合法包 <p>/<ul>）。
+      // 徽标常显（与 showLabel 无关，供视觉区分）：TERM → 📖 书徽标；NAME → 🏷️ 标签牌徽标（与 gp 围栏名称徽标同款）。
+      //   只显示徽标、不显示 "TERM" 文字；showLabel=true 时徽标后附名称。directive 即原始 {include …} token，据此判来源。
+      const isTerm = !isPicture && (kind === 'term' || /\{include\s+TERM\s*=/i.test(directive || ''));
+      const badge = isPicture
+        ? '<span class="gp-include-badge is-picture" title="同目录图片">\u{1F5BC}\uFE0F</span>'
+        : isTerm
+        ? '<span class="gp-include-badge is-term" title="术语详细说明">\u{1F4D6}</span>'
+        : '<span class="gp-include-badge is-name" title="围栏名称引用">\u{1F3F7}\uFE0F</span>';
+      // 折叠按钮：藏在 legend（左上角），只折叠 .gp-include-body；徽标、名称、directive 永不折叠。
+      //   用 <label> 包隐藏 checkbox + 箭头，纯 CSS :has(:checked) 控制，零 JS 三端通用；默认 unchecked＝展开。
+      const fold = '<label class="gp-include-fold" title="折叠/展开内容"><input type="checkbox" class="gp-include-fold-cb"><span class="gp-include-fold-ico">\u25BE</span></label>';
+      const legend = '<legend class="gp-include-label">' + fold + badge + (showLabel ? tlEscapeHtml(name) : '') + '</legend>';
+      // showDirective=true：在框内顶部显示原始 {include …} 指令文本（转义后），默认不显示。（永不折叠）
+      const dirHtml = showDirective
+        ? '<div class="gp-include-directive">' + tlEscapeHtml(directive || '') + '</div>'
+        : '';
+      return '<fieldset class="gp-include-box" data-gp-include="' + tlEscapeHtml(name) + '">' + legend + dirHtml + '<div class="gp-include-body">' + html + '</div></fieldset>';
+    }
+    // 包装整个 notes 渲染链：在 renderMarkdown 之前把 {include} token 换成唯一占位符，渲染完成后再注入 box HTML。
+    //   ⚠️ 不能先预渲染 box 再交给外层 renderMarkdown —— 那会把 div 里的 <p>/<ul> 二次解析成 <p>…</p></p> 破碎结构，
+    //      且 inline span 装块级会被浏览器挤出 → 框空、内容外溢（2026-11-16 用户回报）。
+    function tlRenderWithIncludes(text, index) {
+      const srcText = String(text == null ? '' : text);
+      const hasPicture = /\{include\s+picture\s*=/.test(srcText);
+      if ((!index || !index.size) && !hasPicture || !/\{include\s+(?:name|TERM|picture)\s*=/.test(srcText)) {
+        return renderMarkdown(tlRenderNameRefs(tlRenderTermDefs(tlRenderNoteMarkersLines(text))));
+      }
+      // ⚠️ 占位符必须是普通 ASCII：真实 renderMarkdown 的后处理会剥离 NUL(\u0000) 控制字符，
+      //    若用 NUL 包裹会只剩 'GI0' 裸露、split 匹配不到 → box 永不注入（2026-11-16 用户回报）。
+      //    %%TLINC_n_ZZ%% 可原样穿过 marked + balanceHtmlTags 等后处理（已用真引擎验证）。
+      let seq = 0;
+      const ph = new Map();
+      const prepared = tlExpandGpIncludes(text, index, (raw, nm, showLabel, directive, showDirective, kind) => {
+        const tok = '%%TLINC_' + (seq++) + '_ZZ%%';
+        ph.set(tok, { raw, nm, showLabel, directive, showDirective, kind });
+        return tok;
+      });
+      let html = renderMarkdown(tlRenderNameRefs(tlRenderTermDefs(tlRenderNoteMarkersLines(prepared))));
+      ph.forEach((v, tok) => { html = html.split(tok).join(tlGpIncludeBoxHtml(v.raw, v.nm, v.showLabel, v.directive, v.showDirective, v.kind)); });
+      return html;
+    }
+    // 独立 task 行里的 {include}：同样用占位符法在原文层展开、checkbox 行渲染后注入 box。
+    //   （blocks.forEach 的 task 分支不走 tlRenderWithIncludes，需单独覆盖；gp 块内行已在 inner 链处理。）
+    function tlTaskLineWithIncludes(line, index, uid, i, forceEditable) {
+      const hasPicture = /\{include\s+picture\s*=/.test(String(line));
+      if (((!index || !index.size) && !hasPicture) || !/\{include\s/.test(String(line))) {
+        return tlTaskLineHtml(line, uid, i, forceEditable);
+      }
+      let seq = 0;
+      const ph = new Map();
+      const prepared = tlExpandGpIncludes(line, index, (raw, nm, showLabel, directive, showDirective, kind) => {
+        const tok = '%%TLINC_' + (seq++) + '_ZZ%%';
+        ph.set(tok, { raw, nm, showLabel, directive, showDirective, kind });
+        return tok;
+      });
+      let html = tlTaskLineHtml(prepared, uid, i, forceEditable);
+      ph.forEach((v, tok) => { html = html.split(tok).join(tlGpIncludeBoxHtml(v.raw, v.nm, v.showLabel, v.directive, v.showDirective, v.kind)); });
+      return html;
+    }
+    // 扫 tlCalEvents 全部行程的 gp 围栏 NAME → {include} 索引（与 tlCollectGpNames 同扫描口径）。
+    function tlCollectGpIncludeIndex() {
+      const map = new Map();
+      (tlCalEvents || []).forEach((ev) => {
+        if (!ev || !ev.notes) return;
+        const lines = String(ev.notes).replace(/\r\n/g, '\n').split('\n');
+        const scan = (typeof tlGpFenceScan === 'function') ? tlGpFenceScan(lines) : { ranges: [] };
+        (scan.ranges || []).forEach((r) => {
+          const body = lines.slice(r.start + 1, r.end).join('\n');
+          // 一个围栏可同时被两种语法命中：{include name="NAME"} 与 {include TERM=NAME}。
+          const nm = String(r.name || '').trim();
+          if (nm) {
+            const key = nm.toLowerCase();
+            let arr = map.get(key);
+            if (!arr) { arr = []; map.set(key, arr); }
+            arr.push(body);
+          }
+          const tm = String(r.termName || '').trim();
+          if (tm) {
+            const tkey = 'term:' + tm.toLowerCase();
+            let arr = map.get(tkey);
+            if (!arr) { arr = []; map.set(tkey, arr); }
+            arr.push(body);
+          }
+        });
+      });
+      return map;
     }
     // 單行 checkbox → 帶編輯小圓點 + 可交互勾選框的 HTML；非 task 行原樣回傳。
     //   i 為「整段 notes 的全域行索引」（保存回寫以此為準）。

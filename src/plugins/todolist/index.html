@@ -2151,17 +2151,18 @@
     }
     .tl-alert-state { color: #1d4d3a; background: rgba(255,255,255,.62); border-color: rgba(30,110,90,.75); }
     .tl-alert.done { filter: saturate(.55); opacity: .72; }
-    /* 🆕 2026-11-08 cr / dl / cp 日期標記：圖示＋「月-日」合成一顆長徽標（字體比正文小，日期再小一號）；
-       完整「日期+時間」放 title（hover tooltip）與 data-date（VIEW 排序讀取）。與 term 金膠囊同款 */
+    /* cr / dl / cp 日期標記：徽標＋日期套一圈虛線外框（同 .gp-include-box 的 1px dashed 口徑）。
+       ⚠️ 刻意不設任何背景色 → 直接露出便利貼紙色；在 {gp} 圍欄內則露出 .md-unit.is-gp 的 var(--gp-bg)。
+       字色與框線色同源：color: inherit 跟隨 .body 的事件字色，圍欄內跟隨 var(--gp-fg, inherit)，
+       border: 1px dashed currentColor 自動等於該字色；未設色時兩個 var 都兜回便利貼字色／背景。
+       完整「日期+時間」仍放 title 與 data-date（VIEW 排序讀取）。 */
     .ev-date-mark {
       display: inline-flex; align-items: center; gap: .22em;
-      margin: 0 .18em; padding: 0 .45em;
-      border-radius: 999px; line-height: 1.5; font-size: .8em; font-weight: 600;
+      margin: 0 .18em; padding: .05em .3em;
+      border: 1px dashed currentColor; border-radius: 3px;
+      line-height: 1.5; font-size: .8em; font-weight: 600;
       white-space: nowrap; cursor: help; vertical-align: baseline;
-      color: #4a3b12;
-      background: linear-gradient(180deg, #f4dc8e 0%, #e6bd52 55%, #d0a23a 100%);
-      border: 1px solid #b8893a;
-      box-shadow: 0 1px 2px rgba(0,0,0,.22), inset 0 1px 0 rgba(255,255,255,.6);
+      color: inherit;
     }
     .ev-date-mark-md { font-size: .85em; font-variant-numeric: tabular-nums; opacity: .92; }
     /* 📝 備註表格网格线：備註经 renderMarkdown 可产出 Markdown 表格（如「所有者/工具/账号/用量」），
@@ -2388,6 +2389,23 @@
     .ev-item.only-undone-checks .ev-md-check.done { display: none !important; }
     .ev-notes .ev-md-check + br,
     .ev-notes br:has(+ .ev-md-check) { display: none !important; }
+    /* 🆕 2026-11-16：{include} 插入内容外框 —— 淡化虚线框，与主体内容视觉区隔；inline span 内 display:block 换行显示 */
+    .gp-include-box { display: block; margin: .4em 0; padding: .35em .7em; border: 1px dashed rgba(127,127,127,.5); border-radius: 8px; background: rgba(127,127,127,.05); min-width: 0; }
+    .gp-include-box > .gp-include-body > p { margin: 0; }
+    /* {include picture="X"}：同目录图片等比缩放适应框宽，绝不撑破卡片/便利贴 */
+    .gp-include-picture { display: block; max-width: 100%; height: auto; margin: .2em auto; border-radius: 4px; }
+    .gp-include-picture.pic-missing { min-height: 1.6em; padding: .3em .5em; font-size: .85em; color: var(--ev-muted, #888); background: rgba(127,127,127,.08); border-radius: 4px; white-space: pre-wrap; word-break: break-word; }
+    .gp-include-box > .gp-include-label { display: inline-flex; align-items: center; gap: .35em; padding: 0 .45em; margin-left: -.15em; font-size: .85em; line-height: 1.2; color: var(--ev-muted, #888); font-weight: 600; }
+    /* include 徽标常显（与 showLabel 无关）：TERM 📖 书 / NAME 🏷️ 标签牌。裸徽标、无底色按钮框。 */
+    .gp-include-badge { display: inline-flex; align-items: center; font-size: .95em; line-height: 1; }
+    .gp-include-box > .gp-include-directive { margin: 0 0 .4em; padding: .15em .45em; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .82em; line-height: 1.35; color: var(--ev-muted, #888); white-space: pre-wrap; word-break: break-word; background: rgba(127,127,127,.08); border-radius: 4px; }
+    /* 🆕 折叠：默认展开；只折叠 .gp-include-body，徽标/名称/directive 永不折叠。纯 CSS、零 JS。 */
+    .gp-include-fold { display: inline-flex; align-items: center; justify-content: center; cursor: pointer; user-select: none; margin-right: .05em; }
+    .gp-include-fold-cb { position: absolute; width: 1px; height: 1px; opacity: 0; margin: 0; }
+    .gp-include-fold-ico { display: inline-block; font-size: .8em; line-height: 1; color: var(--ev-muted, #888); transition: transform .15s ease; }
+    .gp-include-fold:hover .gp-include-fold-ico { color: var(--ev-text, #333); }
+    .gp-include-box:has(> .gp-include-label .gp-include-fold-cb:checked) > .gp-include-body { display: none; }
+    .gp-include-box:has(> .gp-include-label .gp-include-fold-cb:checked) .gp-include-fold-ico { transform: rotate(-90deg); }
     /* 🆕「最小 MD 表达单元」区块：非 checkbox 内容（表格/段落/标题/引用/代码/列表/分隔线）
        左侧常驻一个编辑小圆点（✎），点击编辑该区块的 Markdown 原文 */
     .md-unit { position: relative; padding-left: 20px; margin: 0 0 0.45em 0; }
@@ -2409,12 +2427,20 @@
       font-size: inherit;
       line-height: 1.5;
     }
-    /* 🆕 2026-11-14：gp 围栏属性徽标 — 右上角边框线，z-index 高于 anim 伪元素 */
-    .md-unit.is-gp .gp-badges {
-      position: absolute; top: -6px; right: -6px;
-      display: flex; gap: 1px; z-index: 10;
-      pointer-events: auto;
+    /* 🆕 2026-11-16：名称胶囊改到上边框正中央且比内容大一号 → 向上／向下各突出约 .75em。
+       上方补 margin-top 避免压到前一个区块／上一行；框内补 padding-top 让第一行内容下移。
+       只作用于「真的有 NAME」的围栏（:has），其余 gp 区块间距零改。 */
+    .md-unit.is-gp:has(.gp-badge-name) {
+      margin-top: 1.2em; padding-top: 1.1em;
     }
+    /* 🆕 gp 围栏属性徽标：容器横跨整个上边框（left/right:0 → left:50% 才是框线正中央），
+       TERM／ALERT 仍靠右；容器本身不吃点击（pointer-events:none），徽标逐个还原。 */
+    .md-unit.is-gp .gp-badges {
+      position: absolute; top: -6px; left: 0; right: 0;
+      display: flex; justify-content: flex-end; gap: 1px; z-index: 10;
+      pointer-events: none;
+    }
+    .md-unit.is-gp .gp-badges > * { pointer-events: auto; }
     .md-unit.is-gp .gp-badge {
       width: 12px; height: 12px; border-radius: 6px;
       display: flex; align-items: center; justify-content: center;
@@ -2424,10 +2450,16 @@
       box-shadow: 0 1px 2px rgba(0,0,0,0.4);
       cursor: default;
     }
-    /* 🆕 配色与 .tl-term-cap TERM 胶囊一致：不再跟围栏色（bg 为渐变时 --gp-bg 非合法色值，
-       color 于 computed-value 阶段退回 inherit → 字看不见）；字号／高度维持徽标级 8px/12px，border-box 吸收边框。 */
+    /* 🆕 2026-11-16：名称胶囊＝上边框正中央＋比内容大一号（1.15em，13px→15px）。
+       top:50% 相对 12px 高的 .gp-badges（top:-6px）→ 胶囊中心 y=0 正好骑在框线上；
+       height:auto 解开徽标级 12px，max-width:80% 防止窄便利贴溢出。配色仍与 .tl-term-cap 同系，
+       ⛔ 不用 background 简写塞 var()（Chromium 不认），渐变只用既有 hex 字面量。 */
     .md-unit.is-gp .gp-badge.gp-badge-name {
-      width: auto; max-width: 160px; padding: 0 .5em;
+      position: absolute; left: 50%; top: 50%;
+      transform: translate(-50%, -50%);
+      width: auto; max-width: 80%; height: auto;
+      padding: .1em .6em;
+      font-size: 1.15em; line-height: 1.15;
       overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
       box-sizing: border-box;
       color: #4a3b12;
@@ -2841,6 +2873,8 @@
     .tl-gloss-row { display: flex; flex-direction: column; gap: 6px; padding: 8px 10px; border-bottom: 1px solid var(--ev-border, #334155); }
     .tl-gloss-row:last-child { border-bottom: none; }
     .tl-gloss-row-head { display: flex; align-items: baseline; gap: 10px; }
+    /* 项次栏：与事件统计明细表 td.d-no 同口径（窄、居中灰字）；em 相对单位，深浅主题共用 var(--ev-muted) */
+    .tl-gloss-idx { flex: 0 0 auto; min-width: 2.4em; text-align: center; font-size: .85em; color: var(--ev-muted); white-space: nowrap; }
     .tl-gloss-row .tl-term { flex: 0 0 auto; max-width: 46%; }
     .tl-gloss-row .tl-term-cap { max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
     .tl-gloss-def { color: var(--ev-text); font-size: 13px; line-height: 1.5; flex: 1 1 auto; word-break: break-word; min-width: 0; }
@@ -10319,6 +10353,7 @@
       });
       // 🆕 文件嵌入：异步读取外部文本文件内容填进占位块（不 await，先出画面再补内容）
       hydrateFileEmbeds(container);
+      hydrateIncludePictures(container);
       // 🆕 画廊画面滚动位置：仅首次加载（init）时恢复到上次离开的画面位置，
       //    后续 re-render（搜索/筛选/编辑后）不再跳回，避免打乱用户当前浏览。
       if (!galleryScrollRestored) {
@@ -10334,6 +10369,7 @@
       const tmp = document.createElement('div');
       tmp.innerHTML = html;
       await hydrateFileEmbeds(tmp);
+      await hydrateIncludePictures(tmp);
       return tmp.innerHTML;
     }
 
@@ -10908,6 +10944,32 @@
       } catch (e) {
         return { error: (e && e.message) || '路径解析失败' };
       }
+    }
+    // {include picture="X"}：把「日历档同目录」图片的绝对路径填进 <img src>。
+    //   便利贴窗有 nodeIntegration，用 FILE 同步解析；主窗无 Node 权限，统一走主进程 resolve-picture-path
+    //   （两端同一口径：只接受裸档名、必须在 calendar.md 同目录，返回 file:// URL）。
+    async function hydrateIncludePictures(root) {
+      const scope = root || document;
+      let nodes;
+      try { nodes = scope.querySelectorAll('img.gp-include-picture[data-gp-pic]'); } catch (e) { return; }
+      if (!nodes || !nodes.length) return;
+      const api = window.electronAPI || {};
+      if (typeof api.invoke !== 'function') return;
+      const list = Array.prototype.slice.call(nodes);
+      await Promise.all(list.map(async (img) => {
+        const name = img.getAttribute('data-gp-pic') || '';
+        if (!name) return;
+        const fail = (msg) => { img.classList.add('pic-missing'); img.alt = '\u{1F5BC}\uFE0F ' + (msg || name); };
+        try {
+          const res = await api.invoke('resolve-picture-path', { name });
+          if (res && res.success && res.url) {
+            img.onerror = function () { fail('图片载入失败：' + name); };
+            img.src = res.url;
+          } else {
+            fail((res && res.error) || ('找不到图片：' + name));
+          }
+        } catch (e) { fail('图片解析失败：' + name); }
+      }));
     }
     async function readTextFileCached(path) {
       const hit = fileEmbedCache.get(path);
@@ -15732,6 +15794,7 @@
         _mdPreviewEmbedTimer = setTimeout(() => {
           _mdPreviewEmbedTimer = null;
           hydrateFileEmbeds(preview);
+          hydrateIncludePictures(preview);
         }, 80);
       };
       new MutationObserver(schedule).observe(preview, { childList: true, subtree: true });

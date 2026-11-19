@@ -1312,6 +1312,34 @@ function calResolveColorName(input) {
 // 格式：{gpX|attrs段|term段}
 //   attrs 段用 , 分隔 fg=红,bg=黄,anim=pulse
 //   term 段用 | 分隔 alert|TERM=便利贴
+// 2026-11-18：名称类恢复兼容读取；写回仍统一输出 NAME="X"。
+function calQuotedVal(raw) {
+  const s = String(raw == null ? '' : raw).trim();
+  if (!s) return '';
+  // 兼容读取：任意成对/混搭引号（ASCII " '、中文 “ ” ‘ ’、直角 「 」 『 』、全角 ＂・）一律剥离；裸值原样返回。
+  //   写回仍统一输出 NAME="X"（渐进规范化）。旧正则只认 4 种配对，直角/全角/混搭会落裸值兜底→引号残留（2026-11-18 修复）。
+  const OPEN = '"\'“‘「『＂﹁﹃';
+  const CLOSE = '"\'”’」』＂﹂﹄';
+  if (s.length >= 2 && OPEN.indexOf(s[0]) >= 0 && CLOSE.indexOf(s[s.length - 1]) >= 0) {
+    return s.slice(1, -1).trim();
+  }
+  return s;
+}
+// 🆕 2026-11-18：{NAME=X} 围栏名称引用 → 名称胶囊（与桌面 tlRenderNameRefs 同口径；纯显示层）。
+//   兼容任意成对/混搭引号与裸值（复用 calQuotedVal）；跳过代码围栏；不改底稿原文。
+function calRenderNameRefs(text) {
+  let inFence = false;
+  return String(text == null ? '' : text).split('\n').map(function (line) {
+    if (/^\s*(```|~~~)/.test(line)) { inFence = !inFence; return line; }
+    if (inFence) return line;
+    return line.replace(/\{NAME=([^{}\n]+)\}/g, function (m, rawVal) {
+      const nm = calQuotedVal(rawVal);
+      if (!nm) return m;
+      return '<span class="gp-name-ref" data-gp-name-ref="' + escapeHtml(nm) + '"' +
+        ' title="围栏名称：' + escapeHtml(nm) + '">\u{1F3F7}\uFE0F ' + escapeHtml(nm) + '</span>';
+    });
+  }).join('\n');
+}
 function calParseGpAttrs(raw) {
   const s = String(raw == null ? '' : raw).trim();
   if (!s) return { key: '', fg: '', bg: '', anim: '', alert: false, extra: [], term: '', termName: '', name: '', railStyle: '', railA: '', railB: '' };
@@ -1343,13 +1371,14 @@ function calParseGpAttrs(raw) {
         railB = calResolveColorName(rp[2].trim());
       }
     }
-    else if (k === 'name') { name = v; extra.push(p); }  // 留 extra 供写回保留
+    else if (k === 'name') { const q = calQuotedVal(v); if (q) name = q; extra.push(p); }  // 裸值无效，原文留 extra
     else extra.push(p);
   });
-  // 兜底：attrs 段里可能有 TERM=xxx（没有第二个 pipe 的情况），移到 termName
+  // 兜底：attrs 段里可能有 TERM="xxx"（没有第二个 pipe 的情况），移到 termName
   const termInAttrs = extra.find((x) => /^TERM\s*=/i.test(x));
   if (termInAttrs) {
-    termName = termInAttrs.replace(/^TERM\s*=\s*/i, '').trim();
+    const q = calQuotedVal(termInAttrs.replace(/^TERM\s*=\s*/i, ''));
+    if (q) termName = q;
     const idx = extra.indexOf(termInAttrs);
     if (idx >= 0) extra.splice(idx, 1);
   }
@@ -1366,8 +1395,8 @@ function calParseGpAttrs(raw) {
         }
         const k = segTrim.slice(0, eq).trim().toUpperCase();
         const v = segTrim.slice(eq + 1).trim();
-        if (k === 'TERM' && v) termName = v;
-        else if (k === 'NAME' && v) name = v;
+        if (k === 'TERM') { const q = calQuotedVal(v); if (q) termName = q; }
+        else if (k === 'NAME') { const q = calQuotedVal(v); if (q) name = q; }
         else if (k === 'ALERT') alert = v.toLowerCase() === 'true';
         else if (k === 'RAIL') {
           const rp = v.split('#');
@@ -1438,6 +1467,150 @@ function calGpFenceScan(lines) {
     }
   }
   return { ranges: ranges, markers: markers };
+}
+// ========== 🆕 2026-11-16：{include name="NAME"} 围栏内容插入（只读 · 纯显示层） ==========
+//   与桌面 tlExpandGpIncludes 同口径：同名围栏全部按原顺序插入；底稿不动；checkbox 只读；防递归。
+//   ⚠️ 2026-11-16 修正：改为 line.replace() 就地替换（原本 append 到行尾 → 视觉上跑到便利贴末尾）。
+// 解析单个 {include …} token：name / TERM / picture 均兼容引号与裸值（旧资料不失效）。
+//   showLabel／showDirective 可选（=true/on/1/yes 为真）。参数顺序无关、大小写不敏感。
+function calParseIncludeToken(token) {
+  const s = String(token == null ? '' : token);
+  const readVal = (m) => {
+    if (!m) return '';
+    for (let i = 1; i < m.length; i++) if (m[i] != null) return String(m[i]).trim();
+    return '';
+  };
+  const nmVal = readVal(s.match(/(?:^|\s)name\s*=\s*(?:"([^"\n]*)"|'([^'\n]*)'|“([^”\n]*)”|‘([^’\n]*)’|([^\s}]+))/i));
+  const tmVal = readVal(s.match(/(?:^|\s)TERM\s*=\s*(?:"([^"\n]*)"|'([^'\n]*)'|“([^”\n]*)”|‘([^’\n]*)’|([^\s}]+))/i));
+  const picVal = readVal(s.match(/(?:^|\s)picture\s*=\s*(?:"([^"\n]*)"|'([^'\n]*)'|“([^”\n]*)”|‘([^’\n]*)’|([^\s}]+))/i));
+  const isTerm = !nmVal && !!tmVal;
+  const isPicture = !nmVal && !tmVal && !!picVal;
+  const name = isTerm ? tmVal : (isPicture ? picVal : nmVal);
+  const kind = isTerm ? 'term' : (isPicture ? 'picture' : 'name');
+  const lookupKey = isTerm ? ('term:' + tmVal.toLowerCase())
+    : isPicture ? ('picture:' + picVal.toLowerCase()) : nmVal.toLowerCase();
+  const truthy = (key) => {
+    const m = s.match(new RegExp('(?:^|\\s)' + key + '\\s*=\\s*(?:"([^"]*)"|\'([^\']*)\'|([^\\s}]+))', 'i'));
+    if (!m) return false;
+    const v = String(m[1] == null ? (m[2] == null ? m[3] : m[2]) : m[1]).toLowerCase();
+    return v === 'true' || v === 'on' || v === '1' || v === 'yes';
+  };
+  return { name, kind, lookupKey, showLabel: truthy('showLabel'), showDirective: truthy('showDirective') };
+}
+function calExpandGpIncludes(text, index, renderInsert) {
+  const src = String(text == null ? '' : text);
+  if (!src || !index || !index.size) return src;
+  const RE_ANY = /\{include\s[^}]*\}/i;
+  const RE_ONE = /\{include\s[^}]*\}/gi;
+  const MAX_DEPTH = 8;
+  const render = typeof renderInsert === 'function' ? renderInsert : (raw) => raw;
+  const expand = (s, depth, chain) => {
+    if (depth > MAX_DEPTH) return s;
+    let inFence = false;
+    return String(s).split('\n').map((line) => {
+      if (/^\s*(```|~~~)/.test(line)) { inFence = !inFence; return line; }
+      if (inFence || !RE_ANY.test(line)) return line;
+      return line.replace(RE_ONE, function (m) {
+        const p = calParseIncludeToken(m);
+        const nm = p.name;
+        if (!nm) return m;
+        const key = p.lookupKey;
+        if (chain.has(key)) return '';
+        const contents = index.get(key);
+        if (!contents || !contents.length) return m;
+        return contents.map((raw) => {
+          const sub = expand(raw, depth + 1, new Set(chain).add(key));
+          return render(sub, nm, p.showLabel, m, p.showDirective);
+        }).join('');
+      });
+    }).join('\n');
+  };
+  return expand(src, 0, new Set());
+}
+// 把 {include} 命中的围栏内部 markdown 预渲染成「只读 HTML ＋ 淡化虚线外框」（与桌面 tlGpIncludeBoxHtml 同口径）。
+function calGpIncludeBoxHtml(raw, name, showLabel, directive, showDirective) {
+  const CHK_RE = /^\s*[-*+]\s+\[[ xX]\]\s?/;
+  const prepared = String(raw == null ? '' : raw).split('\n').map((l) =>
+    (CHK_RE.test(l) && typeof calNoteCheckLineHtml === 'function')
+      ? calNoteCheckLineHtml(l, null, 0, false, {}) : calRenderNoteMarkers(l)).join('\n');
+  let html = renderMarkdown(calRenderNameRefs(calRenderTermDefs(calRenderNoteMarkersLines(prepared))));
+  // 仅单一段落剥 <p>；多段 <p>+<ul> 留给块级 fieldset 承载，避免框空内容外溢。
+  if (/^<p>[\s\S]*<\/p>$/.test(html) && !/<\/p>\s*<p>/.test(html) && !/<ul[\s>]/.test(html) && !/<ol[\s>]/.test(html)) {
+    html = html.replace(/^<p>([\s\S]*?)<\/p>\s*$/, '$1').trim();
+  }
+  // <fieldset> 的 <legend> 骑在虚线边框顶部左上角。徽标常显（与 showLabel 无关，供视觉区分）：
+  //   TERM → 📖 书徽标；NAME → 🏷️ 标签牌徽标。只显示徽标、不显示 "TERM" 文字；showLabel=true 时徽标后附名称。
+  //   directive 即原始 {include …} token，据此判来源（不改传递链）。
+  const isTerm = /\{include\s+TERM\s*=/i.test(directive || '');
+  const badge = isTerm
+    ? '<span class="gp-include-badge is-term" title="术语详细说明">\u{1F4D6}</span>'
+    : '<span class="gp-include-badge is-name" title="围栏名称引用">\u{1F3F7}\uFE0F</span>';
+  // 折叠按钮：藏在 legend（左上角），只折叠 .gp-include-body；徽标、名称、directive 永不折叠。纯 CSS :has(:checked)，默认展开。
+  const fold = '<label class="gp-include-fold" title="折叠/展开内容"><input type="checkbox" class="gp-include-fold-cb"><span class="gp-include-fold-ico">\u25BE</span></label>';
+  const legend = '<legend class="gp-include-label">' + fold + badge + (showLabel ? escapeHtml(name) : '') + '</legend>';
+  // showDirective=true：框内顶部显示原始 {include …} 指令文本（转义），默认不显示。（永不折叠）
+  const dirHtml = showDirective ? '<div class="gp-include-directive">' + escapeHtml(directive || '') + '</div>' : '';
+  return '<fieldset class="gp-include-box" data-gp-include="' + escapeHtml(name) + '">' + legend + dirHtml + '<div class="gp-include-body">' + html + '</div></fieldset>';
+}
+// 包装整个 notes 渲染链：renderMarkdown 之前把 {include} token 换成占位符，渲染完成后再注入 box HTML（杜绝二次 render 拆散结构）。
+function calRenderWithIncludes(text, index) {
+  if (!index || !index.size || !/\{include\s+(?:name|TERM)\s*=/.test(String(text == null ? '' : text))) {
+    return renderMarkdown(calRenderNameRefs(calRenderTermDefs(calRenderNoteMarkersLines(text))));
+  }
+  // 占位符用普通 ASCII（真 renderer 会剥离 NUL 控制字符 → 裸露 GI0、注入失败）；%%TLINC_n_ZZ%% 已真引擎验证可原样穿过。
+  let seq = 0;
+  const ph = new Map();
+  const prepared = calExpandGpIncludes(text, index, (raw, nm, showLabel, directive, showDirective) => {
+    const tok = '%%TLINC_' + (seq++) + '_ZZ%%';
+    ph.set(tok, { raw, nm, showLabel, directive, showDirective });
+    return tok;
+  });
+  let html = renderMarkdown(calRenderNameRefs(calRenderTermDefs(calRenderNoteMarkersLines(prepared))));
+  ph.forEach((v, tok) => { html = html.split(tok).join(calGpIncludeBoxHtml(v.raw, v.nm, v.showLabel, v.directive, v.showDirective)); });
+  return html;
+}
+// 独立 task 行里的 {include}：占位符法在原文层展开、checkbox 行渲染后注入 box（task 分支不走 calRenderWithIncludes）。
+function calTaskLineWithIncludes(line, index, uid, i, canEdit, opts) {
+  if (!index || !index.size || !/\{include\s/.test(String(line))) {
+    return calNoteCheckLineHtml(line, uid, i, canEdit, opts);
+  }
+  let seq = 0;
+  const ph = new Map();
+  const prepared = calExpandGpIncludes(line, index, (raw, nm, showLabel, directive, showDirective) => {
+    const tok = '%%TLINC_' + (seq++) + '_ZZ%%';
+    ph.set(tok, { raw, nm, showLabel, directive, showDirective });
+    return tok;
+  });
+  let html = calNoteCheckLineHtml(prepared, uid, i, canEdit, opts);
+  ph.forEach((v, tok) => { html = html.split(tok).join(calGpIncludeBoxHtml(v.raw, v.nm, v.showLabel, v.directive, v.showDirective)); });
+  return html;
+}
+// 扫 state.calEvents 全部行程的 gp 围栏 NAME → {include} 索引（与桌面 tlCollectGpIncludeIndex 同口径）。
+function calCollectGpIncludeIndex() {
+  const map = new Map();
+  (state.calEvents || []).forEach((ev) => {
+    if (!ev || !ev.notes) return;
+    const lines = String(ev.notes).replace(/\r\n/g, '\n').split('\n');
+    const scan = (typeof calGpFenceScan === 'function') ? calGpFenceScan(lines) : { ranges: [] };
+    (scan.ranges || []).forEach((r) => {
+      const body = lines.slice(r.start + 1, r.end).join('\n');
+      const nm = String(r.name || '').trim();
+      if (nm) {
+        const key = nm.toLowerCase();
+        let arr = map.get(key);
+        if (!arr) { arr = []; map.set(key, arr); }
+        arr.push(body);
+      }
+      const tm = String(r.termName || '').trim();
+      if (tm) {
+        const tkey = 'term:' + tm.toLowerCase();
+        let arr = map.get(tkey);
+        if (!arr) { arr = []; map.set(tkey, arr); }
+        arr.push(body);
+      }
+    });
+  });
+  return map;
 }
 // ── 從 block.fg / block.bg 生成 .md-unit.is-gp 的 inline style（2026-11-09，與桌面 tlGpInlineStyle 同口徑） ──
 function calGpInlineStyle(b) {
@@ -1547,10 +1720,10 @@ function calGpApplyName(line, name) {
   const lead = (src.match(/^[ \t]*/) || [''])[0];
   const trimmed = src.trim();
   if (!/^\{[ \t]*(?:group|gp)[ \t]*:?[ \t]*[^{}]*\}$/i.test(trimmed)) return src;
-  const nv = String(name == null ? '' : name).replace(/[{}|,]/g, '').trim();
+  const nv = String(name == null ? '' : name).replace(/[{}|,"'\u201c\u201d\u2018\u2019]/g, '').trim();
   const body = trimmed.slice(1, -1);
   const p1 = body.indexOf('|');
-  if (p1 < 0) return lead + '{' + body + (nv ? '|NAME=' + nv : '') + '}';
+  if (p1 < 0) return lead + '{' + body + (nv ? '|NAME="' + nv + '"' : '') + '}';
   const key = body.slice(0, p1);
   const rest = body.slice(p1 + 1);
   const p2 = rest.indexOf('|');
@@ -1562,7 +1735,7 @@ function calGpApplyName(line, name) {
     const t = it.trim();
     if (t && !/^NAME\s*=/i.test(t)) items.push(t);
   }));
-  if (nv) items.push('NAME=' + nv);
+  if (nv) items.push('NAME="' + nv + '"');
   const termClean = items.join('|');
   let out = key;
   if (attrsClean || termClean) out += '|' + attrsClean;
@@ -1699,13 +1872,15 @@ function calGroupMd(rawMd, fallback, fenceWrap) {
 function calRenderNotes(notes, uid, forceEditable) {
   if (!notes) return '';
   const raw = String(notes).replace(/\r\n/g, '\n');
+  // 🆕 2026-11-16：整份 notes 只建一次 {include} 索引，无语法时不扫描。
+  const gpIncludeIndex = /\{include\s+(?:name|TERM)\s*=/i.test(raw) ? calCollectGpIncludeIndex() : null;
   if (!calNotesCanEdit(uid, forceEditable)) {
     // 🆕 2026-11-07：唯讀（include / ro）行程也要顯示小事件群外框（與桌面 tlRenderNotes 同口徑）。
     //   舊版整段渲染直接 return，沒走 calSplitMdBlocks，故不會產生 .md-unit.is-gp。
     //   以 gp 區塊為切點：只把 type==='gp' 那段包外框（不掛編輯小圓點），其餘維持整段渲染；
     //   沒有 gp 區塊時沿用原本單次 renderMarkdown，零回歸。
     const display = calNotesWithChecks(calStripGpMarkers(raw), uid, false);
-    const renderChunk = (s) => renderMarkdown(calRenderTermDefs(s));
+    const renderChunk = (s) => calRenderWithIncludes(s, gpIncludeIndex);
     const gpBlocks = calSplitMdBlocks(raw).filter((b) => b.type === 'gp');
     if (!gpBlocks.length) return renderChunk(display);
     const dLines = display.split('\n');
@@ -1727,7 +1902,7 @@ function calRenderNotes(notes, uid, forceEditable) {
   calSplitMdBlocks(raw).forEach((b) => {
     if (b.type === 'task') {
       // checkbox 行逐行獨立：一律沿用行內「編輯子事件」小圓點，不加外層區塊圓點
-      out += calNoteCheckLineHtml(lines[b.start], uid, b.start, true) + '\n';
+      out += calTaskLineWithIncludes(lines[b.start], gpIncludeIndex, uid, b.start, true) + '\n';
       return;
     }
     // 🆕 只剝「顯示副本」的 {gp}；編輯對話框讀的是 notes 原文，標記必須留著才能維持分組
@@ -1751,7 +1926,7 @@ function calRenderNotes(notes, uid, forceEditable) {
       gpStyle + '>' + gpBadges + '<button type="button" class="md-unit-edit" title="編輯' +
       calMdUnitTypeName(b.type) + '" onclick="calOpenEditBlockDialog(event,\'' + escapeHtml(uid) +
       '\',' + b.start + ',' + b.end + ',\'' + b.type + '\')">✎</button>' +
-      renderMarkdown(calRenderTermDefs(prepared)) + '</div>';
+      calRenderWithIncludes(prepared, gpIncludeIndex) + '</div>';
   });
   return out;
 }

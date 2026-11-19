@@ -563,6 +563,11 @@ function normalizeMeteor(m) {
 const state = { w: DEFAULT_W, h: DEFAULT_H, color: STICKY_DEF_BG, opacity: 100, minimized: false, minH: 0, fontScale: 1, fontColor: STICKY_DEF_FG, fontWeight: 400, undoneChecksOnly: false, sortMode: 'orig', scrollPos: 0, meteor: { on: false, speed: 12, size: 12, shape: 'comet', color: '#ffae00', follow: false, rainbow: false, flame: 160 } };
 
 async function init() {
+  // {include} 折叠按钮 change 委托必须早于 IS_FLIP 早退：翻页模式是「单窗循环」，
+  // 若挂在 init() 后半段，翻页窗永远走不到 → 点折叠不会写回主进程 store →
+  // 翻走再翻回时 HTML 注入拿不到折叠态，看起来「修改完全没作用」。
+  // 委托挂在稳定的 #body 上（innerHTML 重建不影响），内部有 __includeFoldBound 幂等旗标。
+  noteInitIncludeFoldDelegate();
   if (IS_FLIP) { await initFlip(); return; }
   syncViewNoteMode();   // 🆕 分体模式 KEY 不变，开窗即定只读与否
   let inst = {};
@@ -607,7 +612,7 @@ async function init() {
   setStickyTitle(titleEl, titleHtml, ev.title, tip1);
   // 🆕 移除 raw 原文兜底：便利贴正文即 checkbox，清光即空，留白＝正确终态；
   //    旧逻辑会把 notes 当未渲染 Markdown 源塞进正文（如 "- [ ] 11111"），属显示错误。
-  document.getElementById('body').innerHTML = html;
+  noteSetBodyHtml(html);  // 折叠态已由主进程注入 HTML 的 checked 属性自带
   syncUndoneChecksFilter();
   noteApplyHighlight(); // 🆕 依當前定位詞重打高亮
   refreshNoteViewDisplay(); // 🆕 多段落 VIEW 便利贴：初始渲染后套用记忆的「顺序平铺／页签方式」与 active 段落
@@ -2088,6 +2093,19 @@ function noteWrapGpFence(text, mark) {
 //   attrs 段用 , 分隔 fg=红,bg=黄,anim=pulse
 //   term 段用 | 分隔 alert|TERM=便利贴|remind
 // 🆕 2026-11-14：增加 TERM=xxx 解析 → termName 字段
+// 🆕 2026-11-17：名称类参数只认 ASCII 双引号；裸值/单引号/中文弯引号一律无效。
+function noteQuotedVal(raw) {
+  const s = String(raw == null ? '' : raw).trim();
+  if (!s) return '';
+  // 兼容读取：任意成对/混搭引号（ASCII " '、中文 “ ” ‘ ’、直角 「 」 『 』、全角 ＂・）一律剥离；裸值原样返回。
+  //   写回仍统一输出 NAME="X"（渐进规范化）。旧正则只认 4 种配对，直角/全角/混搭会落裸值兜底→引号残留（2026-11-18 修复）。
+  const OPEN = '"\'“‘「『＂﹁﹃';
+  const CLOSE = '"\'”’」』＂﹂﹄';
+  if (s.length >= 2 && OPEN.indexOf(s[0]) >= 0 && CLOSE.indexOf(s[s.length - 1]) >= 0) {
+    return s.slice(1, -1).trim();
+  }
+  return s;
+}
 function noteExtractGpAttrs(line) {
   const s = String(line == null ? '' : line);
   let m = s.trim().match(/^\{[ \t]*(?:group|gp)[ \t]*:?[ \t]*([^{}]*)\}[ \t]*$/i);
@@ -2120,13 +2138,14 @@ function noteExtractGpAttrs(line) {
         railStyle = parts[0].trim(); railA = parts[1].trim(); railB = parts[2].trim();
       }
     }
-    else if (k === 'name') { name = v; extra.push(p); }  // 留 extra 供写回保留
+    else if (k === 'name') { const q = noteQuotedVal(v); if (q) name = q; extra.push(p); }  // 裸值无效，原文留 extra
     else extra.push(p);
   });
-  // 兜底：attrs 段里可能有 TERM=xxx（没有第二个 pipe 的情况），移到 termName
+  // 兜底：attrs 段里可能有 TERM="xxx"（没有第二个 pipe 的情况），移到 termName
   const termInAttrs = extra.find((x) => /^TERM\s*=/i.test(x));
   if (termInAttrs) {
-    termName = termInAttrs.replace(/^TERM\s*=\s*/i, '').trim();
+    const q = noteQuotedVal(termInAttrs.replace(/^TERM\s*=\s*/i, ''));
+    if (q) termName = q;
     const idx = extra.indexOf(termInAttrs);
     if (idx >= 0) extra.splice(idx, 1);
   }
@@ -2145,8 +2164,8 @@ function noteExtractGpAttrs(line) {
         }
         const k = segTrim.slice(0, eq).trim().toUpperCase();
         const v = segTrim.slice(eq + 1).trim();
-        if (k === 'TERM' && v) termName = v;
-        else if (k === 'NAME' && v) name = v;
+        if (k === 'TERM') { const q = noteQuotedVal(v); if (q) termName = q; }
+        else if (k === 'NAME') { const q = noteQuotedVal(v); if (q) name = q; }
         else if (k === 'ALERT') alert = v.toLowerCase() === 'true';
         else if (k === 'RAIL') {
           const rp = v.split('#');
@@ -2224,10 +2243,10 @@ function noteGpApplyName(line, name) {
   const lead = (src.match(/^[ \t]*/) || [''])[0];
   const trimmed = src.trim();
   if (!/^\{[ \t]*(?:group|gp)[ \t]*:?[ \t]*[^{}]*\}$/i.test(trimmed)) return src;
-  const nv = String(name == null ? '' : name).replace(/[{}|,]/g, '').trim();
+  const nv = String(name == null ? '' : name).replace(/[{}|,"'\u201c\u201d\u2018\u2019]/g, '').trim();
   const body = trimmed.slice(1, -1);
   const p1 = body.indexOf('|');
-  if (p1 < 0) return lead + '{' + body + (nv ? '|NAME=' + nv : '') + '}';
+  if (p1 < 0) return lead + '{' + body + (nv ? '|NAME="' + nv + '"' : '') + '}';
   const key = body.slice(0, p1);
   const rest = body.slice(p1 + 1);
   const p2 = rest.indexOf('|');
@@ -2239,7 +2258,7 @@ function noteGpApplyName(line, name) {
     const t = it.trim();
     if (t && !/^NAME\s*=/i.test(t)) items.push(t);
   }));
-  if (nv) items.push('NAME=' + nv);
+  if (nv) items.push('NAME="' + nv + '"');
   const termClean = items.join('|');
   let out = key;
   if (attrsClean || termClean) out += '|' + attrsClean;
@@ -3482,7 +3501,7 @@ function noteBlockMenuOpen(e) {
     // 🆕 2026-11-10：「搬移项目」与「🎨 设定围栏颜色」都只对可编辑的 {gp} 小事件群开放
     // 🆕 2026-11-11：搬移再放开「整行标示」单元（它是项目，不是散文）；颜色动画仍只属 {gp}
     if (act === 'move') item.hidden = ((type !== 'gp' && !isMk) || isViewKey(uid));
-    else if (act === 'color') item.hidden = (type !== 'gp' || isViewKey(uid));
+    else if (act === 'color' || act === 'name') item.hidden = (type !== 'gp' || isViewKey(uid));
   });
   menu.classList.add('open');
   const r = menu.getBoundingClientRect();
@@ -3534,8 +3553,9 @@ function vsrGotoMenuClose() {
   if (menu) menu.classList.remove('open');
   vsrGotoSrc = '';
 }
-// 🆕 右键正文里的 TERM 术语胶囊（.tl-term-cap[data-term]）→ 下拉菜单「显示此 TERM 的子节点／父节点」。
-//   便利贴自己没有术语表 → 两项都唤起主程式开 📖 术语表并套父阶过滤（wake-main-from-note action='glossary'）。
+// 🆕 右键正文里的 TERM 术语胶囊（.tl-term-cap[data-term]）→ 下拉菜单「显示此 TERM 的子节点／父节点／详细说明」。
+//   便利贴自己没有术语表 → 三项都唤起主程式开 📖 术语表（wake-main-from-note action='glossary'），
+//   前两项套父阶过滤，第三项 mode='detail' 只显示该术语＋围栏 TERM=NAME 的详细说明。
 //   胶囊 HTML 由主窗渲染后经 IPC 送来，本窗体只读 data-term，不自己解析 TERM（第四份解析器只存在于主进程字典）。
 //   与 #noteFindSameMenu / #noteBlockMenu / #vsrGotoMenu 平行：只认术语胶囊，定位口径照抄 vsrGotoMenuOpen。
 let noteTermMenuName = '';
@@ -3854,6 +3874,65 @@ async function noteGcSave(clear) {
   noteGcCloseDialog();
   showNoteMoveToast(r.ok ? (clear ? ('✅ 已清除围栏颜色，动画模式已保留' + (r.warn ? ('。' + r.warn) : ''))
     : ('✅ 已更新围栏样式' + (r.warn ? ('。' + r.warn) : '')))
+    : ('⚠️ 设定失败（' + r.error + '）'), !r.ok);
+}
+// 🆕 2026-11-17：右键编辑小圆点「设定围栏名称」——只改开栏行 NAME=，
+//   ⚠️ 关键防呆：沿用 noteGpApplyName（只清旧 NAME、attrs/term 段其它属性原样重建），
+//      绝不用整行替换／正则重写，避免历史上「改名称误删 TERM/bg/fg」的 bug 重演。
+let gpNameTarget = null;
+function noteGnEl(id) { return document.getElementById(id); }
+function noteGnCloseDialog() {
+  const ov = noteGnEl('gpNameOv'); if (ov) ov.classList.remove('show');
+  gpNameTarget = null;
+}
+// 只改开栏行 NAME 的纯字符串手术（复用 noteGpApplyName），供预览与保存同一口径。
+function noteGnRebuildLine(rawLine, name) {
+  if (typeof noteGpApplyName !== 'function') return rawLine;
+  // noteGpApplyName 在 attrs 段被清空时可能留下 `||`（如 {gpB|NAME=旧}→{gpB||NAME=新}），
+  //   这里把连续竖线规整成单个，避免脏标记；名称内的 | 已被 noteGpApplyName 剥离，故安全。
+  return noteGpApplyName(rawLine, name).replace(/\|{2,}/g, '|');
+}
+function noteGnUpdatePreview() {
+  const t = gpNameTarget || {};
+  const inp = noteGnEl('gnName');
+  const name = inp ? inp.value : '';
+  const pv = noteGnEl('gnMarkPreview');
+  if (pv) pv.textContent = '将写入：' + noteGnRebuildLine(t.rawOpen || '{gp}', name);
+}
+async function noteGnOpenDialog(t) {
+  if (!t || t.type !== 'gp') return;
+  if (isViewKey(t.uid)) { showNoteMoveToast('VIEW 投影贴是自动汇总的只读投影，请到来源便利贴设定围栏名称', true); return; }
+  const notes = await fetchAuthoritativeNotes(t.uid);
+  if (notes == null) { showNoteMoveToast('无法读取该便利贴的最新内容，已取消', true); return; }
+  const lines = notes.split('\n');
+  if (t.start < 0 || t.end >= lines.length || t.end < t.start) { showNoteMoveToast('区块内容已变化，请刷新便利贴后重试', true); return; }
+  const range = noteGpFenceScan(lines).ranges.find((r) => r.start === t.start && r.end === t.end);
+  if (!range) { showNoteMoveToast('找不到这个群的开栏标记，请确认它已是块级围栏 {gpX}…{/gpX}', true); return; }
+  gpNameTarget = { uid: t.uid, start: t.start, end: t.end, rawOpen: lines[t.start], key: range.key };
+  const inp = noteGnEl('gnName');
+  if (inp) inp.value = (range.name || '');
+  const hint = noteGnEl('gnKeyHint'); if (hint) hint.textContent = lines[t.start].trim();
+  noteGnUpdatePreview();
+  const ov = noteGnEl('gpNameOv'); if (ov) ov.classList.add('show');
+  setTimeout(() => { if (inp) { inp.focus(); inp.select(); } }, 0);
+}
+async function noteGnSave() {
+  const t = gpNameTarget;
+  if (!t) return;
+  const name = (noteGnEl('gnName') || {}).value || '';
+  const notes = await fetchAuthoritativeNotes(t.uid);
+  if (notes == null) { showNoteMoveToast('无法读取该便利贴的最新内容，已取消', true); return; }
+  const lines = notes.split('\n');
+  const range = noteGpFenceScan(lines).ranges.find((r) => r.start === t.start && r.end === t.end);
+  if (!range || lines[t.start] !== t.rawOpen) {
+    showNoteMoveToast('围栏标记已变化，请重新右键打开设定', true); noteGnCloseDialog(); return;
+  }
+  const newLine = noteGnRebuildLine(lines[t.start], name);
+  if (newLine === lines[t.start]) { showNoteMoveToast('围栏名称没有变化'); noteGnCloseDialog(); return; }
+  const out = lines.slice(); out[t.start] = newLine;
+  const r = await commitStickyNoteContent(out.join('\n'), t.uid, IDX, SRC_FILE, { expect: { present: [newLine.trim()] } });
+  noteGnCloseDialog();
+  showNoteMoveToast(r.ok ? ('✅ 已更新围栏名称' + (r.warn ? ('。' + r.warn) : ''))
     : ('⚠️ 设定失败（' + r.error + '）'), !r.ok);
 }
 function noteGcClear() {
@@ -4704,6 +4783,61 @@ function mergeAlertUpdatesIntoDraft(draft, previousNotes, latestNotes) {
   return result;
 }
 
+// ===== {include picture="X"}：把日历档同目录图片的绝对路径写进 <img src> =====
+//   便利贴窗有 nodeIntegration + FILE（calendar.md 绝对路径），同步解析、无翻页竞态；
+//   主窗无 Node 权限，走 IPC resolve-picture-path（同一口径：只接受同目录裸档名）。
+function noteResolveIncludePictures() {
+  const body = document.getElementById('body');
+  if (!body || !FILE) return;
+  const imgs = body.querySelectorAll('img.gp-include-picture[data-gp-pic]');
+  if (!imgs || !imgs.length) return;
+  let pathMod, urlMod, fsMod;
+  try { pathMod = require('path'); urlMod = require('url'); fsMod = require('fs'); } catch (e) { return; }
+  const dir = pathMod.dirname(FILE);
+  Array.prototype.forEach.call(imgs, (img) => {
+    const name = img.getAttribute('data-gp-pic') || '';
+    const fail = (msg) => { img.classList.add('pic-missing'); img.alt = '\u{1F5BC}\uFE0F ' + (msg || name); };
+    // 只接受裸档名：路径分隔符／绝对路径／file: 一律拒绝（与 main 进程 resolve-picture-path 同口径）。
+    if (!name || /[\\/]/.test(name) || /^([a-zA-Z]:|\/|file:)/i.test(name)) { fail('只支持同目录图片：' + name); return; }
+    let full;
+    try { full = pathMod.join(dir, name); } catch (e) { fail(name); return; }
+    if (pathMod.dirname(full) !== dir) { fail('只支持同目录图片：' + name); return; }
+    try {
+      if (!fsMod.existsSync(full) || !fsMod.statSync(full).isFile()) { fail('找不到图片：' + name); return; }
+      img.onerror = () => fail('图片载入失败：' + name);
+      img.src = urlMod.pathToFileURL(full).href;
+    } catch (e) { fail('图片载入失败：' + name); }
+  });
+}
+// 正文写入统一入口：innerHTML 重建后立刻补回图片 src；折叠态已随主进程注入的 checked 自带。
+//   ★ 所有正文写入点都必须走这里，否则新增的渲染分支会漏掉图片解析（折叠委托曾因同类遗漏失效两版）。
+function noteSetBodyHtml(html) {
+  const body = document.getElementById('body');
+  if (!body) return;
+  body.innerHTML = html;
+  noteResolveIncludePictures();
+}
+
+// ===== {include} 虚线框折叠状态：跨重渲染保持（状态存主进程内存，退出应用自动清） =====
+//   按「页内第几个 .gp-include-box」的序号存到主进程 includeFoldState[noteKey#idx]（同名多个靠序号区分）。
+//   ★ 折叠态由主进程在下发 HTML 前直接注入 checkbox 的 checked（windows.js::applyIncludeFoldToHtml），
+//     渲染进程只要 innerHTML=html 就自带，不依赖任何 async 回填时序（翻页/编辑保存/刷新全免疫）。
+//   这里只负责：change 委托 → 把新的折叠态写回主进程内存。
+function noteInitIncludeFoldDelegate() {
+  const body = document.getElementById('body');
+  if (!body || body.__includeFoldBound) return;
+  body.__includeFoldBound = true;
+  body.addEventListener('change', (e) => {
+    const cb = e.target;
+    if (!cb || !cb.classList || !cb.classList.contains('gp-include-fold-cb')) return;
+    const box = cb.closest('.gp-include-box');
+    if (!box) return;
+    const ord = Array.prototype.indexOf.call(body.querySelectorAll('.gp-include-box'), box);
+    if (ord < 0) return;
+    ipcRenderer.invoke('include-fold-set', { key: KEY, idx: IDX, ord, folded: !!cb.checked });
+  });
+}
+
 // 🆕 刷新内容：接收主程式推来的最新渲染结果（arg.{html,titleHtml}），同步标题/正文/日期/标签
 // 标题与正文来自主程式渲染（与列表行/主窗一致）；日期·完成态·标签直接回读 calendar.md 保持权威
 function applyNoteContent(arg) {
@@ -4750,7 +4884,7 @@ function applyNoteContent(arg) {
   //    先記後還，且避免「被歸零→節流存成 0」把記憶的位置洗掉
   const bodyElRef = document.getElementById('body');
   const keepScroll = bodyElRef ? Math.max(0, Math.round(bodyElRef.scrollTop)) : 0;
-  document.getElementById('body').innerHTML = html;
+  noteSetBodyHtml(html);  // 折叠态已由主进程注入 HTML，无需回填
   // 🆕 定位高亮：渲染模式下把定位詞以 <mark> 標示在標題與內容
   noteApplyHighlight();
   refreshNoteViewDisplay(); // 🆕 多段落 VIEW 便利贴：主进程推送刷新重渲染后重新套用记忆的「顺序平铺／页签方式」与 active 段落
@@ -5338,7 +5472,49 @@ function applyContentFont() {
   const addCheckInput = document.getElementById('addCheckInput');
   if (addCheckInput) addCheckInput.style.fontSize = fontSize;
 }
-// 🆕 外框流星：把 state.meteor 套用到 #note（开关 → .meteor-on＋形狀 class；參數走 CSS 變數 --m-color/--m-dur/--m-head/--m-flame）
+// 🆕 外框流星 v2.1：JS 低頻驅動（15fps），避開 transparent 視窗上 CSS animation 每幀整窗合成的開銷。
+//    没有 active CSS animation → 合成器只在 transform 真正變化的那一刻提交帧；關閉時清 timer → 零提交。
+const METEOR_FPS = 15;
+let meteorTimer = null;
+const meteorBeams = () => {
+  const note = document.getElementById('note');
+  return note ? [...note.querySelectorAll('.meteor-fx .meteor-beam')] : [];
+};
+// 流星绕四边：一顆光條依 phase∈[0,1) 的局面，只在自己所屬 25% 時段扫过，其餘藏在框外。
+// top: phase 0→.25 左到右；right: .25→.5 上到下；bottom: .5→.75 右到左；left: .75→1 下到上。
+function meteorStep() {
+  const note = document.getElementById('note');
+  const m = state.meteor || {};
+  if (!note || !m.on) return;
+  const beams = meteorBeams();
+  if (beams.length < 4) return;
+  const w = note.clientWidth || 360, h = note.clientHeight || 360;
+  const beam = Math.min(320, Math.max(32, Math.round((m.flame || 160) * 0.6)));
+  const speed = Math.max(0.5, m.speed || 12);           // 秒/圈
+  const phase = (performance.now() / (speed * 1000)) % 1;
+  const span = (p) => (p <= 0 ? 0 : (p >= 1 ? 1 : p));   // 0..1 線性裁剪
+  const seg = 0.25;
+  // 每條邊：活躍時从 -beam 扫到 边长；其餘停在框外（端点 0→-beam, 1→边长 皆在框外）。
+  const top = span(phase / seg);
+  const right = span((phase - seg) / seg);
+  const bottom = span((phase - 2 * seg) / seg);
+  const left = span((phase - 3 * seg) / seg);
+  beams[0].style.transform = 'translateX(' + (-beam + (w + beam) * top).toFixed(1) + 'px)';
+  beams[1].style.transform = 'translateY(' + (-beam + (h + beam) * right).toFixed(1) + 'px)';
+  beams[2].style.transform = 'translateX(' + (w - (w + beam) * bottom).toFixed(1) + 'px)';
+  beams[3].style.transform = 'translateY(' + (h - (h + beam) * left).toFixed(1) + 'px)';
+}
+function meteorStart() {
+  if (meteorTimer) return;
+  meteorStep();
+  meteorTimer = setInterval(meteorStep, Math.round(1000 / METEOR_FPS));
+}
+function meteorStop() {
+  if (!meteorTimer) return;
+  clearInterval(meteorTimer);
+  meteorTimer = null;
+}
+// 把 state.meteor 套用到 #note（開關 → .meteor-on＋形狀 class；參數走 CSS 變數；驱动 → setInterval）
 function applyMeteor() {
   const note = document.getElementById('note');
   if (!note) return;
@@ -5346,25 +5522,14 @@ function applyMeteor() {
   note.classList.toggle('meteor-on', !!m.on);
   note.classList.toggle('meteor-rainbow', !!(m.on && m.rainbow));
   note.classList.remove('meteor-shape-comet', 'meteor-shape-sharp', 'meteor-shape-band', 'meteor-shape-twin');
-  if (m.on) {
-    note.classList.add('meteor-shape-' + (m.shape || 'comet'));
-    const color = (m.follow && state.fontColor) ? state.fontColor : (m.color || '#ffae00');
-    note.style.setProperty('--m-color', color);
-    note.style.setProperty('--m-dur', (m.speed || 12) + 's');
-    // 焰火長度(flame)＝「亮頭+拖尾總可見長度(px)」：先依便利貼周長反推總角度，再從中切出亮頭。
-    // 亮頭不超過總長一半，讓 flame 設很小時整段都短（否則固定 12° 亮頭會吃掉預算、使 10px 失效）。
-    const nW = note.clientWidth || 360, nH = note.clientHeight || 360;
-    const perim = 2 * (nW + nH);
-    const sizeHead = Math.min(120, Math.max(1, m.size || 12));
-    let totalDeg = ((m.flame || 160) / perim) * 360;
-    totalDeg = Math.min(300, Math.max(1.5, totalDeg));
-    const headDeg = Math.max(0.5, Math.min(sizeHead, totalDeg * 0.5));
-    const tailDeg = Math.max(0.5, totalDeg - headDeg);
-    note.style.setProperty('--m-head', headDeg + 'deg');
-    note.style.setProperty('--m-flame', tailDeg + 'deg');
-    // 🆕 大小同步放大环厚：旧上限 40°→2px，新上限 120°→6px（3×），40° 以下维持 2px 不退化
-    note.style.setProperty('--m-thick', Math.min(6, Math.max(2, (m.size || 12) / 20)) + 'px');
-  }
+  if (!m.on) { meteorStop(); return; }
+  note.classList.add('meteor-shape-' + (m.shape || 'comet'));
+  const color = (m.follow && state.fontColor) ? state.fontColor : (m.color || '#ffae00');
+  note.style.setProperty('--m-color', color);
+  const beam = Math.min(320, Math.max(32, Math.round((m.flame || 160) * 0.6)));
+  note.style.setProperty('--m-beam', beam + 'px');
+  note.style.setProperty('--m-thick', Math.min(6, Math.max(2, (m.size || 12) / 20)) + 'px');
+  meteorStart();
 }
 // 把 state.meteor 反映到菜单控制项（翻页切页 / 开菜单都重跑）
 function syncMeteorControls() {
@@ -5403,6 +5568,8 @@ function setMeteor(patch) {
 function toggleMeteor() {
   setMeteor({ on: !(state.meteor && state.meteor.on) });
 }
+// 🆕 視窗/便利貼尺寸變化時重算旋轉盤邊長（拖右下把手或 OS 縮放都會觸發 resize）
+window.addEventListener('resize', applyMeteor);
 // 🆕 卷动位置记忆（统一行为，无开关参数）：每张便利贴记住「上次离开前」的卷动位置，
 //    下次开窗（分体）或翻回来（翻页）即还原。body 是唯一卷动容器。
 //    · 卷动中节流写回（400ms）；· 翻页换张／关窗前 flush（此刻 KEY/IDX 仍是离开的那一张）。
@@ -5670,7 +5837,7 @@ async function renderNoteContent() {
   // 🆕 同上：重設 innerHTML 會把 scrollTop 歸零，先記後還（也避免被節流存成 0）
   const bodyElKeep = document.getElementById('body');
   const keepScrollPos = bodyElKeep ? Math.max(0, Math.round(bodyElKeep.scrollTop)) : 0;
-  document.getElementById('body').innerHTML = html;
+  noteSetBodyHtml(html);  // 折叠态已由主进程注入 HTML，无需回填
   noteApplyHighlight(); // 🆕 依當前定位詞重打高亮
   refreshNoteViewDisplay(); // 🆕 多段落 VIEW 便利贴：绑定（一次性事件委托）＋套用记忆的「顺序平铺／页签方式」与 active 段落
   if (keepScrollPos && bodyElKeep) bodyElKeep.scrollTop = keepScrollPos;
@@ -6538,6 +6705,7 @@ function endResize() {
   const nearBottomRight = pointerClientX !== null && pointerClientY !== null
     && rightGap >= 0 && rightGap <= 48 && bottomGap >= 0 && bottomGap <= 48;
   document.getElementById('rz').classList.toggle('visible', nearBottomRight);
+  applyMeteor(); // 🆕 拖完尺寸後流星下一幀即用新 w/h 計算位移（meteorStep 每次讀 clientWidth/Height）
 }
 
 // 🆕 顺序版本号：initFlip 的「拉取」与主进程的「推送」可能交错，晚到的拉取结果不得覆盖更新的推送
@@ -7060,7 +7228,7 @@ async function renderFlipPage(i) {
   const tip = (ev && typeof ev.titleTip === 'string' && ev.titleTip) ? ev.titleTip : '';
   setStickyTitle(titleEl, titleHtml, ev.title, tip);
   // 🆕 移除 raw 原文兜底：html 缺失时留白，绝不以未渲染 Markdown 源呈现（如 "- [ ] 11111"）。
-  document.getElementById('body').innerHTML = html;
+  noteSetBodyHtml(html);  // 折叠态已由主进程按目标页 id 注入 HTML
   noteApplyHighlight(); // 🆕 依當前定位詞重打高亮
   refreshNoteViewDisplay(); // 🆕 多段落 VIEW 便利贴：翻页重渲染后重新套用记忆的「顺序平铺／页签方式」与 active 段落
   syncUndoneChecksFilter();
@@ -7273,6 +7441,8 @@ document.addEventListener('keydown', (e) => {
       else if (act === 'edit') { const tt = t; noteBlockMenuClose(); const synth = { preventDefault() {}, stopPropagation() {}, target: tt.dot }; tlOpenEditBlockDialog(synth, tt.uid, tt.start, tt.end, tt.type); }
       // 🆕 2026-11-10：设定围栏颜色（只改开栏行的 fg/bg 属性段）
       else if (act === 'color') { const tt = t; noteBlockMenuClose(); noteGcOpenDialog(tt); }
+      // 🆕 2026-11-17：设定围栏名称（只改开栏行 NAME=，其它属性原样保留）
+      else if (act === 'name') { const tt = t; noteBlockMenuClose(); noteGnOpenDialog(tt); }
       else if (act === 'copy') { noteBlockMenuClose(); noteBlockCopy(t); }
       // 🆕 gp 小事件群：整群搬移（t 是关菜单前留下的副本，noteBlockMenuClose 清的是全域变量）
       else if (act === 'move') { noteBlockMenuClose(); noteBlockMove(t); }
@@ -7300,7 +7470,7 @@ document.addEventListener('keydown', (e) => {
   }
   const termMenu = document.getElementById('noteTermMenu');
   if (termMenu) {
-    // 🆕 TERM 胶囊右键菜单项委托（按 data-act 分流）：children／parent → 主窗开 📖 术语表并套父阶过滤
+    // 🆕 TERM 胶囊右键菜单项委托（按 data-act 分流）：children／parent → 父阶过滤；detail → 只显示该术语＋围栏详细说明
     termMenu.addEventListener('click', (e) => {
       const item = e.target.closest && e.target.closest('.nami');
       if (!item || item.disabled) return;
@@ -7309,7 +7479,8 @@ document.addEventListener('keydown', (e) => {
       const name = noteTermMenuName;
       noteTermMenuClose();          // 会清掉 name，故先存副本
       if (!name) return;
-      try { ipcRenderer.invoke('wake-main-from-note', { key: KEY, action: 'glossary', term: name, mode: act === 'parent' ? 'parent' : 'children' }); }
+      const mode = act === 'detail' ? 'detail' : (act === 'parent' ? 'parent' : 'children');
+      try { ipcRenderer.invoke('wake-main-from-note', { key: KEY, action: 'glossary', term: name, mode: mode }); }
       catch (err) { window.alert('打开术语表失败：' + (err && err.message ? err.message : err)); }
     });
   }
@@ -7385,6 +7556,25 @@ document.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && e.target && e.target.tagName !== 'SELECT' && e.target.tagName !== 'BUTTON') {
       e.preventDefault(); e.stopPropagation(); noteGcSave(false);
     }
+  }, true);
+})();
+
+// ── 🆕 2026-11-17：围栏名称浮层（#gpNameOv）事件绑定 ──────────────────────
+(function bindGpNameDialog() {
+  const ov = noteGnEl('gpNameOv');
+  if (!ov) return;
+  const bind = (id, fn) => {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener('click', (e) => { e.stopPropagation(); fn(); });
+  };
+  bind('gnApplyBtn', noteGnSave);
+  bind('gnCancelBtn', noteGnCloseDialog);
+  ov.addEventListener('click', (e) => { if (e.target === ov) noteGnCloseDialog(); });
+  ['input', 'change'].forEach((evt) => ov.addEventListener(evt, noteGnUpdatePreview));
+  ov.addEventListener('keydown', (e) => {
+    if (e.isComposing || e.keyCode === 229) return;   // IME 组字中不拦
+    if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); noteGnCloseDialog(); return; }
+    if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); noteGnSave(); }
   }, true);
 })();
 

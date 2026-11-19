@@ -7,6 +7,7 @@ const path = require('path');
 const fs = require('fs');
 const os = require('os');
 const http = require('http');
+const { pathToFileURL } = require('url');
 // 便利貼設定可攜 JSON 的轉換／驗證（與 LITE 共用同一份，見 src/pwa-md-editor/sticky-settings.js）
 const StickySettings = require('../src/pwa-md-editor/sticky-settings.js');
 
@@ -254,6 +255,30 @@ const stickyNoteTitleHtml = new Map(); // 'noteKey#idx' -> 主窗口渲染好的
 //   src＝该行程来自哪个 INCLUDE 外部文件（空＝calendar.md 正式档）；便利贴窗据此显示文档名徽标，
 //   并在编辑时上报 src，让主窗口把结果写回对应文件而不是 calendar.md。
 const stickyNoteMeta = new Map();
+
+// 🆕 {include} 虚线框折叠状态：'noteKey#idx' -> Set<页内第几个 .gp-include-box 的 ordinal>
+//   仅存进程内存、不落盘 → 跨便利贴重渲染（编辑保存/翻页/刷新推送）保持，退出应用自动清除。
+//   之所以 ordinal 而非 NAME：同一页可能有多个同名 include（Map<name,Array> 逐个展开），
+//   用 DOM 顺序里的序号才能唯一区分；名称相同时序号稳定，编辑不改变 include 数量时不会错位。
+const includeFoldState = new Map();
+function includeFoldId(key, idx) { return String(key) + '#' + (+idx || 0); }
+// 下发 HTML 前，把该张便利贴已折叠的 box ordinal 直接写进 checkbox 的 checked 属性。
+//   这样折叠态随 HTML 一起到达 → 渲染进程只要 innerHTML=html 就自带，彻底不依赖 async 回填时序
+//   （编辑保存 refresh、翻页、开窗拉取全部经过主进程这两个下发点，一律覆盖）。
+function applyIncludeFoldToHtml(id, html) {
+  if (typeof html !== 'string' || html.indexOf('gp-include-fold-cb') < 0) return html;
+  const folded = includeFoldState.get(id);
+  // 每个 .gp-include-box 内有且仅有一个 gp-include-fold-cb input；按出现顺序即 ordinal。
+  // ★ 先清后设：HTML 可能来自「上次注入后又回写缓存」的副本，必须让 store 成为唯一权威。
+  //   否则「取消折叠」后翻回来，旧的 checked 仍在 → 又变回折叠（反向 bug）。
+  let ord = -1;
+  return html.replace(/(<input\b[^>]*\bclass="[^"]*\bgp-include-fold-cb\b[^"]*"[^>]*?>)/g, (input) => {
+    const n = ++ord;
+    const clean = input.replace(/\s+checked(?:\s*=\s*"[^"]*")?/g, '');
+    if (!folded || !folded.has(n)) return clean;
+    return clean.replace(/\/?>$/, (tail) => (tail.indexOf('/') === 0 ? ' checked/' : ' checked>'));
+  });
+}
 
 // 🆕 翻页显示模式：single window 循环多张便利贴
 let stickyNoteOrder = [];          // 翻页顺序 [{key, idx}]（与 split 模式并行存在）
@@ -1235,7 +1260,7 @@ ipcMain.handle('sticky-note-html', (e, arg) => {
   const id = noteWinId(String(arg && arg.key), +arg.idx || 0);
   const meta = stickyNoteMeta.get(id) || null;
   return {
-    html: stickyNoteHtml.get(id) || '',
+    html: applyIncludeFoldToHtml(id, stickyNoteHtml.get(id) || ''),
     titleHtml: stickyNoteTitleHtml.get(id) || '',
     notes: (meta && typeof meta.notes === 'string') ? meta.notes : null,
     src: (meta && typeof meta.src === 'string') ? meta.src : '',
@@ -1292,7 +1317,10 @@ ipcMain.on('sticky-note-refresh', (e, arg) => {
   if (!arg || typeof arg.key !== 'string') return;
   const id = noteWinId(arg.key, +arg.idx || 0);
   rememberStickyMeta(arg);
-  if (typeof arg.html === 'string') stickyNoteHtml.set(id, arg.html);
+  if (typeof arg.html === 'string') {
+    stickyNoteHtml.set(id, arg.html);                  // 缓存永远存原始 HTML（不含注入的 checked）
+    arg.html = applyIncludeFoldToHtml(id, arg.html);   // 🆕 只改写下发副本，渲染端 innerHTML 即自带折叠态
+  }
   if (typeof arg.titleHtml === 'string') stickyNoteTitleHtml.set(id, arg.titleHtml);
   // 翻页模式：唯一窗口即翻页窗（注册在 '__flip__#0'），与该刷新针对哪张便利贴无关
   const win = (stickyNoteMode === 'flip') ? stickyNoteFlipWindow : stickyNoteWindows.get(id);
@@ -1834,6 +1862,22 @@ ipcMain.handle('sticky-note-send-email', async (event, arg) => {
 });
 ipcMain.handle('sticky-notes-count', () => ({ count: stickyNoteWindows.size }));
 
+// {include} 虚线框折叠状态：读取某张便利贴内已折叠的 box 序号数组（跨重渲染恢复用）
+ipcMain.handle('include-fold-get', (e, arg) => {
+  const s = includeFoldState.get(includeFoldId(arg && arg.key, arg && arg.idx));
+  return s ? Array.from(s) : [];
+});
+// {include} 虚线框折叠状态：记录/取消某张便利贴内第 ord 个 box 的折叠态（folded=true 折叠）
+ipcMain.handle('include-fold-set', (e, arg) => {
+  const id = includeFoldId(arg && arg.key, arg && arg.idx);
+  let s = includeFoldState.get(id);
+  if (!s) { s = new Set(); includeFoldState.set(id, s); }
+  const ord = +arg.ord;
+  if (!isFinite(ord) || ord < 0) return false;
+  if (arg.folded) s.add(ord); else s.delete(ord);
+  if (!s.size) includeFoldState.delete(id);
+  return true;
+});
 // 单张便利贴：读取自身状态（位置/尺寸/颜色/透明度）
 ipcMain.handle('sticky-note-get', (e, arg) => {
   const it = noteInst(String(arg && arg.key), +arg.idx || 0);
@@ -1934,7 +1978,8 @@ ipcMain.handle('sticky-note-close-page', (e, arg) => {
 // ⚠️ 「新建便利贴」不走这里：它在便利贴窗内自己开浮层 → sticky-note-create（不必把用户带到 Calendar 表单）。
 ipcMain.handle('wake-main-from-note', (e, arg) => {
   const win = showMainWindow();
-  // 🆕 action='glossary'：便利贴右键 TERM 胶囊 →「显示子／父节点」→ 主窗开 📖 术语表并套父阶过滤
+  // 🆕 action='glossary'：便利贴右键 TERM 胶囊 →「显示子／父节点／详细说明」→ 主窗开 📖 术语表
+  //   mode='detail' 透传给渲染层：只显示该术语＋围栏 TERM=NAME 的详细说明，不做父阶过滤。
   const act = arg && arg.action;
   const channel = act === 'scroll' ? 'scroll-sticky-event'
     : act === 'glossary' ? 'open-term-glossary'
@@ -1944,7 +1989,7 @@ ipcMain.handle('wake-main-from-note', (e, arg) => {
     if (channel === 'open-term-glossary') {
       win.webContents.send(channel, {
         term: (arg && typeof arg.term === 'string') ? arg.term : '',
-        mode: (arg && arg.mode === 'parent') ? 'parent' : 'children'
+        mode: (arg && arg.mode === 'parent') ? 'parent' : (arg && arg.mode === 'detail') ? 'detail' : 'children'
       });
       return;
     }
@@ -2232,6 +2277,24 @@ function init(shared) {
       return { success: true, delivered: true };
     }
     return { success: true, delivered: false };
+  });
+
+  // 🆕 {include picture="X"} 图片解析：基准是「calendar.md 所在目录」，与 resolve-doc-path（PLUGINS_DATA_DIR）语义不同，不可混用。
+  //   只接受裸档名（拒绝路径分隔符/绝对路径/file://），解析后必须仍在同一目录；返回 file URL 供两端 <img src> 直接使用。
+  ipcMain.handle('resolve-picture-path', (e, arg) => {
+    const name = String((arg && arg.name) || '').trim();
+    if (!name) return { success: false, error: '空文件名' };
+    if (!stickyNoteFile) return { success: false, error: '未开启日历档案' };
+    if (/[\\/]/.test(name) || /^([a-zA-Z]:|\/|file:)/i.test(name)) {
+      return { success: false, error: '只接受日历档同目录的图片文件名' };
+    }
+    const base = path.resolve(path.dirname(stickyNoteFile));
+    const full = path.join(base, name);
+    if (path.dirname(full) !== base) return { success: false, error: '只接受同目录文件' };
+    let st = null;
+    try { st = fs.statSync(full); } catch (err) { return { success: false, error: '图片不存在：' + name }; }
+    if (!st.isFile()) return { success: false, error: '不是普通文件：' + name };
+    return { success: true, path: full, url: pathToFileURL(full).href };
   });
 
   // 🆕 裸档名解析：[文字](win:文件名) 只写档名时，默认在与卡片相同的资料目录（PLUGINS_DATA_DIR）查找，

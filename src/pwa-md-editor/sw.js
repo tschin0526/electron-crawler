@@ -536,7 +536,25 @@
 //       會丟掉整個 term 段（TERM+NAME）的既有 bug：BuildGpOpenLine 三端對齊保留 raw term，close 行同步新 key。
 //       雙軌制：gpApplyName 純字串手術，attrs 段中文色名原样保留不轉色。calendar-editor.js/index.html/style.css 改，
 //       四主 ?v 戳刷为 lite-gpname-20261115，bump 讓手機重拉。
-const CACHE_NAME = 'md-editor-lite-v230';
+// v231（2026-11-16）：gp 围栏「名稱」膠囊由右上角小字改为上边框正中央、字号比内容大一号（1.15em），
+//       并用 :has(.gp-badge-name) 给「有名称的围栏」补 margin-top/padding-top 避免与上下内容重叠；
+//       TERM／ALERT 徽标仍留右上。三端 CSS（桌面 index.html／便利贴 desktop-note.html／LITE style.css）同源同步，
+//       HTML 生成链与 parse/fenceScan 零改。纯 style.css 改，五处 ?v 戳刷为 lite-gpname-center-20261116，bump 讓手機重拉。
+// v232（2026-11-16）：新增 {include name="NAME"} 模板语法——在语法所在位置插入「所有 NAME=NAME 的围栏内部内容」
+//       （同名全部按底稿原顺序）。底稿原文不改；插入内容只读（checkbox 不挂 uid/data-line/onclick），绝不回写错误行；
+//       递归展开上限 8 层＋访问集合防环，代码围栏内不解析，找不到名称保留原字面量。
+//       四端同步：桌面 calendar-editor.js（tlExpandGpIncludes）／LITE calendar-editor.js（calExpandGpIncludes）／
+//       VIEW view-sticky-rules.js（gpIncludeIndexFromEvents + gpExpandIncludesText + taskLineHtml/nonTaskUnitHtml 接入）／
+//       便利贴窗收主窗渲染 HTML 零改。五处 ?v 戳刷为 lite-gpinclude-20261116，APP_VERSION/manifest 1.10.43→1.10.44。
+//       2026-11-16 再 bump：include 改就地插入 + .gp-include-box 虚线框（预渲染避免 <ul>／巢状 <p>），VIEW 占位符法保 data-text。
+// v247（2026-11-18）：cr/dl/cp 日期標記去掉金色膠囊外框，改為「徽標＋日期」整段下方一條虛線底線
+//       （border-bottom: 1px dashed currentColor，與桌面雙端口徑一致）；純 CSS 外觀調整，DOM／data-date／排序零改動。
+//       style.css 改，bump 讓手機重拉；五處 ?v 戳刷為 lite-datemark-underline-20261118，APP_VERSION/manifest 1.10.58→1.10.59。
+// v248（2026-11-18）：cr/dl/cp 日期標記由「虛線底線」改為「四邊 1px 虛線外框」（border-radius: 3px）；
+//       不設任何背景色 → 露出便利貼／{gp} 圍欄的 var(--gp-bg) 背景；color: inherit 讓字色同時跟隨
+//       便利貼字色與圍欄 var(--gp-fg, inherit)，框線 currentColor 跟字色。純 CSS，DOM／排序零改動。
+//       style.css 改，bump 讓手機重拉；五處 ?v 戳刷為 lite-datemark-outline-20261118，APP_VERSION/manifest 1.10.59→1.10.60。
+const CACHE_NAME = 'md-editor-lite-v248';
 const ASSETS = [
   './',
   './index.html',
@@ -553,7 +571,15 @@ const ASSETS = [
   './icon.svg',
   './icon-180.png',
   './icon-192.png',
-  './icon-512.png'
+  './icon-512.png',
+  // 🆕 2026-11-18：渲染依赖本地化（原 CDN 在大陆网络加载失败 → markdown/花括号指令全失效）。
+  './vendor/marked.min.js',
+  './vendor/marked-emoji.min.js',
+  './vendor/gemoji-data.js',
+  './vendor/katex.min.css',
+  './vendor/katex.min.js',
+  './vendor/hljs-common.min.js',
+  './vendor/hljs-github.min.css'
 ];
 
 // 網絡超時上限（ms）：超過就視為「連不上」，立刻回退快取，避免內網不可達時無限等待。

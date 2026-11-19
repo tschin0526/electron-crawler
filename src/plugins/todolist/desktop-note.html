@@ -138,64 +138,54 @@
       border: 1px dashed #2563eb; background: rgba(37, 99, 235, .16);
       color: var(--note-fg, #1d4ed8); font-style: normal;
     }
-    /* 🆕 便利贴外框流星（每贴可配置：开关 / 飞速 / 大小 / 形状 / 颜色 / 焰尾长度；默认关闭）。
-       由 JS 在该贴元素挂 .meteor-on ＋ .meteor-shape-<shape>，并以 CSS 变量传入参数：
-         --m-color(颜色) --m-dur(周期秒) --m-head(头角宽deg) --m-flame(亮頭+拖尾總長，由 JS 用 px 反推角度)。
-       形状用 .meteor-shape-* 选择渐变配方；@property 驱动 from 角度，mask 只留 2px 边框环，
-       流星不旋转元素（环始终贴合边框，不会随转角错位）。不支持 @property 的老浏览器退化为静态光环。 */
-    @property --meteor-angle { syntax: '<angle>'; initial-value: 0deg; inherits: false; }
-    @property --m-hue { syntax: '<angle>'; initial-value: 0deg; inherits: false; }
-    /* 📌 參數預設必須掛在「本體」規則（#note.meteor-on，無 ::after）：JS 在本體設的行內 --m-* 才能經繼承覆蓋；
-       若寫在 ::after 規則裡，偽元素自身的宣告會遮蔽繼承值 → 顏色/速度/大小/焰尾全失效。 */
+    /* 🆕 便利贴外框流星（GPU 合成版 v2，2026-11-17 性能再造）。
+       v1 失敗教訓：動畫雖只剩 transform:rotate，但父層 mask-composite:exclude ＋兩層 drop-shadow
+       會把整棵子樹拉回 CPU 光柵化 → 實測 50.9% CPU / 56.4% GPU（活動監視器截圖）。
+       v2：徹底去掉 mask / filter / 大尺寸 conic-gradient；四條邊各一個 overflow:hidden 細容器，
+       內放一顆小光條(linear-gradient 尾跡)，只做 translate 動畫 → 純合成層、零重繪。
+       結構：#note > .meteor-fx > .meteor-edge(e-top/right/bottom/left) > .meteor-beam。
+       參數：--m-color --m-thick --m-beam（JS 設）；位移由 JS::meteorStep 以 15fps 寫 transform。 */
     #note.meteor-on {
-      --m-color: #ffae00; --m-dur: 12s; --m-head: 12deg; --m-flame: 60deg; --m-thick: 2px;
+      --m-color: #ffae00; --m-thick: 2px; --m-beam: 96px;
     }
-    #note.meteor-on::after {
-      content: ""; position: absolute; inset: 0; z-index: 6;
-      border-radius: inherit; padding: var(--m-thick, 2px);
-      -webkit-mask:
-        linear-gradient(#000 0 0) content-box,
-        linear-gradient(#000 0 0);
-      -webkit-mask-composite: xor; mask-composite: exclude;
-      filter: drop-shadow(0 0 3px var(--m-color, #ffae00)) drop-shadow(0 0 8px color-mix(in srgb, var(--m-color, #ffae00) 60%, transparent)) hue-rotate(var(--m-hue, 0deg));
-      animation: viewMeteorOrbit var(--m-dur, 12s) linear infinite;
-      pointer-events: none;
+    #note .meteor-fx {
+      display: none; position: absolute; inset: 0; z-index: 6;
+      border-radius: inherit; overflow: hidden; pointer-events: none;
     }
-    /* 形状配方：流星头＝主色实色，焰尾＝主色→透明渐隐（角宽由 --m-flame 控制） */
-    #note.meteor-on.meteor-shape-comet::after {
-      background: conic-gradient(from 0deg, transparent calc(360deg - var(--m-head, 12deg) - var(--m-flame, 60deg)), var(--m-color, #ffae00) calc(360deg - var(--m-head, 12deg)), var(--m-color, #ffae00) 360deg);
-      background: conic-gradient(from var(--meteor-angle, 0deg), transparent calc(360deg - var(--m-head, 12deg) - var(--m-flame, 60deg)), var(--m-color, #ffae00) calc(360deg - var(--m-head, 12deg)), var(--m-color, #ffae00) 360deg);
+    #note.meteor-on .meteor-fx { display: block; }
+    /* 四條邊容器：只做裁切、本身不動。overflow:hidden 不需要像素合成，遠比 mask 便宜。 */
+    #note .meteor-edge { position: absolute; display: block; overflow: hidden; }
+    #note .meteor-edge.e-top    { left: 0; right: 0; top: 0;    height: var(--m-thick, 2px); --m-dir: 90deg; }
+    #note .meteor-edge.e-right  { right: 0; top: 0; bottom: 0;  width: var(--m-thick, 2px); --m-dir: 180deg; }
+    #note .meteor-edge.e-bottom { left: 0; right: 0; bottom: 0; height: var(--m-thick, 2px); --m-dir: 270deg; }
+    #note .meteor-edge.e-left   { left: 0; top: 0; bottom: 0;  width: var(--m-thick, 2px); --m-dir: 0deg; }
+    /* 光條：靜態 linear-gradient 尾跡，只 transform 平移；無 filter、無 mask。 */
+    #note .meteor-beam {
+      position: absolute; display: block; will-change: transform;
+      background: var(--m-grad, linear-gradient(var(--m-dir, 90deg), transparent, var(--m-color, #ffae00)));
     }
-    #note.meteor-on.meteor-shape-sharp::after {
-      background: conic-gradient(from 0deg, transparent calc(360deg - var(--m-head, 8deg) - var(--m-flame, 55deg)), var(--m-color, #ffae00) calc(360deg - var(--m-head, 8deg)), var(--m-color, #ffae00) calc(360deg - 2deg), #fff 360deg);
-      background: conic-gradient(from var(--meteor-angle, 0deg), transparent calc(360deg - var(--m-head, 8deg) - var(--m-flame, 55deg)), var(--m-color, #ffae00) calc(360deg - var(--m-head, 8deg)), var(--m-color, #ffae00) calc(360deg - 2deg), #fff 360deg);
-    }
-    #note.meteor-on.meteor-shape-band::after {
-      background: conic-gradient(from 0deg, transparent calc(360deg - var(--m-head, 26deg) - var(--m-flame, 90deg)), color-mix(in srgb, var(--m-color, #ffae00) 50%, transparent) calc(360deg - var(--m-head, 26deg)), var(--m-color, #ffae00) calc(360deg - var(--m-head, 26deg) * 0.5), var(--m-color, #ffae00) 360deg);
-      background: conic-gradient(from var(--meteor-angle, 0deg), transparent calc(360deg - var(--m-head, 26deg) - var(--m-flame, 90deg)), color-mix(in srgb, var(--m-color, #ffae00) 50%, transparent) calc(360deg - var(--m-head, 26deg)), var(--m-color, #ffae00) calc(360deg - var(--m-head, 26deg) * 0.5), var(--m-color, #ffae00) 360deg);
-    }
-    #note.meteor-on.meteor-shape-twin::after {
-      background: conic-gradient(from 0deg,
-        transparent calc(360deg - var(--m-head, 12deg) - var(--m-flame, 70deg)),
-        var(--m-color, #ffae00) calc(360deg - var(--m-head, 12deg) - var(--m-flame, 70deg) + 8deg),
-        var(--m-color, #ffae00) calc(360deg - var(--m-head, 12deg) - 18deg),
-        transparent calc(360deg - var(--m-head, 12deg) - 12deg),
-        var(--m-color, #ffae00) calc(360deg - var(--m-head, 12deg)),
-        var(--m-color, #ffae00) 360deg);
-      background: conic-gradient(from var(--meteor-angle, 0deg),
-        transparent calc(360deg - var(--m-head, 12deg) - var(--m-flame, 70deg)),
-        var(--m-color, #ffae00) calc(360deg - var(--m-head, 12deg) - var(--m-flame, 70deg) + 8deg),
-        var(--m-color, #ffae00) calc(360deg - var(--m-head, 12deg) - 18deg),
-        transparent calc(360deg - var(--m-head, 12deg) - 12deg),
-        var(--m-color, #ffae00) calc(360deg - var(--m-head, 12deg)),
-        var(--m-color, #ffae00) 360deg);
-    }
-    @keyframes viewMeteorOrbit { to { --meteor-angle: 360deg; } }
-    /* 🆕 彩色流星：在轨道动画之外，再加一段 hue 旋转动画，让整颗流星（含辉光）循环过整圈色相 → 彩虹变色 */
-    #note.meteor-on.meteor-rainbow::after {
-      animation: viewMeteorOrbit var(--m-dur, 12s) linear infinite, meteorHueSpin 4s linear infinite;
-    }
-    @keyframes meteorHueSpin { to { --m-hue: 360deg; } }
+    #note .e-top .meteor-beam, #note .e-bottom .meteor-beam { width: var(--m-beam, 96px); height: 100%; left: 0; top: 0; }
+    #note .e-left .meteor-beam, #note .e-right .meteor-beam { width: 100%; height: var(--m-beam, 96px); left: 0; top: 0; }
+    /* 一顆流星繞四邊：每顆光條只在自己 25% 時段移動，其餘停在容器外（不可見），循環無跳變。
+       ⚠️ 關鍵：這裡「不用 CSS animation」。實測 v2 用 CSS animation（含 steps 降幀）仍 32.6% CPU：
+       因為 transparent:true 的 macOS 視窗，只要有 active animation，合成器每帧都整窗合成＋alpha 混合。
+       改由 JS setInterval 以 METEOR_FPS(15) 直接寫 transform → 合成器只在 DOM 改變的那一刻提交帧，
+       其餘 45 帧完全不提交；關閉流星時清掉 timer → 零動畫、零提交。位移公式見 desktop-note.js::meteorStep。 */
+    /* 初始位置：四條光條都在容器外（不可見），等 JS 第一次 meteorStep 推進。 */
+    #note .e-top    .meteor-beam { transform: translateX(-120px); }
+    #note .e-right  .meteor-beam { transform: translateY(-120px); }
+    #note .e-bottom .meteor-beam { transform: translateX(400px); }
+    #note .e-left   .meteor-beam { transform: translateY(400px); }
+    /* 形狀：只換漸變配方，不動動畫/結構；--m-dir 由邊容器提供、在光條上解析。 */
+    #note.meteor-on.meteor-shape-comet { --m-grad: linear-gradient(var(--m-dir, 90deg), transparent 0%, var(--m-color, #ffae00) 100%); }
+    #note.meteor-on.meteor-shape-sharp { --m-grad: linear-gradient(var(--m-dir, 90deg), transparent 72%, #fff 100%); }
+    #note.meteor-on.meteor-shape-band  { --m-grad: linear-gradient(var(--m-dir, 90deg), transparent 0%, color-mix(in srgb, var(--m-color, #ffae00) 50%, transparent) 55%, var(--m-color, #ffae00) 100%); }
+    #note.meteor-on.meteor-shape-twin  { --m-grad: linear-gradient(var(--m-dir, 90deg), transparent 0%, var(--m-color, #ffae00) 38%, transparent 52%, var(--m-color, #ffae00) 100%); }
+    /* 彩虹：四邊各一段色，流星繞圈即呈現完整彩虹尾跡；仍只有 translate 動畫。 */
+    #note.meteor-on.meteor-rainbow .e-top    .meteor-beam { background: linear-gradient(90deg,  transparent, #ff3b30, #ff9500); }
+    #note.meteor-on.meteor-rainbow .e-right  .meteor-beam { background: linear-gradient(180deg, transparent, #ffcc00, #34c759); }
+    #note.meteor-on.meteor-rainbow .e-bottom .meteor-beam { background: linear-gradient(270deg, transparent, #34c759, #30b0c7); }
+    #note.meteor-on.meteor-rainbow .e-left   .meteor-beam { background: linear-gradient(0deg,   transparent, #5856d6, #af52de); }
     /* 🆕 VIEW 便利贴设定逻辑弹层（点右上角紫色徽标唤起） */
     #viewRuleModal {
       position: fixed; inset: 0; z-index: 60; display: none;
@@ -571,6 +561,23 @@
     .ev-md-edit:hover, .ev-md-edit:focus-visible { opacity: 1; outline: 2px solid var(--ev-primary, #7c3aed); outline-offset: 1px; }
     .ev-md-check.done .ev-cb { background: var(--ev-primary, #7c3aed); border-color: var(--ev-primary, #7c3aed); }
     .ev-md-check.done .ev-md-check-text { text-decoration: line-through; opacity: 0.75; }
+    /* 🆕 2026-11-16：{include} 插入内容外框 —— 淡化虚线框，与主体内容视觉区隔；inline span 内 display:block 换行显示 */
+    .gp-include-box { display: block; margin: .4em 0; padding: .35em .7em; border: 1px dashed rgba(127,127,127,.5); border-radius: 8px; background: rgba(127,127,127,.05); min-width: 0; }
+    .gp-include-box > .gp-include-body > p { margin: 0; }
+    /* {include picture="X"}：同目录图片等比缩放适应框宽，绝不撑破便利贴 */
+    .gp-include-picture { display: block; max-width: 100%; height: auto; margin: .2em auto; border-radius: 4px; }
+    .gp-include-picture.pic-missing { min-height: 1.6em; padding: .3em .5em; font-size: .85em; color: var(--ev-muted, #888); background: rgba(127,127,127,.08); border-radius: 4px; white-space: pre-wrap; word-break: break-word; }
+    .gp-include-box > .gp-include-label { display: inline-flex; align-items: center; gap: .35em; padding: 0 .45em; margin-left: -.15em; font-size: .85em; line-height: 1.2; color: var(--ev-muted, #888); font-weight: 600; }
+    /* include 徽标常显（与 showLabel 无关）：TERM 📖 书 / NAME 🏷️ 标签牌。裸徽标、无底色按钮框。 */
+    .gp-include-badge { display: inline-flex; align-items: center; font-size: .95em; line-height: 1; }
+    .gp-include-box > .gp-include-directive { margin: 0 0 .4em; padding: .15em .45em; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .82em; line-height: 1.35; color: var(--ev-muted, #888); white-space: pre-wrap; word-break: break-word; background: rgba(127,127,127,.08); border-radius: 4px; }
+    /* 🆕 折叠：默认展开；只折叠 .gp-include-body，徽标/名称/directive 永不折叠。纯 CSS、零 JS。 */
+    .gp-include-fold { display: inline-flex; align-items: center; justify-content: center; cursor: pointer; user-select: none; margin-right: .05em; }
+    .gp-include-fold-cb { position: absolute; width: 1px; height: 1px; opacity: 0; margin: 0; }
+    .gp-include-fold-ico { display: inline-block; font-size: .8em; line-height: 1; color: var(--ev-muted, #888); transition: transform .15s ease; }
+    .gp-include-fold:hover .gp-include-fold-ico { color: var(--ev-text, #333); }
+    .gp-include-box:has(> .gp-include-label .gp-include-fold-cb:checked) > .gp-include-body { display: none; }
+    .gp-include-box:has(> .gp-include-label .gp-include-fold-cb:checked) .gp-include-fold-ico { transform: rotate(-90deg); }
     #body.only-undone-checks .ev-md-check.done { display: none !important; }
     /* 🆕「只看未完成」时，按 md-unit 内 checkbox 完成状态决定是否隐藏整个区块：
        - gp-all-done ＝ 区块内所有 checkbox 都完成了 → 隐藏整个块（含说明行）
@@ -614,12 +621,20 @@
       font-size: inherit;
       line-height: 1.5;
     }
-    /* 🆕 2026-11-14：gp 围栏属性徽标 — 右上角边框线 */
-    #body .md-unit.is-gp .gp-badges {
-      position: absolute; top: -6px; right: -6px;
-      display: flex; gap: 1px; z-index: 10;
-      pointer-events: auto;
+    /* 🆕 2026-11-16：名称胶囊改到上边框正中央且比内容大一号 → 向上／向下各突出约 .75em。
+       上方补 margin-top 避免压到前一个区块／上一行；框内补 padding-top 让第一行内容下移。
+       只作用于「真的有 NAME」的围栏（:has），其余 gp 区块间距零改。 */
+    #body .md-unit.is-gp:has(.gp-badge-name) {
+      margin-top: 1.2em; padding-top: 1.1em;
     }
+    /* 🆕 gp 围栏属性徽标：容器横跨整个上边框（left/right:0 → left:50% 才是框线正中央），
+       TERM／ALERT 仍靠右；容器本身不吃点击，徽标逐个还原。 */
+    #body .md-unit.is-gp .gp-badges {
+      position: absolute; top: -6px; left: 0; right: 0;
+      display: flex; justify-content: flex-end; gap: 1px; z-index: 10;
+      pointer-events: none;
+    }
+    #body .md-unit.is-gp .gp-badges > * { pointer-events: auto; }
     #body .md-unit.is-gp .gp-badge {
       width: 12px; height: 12px; border-radius: 6px;
       display: flex; align-items: center; justify-content: center;
@@ -629,10 +644,14 @@
       box-shadow: 0 1px 2px rgba(0,0,0,0.4);
       cursor: default;
     }
-    /* 🆕 配色与徽章列 TERM 徽标同口径：实心金 #D4AF37（不透明，压在边框上不透群色）＋--note-fg 字色；
-       不再跟围栏色（bg 为渐变时 --gp-bg 非合法色值 → 字看不见）；字号／高度维持徽标级 8px/12px，border-box 吸收边框。 */
+    /* 🆕 2026-11-16：名称胶囊＝上边框正中央＋比内容大一号（1.15em）；中心骑在框线上，
+       height:auto 解开徽标级 12px。配色沿用实心金 #D4AF37＋--note-fg（不透明，压在边框上不透群色）。 */
     #body .md-unit.is-gp .gp-badge.gp-badge-name {
-      width: auto; max-width: 160px; padding: 0 .5em;
+      position: absolute; left: 50%; top: 50%;
+      transform: translate(-50%, -50%);
+      width: auto; max-width: 80%; height: auto;
+      padding: .1em .6em;
+      font-size: 1.15em; line-height: 1.15;
       overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
       box-sizing: border-box;
       color: var(--note-fg, #33384a);
@@ -874,18 +893,18 @@
     }
     .tl-alert-state { background: rgba(0,0,0,.28); border-color: rgba(90,200,170,.8); }
     .tl-alert.done { filter: saturate(.55); opacity: .72; }
-    /* 🆕 2026-11-08 cr / dl / cp 日期標記：圖示＋「月-日」合成一顆長徽標（字體比正文小，日期再小一號）；
-       完整「日期+時間」放 title（hover tooltip）與 data-date（VIEW 排序讀取）。
-       便利貼沿用 --note-fg 與半透明金底，避免黃色便簽上金膠囊糊成一片 */
+    /* cr / dl / cp 日期標記：徽標＋日期套一圈虛線外框；不設背景色 → 露出便利貼紙色（--note-bg），
+       在 {gp} 圍欄內露出 #body .md-unit.is-gp 的 var(--gp-bg, transparent)。
+       ⚠️ 字色必須用 inherit 而非 var(--note-fg)：前者在圍欄內會自動跟隨 var(--gp-fg, inherit)，
+       後者是本貼全域變數、圍欄改色時不會變。border: 1px dashed currentColor 讓框線與字色完全相同。
+       完整「日期+時間」仍放 title 與 data-date（VIEW 排序讀取）。 */
     .ev-date-mark {
       display: inline-flex; align-items: center; gap: .22em;
-      margin: 0 .18em; padding: 0 .45em;
-      border-radius: 999px; line-height: 1.3; font-size: .8em; font-weight: 600;
+      margin: 0 .18em; padding: .05em .3em;
+      border: 1px dashed currentColor; border-radius: 3px;
+      line-height: 1.3; font-size: .8em; font-weight: 600;
       white-space: nowrap; cursor: help; vertical-align: baseline;
-      color: var(--note-fg, #33384a);
-      background: rgba(212,175,55,.42);
-      border: 1px solid rgba(212,175,55,.8);
-      box-shadow: 0 1px 2px rgba(0,0,0,.18);
+      color: inherit;
     }
     .ev-date-mark-md { font-size: .85em; font-variant-numeric: tabular-nums; opacity: .9; }
     /* 🆕 VIEW 便利贴（🔔 提醒）＝只读投影：把「会改动这张贴资料」的入口全部收起。
@@ -1273,6 +1292,13 @@
 </head>
 <body>
   <div id="note">
+    <!-- 🆕 外框流星 v2：四邊各一顆光條、純 translate 動畫（無 mask/filter），詳見 CSS 流星段落 -->
+    <div class="meteor-fx" aria-hidden="true">
+      <span class="meteor-edge e-top"><span class="meteor-beam"></span></span>
+      <span class="meteor-edge e-right"><span class="meteor-beam"></span></span>
+      <span class="meteor-edge e-bottom"><span class="meteor-beam"></span></span>
+      <span class="meteor-edge e-left"><span class="meteor-beam"></span></span>
+    </div>
     <div class="bar" id="bar"></div>
     <div class="head">
       <div class="title" id="title"></div>
@@ -1323,6 +1349,7 @@
       <button type="button" class="nami" data-act="goto-event" role="menuitem" title="唤起 Calendar 开启对应的编辑行程画面（被 include 的外部档为只读），并把备注框滚动到这个区块所在行＋闪烁">📝 切换编辑行程并定位</button>
       <button type="button" class="nami" data-act="edit" role="menuitem">✎ 编辑此区块</button>
       <button type="button" class="nami" data-act="color" role="menuitem" hidden title="只有 {gp} 小事件群可用：设定字体色、背景渐变与高科技边框动画">🎨 设定围栏颜色／动画</button>
+      <button type="button" class="nami" data-act="name" role="menuitem" hidden title="只有 {gp} 小事件群可用：设定 NAME 名称（上边框正中央显示），开栏行其它属性 TERM/bg/fg 等原样保留">🏷 设定围栏名称</button>
       <button type="button" class="nami" data-act="copy" role="menuitem">📋 复制整块内容</button>
       <button type="button" class="nami" data-act="move" role="menuitem" hidden title="搬移到其它便利贴：{gp} 小事件群整群搬移（含 {gp} 标记，维持分组）；整行 [[…]] 标示按一个小事件搬移">📤 搬移项目</button>
       <button type="button" class="nami" data-act="del" role="menuitem">🗑 删除此区块</button>
@@ -1335,12 +1362,14 @@
       <button type="button" class="nami" data-act="scroll" role="menuitem">📍 滚动到该事件所在位置</button>
     </div>
     <!-- 🆕 右键正文里的 TERM 术语胶囊（.tl-term-cap[data-term]）→ 下拉菜单：
-         两项都唤起主程式开 📖 术语表并套「父阶过滤」（便利贴自己没有术语表，故走 wake-main-from-note action='glossary'）。
-         与 #noteFindSameMenu / #noteBlockMenu / #vsrGotoMenu 平行，只认术语胶囊。
-         胶囊 HTML 由主窗渲染后经 IPC 送来，data-term＝原始术语名（本窗体不自己解析 TERM）。 -->
+         三項都喚起主程式開 📖 術語表：子／父節點套「父階過濾」，詳細說明只顯示該術語的「📌 圍欄說明」
+         （便利貼自己沒有術語表，故走 wake-main-from-note action='glossary'，mode 分流）。
+         與 #noteFindSameMenu / #noteBlockMenu / #vsrGotoMenu 平行，只認術語膠囊。
+         膠囊 HTML 由主窗渲染後經 IPC 送來，data-term＝原始術語名（本窗體不自己解析 TERM）。 -->
     <div class="note-addcheck-menu" id="noteTermMenu" role="menu">
       <button type="button" class="nami" data-act="children" role="menuitem">⬇ 显示此 TERM 的子节点</button>
       <button type="button" class="nami" data-act="parent" role="menuitem">⬆ 显示此 TERM 的父节点</button>
+      <button type="button" class="nami" data-act="detail" role="menuitem">📖 显示此 TERM 的详细说明</button>
     </div>
     <div class="body" id="body"></div>
     <div class="tl-text-gutter-wrap" id="editAreaGutterWrap">
@@ -1638,6 +1667,22 @@
           <button type="button" class="ac-copy" id="gcClearBtn">清除颜色</button>
           <button type="button" class="ac-copy ac-primary" id="gcApplyBtn">套用</button>
           <button type="button" class="ac-copy" id="gcCancelBtn">取消</button>
+        </div>
+      </div>
+    </div>
+    <!-- 🆕 2026-11-17：右键编辑小圆点「设定围栏名称」浮层（只改开栏行 NAME=，TERM/bg/fg/anim 等其它属性原样保留）。 -->
+    <div class="addcheck-ov" id="gpNameOv">
+      <div class="addcheck-box" id="gpNameBox">
+        <div class="ac-title">🏷 设定围栏名称 <span class="gc-key" id="gnKeyHint"></span></div>
+        <div class="ac-hint gc-hint">名称显示在围栏上边框正中央（NAME=）。<strong>只改开栏行的 NAME 属性</strong>：TERM、bg、fg、anim、ALERT、rail 等其它属性与闭栏行、群内容一概原样保留。清空后按「套用」即移除名称。</div>
+        <div class="gc-row">
+          <label class="gc-label" for="gnName">围栏名称</label>
+          <input type="text" id="gnName" maxlength="80" placeholder="例如：说明书单元的写法与用法" autocomplete="off">
+        </div>
+        <div class="ac-hint gc-mark" id="gnMarkPreview">将写入：—</div>
+        <div class="ac-actions">
+          <button type="button" class="ac-copy ac-primary" id="gnApplyBtn">套用</button>
+          <button type="button" class="ac-copy" id="gnCancelBtn">取消</button>
         </div>
       </div>
     </div>
