@@ -554,7 +554,16 @@
 //       不設任何背景色 → 露出便利貼／{gp} 圍欄的 var(--gp-bg) 背景；color: inherit 讓字色同時跟隨
 //       便利貼字色與圍欄 var(--gp-fg, inherit)，框線 currentColor 跟字色。純 CSS，DOM／排序零改動。
 //       style.css 改，bump 讓手機重拉；五處 ?v 戳刷為 lite-datemark-outline-20261118，APP_VERSION/manifest 1.10.59→1.10.60。
-const CACHE_NAME = 'md-editor-lite-v248';
+// v249：{include TERM/NAME} 新增 folded=true/false 默认折叠开关（三端 parse/expand/box 同步）；
+//       渲染端 input 带 data-gp-fold-default 标记，主进程注入跳过指令控制框。calendar-editor.js 改，
+//       五处 ?v 戳刷为 lite-include-fold-20261119，APP_VERSION/manifest 1.10.60→1.10.61。
+// v250：{list NAME} 列出全部具名围栏名称清单（三端 parse/collect/box 同步，复用 .gp-include-box + folded + .gp-name-ref 跳转）；
+//       calRenderWithIncludes/calTaskLineWithIncludes 挂链 + style.css 清单样式。calendar-editor.js/style.css 改，
+//       五处 ?v 戳刷为 lite-namelist-20261120，APP_VERSION/manifest 1.10.61→1.10.62。
+// v251：{list NAME="*关键字*"} 万用字元查询（* 通配、多段 AND、大小写不敏感、纯词＝包含）；
+//       三端 parse/collect/filter/box 同步，空结果提示带查询词。calendar-editor.js 改，
+//       五处 ?v 戳刷为 lite-namelist-wildcard-20261120，APP_VERSION/manifest 1.10.62→1.10.63。
+const CACHE_NAME = 'md-editor-lite-v251';
 const ASSETS = [
   './',
   './index.html',

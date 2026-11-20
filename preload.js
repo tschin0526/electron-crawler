@@ -155,9 +155,25 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.on('open-term-glossary', (event, payload) => callback(payload));
   },
 
-  // 🆕 桌面便利贴 {NAME=X} 名称胶囊点击：主进程转发 {name} → 主窗全局搜索同名围栏并跳转＋滚动＋闪烁
+  // 🆕 桌面便利贴 {NAME=X} 名称胶囊点击：主进程转发 {name,fromKey,fromIdx} → 主窗全局搜索同名围栏并跳转＋滚动＋闪烁
   onGpNameRefRequest: (callback) => {
     ipcRenderer.on('gp-name-ref-jump', (event, payload) => callback(payload));
+  },
+
+  // 🆕 2026-11-20：{NAME=X} 跳转后的「返回」悬浮按钮 —— 主进程广播显示/隐藏（主窗＋所有便利贴同时收）
+  onGpReturnShow: (callback) => {
+    ipcRenderer.on('gp-return-show', (event, payload) => callback(payload));
+  },
+  onGpReturnHide: (callback) => {
+    ipcRenderer.on('gp-return-hide', (event, payload) => callback(payload));
+  },
+  // 🆕 主窗收到来源快照 → 还原滚动位置（origin.type==='main' 时由主进程定向发来）
+  onGpReturnRestore: (callback) => {
+    ipcRenderer.on('gp-return-restore', (event, payload) => callback(payload));
+  },
+  // 🆕 便利贴定位完成回告（串行化：主窗等它滚完再滚自己）
+  onGpJumpDone: (callback) => {
+    ipcRenderer.on('gp-jump-done', (event, payload) => callback(payload));
   },
 
   // 🆕 桌面便利贴「新建便利贴」：Calendar 渲染端接收新建请求（浮层在便利贴窗内，这里只负责收/回）

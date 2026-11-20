@@ -16,6 +16,9 @@ const APP_ROOT = path.join(__dirname, '..');
 
 let mainWindow = null;
 let stickyCalendarReadyWindowId = null;
+// 🆕 主窗刚被便利贴重建时，名称跳转请求要等 init 完成（sticky-calendar-ready）才下发；
+//   否则 did-finish-load 就送 → taskText/行事历还没载入 → 名称索引为空，跳转定位失效。
+const pendingStickyJumpRequests = [];
 let elementViewerWindow = null;
 let domTreeViewWindow = null;
 let aiResponseViewerWindow = null;
@@ -198,7 +201,10 @@ function createWindow(options = {}) {
     //    --sticky 单独使用时主窗口已设为 show:false（仅驻留 Dock），画面上只显示便利贴；
     //    --calendar --sticky 同时使用时主窗口照常展开日历并叠加便利贴。
     const search = '?standalone=1' + ((isCalendarMode || isStickyMode) ? '&cal=1' : '') +
-      (isStickyMode && !options.skipStickyRestore ? '&sticky=1' : '') + (themeArg ? '&theme=' + themeArg : '');
+      (isStickyMode && !options.skipStickyRestore ? '&sticky=1' : '') + (themeArg ? '&theme=' + themeArg : '') +
+      // 🆕 从便利贴唤起主窗时，明确带上这张便利贴所属的 calendar.md：
+      //   否则新窗会用「上次停留的档案」→ sync 把便利贴清单换成别份 → 画面跳到 VIEW 贴。
+      (options.calFile ? '&calFile=' + encodeURIComponent(options.calFile) : '');
     mainWindow.loadFile('src/plugins/todolist/index.html', { search });
     console.log('📌 [Main] 独立模式：主窗口已加载 TodoList（standalone=1' + (themeArg ? '，主题=' + themeArg : '') + '）');
   } else {
@@ -219,16 +225,52 @@ function createWindow(options = {}) {
     mainWindow.webContents.openDevTools();
   }
 
+  // 🆕 便利贴开着时禁止关闭 Calendar → 改为隐藏并说明原因。
+  //   最小化／隐藏照旧允许；要真正关掉请先关掉所有便利贴。程式退出（before-quit）时不拦。
+  mainWindow.on('close', (event) => {
+    if (appQuitting || !stickyNotesAreOpen()) return;
+    event.preventDefault();
+    if (!mainWindow.isDestroyed() && mainWindow.isVisible()) mainWindow.hide();
+    dialog.showMessageBox({
+      type: 'info',
+      title: '无法关闭 Calendar',
+      message: '还有便利贴开启中，Calendar 不能关闭。',
+      detail: '已改为隐藏窗口。请先关闭所有便利贴，再关闭 Calendar。',
+      buttons: ['知道了'],
+      defaultId: 0,
+      noLink: true
+    }).catch(() => {});
+  });
+
   mainWindow.on('closed', () => {
     mainWindow = null;
     stickyCalendarReadyWindowId = null;
+    // 主窗被关：还没下发的名称跳转作废（用户再点会重新发起），避免旧窗口的队列污染新窗口
+    for (let i = pendingStickyJumpRequests.length - 1; i >= 0; i--) {
+      const pending = pendingStickyJumpRequests[i];
+      if (pending.timer) clearTimeout(pending.timer);
+      pendingStickyJumpRequests.splice(i, 1);
+    }
     setMainWindowCallback(null);
   });
 }
 
-function showMainWindow() {
+// 🆕 从便利贴唤起主窗（新建）时，先让便利贴「锁住当前页」：
+//   新窗载入后会推 sticky-note-sync → order-updated，便利贴若照旧按新清单重绘，
+//   当前页在新清单里找不到身份时会落到别的贴（使用者看到「分页签显示 396/505」）。
+function holdStickyPageWhileWaking() {
+  const payload = { ms: 6000 };
+  stickyNoteWindows.forEach((win) => {
+    if (win && !win.isDestroyed()) win.webContents.send('sticky-note-hold-page', payload);
+  });
+  if (stickyNoteFlipWindow && !stickyNoteFlipWindow.isDestroyed()) {
+    stickyNoteFlipWindow.webContents.send('sticky-note-hold-page', payload);
+  }
+}
+function showMainWindow(options) {
   if (!mainWindow || mainWindow.isDestroyed()) {
-    createWindow({ show: true, skipStickyRestore: true });
+    holdStickyPageWhileWaking();
+    createWindow(Object.assign({ show: true, skipStickyRestore: true }, options || {}));
   }
   if (mainWindow.isMinimized()) mainWindow.restore();
   mainWindow.show();
@@ -256,8 +298,11 @@ const stickyNoteTitleHtml = new Map(); // 'noteKey#idx' -> 主窗口渲染好的
 //   并在编辑时上报 src，让主窗口把结果写回对应文件而不是 calendar.md。
 const stickyNoteMeta = new Map();
 
-// 🆕 {include} 虚线框折叠状态：'noteKey#idx' -> Set<页内第几个 .gp-include-box 的 ordinal>
+// 🆕 {include} 虚线框折叠状态：'noteKey#idx' -> Map<ordinal, boolean>
 //   仅存进程内存、不落盘 → 跨便利贴重渲染（编辑保存/翻页/刷新推送）保持，退出应用自动清除。
+//   ★ boolean 而非 Set：{include … folded=true/false} 只是「默认态」（重启后生效），
+//     用户手动点折叠/展开必须显式记住 true/false —— 尤其「点展开」要记 false，
+//     若用 Set 的 delete 表示展开，翻页回来就会丢失、被指令默认值盖回折叠。
 //   之所以 ordinal 而非 NAME：同一页可能有多个同名 include（Map<name,Array> 逐个展开），
 //   用 DOM 顺序里的序号才能唯一区分；名称相同时序号稳定，编辑不改变 include 数量时不会错位。
 const includeFoldState = new Map();
@@ -269,13 +314,21 @@ function applyIncludeFoldToHtml(id, html) {
   if (typeof html !== 'string' || html.indexOf('gp-include-fold-cb') < 0) return html;
   const folded = includeFoldState.get(id);
   // 每个 .gp-include-box 内有且仅有一个 gp-include-fold-cb input；按出现顺序即 ordinal。
-  // ★ 先清后设：HTML 可能来自「上次注入后又回写缓存」的副本，必须让 store 成为唯一权威。
-  //   否则「取消折叠」后翻回来，旧的 checked 仍在 → 又变回折叠（反向 bug）。
+  // ★ 优先级：本会话用户手动态 > 指令默认态 > 旧行为（展开）。
+  //   - 手动态来自 includeFoldState（Map<ord,bool>），翻页/刷新/编辑保存都保留，退出即清。
+  //   - 指令默认态来自 input 的 data-gp-fold-default="1"/"0"（folded=true/false），重启后才生效。
+  // ★ 先清后设：HTML 缓存可能带旧 checked，必须让「手动态 or 指令默认态」共同决定最终值，
+  //   否则「取消折叠」后翻回来旧的 checked 仍在 → 又变回折叠（反向 bug）。
   let ord = -1;
   return html.replace(/(<input\b[^>]*\bclass="[^"]*\bgp-include-fold-cb\b[^"]*"[^>]*?>)/g, (input) => {
     const n = ++ord;
     const clean = input.replace(/\s+checked(?:\s*=\s*"[^"]*")?/g, '');
-    if (!folded || !folded.has(n)) return clean;
+    let want;
+    if (folded && folded.has(n)) want = folded.get(n);          // ① 本会话手动态（最高优先）
+    else if (/\bdata-gp-fold-default="1"/.test(input)) want = true;   // ② 指令 folded=true 默认折叠
+    else if (/\bdata-gp-fold-default="0"/.test(input)) want = false;  // ③ 指令 folded=false 默认展开
+    else want = false;                                          // ④ 未指定：旧行为＝展开
+    if (!want) return clean;
     return clean.replace(/\/?>$/, (tail) => (tail.indexOf('/') === 0 ? ' checked/' : ' checked>'));
   });
 }
@@ -312,6 +365,8 @@ let stickyMenuCloseSeq = 0;
 const pendingStickyRefreshes = new Map();
 
 let stickyNoteFile = '';            // 当前 Calendar 档案绝对路径（便利贴存档写在同目录）
+// 🆕 便利贴还开着时禁止关闭 Calendar（只能最小/隐藏）；真正退出程式时不拦，否则 app 关不掉。
+let appQuitting = false;
 let stickyNoteState = null;         // null＝本次会话还没成功读到存档 → 绝不允许落盘（见 saveStickyNoteState）
 
 function stickyStatePath() {
@@ -587,6 +642,26 @@ ipcMain.handle('sticky-notes-import-settings', async () => {
   }
 });
 function noteWinId(key, idx) { return key + '#' + idx; }
+// 🆕 2026-11-20：calendar 未开启时，跨便利贴找具名围栏。
+//   主进程缓存了每张便利贴由渲染端算好的 HTML（含 data-gp-name），这里只做字符串查找，
+//   不在主进程复制一份围栏解析逻辑（避免与渲染端漂移）。名称按 tlEscapeHtml 同一口径转义后再比对。
+function gpFindStickyByName(name) {
+  const raw = String(name == null ? '' : name).trim();
+  if (!raw) return null;
+  const enc = raw.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+  const needle = ('data-gp-name="' + enc + '"').toLowerCase();
+  const list = (stickyNoteCatalog && stickyNoteCatalog.length) ? stickyNoteCatalog : stickyNoteOrder;
+  for (const note of list) {
+    if (!note || typeof note.key !== 'string') continue;
+    // ⛔ VIEW 投影贴（🔔 提醒／自订「分页签显示」）里是各来源围栏的复本，
+    //   不排除的话任何名称都会先命中它 → 用户点哪条都跳到同一张投影贴。
+    if (isViewKey(note.key)) continue;
+    const idx = +note.idx || 0;
+    const html = stickyNoteHtml.get(noteWinId(note.key, idx)) || '';
+    if (html && html.toLowerCase().indexOf(needle) >= 0) return { key: note.key, idx: idx };
+  }
+  return null;
+}
 // 记录/更新一张便利贴的来源元数据（notes＝原始 Markdown 备注，src＝INCLUDE 来源文件名，空＝calendar.md）
 function rememberStickyMeta(note) {
   if (!note || typeof note.key !== 'string') return;
@@ -729,6 +804,7 @@ function clampToVisible(x, y, w, h) {
 
 // 退出前先把所有还开着的便利贴「最终实时 bounds」快照进存档再落盘（不依赖 moved 事件/去抖）
 app.on('before-quit', () => {
+  appQuitting = true;
   try {
     stickyNoteWindows.forEach((win, id) => captureStickyBoundsById(id, win));
     saveStickyNoteState();
@@ -1188,7 +1264,8 @@ ipcMain.handle('sticky-note-menu-close-result', (event, payload) => {
 // 把某张便利贴显示到最前：翻页模式→让它跳到该页；分体模式→显示对应窗口。返回是否成功。
 //   「下拉清单点名称」「新建便利贴后跳到新贴」共用这一处（唯一入口，避免两套显示逻辑漂移）
 //   focusUnit：🆕 主窗右击某笔小事件(群)后「跳转到便利贴」顺带要滚动定位+闪烁的目标单元描述。
-function showStickyNoteAt(key, idx, focusUnit) {
+//   restoreScrollTop：🆕 返回时还原「点击名称引用当时」的滚动位置（翻页走 show-page，分体走独立 IPC）。
+function showStickyNoteAt(key, idx, focusUnit, restoreScrollTop) {
   const i = +idx || 0;
   if (typeof key !== 'string' || !key) return false;
   let win;
@@ -1201,6 +1278,8 @@ function showStickyNoteAt(key, idx, focusUnit) {
     const payload = { key, idx: i, index: pageIndex, order: stickyNoteOrder };
     // 🆕 顺带要定位＋闪烁的小事件(群)：随翻页 payload 一并下发（便利贴窗渲染后会消费）
     if (typeof focusUnit !== 'undefined') payload.focusUnit = focusUnit;
+    // 🆕 返回原位：把点击当时的滚动位置随翻页一并下发，renderFlipPage 会在还原存档 scrollPos 后覆盖它
+    if (typeof restoreScrollTop === 'number' && isFinite(restoreScrollTop)) payload.restoreScrollTop = Math.max(0, restoreScrollTop);
     // 🆕 便利贴原本没开、由主窗「按便利贴徽标」刚唤起时窗口还在 loadFile，此刻直接 send 会丢。
     //    与 wake-main-from-note 同口径等 did-finish-load；renderer 的 initFlip 也会暂存早到的请求。
     const sendPage = () => { if (!win.isDestroyed()) win.webContents.send('sticky-note-show-page', payload); };
@@ -1220,6 +1299,14 @@ function showStickyNoteAt(key, idx, focusUnit) {
     const sendUnit = () => { if (!win.isDestroyed()) win.webContents.send('sticky-note-focus-unit', { unit: focusUnit }); };
     if (win.webContents.isLoading()) win.webContents.once('did-finish-load', sendUnit);
     else sendUnit();
+  }
+  // 🆕 分体模式：还原点击名称引用当时的滚动位置（独立窗口可能刚 loadFile，等同 did-finish-load）
+  if (typeof restoreScrollTop === 'number' && isFinite(restoreScrollTop)) {
+    const sendScroll = () => {
+      if (!win.isDestroyed()) win.webContents.send('sticky-note-restore-scroll', { scrollTop: Math.max(0, restoreScrollTop) });
+    };
+    if (win.webContents.isLoading()) win.webContents.once('did-finish-load', sendScroll);
+    else sendScroll();
   }
   return true;
 }
@@ -1503,6 +1590,19 @@ ipcMain.handle('sticky-calendar-ready', (event) => {
     return { success: false };
   }
   stickyCalendarReadyWindowId = event.sender.id;
+  // 🆕 主窗 init 完成（行事历/taskText 已就绪）→ 下发之前排队的名称跳转
+  const readyId = event.sender.id;
+  const readyJumps = pendingStickyJumpRequests.filter((p) => p.webContentsId === readyId && !p.sent);
+  readyJumps.forEach((pending) => {
+    pending.sent = true;
+    if (pending.timer) clearTimeout(pending.timer);
+    pending.send();
+  });
+  if (readyJumps.length) {
+    for (let i = pendingStickyJumpRequests.length - 1; i >= 0; i--) {
+      if (pendingStickyJumpRequests[i].sent) pendingStickyJumpRequests.splice(i, 1);
+    }
+  }
   pendingStickyEditSaves.forEach((pending) => {
     if (pending.webContentsId === event.sender.id && !pending.sent && pending.send) pending.send();
   });
@@ -1862,20 +1962,21 @@ ipcMain.handle('sticky-note-send-email', async (event, arg) => {
 });
 ipcMain.handle('sticky-notes-count', () => ({ count: stickyNoteWindows.size }));
 
-// {include} 虚线框折叠状态：读取某张便利贴内已折叠的 box 序号数组（跨重渲染恢复用）
+// {include} 虚线框折叠状态：读取某张便利贴内「本会话手动态」的 box 序号（仅折叠=true 者）
 ipcMain.handle('include-fold-get', (e, arg) => {
   const s = includeFoldState.get(includeFoldId(arg && arg.key, arg && arg.idx));
-  return s ? Array.from(s) : [];
+  if (!s) return [];
+  return Array.from(s.entries()).filter(([, v]) => v === true).map(([k]) => k);
 });
-// {include} 虚线框折叠状态：记录/取消某张便利贴内第 ord 个 box 的折叠态（folded=true 折叠）
+// {include} 虚线框折叠状态：记录某张便利贴第 ord 个 box 的手动态（folded=true 折叠／false 展开）。
+//   ★ 必须显式存 false：{include folded=true} 只是默认值，用户点展开要能压过它，直到退出应用清空。
 ipcMain.handle('include-fold-set', (e, arg) => {
   const id = includeFoldId(arg && arg.key, arg && arg.idx);
   let s = includeFoldState.get(id);
-  if (!s) { s = new Set(); includeFoldState.set(id, s); }
+  if (!s) { s = new Map(); includeFoldState.set(id, s); }
   const ord = +arg.ord;
   if (!isFinite(ord) || ord < 0) return false;
-  if (arg.folded) s.add(ord); else s.delete(ord);
-  if (!s.size) includeFoldState.delete(id);
+  s.set(ord, !!arg.folded);
   return true;
 });
 // 单张便利贴：读取自身状态（位置/尺寸/颜色/透明度）
@@ -1977,10 +2078,61 @@ ipcMain.handle('sticky-note-close-page', (e, arg) => {
 // action='edit'（缺省）→ 打开行程编辑框；action='scroll' → 只滚动定位到该行程（不打开编辑框）
 // ⚠️ 「新建便利贴」不走这里：它在便利贴窗内自己开浮层 → sticky-note-create（不必把用户带到 Calendar 表单）。
 ipcMain.handle('wake-main-from-note', (e, arg) => {
-  const win = showMainWindow();
+  const act = arg && arg.action;
+  // 🆕 2026-11-20：calendar 主窗被主动关闭后，便利贴点 {NAME=X} 不再唤起主窗、不再同步滚动 calendar。
+  //   改为回送发起的这个便利贴窗，让它在本张内容里找同名围栏 → 滚到标题＋闪烁（本地定位）。
+  //   这样既满足「calendar 关着就别动 calendar」，也不会点了完全没反应。
+  if (act === 'gp-name-jump') {
+    // ⛔ 不要再用 URL 是否含 todolist/index.html 判断 calendar 是否开着：
+    //   主程式（AI 智控台）内嵌 TodoList 时 URL 是 crawler-window.html，会被误判成「没开」。
+    //   主窗存在即视为 calendar 可用；没开时才走离线跨贴定位。
+    if (!mainWindow || mainWindow.isDestroyed()) {
+      const nm = (arg && typeof arg.name === 'string') ? arg.name : '';
+      // 同名围栏可能在【别的便利贴】：主进程缓存了每张贴的渲染 HTML，先跨贴找出来。
+      const target = gpFindStickyByName(nm);
+      if (target) {
+        // ★ 跨贴会翻页 → 先入返回栈（主窗路径由 renderer 的 tlGpReturnPrepare 负责；这里主窗不存在，必须自己入）。
+        //   来源页用主进程记录的当前页，翻页模式的 arg.key 是 '__flip__' 不是真实贴 id。
+        const srcPage = gpCurrentStickyPage();
+        gpReturnStack.push({
+          token: ++gpReturnSeq,
+          origin: {
+            type: 'sticky',
+            key: (srcPage && srcPage.key) || (arg && arg.key) || '',
+            idx: srcPage ? srcPage.idx : (+((arg && arg.idx) || 0) || 0),
+            scrollTop: (arg && typeof arg.scrollTop === 'number' && isFinite(arg.scrollTop)) ? Math.max(0, arg.scrollTop) : 0
+          },
+          label: (arg && typeof arg.label === 'string') ? arg.label.slice(0, 80) : '便利贴',
+          targetName: nm,
+          stickyPage: srcPage
+        });
+        broadcastGpReturnShow();
+        // start/end 只为满足 noteFindUnitElement 的 block 分支；name 是权威锚点，先于行号匹配。
+        const focusUnit = { kind: 'block', start: 0, end: 0, name: nm };
+        let ok = showStickyNoteAt(target.key, target.idx, focusUnit);
+        // 分体模式目标窗可能被关掉 → 开出来再定位
+        if (!ok && stickyNoteMode !== 'flip') {
+          createStickyNoteWindow(target.key, target.idx);
+          ok = showStickyNoteAt(target.key, target.idx, focusUnit);
+        }
+        if (ok) return { local: true, target: target };
+        // 两次都失败 → 撤销刚才那层，别留下「没跳却可返回」的假按钮
+        gpReturnStack.pop();
+        if (gpReturnStack.length) broadcastGpReturnShow();
+        else broadcastGpReturn('gp-return-hide', { token: 0 });
+      }
+      // 缓存里没找到：退回当前便利贴本地查找（找不到时便利贴会给明确提示）。
+      if (e && e.sender && !e.sender.isDestroyed()) {
+        e.sender.send('gp-local-name-jump', { name: nm });
+      }
+      return { local: true };
+    }
+  }
+  // 🆕 新建主窗时必须指定这张便利贴自己的 calendar.md，否则新窗用「上次停留的档案」→
+  //   sync 把便利贴清单换成别份（2/13 → 396/505）→ 画面被翻到 VIEW 贴。
+  const win = showMainWindow({ calFile: stickyNoteFile });
   // 🆕 action='glossary'：便利贴右键 TERM 胶囊 →「显示子／父节点／详细说明」→ 主窗开 📖 术语表
   //   mode='detail' 透传给渲染层：只显示该术语＋围栏 TERM=NAME 的详细说明，不做父阶过滤。
-  const act = arg && arg.action;
   const channel = act === 'scroll' ? 'scroll-sticky-event'
     : act === 'glossary' ? 'open-term-glossary'
     : act === 'gp-name-jump' ? 'gp-name-ref-jump'
@@ -1995,19 +2147,196 @@ ipcMain.handle('wake-main-from-note', (e, arg) => {
     }
     // 🆕 2026-11-15：便利贴 {NAME=X} 名称胶囊点击 → 主窗全局搜索同名围栏并跳转（与 glossary 分支同口径）
     if (channel === 'gp-name-ref-jump') {
-      win.webContents.send(channel, { name: (arg && typeof arg.name === 'string') ? arg.name : '' });
+      sendNameJump();
       return;
     }
     win.webContents.send(channel, {
       key: (arg && arg.key) || '',
       // 🆕 「找出相同的项目」切换定位：便利贴窗传来的高亮行（0-based 行号区间）＋目标原文，转交主程式 open-sticky-event
       lines: (arg && Array.isArray(arg.lines)) ? arg.lines : [],
-      text: (arg && typeof arg.text === 'string') ? arg.text : ''
+      text: (arg && typeof arg.text === 'string') ? arg.text : '',
+      // 🆕 菜单「滚动」：便利贴当前第一行的 0-based 锚点，calendar 据此滚到同一行而不是整张卡中间
+      line: (arg && arg.line && typeof arg.line === 'object') ? arg.line : null
     });
   };
-  if (win.webContents.isLoading()) win.webContents.once('did-finish-load', notifySticky);
-  else notifySticky();
+  // 🆕 2026-11-20：calendar 被主动关闭后，便利贴点击会新建主窗。
+  //   did-finish-load 只代表 HTML 载入完，init() 还没读 calendar.md / include → 名称索引为空；
+  //   此时直接送 gp-name-ref-jump 会定位失败（外表看像便利贴定位坏掉）。
+  //   统一走就绪门：没回报 sticky-calendar-ready 就先排队，就绪后再送；超时兜底避免请求永久丢失。
+  const sendNameJump = () => {
+    if (!win || win.isDestroyed() || win.webContents.isDestroyed()) return;
+    // 🆕 带来源便利贴 key/idx/scrollTop/标题：跳转后「返回」按钮要能翻回这一页的这一处。
+    win.webContents.send(channel, {
+      name: (arg && typeof arg.name === 'string') ? arg.name : '',
+      fromKey: (arg && typeof arg.key === 'string') ? arg.key : '',
+      fromIdx: +((arg && arg.idx) || 0) || 0,
+      fromScrollTop: (arg && typeof arg.scrollTop === 'number' && isFinite(arg.scrollTop)) ? Math.max(0, arg.scrollTop) : 0,
+      fromLabel: (arg && typeof arg.label === 'string') ? arg.label.slice(0, 80) : '',
+      fromLocalUnit: (arg && arg.localUnit) ? arg.localUnit : null   // 🆕 校准主窗用
+    });
+  };
+  if (channel === 'gp-name-ref-jump' && stickyCalendarReadyWindowId !== win.webContents.id) {
+    const pending = {
+      webContentsId: win.webContents.id,
+      sent: false,
+      timer: null,
+      send: sendNameJump
+    };
+    pending.timer = setTimeout(() => {
+      if (pending.sent) return;
+      const at = pendingStickyJumpRequests.indexOf(pending);
+      if (at >= 0) pendingStickyJumpRequests.splice(at, 1);
+      // 兜底：主窗始终没回报 ready 时，至少等页面载入完再送，不让这次点击石沉大海
+      const fire = () => { if (!pending.sent) { pending.sent = true; sendNameJump(); } };
+      if (!win.isDestroyed() && win.webContents.isLoading()) win.webContents.once('did-finish-load', fire);
+      else fire();
+    }, 4000);
+    pendingStickyJumpRequests.push(pending);
+  } else if (win.webContents.isLoading()) {
+    win.webContents.once('did-finish-load', notifySticky);
+  } else {
+    notifySticky();
+  }
   return true;
+});
+
+// ===== 🆕 2026-11-20：{NAME=X} 跳转「返回」栈（嵌套逐层 / 任意层选择） =====
+//   每次点击名称引用 push 一个来源；按 ↩ 默认 pop 顶层回到「本次点击前」的位置，
+//   从清单点某一层则丢弃该层及以上、回到那一层（下层仍留着可继续退）。
+//   A→①→②：第一次返回到①（点②前的位置），第二次返回到 A（点①前的位置）。
+//   origin.type==='main'   → 还原主窗各滚动容器 top（跳转只滚动不改视图，故只需 scroll）
+//   origin.type==='sticky' → showStickyNoteAt 翻回来源便利贴 key#idx，并还原「点击当时」的 scrollTop
+//   仅存进程内存；退出即清。主窗本地另有一份等长的滚动快照栈，两边严格同步 push/pop。
+//   ★ 层数与清单都以主进程快照 gpReturnSnapshot() 为唯一来源，广播给所有窗口；
+//     renderer 不再自己 +1 或兜底（旧版 `(remaining||1)` 兜底把层数永远显示成 1）。
+const gpReturnStack = [];
+let gpReturnSeq = 0;
+function gpReturnSnapshot() {
+  return {
+    token: gpReturnStack.length ? gpReturnStack[gpReturnStack.length - 1].token : 0,
+    remaining: gpReturnStack.length,
+    entries: gpReturnStack.map((s, i) => {
+      const o = s.origin || {};
+      return {
+        token: s.token,
+        index: i,
+        type: o.type === 'sticky' ? 'sticky' : 'main',
+        key: o.key || '',
+        idx: +o.idx || 0,
+        scrollTop: typeof o.scrollTop === 'number' ? o.scrollTop : 0,
+        label: s.label || (o.type === 'sticky' ? ('便利贴 ' + ((+o.idx || 0) + 1)) : '主窗'),
+        targetName: s.targetName || ''
+      };
+    })
+  };
+}
+function broadcastGpReturn(channel, payload) {
+  if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(channel, payload);
+  stickyNoteWindows.forEach((win) => { if (win && !win.isDestroyed()) win.webContents.send(channel, payload); });
+  if (stickyNoteFlipWindow && !stickyNoteFlipWindow.isDestroyed()) stickyNoteFlipWindow.webContents.send(channel, payload);
+}
+function broadcastGpReturnShow() { broadcastGpReturn('gp-return-show', gpReturnSnapshot()); }
+// 抓取「跳转当下便利贴停在那一页」→ 主窗来源的返回也要把便利贴翻回去。
+//   翻页模式读主进程记录的 lastId/lastKey/lastIdx（renderer 每次切页都会回报）；
+//   分体模式取当前开着的那张窗口的 URL 参数。
+function gpCurrentStickyPage() {
+  if (stickyNoteMode === 'flip') {
+    // 便利贴根本没开时不抓（否则会把上次会话的记忆页当成「来源」，返回时反而无故弹窗）
+    if (!stickyNoteFlipWindow || stickyNoteFlipWindow.isDestroyed()) return null;
+    const flip = peekNoteInst(FLIP_KEY, FLIP_IDX) || {};
+    const lastId = typeof flip.lastId === 'string' ? flip.lastId : '';
+    if (lastId) {
+      const note = stickyNoteOrder.find((n) => flipNoteIdentity(n) === lastId);
+      if (note) return { key: note.key, idx: +note.idx || 0 };
+    }
+    const lastKey = typeof flip.lastKey === 'string' ? flip.lastKey : '';
+    if (lastKey) return { key: lastKey, idx: +flip.lastIdx || 0 };
+    return null;
+  }
+  for (const win of stickyNoteWindows.values()) {
+    if (!win || win.isDestroyed()) continue;
+    try {
+      const u = new URL(win.webContents.getURL());
+      const key = u.searchParams.get('key') || '';
+      if (key) return { key: key, idx: +u.searchParams.get('idx') || 0 };
+    } catch (e) {}
+  }
+  return null;
+}
+// 记来源并入栈：origin={type:'main'} 或 {type:'sticky',key,idx,scrollTop}
+//   label/targetName 只用于「返回位置清单」显示，不影响返回逻辑。
+ipcMain.handle('gp-return-arm', (e, arg) => {
+  const origin = (arg && arg.origin) ? arg.origin : { type: 'main' };
+  const token = ++gpReturnSeq;
+  // ★ 跳转前「校准对方」：主窗操作时把便利贴翻到本条引用所在页＋定位到同一小事件。
+  //   showStickyNoteAt 在便利贴没开 / 该行程没有便利贴时返回 false → 对方不存在，放弃校准（保留原页）。
+  let stickyPage = gpCurrentStickyPage();
+  const cal = arg && arg.calibrateSticky;
+  if (cal && typeof cal.key === 'string' && cal.key) {
+    const ci = +cal.idx || 0;
+    if (showStickyNoteAt(cal.key, ci, cal.unit || undefined)) {
+      stickyPage = { key: cal.key, idx: ci };   // 校准后的页＝返回时要回到的「一致位置」
+    }
+  }
+  gpReturnStack.push({
+    token: token,
+    origin: origin,
+    label: (arg && typeof arg.label === 'string') ? arg.label.slice(0, 80) : '',
+    targetName: (arg && typeof arg.targetName === 'string') ? arg.targetName.slice(0, 80) : '',
+    // ★ 必须在 jump 前抓（renderer 先 arm 再发 focus-sticky-note），否则便利贴已翻到目标页就回不去了
+    stickyPage: stickyPage
+  });
+  // 唯一 show 广播点：arm 与广播同一 handler，层数不会因两次 IPC 竞态错位。
+  broadcastGpReturnShow();
+  return gpReturnSnapshot();
+});
+// 需要重画按钮时（例如新开的便利贴窗没收到上一条广播）：回当前完整快照并广播一次。
+ipcMain.handle('gp-return-show', () => { broadcastGpReturnShow(); return gpReturnSnapshot(); });
+// 新窗口/重载后主动取一次当前状态（不广播，避免别处按钮闪烁）。
+ipcMain.handle('gp-return-state', () => gpReturnSnapshot());
+// 🆕 便利贴定位完成回告 → 转给主窗，让主窗「等便利贴滚完再滚自己」（串行化，避免偶发定位漂移）。
+ipcMain.handle('gp-jump-done', (e, arg) => {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('gp-jump-done', { jumpToken: (arg && arg.jumpToken) || 0 });
+  }
+  return true;
+});
+// 按 ↩：默认 pop 顶层；带 toToken 则回到清单指定的那一层（含该层一起丢弃）。
+//   任一处按都生效；从清单选低层会一次退掉其上所有层。
+ipcMain.handle('gp-return-back', (e, arg) => {
+  if (!gpReturnStack.length) return gpReturnSnapshot();
+  let pos = gpReturnStack.length - 1;
+  const want = arg && (arg.toToken || arg.token);
+  if (want) {
+    const found = gpReturnStack.findIndex((s) => s.token === +want);
+    if (found < 0) return gpReturnSnapshot();   // 旧 token（已退掉）→ 什么都不做
+    pos = found;
+  }
+  const st = gpReturnStack[pos];
+  const o = st.origin || {};
+  const restoreCount = gpReturnStack.length - pos;  // 主窗需 pop 的本地快照份数
+  // 每次跳转都会滚动主窗（tlGlossJumpToFence 主窗路径始终执行）→ 按层数发 restore，
+  //   主窗据此 pop 对应份数并还原最底那份；本地快照栈与主进程栈严格一一对应。
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('gp-return-restore', { count: restoreCount });
+  }
+  // sticky 来源：翻回来源便利贴那一页，并还原点击当时的滚动位置
+  if (o.type === 'sticky' && o.key) {
+    const st2 = typeof o.scrollTop === 'number' ? o.scrollTop : undefined;
+    // 离线跨贴跳转的来源页由主进程抓；若已不在当前顺序里（被隐藏/关掉）→ 退回快照里的那一页。
+    if (!showStickyNoteAt(o.key, +o.idx || 0, undefined, st2) && st.stickyPage && st.stickyPage.key) {
+      showStickyNoteAt(st.stickyPage.key, +st.stickyPage.idx || 0, undefined, st2);
+    }
+  } else if (st.stickyPage && st.stickyPage.key) {
+    // ★ 主窗来源：跳转把便利贴翻到了目标页 → 返回时也要翻回跳转前那一页
+    //   （旧版只还原主窗滚动，便利贴画面留在目标页，用户以为「返回失效」）
+    showStickyNoteAt(st.stickyPage.key, +st.stickyPage.idx || 0);
+  }
+  // 丢弃第 pos 层及以上（返回后这些「待返回」都不再存在），下层仍留栈中
+  gpReturnStack.length = pos;
+  if (gpReturnStack.length) broadcastGpReturnShow();
+  else broadcastGpReturn('gp-return-hide', { token: st.token });
+  return gpReturnSnapshot();
 });
 
 // 🆕 便利贴：从便利贴菜单唤起指定主程序视图（仅开便利贴 --sticky 时主窗只驻 Dock，不显示）。
@@ -2018,6 +2347,7 @@ ipcMain.handle('wake-main-from-note', (e, arg) => {
 function openMainViewFromNote(target) {
   let win = mainWindow;
   if (!win || win.isDestroyed()) {
+    holdStickyPageWhileWaking();
     createWindow({ show: false, skipStickyRestore: true });
     win = mainWindow;
   }
@@ -2690,7 +3020,7 @@ function init(shared) {
     console.log('[Main] 🖥️ 收到 activate-main-window 请求！');
 
     try {
-      showMainWindow();
+      showMainWindow({ calFile: stickyNoteFile });
 
       console.log('[Main] ✅ 主窗口已激活！');
       return { success: true, message: '主窗口已激活' };

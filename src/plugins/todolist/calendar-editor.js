@@ -3894,13 +3894,15 @@
       const kind = isTerm ? 'term' : (isPicture ? 'picture' : 'name');
       const lookupKey = isTerm ? ('term:' + tmVal.toLowerCase())
         : isPicture ? ('picture:' + picVal.toLowerCase()) : nmVal.toLowerCase();
-      const truthy = (key) => {
+      // folded 三态：未指定=null（沿用主进程 store 旧行为）；true/false＝指令显式指定，渲染端输出 data-gp-fold-default 标记。
+      const boolTri = (key) => {
         const m = s.match(new RegExp('(?:^|\\s)' + key + '\\s*=\\s*(?:"([^"]*)"|\'([^\']*)\'|“([^”]*)”|‘([^’]*)’|([^\\s}]+))', 'i'));
-        if (!m) return false;
+        if (!m) return null;
         const v = readVal(m).toLowerCase();
         return v === 'true' || v === 'on' || v === '1' || v === 'yes';
       };
-      return { name, kind, lookupKey, showLabel: truthy('showLabel'), showDirective: truthy('showDirective') };
+      const truthy = (key) => boolTri(key) === true;
+      return { name, kind, lookupKey, showLabel: truthy('showLabel'), showDirective: truthy('showDirective'), folded: boolTri('folded') };
     }
     function tlExpandGpIncludes(text, index, renderInsert) {
       const src = String(text == null ? '' : text);
@@ -3921,14 +3923,14 @@
             const nm = p.name;
             if (!nm) return m;
             // picture= 不查围栏索引：直接产出占位，由后续路径解析填入真实图片 src。
-            if (p.kind === 'picture') return render('', nm, p.showLabel, m, p.showDirective, p.kind);
+            if (p.kind === 'picture') return render('', nm, p.showLabel, m, p.showDirective, p.kind, p.folded);
             const key = p.lookupKey;                        // name= → 裸小写；TERM= → 'term:' 前缀
             if (chain.has(key)) return '';                  // 环：吞掉标记，不再展开
             const contents = index.get(key);
             if (!contents || !contents.length) return m;     // 找不到：保留原字面量
             return contents.map((raw) => {
               const sub = expand(raw, depth + 1, new Set(chain).add(key));
-              return render(sub, nm, p.showLabel, m, p.showDirective, p.kind);
+              return render(sub, nm, p.showLabel, m, p.showDirective, p.kind, p.folded);
             }).join('');
           });
         }).join('\n');
@@ -3940,7 +3942,7 @@
     //   · 其余行 → 走与外层相同的 term/marker/nameRef/markdown 管线，术语胶囊与日期标记一致。
     //   · 整包塞进 <div class="gp-include-box">（块级！能合法包住 <p>/<ul>；用 <span> 会被浏览器把块级内容挤出框外），
     //     CSS display:block ＋ dashed 边框做视觉区隔。
-    function tlGpIncludeBoxHtml(raw, name, showLabel, directive, showDirective, kind) {
+    function tlGpIncludeBoxHtml(raw, name, showLabel, directive, showDirective, kind, folded) {
       // picture=：图片走独立路径，不跑 markdown/term/marker 管线（避免文件名被当术语或链接解析）。
       //   <img> 只带 data-gp-pic 文件名，真实 src 由各端「同目录路径解析」注入（见 noteResolveIncludePictures / tlHydrateIncludePictures）。
       const isPicture = kind === 'picture' || /\{include\s+picture\s*=/i.test(directive || '');
@@ -3970,8 +3972,13 @@
         ? '<span class="gp-include-badge is-term" title="术语详细说明">\u{1F4D6}</span>'
         : '<span class="gp-include-badge is-name" title="围栏名称引用">\u{1F3F7}\uFE0F</span>';
       // 折叠按钮：藏在 legend（左上角），只折叠 .gp-include-body；徽标、名称、directive 永不折叠。
-      //   用 <label> 包隐藏 checkbox + 箭头，纯 CSS :has(:checked) 控制，零 JS 三端通用；默认 unchecked＝展开。
-      const fold = '<label class="gp-include-fold" title="折叠/展开内容"><input type="checkbox" class="gp-include-fold-cb"><span class="gp-include-fold-ico">\u25BE</span></label>';
+      //   用 <label> 包隐藏 checkbox + 箭头，纯 CSS :has(:checked) 控制；默认 unchecked＝展开。
+      //   folded 三态：true → 指令要求默认折叠（checked + data-gp-fold-default="1"）；
+      //                false → 指令要求默认展开（data-gp-fold-default="0"，不 checked）；
+      //                null/未指定 → 不带标记，沿用主进程 store 旧行为（保持用户手动折叠态）。
+      const foldAttr = folded === true ? ' checked data-gp-fold-default="1"'
+        : folded === false ? ' data-gp-fold-default="0"' : '';
+      const fold = '<label class="gp-include-fold" title="折叠/展开内容"><input type="checkbox" class="gp-include-fold-cb"' + foldAttr + '><span class="gp-include-fold-ico">\u25BE</span></label>';
       const legend = '<legend class="gp-include-label">' + fold + badge + (showLabel ? tlEscapeHtml(name) : '') + '</legend>';
       // showDirective=true：在框内顶部显示原始 {include …} 指令文本（转义后），默认不显示。（永不折叠）
       const dirHtml = showDirective
@@ -3985,40 +3992,162 @@
     function tlRenderWithIncludes(text, index) {
       const srcText = String(text == null ? '' : text);
       const hasPicture = /\{include\s+picture\s*=/.test(srcText);
-      if ((!index || !index.size) && !hasPicture || !/\{include\s+(?:name|TERM|picture)\s*=/.test(srcText)) {
+      const hasList = TL_LIST_RE_ANY.test(srcText);
+      if (!hasList && ((!index || !index.size) && !hasPicture || !/\{include\s+(?:name|TERM|picture)\s*=/.test(srcText))) {
         return renderMarkdown(tlRenderNameRefs(tlRenderTermDefs(tlRenderNoteMarkersLines(text))));
       }
       // ⚠️ 占位符必须是普通 ASCII：真实 renderMarkdown 的后处理会剥离 NUL(\u0000) 控制字符，
       //    若用 NUL 包裹会只剩 'GI0' 裸露、split 匹配不到 → box 永不注入（2026-11-16 用户回报）。
-      //    %%TLINC_n_ZZ%% 可原样穿过 marked + balanceHtmlTags 等后处理（已用真引擎验证）。
+      //    %%TLINC_n_ZZ%% / %%TLLST_n_ZZ%% 可原样穿过 marked + balanceHtmlTags 等后处理（已用真引擎验证）。
       let seq = 0;
       const ph = new Map();
-      const prepared = tlExpandGpIncludes(text, index, (raw, nm, showLabel, directive, showDirective, kind) => {
-        const tok = '%%TLINC_' + (seq++) + '_ZZ%%';
-        ph.set(tok, { raw, nm, showLabel, directive, showDirective, kind });
-        return tok;
-      });
+      let prepared = text;
+      if (hasList || (index && index.size) || hasPicture) {
+        prepared = tlExpandGpIncludes(text, index, (raw, nm, showLabel, directive, showDirective, kind, folded) => {
+          const tok = '%%TLINC_' + (seq++) + '_ZZ%%';
+          ph.set(tok, { raw, nm, showLabel, directive, showDirective, kind, folded });
+          return tok;
+        });
+      }
+      if (hasList) {
+        prepared = tlExpandGpLists(prepared, (list, showCount, directive, folded, pattern) => {
+          const tok = '%%TLLST_' + (seq++) + '_ZZ%%';
+          ph.set(tok, { list, showCount, directive, folded, pattern, isList: true });
+          return tok;
+        });
+      }
       let html = renderMarkdown(tlRenderNameRefs(tlRenderTermDefs(tlRenderNoteMarkersLines(prepared))));
-      ph.forEach((v, tok) => { html = html.split(tok).join(tlGpIncludeBoxHtml(v.raw, v.nm, v.showLabel, v.directive, v.showDirective, v.kind)); });
+      ph.forEach((v, tok) => {
+        const box = v.isList
+          ? tlGpNameListBoxHtml(v.list, v.showCount, v.directive, v.folded, v.pattern)
+          : tlGpIncludeBoxHtml(v.raw, v.nm, v.showLabel, v.directive, v.showDirective, v.kind, v.folded);
+        html = html.split(tok).join(box);
+      });
       return html;
     }
     // 独立 task 行里的 {include}：同样用占位符法在原文层展开、checkbox 行渲染后注入 box。
     //   （blocks.forEach 的 task 分支不走 tlRenderWithIncludes，需单独覆盖；gp 块内行已在 inner 链处理。）
     function tlTaskLineWithIncludes(line, index, uid, i, forceEditable) {
       const hasPicture = /\{include\s+picture\s*=/.test(String(line));
-      if (((!index || !index.size) && !hasPicture) || !/\{include\s/.test(String(line))) {
+      const hasList = TL_LIST_RE_ANY.test(String(line));
+      if (!hasList && (((!index || !index.size) && !hasPicture) || !/\{include\s/.test(String(line)))) {
         return tlTaskLineHtml(line, uid, i, forceEditable);
       }
       let seq = 0;
       const ph = new Map();
-      const prepared = tlExpandGpIncludes(line, index, (raw, nm, showLabel, directive, showDirective, kind) => {
-        const tok = '%%TLINC_' + (seq++) + '_ZZ%%';
-        ph.set(tok, { raw, nm, showLabel, directive, showDirective, kind });
-        return tok;
-      });
+      let prepared = line;
+      if ((index && index.size) || hasPicture) {
+        prepared = tlExpandGpIncludes(line, index, (raw, nm, showLabel, directive, showDirective, kind, folded) => {
+          const tok = '%%TLINC_' + (seq++) + '_ZZ%%';
+          ph.set(tok, { raw, nm, showLabel, directive, showDirective, kind, folded });
+          return tok;
+        });
+      }
+      if (hasList) {
+        prepared = tlExpandGpLists(prepared, (list, showCount, directive, folded, pattern) => {
+          const tok = '%%TLLST_' + (seq++) + '_ZZ%%';
+          ph.set(tok, { list, showCount, directive, folded, pattern, isList: true });
+          return tok;
+        });
+      }
       let html = tlTaskLineHtml(prepared, uid, i, forceEditable);
-      ph.forEach((v, tok) => { html = html.split(tok).join(tlGpIncludeBoxHtml(v.raw, v.nm, v.showLabel, v.directive, v.showDirective, v.kind)); });
+      ph.forEach((v, tok) => {
+        const box = v.isList
+          ? tlGpNameListBoxHtml(v.list, v.showCount, v.directive, v.folded, v.pattern)
+          : tlGpIncludeBoxHtml(v.raw, v.nm, v.showLabel, v.directive, v.showDirective, v.kind, v.folded);
+        html = html.split(tok).join(box);
+      });
       return html;
+    }
+    // ========== 🆕 2026-11-20：{list NAME} 列出「所有具名围栏」的名称清单 ==========
+    // 语义：扫描全部行程中带 NAME="X" 的围栏（{gpJ|NAME="X"}…{/gpJ}），去重列出名称。
+    //   · {gpJ} 无 NAME → 不算具名，不入清单（用户定义：关键在围栏 open 行有没有 NAME）。
+    //   · 每个名称是可点击的 .gp-name-ref 胶囊 → 复用现有 tlJumpToGpName 跳转委托（多个同名会弹清单）。
+    //   · 结果塞进与 include 同款 .gp-include-box 虚线框，复用 folded 默认折叠机制。
+    //   属性：showCount=true 附「(N)」同名数量；folded=true/false 默认态（复用 data-gp-fold-default 三态）。
+    const TL_LIST_RE_ANY = /\{list\s+NAME\b[^}]*\}/i;
+    const TL_LIST_RE_ONE = /\{list\s+NAME\b[^}]*\}/gi;
+    function tlParseListToken(token) {
+      const s = String(token == null ? '' : token);
+      const readVal = (m) => {
+        if (!m) return '';
+        for (let i = 1; i < m.length; i++) if (m[i] != null) return String(m[i]).trim();
+        return '';
+      };
+      const boolTri = (key) => {
+        const m = s.match(new RegExp('(?:^|\\s)' + key + '\\s*=\\s*(?:"([^"]*)"|\'([^\']*)\'|“([^”]*)”|‘([^’]*)’|([^\\s}]+))', 'i'));
+        if (!m) return null;
+        const v = readVal(m).toLowerCase();
+        return v === 'true' || v === 'on' || v === '1' || v === 'yes';
+      };
+      // NAME="…"：万用字元查询（* 通配任意字符）。无 NAME= 时为空＝列全部。名称类参数沿用混搭引号兼容口径。
+      const pattern = readVal(s.match(/(?:^|\s)NAME\s*=\s*(?:"([^"\n]*)"|'([^'\n]*)'|“([^”\n]*)”|‘([^’\n]*)’|([^\s}]+))/i));
+      return { showCount: boolTri('showCount') === true, folded: boolTri('folded'), pattern };
+    }
+    // 万用字元匹配：* 通配任意字符；多段 * 拆成片段按顺序全命中（AND，沿用 Glossary tokens.every 口径）；
+    //   不带 * 的纯词＝包含匹配；大小写不敏感；空 pattern＝不过滤。
+    function tlGpNamePatternHit(name, pattern) {
+      if (!pattern) return true;
+      const hay = String(name == null ? '' : name).toLowerCase();
+      const needle = String(pattern).toLowerCase();
+      if (needle.indexOf('*') < 0) return hay.indexOf(needle) >= 0;
+      const parts = needle.split('*').filter((x) => x !== '');
+      if (!parts.length) return true;                       // 只有 '*' → 全部命中
+      let pos = 0;
+      for (const part of parts) {
+        const at = hay.indexOf(part, pos);
+        if (at < 0) return false;
+        pos = at + part.length;
+      }
+      return true;
+    }
+    // 按 pattern 过滤名称清单（返回新 Map，不改原清单）：每个 token 可能有不同查询，故在 expand 里逐个过滤。
+    function tlFilterGpNameList(list, pattern) {
+      if (!pattern) return list;
+      const out = new Map();
+      list.forEach((v, k) => { if (tlGpNamePatternHit(v.name, pattern)) out.set(k, v); });
+      return out;
+    }
+    // 去重收集具名围栏名称：Map<lowercase, {name, count}>，按首次出现顺序（tlCollectGpNames 已按此返回）。
+    function tlCollectGpNameList() {
+      const out = new Map();
+      const src = (typeof tlCollectGpNames === 'function') ? tlCollectGpNames() : new Map();
+      src.forEach((arr, key) => {
+        const nm = String((arr && arr[0] && arr[0].name) || '').trim();
+        if (!nm) return;
+        out.set(key, { name: nm, count: arr.length });
+      });
+      return out;
+    }
+    // 把清单渲染成虚线框：每个名称一个可点击胶囊（.gp-name-ref），folded 三态同 include。
+    function tlGpNameListBoxHtml(list, showCount, directive, folded, pattern) {
+      const entries = Array.from(list.values());
+      const body = entries.length
+        ? '<ul class="gp-name-list">' + entries.map((it) => {
+            const cnt = showCount ? ' <span class="gp-name-list-count">(' + it.count + ')</span>' : '';
+            return '<li><span class="gp-name-ref" data-gp-name-ref="' + tlEscapeHtml(it.name) + '"' +
+              ' title="跳转到围栏：' + tlEscapeHtml(it.name) + '">\u{1F3F7}\uFE0F ' + tlEscapeHtml(it.name) + '</span>' + cnt + '</li>';
+          }).join('') + '</ul>'
+        : pattern
+        ? '<div class="gp-name-list-empty">没有名称匹配 <code>' + tlEscapeHtml(pattern) + '</code> 的具名围栏</div>'
+        : '<div class="gp-name-list-empty">尚未有具名围栏（在围栏 open 行写 NAME="名称" 即可，如 <code>{gpJ|NAME="X"}</code>）</div>';
+      const foldAttr = folded === true ? ' checked data-gp-fold-default="1"'
+        : folded === false ? ' data-gp-fold-default="0"' : '';
+      const fold = '<label class="gp-include-fold" title="折叠/展开内容"><input type="checkbox" class="gp-include-fold-cb"' + foldAttr + '><span class="gp-include-fold-ico">\u25BE</span></label>';
+      const legend = '<legend class="gp-include-label">' + fold + '<span class="gp-include-badge is-name" title="具名围栏清单">\u{1F3F7}\uFE0F</span>围栏名称清单 <span class="gp-name-list-total">' + entries.length + '</span></legend>';
+      const dirHtml = '<div class="gp-include-directive">' + tlEscapeHtml(directive || '') + '</div>';
+      return '<fieldset class="gp-include-box gp-name-list-box" data-gp-name-list="1">' + legend + dirHtml + '<div class="gp-include-body">' + body + '</div></fieldset>';
+    }
+    // 占位符法展开 {list NAME}：与 include 共用 %%TLINC_n_ZZ%% 序列但独立 ph 项（带 isList 标记）。
+    function tlExpandGpLists(text, renderInsert) {
+      const src = String(text == null ? '' : text);
+      if (!TL_LIST_RE_ANY.test(src)) return src;
+      const all = tlCollectGpNameList();
+      return src.replace(TL_LIST_RE_ONE, (m) => {
+        const p = tlParseListToken(m);
+        const list = tlFilterGpNameList(all, p.pattern);
+        return renderInsert(list, p.showCount, m, p.folded, p.pattern);
+      });
     }
     // 扫 tlCalEvents 全部行程的 gp 围栏 NAME → {include} 索引（与 tlCollectGpNames 同扫描口径）。
     function tlCollectGpIncludeIndex() {
@@ -4650,40 +4779,57 @@
     // 🆕 2026-11-14：Glossary 跳转到 gp 围栏
     //   · 便利贴路径（ev.sticky > 0）→ focus-sticky-note IPC + focusUnit → 便利贴 webview 内部滚动+闪烁（追加，不 return）
     //   · 主窗口路径 → 事件卡居中 → 精定位 .md-unit-edit[data-start,data-end] → 闪烁（两者都执行）
-    async function tlGlossJumpToFence(uid, startLine, endLine) {
+    //   name：具名围栏的名称（{NAME=X} 跳转传入）→ 以 .md-unit.is-gp[data-gp-name] 为权威锚点，
+    //         避免只靠行号落到「引用了同名文字的别的围栏」（2026-11-20 用户回报）。
+    // 🆕 串行化握手：便利贴滚完回告 gp-jump-done 后主窗才滚自己（两窗并发滚动会偶发定位漂移）。
+    let tlGpJumpSeq = 0;
+    let tlGpPendingJump = null;
+    if (typeof window !== 'undefined' && window.electronAPI && typeof window.electronAPI.onGpJumpDone === 'function') {
+      window.electronAPI.onGpJumpDone((p) => {
+        if (tlGpPendingJump && p && +p.jumpToken === tlGpPendingJump.token) tlGpPendingJump.finish();
+      });
+    }
+
+    function tlTargetHasSticky(uid, ev) {
+      return (parseInt(ev && ev.sticky, 10) || 0) > 0 ||
+        ((typeof tlIsTempSticky === 'function') && tlIsTempSticky(uid));
+    }
+    async function tlGlossJumpToFence(uid, startLine, endLine, name) {
       tlCloseGlossary();
-      // ① 便利贴路径：sticky>0 的事件 → 唤起便利贴 + 内部定位闪烁
+      const wantName = String(name == null ? '' : name).trim();
+      const jumpToken = ++tlGpJumpSeq;
       const ev = (tlCalEvents || []).find((e) => e && e.uid === uid);
-      const stickyCount = parseInt(ev && ev.sticky, 10) || 0;
-      if (stickyCount > 0) {
-        try {
-          await window.electronAPI.invoke('focus-sticky-note', {
-            key: uid,
-            idx: 0,
-            focusUnit: { kind: 'block', start: startLine, end: endLine }
-          });
-        } catch (err) {
-          // 便利贴唤起失败不影响主窗口路径继续执行
-          console.warn('[Glossary] 便利贴唤起失败：', err && err.message);
+      // 🆕 临时便利贴（右键「临时开启为便利贴」）不写 sticky 字段，ev.sticky 恒为 0；
+      //   但它确实有便利贴页 → 必须一起走 focus-sticky-note，否则只有 calendar 跳、便利贴不动。
+      const hasSticky = tlTargetHasSticky(uid, ev);
+      // 连续点两次名称：取消上一笔等待，别让旧目标在后来把画面滚走
+      if (tlGpPendingJump && tlGpPendingJump.timer) clearTimeout(tlGpPendingJump.timer);
+      tlGpPendingJump = null;
+
+      // 主窗滚动抽成一处：★ 只滚一次（旧版先 card 再 300ms 后 unit，两次 smooth 动画叠加＝偶发偏位真因之一）。
+      const runMainJump = () => {
+        const cardEl = document.querySelector('[data-uid="' + uid + '"]');
+        if (!cardEl || !cardEl.offsetParent) {
+          if (hasSticky) { showToast('已切换到便利贴；主窗口当前视图未显示该事件', 'info'); }
+          else { showToast('当前视图未显示该事件，请切换到包含它的视图后再试', 'danger'); }
+          return;
         }
-      }
-      // ② 主窗口路径（始终执行）：事件卡居中 + 金色描边闪 2s
-      const cardEl = document.querySelector('[data-uid="' + uid + '"]');
-      if (!cardEl || !cardEl.offsetParent) {
-        if (stickyCount > 0) { showToast('已切换到便利贴；主窗口当前视图未显示该事件', 'info'); }
-        else { showToast('当前视图未显示该事件，请切换到包含它的视图后再试', 'danger'); }
-        return;
-      }
-      cardEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      cardEl.classList.remove('tl-jump-flash');
-      void cardEl.offsetWidth;
-      cardEl.classList.add('tl-jump-flash');
-      setTimeout(() => cardEl.classList.remove('tl-jump-flash'), 2000);
-      // ③ 精定位围栏对应的 .md-unit-edit[data-start,data-end]
-      setTimeout(() => {
-        const exactBtn = cardEl.querySelector('.md-unit-edit[data-start="' + startLine + '"][data-end="' + endLine + '"]');
+        // 精定位围栏：★ 具名时 data-gp-name 精确命中（行号只作兜底）
         let targetUnit = null;
-        if (exactBtn) targetUnit = exactBtn.closest('.md-unit');
+        if (wantName) {
+          const named = Array.prototype.slice.call(cardEl.querySelectorAll('.md-unit.is-gp[data-gp-name]'));
+          const hit = named.find((u) => String(u.getAttribute('data-gp-name') || '').trim().toLowerCase() === wantName.toLowerCase());
+          if (hit) targetUnit = hit;
+          else {
+            const badges = Array.prototype.slice.call(cardEl.querySelectorAll('.gp-badge-name'));
+            const badge = badges.find((b) => String(b.textContent || '').trim().toLowerCase().indexOf(wantName.toLowerCase()) >= 0);
+            if (badge) targetUnit = badge.closest('.md-unit.is-gp') || badge.closest('.md-unit');
+          }
+        }
+        if (!targetUnit) {
+          const exactBtn = cardEl.querySelector('.md-unit-edit[data-start="' + startLine + '"][data-end="' + endLine + '"]');
+          if (exactBtn) targetUnit = exactBtn.closest('.md-unit');
+        }
         if (!targetUnit) {
           const btns = cardEl.querySelectorAll('.md-unit-edit[data-start][data-end]');
           for (let i = 0; i < btns.length; i++) {
@@ -4692,15 +4838,48 @@
             if (s <= startLine && e >= endLine) { targetUnit = btns[i].closest('.md-unit'); break; }
           }
         }
+        // 用户要的是「标题的位置」→ 有 NAME 徽标就滚徽标；一次 smooth 到位
+        const anchor = (wantName && targetUnit && targetUnit.querySelector('.gp-badge-name')) || targetUnit || cardEl;
+        anchor.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        cardEl.classList.remove('tl-jump-flash');
+        void cardEl.offsetWidth;
+        cardEl.classList.add('tl-jump-flash');
+        setTimeout(() => cardEl.classList.remove('tl-jump-flash'), 2000);
         if (targetUnit) {
-          targetUnit.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
           if (typeof tlBlinkFound === 'function') tlBlinkFound(targetUnit);
           else {
             targetUnit.classList.add('fs-found-blink');
             setTimeout(() => targetUnit.classList.remove('fs-found-blink'), 4200);
           }
         }
-      }, 300);
+      };
+
+      if (hasSticky) {
+        // ① 便利贴路径先走（含临时便利贴）；拿到回告（或超时兜底 1.2s）后才滚主窗
+        let finished = false, timer = null;
+        const finish = () => {
+          if (finished) return;
+          finished = true;
+          if (timer) clearTimeout(timer);
+          if (tlGpPendingJump && tlGpPendingJump.token === jumpToken) tlGpPendingJump = null;
+          runMainJump();
+        };
+        timer = setTimeout(finish, 1200);
+        tlGpPendingJump = { token: jumpToken, timer: timer, finish: finish };
+        try {
+          const res = await window.electronAPI.invoke('focus-sticky-note', {
+            key: uid,
+            idx: 0,
+            focusUnit: { kind: 'block', start: startLine, end: endLine, name: wantName, jumpToken: jumpToken }
+          });
+          if (res && res.success === false) finish();
+        } catch (err) {
+          console.warn('[Glossary] 便利贴唤起失败：', err && err.message);
+          finish();
+        }
+      } else {
+        runMainJump();
+      }
     }
     // 暴露到 window（HTML onclick 用）
     if (typeof window !== 'undefined') {
@@ -4711,7 +4890,10 @@
     //   key 小写（大小写视为同名）；每个名称收集所有命中来源 [{uid,title,date,name,start,end}]，供「多个同名弹清单」。
     function tlCollectGpNames() {
       const map = new Map();
-      (tlCalEvents || []).forEach((ev) => {
+      // ⛔ 必须含 include 档的事件：便利贴本身由 tlStickyNoteRefs（tlLiveCalEvents）渲染，
+      //   只扫 tlCalEvents 会让 include 档里的具名围栏「清单看得到、点击找不到」。
+      const list = (typeof tlLiveCalEvents === 'function') ? tlLiveCalEvents() : (tlCalEvents || []);
+      list.forEach((ev) => {
         if (!ev || !ev.notes) return;
         const lines = String(ev.notes).replace(/\r\n/g, '\n').split('\n');
         const scan = (typeof tlGpFenceScan === 'function') ? tlGpFenceScan(lines) : { ranges: [] };
@@ -4726,28 +4908,244 @@
       });
       return map;
     }
+    // 🆕 2026-11-20「跳转前校准」：取被点击名称引用【所在的小事件】坐标，作为校准对方的基准。
+    //   块级小事件 → .md-unit-edit[data-start][data-end]；task 行 → .ev-md-edit[data-line]。
+    function tlRefLocalUnit(ref) {
+      if (!ref) return null;
+      const unit = ref.closest('.md-unit');
+      if (unit) {
+        const btn = unit.querySelector('.md-unit-edit[data-start][data-end]');
+        if (btn) {
+          const s = parseInt(btn.getAttribute('data-start'), 10);
+          const e = parseInt(btn.getAttribute('data-end'), 10);
+          if (isFinite(s) && isFinite(e)) return { kind: 'block', start: s, end: e };
+        }
+      }
+      const card = ref.closest('[data-uid]') || ref.closest('.ev-item');
+      if (card) {
+        const edits = Array.prototype.slice.call(card.querySelectorAll('.ev-md-edit[data-line], .ev-cb[data-line]'));
+        let best = null;
+        edits.forEach((ed) => {
+          // DOCUMENT_POSITION_FOLLOWING(4)：ref 在该圆点之后 → 就是这一行的圆点
+          if ((ed.compareDocumentPosition(ref) & 4) && !best) best = ed;
+        });
+        if (!best && edits.length) best = edits[0];
+        if (best) {
+          const l = parseInt(best.getAttribute('data-line'), 10);
+          if (isFinite(l)) return { kind: 'check', line: l };
+        }
+      }
+      return null;
+    }
+    // 🆕 便利贴来源：先把主窗校准到便利贴当前所在事件/小事件（对方不存在就放弃）。
+    //   用 behavior:'auto' 瞬时定位，避免与紧随的跳转 smooth 动画叠加。
+    function tlCalibrateMainToUnit(uid, localUnit) {
+      if (!uid) return false;
+      const card = document.querySelector('[data-uid="' + uid + '"]');
+      if (!card || !card.offsetParent) return false;
+      let anchor = card;
+      if (localUnit && localUnit.kind === 'block' && isFinite(localUnit.start) && isFinite(localUnit.end)) {
+        const btn = card.querySelector('.md-unit-edit[data-start="' + localUnit.start + '"][data-end="' + localUnit.end + '"]');
+        if (btn) anchor = btn.closest('.md-unit') || card;
+      } else if (localUnit && localUnit.kind === 'check' && isFinite(localUnit.line)) {
+        const ed = card.querySelector('.ev-md-edit[data-line="' + localUnit.line + '"]') ||
+          card.querySelector('.ev-cb[data-line="' + localUnit.line + '"]');
+        if (ed) anchor = ed.closest('.md-unit') || ed;
+      }
+      anchor.scrollIntoView({ behavior: 'auto', block: 'center' });
+      return true;
+    }
+    // ========== 🆕 2026-11-20：{NAME=X} 跳转后的「返回原位」悬浮按钮（主窗侧） ==========
+    //   一次点击来源快照：主窗滚动留本地（DOM 节点不能过 IPC），主进程只记「type + 便利贴 key/idx」。
+    //   origin.type='main' → 返回时主进程发 gp-return-restore → 这里用本地快照还原滚动。
+    //   origin.type='sticky' → 返回时主进程 showStickyNoteAt(key,idx) 翻回来源便利贴（主窗滚动也一并还原）。
+    let tlGpReturnOrigin = null;
+    const tlGpReturnScrollStack = [];   // 与主进程 gpReturnStack 等长同步：每次 prepare push 一份，每次 restore pop 一份
+    // 捕获主窗当前所有可滚动容器 + window 的 top（快照留本地，不 IPC）。
+    function tlGpReturnCaptureScrolls() {
+      const snaps = [];
+      document.querySelectorAll('*').forEach((el) => {
+        try {
+          const oy = getComputedStyle(el).overflowY;
+          if ((oy === 'auto' || oy === 'scroll') && el.scrollHeight > el.clientHeight + 2) {
+            snaps.push({ node: el, top: el.scrollTop });
+          }
+        } catch (e) {}
+      });
+      const se = document.scrollingElement || document.documentElement;
+      snaps.push({ win: true, top: window.scrollY || (se && se.scrollTop) || 0, left: window.scrollX || 0 });
+      return snaps;
+    }
+    function tlGpReturnRestoreScrolls(snaps) {
+      (snaps || []).forEach((s) => {
+        try {
+          if (s.win) window.scrollTo(s.left || 0, s.top || 0);
+          else if (s.node && s.node.isConnected) s.node.scrollTop = s.top;
+        } catch (e) {}
+      });
+    }
+    // 准备来源（主窗点击 / 便利贴 IPC 都调）：记 origin + 抓主窗滚动快照入栈。
+    //   extra={scrollTop,label}：便利贴来源把「点击当时」的滚动位置与标题带过来，供返回时还原／清单显示。
+    function tlGpReturnPrepare(type, key, idx, extra) {
+      const x = extra || {};
+      tlGpReturnOrigin = (type === 'sticky')
+        ? {
+            type: 'sticky', key: key || '', idx: +idx || 0,
+            scrollTop: (typeof x.scrollTop === 'number' && isFinite(x.scrollTop)) ? Math.max(0, x.scrollTop) : 0,
+            label: x.label || ('便利贴 ' + ((+idx || 0) + 1))
+          }
+        : { type: 'main', label: x.label || '主窗', uid: x.uid || '', localUnit: x.localUnit || null };
+      tlGpReturnScrollStack.push(tlGpReturnCaptureScrolls());
+    }
+    // 本次 prepare 后没能真正跳转（找不到名称/取消清单）→ 回滚刚 push 的快照，保持栈同步。
+    function tlGpReturnAbort() {
+      tlGpReturnOrigin = null;
+      if (tlGpReturnScrollStack.length) tlGpReturnScrollStack.pop();
+    }
+    // 真正跳转已发起 → arm 主进程（主进程同处广播 show，层数由唯一快照决定）。
+    //   找不到名称/弹清单未选时不调用，避免空栈冒按钮。
+    function tlGpReturnArmAndShow() {
+      if (!tlGpReturnOrigin || !window.electronAPI || typeof window.electronAPI.invoke !== 'function') return;
+      const origin = tlGpReturnOrigin;
+      tlGpReturnOrigin = null;
+      window.electronAPI.invoke('gp-return-arm', {
+        origin: origin,
+        label: origin.label || '',
+        targetName: origin.targetName || '',
+        // 主窗操作：请主进程在跳转前把便利贴校准到「本条引用所在事件/小事件」
+        calibrateSticky: (origin.type === 'main' && origin.uid)
+          ? { key: origin.uid, idx: 0, unit: origin.localUnit || null }
+          : null
+      }).then((snap) => { if (snap && snap.remaining) tlGpReturnBtnShow(snap); })
+        .catch(() => {});
+    }
+    // 悬浮返回工具组（fixed 右下）：↩ 返回原位 (N) ＋ ☰ 返回位置清单。
+    //   ★ 层数/清单只认主进程快照 payload.entries.length，不再做 `||1` 兜底（那是旧版永远显示 1 的元凶之一）。
+    function tlGpReturnEnsureDock() {
+      let dock = document.getElementById('tlGpReturnDock');
+      if (dock) return dock;
+      dock = document.createElement('div');
+      dock.id = 'tlGpReturnDock';
+      dock.className = 'gp-return-dock';
+      const panel = document.createElement('div');
+      panel.id = 'tlGpReturnList';
+      panel.className = 'gp-return-list';
+      const listBtn = document.createElement('button');
+      listBtn.id = 'tlGpReturnListBtn';
+      listBtn.type = 'button';
+      listBtn.className = 'gp-return-list-btn';
+      listBtn.title = '返回位置清单';
+      listBtn.textContent = '\u2630';
+      listBtn.addEventListener('click', (e) => {
+        e.preventDefault(); e.stopPropagation();
+        panel.style.display = (panel.style.display === 'flex') ? 'none' : 'flex';
+      });
+      const back = document.createElement('button');
+      back.id = 'tlGpReturnBtn';
+      back.type = 'button';
+      back.className = 'gp-return-btn';
+      back.addEventListener('click', (e) => {
+        e.preventDefault(); e.stopPropagation();
+        tlGpReturnBackInvoke();
+      });
+      dock.appendChild(panel); dock.appendChild(listBtn); dock.appendChild(back);
+      document.body.appendChild(dock);
+      return dock;
+    }
+    function tlGpReturnBackInvoke(toToken) {
+      if (window.electronAPI && typeof window.electronAPI.invoke === 'function') {
+        window.electronAPI.invoke('gp-return-back', toToken ? { toToken: +toToken } : {}).catch(() => {});
+      }
+      const panel = document.getElementById('tlGpReturnList');
+      if (panel) panel.style.display = 'none';
+    }
+    function tlGpReturnBtnShow(payload) {
+      const entries = (payload && Array.isArray(payload.entries)) ? payload.entries : [];
+      const remaining = entries.length ? entries.length : Math.max(0, +((payload && payload.remaining) || 0) || 0);
+      if (!remaining) { tlGpReturnBtnHide(); return; }
+      const dock = tlGpReturnEnsureDock();
+      const btn = document.getElementById('tlGpReturnBtn');
+      btn.innerHTML = '\u21A9 返回原位 <span class="gp-return-count">(' + remaining + ')</span>';
+      btn.title = '回到点击名称引用前的位置（还有 ' + remaining + ' 层可返回）';
+      btn.style.display = 'inline-flex';
+      const listBtn = document.getElementById('tlGpReturnListBtn');
+      if (listBtn) listBtn.style.display = 'inline-flex';
+      const panel = document.getElementById('tlGpReturnList');
+      if (panel) {
+        panel.innerHTML = '<div class="gp-return-list-title">返回位置清单 · 点选直接回到该层</div>' +
+          entries.slice().reverse().map((en, r) => {
+            const src = en.type === 'sticky'
+              ? '便利贴「' + tlEscapeHtml(en.label || ('第 ' + ((+en.idx || 0) + 1) + ' 张')) + '」'
+              : tlEscapeHtml(en.label || '主窗');
+            const dst = en.targetName ? ' \u2192 ' + tlEscapeHtml(en.targetName) : '';
+            return '<button type="button" class="gp-return-list-row" data-token="' + (+en.token || 0) + '">' +
+              '<span class="gp-return-list-depth">' + (remaining - r) + '</span>' +
+              '<span>' + src + dst + '</span></button>';
+          }).join('');
+        panel.querySelectorAll('.gp-return-list-row').forEach((row) => {
+          row.addEventListener('click', (e) => {
+            e.preventDefault(); e.stopPropagation();
+            tlGpReturnBackInvoke(+row.getAttribute('data-token'));
+          });
+        });
+      }
+      dock.style.display = 'flex';
+    }
+    function tlGpReturnBtnHide() {
+      const dock = document.getElementById('tlGpReturnDock');
+      if (!dock) return;
+      dock.style.display = 'none';
+      const panel = document.getElementById('tlGpReturnList');
+      if (panel) panel.style.display = 'none';
+    }
+    // 监听主进程广播：显示/隐藏工具组；按主进程给的层数还原主窗滚动（来源无论 main/sticky 都还原主窗）。
+    if (typeof window !== 'undefined' && window.electronAPI) {
+      if (typeof window.electronAPI.onGpReturnShow === 'function') window.electronAPI.onGpReturnShow((p) => tlGpReturnBtnShow(p));
+      if (typeof window.electronAPI.onGpReturnHide === 'function') window.electronAPI.onGpReturnHide(() => tlGpReturnBtnHide());
+      if (typeof window.electronAPI.onGpReturnRestore === 'function') {
+        window.electronAPI.onGpReturnRestore((p) => {
+          // 选清单低层时一次退多层：pop 指定份数，只还原最底那份（＝目标层点击前的位置）
+          const count = Math.max(1, +(p && p.count) || 1);
+          let snaps = null;
+          for (let i = 0; i < count; i++) { const s = tlGpReturnScrollStack.pop(); if (s) snaps = s; }
+          if (snaps) tlGpReturnRestoreScrolls(snaps);
+        });
+      }
+      // 主窗重载但主进程栈还在：补占位快照保持两边等长，并恢复按钮显示
+      if (typeof window.electronAPI.invoke === 'function') {
+        window.electronAPI.invoke('gp-return-state', {}).then((snap) => {
+          if (!snap || !snap.remaining) return;
+          while (tlGpReturnScrollStack.length < snap.remaining) tlGpReturnScrollStack.push(tlGpReturnCaptureScrolls());
+          tlGpReturnBtnShow(snap);
+        }).catch(() => {});
+      }
+    }
     // 跳转入口（主窗内联点击／便利贴经 IPC 都走这里）：0→toast；1→直接跳；多→弹清单让使用者选。
     function tlJumpToGpName(name) {
       const nm = String(name == null ? '' : name).trim();
       if (!nm) return;
+      if (tlGpReturnOrigin) tlGpReturnOrigin.targetName = nm;   // 清单里显示「从哪跳去哪」
       const matches = tlCollectGpNames().get(nm.toLowerCase()) || [];
-      if (!matches.length) { showToast('找不到围栏名称：' + nm, 'danger'); return; }
+      if (!matches.length) { tlGpReturnAbort(); showToast('找不到围栏名称：' + nm, 'danger'); return; }
       if (matches.length === 1) {
         const m = matches[0];
-        tlGlossJumpToFence(m.uid, m.start, m.end);
+        tlGpReturnArmAndShow();   // 先 arm：主进程要在便利贴翻页前抓「跳转前那一页」
+        tlGlossJumpToFence(m.uid, m.start, m.end, nm);
         return;
       }
       tlOpenGpNamePicker(nm, matches);
     }
-    function tlCloseGpNamePicker() {
+    // abort=true（默认，× 按钮/overlay 取消）：回滚本次 prepare 的快照；定位按钮传 false 保留。
+    function tlCloseGpNamePicker(abort) {
       const ov = document.getElementById('tlGpNamePickerOverlay');
       if (ov) ov.style.display = 'none';
+      if (abort !== false) tlGpReturnAbort();
     }
     // 多个同名围栏的清单弹层（镜像 tlOpenGlossary 的弹层结构）：每行＝行程标题＋日期＋「定位」按钮。
     function tlOpenGpNamePicker(name, matches) {
       const ov = document.getElementById('tlGpNamePickerOverlay');
       const body = document.getElementById('tlGpNamePickerBody');
-      if (!ov || !body) { const m = matches[0]; tlGlossJumpToFence(m.uid, m.start, m.end); return; }
+      if (!ov || !body) { const m = matches[0]; tlGpReturnArmAndShow(); tlGlossJumpToFence(m.uid, m.start, m.end, name); return; }
       const titleEl = document.getElementById('tlGpNamePickerTitle');
       if (titleEl) titleEl.textContent = '\u{1F3F7}\uFE0F ' + name + '（' + matches.length + ' 个同名围栏）';
       body.innerHTML = matches.map((m) => {
@@ -4762,8 +5160,9 @@
           const uid = btn.getAttribute('data-uid');
           const s = parseInt(btn.getAttribute('data-start'), 10);
           const e = parseInt(btn.getAttribute('data-end'), 10);
-          tlCloseGpNamePicker();
-          tlGlossJumpToFence(uid, s, e);
+          tlCloseGpNamePicker(false);                          // 取消＝false：保留本次 prepare 的快照
+          tlGpReturnArmAndShow();   // 先 arm：便利贴还没翻页，抓得到来源页
+          tlGlossJumpToFence(uid, s, e, name);
         });
       });
       ov.onclick = (e) => { if (e.target === ov) tlCloseGpNamePicker(); };
@@ -4772,10 +5171,19 @@
     // 主窗正文名称胶囊左键委托（便利贴窗经 IPC 回主窗走 tlJumpToGpName 同一入口）。
     if (typeof document !== 'undefined') {
       document.addEventListener('click', function (e) {
+        // 返回工具组自身点击不参与胶囊委托（它们有自己的监听）
+        if (e.target && e.target.closest && e.target.closest('#tlGpReturnDock')) return;
         const ref = e.target && e.target.closest && e.target.closest('.gp-name-ref[data-gp-name-ref]');
         if (!ref) return;
         e.preventDefault();
         e.stopPropagation();
+        const evCard = ref.closest('.ev-item');
+        const uid = (evCard && evCard.getAttribute('data-uid')) ||
+          (ref.closest('[data-uid]') && ref.closest('[data-uid]').getAttribute('data-uid')) || '';
+        const titleEl = evCard && evCard.querySelector('.ev-title');
+        const label = '主窗' + (titleEl && titleEl.textContent.trim()
+          ? '「' + titleEl.textContent.trim().slice(0, 24) + '」' : '');
+        tlGpReturnPrepare('main', '', 0, { label: label, uid: uid, localUnit: tlRefLocalUnit(ref) });
         tlJumpToGpName(ref.getAttribute('data-gp-name-ref'));
       });
     }
@@ -4783,6 +5191,8 @@
       window.tlRenderNameRefs = tlRenderNameRefs;
       window.tlCollectGpNames = tlCollectGpNames;
       window.tlJumpToGpName = tlJumpToGpName;
+      window.tlGpReturnPrepare = tlGpReturnPrepare;   // 🆕 便利贴 IPC 入口记来源用
+      window.tlCalibrateMainToUnit = tlCalibrateMainToUnit;  // 🆕 便利贴来源：跳转前校准主窗
       window.tlOpenGpNamePicker = tlOpenGpNamePicker;
       window.tlCloseGpNamePicker = tlCloseGpNamePicker;
     }
@@ -4800,7 +5210,31 @@
     //    两段式：① 游标／选中日／列表锚点设到该行程日期 → 各模式渲染后自动滚到该日期；
     //            ② 渲染落地后精定位 [data-uid] 事件行（列表／明细）＋金色闪烁；年/月网格无行时退而闪日期格。
     //    返回 true＝已发起滚动；false＝找不到行程或日期（调用方可自行提示，不产生任何卷动副作用）。
-    function tlScrollToEventByUid(uid) {
+    // 🆕 在事件卡里按 0-based 行号找锚点（便利贴与 calendar 共用 tlRenderNotes，行号一致）。
+    function tlLineAnchorInEvent(row, ref) {
+      if (!row || !ref || typeof ref !== 'object') return null;
+      const line = +ref.line;
+      if (Number.isFinite(line)) {
+        const hit = row.querySelector('.ev-md-edit[data-line="' + line + '"], .ev-cb[data-line="' + line + '"]');
+        if (hit) return hit;
+        const units = row.querySelectorAll('.md-unit[data-start][data-end]');
+        for (let i = 0; i < units.length; i++) {
+          const s = +units[i].getAttribute('data-start'), e = +units[i].getAttribute('data-end');
+          if (Number.isFinite(s) && Number.isFinite(e) && s <= line && line <= e) return units[i];
+        }
+        return null;
+      }
+      const s = +ref.start, e = +ref.end;
+      if (!Number.isFinite(s) || !Number.isFinite(e)) return null;
+      const btn = row.querySelector('.md-unit-edit[data-start="' + s + '"][data-end="' + e + '"]');
+      if (btn) return btn.closest('.md-unit') || btn;
+      const units = row.querySelectorAll('.md-unit[data-start][data-end]');
+      for (let i = 0; i < units.length; i++) {
+        if (+units[i].getAttribute('data-start') === s && +units[i].getAttribute('data-end') === e) return units[i];
+      }
+      return null;
+    }
+    function tlScrollToEventByUid(uid, lineRef) {
       if (!uid) return false;
       const txt = document.getElementById('taskText');
       let list = [];
@@ -4825,6 +5259,18 @@
       setTimeout(function () {
         const row = document.querySelector('[data-uid="' + uid + '"]');
         if (row && row.offsetParent) {
+          // 🆕 有便利贴第一行锚点 → 滚到那一行（顶部对齐），不再是整张卡居中。
+          const anchor = tlLineAnchorInEvent(row, lineRef);
+          if (anchor) {
+            anchor.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            if (typeof tlBlinkFound === 'function') tlBlinkFound(anchor);
+            else {
+              anchor.classList.remove('tl-jump-flash'); void anchor.offsetWidth;
+              anchor.classList.add('tl-jump-flash');
+              setTimeout(function () { anchor.classList.remove('tl-jump-flash'); }, 2000);
+            }
+            return;
+          }
           try { if (typeof tlJumpToEventCore === 'function') tlJumpToEventCore(uid); } catch (e) { /* 高亮失败不影响滚动 */ }
           return;
         }
@@ -6509,14 +6955,50 @@
       if (!ev || !ev.date) return false;
       return !ev.endDate || ev.endDate === ev.date;
     }
-    // 候选＝主档（tlParseEvents 不含 include 的 ro 行程）里「前一天的单日行程」。
-    // 排除重复行程：它自己会展开到今天，再复制一份只会重复显示。
-    function tlStartWorkCandidates(md, todayStr) {
+    // 候选池＝主档（tlParseEvents 不含 include 的 ro 行程）里所有「单日、非重复、非只读」行程，
+    // 按 date 分组。排除重复行程：它自己会展开到今天，再复制一份只会重复显示。
+    function tlStartWorkCandidatePool(md) {
+      const byDate = new Map();
+      (tlParseEvents(md) || []).forEach(function (ev) {
+        if (!ev.date || !tlStartWorkIsSingleDay(ev) || ev.repeatMode || ev.ro) return;
+        if (!byDate.has(ev.date)) byDate.set(ev.date, []);
+        byDate.get(ev.date).push(ev);
+      });
+      byDate.forEach(function (arr, d) { byDate.set(d, tlSorted(arr)); });
+      return byDate;
+    }
+    // 向前找参考日：从前一天开始，逐日往前，直到找到第一个有候选的日期；全找不到则停在最早行程日或前一天。
+    // 返回 refDate=命中的日期（没命中为前一天）、daysAgo=距今天数、found=是否找到、list=该日候选。
+    function tlStartWorkFindRef(md, todayStr) {
       const yesterday = tlStartWorkDayBefore(todayStr);
-      const list = tlSorted((tlParseEvents(md) || []).filter(function (ev) {
-        return ev.date === yesterday && tlStartWorkIsSingleDay(ev) && !ev.repeatMode && !ev.ro;
-      }));
-      return { today: todayStr, yesterday: yesterday, list: list };
+      const pool = tlStartWorkCandidatePool(md);
+      // 下界：主档里最早的单日候选日期，避免无限往前找；无候选则用前一天即可。
+      let minDate = '';
+      pool.forEach(function (_arr, d) { if (!minDate || d < minDate) minDate = d; });
+      let cursor = yesterday;
+      let guard = 0;
+      while (cursor && guard++ < 3660) { // 10 年上限兜底，防脏数据死循环
+        const list = pool.get(cursor) || [];
+        if (list.length) return { refDate: cursor, daysAgo: guard, found: true, list: list };
+        if (minDate && cursor <= minDate) break; // 已越过最早候选日，后面不可能再有
+        const prev = tlStartWorkDayBefore(cursor);
+        if (!prev || (minDate && prev < minDate)) break;
+        cursor = prev;
+      }
+      return { refDate: yesterday, daysAgo: 1, found: false, list: [] };
+    }
+    // 候选＝向前找到的最近一个有单日行程的日期（原为前一天；找不到时继续往前，直到找到或穷尽）。
+    function tlStartWorkCandidates(md, todayStr) {
+      const hit = tlStartWorkFindRef(md, todayStr);
+      const yesterday = tlStartWorkDayBefore(todayStr); // 兼容旧字段名
+      return {
+        today: todayStr,
+        yesterday: hit.refDate, // 兼容：旧 UI 读 yesterday，现指向实际参考日
+        refDate: hit.refDate,
+        daysAgo: hit.daysAgo,
+        found: hit.found,
+        list: hit.list
+      };
     }
     // 今天已存在的标题（含跨天覆盖今天的行程）→ 避免「开工」重复建档
     function tlStartWorkExistingTitles(md, todayStr) {
@@ -6597,9 +7079,10 @@
       const dateEl = document.getElementById('tlStartWorkDate');
       if (dateEl) dateEl.textContent = todayStr;
       const sub = document.getElementById('tlStartWorkSub');
-      if (sub) sub.innerHTML = '参考 <b>' + tlEscapeHtml(res.yesterday) + '</b>（前一天）「开始与结束同一天」的行程；勾选后按「开工」，在 <b>' + tlEscapeHtml(todayStr) + '</b> 建立同样的行程并存档。重复行程、跨天行程、外部档只读行程不列入。';
+      const refLabel = res.daysAgo === 1 ? '前一天' : (res.daysAgo + ' 天前');
+      if (sub) sub.innerHTML = '参考 <b>' + tlEscapeHtml(res.refDate) + '</b>（' + refLabel + '）「开始与结束同一天」的行程；勾选后按「开工」，在 <b>' + tlEscapeHtml(todayStr) + '</b> 建立同样的行程并存档。若前一天没有，会自动向前逐日寻找最近的单日行程；重复行程、跨天行程、外部档只读行程不列入。';
       if (!tlStartWorkRows.length) {
-        body.innerHTML = '<div class="tl-sw-empty">前一天（' + tlEscapeHtml(res.yesterday) + '）没有可参考的单日行程。<br>可先在前一天建立行程，或改用右键「＋ 新增今日行程」。</div>';
+        body.innerHTML = '<div class="tl-sw-empty">从 ' + tlEscapeHtml(res.refDate) + ' 起向前查找，都没有可参考的单日行程。<br>可先在较早的日期建立行程，或改用右键「＋ 新增今日行程」。</div>';
       } else {
         body.innerHTML = tlStartWorkRows.map(function (r, i) {
           return '<label class="tl-sw-row' + (r.exists ? ' is-exists' : '') + '">' +

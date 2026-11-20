@@ -293,6 +293,43 @@
       border: 1px solid #D4AF37;
       box-shadow: 0 12px 26px rgba(0,0,0,.32), 0 4px 8px rgba(0,0,0,.18);
     }
+    /* 🆕 2026-11-20：{NAME=X} 跳转后的「返回原位」悬浮按钮 —— 固定右下、金色胶囊、按了才消失 */
+    .gp-return-btn {
+      position: fixed; right: 14px; bottom: 14px; z-index: 70;
+      display: none; align-items: center; gap: .25em;
+      padding: .45em .9em; border: 1px solid #D4AF37; border-radius: 999px;
+      background: #2b2400; color: #f6d774; font: inherit; font-size: .9em; font-weight: 600;
+      cursor: pointer; box-shadow: 0 6px 18px rgba(0,0,0,.35); -webkit-app-region: no-drag;
+    }
+    .gp-return-btn:hover { filter: brightness(1.15); }
+    /* 🆕 返回工具组：↩ 按钮 + ☰ 位置清单（便利贴窗很窄，清单右对齐贴住按钮） */
+    .gp-return-dock { position: fixed; right: 14px; bottom: 14px; z-index: 70; display: none; flex-direction: row; align-items: flex-end; gap: 5px; }
+    .gp-return-dock .gp-return-btn { position: static; display: none; }
+    .gp-return-list-btn {
+      display: inline-flex; align-items: center; justify-content: center;
+      min-width: 30px; height: 30px; padding: 0 6px; border: 1px solid #D4AF37; border-radius: 999px;
+      background: #2b2400; color: #f6d774; font: inherit; font-size: 14px; line-height: 1;
+      cursor: pointer; box-shadow: 0 6px 18px rgba(0,0,0,.35); -webkit-app-region: no-drag;
+    }
+    .gp-return-list-btn:hover { filter: brightness(1.15); }
+    .gp-return-list {
+      display: none; flex-direction: column; gap: 2px; width: max-content; min-width: 190px; max-width: min(320px, calc(100vw - 28px));
+      max-height: 260px; overflow: auto; margin-bottom: 4px; padding: 7px;
+      border: 1px solid #D4AF37; border-radius: 10px;
+      background: var(--note-bg, #fff); color: var(--note-fg, #333); box-shadow: 0 10px 32px rgba(0,0,0,.32);
+      font-size: 12px; -webkit-app-region: no-drag;
+    }
+    .gp-return-list-title { font-weight: 700; color: #9a7b12; padding: 0 4px 5px; border-bottom: 1px solid rgba(212,175,55,.45); margin-bottom: 3px; }
+    .gp-return-list-row {
+      display: flex; align-items: center; gap: 7px; width: 100%; text-align: left;
+      padding: 5px 6px; border: none; border-radius: 7px; background: transparent; color: inherit;
+      font: inherit; cursor: pointer; -webkit-app-region: no-drag;
+    }
+    .gp-return-list-row:hover { background: rgba(212,175,55,.22); }
+    .gp-return-list-depth {
+      flex: 0 0 auto; min-width: 19px; height: 19px; display: inline-flex; align-items: center; justify-content: center;
+      border: 1px solid #D4AF37; border-radius: 999px; color: #9a7b12; font-weight: 700; font-size: 11px;
+    }
     .note-close-menu .nami { padding: 7px 10px; font-size: 12.5px; }
     .note-close-menu .nami + .nami { border-top: 1px solid rgba(212,175,55,.45); }
     .note-close-menu .nami:hover { background: rgba(212,175,55,.18); }
@@ -578,6 +615,13 @@
     .gp-include-fold:hover .gp-include-fold-ico { color: var(--ev-text, #333); }
     .gp-include-box:has(> .gp-include-label .gp-include-fold-cb:checked) > .gp-include-body { display: none; }
     .gp-include-box:has(> .gp-include-label .gp-include-fold-cb:checked) .gp-include-fold-ico { transform: rotate(-90deg); }
+    /* 🆕 2026-11-20：{list NAME} 具名围栏清单 */
+    .gp-name-list-total { font-weight: 700; color: var(--ev-text, #333); }
+    .gp-name-list { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: .35em .5em; }
+    .gp-name-list > li { display: inline-flex; align-items: center; gap: .15em; max-width: 100%; }
+    .gp-name-list-count { font-size: .8em; color: var(--ev-muted, #888); white-space: nowrap; }
+    .gp-name-list-empty { font-size: .85em; line-height: 1.4; color: var(--ev-muted, #888); }
+    .gp-name-list-empty code { font-family: ui-monospace, Menlo, Consolas, monospace; }
     #body.only-undone-checks .ev-md-check.done { display: none !important; }
     /* 🆕「只看未完成」时，按 md-unit 内 checkbox 完成状态决定是否隐藏整个区块：
        - gp-all-done ＝ 区块内所有 checkbox 都完成了 → 隐藏整个块（含说明行）

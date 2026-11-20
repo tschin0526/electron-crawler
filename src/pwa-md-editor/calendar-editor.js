@@ -1489,13 +1489,15 @@ function calParseIncludeToken(token) {
   const kind = isTerm ? 'term' : (isPicture ? 'picture' : 'name');
   const lookupKey = isTerm ? ('term:' + tmVal.toLowerCase())
     : isPicture ? ('picture:' + picVal.toLowerCase()) : nmVal.toLowerCase();
-  const truthy = (key) => {
+  // folded 三态：未指定=null（沿用主进程 store 旧行为）；true/false＝指令显式指定，渲染端输出 data-gp-fold-default 标记。
+  const boolTri = (key) => {
     const m = s.match(new RegExp('(?:^|\\s)' + key + '\\s*=\\s*(?:"([^"]*)"|\'([^\']*)\'|([^\\s}]+))', 'i'));
-    if (!m) return false;
+    if (!m) return null;
     const v = String(m[1] == null ? (m[2] == null ? m[3] : m[2]) : m[1]).toLowerCase();
     return v === 'true' || v === 'on' || v === '1' || v === 'yes';
   };
-  return { name, kind, lookupKey, showLabel: truthy('showLabel'), showDirective: truthy('showDirective') };
+  const truthy = (key) => boolTri(key) === true;
+  return { name, kind, lookupKey, showLabel: truthy('showLabel'), showDirective: truthy('showDirective'), folded: boolTri('folded') };
 }
 function calExpandGpIncludes(text, index, renderInsert) {
   const src = String(text == null ? '' : text);
@@ -1520,7 +1522,7 @@ function calExpandGpIncludes(text, index, renderInsert) {
         if (!contents || !contents.length) return m;
         return contents.map((raw) => {
           const sub = expand(raw, depth + 1, new Set(chain).add(key));
-          return render(sub, nm, p.showLabel, m, p.showDirective);
+          return render(sub, nm, p.showLabel, m, p.showDirective, p.folded);
         }).join('');
       });
     }).join('\n');
@@ -1528,7 +1530,7 @@ function calExpandGpIncludes(text, index, renderInsert) {
   return expand(src, 0, new Set());
 }
 // 把 {include} 命中的围栏内部 markdown 预渲染成「只读 HTML ＋ 淡化虚线外框」（与桌面 tlGpIncludeBoxHtml 同口径）。
-function calGpIncludeBoxHtml(raw, name, showLabel, directive, showDirective) {
+function calGpIncludeBoxHtml(raw, name, showLabel, directive, showDirective, folded) {
   const CHK_RE = /^\s*[-*+]\s+\[[ xX]\]\s?/;
   const prepared = String(raw == null ? '' : raw).split('\n').map((l) =>
     (CHK_RE.test(l) && typeof calNoteCheckLineHtml === 'function')
@@ -1545,8 +1547,12 @@ function calGpIncludeBoxHtml(raw, name, showLabel, directive, showDirective) {
   const badge = isTerm
     ? '<span class="gp-include-badge is-term" title="术语详细说明">\u{1F4D6}</span>'
     : '<span class="gp-include-badge is-name" title="围栏名称引用">\u{1F3F7}\uFE0F</span>';
-  // 折叠按钮：藏在 legend（左上角），只折叠 .gp-include-body；徽标、名称、directive 永不折叠。纯 CSS :has(:checked)，默认展开。
-  const fold = '<label class="gp-include-fold" title="折叠/展开内容"><input type="checkbox" class="gp-include-fold-cb"><span class="gp-include-fold-ico">\u25BE</span></label>';
+  // 折叠按钮：藏在 legend（左上角），只折叠 .gp-include-body；徽标、名称、directive 永不折叠。纯 CSS :has(:checked)。
+  //   folded 三态：true → checked + data-gp-fold-default="1"（默认折叠）；false → data-gp-fold-default="0"（默认展开）；
+  //                null/未指定 → 无标记，沿用主进程 store 旧行为。
+  const foldAttr = folded === true ? ' checked data-gp-fold-default="1"'
+    : folded === false ? ' data-gp-fold-default="0"' : '';
+  const fold = '<label class="gp-include-fold" title="折叠/展开内容"><input type="checkbox" class="gp-include-fold-cb"' + foldAttr + '><span class="gp-include-fold-ico">\u25BE</span></label>';
   const legend = '<legend class="gp-include-label">' + fold + badge + (showLabel ? escapeHtml(name) : '') + '</legend>';
   // showDirective=true：框内顶部显示原始 {include …} 指令文本（转义），默认不显示。（永不折叠）
   const dirHtml = showDirective ? '<div class="gp-include-directive">' + escapeHtml(directive || '') + '</div>' : '';
@@ -1554,36 +1560,157 @@ function calGpIncludeBoxHtml(raw, name, showLabel, directive, showDirective) {
 }
 // 包装整个 notes 渲染链：renderMarkdown 之前把 {include} token 换成占位符，渲染完成后再注入 box HTML（杜绝二次 render 拆散结构）。
 function calRenderWithIncludes(text, index) {
-  if (!index || !index.size || !/\{include\s+(?:name|TERM)\s*=/.test(String(text == null ? '' : text))) {
+  const srcText = String(text == null ? '' : text);
+  const hasList = CAL_LIST_RE_ANY.test(srcText);
+  if (!hasList && (!index || !index.size || !/\{include\s+(?:name|TERM)\s*=/.test(srcText))) {
     return renderMarkdown(calRenderNameRefs(calRenderTermDefs(calRenderNoteMarkersLines(text))));
   }
   // 占位符用普通 ASCII（真 renderer 会剥离 NUL 控制字符 → 裸露 GI0、注入失败）；%%TLINC_n_ZZ%% 已真引擎验证可原样穿过。
   let seq = 0;
   const ph = new Map();
-  const prepared = calExpandGpIncludes(text, index, (raw, nm, showLabel, directive, showDirective) => {
-    const tok = '%%TLINC_' + (seq++) + '_ZZ%%';
-    ph.set(tok, { raw, nm, showLabel, directive, showDirective });
-    return tok;
-  });
+  let prepared = text;
+  if (hasList || (index && index.size)) {
+    prepared = calExpandGpIncludes(text, index, (raw, nm, showLabel, directive, showDirective, folded) => {
+      const tok = '%%TLINC_' + (seq++) + '_ZZ%%';
+      ph.set(tok, { raw, nm, showLabel, directive, showDirective, folded });
+      return tok;
+    });
+  }
+  if (hasList) {
+    prepared = calExpandGpLists(prepared, (list, showCount, directive, folded, pattern) => {
+      const tok = '%%TLLST_' + (seq++) + '_ZZ%%';
+      ph.set(tok, { list, showCount, directive, folded, pattern, isList: true });
+      return tok;
+    });
+  }
   let html = renderMarkdown(calRenderNameRefs(calRenderTermDefs(calRenderNoteMarkersLines(prepared))));
-  ph.forEach((v, tok) => { html = html.split(tok).join(calGpIncludeBoxHtml(v.raw, v.nm, v.showLabel, v.directive, v.showDirective)); });
+  ph.forEach((v, tok) => {
+    const box = v.isList ? calGpNameListBoxHtml(v.list, v.showCount, v.directive, v.folded, v.pattern)
+      : calGpIncludeBoxHtml(v.raw, v.nm, v.showLabel, v.directive, v.showDirective, v.folded);
+    html = html.split(tok).join(box);
+  });
   return html;
 }
 // 独立 task 行里的 {include}：占位符法在原文层展开、checkbox 行渲染后注入 box（task 分支不走 calRenderWithIncludes）。
 function calTaskLineWithIncludes(line, index, uid, i, canEdit, opts) {
-  if (!index || !index.size || !/\{include\s/.test(String(line))) {
+  const hasList = CAL_LIST_RE_ANY.test(String(line));
+  if (!hasList && (!index || !index.size || !/\{include\s/.test(String(line)))) {
     return calNoteCheckLineHtml(line, uid, i, canEdit, opts);
   }
   let seq = 0;
   const ph = new Map();
-  const prepared = calExpandGpIncludes(line, index, (raw, nm, showLabel, directive, showDirective) => {
-    const tok = '%%TLINC_' + (seq++) + '_ZZ%%';
-    ph.set(tok, { raw, nm, showLabel, directive, showDirective });
-    return tok;
-  });
+  let prepared = line;
+  if (index && index.size) {
+    prepared = calExpandGpIncludes(line, index, (raw, nm, showLabel, directive, showDirective, folded) => {
+      const tok = '%%TLINC_' + (seq++) + '_ZZ%%';
+      ph.set(tok, { raw, nm, showLabel, directive, showDirective, folded });
+      return tok;
+    });
+  }
+  if (hasList) {
+    prepared = calExpandGpLists(prepared, (list, showCount, directive, folded, pattern) => {
+      const tok = '%%TLLST_' + (seq++) + '_ZZ%%';
+      ph.set(tok, { list, showCount, directive, folded, pattern, isList: true });
+      return tok;
+    });
+  }
   let html = calNoteCheckLineHtml(prepared, uid, i, canEdit, opts);
-  ph.forEach((v, tok) => { html = html.split(tok).join(calGpIncludeBoxHtml(v.raw, v.nm, v.showLabel, v.directive, v.showDirective)); });
+  ph.forEach((v, tok) => {
+    const box = v.isList ? calGpNameListBoxHtml(v.list, v.showCount, v.directive, v.folded, v.pattern)
+      : calGpIncludeBoxHtml(v.raw, v.nm, v.showLabel, v.directive, v.showDirective, v.folded);
+    html = html.split(tok).join(box);
+  });
   return html;
+}
+// ========== 🆕 2026-11-20：{list NAME} 列出「所有具名围栏」的名称清单（与桌面 tl 同口径） ==========
+//   · {gpJ|NAME="X"} 算具名；{gpJ} 无 NAME 不算。每个名称是可点击 .gp-name-ref 胶囊，复用现有跳转委托。
+//   · 属性：showCount=true 附「(N)」；folded=true/false 默认态（data-gp-fold-default 三态）。
+const CAL_LIST_RE_ANY = /\{list\s+NAME\b[^}]*\}/i;
+const CAL_LIST_RE_ONE = /\{list\s+NAME\b[^}]*\}/gi;
+function calParseListToken(token) {
+  const s = String(token == null ? '' : token);
+  const readVal = (m) => {
+    if (!m) return '';
+    for (let i = 1; i < m.length; i++) if (m[i] != null) return String(m[i]).trim();
+    return '';
+  };
+  const boolTri = (key) => {
+    const m = s.match(new RegExp('(?:^|\\s)' + key + '\\s*=\\s*(?:"([^"]*)"|\'([^\']*)\'|([^\\s}]+))', 'i'));
+    if (!m) return null;
+    const v = readVal(m).toLowerCase();
+    return v === 'true' || v === 'on' || v === '1' || v === 'yes';
+  };
+  // NAME="…"：万用字元查询（* 通配任意字符）。无 NAME= 时为空＝列全部。
+  const pattern = readVal(s.match(/(?:^|\s)NAME\s*=\s*(?:"([^"\n]*)"|'([^'\n]*)'|([^\s}]+))/i));
+  return { showCount: boolTri('showCount') === true, folded: boolTri('folded'), pattern };
+}
+// 万用字元匹配：* 通配任意字符；多段 * 拆成片段按顺序全命中（AND）；不带 * 的纯词＝包含匹配；大小写不敏感。
+function calGpNamePatternHit(name, pattern) {
+  if (!pattern) return true;
+  const hay = String(name == null ? '' : name).toLowerCase();
+  const needle = String(pattern).toLowerCase();
+  if (needle.indexOf('*') < 0) return hay.indexOf(needle) >= 0;
+  const parts = needle.split('*').filter((x) => x !== '');
+  if (!parts.length) return true;
+  let pos = 0;
+  for (const part of parts) {
+    const at = hay.indexOf(part, pos);
+    if (at < 0) return false;
+    pos = at + part.length;
+  }
+  return true;
+}
+function calFilterGpNameList(list, pattern) {
+  if (!pattern) return list;
+  const out = new Map();
+  list.forEach((v, k) => { if (calGpNamePatternHit(v.name, pattern)) out.set(k, v); });
+  return out;
+}
+// 扫 state.calEvents 全部围栏 NAME，去重按首次出现顺序：Map<lowercase,{name,count}>。
+function calCollectGpNameList() {
+  const out = new Map();
+  (state.calEvents || []).forEach((ev) => {
+    if (!ev || !ev.notes) return;
+    const lines = String(ev.notes).replace(/\r\n/g, '\n').split('\n');
+    const scan = (typeof calGpFenceScan === 'function') ? calGpFenceScan(lines) : { ranges: [] };
+    (scan.ranges || []).forEach((r) => {
+      const nm = String(r.name || '').trim();
+      if (!nm) return;
+      const key = nm.toLowerCase();
+      const hit = out.get(key);
+      if (hit) hit.count++;
+      else out.set(key, { name: nm, count: 1 });
+    });
+  });
+  return out;
+}
+function calGpNameListBoxHtml(list, showCount, directive, folded, pattern) {
+  const entries = Array.from(list.values());
+  const body = entries.length
+    ? '<ul class="gp-name-list">' + entries.map((it) => {
+        const cnt = showCount ? ' <span class="gp-name-list-count">(' + it.count + ')</span>' : '';
+        return '<li><span class="gp-name-ref" data-gp-name-ref="' + escapeHtml(it.name) + '"' +
+          ' title="跳转到围栏：' + escapeHtml(it.name) + '">\u{1F3F7}\uFE0F ' + escapeHtml(it.name) + '</span>' + cnt + '</li>';
+      }).join('') + '</ul>'
+    : pattern
+    ? '<div class="gp-name-list-empty">没有名称匹配 <code>' + escapeHtml(pattern) + '</code> 的具名围栏</div>'
+    : '<div class="gp-name-list-empty">尚未有具名围栏（在围栏 open 行写 NAME="名称" 即可，如 <code>{gpJ|NAME="X"}</code>）</div>';
+  const foldAttr = folded === true ? ' checked data-gp-fold-default="1"'
+    : folded === false ? ' data-gp-fold-default="0"' : '';
+  const fold = '<label class="gp-include-fold" title="折叠/展开内容"><input type="checkbox" class="gp-include-fold-cb"' + foldAttr + '><span class="gp-include-fold-ico">\u25BE</span></label>';
+  const legend = '<legend class="gp-include-label">' + fold + '<span class="gp-include-badge is-name" title="具名围栏清单">\u{1F3F7}\uFE0F</span>围栏名称清单 <span class="gp-name-list-total">' + entries.length + '</span></legend>';
+  const dirHtml = '<div class="gp-include-directive">' + escapeHtml(directive || '') + '</div>';
+  return '<fieldset class="gp-include-box gp-name-list-box" data-gp-name-list="1">' + legend + dirHtml + '<div class="gp-include-body">' + body + '</div></fieldset>';
+}
+function calExpandGpLists(text, renderInsert) {
+  const src = String(text == null ? '' : text);
+  if (!CAL_LIST_RE_ANY.test(src)) return src;
+  const all = calCollectGpNameList();
+  return src.replace(CAL_LIST_RE_ONE, (m) => {
+    const p = calParseListToken(m);
+    const list = calFilterGpNameList(all, p.pattern);
+    return renderInsert(list, p.showCount, m, p.folded, p.pattern);
+  });
 }
 // 扫 state.calEvents 全部行程的 gp 围栏 NAME → {include} 索引（与桌面 tlCollectGpIncludeIndex 同口径）。
 function calCollectGpIncludeIndex() {

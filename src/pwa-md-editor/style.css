@@ -806,6 +806,13 @@ body {
 .gp-include-fold:hover .gp-include-fold-ico { color: var(--ev-text, #333); }
 .gp-include-box:has(> .gp-include-label .gp-include-fold-cb:checked) > .gp-include-body { display: none; }
 .gp-include-box:has(> .gp-include-label .gp-include-fold-cb:checked) .gp-include-fold-ico { transform: rotate(-90deg); }
+/* 🆕 2026-11-20：{list NAME} 具名围栏清单 */
+.gp-name-list-total { font-weight: 700; color: var(--ev-text, #333); }
+.gp-name-list { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: .35em .5em; }
+.gp-name-list > li { display: inline-flex; align-items: center; gap: .15em; max-width: 100%; }
+.gp-name-list-count { font-size: .8em; color: var(--ev-muted, #888); white-space: nowrap; }
+.gp-name-list-empty { font-size: .85em; line-height: 1.4; color: var(--ev-muted, #888); }
+.gp-name-list-empty code { font-family: ui-monospace, Menlo, Consolas, monospace; }
 /* 🆕 2026-11-18：{NAME=X} 围栏名称引用胶囊（与桌面同款）——金色圆角标签。 */
 .gp-name-ref {
   display: inline-block; max-width: 220px; padding: 0 .5em; border-radius: 999px;

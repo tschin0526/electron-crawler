@@ -2406,6 +2406,13 @@
     .gp-include-fold:hover .gp-include-fold-ico { color: var(--ev-text, #333); }
     .gp-include-box:has(> .gp-include-label .gp-include-fold-cb:checked) > .gp-include-body { display: none; }
     .gp-include-box:has(> .gp-include-label .gp-include-fold-cb:checked) .gp-include-fold-ico { transform: rotate(-90deg); }
+    /* 🆕 2026-11-20：{list NAME} 具名围栏清单 */
+    .gp-name-list-total { font-weight: 700; color: var(--ev-text, #333); }
+    .gp-name-list { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: .35em .5em; }
+    .gp-name-list > li { display: inline-flex; align-items: center; gap: .15em; max-width: 100%; }
+    .gp-name-list-count { font-size: .8em; color: var(--ev-muted, #888); white-space: nowrap; }
+    .gp-name-list-empty { font-size: .85em; line-height: 1.4; color: var(--ev-muted, #888); }
+    .gp-name-list-empty code { font-family: ui-monospace, Menlo, Consolas, monospace; }
     /* 🆕「最小 MD 表达单元」区块：非 checkbox 内容（表格/段落/标题/引用/代码/列表/分隔线）
        左侧常驻一个编辑小圆点（✎），点击编辑该区块的 Markdown 原文 */
     .md-unit { position: relative; padding-left: 20px; margin: 0 0 0.45em 0; }
@@ -2768,6 +2775,43 @@
       padding: 6px; font-size: 13px;
     }
     body.dark .ev-sticky-menu { box-shadow: 0 10px 32px rgba(0,0,0,.5); }
+    /* 🆕 2026-11-20：{NAME=X} 跳转后的「返回原位」悬浮按钮 —— 固定右下、金色胶囊、按了才消失 */
+    .gp-return-btn {
+      position: fixed; right: 18px; bottom: 18px; z-index: 99998;
+      display: none; align-items: center; gap: .25em;
+      padding: .5em 1em; border: 1px solid #D4AF37; border-radius: 999px;
+      background: #2b2400; color: #f6d774; font: inherit; font-size: 13px; font-weight: 600;
+      cursor: pointer; box-shadow: 0 6px 18px rgba(0,0,0,.35);
+    }
+    .gp-return-btn:hover { filter: brightness(1.15); }
+    /* 🆕 返回工具组：↩ 按钮 + ☰ 位置清单（层数由主进程快照决定） */
+    .gp-return-dock { position: fixed; right: 18px; bottom: 18px; z-index: 99998; display: none; flex-direction: row; align-items: flex-end; gap: 6px; }
+    .gp-return-dock .gp-return-btn { position: static; display: none; }
+    .gp-return-list-btn {
+      display: inline-flex; align-items: center; justify-content: center;
+      min-width: 34px; height: 34px; padding: 0 8px; border: 1px solid #D4AF37; border-radius: 999px;
+      background: #2b2400; color: #f6d774; font: inherit; font-size: 15px; line-height: 1;
+      cursor: pointer; box-shadow: 0 6px 18px rgba(0,0,0,.35);
+    }
+    .gp-return-list-btn:hover { filter: brightness(1.15); }
+    .gp-return-list {
+      display: none; flex-direction: column; gap: 2px; min-width: 230px; max-width: 340px;
+      max-height: 300px; overflow: auto; margin-bottom: 4px; padding: 8px;
+      border: 1px solid #D4AF37; border-radius: 10px;
+      background: var(--ev-card, #fff); color: var(--ev-text, #333); box-shadow: 0 10px 32px rgba(0,0,0,.32);
+      font-size: 12.5px;
+    }
+    .gp-return-list-title { font-weight: 700; color: #9a7b12; padding: 0 4px 5px; border-bottom: 1px solid rgba(212,175,55,.45); margin-bottom: 3px; }
+    .gp-return-list-row {
+      display: flex; align-items: center; gap: 8px; width: 100%; text-align: left;
+      padding: 6px 7px; border: none; border-radius: 7px; background: transparent; color: inherit;
+      font: inherit; cursor: pointer;
+    }
+    .gp-return-list-row:hover { background: rgba(212,175,55,.22); }
+    .gp-return-list-depth {
+      flex: 0 0 auto; min-width: 20px; height: 20px; display: inline-flex; align-items: center; justify-content: center;
+      border: 1px solid #D4AF37; border-radius: 999px; color: #9a7b12; font-weight: 700; font-size: 11px;
+    }
     .ev-sticky-menu-item {
       display: block; width: 100%; text-align: left;
       background: transparent; border: none; color: inherit;
@@ -4687,6 +4731,10 @@
         if (params.get('cal') === '1') {
           window.__todoOpenCal = true;
         }
+        // 🆕 从便利贴唤起主窗时指定的 calendar.md：优先打开它，不要用「上次停留的档案」
+        //    （否则 sync 会把便利贴清单换成别份，便利贴画面跳到 VIEW 贴）。
+        var calFile = params.get('calFile');
+        if (calFile) window.__todoCalFile = calFile;
         // 🆕 桌面便利贴模式（./start.sh --sticky）：自动进入行程视图并弹出桌面便利贴窗口
         if (params.get('sticky') === '1') {
           window.__todoOpenSticky = true;
@@ -7742,7 +7790,8 @@
         : tlCalEvents;
       const uid = (typeof tlFindEventUidByKey === 'function') ? tlFindEventUidByKey(key) : null;
       if (!uid) { if (typeof showToast === 'function') showToast('找不到该行程', 'danger'); return; }
-      const ok = (typeof tlScrollToEventByUid === 'function') && tlScrollToEventByUid(uid);
+      // 🆕 带上便利贴当前第一行的行号锚点 → 滚到同一行，而不是整张事件卡中间
+      const ok = (typeof tlScrollToEventByUid === 'function') && tlScrollToEventByUid(uid, payload && payload.line);
       if (!ok && typeof showToast === 'function') showToast('找不到该行程的日期', 'danger');
     }
     if (window.electronAPI && typeof window.electronAPI.onStickyScrollToEvent === 'function') {
@@ -7763,12 +7812,34 @@
     }
     // 🆕 2026-11-15：便利贴正文 {NAME=X} 名称胶囊点击 → 主进程送来 {name} → 全局搜索同名围栏并跳转。
     //    与 tlOnTermGlossaryRequest 同口径：先刷新 tlCalEvents 成当前缓冲最新事件，再跳转（便利贴可能刚编辑过）。
-    function tlOnGpNameRefRequest(payload) {
+    function tlOnGpNameRefRequest(payload, retry) {
       const name = payload && payload.name;
       if (!name) return;
-      tlCalEvents = (typeof tlAllEvents === 'function')
-        ? tlAllEvents(document.getElementById('taskText').value)
-        : tlCalEvents;
+      // ⛔ 不能用 tlAllEvents(textarea.value) 重算：那只解析主档，会把 include 档（如 calendar-在电脑上的草稿.md）
+      //    的事件整批丢掉 → 名称索引查不到 include 里的围栏，跳转静默失效。用 tlLiveCalEvents（主档＋include）。
+      tlCalEvents = (typeof tlLiveCalEvents === 'function')
+        ? tlLiveCalEvents()
+        : ((typeof tlAllEvents === 'function')
+          ? tlAllEvents(document.getElementById('taskText').value)
+          : tlCalEvents);
+      // 🆕 主窗刚被便利贴唤起时 taskText 可能还没载入完 → 名称索引为空会让跳转直接失败，
+      //   表现为「便利贴定位失常」。等缓冲就绪再执行（最多 ~1.2s），且此时还没 prepare，不会污染返回栈。
+      if (typeof tlCollectGpNames === 'function' && !(tlCollectGpNames().get(String(name).toLowerCase()) || []).length) {
+        if ((+retry || 0) < 8) { setTimeout(function () { tlOnGpNameRefRequest(payload, (+retry || 0) + 1); }, 150); return; }
+      }
+      // 🆕 2026-11-20「跳转前校准」：先以操作方（便利贴）的当前位置校准主窗；
+      //   便利贴显示的事件不在主窗当前视图 → tlCalibrateMainToUnit 返回 false，主窗放弃校准。
+      //   必须在 prepare 之前：这样快照存的是校准后的位置，返回时两边才一致。
+      if (typeof tlCalibrateMainToUnit === 'function') {
+        try { tlCalibrateMainToUnit(payload.fromKey, payload.fromLocalUnit); } catch (e) {}
+      }
+      // 🆕 记来源为便利贴 key/idx + 点击当时滚动位置（返回时一并还原）
+      if (typeof tlGpReturnPrepare === 'function') {
+        tlGpReturnPrepare('sticky', payload.fromKey, payload.fromIdx, {
+          scrollTop: payload.fromScrollTop,
+          label: payload.fromLabel || '便利贴'
+        });
+      }
       if (typeof tlJumpToGpName === 'function') tlJumpToGpName(name);
     }
     if (window.electronAPI && typeof window.electronAPI.onGpNameRefRequest === 'function') {
@@ -15678,6 +15749,14 @@
     //    两者都走既有打开入口（activateSheetTab / openExternalFile），与用户手动打开 calendar.md 行为一致，
     //    打开后由 tlPrioritizeDedicatedEditor 自动进入行程视图。
     async function tlAutoOpenCalendar() {
+      // 🆕 便利贴唤起主窗时带了自己的 calendar.md 路径 → 直接打开它，
+      //   不要退回「上次停留的档案」（那份可能是别的档案，会把便利贴清单整个换掉）。
+      if (window.__todoCalFile) {
+        var p = String(window.__todoCalFile);
+        var nm = p.split(/[\\/]/).pop() || 'calendar.md';
+        try { await openExternalFile(p, nm, 'md'); } catch (e) { console.warn('[TodoList] 打开指定 calendar 失败:', e); }
+        return;
+      }
       var calName = function (s) { return (s || '').toLowerCase() === 'calendar.md'; };
       var tabName = function (t) {
         return (t.title || (t.path ? t.path.split(/[\\/]/).pop() : '') || t.id || '').toLowerCase();

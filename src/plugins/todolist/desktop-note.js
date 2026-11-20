@@ -52,6 +52,8 @@ let pendingShowPage = null;
 // 🆕 主窗右击某笔小事件(群)后「跳转到便利贴」顺带要滚动定位+闪烁的目标单元描述。
 //   翻页模式由 sticky-note-show-page 的 payload.focusUnit 写入；分体模式由独立 IPC sticky-note-focus-unit 写入。
 let pendingFocusUnit = null;
+// 🆕 返回原位（翻页模式）：点击名称引用当时的 scrollTop，随 show-page 早到也要留到 renderFlipPage 消费。
+let pendingReturnScrollTop = null;
 let noteRendered = false;   // 正文是否已渲染过（用于判断 focus-unit 早到时要不要立刻消费）
 let stickyMenuLoadSeq = 0;
 let stickyRefreshSeq = 0;
@@ -568,6 +570,7 @@ async function init() {
   // 翻走再翻回时 HTML 注入拿不到折叠态，看起来「修改完全没作用」。
   // 委托挂在稳定的 #body 上（innerHTML 重建不影响），内部有 __includeFoldBound 幂等旗标。
   noteInitIncludeFoldDelegate();
+  noteInitGpReturnBtn();   // 🆕 返回按钮监听：翻页窗单窗循环，必须早于 IS_FLIP 早退绑定
   if (IS_FLIP) { await initFlip(); return; }
   syncViewNoteMode();   // 🆕 分体模式 KEY 不变，开窗即定只读与否
   let inst = {};
@@ -808,7 +811,11 @@ function setupControls() {
   });
   document.getElementById('miCalendar').onclick = (e) => { e.stopPropagation(); closeMenu(); ipcRenderer.invoke('activate-main-window'); };
   // 📜 滚动：唤起主程式并滚动定位到该行程（不打开编辑框）
-  document.getElementById('miCalendarScroll').onclick = (e) => { e.stopPropagation(); closeMenu(); ipcRenderer.invoke('wake-main-from-note', { key: KEY, action: 'scroll' }); };
+  document.getElementById('miCalendarScroll').onclick = (e) => {
+    e.stopPropagation(); closeMenu();
+    const at = noteFirstVisibleLine();   // 🆕 把便利贴当前第一行带给 calendar，滚到同一处
+    ipcRenderer.invoke('wake-main-from-note', { key: KEY, action: 'scroll', line: at }).catch(() => {});
+  };
   // ✎ 检视行程：与「双击便利贴 / 点标题栏」同一条管线（wake-main-from-note → open-sticky-event → tlOpenEventForm）。
   //    被 include 的外部档行程（ev.ro）现在不再被主程式 toast 拒绝，会开成「查看行程（只读）」窗体。
   //    VIEW 投影贴没有单一来源行程，该按钮由 CSS 收起（#note.view-note #miEditEvent）。
@@ -1240,7 +1247,16 @@ function setupControls() {
       e.preventDefault();
       e.stopPropagation();
       const nm = nameRef.getAttribute('data-gp-name-ref') || '';
-      if (nm) ipcRenderer.invoke('wake-main-from-note', { key: KEY, action: 'gp-name-jump', name: nm }).catch(() => {});
+      // 🆕 带来源 key/idx + 点击当时的滚动位置/标题：返回时要翻回这一张的这一处，清单里也要认得出。
+      if (nm) {
+        const titleText = (document.getElementById('title') || {}).textContent || '';
+        ipcRenderer.invoke('wake-main-from-note', {
+          key: KEY, idx: IDX, action: 'gp-name-jump', name: nm,
+          scrollTop: currentScrollTop(),
+          localUnit: noteLocalUnitFromRef(nameRef),   // 🆕 校准主窗用：本条引用所在小事件
+          label: '便利贴「' + String(titleText).trim().slice(0, 24) + '」'
+        }).catch(() => {});
+      }
       return;
     }
     const execLink = e.target.closest && e.target.closest('a.card-exec-link');
@@ -4830,12 +4846,106 @@ function noteInitIncludeFoldDelegate() {
   body.addEventListener('change', (e) => {
     const cb = e.target;
     if (!cb || !cb.classList || !cb.classList.contains('gp-include-fold-cb')) return;
+    // {include … folded=true/false} 只是默认值：用户手动点过就写 store（含展开=false），
+    //   本会话内压过指令默认值；退出应用 store 清空 → 下次启动回到指令默认值。
     const box = cb.closest('.gp-include-box');
     if (!box) return;
     const ord = Array.prototype.indexOf.call(body.querySelectorAll('.gp-include-box'), box);
     if (ord < 0) return;
     ipcRenderer.invoke('include-fold-set', { key: KEY, idx: IDX, ord, folded: !!cb.checked });
   });
+}
+
+// ===== 🆕 2026-11-20：{NAME=X} 跳转后的「返回原位」工具组（便利贴侧） =====
+//   主进程在跳转完成后广播 gp-return-show（payload=完整快照）→ 浮出 ↩ 按钮 + ☰ 位置清单。
+//   ⚠️ ipcRenderer.on 的回调第一个参数是 event，payload 是第二个！旧版把 event 当 payload
+//      → payload.remaining 永远 undefined → 兜底成 (1)（跳几层都显示 1 的真因）。
+function noteGpReturnBackInvoke(toToken) {
+  ipcRenderer.invoke('gp-return-back', toToken ? { toToken: +toToken } : {}).catch(() => {});
+  const panel = document.getElementById('gpReturnList');
+  if (panel) panel.style.display = 'none';
+}
+function noteGpReturnEnsureDock() {
+  let dock = document.getElementById('gpReturnDock');
+  if (dock) return dock;
+  dock = document.createElement('div');
+  dock.id = 'gpReturnDock';
+  dock.className = 'gp-return-dock';
+  const panel = document.createElement('div');
+  panel.id = 'gpReturnList';
+  panel.className = 'gp-return-list';
+  const listBtn = document.createElement('button');
+  listBtn.id = 'gpReturnListBtn';
+  listBtn.type = 'button';
+  listBtn.className = 'gp-return-list-btn';
+  listBtn.title = '返回位置清单';
+  listBtn.textContent = '\u2630';
+  listBtn.addEventListener('click', (e) => {
+    e.preventDefault(); e.stopPropagation();
+    panel.style.display = (panel.style.display === 'flex') ? 'none' : 'flex';
+  });
+  const btn = document.createElement('button');
+  btn.id = 'gpReturnBtn';
+  btn.type = 'button';
+  btn.className = 'gp-return-btn';
+  btn.addEventListener('click', (e) => {
+    e.preventDefault(); e.stopPropagation();
+    noteGpReturnBackInvoke();
+  });
+  dock.appendChild(panel); dock.appendChild(listBtn); dock.appendChild(btn);
+  document.body.appendChild(dock);
+  return dock;
+}
+function noteGpReturnShow(payload) {
+  const entries = (payload && Array.isArray(payload.entries)) ? payload.entries : [];
+  const remaining = entries.length ? entries.length : Math.max(0, +((payload && payload.remaining) || 0) || 0);
+  if (!remaining) { noteGpReturnHide(); return; }
+  const dock = noteGpReturnEnsureDock();
+  const btn = document.getElementById('gpReturnBtn');
+  btn.innerHTML = '\u21A9 返回原位 <span class="gp-return-count">(' + remaining + ')</span>';
+  btn.title = '回到点击名称引用前的位置（还有 ' + remaining + ' 层可返回）';
+  btn.style.display = 'inline-flex';
+  const listBtn = document.getElementById('gpReturnListBtn');
+  if (listBtn) listBtn.style.display = 'inline-flex';
+  const panel = document.getElementById('gpReturnList');
+  if (panel) {
+    const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    panel.innerHTML = '<div class="gp-return-list-title">返回位置清单 · 点选直接回到该层</div>' +
+      entries.slice().reverse().map((en, r) => {
+        const src = en.type === 'sticky'
+          ? '便利贴「' + esc(en.label || ('第 ' + ((+en.idx || 0) + 1) + ' 张')) + '」'
+          : esc(en.label || '主窗');
+        const dst = en.targetName ? ' \u2192 ' + esc(en.targetName) : '';
+        return '<button type="button" class="gp-return-list-row" data-token="' + (+en.token || 0) + '">' +
+          '<span class="gp-return-list-depth">' + (remaining - r) + '</span><span>' + src + dst + '</span></button>';
+      }).join('');
+    panel.querySelectorAll('.gp-return-list-row').forEach((row) => {
+      row.addEventListener('click', (e) => {
+        e.preventDefault(); e.stopPropagation();
+        noteGpReturnBackInvoke(+row.getAttribute('data-token'));
+      });
+    });
+  }
+  dock.style.display = 'flex';
+}
+function noteGpReturnHide() {
+  const dock = document.getElementById('gpReturnDock');
+  if (!dock) return;
+  dock.style.display = 'none';
+  const panel = document.getElementById('gpReturnList');
+  if (panel) panel.style.display = 'none';
+}
+function noteInitGpReturnBtn() {
+  if (window.__gpReturnBound) return;
+  window.__gpReturnBound = true;
+  if (typeof ipcRenderer.on === 'function') {
+    ipcRenderer.on('gp-return-show', (e, payload) => noteGpReturnShow(payload));
+    ipcRenderer.on('gp-return-hide', () => noteGpReturnHide());
+  }
+  // 新开的便利贴窗没收到上一条广播：主动取一次当前快照
+  ipcRenderer.invoke('gp-return-state', {}).then((snap) => {
+    if (snap && snap.remaining) noteGpReturnShow(snap);
+  }).catch(() => {});
 }
 
 // 🆕 刷新内容：接收主程式推来的最新渲染结果（arg.{html,titleHtml}），同步标题/正文/日期/标签
@@ -5255,10 +5365,15 @@ ipcRenderer.on('sticky-note-refresh', (e, arg) => applyNoteContent(arg));
 ipcRenderer.on('sticky-note-focus-unit', (e, payload) => {
   if (!payload) return;
   pendingFocusUnit = payload.unit || payload;
+  if (pendingFocusUnit) notifyCancel();   // 🆕 跳转优先：结束提醒贴展示阶段
   if (noteRendered) consumePendingFocusUnit();
 });
+// 🆕 2026-11-20：calendar 关闭时，主进程不唤起主窗，改把 {NAME=X} 回送本窗做本地定位。
+ipcRenderer.on('gp-local-name-jump', (e, payload) => { noteLocalNameJump(payload); });
 // 📥 主进程载入可携设定后：重读自身状态并立即套用（只读不写回，避免覆盖刚导入的值）
 ipcRenderer.on('sticky-note-apply-state', async (e, payload) => {
+  // 🆕 通知阶段 / 跳转定位中：别让新开主窗的 apply-state 把页翻回「上次记忆页」
+  if (notifyActive || noteFocusBusy()) return;
   if (IS_FLIP) {
     if (!flipTotal) { clearFlipPage(); return; }
     // 汇入档带了上次页次 → 跳到那一页再重绘（否则重绘会把当前页写回 lastId／lastIdx）
@@ -5578,6 +5693,29 @@ function currentScrollTop() {
   const body = document.getElementById('body');
   return body ? Math.max(0, Math.round(body.scrollTop)) : 0;
 }
+// 🆕 便利贴当前画面最上方那一行的内容锚点（0-based，和 calendar 共用 tlRenderNotes 的行号）。
+//   菜单「滚动」把它带给 calendar → 直接滚到这一行，而不是整张事件卡的中间。
+function noteFirstVisibleLine() {
+  const body = document.getElementById('body');
+  if (!body) return null;
+  const bodyTop = body.getBoundingClientRect().top;
+  const cands = Array.prototype.slice.call(
+    body.querySelectorAll('.ev-cb[data-line], .ev-md-edit[data-line], .md-unit[data-start][data-end]')
+  );
+  let best = null, bestD = Infinity;
+  cands.forEach((el) => {
+    const r = el.getBoundingClientRect();
+    const d = r.top - bodyTop;
+    if (d <= -Math.max(1, r.height)) return;   // 完全滚出上方
+    if (d < bestD) { bestD = d; best = el; }
+  });
+  if (!best) return null;
+  const l = best.getAttribute('data-line');
+  if (l !== null && Number.isFinite(+l)) return { line: +l };
+  const s = +best.getAttribute('data-start');
+  const e = +best.getAttribute('data-end');
+  return (Number.isFinite(s) && Number.isFinite(e)) ? { start: s, end: e } : null;
+}
 function restoreScrollPos() {
   const body = document.getElementById('body');
   if (!body) return;
@@ -5586,6 +5724,16 @@ function restoreScrollPos() {
   // 等版面定稿（高亮重包、字级／配色套用都可能改变高度）后再定位，避免被后续重绘吃掉
   requestAnimationFrame(() => { body.scrollTop = pos; });
 }
+// 🆕 返回原位（分体模式）：主进程送来「点击名称引用当时」的 scrollTop，直接还原并记为新位置。
+//   翻页模式不走这里（位置随 sticky-note-show-page 的 restoreScrollTop 在 renderFlipPage 里套用）。
+ipcRenderer.on('sticky-note-restore-scroll', (e, payload) => {
+  const v = payload && payload.scrollTop;
+  if (typeof v !== 'number' || !isFinite(v)) return;
+  const pos = Math.max(0, v);
+  writeScrollPos(pos);   // 内部会更新 state.scrollPos 并落盘（不必等 400ms 节流）
+  const body = document.getElementById('body');
+  if (body) requestAnimationFrame(() => { body.scrollTop = pos; });
+});
 function writeScrollPos(pos) {
   if (!KEY) return;   // 翻页窗首次重绘时 KEY 还是空（URL 没带 key），别写出垃圾条目
   if (pos === (state.scrollPos || 0)) return;
@@ -5618,6 +5766,28 @@ function closestUnit(el) {
   }
   return el.closest('.md-unit') || el;
 }
+// 🆕 2026-11-20「跳转前校准」：取被点击名称引用【所在的小事件】坐标，作为校准主窗的基准。
+function noteLocalUnitFromRef(ref) {
+  if (!ref) return null;
+  const unit = ref.closest('.md-unit');
+  if (unit) {
+    const btn = unit.querySelector('.md-unit-edit[data-start][data-end]');
+    if (btn) {
+      const s = parseInt(btn.getAttribute('data-start'), 10);
+      const e = parseInt(btn.getAttribute('data-end'), 10);
+      if (isFinite(s) && isFinite(e)) return { kind: 'block', start: s, end: e };
+    }
+  }
+  const holder = ref.closest('.ev-md-check') || ref.closest('li');
+  if (holder) {
+    const ed = holder.querySelector('.ev-md-edit[data-line], .ev-cb[data-line]');
+    if (ed) {
+      const l = parseInt(ed.getAttribute('data-line'), 10);
+      if (isFinite(l)) return { kind: 'check', line: l };
+    }
+  }
+  return null;
+}
 function noteFindUnitElement(unit) {
   const body = document.getElementById('body');
   if (!body || !unit) return null;
@@ -5629,22 +5799,30 @@ function noteFindUnitElement(unit) {
     if (cb) return closestUnit(cb);
   }
   if (unit.kind === 'block' && Number.isFinite(unit.start) && Number.isFinite(unit.end) && unit.start >= 0) {
-    // ① 精确匹配：data-start/data-end 完全一致
-    let ed = body.querySelector('.md-unit-edit[data-start="' + unit.start + '"][data-end="' + unit.end + '"]');
+    // ① ★ 具名围栏以 data-gp-name 为权威锚点（2026-11-20 真因：旧版只靠行号，
+    //    精确匹配失败就「取第一个 .md-unit.is-gp」→ 永远跳到画面最上面的那个围栏，
+    //    即使那里只是「引用了同名文字」的另一个围栏）。
+    const wantName = String(unit.name == null ? '' : unit.name).trim().toLowerCase();
+    if (wantName) {
+      const named = Array.prototype.slice.call(body.querySelectorAll('.md-unit.is-gp[data-gp-name]'));
+      const hit = named.find((u) => String(u.getAttribute('data-gp-name') || '').trim().toLowerCase() === wantName);
+      if (hit) return hit;
+      // ①b 旧快取/LESS 渲染可能没带 data-gp-name → 直接按 NAME 徽标文字找（徽标在围栏内）
+      const badges = Array.prototype.slice.call(body.querySelectorAll('.gp-badge-name'));
+      const badge = badges.find((b) => String(b.textContent || '').trim().toLowerCase().indexOf(wantName) >= 0);
+      if (badge) return badge.closest('.md-unit.is-gp') || closestUnit(badge);
+    }
+    // ② 精确匹配：data-start/data-end 完全一致
+    const ed = body.querySelector('.md-unit-edit[data-start="' + unit.start + '"][data-end="' + unit.end + '"]');
     if (ed) return closestUnit(ed);
-    // ② 区间兜底：找包含该区间的区块（s<=start && e>=end）— 与主窗口 tlGlossJumpToFence 同口径
+    // ③ 区间兜底：找包含该区间的区块（s<=start && e>=end）— 与主窗口 tlGlossJumpToFence 同口径
     const btns = body.querySelectorAll('.md-unit-edit[data-start][data-end]');
     for (let i = 0; i < btns.length; i++) {
       const s = parseInt(btns[i].getAttribute('data-start'), 10);
       const e = parseInt(btns[i].getAttribute('data-end'), 10);
       if (s <= unit.start && e >= unit.end) return closestUnit(btns[i]);
     }
-    // ③ .md-unit.is-gp 兜底（type=gp 的围栏区块可能没有 .md-unit-edit 小圆点但外框存在）
-    const gpCands = body.querySelectorAll('.md-unit.is-gp');
-    if (gpCands.length) {
-      // 取第一个（is-gp 外框本身就是可闪的真实单元，isRealUnit 守卫会通过）
-      return gpCands[0];
-    }
+    // ⛔ 不再「取第一个 .md-unit.is-gp」：那是跳错围栏的根因。找不到就让文本兜底/整页提示接管。
   }
   // ② 文本兜底：主窗与便利贴同源渲染，textContent 通常完全相等 → 精确相等优先。
   //    ⚠️ 早期版本用「任意方向子串 + 取最短命中」：当 unit.text 是一整个群的长文本时，
@@ -5678,6 +5856,59 @@ function noteScrollToCenter(el) {
   // 两帧后设置：避开 restoreScrollPos 的 rAF 回写（它只设一次，且先跑），确保定位不被覆盖
   requestAnimationFrame(() => {
     requestAnimationFrame(() => { body.scrollTop = Math.max(0, body.scrollTop + delta); });
+  });
+}
+// 🆕 具名围栏跳转：滚到「NAME 徽标（标题）」而不是整个围栏中心 —— 用户要的是标题就在视野上方。
+//   badge 文本形如「🏷️ 名称」，用包含匹配避开 emoji/变体选择符差异。
+function noteScrollToTitle(el, name) {
+  const body = document.getElementById('body');
+  if (!body || !el) return;
+  const want = String(name == null ? '' : name).trim().toLowerCase();
+  const badgeOf = (unit) => {
+    const badges = Array.prototype.slice.call(unit.querySelectorAll('.gp-badge-name'));
+    const hit = badges.find((b) => String(b.textContent || '').trim().toLowerCase().indexOf(want) >= 0);
+    return hit || badges[0] || unit;
+  };
+  // 第二次跳转常伴随 refresh 重绘：旧节点会被 innerHTML 换掉 → 每次都按 name 重新解析锚点。
+  const resolveAnchor = () => {
+    if (want) {
+      const named = Array.prototype.slice.call(body.querySelectorAll('.md-unit.is-gp[data-gp-name]'));
+      const hit = named.find((u) => String(u.getAttribute('data-gp-name') || '').trim().toLowerCase() === want);
+      if (hit) return badgeOf(hit);
+    }
+    return el.isConnected ? badgeOf(el) : null;
+  };
+  let anchor = resolveAnchor();
+  // ★ 定位结果要成为权威：两次跳转之间用户滚过画面，store 里存的是「滚过的位置」，
+  //   renderFlipPage 会先 restoreScrollPos 把它写回 body；若此处只设 scrollTop 而不改 store，
+  //   随后任何 refresh/重绘都会把画面拉回旧位置 → 第二次跳转就「没对准标题」。
+  //   所以：定位后立刻取消在途的 scrollSave、把最终位置写进 state/store；
+  //   并在 180ms 后再校正一次（图片载入 / 高亮重包 / VIEW 排序会改变徽标坐标）。
+  const applyTitleScroll = () => {
+    if (!anchor || !anchor.isConnected) anchor = resolveAnchor();
+    if (!anchor) return null;
+    const bRect = body.getBoundingClientRect();
+    const aRect = anchor.getBoundingClientRect();
+    const top = Math.max(0, body.scrollTop + (aRect.top - bRect.top) - 8);
+    body.scrollTop = top;
+    if (scrollSaveTimer) { clearTimeout(scrollSaveTimer); scrollSaveTimer = null; }
+    if (KEY) {
+      state.scrollPos = top;
+      ipcRenderer.invoke('sticky-note-set', { key: KEY, idx: IDX, patch: { scrollPos: top } }).catch(() => {});
+    }
+    return top;
+  };
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      applyTitleScroll();
+      setTimeout(() => {
+        if (!anchor || !anchor.isConnected) anchor = resolveAnchor();
+        if (!anchor) return;
+        const b = body.getBoundingClientRect();
+        const a = anchor.getBoundingClientRect();
+        if (Math.abs((a.top - b.top) - 8) > 12) applyTitleScroll();
+      }, 180);
+    });
   });
 }
 function flashUnit(el) {
@@ -5714,6 +5945,12 @@ function noteFlashWholePage() {
   setTimeout(() => note.classList.remove('note-page-flash'), 2400);
 }
 function noteScrollFlashUnit(unit) {
+  // 🆕 串行化握手：定位（含 180ms 延迟校正）结束后回告主窗，主窗才滚自己的画面。
+  //   280ms = 两层 rAF（≈32ms）+ 180ms 校正 + 余量；失败路径也照回，主窗不会干等。
+  const jt = unit && unit.jumpToken;
+  if (jt) {
+    setTimeout(() => { ipcRenderer.invoke('gp-jump-done', { jumpToken: jt }).catch(() => {}); }, 280);
+  }
   const el = noteFindUnitElement(unit);
   // 🆕 防回归守卫：只接受真正的「小事件(群)」单元，绝不把 #body / #note 等容器当目标。
   //    早期 closestUnit 会爬到 #body（check.parentElement.closest('div')），结果整张便利贴一起闪。
@@ -5727,7 +5964,9 @@ function noteScrollFlashUnit(unit) {
     noteFlashWholePage();
     return;
   }
-  noteScrollToCenter(el);
+  // 具名围栏 → 标题对齐；其它单元 → 维持原有居中
+  if (unit && unit.name) noteScrollToTitle(el, unit.name);
+  else noteScrollToCenter(el);
   // ⚠️ 闪烁必须延到「滚动落地」那一帧，并**重新查一次元素**：
   //    便利贴跳转常伴随 sticky-note-refresh / 翻页重绘竞态，旧 el 可能已被 innerHTML 换掉变成 detached——
   //    此时 scrollTop 照常会动（使用者看到「有滚动」），但 class 加在脱离文档的节点上**完全看不见**（11-08 回报）。
@@ -5744,10 +5983,66 @@ function noteScrollFlashUnit(unit) {
     });
   });
 }
+// 🆕 2026-11-20：calendar 未开启时的本地 {NAME=X} 跳转。
+//   只在【当前这张便利贴】里找同名围栏 → 滚到 NAME 徽标（标题）＋闪烁；
+//   不唤起、不滚动 calendar，也就不会被重建主窗的状态推送抢走便利贴页/滚动。
+function noteLocalNameJump(payload) {
+  const name = String((payload && payload.name) || '').trim();
+  if (!name) return;
+  const body = document.getElementById('body');
+  if (!body) return;
+  const want = name.toLowerCase();
+  const findNamed = () => {
+    const named = Array.prototype.slice.call(body.querySelectorAll('.md-unit.is-gp[data-gp-name]'));
+    const hit = named.find((u) => String(u.getAttribute('data-gp-name') || '').trim().toLowerCase() === want);
+    if (hit) return hit;
+    const badges = Array.prototype.slice.call(body.querySelectorAll('.gp-badge-name'));
+    const badge = badges.find((b) => String(b.textContent || '').trim().toLowerCase().indexOf(want) >= 0);
+    return badge ? (badge.closest('.md-unit.is-gp') || badge.closest('.md-unit')) : null;
+  };
+  const el = findNamed();
+  if (!el) {
+    // 目标不在这张便利贴：明确告知，别让使用者以为点击失效。
+    if (typeof showStickyRefreshFeedback === 'function') {
+      showStickyRefreshFeedback('这张便利贴内没有「' + name.slice(0, 18) + '」的围栏（Calendar 未开启）', true);
+    }
+    return;
+  }
+  // 挡住新开主窗可能带来的 apply-state / order-updated 重绘（与远端跳转同一套保护窗口）。
+  noteMarkFocusActive({ kind: 'block', name: name });
+  noteScrollToTitle(el, name);
+  // 闪烁要等滚动落地，并重查节点（refresh/重绘可能换掉旧 DOM）。
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      const fresh = el.isConnected ? el : findNamed();
+      if (fresh) flashUnit(fresh);
+      else noteFlashWholePage();
+    });
+  });
+}
+// 🆕 跳转定位保护窗口：从便利贴点名称时主窗可能还没开，主进程会先 createWindow+loadFile；
+//   新主窗起来后会推 sticky-note-apply-state / order-updated，把便利贴翻回「上次记忆页」并重设滚动
+//   → 刚做好的跳转定位被毁，看起来像「便利贴刚被打开」。这段窗口内拒绝这类重绘抢画面。
+let noteActiveFocus = null;
+let noteActiveFocusUntil = 0;
+// 🆕 由便利贴唤起主窗（新建）期间锁住当前页：新窗的 sticky-note-sync → order-updated
+//   会重建清单，若照旧重绘，当前页身份对不上时会被翻到别的贴（VIEW 贴 396/505）。
+let noteWakeGuardUntil = 0;
+ipcRenderer.on('sticky-note-hold-page', (e, p) => {
+  noteWakeGuardUntil = Date.now() + (p && typeof p.ms === 'number' ? p.ms : 6000);
+});
+function noteMarkFocusActive(u) {
+  noteActiveFocus = u || null;
+  noteActiveFocusUntil = Date.now() + 1800;
+}
+function noteFocusBusy() {
+  return !!(pendingFocusUnit || (noteActiveFocus && Date.now() < noteActiveFocusUntil) || Date.now() < noteWakeGuardUntil);
+}
 function consumePendingFocusUnit() {
   if (!pendingFocusUnit) return;
   const u = pendingFocusUnit;
   pendingFocusUnit = null;
+  noteMarkFocusActive(u);
   // 🆕 诊断：DevTools 里可确认主窗右击带来的 focusUnit 是否真的送达便利贴窗
   if (typeof console !== 'undefined' && console.log) console.log('[便利贴] 收到 focusUnit，准备滚动+闪烁：', u);
   // 等下一帧：确保 init/renderFlipPage 内的 restoreScrollPos 已完成，再滚动定位
@@ -6760,6 +7055,10 @@ async function resyncFlipOrder() {
   if (!res || !Array.isArray(res.order)) return;
   const r = applyFlipOrder(res.order);
   if (!r.changed || !flipTotal) return;
+  // 🆕 通知阶段（提醒贴展示数秒后恢复上次页）绝不抢画面：renderFlipPage 会 notifyCancel，
+  //    导致 runNotifyPhase 提前 return 而不渲染 startIndex → 「先提醒再恢复」功能消失。
+  //    唤起主窗期间同样只更新清单、不重绘当前页（否则新清单会把画面翻到别的贴）。
+  if (notifyActive || noteFocusBusy()) return;
   // 编辑中绝不抢画面（未保存改动会被 renderFlipPage 的确认框打断）：只更新页数，等下次翻页再取内容
   if (editMode) return;
   flipRenderQuiet = true;
@@ -6792,6 +7091,8 @@ async function initFlip() {
   ipcRenderer.on('sticky-note-order-updated', (e, payload) => {
     flipOrderSeq++;
     applyFlipOrder(payload && payload.order);
+    // 🆕 顺序照收，但通知阶段／跳转定位中不重绘（否则提醒贴流程被 notifyCancel 打断、定位被盖掉）
+    if (notifyActive || noteFocusBusy()) return;
     if (!flipTotal) { clearFlipPage(); return; }
     if (payload && payload.skipRender) return; // 紧接着会推 apply-state（可能还要跳页），避免两次重绘互踩
     if (editMode) return; // 编辑中不抢画面（页数已更新，内容等翻页再取）
@@ -6804,7 +7105,15 @@ async function initFlip() {
     if (!payload) return;
     if (Array.isArray(payload.order)) { flipOrderSeq++; applyFlipOrder(payload.order); }
     // 🆕 顺带要定位+闪烁的小事件(群)：翻页渲染后会由 renderFlipPage 末尾消费（含 pendingShowPage 早到分支）
-    if (typeof payload.focusUnit !== 'undefined') pendingFocusUnit = payload.focusUnit;
+    if (typeof payload.focusUnit !== 'undefined') {
+      pendingFocusUnit = payload.focusUnit;
+      // 🆕 用户在提醒贴展示期间点了跳转 → 明确结束通知阶段，别让它把画面抢回提醒贴
+      if (payload.focusUnit) notifyCancel();
+    }
+    // 🆕 返回原位：记下点击当时的 scrollTop，renderFlipPage 套用存档 scrollPos 后覆盖它
+    if (typeof payload.restoreScrollTop === 'number' && isFinite(payload.restoreScrollTop)) {
+      pendingReturnScrollTop = Math.max(0, payload.restoreScrollTop);
+    }
     if (!flipTotal) { pendingShowPage = payload; return; }
     showFlipPagePayload(payload);
   });
@@ -7160,8 +7469,12 @@ async function loadStickyMenuNotes() {
 }
 
 // 渲染第 i 张：切换 KEY/IDX（内容＋颜色/透明度按该便利贴自身状态），翻页窗几何保持不变
+// 🆕 连续两次 show-page（校准＋跳转）会让两趟 renderFlipPage 交错：
+//    旧那趟 await 回来后若继续写 DOM，会把画面盖回校准页 → 用序号守卫丢弃过期渲染。
+let flipRenderSeq = 0;
 async function renderFlipPage(i) {
   if (flipTotal === 0) return;
+  const myRenderSeq = ++flipRenderSeq;
   // 🆕 通知期间使用者自己翻页（键盘／滑动／按钮）→ 放弃整个通知阶段，以使用者的操作为准
   if (notifyActive && !notifyRendering) notifyCancel();
   i = ((i % flipTotal) + flipTotal) % flipTotal; // 循环换页：越界自动首尾回绕（首⇄尾）
@@ -7202,6 +7515,7 @@ async function renderFlipPage(i) {
   }
   // 颜色/透明度/字号：优先用该便利贴自身已存状态，否则退回纸质默认（淡黄底 + 纯黑字）
   const inst = (await ipcRenderer.invoke('sticky-note-get', { key: KEY, idx: IDX })) || {};
+  if (myRenderSeq !== flipRenderSeq) return;   // 已被更新的翻页请求取代
   state.color = (inst && inst.color) ? inst.color : STICKY_DEF_BG;
   state.opacity = (inst && typeof inst.opacity === 'number') ? inst.opacity : 100;
   state.fontScale = (inst && typeof inst.fontScale === 'number') ? inst.fontScale : 1;
@@ -7211,6 +7525,13 @@ async function renderFlipPage(i) {
   // 🆕 翻页换到另一张便利贴：套用「该张」自己的排序偏好（须在下方 refreshNoteViewDisplay 之前设好）
   state.sortMode = (inst && (inst.sortMode === 'asc' || inst.sortMode === 'desc')) ? inst.sortMode : 'orig';
   state.scrollPos = (inst && typeof inst.scrollPos === 'number' && isFinite(inst.scrollPos)) ? Math.max(0, inst.scrollPos) : 0;
+  // 🆕 返回原位：用「点击名称引用当时」的 scrollTop 覆盖该贴存档位置，并落盘成为新记忆。
+  //   必须在改 state.scrollPos 之前调 writeScrollPos（它内部会比对旧值，先改就永远不写了）。
+  if (pendingReturnScrollTop !== null) {
+    const retTop = pendingReturnScrollTop;
+    pendingReturnScrollTop = null;
+    writeScrollPos(Math.max(0, retTop));
+  }
   state.meteor = normalizeMeteor(inst && inst.meteor);
 
   renderMeta(ev);
@@ -7223,6 +7544,7 @@ async function renderFlipPage(i) {
     html = (typeof res.html === 'string') ? res.html : '';
     titleHtml = (typeof res.titleHtml === 'string') ? res.titleHtml : '';
   } catch (e) { html = ''; titleHtml = ''; }
+  if (myRenderSeq !== flipRenderSeq) return;   // 已被更新的翻页请求取代
   const titleEl = document.getElementById('title');
   // 🆕 单段落 VIEW 贴：标题 tooltip（段落名称＋条件摘要）；多段落不挂。文字包进 .tt（no-drag），只写 data-tip。
   const tip = (ev && typeof ev.titleTip === 'string' && ev.titleTip) ? ev.titleTip : '';

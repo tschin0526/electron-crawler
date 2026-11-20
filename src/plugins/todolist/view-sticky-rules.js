@@ -794,15 +794,17 @@
       const kind = isTerm ? 'term' : (isPicture ? 'picture' : 'name');
       const lookupKey = isTerm ? ('term:' + tmVal.toLowerCase())
         : isPicture ? ('picture:' + picVal.toLowerCase()) : nmVal.toLowerCase();
-      const truthy = (key) => {
+      // folded 三态：未指定=null（沿用主进程 store 旧行为）；true/false＝指令显式指定，渲染端输出 data-gp-fold-default 标记。
+      const boolTri = (key) => {
         const m = s.match(new RegExp('(?:^|\\s)' + key + '\\s*=\\s*(?:"([^"]*)"|\'([^\']*)\'|“([^”]*)”|‘([^’]*)’|([^\\s}]+))', 'i'));
-        if (!m) return false;
+        if (!m) return null;
         let first = '';
         for (let i = 1; i < m.length; i++) if (m[i] != null) { first = m[i]; break; }
         const v = first.toLowerCase();
         return v === 'true' || v === 'on' || v === '1' || v === 'yes';
       };
-    return { name, kind, lookupKey, showLabel: truthy('showLabel'), showDirective: truthy('showDirective') };
+      const truthy = (key) => boolTri(key) === true;
+    return { name, kind, lookupKey, showLabel: truthy('showLabel'), showDirective: truthy('showDirective'), folded: boolTri('folded') };
   }
   // 就地展开：同名全部按原顺序插入到 {include} 语法所在位置（不在段尾追加），递归防环（深度 8），代码围栏内不解析。
   //   renderInsert(raw,name)：可选回调，把展开后的内容预渲染成 HTML（如 .gp-include-box）；无回调则返回纯文本。
@@ -824,14 +826,14 @@
         const nm = p.name;
         if (!nm) return m;
         // picture= 不查围栏索引
-        if (p.kind === 'picture') return render ? render('', nm, p.showLabel, m, p.showDirective, p.kind) : m;
+        if (p.kind === 'picture') return render ? render('', nm, p.showLabel, m, p.showDirective, p.kind, p.folded) : m;
         const key = p.lookupKey;
         if (seen.has(key)) return '';
         const contents = index.get(key);
         if (!contents || !contents.length) return m;
         return contents.map((raw) => {
           const sub = gpExpandIncludesText(raw, index, d + 1, new Set(seen).add(key), renderInsert);
-          return render ? render(sub, nm, p.showLabel, m, p.showDirective, p.kind) : sub;
+          return render ? render(sub, nm, p.showLabel, m, p.showDirective, p.kind, p.folded) : sub;
         }).join('');
       }));
     });
@@ -855,7 +857,7 @@
   // 单个 include 内容 → inline-safe 的 .gp-include-box HTML（就地替换 token 用）。
   //   与桌面 tlGpIncludeBoxHtml 同口径：checkbox 行先转只读 .ev-md-check（不挂 uid/onclick/data-line），
   //   再走 noteMarkers → termDefs → nameRefs → markdown，剥最外层 <p> 后包虚线框，避免二次 render 拆 <ul>／巢状 <p>。
-  function gpIncludeBoxHtml(raw, name, D, showLabel, directive, showDirective, kind) {
+  function gpIncludeBoxHtml(raw, name, D, showLabel, directive, showDirective, kind, folded) {
     const isPicture = kind === 'picture' || /\{include\s+picture\s*=/i.test(directive || '');
     let html;
     if (isPicture) {
@@ -887,8 +889,12 @@
       : isTerm
       ? '<span class="gp-include-badge is-term" title="术语详细说明">\u{1F4D6}</span>'
       : '<span class="gp-include-badge is-name" title="围栏名称引用">\u{1F3F7}\uFE0F</span>';
-    // 折叠按钮：藏在 legend（左上角），只折叠 .gp-include-body；徽标、名称、directive 永不折叠。纯 CSS :has(:checked)，默认展开。
-    const fold = '<label class="gp-include-fold" title="折叠/展开内容"><input type="checkbox" class="gp-include-fold-cb"><span class="gp-include-fold-ico">\u25BE</span></label>';
+    // 折叠按钮：藏在 legend（左上角），只折叠 .gp-include-body；徽标、名称、directive 永不折叠。纯 CSS :has(:checked)。
+    //   folded 三态：true → checked + data-gp-fold-default="1"（默认折叠）；false → data-gp-fold-default="0"（默认展开）；
+    //                null/未指定 → 无标记，沿用主进程 store 旧行为。
+    const foldAttr = folded === true ? ' checked data-gp-fold-default="1"'
+      : folded === false ? ' data-gp-fold-default="0"' : '';
+    const fold = '<label class="gp-include-fold" title="折叠/展开内容"><input type="checkbox" class="gp-include-fold-cb"' + foldAttr + '><span class="gp-include-fold-ico">\u25BE</span></label>';
     const legend = '<legend class="gp-include-label">' + fold + badge + (showLabel ? D.esc(name) : '') + '</legend>';
     // showDirective=true：框内顶部显示原始 {include …} 指令文本（转义），默认不显示。（永不折叠）
     const dirHtml = showDirective ? '<div class="gp-include-directive">' + D.esc(directive || '') + '</div>' : '';
@@ -900,18 +906,118 @@
   function gpRenderWithIncludes(rawText, renderText, D) {
     const idx = D && D.gpIncludeIndex;
     const hasPicture = /\{include\s+picture\s*=/.test(String(rawText || ''));
-    if ((!idx || !idx.size) && !hasPicture || !GP_INCLUDE_RE_ANY.test(rawText)) return renderText(rawText);
+    const hasList = GP_LIST_RE_ANY.test(String(rawText || ''));
+    if (!hasList && ((!idx || !idx.size) && !hasPicture || !GP_INCLUDE_RE_ANY.test(rawText))) return renderText(rawText);
     // 占位符用普通 ASCII（真 renderer 剥 NUL 控制字符 → 裸露标记、注入失败）；%%TLINC_n_ZZ%% 真引擎验证可原样穿过。
     let seq = 0;
     const ph = new Map();
-    const prepared = gpExpandIncludesText(rawText, idx || new Map(), 0, new Set(), (r, nm, showLabel, directive, showDirective, kind) => {
-      const tok = '%%TLINC_' + (seq++) + '_ZZ%%';
-      ph.set(tok, { raw: r, nm: nm, showLabel: showLabel, directive: directive, showDirective: showDirective, kind: kind });
-      return tok;
-    });
+    let prepared = rawText;
+    if ((idx && idx.size) || hasPicture) {
+      prepared = gpExpandIncludesText(rawText, idx || new Map(), 0, new Set(), (r, nm, showLabel, directive, showDirective, kind, folded) => {
+        const tok = '%%TLINC_' + (seq++) + '_ZZ%%';
+        ph.set(tok, { raw: r, nm: nm, showLabel: showLabel, directive: directive, showDirective: showDirective, kind: kind, folded: folded });
+        return tok;
+      });
+    }
+    if (hasList) {
+      const all = gpCollectGpNameList(D);
+      prepared = String(prepared).replace(GP_LIST_RE_ONE, (m) => {
+        const p = gpParseListToken(m);
+        const list = gpFilterGpNameList(all, p.pattern);
+        const tok = '%%TLLST_' + (seq++) + '_ZZ%%';
+        ph.set(tok, { isList: true, list, showCount: p.showCount, directive: m, folded: p.folded, pattern: p.pattern });
+        return tok;
+      });
+    }
     let out = renderText(prepared);
-    ph.forEach((v, tok) => { out = out.split(tok).join(gpIncludeBoxHtml(v.raw, v.nm, D, v.showLabel, v.directive, v.showDirective, v.kind)); });
+    ph.forEach((v, tok) => {
+      const box = v.isList ? gpNameListBoxHtml(v.list, v.showCount, v.directive, v.folded, D, v.pattern)
+        : gpIncludeBoxHtml(v.raw, v.nm, D, v.showLabel, v.directive, v.showDirective, v.kind, v.folded);
+      out = out.split(tok).join(box);
+    });
     return out;
+  }
+  // ========== 🆕 2026-11-20：{list NAME} 具名围栏名称清单（共享 VIEW 引擎，与桌面/LITE 同口径） ==========
+  //   · 数据源：从 D.gpIncludeIndex 的 key 重建（key 即围栏 NAME 小写；排除 'term:' 前缀）。
+  //     若 index 因无 {include} 语法未建，则回退按本次 events 扫围栏 NAME。
+  const GP_LIST_RE_ANY = /\{list\s+NAME\b[^}]*\}/i;
+  const GP_LIST_RE_ONE = /\{list\s+NAME\b[^}]*\}/gi;
+  function gpParseListToken(token) {
+    const s = String(token == null ? '' : token);
+    const readVal = (m) => {
+      if (!m) return '';
+      for (let i = 1; i < m.length; i++) if (m[i] != null) return String(m[i]).trim();
+      return '';
+    };
+    const boolTri = (key) => {
+      const m = s.match(new RegExp('(?:^|\\s)' + key + '\\s*=\\s*(?:"([^"]*)"|\'([^\']*)\'|“([^”]*)”|‘([^’]*)’|([^\\s}]+))', 'i'));
+      if (!m) return null;
+      const v = readVal(m).toLowerCase();
+      return v === 'true' || v === 'on' || v === '1' || v === 'yes';
+    };
+    // NAME="…"：万用字元查询（* 通配任意字符）。无 NAME= 时为空＝列全部。
+    const pattern = readVal(s.match(/(?:^|\s)NAME\s*=\s*(?:"([^"\n]*)"|'([^'\n]*)'|“([^”\n]*)”|‘([^’\n]*)’|([^\s}]+))/i));
+    return { showCount: boolTri('showCount') === true, folded: boolTri('folded'), pattern };
+  }
+  // 万用字元匹配：* 通配任意字符；多段 * 拆成片段按顺序全命中（AND）；不带 * 的纯词＝包含匹配；大小写不敏感。
+  function gpGpNamePatternHit(name, pattern) {
+    if (!pattern) return true;
+    const hay = String(name == null ? '' : name).toLowerCase();
+    const needle = String(pattern).toLowerCase();
+    if (needle.indexOf('*') < 0) return hay.indexOf(needle) >= 0;
+    const parts = needle.split('*').filter((x) => x !== '');
+    if (!parts.length) return true;
+    let pos = 0;
+    for (const part of parts) {
+      const at = hay.indexOf(part, pos);
+      if (at < 0) return false;
+      pos = at + part.length;
+    }
+    return true;
+  }
+  function gpFilterGpNameList(list, pattern) {
+    if (!pattern) return list;
+    const out = new Map();
+    list.forEach((v, k) => { if (gpGpNamePatternHit(v.name, pattern)) out.set(k, v); });
+    return out;
+  }
+  function gpCollectGpNameList(D) {
+    const out = new Map();
+    // 统一按本次 events 扫围栏 NAME（{gpJ} 无 NAME 自动跳过），拿到正确大小写名称与同名计数。
+    const events = (D && D.gpEvents) || [];
+    (Array.isArray(events) ? events : []).forEach((ev) => {
+      if (!ev || !ev.notes) return;
+      const lines = String(ev.notes).replace(/\r\n/g, '\n').split('\n');
+      const scan = gpFenceScan(lines);
+      (scan.ranges || []).forEach((r) => {
+        const a = extractGpAttrsLocal(lines[r.start] || '');
+        const nm = String((a && a.name) || '').trim();
+        if (!nm) return;
+        const key = nm.toLowerCase();
+        const hit = out.get(key);
+        if (hit) { hit.count++; hit.name = nm; }
+        else out.set(key, { name: nm, count: 1 });
+      });
+    });
+    return out;
+  }
+  function gpNameListBoxHtml(list, showCount, directive, folded, D, pattern) {
+    const entries = Array.from(list.values());
+    const body = entries.length
+      ? '<ul class="gp-name-list">' + entries.map((it) => {
+          const cnt = showCount ? ' <span class="gp-name-list-count">(' + it.count + ')</span>' : '';
+          return '<li><span class="gp-name-ref" data-gp-name-ref="' + D.esc(it.name) + '"' +
+            ' title="跳转到围栏：' + D.esc(it.name) + '">\u{1F3F7}\uFE0F ' + D.esc(it.name) + '</span>' + cnt + '</li>';
+        }).join('') + '</ul>'
+      : pattern
+      ? '<div class="gp-name-list-empty">没有名称匹配 <code>' + D.esc(pattern) + '</code> 的具名围栏</div>'
+      : '<div class="gp-name-list-empty">尚未有具名围栏（在围栏 open 行写 NAME="名称" 即可，如 <code>{gpJ|NAME="X"}</code>）</div>';
+    const foldAttr = folded === true ? ' checked data-gp-fold-default="1"'
+      : folded === false ? ' data-gp-fold-default="0"' : '';
+    const fold = '<label class="gp-include-fold" title="折叠/展开内容"><input type="checkbox" class="gp-include-fold-cb"' + foldAttr + '><span class="gp-include-fold-ico">\u25BE</span></label>';
+    const legend = '<legend class="gp-include-label">' + fold + '<span class="gp-include-badge is-name" title="具名围栏清单">\u{1F3F7}\uFE0F</span>围栏名称清单 <span class="gp-name-list-total">' + entries.length + '</span></legend>';
+    const dirHtml = '<div class="gp-include-directive">' + D.esc(directive || '') + '</div>';
+    return '<fieldset class="gp-include-box gp-name-list-box" data-gp-name-list="1">' + legend + dirHtml + '<div class="gp-include-body">' + body + '</div></fieldset>';
   }
   // 🆕 {gp} / {gp:名称} 分组标记解析（与 calendar-editor.js::tlGpKeyOfLine 同口径）。
   //   null＝无标记；''＝{gp} 无名组；名称＝{gp:名称}。VIEW 投影贴的排序单元必须以此为准，
@@ -1222,6 +1328,8 @@
     const D = makeDeps(deps);
     // 🆕 2026-11-16：{include} 索引按本次 events 建一次，挂在 D 上供 taskLineHtml/nonTaskUnitHtml 共用。
     D.gpIncludeIndex = gpIncludeIndexFromEvents(events);
+    // 🆕 2026-11-20：{list NAME} 需要全部 events 扫具名围栏，挂在 D 上供 gpRenderWithIncludes 共用。
+    D.gpEvents = events;
     const r = normalizeRule(rule);
     if (!r.enabled) return null;                     // 关闭的规则＝不要这张贴
     if (!r.segments.some(segmentHasCondition)) return null;   // 全部段落都没条件＝还没填好
