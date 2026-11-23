@@ -297,20 +297,50 @@
     .gp-return-btn {
       position: fixed; right: 14px; bottom: 14px; z-index: 70;
       display: none; align-items: center; gap: .25em;
-      padding: .45em .9em; border: 1px solid #D4AF37; border-radius: 999px;
-      background: #2b2400; color: #f6d774; font: inherit; font-size: .9em; font-weight: 600;
+      /* ★ 与 calendar 端同口径用固定 13px：按钮挂在 document.body（不在 #body 内），
+         用 em 会拿浏览器默认 16px 计算、与正文 fontScale 脱钩，被撑成 14.4px 而和固定 12px 的 ▾ 不等大 */
+      padding: .5em 1em; border: 1px solid #D4AF37; border-radius: 999px;
+      background: #2b2400; color: #f6d774; font: inherit; font-size: 13px; font-weight: 600;
       cursor: pointer; box-shadow: 0 6px 18px rgba(0,0,0,.35); -webkit-app-region: no-drag;
     }
     .gp-return-btn:hover { filter: brightness(1.15); }
-    /* 🆕 返回工具组：↩ 按钮 + ☰ 位置清单（便利贴窗很窄，清单右对齐贴住按钮） */
+    /* 🆕 2026-11-21：主按钮右上双角标——金色＝跳转层数、📍＝手动点数；0 也显示 */
+    .gp-return-badges { position: absolute; top: -8px; right: 4px; display: inline-flex; gap: 2px; pointer-events: none; -webkit-app-region: no-drag; }
+    .gp-return-badge {
+      min-width: 17px; height: 17px; padding: 0 3px; display: inline-flex; align-items: center; justify-content: center;
+      border-radius: 999px; font-size: 10px; font-weight: 700; line-height: 1; font-variant-numeric: tabular-nums;
+      box-shadow: 0 1px 3px rgba(0,0,0,.35); -webkit-app-region: no-drag;
+    }
+    .gp-return-badge-jump { background: #D4AF37; color: #2b2400; border: 1px solid #f6d774; }
+    .gp-return-badge-manual { background: #2b2400; color: #f6d774; border: 1px solid #D4AF37; }
+    .gp-return-btn.is-idle { opacity: .55; }
+    .gp-return-btn.is-idle:hover { filter: none; }
+    /* 🆕 返回工具组：返回原位＋▾ 合成 combo；▾ 选单第一项＝返回清单，第二项＝设定返回定位点 */
     .gp-return-dock { position: fixed; right: 14px; bottom: 14px; z-index: 70; display: none; flex-direction: row; align-items: flex-end; gap: 5px; }
-    .gp-return-dock .gp-return-btn { position: static; display: none; }
-    .gp-return-list-btn {
+    .gp-return-combo { display: inline-flex; flex-direction: row; align-items: stretch; }
+    /* ★ 角标锚点用 relative；必须重置基础类残留的 right/bottom（static 时本被忽略，改 relative 会生效把主按钮推离 ▾） */
+    .gp-return-dock .gp-return-btn { position: relative; right: auto; bottom: auto; z-index: auto; display: none; border-radius: 999px 0 0 999px; margin-right: -1px; }
+    /* 🆕 2026-11-21：combo 中间 ＋ 加定位点（方角，夹在左半圆主按钮与右半圆 ▾ 之间） */
+    .gp-return-mark-btn {
       display: inline-flex; align-items: center; justify-content: center;
-      min-width: 30px; height: 30px; padding: 0 6px; border: 1px solid #D4AF37; border-radius: 999px;
-      background: #2b2400; color: #f6d774; font: inherit; font-size: 14px; line-height: 1;
+      min-width: 28px; height: 34px; padding: 0 6px; border: 1px solid #D4AF37; border-radius: 0; margin-right: -1px;
+      background: #2b2400; color: #f6d774; font: inherit; font-size: 15px; font-weight: 700; line-height: 1;
       cursor: pointer; box-shadow: 0 6px 18px rgba(0,0,0,.35); -webkit-app-region: no-drag;
     }
+    .gp-return-mark-btn:hover { filter: brightness(1.15); }
+    .gp-return-list-btn {
+      display: inline-flex; align-items: center; justify-content: center;
+      min-width: 28px; height: 34px; padding: 0 6px; border: 1px solid #D4AF37; border-radius: 0 999px 999px 0;
+      background: #2b2400; color: #f6d774; font: inherit; font-size: 13px; line-height: 1;
+      cursor: pointer; box-shadow: 0 6px 18px rgba(0,0,0,.35); -webkit-app-region: no-drag;
+    }
+    .gp-return-menu-row {
+      display: flex; align-items: center; gap: 6px; width: 100%; text-align: left;
+      padding: 5px 6px; border: none; border-radius: 7px; background: transparent; color: inherit;
+      font: inherit; font-size: 12px; cursor: pointer; -webkit-app-region: no-drag;
+    }
+    .gp-return-menu-row:hover { background: rgba(212,175,55,.22); }
+    .gp-return-list-rows { display: none; flex-direction: column; gap: 2px; }
     .gp-return-list-btn:hover { filter: brightness(1.15); }
     .gp-return-list {
       display: none; flex-direction: column; gap: 2px; width: max-content; min-width: 190px; max-width: min(320px, calc(100vw - 28px));
@@ -320,16 +350,31 @@
       font-size: 12px; -webkit-app-region: no-drag;
     }
     .gp-return-list-title { font-weight: 700; color: #9a7b12; padding: 0 4px 5px; border-bottom: 1px solid rgba(212,175,55,.45); margin-bottom: 3px; }
+    .gp-return-list-empty { padding: 6px; color: #9a7b12; opacity: .7; font-size: 12px; }
     .gp-return-list-row {
       display: flex; align-items: center; gap: 7px; width: 100%; text-align: left;
       padding: 5px 6px; border: none; border-radius: 7px; background: transparent; color: inherit;
       font: inherit; cursor: pointer; -webkit-app-region: no-drag;
     }
     .gp-return-list-row:hover { background: rgba(212,175,55,.22); }
+    /* 项次：排在定位徽标（层数/📍）前面，让清单行可以口头指称 */
+    .gp-return-list-ord { flex: 0 0 auto; min-width: 16px; text-align: right; color: #9a7b12; font-weight: 700; font-size: 11px; opacity: .85; }
     .gp-return-list-depth {
       flex: 0 0 auto; min-width: 19px; height: 19px; display: inline-flex; align-items: center; justify-content: center;
       border: 1px solid #D4AF37; border-radius: 999px; color: #9a7b12; font-weight: 700; font-size: 11px;
     }
+    .gp-return-list-row.is-manual { background: rgba(212,175,55,.08); }
+    .gp-return-list-row .gp-return-list-text { flex: 1 1 auto; min-width: 0; }
+    /* 手动点位置提示（·「…」）大一号粗体，便于在清单里一眼分辨不同定位点 */
+    .gp-return-list-pos { font-size: 14px; font-weight: 700; }
+    /* 来源「便利贴／主窗」胶囊外框：只描边、透明底（不额外加背景） */
+    .gp-return-src-tag { margin-right: 3px; padding: 0 5px; border: 1px solid rgba(212,175,55,.55); border-radius: 999px; }
+    .gp-return-manual-tag { margin-left: 2px; padding: 0 4px; border: 1px solid rgba(212,175,55,.55); border-radius: 999px; color: #9a7b12; font-size: 10px; }
+    .gp-return-mark-x {
+      flex: 0 0 auto; min-width: 17px; height: 17px; display: inline-flex; align-items: center; justify-content: center;
+      border-radius: 999px; color: #9a7b12; font-size: 11px; line-height: 1; cursor: pointer; -webkit-app-region: no-drag;
+    }
+    .gp-return-mark-x:hover { background: rgba(212,175,55,.3); color: #7a3a12; }
     .note-close-menu .nami { padding: 7px 10px; font-size: 12.5px; }
     .note-close-menu .nami + .nami { border-top: 1px solid rgba(212,175,55,.45); }
     .note-close-menu .nami:hover { background: rgba(212,175,55,.18); }
@@ -456,6 +501,8 @@
     #noteMarkerBox .nm-row input.nm-num { flex: none; width: 52px; }
     #noteMarkerBox .nm-row select { flex: none; width: auto; }
     #noteMarkerBox .nm-row select.nm-wide { flex: 1 1 auto; width: 100%; }
+    #noteMarkerBox .nm-gp-name { display: flex; flex: 1 1 auto; min-width: 0; }
+    #noteMarkerBox .nm-gp-name > select, #noteMarkerBox .nm-gp-name > input { flex: 1 1 auto; width: 100%; }
     #noteMarkerBox .nm-schedule { display: flex; flex: 1 1 auto; flex-direction: column; gap: 4px; min-width: 0; width: 100%; }
     #noteMarkerBox .nm-schedule-values { display: flex; gap: 4px; min-width: 0; }
     #noteMarkerBox .nm-schedule-values .nm-schedule-date { flex: 1 1 auto; min-width: 0; }
@@ -599,7 +646,7 @@
     .ev-md-check.done .ev-cb { background: var(--ev-primary, #7c3aed); border-color: var(--ev-primary, #7c3aed); }
     .ev-md-check.done .ev-md-check-text { text-decoration: line-through; opacity: 0.75; }
     /* 🆕 2026-11-16：{include} 插入内容外框 —— 淡化虚线框，与主体内容视觉区隔；inline span 内 display:block 换行显示 */
-    .gp-include-box { display: block; margin: .4em 0; padding: .35em .7em; border: 1px dashed rgba(127,127,127,.5); border-radius: 8px; background: rgba(127,127,127,.05); min-width: 0; }
+    .gp-include-box { display: block; position: relative; overflow: visible; margin: .4em 0; padding: .35em .7em; border: 1px dashed rgba(127,127,127,.5); border-radius: 8px; background: rgba(127,127,127,.05); min-width: 0; }
     .gp-include-box > .gp-include-body > p { margin: 0; }
     /* {include picture="X"}：同目录图片等比缩放适应框宽，绝不撑破便利贴 */
     .gp-include-picture { display: block; max-width: 100%; height: auto; margin: .2em auto; border-radius: 4px; }
@@ -608,6 +655,9 @@
     /* include 徽标常显（与 showLabel 无关）：TERM 📖 书 / NAME 🏷️ 标签牌。裸徽标、无底色按钮框。 */
     .gp-include-badge { display: inline-flex; align-items: center; font-size: .95em; line-height: 1; }
     .gp-include-box > .gp-include-directive { margin: 0 0 .4em; padding: .15em .45em; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .82em; line-height: 1.35; color: var(--ev-muted, #888); white-space: pre-wrap; word-break: break-word; background: rgba(127,127,127,.08); border-radius: 4px; }
+    .gp-include-box > .gp-exec-directive { margin: 0 0 .4em; padding: .15em .45em; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .82em; line-height: 1.35; color: var(--gp-fg, inherit); white-space: pre-wrap; word-break: break-word; background: transparent; border-left: 2px solid var(--gp-border, currentColor); border-radius: 4px; }
+    .gp-exec-directive-label { opacity: .7; margin-right: .35em; }
+    .gp-exec-directive-code { font-family: inherit; }
     /* 🆕 折叠：默认展开；只折叠 .gp-include-body，徽标/名称/directive 永不折叠。纯 CSS、零 JS。 */
     .gp-include-fold { display: inline-flex; align-items: center; justify-content: center; cursor: pointer; user-select: none; margin-right: .05em; }
     .gp-include-fold-cb { position: absolute; width: 1px; height: 1px; opacity: 0; margin: 0; }
@@ -622,6 +672,66 @@
     .gp-name-list-count { font-size: .8em; color: var(--ev-muted, #888); white-space: nowrap; }
     .gp-name-list-empty { font-size: .85em; line-height: 1.4; color: var(--ev-muted, #888); }
     .gp-name-list-empty code { font-family: ui-monospace, Menlo, Consolas, monospace; }
+    .gp-include-missing { font-size: .85em; line-height: 1.5; color: var(--ev-muted, #888); font-style: italic; }
+    /* 🆕 2026-11-21：{pmenu NAME} 围栏内容弹出式选单 */
+    .gp-pmenu-box > .gp-include-body { display: flex; flex-direction: column; gap: .5em; }
+    .gp-pmenu-select {
+      width: 100%; max-width: 100%; box-sizing: border-box; font: inherit; font-size: .9em;
+      padding: .35em .5em; border: 1px solid rgba(212,175,55,.55); border-radius: 6px;
+      background: var(--ev-card, #fff); color: var(--ev-text, #333); cursor: pointer;
+    }
+    .gp-pmenu-content { border-top: 1px dashed rgba(212,175,55,.45); padding-top: .5em; min-height: 1.4em; }
+    /* 🆕 2026-11-22：选框旁的「定位」按钮（选中项有围栏说明才显示） */
+    .gp-pmenu-nav-row { display: flex; align-items: center; gap: .5em; }
+    .gp-pmenu-nav-row .gp-pmenu-select { flex: 1 1 auto; width: auto; }
+    .gp-pmenu-nav-btn {
+      flex: 0 0 auto; font: inherit; font-size: .85em; padding: .35em .7em; white-space: nowrap;
+      border: 1px solid rgba(212,175,55,.7); border-radius: 6px;
+      background: rgba(212,175,55,.12); color: var(--ev-text, #333); cursor: pointer;
+    }
+    .gp-pmenu-nav-btn[hidden] { display: none; }
+    /* 🆕 2026-11-22 {gpG8}：选框旁临时参数过滤栏（输入不回写 .md） */
+    .gp-pmenu-filter-bar { display: flex; align-items: center; gap: .4em; flex-wrap: wrap; }
+    .gp-pmenu-filter-input {
+      flex: 1 1 10em; min-width: 0; box-sizing: border-box; font: inherit; font-size: .85em;
+      padding: .3em .45em; border: 1px solid rgba(212,175,55,.55); border-radius: 6px;
+      background: var(--ev-card, #fff); color: var(--ev-text, #333);
+    }
+    .gp-pmenu-all-toggle { display: inline-flex; align-items: center; gap: .25em; font-size: .85em; color: var(--ev-text, #333); white-space: nowrap; cursor: pointer; }
+    .gp-pmenu-filter-count { font-size: .8em; color: var(--ev-muted, #888); white-space: nowrap; }
+    /* 🆕 2026-11-22 {gpG8}：list NAME/TERM 临时过滤栏（与 pmenu 同款，不回写 .md） */
+    .gp-list-filter-bar { display: flex; align-items: center; gap: .4em; flex-wrap: wrap; margin-bottom: .4em; }
+    .gp-list-filter-input {
+      flex: 1 1 10em; min-width: 0; box-sizing: border-box; font: inherit; font-size: .85em;
+      padding: .3em .45em; border: 1px solid rgba(212,175,55,.55); border-radius: 6px;
+      background: var(--ev-card, #fff); color: var(--ev-text, #333);
+    }
+    .gp-list-filter-count { font-size: .8em; color: var(--ev-muted, #888); white-space: nowrap; }
+    .gp-name-list > li[hidden] { display: none; }
+    /* 🆕 2026-11-22 {gpG8}：通用临时参数栏（include/list/pmenu 全部可用参数） */
+    .gp-temp-param-bar { display: flex; align-items: center; gap: .45em; flex-wrap: wrap; margin-bottom: .4em; }
+    .gp-temp-toggle { display: inline-flex; align-items: center; gap: .2em; white-space: nowrap; color: var(--ev-muted, #888); cursor: pointer; font-size: .8em; }
+    .gp-temp-toggle input { margin: 0; cursor: pointer; }
+    /* 插字表单三态 checkbox：沿用结果框属性 checkbox 外观，旁边小字标出当前态 */
+    .nm-bool-toggle { font-size: 1em; color: inherit; }
+    .nm-bool-state { font-size: .8em; color: var(--ev-muted, #888); }
+    .gp-temp-name { display: inline-flex; align-items: center; gap: .25em; white-space: nowrap; color: var(--ev-muted, #888); font-size: .8em; }
+    .gp-temp-name select { max-width: 12em; font-size: inherit; padding: 1px 2px; }
+    /* 结果框参数抽屉：固定把手 + 可拖动面板；状态只存 sessionStorage */
+    .gp-drawer-badge { display: inline-flex; align-items: center; justify-content: center; line-height: 1; }
+    .gp-drawer-directive-wrap { display: flex; align-items: baseline; gap: .4em; margin-bottom: .4em; padding: .3em .4em; border: 1px solid var(--gp-border, currentColor); border-radius: 5px; }
+    .gp-drawer-directive-label { font-size: .72em; opacity: .8; white-space: nowrap; }
+    .gp-drawer-directive { flex: 1 1 auto; min-width: 0; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .82em; line-height: 1.35; word-break: break-word; user-select: text; cursor: text; }
+    .gp-param-drawer-handle { position: absolute; right: -.55em; top: -.55em; z-index: 8; display: inline-flex; align-items: center; justify-content: center; width: 1.1em; height: 1.1em; padding: 0; border: 1px solid var(--gp-border, var(--gp-fg, var(--note-fg, var(--cal-sticky-fg, var(--ev-border, #888))))); border-radius: 999px; background: var(--gp-bg, var(--note-bg, var(--cal-sticky-bg, var(--ev-card, #fff)))); color: var(--gp-fg, var(--note-fg, var(--cal-sticky-fg, var(--ev-text, #333)))); font-size: .72em; cursor: pointer; box-shadow: 0 2px 6px rgba(0,0,0,.25); }
+    .gp-param-drawer-panel { position: absolute; right: .4em; top: 1.8em; z-index: 20; display: none; min-width: 14em; max-width: 22em; padding: .45em .55em; border: 1px solid var(--gp-border, var(--gp-fg, var(--note-fg, var(--cal-sticky-fg, var(--ev-border, #888))))); border-radius: 8px; background: var(--gp-bg, var(--note-bg, var(--cal-sticky-bg, var(--ev-card, #fff)))); color: var(--gp-fg, var(--note-fg, var(--cal-sticky-fg, var(--ev-text, #333)))); box-shadow: 0 8px 22px rgba(0,0,0,.32), inset 0 1px 0 rgba(255,255,255,.35); }
+    .gp-param-drawer-body .gp-temp-toggle, .gp-param-drawer-body .gp-temp-name, .gp-param-drawer-body .gp-list-filter-count, .gp-param-drawer-body .gp-pmenu-filter-count, .gp-param-drawer-body .gp-pmenu-all-toggle { color: inherit; }
+    .gp-param-drawer-body .gp-list-filter-input, .gp-param-drawer-body .gp-pmenu-filter-input { background: var(--gp-bg, var(--note-bg, var(--cal-sticky-bg, var(--ev-card, #fff)))); color: inherit; border-color: var(--gp-border, var(--gp-fg, currentColor)); }
+    .gp-param-drawer.is-open .gp-param-drawer-panel { display: block; }
+    .gp-param-drawer-head { display: flex; align-items: center; justify-content: space-between; gap: 1em; cursor: move; user-select: none; font-weight: 600; font-size: .8em; margin-bottom: .35em; }
+    .gp-param-drawer-close { border: 0; background: transparent; color: inherit; cursor: pointer; font-size: 1.1em; line-height: 1; padding: 0 .15em; }
+    .gp-param-drawer-body .gp-temp-param-bar, .gp-param-drawer-body .gp-list-filter-bar, .gp-param-drawer-body .gp-pmenu-filter-bar { margin-bottom: 0; }
+    .gp-include-label-text[hidden], .gp-include-directive[hidden], .gp-exec-directive[hidden],
+    .gp-name-list-count[hidden], .gp-name-list-total[hidden] { display: none; }
     #body.only-undone-checks .ev-md-check.done { display: none !important; }
     /* 🆕「只看未完成」时，按 md-unit 内 checkbox 完成状态决定是否隐藏整个区块：
        - gp-all-done ＝ 区块内所有 checkbox 都完成了 → 隐藏整个块（含说明行）
@@ -702,6 +812,15 @@
       background: #D4AF37;
       border: 1px solid rgba(212,175,55,.8);
       box-shadow: 0 1px 2px rgba(0,0,0,.18);
+    }
+
+    /* 🆕 2026-11-22：围栏名称徽标的小图标由 🏷️ 改为花刮号 { }（深绿字＋金描边，呼应花刮号指令） */
+    .gp-brace-mark {
+      display: inline-block; margin-right: .18em;
+      font-family: Georgia, 'Times New Roman', serif; font-weight: 700;
+      letter-spacing: -.12em; color: #16463b;
+      -webkit-text-stroke: .3px #f7e2a3;
+      text-shadow: 0 0 1px rgba(22,70,59,.35);
     }
     /* 🆕 2026-11-15：{NAME=X} 围栏名称引用胶囊 — 正文内可点击跳转（金色，与名称徽标同系）。
        正文 HTML 由主窗渲染下发，本窗体只负责显示＋点击（点击经 IPC 回主窗全局搜索）。
@@ -1740,7 +1859,7 @@
         <div class="nm-list" id="noteMarkerList"></div>
         <div class="nm-form" id="noteMarkerForm" hidden></div>
         <div class="nm-preview" id="noteMarkerPreview" hidden></div>
-        <div class="ac-hint" id="noteMarkerHint">连按三下 Shift 可叫出本菜单 · ↑↓ 选项目、Enter 确认 · 支持专属标示、Alert 围栏、MD 表格与代码块／行内代码；一般插入于游标（选区取代）；Alert 围栏为多行块，CheckBox 模式会自动切换为原文模式</div>
+        <div class="ac-hint" id="noteMarkerHint">连按三下 Shift 可叫出本菜单 · ↑↓ 选项目、Enter 确认 · 支持专属标示、Alert 围栏、花刮号指令（include/list/pmenu）、MD 表格与代码块／行内代码；一般插入于游标（选区取代）；Alert 围栏为多行块，CheckBox 模式会自动切换为原文模式</div>
         <div class="ac-actions">
           <button type="button" class="ac-copy" id="noteMarkerBackButton" hidden>← 重选标示</button>
           <button type="button" class="ac-copy" id="noteMarkerCancel">取消</button>

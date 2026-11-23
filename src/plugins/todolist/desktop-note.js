@@ -1259,6 +1259,44 @@ function setupControls() {
       }
       return;
     }
+    // 🆕 2026-11-22：{list TERM} 花刮号术语胶囊左键 → 回主窗跳到 TERM 围栏（等同名称跳转）。
+    //   只认带 data-gp-term-nav 的（＝有围栏详细说明者）；右键仍走 TERM 术语菜单。
+    const termNav = e.target.closest && e.target.closest('.tl-term-cap[data-gp-term-nav]');
+    if (termNav) {
+      e.preventDefault();
+      e.stopPropagation();
+      const tm = termNav.getAttribute('data-gp-term-nav') || '';
+      if (tm) {
+        const titleText = (document.getElementById('title') || {}).textContent || '';
+        ipcRenderer.invoke('wake-main-from-note', {
+          key: KEY, idx: IDX, action: 'gp-term-jump', name: tm,
+          scrollTop: currentScrollTop(),
+          localUnit: noteLocalUnitFromRef(termNav),
+          label: '便利贴「' + String(titleText).trim().slice(0, 24) + '」'
+        }).catch(() => {});
+      }
+      return;
+    }
+    // 🆕 2026-11-22：{pmenu NAME/TERM} 选框旁的「定位」按钮 → 等同点击花刮号名称/术语胶囊。
+    const pmenuNav = e.target.closest && e.target.closest('.gp-pmenu-nav-btn');
+    if (pmenuNav) {
+      e.preventDefault();
+      e.stopPropagation();
+      if (pmenuNav.hidden) return;
+      const nm = String(pmenuNav.getAttribute('data-nav-name') || '').trim();
+      const box = pmenuNav.closest ? pmenuNav.closest('.gp-pmenu-box') : null;
+      const isTerm = !!(box && box.getAttribute('data-gp-pmenu-kind') === 'TERM');
+      if (nm) {
+        const titleText = (document.getElementById('title') || {}).textContent || '';
+        ipcRenderer.invoke('wake-main-from-note', {
+          key: KEY, idx: IDX, action: isTerm ? 'gp-term-jump' : 'gp-name-jump', name: nm,
+          scrollTop: currentScrollTop(),
+          localUnit: noteLocalUnitFromRef(pmenuNav),
+          label: '便利贴「' + String(titleText).trim().slice(0, 24) + '」'
+        }).catch(() => {});
+      }
+      return;
+    }
     const execLink = e.target.closest && e.target.closest('a.card-exec-link');
     if (execLink) {
       e.preventDefault();
@@ -3278,6 +3316,7 @@ function hideNoteFindSame() {
 //   显示期间「正常／reverse」每 2 秒交错切换——normal＝纸底＋字色，reverse＝字色底＋纸色字。
 let noteMoveToastTimer = null;        // reverse 交错计时器（setInterval）
 let noteMoveToastAutoTimer = null;    // 30 秒自动关闭计时器（setTimeout）
+let noteGpMarkToastTimer = null;      // ＋ 加定位点短提示计时器（与搬移 toast 共用容器，必须互斥）
 function showNoteMoveToast(message, isError = false) {
   const el = document.getElementById('noteMoveToast');
   const msg = document.getElementById('noteMoveToastMsg');
@@ -3285,6 +3324,7 @@ function showNoteMoveToast(message, isError = false) {
   // 重置两个计时器：避免旧 toast 的计时器对新 toast 误触发（尤其 30s 自动关闭会提前关掉新 toast）
   if (noteMoveToastTimer) { clearInterval(noteMoveToastTimer); noteMoveToastTimer = null; }
   if (noteMoveToastAutoTimer) { clearTimeout(noteMoveToastAutoTimer); noteMoveToastAutoTimer = null; }
+  if (noteGpMarkToastTimer) { clearTimeout(noteGpMarkToastTimer); noteGpMarkToastTimer = null; }
   msg.textContent = message;
   el.classList.toggle('error', isError);
   el.classList.remove('reverse');
@@ -3301,6 +3341,7 @@ function hideNoteMoveToast() {
   const el = document.getElementById('noteMoveToast');
   if (noteMoveToastTimer) { clearInterval(noteMoveToastTimer); noteMoveToastTimer = null; }
   if (noteMoveToastAutoTimer) { clearTimeout(noteMoveToastAutoTimer); noteMoveToastAutoTimer = null; }
+  if (noteGpMarkToastTimer) { clearTimeout(noteGpMarkToastTimer); noteGpMarkToastTimer = null; }
   if (el) {
     el.classList.remove('show');
     el.classList.remove('reverse');
@@ -3319,6 +3360,7 @@ function showFindSameBlinkToast(message) {
   // 先清掉搬移 toast 自身的计时器与双闪计时器，避免互相干扰
   if (noteMoveToastTimer) { clearInterval(noteMoveToastTimer); noteMoveToastTimer = null; }
   if (noteMoveToastAutoTimer) { clearTimeout(noteMoveToastAutoTimer); noteMoveToastAutoTimer = null; }
+  if (noteGpMarkToastTimer) { clearTimeout(noteGpMarkToastTimer); noteGpMarkToastTimer = null; }
   if (findSameBlinkTimer) { clearTimeout(findSameBlinkTimer); findSameBlinkTimer = null; }
   if (findSameBlinkAuto) { clearTimeout(findSameBlinkAuto); findSameBlinkAuto = null; }
   msg.textContent = message;
@@ -4831,7 +4873,44 @@ function noteSetBodyHtml(html) {
   const body = document.getElementById('body');
   if (!body) return;
   body.innerHTML = html;
+  noteRestorePmenuSelection();   // ★ 同步回填已选菜单项的结果（选中态已由主进程注入 selected）
+  noteRestoreGpParamFilters();   // ★ 主进程注入的临时参数值要立刻作用到 option/li 显隐
   noteResolveIncludePictures();
+}
+// 🆕 {gpG8}：翻页回来后，输入框已有缓存值但 option/li 的 hidden 还是原始态；
+//   主动派发一次 input，让共享过滤委派按缓存值重新收窄（幂等，不写文件）。
+function noteRestoreGpParamFilters() {
+  const body = document.getElementById('body');
+  if (!body || typeof body.querySelectorAll !== 'function') return;
+  const inputs = body.querySelectorAll('[data-gp-temp-param]') || [];
+  Array.prototype.forEach.call(inputs, (inp) => {
+    if (typeof inp.dispatchEvent !== 'function' || typeof Event !== 'function') return;
+    inp.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+}
+// 🆕 {pmenu NAME}：把 select 的已选 option 的 data-content 同步写回结果区。
+//   ★ 必须是同步 DOM 回填（innerHTML 之后立刻做），⛔不要 async 查询 store —— 翻页/保存竞态会漏回填。
+function noteRestorePmenuSelection() {
+  const body = document.getElementById('body');
+  if (!body || typeof body.querySelectorAll !== 'function') return;
+  const boxes = body.querySelectorAll('.gp-pmenu-box');
+  Array.prototype.forEach.call(boxes, (box) => {
+    const sel = box.querySelector ? box.querySelector('.gp-pmenu-select') : null;
+    const out = box.querySelector ? box.querySelector('.gp-pmenu-content') : null;
+    if (!sel || !out) return;
+    const opt = sel.selectedOptions && sel.selectedOptions[0];
+    // ★ 定位按钮与选中项同源：翻页回填时 change 不触发，必须在这里同步（先清后设）。
+    const navBtn = box.querySelector ? box.querySelector('.gp-pmenu-nav-btn') : null;
+    if (navBtn) {
+      const navName = (opt && typeof opt.getAttribute === 'function') ? String(opt.getAttribute('data-nav-name') || '') : '';
+      navBtn.hidden = !navName || !opt.value;
+      if (navName && opt.value) navBtn.setAttribute('data-nav-name', navName);
+      else navBtn.removeAttribute('data-nav-name');
+    }
+    if (!opt || !opt.value) return;
+    const html = typeof opt.getAttribute === 'function' ? opt.getAttribute('data-content') : '';
+    if (html) out.innerHTML = html;
+  });
 }
 
 // ===== {include} 虚线框折叠状态：跨重渲染保持（状态存主进程内存，退出应用自动清） =====
@@ -4843,16 +4922,55 @@ function noteInitIncludeFoldDelegate() {
   const body = document.getElementById('body');
   if (!body || body.__includeFoldBound) return;
   body.__includeFoldBound = true;
+  // 🆕 {gpG8} 临时参数值写回主进程内存：ordinal 与 applyGpParamTempToHtml 一致，按结果框 DOM 顺序。
+  function noteGpParamWrite(target, overrides) {
+    if (!target || !target.closest) return;
+    const box = target.closest('.gp-include-box');
+    if (!box || !body.querySelectorAll) return;
+    const boxes = body.querySelectorAll('.gp-include-box') || [];
+    const ord = Array.prototype.indexOf.call(boxes, box);
+    if (ord < 0) return;
+    const params = {};
+    const ctrls = box.querySelectorAll ? box.querySelectorAll('[data-gp-temp-param]') || [] : [];
+    Array.prototype.forEach.call(ctrls, (c) => {
+      const key = c.getAttribute && c.getAttribute('data-gp-temp-param');
+      if (!key) return;
+      params[key] = c.type === 'checkbox' ? !!c.checked : String(c.value == null ? '' : c.value);
+    });
+    if (overrides && typeof overrides === 'object') Object.assign(params, overrides);
+    ipcRenderer.invoke('gp-param-temp-set', { key: KEY, idx: IDX, ord, params }).catch(() => {});
+    // folded 是唯一同时有两套 UI（参数栏 + legend 折叠箭头）的参数：两个缓存必须一起写，
+    //   否则翻页后「参数栏 checked」与「实际折叠态」会各说各话。
+    if (Object.prototype.hasOwnProperty.call(params, 'folded')) {
+      ipcRenderer.invoke('include-fold-set', { key: KEY, idx: IDX, ord, folded: !!params.folded }).catch(() => {});
+    }
+  }
+  body.addEventListener('input', (e) => {
+    const t = e.target;
+    if (!t || typeof t.getAttribute !== 'function') return;
+    if (!t.getAttribute('data-gp-temp-param')) return;
+    noteGpParamWrite(t);
+  });
   body.addEventListener('change', (e) => {
-    const cb = e.target;
+    const target = e.target;
+    // ★ {pmenu NAME}：选中项写入主进程内存（只存 option value，结果 HTML 不进 store）。
+    if (target && target.classList && target.classList.contains('gp-pmenu-select')) {
+      const pbox = target.closest ? target.closest('.gp-pmenu-box') : null;
+      const pord = pbox ? Array.prototype.indexOf.call(body.querySelectorAll('.gp-pmenu-box'), pbox) : -1;
+      if (pord >= 0) ipcRenderer.invoke('pmenu-select-set', { key: KEY, idx: IDX, ord: pord, index: target.value });
+      return;
+    }
+    // 🆕 临时参数控件（all / showLabel / showDirective / showCount / folded）同样写入缓存。
+    if (target && typeof target.getAttribute === 'function' && target.getAttribute('data-gp-temp-param')) {
+      noteGpParamWrite(target);
+      return;
+    }
+    const cb = target;
     if (!cb || !cb.classList || !cb.classList.contains('gp-include-fold-cb')) return;
     // {include … folded=true/false} 只是默认值：用户手动点过就写 store（含展开=false），
     //   本会话内压过指令默认值；退出应用 store 清空 → 下次启动回到指令默认值。
-    const box = cb.closest('.gp-include-box');
-    if (!box) return;
-    const ord = Array.prototype.indexOf.call(body.querySelectorAll('.gp-include-box'), box);
-    if (ord < 0) return;
-    ipcRenderer.invoke('include-fold-set', { key: KEY, idx: IDX, ord, folded: !!cb.checked });
+    // ★ folded 参数栏与折叠箭头是同一个值的两个入口，统一走 noteGpParamWrite 同步两个缓存。
+    noteGpParamWrite(cb, { folded: !!cb.checked });
   });
 }
 
@@ -4874,77 +4992,194 @@ function noteGpReturnEnsureDock() {
   const panel = document.createElement('div');
   panel.id = 'gpReturnList';
   panel.className = 'gp-return-list';
-  const listBtn = document.createElement('button');
-  listBtn.id = 'gpReturnListBtn';
-  listBtn.type = 'button';
-  listBtn.className = 'gp-return-list-btn';
-  listBtn.title = '返回位置清单';
-  listBtn.textContent = '\u2630';
-  listBtn.addEventListener('click', (e) => {
-    e.preventDefault(); e.stopPropagation();
-    panel.style.display = (panel.style.display === 'flex') ? 'none' : 'flex';
-  });
+  // 🆕 返回原位 ＋ 选单合成一个 combo：主按钮直接返回，右侧 ▾ 展开选单
+  const combo = document.createElement('div');
+  combo.className = 'gp-return-combo';
   const btn = document.createElement('button');
   btn.id = 'gpReturnBtn';
   btn.type = 'button';
   btn.className = 'gp-return-btn';
   btn.addEventListener('click', (e) => {
     e.preventDefault(); e.stopPropagation();
+    // 置灰态（只剩手动点、无跳转层）：主按钮点击无效，手动点请从 ▾ 清单点选
+    if ((+btn.dataset.jumpCount || 0) <= 0) return;
     noteGpReturnBackInvoke();
   });
-  dock.appendChild(panel); dock.appendChild(listBtn); dock.appendChild(btn);
+  // 🆕 2026-11-21：中间 ＋ 直接加手动定位点（免进选单）；参数与选单第二项同口径
+  const markBtn = document.createElement('button');
+  markBtn.id = 'gpReturnMarkBtn';
+  markBtn.type = 'button';
+  markBtn.className = 'gp-return-mark-btn';
+  markBtn.title = '＋ 加定位点：把当前便利贴页与滚动位置记为一个手动返回定位点';
+  markBtn.textContent = '＋';
+  markBtn.addEventListener('click', (e) => {
+    e.preventDefault(); e.stopPropagation();
+    const titleText = (document.getElementById('title') || {}).textContent || '';
+    // ★ 2026-11-21：label 的文字与 anchor 必须来自同一个元素（noteFirstVisibleContent）。
+    const content = (typeof noteFirstVisibleContent === 'function') ? noteFirstVisibleContent() : null;
+    const anchor = content ? content.anchor
+      : ((typeof noteFirstVisibleUnit === 'function') ? noteFirstVisibleUnit() : null);
+    const posText = (content && content.text) || (anchor && anchor.text)
+      || ((typeof noteFirstVisibleText === 'function') ? noteFirstVisibleText() : '');
+    // ★ 类型区分交给「手动」胶囊＋📍，label 只保留「来源＋位置内容」
+    const label = '便利贴「' + String(titleText).trim().slice(0, 20) + '」' +
+      (posText ? '·「' + posText + '」' : '');
+    // ★ 手动点只存两个值——① 事件识别 KEY/IDX；② 事件内相对锚点 anchor（含 text/focus:content）
+    ipcRenderer.invoke('gp-return-mark', {
+      type: 'sticky', key: KEY, idx: IDX,
+      eventKey: KEY, eventIdx: IDX,
+      eventTitle: String(titleText).trim().slice(0, 80),
+      anchor: anchor,
+      label: label
+    }).then((snap) => showNoteGpManualMarkToast(noteGpManualMarkToastText(snap, label))).catch(() => {});
+  });
+  const listBtn = document.createElement('button');
+  listBtn.id = 'gpReturnListBtn';
+  listBtn.type = 'button';
+  listBtn.className = 'gp-return-list-btn';
+  listBtn.title = '返回选单（返回清单／设定返回定位点）';
+  listBtn.textContent = '\u25BE';
+  listBtn.addEventListener('click', (e) => {
+    e.preventDefault(); e.stopPropagation();
+    panel.style.display = (panel.style.display === 'flex') ? 'none' : 'flex';
+  });
+  combo.appendChild(btn); combo.appendChild(markBtn); combo.appendChild(listBtn);
+  dock.appendChild(panel); dock.appendChild(combo);
   document.body.appendChild(dock);
   return dock;
 }
+// combo 选单共用渲染：① 返回清单（展层） ② 设定 返回定位点（把当前便利贴位置压入返回栈）；空栈时第一项显示「尚无定位点」。
+function noteGpReturnRenderPanel(panel, entries, remaining) {
+  const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  // 手动点 label 形如「便利贴「标题」·「位置文字」」：只把位置那段包成强调（大一号粗体）。
+  // ★ 入参必须已 esc()，片段才能安全直进 innerHTML；只替换第一处，标题里的引号不会被误伤。
+  // ★ 只强调「·「位置内容」」那一段（便利貼與主窗 label 現在同格式）；事件標題不放大，與便利貼一致。
+  const strongPos = (s) => String(s).replace(/·「([^」]*)」/, (full, pos) =>
+    '·「<strong class="gp-return-list-pos">' + pos + '</strong>」');
+  // 開頭「便利貼／主窗」加膠囊外框（只描邊、不給背景，沿用 manual-tag 配色）
+  const srcTag = (s) => String(s).replace(/^(便利贴|主窗)(?=[「\s])/, (m) =>
+    '<span class="gp-return-src-tag">' + m + '</span>');
+  const jumps = entries.filter((en) => !en.manual);
+  const manual = entries.filter((en) => en.manual);
+  // ★ 项次：显示在定位徽标前面；编号照清单实际显示顺序（跳转层在前、手动点在后，各自新到旧）。
+  const rowHtml = (en, depth, isManual, ord) => {
+        // ★ label 本身已带来源前缀（便利贴「…」/主窗「…」），⛔不要再包一层，否则出现「便利贴「便利贴…」」
+        const src = srcTag(strongPos(esc(en.label || (en.type === 'sticky'
+          ? ('便利贴 ' + ((+en.idx || 0) + 1)) : '主窗'))));
+    const dst = en.targetName ? ' \u2192 ' + esc(en.targetName) : '';
+    const ordTag = '<span class="gp-return-list-ord">' + ord + '.</span>';
+    const tag = '<span class="gp-return-list-depth">' + (isManual ? '\u{1F4CD}' : depth) + '</span>';
+    const x = isManual ? '<span class="gp-return-mark-x" data-x-token="' + (+en.token || 0) + '" title="删除此手动定位点">✕</span>' : '';
+    return '<button type="button" class="gp-return-list-row' + (isManual ? ' is-manual' : '') + '" data-token="' + (+en.token || 0) + '">' +
+      ordTag + tag + '<span class="gp-return-list-text">' + src + dst + (isManual ? ' <span class="gp-return-manual-tag">手动</span>' : '') + '</span>' + x + '</button>';
+  };
+  const rows = jumps.slice().reverse().map((en, r) => rowHtml(en, remaining - r, false, r + 1))
+    .concat(manual.slice().reverse().map((en, r) => rowHtml(en, 0, true, jumps.length + r + 1))).join('');
+  // ★ 2026-11-21：删掉「返回清单」「设定返回定位点」两个菜单按钮（加定位改走 combo 的 ＋）；
+  //   ▾ 打开即直接铺开清单行，空态显示「尚无定位点」。
+  panel.innerHTML = '<div class="gp-return-list-title">返回定位</div>' +
+    (entries.length
+      ? '<div class="gp-return-list-rows" style="display:flex">' + rows + '</div>'
+      : '<div class="gp-return-list-empty">尚无定位点</div>');
+  panel.querySelectorAll('.gp-return-list-row').forEach((row) => {
+    row.addEventListener('click', (e) => {
+      e.preventDefault(); e.stopPropagation();
+      noteGpReturnBackInvoke(+row.getAttribute('data-token'));
+    });
+  });
+  // ★ 行尾 ✕ 独立绑定：stopPropagation 阻止冒泡到整行的「返回」，只发删除
+  panel.querySelectorAll('.gp-return-mark-x').forEach((x) => {
+    x.addEventListener('click', (e) => {
+      e.preventDefault(); e.stopPropagation();
+      ipcRenderer.invoke('gp-return-remove', { token: +x.getAttribute('data-x-token') }).catch(() => {});
+    });
+  });
+}
 function noteGpReturnShow(payload) {
   const entries = (payload && Array.isArray(payload.entries)) ? payload.entries : [];
-  const remaining = entries.length ? entries.length : Math.max(0, +((payload && payload.remaining) || 0) || 0);
-  if (!remaining) { noteGpReturnHide(); return; }
+  // ★ 角标分别取主进程两个计数：remaining＝跳转层数、manualRemaining＝手动点数
+  const remaining = Math.max(0, +((payload && payload.remaining) || 0) || 0);
+  const manual = Math.max(0, +((payload && payload.manualRemaining) || 0) || 0);
+  // 两容器都空：与 gp-return-hide 同口径，主按钮隐藏只留 ▾（0 角标只在「有任一定位点」时显示）
+  if (!remaining && !manual) { noteGpReturnHide(); return; }
   const dock = noteGpReturnEnsureDock();
   const btn = document.getElementById('gpReturnBtn');
-  btn.innerHTML = '\u21A9 返回原位 <span class="gp-return-count">(' + remaining + ')</span>';
-  btn.title = '回到点击名称引用前的位置（还有 ' + remaining + ' 层可返回）';
+  btn.dataset.jumpCount = String(remaining);   // 点击守卫读它判断是否处于「只剩手动点」置灰态
+  // 主按钮右上双角标：金色＝跳转层、📍＝手动点；0 也照常显示
+  btn.innerHTML = '\u21A9 返回原位' +
+    '<span class="gp-return-badges">' +
+      '<span class="gp-return-badge gp-return-badge-jump" title="名称跳转定位点：' + remaining + ' 层">' + remaining + '</span>' +
+      '<span class="gp-return-badge gp-return-badge-manual" title="手动定位点：' + manual + ' 个">\u{1F4CD}' + manual + '</span>' +
+    '</span>';
+  // 只剩手动点（无跳转层）：主按钮保留显示但置灰，点击无效
+  if (remaining > 0) {
+    btn.classList.remove('is-idle');
+    btn.title = '回到点击名称引用前的位置（还有 ' + remaining + ' 层可返回）';
+  } else {
+    btn.classList.add('is-idle');
+    btn.title = '没有按序返回的定位点；手动定位点请在 ▾ 清单中点选';
+  }
   btn.style.display = 'inline-flex';
   const listBtn = document.getElementById('gpReturnListBtn');
   if (listBtn) listBtn.style.display = 'inline-flex';
   const panel = document.getElementById('gpReturnList');
-  if (panel) {
-    const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-    panel.innerHTML = '<div class="gp-return-list-title">返回位置清单 · 点选直接回到该层</div>' +
-      entries.slice().reverse().map((en, r) => {
-        const src = en.type === 'sticky'
-          ? '便利贴「' + esc(en.label || ('第 ' + ((+en.idx || 0) + 1) + ' 张')) + '」'
-          : esc(en.label || '主窗');
-        const dst = en.targetName ? ' \u2192 ' + esc(en.targetName) : '';
-        return '<button type="button" class="gp-return-list-row" data-token="' + (+en.token || 0) + '">' +
-          '<span class="gp-return-list-depth">' + (remaining - r) + '</span><span>' + src + dst + '</span></button>';
-      }).join('');
-    panel.querySelectorAll('.gp-return-list-row').forEach((row) => {
-      row.addEventListener('click', (e) => {
-        e.preventDefault(); e.stopPropagation();
-        noteGpReturnBackInvoke(+row.getAttribute('data-token'));
-      });
-    });
-  }
+  if (panel) noteGpReturnRenderPanel(panel, entries, remaining);
   dock.style.display = 'flex';
 }
 function noteGpReturnHide() {
-  const dock = document.getElementById('gpReturnDock');
-  if (!dock) return;
-  dock.style.display = 'none';
+  // 空栈也保留 ▾：使用者要能「随时设定返回定位点」，只隐藏主返回按钮。
+  const dock = noteGpReturnEnsureDock();
+  const btn = document.getElementById('gpReturnBtn');
+  if (btn) btn.style.display = 'none';
+  const listBtn = document.getElementById('gpReturnListBtn');
+  if (listBtn) listBtn.style.display = 'inline-flex';
   const panel = document.getElementById('gpReturnList');
-  if (panel) panel.style.display = 'none';
+  if (panel) { noteGpReturnRenderPanel(panel, [], 0); panel.style.display = 'none'; }
+  dock.style.display = 'flex';
+}
+// ＋ 加定位点成功后的 toast：项次与清单一致（跳转层数 + 手动点序号），
+//   详细讯息＝来源＋便利贴标题＋定位内容＋事件内锚点（行号/区块）。
+function noteGpManualMarkToastText(snap, fallbackLabel) {
+  const entries = (snap && Array.isArray(snap.entries)) ? snap.entries : [];
+  const marks = entries.filter((en) => en && en.manual);
+  const last = marks.length ? marks[marks.length - 1] : null;
+  const label = String((last && last.label) || fallbackLabel || '手动定位点').trim();
+  const a = last && last.anchor;
+  let where = '';
+  if (a && a.kind === 'check' && Number.isFinite(+a.line)) where = '第 ' + (+a.line) + ' 行';
+  else if (a && a.kind === 'block' && Number.isFinite(+a.start)) {
+    where = '区块 ' + (+a.start) + '\u2013' + (+a.end || +a.start) + (a.name ? '「' + a.name + '」' : '');
+  }
+  const ord = Math.max(0, +((snap && snap.remaining) || 0) || 0) + marks.length;
+  const msg = '\u{1F4CD} 已加定位点 ' + ord + '：' + label + (where ? '（' + where + '）' : '');
+  return msg.length > 72 ? msg.slice(0, 70) + '\u2026' : msg;
+}
+function showNoteGpManualMarkToast(message) {
+  const el = document.getElementById('noteMoveToast');
+  const msg = document.getElementById('noteMoveToastMsg');
+  if (!el || !msg) return;
+  if (typeof hideNoteMoveToast === 'function') hideNoteMoveToast(); // 清掉搬移 toast 的计时器，互斥
+  msg.textContent = message;
+  el.classList.remove('reverse', 'blink2', 'error');
+  el.classList.add('show');
+  if (noteGpMarkToastTimer) clearTimeout(noteGpMarkToastTimer);
+  noteGpMarkToastTimer = setTimeout(() => {
+    el.classList.remove('show', 'reverse');
+    noteGpMarkToastTimer = null;
+  }, 6000);
 }
 function noteInitGpReturnBtn() {
   if (window.__gpReturnBound) return;
   window.__gpReturnBound = true;
+  noteGpReturnEnsureDock(); // 空栈也先建好 ▾，供随时设定定位点
+  noteGpReturnHide();
   if (typeof ipcRenderer.on === 'function') {
     ipcRenderer.on('gp-return-show', (e, payload) => noteGpReturnShow(payload));
     ipcRenderer.on('gp-return-hide', () => noteGpReturnHide());
   }
   // 新开的便利贴窗没收到上一条广播：主动取一次当前快照
   ipcRenderer.invoke('gp-return-state', {}).then((snap) => {
-    if (snap && snap.remaining) noteGpReturnShow(snap);
+    if (snap && ((snap.remaining || 0) > 0 || (snap.manualRemaining || 0) > 0)) noteGpReturnShow(snap);
   }).catch(() => {});
 }
 
@@ -5370,6 +5605,10 @@ ipcRenderer.on('sticky-note-focus-unit', (e, payload) => {
 });
 // 🆕 2026-11-20：calendar 关闭时，主进程不唤起主窗，改把 {NAME=X} 回送本窗做本地定位。
 ipcRenderer.on('gp-local-name-jump', (e, payload) => { noteLocalNameJump(payload); });
+// 🆕 2026-11-22：calendar 关闭时 TERM 花刮号胶囊本地定位（按 data-gp-term 找围栏）
+ipcRenderer.on('gp-local-term-jump', (e, payload) => {
+  noteLocalNameJump({ termName: (payload && payload.name) || '' });
+});
 // 📥 主进程载入可携设定后：重读自身状态并立即套用（只读不写回，避免覆盖刚导入的值）
 ipcRenderer.on('sticky-note-apply-state', async (e, payload) => {
   // 🆕 通知阶段 / 跳转定位中：别让新开主窗的 apply-state 把页翻回「上次记忆页」
@@ -5716,6 +5955,120 @@ function noteFirstVisibleLine() {
   const e = +best.getAttribute('data-end');
   return (Number.isFinite(s) && Number.isFinite(e)) ? { start: s, end: e } : null;
 }
+// ★ 2026-11-21：手动点的「定位内容」与「锚点」必须来自同一个 DOM 元素。
+//   旧版 label 走 noteFirstVisibleText（视觉首行），anchor 走 noteFirstVisibleLine（行号锚点），
+//   两者可能选到不同元素 → 使用者看到清单内容 A，却滚到/闪到 B。
+const NOTE_CONTENT_SEL = '.ev-md-check-text, p, h1, h2, h3, h4, h5, h6, li, blockquote, pre, td, th';
+function noteUnitTextOf(el, contentSel) {
+  let raw = '';
+  if (el.matches && el.matches('.md-unit')) {
+    let first = null;
+    const inner = Array.prototype.slice.call(el.querySelectorAll(contentSel));
+    for (let i = 0; i < inner.length; i++) {
+      if (inner[i].closest && inner[i].closest('.gp-badges')) continue;
+      first = inner[i]; break;
+    }
+    if (first) raw = first.textContent || '';
+    else {
+      const c = el.cloneNode(true);
+      c.querySelectorAll('.gp-badges, .md-unit-edit, .ev-md-edit, button, svg').forEach((b) => b.remove());
+      raw = c.textContent || '';
+    }
+  } else {
+    raw = el.textContent || '';
+  }
+  raw = (typeof notePlainText === 'function') ? notePlainText(raw) : raw;
+  raw = String(raw).replace(/^\s*\[[ xX✓✔]?\]\s*/, '').trim();
+  return noteClipText(raw, 20);
+}
+// 同一个视觉首行元素 → 规范化成 noteFindUnitElement 能消费的锚点
+function noteUnitAnchorOf(el) {
+  const check = el.closest ? el.closest('.ev-md-check') : null;
+  if (check) {
+    const cb = check.querySelector('.ev-cb[data-line], .ev-md-edit[data-line]');
+    if (cb && Number.isFinite(+cb.getAttribute('data-line'))) return { kind: 'check', line: +cb.getAttribute('data-line') };
+  }
+  const unit = (el.matches && el.matches('.md-unit')) ? el : (el.closest ? el.closest('.md-unit') : null);
+  if (unit) {
+    const ed = unit.querySelector('.md-unit-edit[data-start][data-end]');
+    if (ed) {
+      const s = +ed.getAttribute('data-start'), e = +ed.getAttribute('data-end');
+      if (Number.isFinite(s) && Number.isFinite(e)) {
+        let name = unit.getAttribute('data-gp-name') || '';
+        if (!name) {
+          const badge = unit.querySelector('.gp-badge-name');
+          if (badge) name = String(badge.textContent || '').replace(/^🏷️\s*/, '').trim();
+        }
+        return { kind: 'block', start: s, end: e, name: name };
+      }
+    }
+  }
+  return null;
+}
+// 视觉最上方的正文元素（label 与 anchor 共用的唯一取数入口）
+function noteFirstVisibleEl() {
+  const body = document.getElementById('body');
+  if (!body || typeof body.querySelectorAll !== 'function') return null;
+  const r0 = body.getBoundingClientRect ? body.getBoundingClientRect() : null;
+  if (!r0) return null;
+  const bodyTop = r0.top;
+  let lineH = 24;
+  try {
+    const v = (typeof window !== 'undefined' && window.getComputedStyle) ? window : document.defaultView;
+    const cs = v && v.getComputedStyle ? v.getComputedStyle(body) : null;
+    const lh = cs && parseFloat(cs.lineHeight);
+    if (Number.isFinite(lh) && lh > 6) lineH = lh;
+  } catch (e) { /* 取不到行高就用回退值 */ }
+  const cands = Array.prototype.slice.call(body.querySelectorAll('.md-unit, ' + NOTE_CONTENT_SEL));
+  let best = null, bestD = Infinity;
+  cands.forEach((el) => {
+    if (el.closest && el.closest('.gp-badges')) return;
+    const r = el.getBoundingClientRect ? el.getBoundingClientRect() : null;
+    if (!r || !r.height || !r.width) return;
+    const d = r.top - bodyTop;
+    if (r.bottom <= bodyTop + 1) return;
+    if (d <= -lineH) return;
+    if (d < bestD) { bestD = d; best = el; }
+  });
+  return best;
+}
+function noteFirstVisibleContent() {
+  const best = noteFirstVisibleEl();
+  if (!best) return null;
+  const anchor = noteUnitAnchorOf(best);
+  if (!anchor) return null;
+  const text = noteUnitTextOf(best, NOTE_CONTENT_SEL);
+  // focus:'content' → 还原时滚到「这一行正文」而不是围栏 NAME 标题；text 用于跨端按文字精确找回同一行
+  anchor.text = text;
+  anchor.focus = 'content';
+  return { el: best, text, anchor };
+}
+// 手动点相对锚点：优先与定位内容同源；测试桩/异常时退回旧行号口径
+function noteFirstVisibleUnit() {
+  const c = noteFirstVisibleContent();
+  if (c) return c.anchor;
+  const ref = (typeof noteFirstVisibleLine === 'function') ? noteFirstVisibleLine() : null;
+  if (!ref) return null;
+  if (Number.isFinite(+ref.line)) return { kind: 'check', line: +ref.line };
+  const s = +ref.start, e = +ref.end;
+  if (!Number.isFinite(s) || !Number.isFinite(e)) return null;
+  let name = '';
+  const body = document.getElementById('body');
+  const el = body && typeof body.querySelector === 'function'
+    ? body.querySelector('.md-unit[data-start="' + s + '"][data-end="' + e + '"]') : null;
+  if (el) {
+    name = el.getAttribute('data-gp-name') || '';
+    if (!name) {
+      const badge = el.querySelector('.gp-badge-name');
+      if (badge) name = String(badge.textContent || '').replace(/^🏷️\s*/, '').trim();
+    }
+  }
+  return { kind: 'block', start: s, end: e, name: name };
+}
+function noteFirstVisibleText() {
+  const el = noteFirstVisibleEl();
+  return el ? noteUnitTextOf(el, NOTE_CONTENT_SEL) : '';
+}
 function restoreScrollPos() {
   const body = document.getElementById('body');
   if (!body) return;
@@ -5788,9 +6141,32 @@ function noteLocalUnitFromRef(ref) {
   }
   return null;
 }
+// ★ 手动点 focus:'content'：按「清单里显示的那段文字」找回同一行正文（不是整块围栏/标题）。
+function noteFindContentByText(body, text) {
+  // 清单文字超过 20 字会被 noteClipText 加 '…'，匹配时要去掉才能对上原文
+  const want = normalizeUnitText(text).replace(/[…]+$/, '').trim();
+  if (!want || typeof body.querySelectorAll !== 'function') return null;
+  const cands = Array.prototype.slice.call(body.querySelectorAll(NOTE_CONTENT_SEL));
+  let exact = null, contained = null, containedLen = Infinity;
+  cands.forEach((el) => {
+    if (el.closest && el.closest('.gp-badges')) return;
+    const t = normalizeUnitText(el.textContent);
+    if (!t) return;
+    if (t === want) { if (!exact) exact = el; }
+    else if (t.indexOf(want) >= 0 && want.length >= 4 && t.length < containedLen) {
+      contained = el; containedLen = t.length;
+    }
+  });
+  return exact || contained || null;
+}
 function noteFindUnitElement(unit) {
   const body = document.getElementById('body');
   if (!body || !unit) return null;
+  // ★ 手动点：文字优先——滚到/闪烁的就是清单显示的那一句，绝不再被围栏 name 抢去标题
+  if (unit.focus === 'content' && typeof unit.text === 'string' && unit.text) {
+    const hit = noteFindContentByText(body, unit.text);
+    if (hit) return hit;
+  }
   // ① 坐标精确匹配（用户右击的就是「编辑小圆点」，先找它自身，最贴近目标）
   if (unit.kind === 'check' && Number.isFinite(unit.line)) {
     const ed = body.querySelector('.ev-md-edit[data-line="' + unit.line + '"]');
@@ -5803,6 +6179,13 @@ function noteFindUnitElement(unit) {
     //    精确匹配失败就「取第一个 .md-unit.is-gp」→ 永远跳到画面最上面的那个围栏，
     //    即使那里只是「引用了同名文字」的另一个围栏）。
     const wantName = String(unit.name == null ? '' : unit.name).trim().toLowerCase();
+    // 🆕 2026-11-22：TERM 围栏按 data-gp-term 定位（{list TERM} 花刮号胶囊跨贴跳转）
+    const wantTermName = String(unit.termName == null ? '' : unit.termName).trim().toLowerCase();
+    if (wantTermName) {
+      const termed = Array.prototype.slice.call(body.querySelectorAll('.md-unit.is-gp[data-gp-term]'));
+      const thit = termed.find((u) => String(u.getAttribute('data-gp-term') || '').trim().toLowerCase() === wantTermName);
+      if (thit) return thit;
+    }
     if (wantName) {
       const named = Array.prototype.slice.call(body.querySelectorAll('.md-unit.is-gp[data-gp-name]'));
       const hit = named.find((u) => String(u.getAttribute('data-gp-name') || '').trim().toLowerCase() === wantName);
@@ -5858,19 +6241,46 @@ function noteScrollToCenter(el) {
     requestAnimationFrame(() => { body.scrollTop = Math.max(0, body.scrollTop + delta); });
   });
 }
+// 🆕 2026-11-21 手动点：滚到「清单显示的那一行正文」顶部（不是围栏标题、也不是整块居中）。
+function noteScrollToTop(el) {
+  const body = document.getElementById('body');
+  if (!body || !el) return;
+  const apply = () => {
+    if (!el.isConnected) return;
+    const bRect = body.getBoundingClientRect();
+    const eRect = el.getBoundingClientRect();
+    const top = Math.max(0, body.scrollTop + (eRect.top - bRect.top) - 8);
+    body.scrollTop = top;
+    if (scrollSaveTimer) { clearTimeout(scrollSaveTimer); scrollSaveTimer = null; }
+    writeScrollPos(top);
+  };
+  // 两帧后执行避开 restoreScrollPos 的 rAF；180ms 再校正一次（高亮重包／VIEW 排序会改坐标）
+  requestAnimationFrame(() => { apply(); setTimeout(apply, 180); });
+}
 // 🆕 具名围栏跳转：滚到「NAME 徽标（标题）」而不是整个围栏中心 —— 用户要的是标题就在视野上方。
 //   badge 文本形如「🏷️ 名称」，用包含匹配避开 emoji/变体选择符差异。
-function noteScrollToTitle(el, name) {
+function noteScrollToTitle(el, name, termName) {
   const body = document.getElementById('body');
   if (!body || !el) return;
   const want = String(name == null ? '' : name).trim().toLowerCase();
+  const wantTerm = String(termName == null ? '' : termName).trim().toLowerCase();   // 🆕 2026-11-22
   const badgeOf = (unit) => {
+    // 🆕 TERM 围栏的「标题徽标」＝右上角术语胶囊（.gp-badges .tl-term-cap），优先取它
+    if (wantTerm) {
+      const tb = unit.querySelector('.gp-badges .tl-term-cap[data-term]');
+      if (tb) return tb;
+    }
     const badges = Array.prototype.slice.call(unit.querySelectorAll('.gp-badge-name'));
     const hit = badges.find((b) => String(b.textContent || '').trim().toLowerCase().indexOf(want) >= 0);
     return hit || badges[0] || unit;
   };
-  // 第二次跳转常伴随 refresh 重绘：旧节点会被 innerHTML 换掉 → 每次都按 name 重新解析锚点。
+  // 第二次跳转常伴随 refresh 重绘：旧节点会被 innerHTML 换掉 → 每次都按 name/term 重新解析锚点。
   const resolveAnchor = () => {
+    if (wantTerm) {
+      const termed = Array.prototype.slice.call(body.querySelectorAll('.md-unit.is-gp[data-gp-term]'));
+      const thit = termed.find((u) => String(u.getAttribute('data-gp-term') || '').trim().toLowerCase() === wantTerm);
+      if (thit) return badgeOf(thit);
+    }
     if (want) {
       const named = Array.prototype.slice.call(body.querySelectorAll('.md-unit.is-gp[data-gp-name]'));
       const hit = named.find((u) => String(u.getAttribute('data-gp-name') || '').trim().toLowerCase() === want);
@@ -5952,11 +6362,12 @@ function noteScrollFlashUnit(unit) {
     setTimeout(() => { ipcRenderer.invoke('gp-jump-done', { jumpToken: jt }).catch(() => {}); }, 280);
   }
   const el = noteFindUnitElement(unit);
+  const contentMode = !!(unit && unit.focus === 'content');
   // 🆕 防回归守卫：只接受真正的「小事件(群)」单元，绝不把 #body / #note 等容器当目标。
-  //    早期 closestUnit 会爬到 #body（check.parentElement.closest('div')），结果整张便利贴一起闪。
+  //    ★ 手动点 focus:'content' 会命中 p/.ev-md-check-text 这类正文行，也要放行。
   const isRealUnit = !!el && el !== document.body &&
     el.id !== 'body' && el.id !== 'note' &&
-    (el.classList.contains('ev-md-check') || el.classList.contains('md-unit') || /^LI$/i.test(el.tagName || ''));
+    (contentMode || el.classList.contains('ev-md-check') || el.classList.contains('md-unit') || /^LI$/i.test(el.tagName || ''));
   if (!isRealUnit) {
     if (typeof console !== 'undefined' && console.warn) {
       console.warn('[便利贴] 无法定位到指定的小事件(群)，改闪整页细边提示；unit=', unit, ' 匹配到的元素=', el && (el.id || el.className || el.tagName));
@@ -5964,8 +6375,9 @@ function noteScrollFlashUnit(unit) {
     noteFlashWholePage();
     return;
   }
-  // 具名围栏 → 标题对齐；其它单元 → 维持原有居中
-  if (unit && unit.name) noteScrollToTitle(el, unit.name);
+  // ★ 手动点：滚到「清单显示的那一行正文」；具名围栏的 name 标题对齐只给名称跳转用
+  if (contentMode) noteScrollToTop(el);
+  else if (unit && unit.name) noteScrollToTitle(el, unit.name);
   else noteScrollToCenter(el);
   // ⚠️ 闪烁必须延到「滚动落地」那一帧，并**重新查一次元素**：
   //    便利贴跳转常伴随 sticky-note-refresh / 翻页重绘竞态，旧 el 可能已被 innerHTML 换掉变成 detached——
@@ -5988,11 +6400,19 @@ function noteScrollFlashUnit(unit) {
 //   不唤起、不滚动 calendar，也就不会被重建主窗的状态推送抢走便利贴页/滚动。
 function noteLocalNameJump(payload) {
   const name = String((payload && payload.name) || '').trim();
-  if (!name) return;
+  const termName = String((payload && payload.termName) || '').trim();   // 🆕 2026-11-22：TERM 围栏本地定位
+  if (!name && !termName) return;
   const body = document.getElementById('body');
   if (!body) return;
   const want = name.toLowerCase();
+  const wantTerm = termName.toLowerCase();
   const findNamed = () => {
+    // 🆕 TERM 跳转：按 data-gp-term 找围栏（{list TERM} 花刮号胶囊本地定位）
+    if (wantTerm) {
+      const termed = Array.prototype.slice.call(body.querySelectorAll('.md-unit.is-gp[data-gp-term]'));
+      const thit = termed.find((u) => String(u.getAttribute('data-gp-term') || '').trim().toLowerCase() === wantTerm);
+      if (thit) return thit;
+    }
     const named = Array.prototype.slice.call(body.querySelectorAll('.md-unit.is-gp[data-gp-name]'));
     const hit = named.find((u) => String(u.getAttribute('data-gp-name') || '').trim().toLowerCase() === want);
     if (hit) return hit;
@@ -6001,16 +6421,17 @@ function noteLocalNameJump(payload) {
     return badge ? (badge.closest('.md-unit.is-gp') || badge.closest('.md-unit')) : null;
   };
   const el = findNamed();
+  const showName = termName || name;
   if (!el) {
     // 目标不在这张便利贴：明确告知，别让使用者以为点击失效。
     if (typeof showStickyRefreshFeedback === 'function') {
-      showStickyRefreshFeedback('这张便利贴内没有「' + name.slice(0, 18) + '」的围栏（Calendar 未开启）', true);
+      showStickyRefreshFeedback('这张便利贴内没有「' + showName.slice(0, 18) + '」的围栏（Calendar 未开启）', true);
     }
     return;
   }
   // 挡住新开主窗可能带来的 apply-state / order-updated 重绘（与远端跳转同一套保护窗口）。
-  noteMarkFocusActive({ kind: 'block', name: name });
-  noteScrollToTitle(el, name);
+  noteMarkFocusActive(wantTerm ? { kind: 'block', termName: termName } : { kind: 'block', name: name });
+  noteScrollToTitle(el, name, termName);
   // 闪烁要等滚动落地，并重查节点（refresh/重绘可能换掉旧 DOM）。
   requestAnimationFrame(() => {
     requestAnimationFrame(() => {
@@ -7632,14 +8053,13 @@ function bindFlipNav() {
   });
 }
 
-// 🆕 鼠标左右拖拽（正文区）/ 触控板横向滚动＝翻页。
+// 🆕 鼠标左右拖拽（正文区）＝翻页；键盘 ←/→ 翻页另见上方绑定。
 //    正文是 -webkit-app-region:no-drag，可安全接管；标题/边框仍是 OS 拖窗区，不抢。
+//    ★ 2026-11-22：已移除触控板横向滚动（wheel deltaX）翻页——误触频繁，干扰正常便利贴操作。
 const FLIP_SWIPE_IGNORE = 'button, a, input, textarea, select, label, pre, .flip-edge, .ev-md-check, .ev-md-edit, .md-unit-edit, .note-addcheck-menu, .addcheck-ov, .menu';
 function bindFlipSwipe(note) {
   const blocked = () => editMode || !!document.querySelector('.addcheck-ov.show, .menu.open');
   let drag = null;
-  let wheelAcc = 0;
-  let wheelAt = 0;
   note.addEventListener('pointerdown', (e) => {
     drag = null;
     if (flipTotal < 2 || blocked() || e.button !== 0) return;
@@ -7660,19 +8080,6 @@ function bindFlipSwipe(note) {
     renderFlipPage(flipIndex + (dx < 0 ? 1 : -1));
   });
   window.addEventListener('blur', () => { drag = null; });
-  note.addEventListener('wheel', (e) => {
-    if (flipTotal < 2 || blocked() || e.ctrlKey) return;
-    if (!e.target.closest || e.target.closest(FLIP_SWIPE_IGNORE)) return;
-    if (Math.abs(e.deltaX) <= Math.abs(e.deltaY)) return;
-    const now = Date.now();
-    if (now - wheelAt > 500) wheelAcc = 0;
-    wheelAcc += e.deltaX;
-    wheelAt = now;
-    if (Math.abs(wheelAcc) < 72) return;
-    const dir = wheelAcc > 0 ? 1 : -1;
-    wheelAcc = 0;
-    renderFlipPage(flipIndex + dir);
-  }, { passive: true });
 }
 
 // 🆕 右键 编辑小圆点 → 下拉菜单：checkbox 子事件（.ev-md-edit＝#noteFindSameMenu）／区块（.md-unit-edit＝#noteBlockMenu），两套全局绑定（分体/翻页模式共用，脚本载入即生效）
@@ -7909,6 +8316,175 @@ document.addEventListener('keydown', (e) => {
 //   校验：def.forbid 对所有文字栏位生效，f.forbid 是该栏位禁字（可单独使用，如术语栏禁「:」）；
 //         def.check(values) 用来表达「跨栏位」的格式约束，回传一句要显示的错误、没问题就回空串。
 //   build(values) 回传整串标示；插入点＝#addCheckInput 的游标（有选区则取代选区）。
+// 🆕 花刮号指令共用的小工具：include/list/pmenu 三端参数栏「当前指令」同口径，只在浮层里组字。
+function noteMarkerDirectiveQuote(v) {
+  const s = String(v == null ? '' : v);
+  if (s.indexOf('"') >= 0 && s.indexOf("'") < 0) return "'" + s + "'";
+  if (s.indexOf('"') >= 0 && s.indexOf("'") >= 0) return '\u201C' + s + '\u201D';
+  return '"' + s + '"';
+}
+function noteMarkerDirectiveBools(v, keys) {
+  return keys.map((k) => (v[k] === '' || v[k] == null ? '' : ' ' + k + '=' + v[k])).join('');
+}
+// 2026-11-23：三态参数下拉改为 checkbox（与结果框 .gp-temp-toggle 同外观）。
+//   点击循环：未指定（半选）→ true（勾选）→ false（空白）；保留原来的三态语义，不产生多余参数。
+function noteMarkerDirectiveTriField(key, label, def) {
+  return { key: key, label: label, type: 'bool', def: def == null ? '' : def };
+}
+function noteMarkerDirectivePatternField(kind, placeholder) {
+  return { key: 'pattern', label: '过滤条件（' + kind + '）', type: 'text', forbid: '"}',
+    placeholder: placeholder || '可留空＝全部；* 通配，如 *便利* 或 TERM*' };
+}
+function noteMarkerDirectiveBuild(head, kindKey, pattern, bools) {
+  return '{' + head + (pattern ? ' ' + kindKey + '=' + noteMarkerDirectiveQuote(pattern) : ' ' + kindKey) + bools + '}';
+}
+// 🆕 三下 Shift 时从选区反查该开哪一个插字表单：只认花刮号指令，产出 { def, preset }。
+//   参数值口径与 noteMarkerDirectiveQuote 一致（双引号/单引号/中文引号/裸值），大小写不敏感。
+function noteMarkerParseDirectiveAttrs(token) {
+  const m = String(token || '').trim().match(/^\{([A-Za-z_][\w-]*)([\s\S]*)\}$/);
+  if (!m) return null;
+  const body = m[2] || '';
+  const attrs = {};
+  const re = /([A-Za-z_][\w-]*)\s*=\s*(?:"([^"]*)"|'([^']*)'|\u201C([^\u201D]*)\u201D|([^\s}]+))/g;
+  let mm;
+  while ((mm = re.exec(body))) {
+    attrs[mm[1].toLowerCase()] = mm[2] != null ? mm[2] : (mm[3] != null ? mm[3] : (mm[4] != null ? mm[4] : (mm[5] || '')));
+  }
+  const kind = (body.trim().match(/^(NAME|TERM|picture)\b/i) || [])[1] || '';
+  return { head: m[1], body: body, attrs: attrs, kind: kind ? (kind.toLowerCase() === 'picture' ? 'picture' : kind.toUpperCase()) : '' };
+}
+function noteMarkerDetectFromSelection(raw) {
+  const text = String(raw == null ? '' : raw).trim();
+  if (!text) return null;
+  const tokens = text.match(/\{[^{}]*\}/g) || [];
+  const token = tokens.find((t) => /^\{(include|list|pmenu|gp)\b/i.test(t)) || tokens[0];
+  if (!token) return null;
+  const p = noteMarkerParseDirectiveAttrs(token);
+  if (!p) return null;
+  const bool = (k) => Object.prototype.hasOwnProperty.call(p.attrs, k) ? String(p.attrs[k]) : '';
+  const head = p.head.toLowerCase();
+  if (head === 'include') {
+    const kind = p.kind || (Object.prototype.hasOwnProperty.call(p.attrs, 'term') ? 'TERM'
+      : (Object.prototype.hasOwnProperty.call(p.attrs, 'picture') ? 'picture' : 'NAME'));
+    const key = kind.toLowerCase();
+    return { def: NOTE_MARKER_DEFS.find((d) => d.id === 'gp-include'),
+      preset: { kind, name: p.attrs[key] || '', showLabel: bool('showlabel'),
+        showDirective: bool('showdirective'), folded: bool('folded') } };
+  }
+  if (head === 'list' || head === 'pmenu') {
+    const kind = p.kind || (Object.prototype.hasOwnProperty.call(p.attrs, 'term') ? 'TERM' : 'NAME');
+    const id = 'gp-' + head + '-' + (kind === 'TERM' ? 'term' : 'name');
+    const preset = { pattern: p.attrs[kind.toLowerCase()] || '', showDirective: bool('showdirective'), folded: bool('folded') };
+    if (head === 'list') preset.showCount = bool('showcount');
+    else if (kind === 'TERM') preset.all = bool('all');
+    return { def: NOTE_MARKER_DEFS.find((d) => d.id === id), preset };
+  }
+  if (head === 'gp') {
+    const name = token.replace(/^\{gp\b/i, '').replace(/^\s*:\s*/, '').replace(/\}$/, '').trim();
+    return { def: NOTE_MARKER_DEFS.find((d) => d.id === 'gp'), preset: { name } };
+  }
+  return null;
+}
+// {include} 的「名称／路径」栏：NAME/TERM 从全量围栏下拉选，picture 维持文字路径。
+// 数据源沿用 sticky-note-order 的 notes/events（与「找出相同项目」同一份快照），不另起一套扫描。
+async function noteMarkerLoadGpNameChoices() {
+  const out = { NAME: [], TERM: [] };
+  const seen = { NAME: new Map(), TERM: new Map() };
+  const texts = [];
+  const inp = document.getElementById('addCheckInput');
+  if (inp && inp.value) texts.push(inp.value);
+  let result = null;
+  try { result = await ipcRenderer.invoke('sticky-note-order'); } catch (_) { result = null; }
+  const push = (n) => { if (n && n.notes) texts.push(n.notes); };
+  if (result && Array.isArray(result.notes)) result.notes.forEach(push);
+  if (result && Array.isArray(result.events)) result.events.forEach(push);
+  texts.forEach((raw) => {
+    const lines = String(raw == null ? '' : raw).replace(/\r\n/g, '\n').split('\n');
+    noteGpFenceScan(lines).ranges.forEach((r) => {
+      [['NAME', r.name], ['TERM', r.termName]].forEach(([kind, nm]) => {
+        const s = String(nm == null ? '' : nm).trim();
+        if (!s) return;
+        const key = s.toLowerCase();
+        if (!seen[kind].has(key)) seen[kind].set(key, s);
+      });
+    });
+  });
+  out.NAME = Array.from(seen.NAME.values());
+  out.TERM = Array.from(seen.TERM.values());
+  return out;
+}
+function noteMarkerGpNameControl(f, kind, choices) {
+  const wrap = document.createElement('span');
+  wrap.className = 'nm-gp-name';
+  if (kind === 'picture') {
+    const el = noteMarkerFieldInput(f);
+    el.classList.add('nm-wide');
+    wrap.appendChild(el);
+    return wrap;
+  }
+  const sel = document.createElement('select');
+  sel.id = 'nmf_' + f.key;
+  sel.classList.add('nm-wide');
+  const list = (choices && choices[kind]) || [];
+  if (!list.length) {
+    const empty = document.createElement('option');
+    empty.value = '';
+    empty.textContent = '（没有可用的' + (kind === 'TERM' ? '术语' : '名称') + '，请自订）';
+    sel.appendChild(empty);
+  }
+  list.forEach((nm) => {
+    const o = document.createElement('option');
+    o.value = nm; o.textContent = nm;
+    sel.appendChild(o);
+  });
+  const custom = document.createElement('option');
+  custom.value = '__custom__'; custom.textContent = '✎ 自订名称…';
+  sel.appendChild(custom);
+  wrap.appendChild(sel);
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.id = 'nmf_' + f.key + 'Custom';
+  input.hidden = true;
+  input.spellcheck = false;
+  input.autocomplete = 'off';
+  input.placeholder = f.placeholder || '输入名称';
+  wrap.appendChild(input);
+  sel.addEventListener('change', () => {
+    const custom = sel.value === '__custom__';
+    sel.hidden = custom;
+    input.hidden = !custom;
+    if (custom) input.focus();
+    noteMarkerUpdatePreview();
+  });
+  return wrap;
+}
+function noteMarkerListDirectiveDef(kind, id, label) {
+  return {
+    id: id, label: label, forbid: '"}',
+    syntax: '{list ' + kind + '="*关键字*" showCount=true showDirective=true folded=false}',
+    fields: [
+      noteMarkerDirectivePatternField(kind),
+      noteMarkerDirectiveTriField('showCount', '显示数量'),
+      noteMarkerDirectiveTriField('showDirective', '显示指令'),
+      noteMarkerDirectiveTriField('folded', '折叠'),
+    ],
+    build: (v) => noteMarkerDirectiveBuild('list', kind, v.pattern,
+      noteMarkerDirectiveBools(v, ['showCount', 'showDirective', 'folded']))
+  };
+}
+function noteMarkerPmenuDirectiveDef(kind, id, label) {
+  const keys = kind === 'TERM' ? ['all', 'showDirective', 'folded'] : ['showDirective', 'folded'];
+  const fields = [noteMarkerDirectivePatternField(kind)];
+  if (kind === 'TERM') fields.push(noteMarkerDirectiveTriField('all', '含无围栏术语'));
+  fields.push(noteMarkerDirectiveTriField('showDirective', '显示指令'));
+  fields.push(noteMarkerDirectiveTriField('folded', '折叠'));
+  return {
+    id: id, label: label, forbid: '"}',
+    syntax: '{pmenu ' + kind + '="*关键字*"' + (kind === 'TERM' ? ' all=true' : '') + ' showDirective=true folded=false}',
+    fields: fields,
+    build: (v) => noteMarkerDirectiveBuild('pmenu', kind, v.pattern, noteMarkerDirectiveBools(v, keys))
+  };
+}
 const NOTE_MARKER_DEFS = [
   {
     id: 'alert', label: '⏰ 闹铃提醒', forbid: ']',
@@ -8035,6 +8611,27 @@ const NOTE_MARKER_DEFS = [
     build: (v) => v.name ? '{gp:' + v.name + '}' : '{gp}'
   },
   {
+    id: 'gp-include', label: '📄 {include} 插入围栏内容', forbid: '"}',
+    syntax: '{include NAME="名称" showLabel=true showDirective=false folded=true}',
+    fields: [
+      { key: 'kind', label: '来源', type: 'select', def: 'NAME',
+        options: [['NAME', 'NAME 围栏'], ['TERM', 'TERM 围栏'], ['picture', '图片（相对 calendar.md）']] },
+      { key: 'name', label: '名称／路径', type: 'gp-name', required: true, forbid: '"}',
+        placeholder: '要插入的围栏名称、术语或图片档名' },
+      noteMarkerDirectiveTriField('showLabel', '显示名称'),
+      noteMarkerDirectiveTriField('showDirective', '显示指令'),
+      noteMarkerDirectiveTriField('folded', '折叠'),
+    ],
+    check: (v) => (v.kind === 'picture' && v.showLabel === 'true')
+      ? 'picture 没有名称徽标，不必设 showLabel' : '',
+    build: (v) => '{include ' + (v.kind === 'TERM' ? 'TERM' : (v.kind === 'picture' ? 'picture' : 'NAME')) + '=' +
+      noteMarkerDirectiveQuote(v.name) + noteMarkerDirectiveBools(v, ['showLabel', 'showDirective', 'folded']) + '}'
+  },
+  noteMarkerListDirectiveDef('NAME', 'gp-list-name', '📜 {list NAME} 名称清单'),
+  noteMarkerListDirectiveDef('TERM', 'gp-list-term', '📖 {list TERM} 术语清单'),
+  noteMarkerPmenuDirectiveDef('NAME', 'gp-pmenu-name', '🔽 {pmenu NAME} 名称选单'),
+  noteMarkerPmenuDirectiveDef('TERM', 'gp-pmenu-term', '📖🔽 {pmenu TERM} 术语选单'),
+  {
     id: 'codeblock', label: '🧑‍💻 Markdown 代码块', syntax: '```语言\\n代码内容\\n```',
     fields: [
       { key: 'code', label: '代码内容', type: 'textarea', required: true, preserveWhitespace: true, rows: 7,
@@ -8126,6 +8723,37 @@ function noteMarkerFieldSelect(f, key, options, def) {
   el.value = def;
   return el;
 }
+function noteMarkerBoolFieldState(el) {
+  if (!el) return '';
+  return el.indeterminate ? '未指定' : (el.checked ? 'true' : 'false');
+}
+function noteMarkerBoolField(f) {
+  const label = document.createElement('label');
+  label.className = 'gp-temp-toggle nm-bool-toggle';
+  label.title = '点击循环：未指定 → true → false';
+  const el = document.createElement('input');
+  el.type = 'checkbox';
+  el.id = 'nmf_' + f.key;
+  el.dataset.tri = '1';
+  const v = typeof f.def === 'function' ? f.def() : (f.def == null ? '' : String(f.def));
+  el.checked = v === 'true';
+  el.indeterminate = v === '';                 // false → 空白勾选；未指定 → 半选
+  const state = document.createElement('span');
+  state.className = 'nm-bool-state';
+  const sync = () => { state.textContent = noteMarkerBoolFieldState(el); };
+  el.addEventListener('click', (e) => {
+    e.preventDefault();                        // 自管三态循环，不让浏览器直接 checked→false
+    if (el.indeterminate) { el.indeterminate = false; el.checked = true; }
+    else if (el.checked) { el.checked = false; }
+    else { el.indeterminate = true; }
+    sync();
+    el.dispatchEvent(new Event('change', { bubbles: true }));
+  });
+  sync();
+  label.appendChild(el);
+  label.appendChild(state);
+  return label;
+}
 function noteMarkerAlertScheduleField(f, ctl) {
   const box = document.createElement('div');
   box.className = 'nm-schedule';
@@ -8184,7 +8812,40 @@ function noteMarkerSyncAlertSchedule() {
   const days = mode.parentElement && mode.parentElement.querySelector('.nm-schedule-days');
   if (days) days.hidden = mode.value !== 'selected-days';
 }
-function noteMarkerShowForm(def) {
+function noteMarkerApplyPreset(def, preset) {
+  if (!preset) return;
+  Object.keys(preset).forEach((key) => {
+    if (preset[key] == null) return;
+    const el = document.getElementById('nmf_' + key);
+    if (!el) return;
+    if (el.dataset && el.dataset.tri === '1') {
+      const v = String(preset[key]);
+      el.checked = v === 'true';
+      el.indeterminate = v === '';
+      const state = el.parentElement && el.parentElement.querySelector('.nm-bool-state');
+      if (state) state.textContent = noteMarkerBoolFieldState(el);
+      return;
+    }
+    el.value = String(preset[key]);
+  });
+  const nameField = def.fields.find((f) => f.type === 'gp-name');
+  if (nameField) {
+    const val = preset[nameField.key];
+    if (val != null && String(val)) {
+      const sel = document.getElementById('nmf_' + nameField.key);
+      const custom = document.getElementById('nmf_' + nameField.key + 'Custom');
+      if (sel && custom) {
+        const exists = Array.prototype.some.call(sel.options || [], (o) => o.value === String(val));
+        if (exists) {
+          sel.value = String(val); sel.hidden = false; custom.hidden = true;
+        } else {
+          sel.value = '__custom__'; sel.hidden = true; custom.hidden = false; custom.value = String(val);
+        }
+      }
+    }
+  }
+}
+async function noteMarkerShowForm(def, preset) {
   noteMarkerDef = def;
   const list = document.getElementById('noteMarkerList');
   const form = document.getElementById('noteMarkerForm');
@@ -8192,6 +8853,7 @@ function noteMarkerShowForm(def) {
   const back = document.getElementById('noteMarkerBackButton');
   const ins = document.getElementById('noteMarkerInsert');
   if (!list || !form || !title || !back || !ins) return;
+  const nameChoices = def.fields.some((f) => f.type === 'gp-name') ? await noteMarkerLoadGpNameChoices() : null;
   title.textContent = def.label + ' — 填写内容';
   list.hidden = true;
   list.textContent = '';
@@ -8200,6 +8862,7 @@ function noteMarkerShowForm(def) {
   def.fields.forEach((f) => {
     const row = document.createElement('div');
     row.className = 'nm-row';
+    row.setAttribute('data-nm-field', f.key);
     const label = document.createElement('span');
     label.className = 'nm-label';
     label.textContent = f.label;
@@ -8213,8 +8876,14 @@ function noteMarkerShowForm(def) {
       ctl.appendChild(noteMarkerFieldSelect(f, f.unitKey, f.options, f.defUnit));
     } else if (f.type === 'select') {
       ctl.appendChild(noteMarkerFieldSelect(f, f.key, f.options, f.def));
+    } else if (f.type === 'bool') {
+      ctl.appendChild(noteMarkerBoolField(f));
     } else if (f.type === 'alert-schedule') {
       noteMarkerAlertScheduleField(f, ctl);
+    } else if (f.type === 'gp-name') {
+      const kindSel = form.querySelector('#nmf_kind');
+      const initialKind = preset && preset.kind ? String(preset.kind) : (kindSel ? kindSel.value : 'NAME');
+      ctl.appendChild(noteMarkerGpNameControl(f, initialKind, nameChoices));
     } else {
       const el = noteMarkerFieldInput(f);
       el.classList.add(f.type === 'number' ? 'nm-num' : 'nm-wide');
@@ -8223,11 +8892,26 @@ function noteMarkerShowForm(def) {
     row.appendChild(ctl);
     form.appendChild(row);
   });
+  // 「来源」切换时重建名称栏：NAME/TERM → 各自下拉选单，picture → 路径文字栏。
+  if (nameChoices) {
+    const kindSel = form.querySelector('#nmf_kind');
+    const nameField = def.fields.find((f) => f.type === 'gp-name');
+    if (kindSel && nameField) {
+      kindSel.addEventListener('change', () => {
+        const ctl = form.querySelector('[data-nm-field="' + nameField.key + '"] .nm-ctl');
+        if (!ctl) return;
+        ctl.textContent = '';
+        ctl.appendChild(noteMarkerGpNameControl(nameField, kindSel.value, nameChoices));
+        noteMarkerUpdatePreview();
+      });
+    }
+  }
   noteMarkerSyncAlertSchedule();
+  noteMarkerApplyPreset(def, preset);
   back.hidden = false;
   ins.hidden = false;
   noteMarkerUpdatePreview();
-  const first = form.querySelector('textarea, input, select');
+  const first = form.querySelector('textarea, input:not([hidden]), select');
   if (first) first.focus();
 }
 function noteMarkerShowList() {
@@ -8287,11 +8971,23 @@ function noteMarkerReadValues(def) {
     return trim === false ? value : value.trim();
   };
   def.fields.forEach((f) => {
+    if (f.type === 'bool') {
+      const el = document.getElementById('nmf_' + f.key);
+      values[f.key] = !el ? '' : (el.indeterminate ? '' : (el.checked ? 'true' : 'false'));
+      return;
+    }
     if (f.type === 'interval') {
       const n = read(f.numKey), unit = read(f.unitKey);
       if (f.required && !n) errors.push('「' + f.label + '」要填数字');
       else if (!/^[1-9]\d*$/.test(n)) errors.push('「' + f.label + '」必须是 1 以上的整数（格式只接受 1m／2h／3d 这种）');
       values[f.numKey] = n; values[f.unitKey] = unit;
+      return;
+    }
+    if (f.type === 'gp-name') {
+      const sel = document.getElementById('nmf_' + f.key);
+      const v = sel && sel.value === '__custom__' ? read(f.key + 'Custom') : read(f.key);
+      if (f.required && !v) errors.push('「' + f.label + '」不能为空');
+      values[f.key] = v;
       return;
     }
     if (f.type === 'alert-schedule') {
@@ -8325,7 +9021,7 @@ function noteMarkerReadValues(def) {
   // 标记字段中的禁字（尤其 ]）会截断标记或错拆栏位；正文栏位可单独不设禁字
   Object.keys(values).forEach((k) => {
     const f = def.fields.find((x) => x.key === k || x.numKey === k || x.unitKey === k);
-    if (!f || f.type === 'select' || f.type === 'interval' || f.type === 'number' || f.type === 'datetime') return;
+    if (!f || f.type === 'select' || f.type === 'bool' || f.type === 'interval' || f.type === 'number' || f.type === 'datetime') return;
     const ban = (def.forbid || '') + (f.forbid || '');
     const hit = String(values[k]).split('').find((ch) => ban.indexOf(ch) >= 0);
     if (hit) errors.push('「' + f.label + '」不能含「' + hit + '」，' +
@@ -8455,12 +9151,19 @@ function noteMarkerFocusFirstItem() {
   const items = noteMarkerListItems();
   if (items.length) items[0].focus();
 }
-function noteMarkerOpenList() {
+async function noteMarkerOpenList() {
   const ov = noteMarkerOv();
   if (!ov) return;
   // 表格网格模式下那颗 textarea 是隐藏的，游标不在可见内容上 → 先切回原文再插，避免写进看不见的地方
   if (noteTableGrid && noteTableGrid.isGridVisible()) {
     showStickyRefreshFeedback('表格网格编辑中无法定位游标：请先按「改 Markdown 原文」切回文字编辑，再连按三下 Shift', true);
+    return;
+  }
+  // 🆕 选区辨认：选中现成花刮号指令时，直接开对应表单并预填，不再要求先从清单挑一项。
+  const hit = noteMarkerDetectFromSelection(noteMarkerSelectedText());
+  if (hit && hit.def) {
+    ov.classList.add('show');
+    await noteMarkerShowForm(hit.def, hit.preset);
     return;
   }
   noteMarkerShowList();

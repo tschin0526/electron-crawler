@@ -307,6 +307,98 @@ const stickyNoteMeta = new Map();
 //   用 DOM 顺序里的序号才能唯一区分；名称相同时序号稳定，编辑不改变 include 数量时不会错位。
 const includeFoldState = new Map();
 function includeFoldId(key, idx) { return String(key) + '#' + (+idx || 0); }
+// 🆕 {pmenu NAME} 选中项状态：'noteKey#idx' -> Map<ordinal, optionIndex>
+//   与 includeFoldState 同口径：只存内存、退出即清；ordinal＝该页第几个 .gp-pmenu-box，
+//   optionIndex＝<option value="N">（0 起，对应符合查询的第 N 个围栏；''＝回到未选择）。
+//   ★ 选中结果 HTML 不存主进程：它随 option 的 data-content 一起来回，翻页时由 renderer 同步回填。
+const pmenuSelectState = new Map();
+// 🆕 {gpG8} 临时参数值状态：'noteKey#idx' -> Map<ordinal, {pattern, all, showLabel, showDirective, showCount, folded}>
+//   与 includeFoldState 同口径：只存进程内存、退出即清；ordinal＝该页第几个 .gp-include-box
+//   （include/list/pmenu 共用同一序列），值由 [data-gp-temp-param] 控件统一收集。
+//   ★ folded 同时驱动参数栏 checkbox 与 legend 折叠箭头；两个入口写同一缓存，⛔不回写 .md。
+const gpParamTempState = new Map();
+function gpParamTempEsc(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+  })[c]);
+}
+function applyGpParamTempToHtml(id, html) {
+  if (typeof html !== 'string' || html.indexOf('data-gp-temp-param') < 0) return html;
+  const state = gpParamTempState.get(id);
+  let ord = -1;
+  // ordinal 一律按 .gp-include-box 在页面中的顺序；include/list/pmenu 共用，渲染端同口径读取。
+  return html.replace(/(<fieldset class="gp-include-box[^"]*"[^>]*>[\s\S]*?<\/fieldset>)/g, (box) => {
+    const n = ++ord;
+    const rec = state && state.get(n);
+    let out = box.replace(/(<input\b[^>]*\bdata-gp-temp-param="([^"]+)"[^>]*>)/g, (input, _all, key) => {
+      let clean = input.replace(/\s+data-gp-temp-ord="[^"]*"/g, '');
+      let attrs = ' data-gp-temp-ord="' + n + '"';
+      const cached = rec && Object.prototype.hasOwnProperty.call(rec, key);
+      if (cached) {
+        // 有缓存才「先清后设」：缓存值必须能覆盖指令默认值（含 false / 空字串）。
+        clean = clean
+          .replace(/\s+value="[^"]*"/g, '')
+          .replace(/\s+checked(?:\s*=\s*"[^"]*")?/g, '');
+        const v = rec[key];
+        if (typeof v === 'boolean') { if (v) attrs += ' checked'; }
+        else if (v !== '' && v != null) attrs += ' value="' + gpParamTempEsc(v) + '"';
+      }
+      // ⛔ 无缓存时绝不能清 checked/value：指令里的 showLabel/showDirective/folded=true
+      //    就是靠 HTML 自带 checked 呈现；清掉会把所有默认值误解成未勾选（2026-11-22 截图回报）。
+      return clean.replace(/\/?>$/, (tail) => attrs + tail);
+    });
+    // select 不能靠 value 属性选中 option（HTML 只认 option[selected]）：includeName 必须按缓存值重设 selected。
+    //   ⛔ 先清所有 option 的 selected 再按缓存设回；无缓存时保留指令原本的 selected。
+    out = out.replace(/(<select\b[^>]*\bdata-gp-temp-param="([^"]+)"[^>]*>)([\s\S]*?)(<\/select>)/g,
+      (all, open, key, opts, close) => {
+        const cleanOpen = open.replace(/\s+data-gp-temp-ord="[^"]*"/g, '');
+        const taggedOpen = cleanOpen.replace(/\/?>$/, (tail) => ' data-gp-temp-ord="' + n + '"' + tail);
+        const cached = rec && Object.prototype.hasOwnProperty.call(rec, key);
+        if (!cached) return taggedOpen + opts + close;
+        const want = rec[key] == null ? '' : gpParamTempEsc(String(rec[key]));
+        const cleanOpts = opts.replace(/<option\b[^>]*>/g, (opt) =>
+          opt.replace(/\s+selected(?:\s*=\s*"[^"]*")?/g, ''));
+        if (!want) return taggedOpen + cleanOpts + close;
+        const picked = cleanOpts.replace(/<option\b[^>]*>/g, (opt) => {
+          const vm = opt.match(/\bvalue="([^"]*)"/);
+          if (!vm || vm[1] !== want) return opt;
+          return opt.replace(/\/?>$/, (tail) => (tail.indexOf('/') === 0 ? ' selected/' : ' selected>'));
+        });
+        return taggedOpen + picked + close;
+      });
+    // folded 是结果框参数，也是 legend 折叠箭头的同一状态：下发前就同步好，避免翻页回来闪一下。
+    if (rec && typeof rec.folded === 'boolean') {
+      out = out.replace(/(<input\b[^>]*\bclass="[^"]*\bgp-include-fold-cb\b[^"]*"[^>]*?>)/g, (input) => {
+        const clean = input.replace(/\s+checked(?:\s*=\s*"[^"]*")?/g, '');
+        if (!rec.folded) return clean;
+        return clean.replace(/\/?>$/, (tail) => (tail.indexOf('/') === 0 ? ' checked/' : ' checked>'));
+      });
+    }
+    return out;
+  });
+}
+function applyPmenuSelectToHtml(id, html) {
+  if (typeof html !== 'string' || html.indexOf('gp-pmenu-select') < 0) return html;
+  const state = pmenuSelectState.get(id);
+  if (!state || !state.size) return html;
+  let ord = -1;
+  // 每个 .gp-pmenu-box 内只有一个 select；按出现顺序即 ordinal。
+  return html.replace(/(<fieldset class="gp-include-box gp-pmenu-box"[^>]*>[\s\S]*?<\/fieldset>)/g, (box) => {
+    const n = ++ord;
+    const want = state.has(n) ? String(state.get(n)) : '';
+    if (!want) return box;
+    // 先清掉缓存里可能残留的 selected，再按记忆值设回（先清后设，避免翻页态污染）。
+    return box.replace(/<option\b[^>]*>/g, (opt) => {
+      const clean = opt.replace(/\s+selected(?:\s*=\s*"[^"]*")?/g, '');
+      const vm = clean.match(/\bvalue="([^"]*)"/);
+      if (!vm || vm[1] !== want) return clean;
+      return clean.replace(/\/?>$/, (tail) => (tail.indexOf('/') === 0 ? ' selected/' : ' selected>'));
+    });
+  });
+}
+function applyNoteStateToHtml(id, html) {
+  return applyGpParamTempToHtml(id, applyPmenuSelectToHtml(id, applyIncludeFoldToHtml(id, html)));
+}
 // 下发 HTML 前，把该张便利贴已折叠的 box ordinal 直接写进 checkbox 的 checked 属性。
 //   这样折叠态随 HTML 一起到达 → 渲染进程只要 innerHTML=html 就自带，彻底不依赖 async 回填时序
 //   （编辑保存 refresh、翻页、开窗拉取全部经过主进程这两个下发点，一律覆盖）。
@@ -655,6 +747,23 @@ function gpFindStickyByName(name) {
     if (!note || typeof note.key !== 'string') continue;
     // ⛔ VIEW 投影贴（🔔 提醒／自订「分页签显示」）里是各来源围栏的复本，
     //   不排除的话任何名称都会先命中它 → 用户点哪条都跳到同一张投影贴。
+    if (isViewKey(note.key)) continue;
+    const idx = +note.idx || 0;
+    const html = stickyNoteHtml.get(noteWinId(note.key, idx)) || '';
+    if (html && html.toLowerCase().indexOf(needle) >= 0) return { key: note.key, idx: idx };
+  }
+  return null;
+}
+// 🆕 2026-11-22：按 TERM 围栏属性跨贴查找（{list TERM} 花刮号胶囊点击、calendar 关闭时用）。
+//   与 gpFindStickyByName 同口径，只是 needle 换成 data-gp-term。
+function gpFindStickyByTerm(termName) {
+  const raw = String(termName == null ? '' : termName).trim();
+  if (!raw) return null;
+  const enc = raw.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+  const needle = ('data-gp-term="' + enc + '"').toLowerCase();
+  const list = (stickyNoteCatalog && stickyNoteCatalog.length) ? stickyNoteCatalog : stickyNoteOrder;
+  for (const note of list) {
+    if (!note || typeof note.key !== 'string') continue;
     if (isViewKey(note.key)) continue;
     const idx = +note.idx || 0;
     const html = stickyNoteHtml.get(noteWinId(note.key, idx)) || '';
@@ -1016,6 +1125,7 @@ ipcMain.handle('open-sticky-notes', (e, arg) => {
       src: typeof n.src === 'string' ? n.src : '',
       notes: typeof n.notes === 'string' ? n.notes : '',
       view: !!n.view,            // 🆕 VIEW 便利贴旗标（与 sticky-note-sync 的 normalized 同形，别在这里抹掉）
+      temp: !!n.temp,            // 🆕 临时便利贴旗标（当日临时贴也走开局这条路径，别在这里抹掉）
       // 🆕 启动通知旗标（VIEW 贴「通知讯息」）：翻页窗据此在启动时先闪烁显示这张贴
       notify: !!n.notify,
       notifySeconds: (typeof n.notifySeconds === 'number' && isFinite(n.notifySeconds)) ? n.notifySeconds : 15
@@ -1347,7 +1457,7 @@ ipcMain.handle('sticky-note-html', (e, arg) => {
   const id = noteWinId(String(arg && arg.key), +arg.idx || 0);
   const meta = stickyNoteMeta.get(id) || null;
   return {
-    html: applyIncludeFoldToHtml(id, stickyNoteHtml.get(id) || ''),
+    html: applyNoteStateToHtml(id, stickyNoteHtml.get(id) || ''),
     titleHtml: stickyNoteTitleHtml.get(id) || '',
     notes: (meta && typeof meta.notes === 'string') ? meta.notes : null,
     src: (meta && typeof meta.src === 'string') ? meta.src : '',
@@ -1406,7 +1516,7 @@ ipcMain.on('sticky-note-refresh', (e, arg) => {
   rememberStickyMeta(arg);
   if (typeof arg.html === 'string') {
     stickyNoteHtml.set(id, arg.html);                  // 缓存永远存原始 HTML（不含注入的 checked）
-    arg.html = applyIncludeFoldToHtml(id, arg.html);   // 🆕 只改写下发副本，渲染端 innerHTML 即自带折叠态
+    arg.html = applyNoteStateToHtml(id, arg.html);   // 🆕 只改下发副本，渲染端 innerHTML 即自带折叠态＋pmenu 选中态
   }
   if (typeof arg.titleHtml === 'string') stickyNoteTitleHtml.set(id, arg.titleHtml);
   // 翻页模式：唯一窗口即翻页窗（注册在 '__flip__#0'），与该刷新针对哪张便利贴无关
@@ -1979,6 +2089,37 @@ ipcMain.handle('include-fold-set', (e, arg) => {
   s.set(ord, !!arg.folded);
   return true;
 });
+// {pmenu NAME}：记录某张便利贴第 ord 个选单当前选中的 option value（''＝未选择）。
+//   ★ 只存选中索引，不存结果 HTML —— 结果随页面重渲染重新生成，翻页回来按索引重新填入。
+ipcMain.handle('pmenu-select-set', (e, arg) => {
+  const id = includeFoldId(arg && arg.key, arg && arg.idx);
+  const ord = +arg.ord;
+  if (!isFinite(ord) || ord < 0) return false;
+  let s = pmenuSelectState.get(id);
+  if (!s) { s = new Map(); pmenuSelectState.set(id, s); }
+  const value = String(arg && arg.index != null ? arg.index : '');
+  if (value) s.set(ord, value);
+  else s.delete(ord);
+  if (!s.size) pmenuSelectState.delete(id);
+  return true;
+});
+// 🆕 {gpG8}：记录某张便利贴第 ord 个结果框的全部临时参数值，只存内存、退出即清。
+//   ★ 只存值，不写 .md；下发 HTML 前由 applyGpParamTempToHtml 注入 value/checked（含 folded 折叠箭头）。
+ipcMain.handle('gp-param-temp-set', (e, arg) => {
+  const id = includeFoldId(arg && arg.key, arg && arg.idx);
+  const ord = +arg.ord;
+  if (!isFinite(ord) || ord < 0) return false;
+  let s = gpParamTempState.get(id);
+  if (!s) { s = new Map(); gpParamTempState.set(id, s); }
+  const rec = Object.assign({}, s.get(ord) || {});
+  if (arg.params && typeof arg.params === 'object') Object.assign(rec, arg.params);
+  if (typeof arg.kw === 'string') { rec.kw = arg.kw; rec.pattern = arg.kw; }
+  if (typeof arg.all === 'boolean') rec.all = arg.all;
+  if (!Object.keys(rec).some((k) => rec[k] !== '' && rec[k] != null)) s.delete(ord);
+  else s.set(ord, rec);
+  if (!s.size) gpParamTempState.delete(id);
+  return true;
+});
 // 单张便利贴：读取自身状态（位置/尺寸/颜色/透明度）
 ipcMain.handle('sticky-note-get', (e, arg) => {
   const it = noteInst(String(arg && arg.key), +arg.idx || 0);
@@ -2082,14 +2223,16 @@ ipcMain.handle('wake-main-from-note', (e, arg) => {
   // 🆕 2026-11-20：calendar 主窗被主动关闭后，便利贴点 {NAME=X} 不再唤起主窗、不再同步滚动 calendar。
   //   改为回送发起的这个便利贴窗，让它在本张内容里找同名围栏 → 滚到标题＋闪烁（本地定位）。
   //   这样既满足「calendar 关着就别动 calendar」，也不会点了完全没反应。
-  if (act === 'gp-name-jump') {
+  const isTermJump = act === 'gp-term-jump';   // 🆕 2026-11-22：{list TERM} 花刮号胶囊跳转
+  if (act === 'gp-name-jump' || isTermJump) {
     // ⛔ 不要再用 URL 是否含 todolist/index.html 判断 calendar 是否开着：
     //   主程式（AI 智控台）内嵌 TodoList 时 URL 是 crawler-window.html，会被误判成「没开」。
     //   主窗存在即视为 calendar 可用；没开时才走离线跨贴定位。
     if (!mainWindow || mainWindow.isDestroyed()) {
       const nm = (arg && typeof arg.name === 'string') ? arg.name : '';
       // 同名围栏可能在【别的便利贴】：主进程缓存了每张贴的渲染 HTML，先跨贴找出来。
-      const target = gpFindStickyByName(nm);
+      //   TERM 跳转按 data-gp-term 找，名称跳转按 data-gp-name 找。
+      const target = isTermJump ? gpFindStickyByTerm(nm) : gpFindStickyByName(nm);
       if (target) {
         // ★ 跨贴会翻页 → 先入返回栈（主窗路径由 renderer 的 tlGpReturnPrepare 负责；这里主窗不存在，必须自己入）。
         //   来源页用主进程记录的当前页，翻页模式的 arg.key 是 '__flip__' 不是真实贴 id。
@@ -2108,7 +2251,10 @@ ipcMain.handle('wake-main-from-note', (e, arg) => {
         });
         broadcastGpReturnShow();
         // start/end 只为满足 noteFindUnitElement 的 block 分支；name 是权威锚点，先于行号匹配。
-        const focusUnit = { kind: 'block', start: 0, end: 0, name: nm };
+        //   TERM 跳转用 termName 字段走 data-gp-term 锚点（与 name 分支区分，避免同名混淆）。
+        const focusUnit = isTermJump
+          ? { kind: 'block', start: 0, end: 0, termName: nm }
+          : { kind: 'block', start: 0, end: 0, name: nm };
         let ok = showStickyNoteAt(target.key, target.idx, focusUnit);
         // 分体模式目标窗可能被关掉 → 开出来再定位
         if (!ok && stickyNoteMode !== 'flip') {
@@ -2123,7 +2269,7 @@ ipcMain.handle('wake-main-from-note', (e, arg) => {
       }
       // 缓存里没找到：退回当前便利贴本地查找（找不到时便利贴会给明确提示）。
       if (e && e.sender && !e.sender.isDestroyed()) {
-        e.sender.send('gp-local-name-jump', { name: nm });
+        e.sender.send(isTermJump ? 'gp-local-term-jump' : 'gp-local-name-jump', { name: nm });
       }
       return { local: true };
     }
@@ -2136,6 +2282,7 @@ ipcMain.handle('wake-main-from-note', (e, arg) => {
   const channel = act === 'scroll' ? 'scroll-sticky-event'
     : act === 'glossary' ? 'open-term-glossary'
     : act === 'gp-name-jump' ? 'gp-name-ref-jump'
+    : isTermJump ? 'gp-term-ref-jump'
     : 'open-sticky-event';
   const notifySticky = () => {
     if (channel === 'open-term-glossary') {
@@ -2146,8 +2293,9 @@ ipcMain.handle('wake-main-from-note', (e, arg) => {
       return;
     }
     // 🆕 2026-11-15：便利贴 {NAME=X} 名称胶囊点击 → 主窗全局搜索同名围栏并跳转（与 glossary 分支同口径）
-    if (channel === 'gp-name-ref-jump') {
-      sendNameJump();
+    // 🆕 2026-11-22：TERM 花刮号胶囊点击 → 同口径，payload 多带 isTerm 让主窗走 tlJumpToGpTerm
+    if (channel === 'gp-name-ref-jump' || channel === 'gp-term-ref-jump') {
+      sendNameJump(channel === 'gp-term-ref-jump');
       return;
     }
     win.webContents.send(channel, {
@@ -2163,11 +2311,12 @@ ipcMain.handle('wake-main-from-note', (e, arg) => {
   //   did-finish-load 只代表 HTML 载入完，init() 还没读 calendar.md / include → 名称索引为空；
   //   此时直接送 gp-name-ref-jump 会定位失败（外表看像便利贴定位坏掉）。
   //   统一走就绪门：没回报 sticky-calendar-ready 就先排队，就绪后再送；超时兜底避免请求永久丢失。
-  const sendNameJump = () => {
+  const sendNameJump = (isTerm) => {
     if (!win || win.isDestroyed() || win.webContents.isDestroyed()) return;
     // 🆕 带来源便利贴 key/idx/scrollTop/标题：跳转后「返回」按钮要能翻回这一页的这一处。
     win.webContents.send(channel, {
       name: (arg && typeof arg.name === 'string') ? arg.name : '',
+      isTerm: isTerm === true,   // 🆕 2026-11-22：TERM 胶囊跳转标记
       fromKey: (arg && typeof arg.key === 'string') ? arg.key : '',
       fromIdx: +((arg && arg.idx) || 0) || 0,
       fromScrollTop: (arg && typeof arg.scrollTop === 'number' && isFinite(arg.scrollTop)) ? Math.max(0, arg.scrollTop) : 0,
@@ -2209,25 +2358,42 @@ ipcMain.handle('wake-main-from-note', (e, arg) => {
 //   仅存进程内存；退出即清。主窗本地另有一份等长的滚动快照栈，两边严格同步 push/pop。
 //   ★ 层数与清单都以主进程快照 gpReturnSnapshot() 为唯一来源，广播给所有窗口；
 //     renderer 不再自己 +1 或兜底（旧版 `(remaining||1)` 兜底把层数永远显示成 1）。
-const gpReturnStack = [];
+// ★ 2026-11-21：双容器——跳转层按序出栈；手动定位点独立于按序规则，选中返回只定位、不消费，
+//   只有清单行尾 ✕（gp-return-remove）才删除。两容器都进同一份快照供清单显示。
+const gpReturnStack = [];     // 名称跳转产生的定位点（按序返回）
+const gpManualMarks = [];     // 使用者主动设定的定位点（不参与按序返回）
 let gpReturnSeq = 0;
 function gpReturnSnapshot() {
+  const toEntry = (s, i, manual) => {
+    const o = s.origin || {};
+    return {
+      token: s.token,
+      index: i,
+      type: o.type === 'sticky' ? 'sticky' : 'main',
+      key: o.key || '',
+      idx: +o.idx || 0,
+      scrollTop: typeof o.scrollTop === 'number' ? o.scrollTop : 0,
+      label: s.label || (o.type === 'sticky' ? ('便利贴 ' + ((+o.idx || 0) + 1)) : '主窗'),
+      targetName: s.targetName || '',
+      manual: !!manual,
+      // ★ 手动点定位两键：事件识别 + 事件内相对锚点（跳转层没有就给 null）
+      eventKey: o.key || '',
+      eventIdx: +o.idx || 0,
+      occDate: o.occDate || '',
+      eventTitle: o.eventTitle || '',
+      anchor: o.anchor || null,
+      // 兼容旧字段（清单/旧调试用；定位不再消费）
+      line: o.line || null,
+      unit: o.unit || null
+    };
+  };
   return {
-    token: gpReturnStack.length ? gpReturnStack[gpReturnStack.length - 1].token : 0,
-    remaining: gpReturnStack.length,
-    entries: gpReturnStack.map((s, i) => {
-      const o = s.origin || {};
-      return {
-        token: s.token,
-        index: i,
-        type: o.type === 'sticky' ? 'sticky' : 'main',
-        key: o.key || '',
-        idx: +o.idx || 0,
-        scrollTop: typeof o.scrollTop === 'number' ? o.scrollTop : 0,
-        label: s.label || (o.type === 'sticky' ? ('便利贴 ' + ((+o.idx || 0) + 1)) : '主窗'),
-        targetName: s.targetName || ''
-      };
-    })
+    token: gpReturnStack.length ? gpReturnStack[gpReturnStack.length - 1].token
+      : (gpManualMarks.length ? gpManualMarks[gpManualMarks.length - 1].token : 0),
+    remaining: gpReturnStack.length,          // ★ 主按钮 N 只算跳转层
+    manualRemaining: gpManualMarks.length,    // 清单用：手动点数（不进 N）
+    entries: gpReturnStack.map((s, i) => toEntry(s, i, false))
+      .concat(gpManualMarks.map((s, i) => toEntry(s, i, true)))
   };
 }
 function broadcastGpReturn(channel, payload) {
@@ -2290,6 +2456,70 @@ ipcMain.handle('gp-return-arm', (e, arg) => {
   broadcastGpReturnShow();
   return gpReturnSnapshot();
 });
+// 🆕 2026-11-20：手动「设定返回定位点」——不必先点名称跳转，随时把当前位置记下来。
+// ★ 2026-11-21：改投 gpManualMarks（不进 gpReturnStack）→ 不参与按序返回、选中返回也不消费。
+//   type='sticky'：便利贴页＋scrollTop；type='main'：主窗来源（同时抓便利贴当前页）。
+ipcMain.handle('gp-return-mark', (e, arg) => {
+  const type = (arg && arg.type === 'sticky') ? 'sticky' : 'main';
+  const token = ++gpReturnSeq;
+  // ★ 2026-11-21 统一模型：手动点只存两件事——
+  //   ① 事件识别 eventKey(=uid)/eventIdx/occDate：决定「便利贴翻到哪一张、主窗切到哪一天哪一笔」；
+  //   ② 相对锚点 anchor {kind:'check',line} | {kind:'block',start,end,name}：决定「事件内滚到哪一行」。
+  //   ⛔ 不再用 gpCurrentStickyPage() 当主窗来源的事件：那是便利贴「当下恰好显示的页」，
+  //     与主窗看到的事件无关 → 用户回报「主窗按定位，便利贴连翻页都不对」的真因。
+  //   ⛔ 不再存 scrollTop/mainScrolls 像素快照：不同窗口尺寸/渲染高度下对端必偏。
+  const eventKey = (arg && typeof arg.eventKey === 'string' && arg.eventKey)
+    ? arg.eventKey
+    : ((type === 'sticky' && typeof arg.key === 'string') ? arg.key : '');
+  const eventIdx = (arg && Number.isFinite(+arg.eventIdx)) ? +arg.eventIdx
+    : ((arg && Number.isFinite(+arg.idx)) ? +arg.idx : 0);
+  const occDate = (arg && typeof arg.occDate === 'string') ? arg.occDate : '';
+  // 事件标题仅作定位兜底（uid 对不上时按标题找回），不是定位的第一键；label 仍只供清单显示
+  const eventTitle = (arg && typeof arg.eventTitle === 'string') ? arg.eventTitle.slice(0, 80) : '';
+  const anchor = (arg && arg.anchor && typeof arg.anchor === 'object') ? arg.anchor : null;
+  // 兼容旧版字段：仍有 line/unit 时也能规范化成 anchor（旧便利贴/旧主窗暂未更新时使用）
+  const legacyLine = (arg && arg.line && typeof arg.line === 'object') ? arg.line : null;
+  const legacyUnit = (arg && arg.unit && typeof arg.unit === 'object') ? arg.unit : null;
+  const useAnchor = anchor || legacyUnit || (legacyLine
+    ? (Number.isFinite(+legacyLine.line)
+        ? { kind: 'check', line: +legacyLine.line }
+        : { kind: 'block', start: +legacyLine.start, end: +legacyLine.end, name: '' })
+    : null);
+  const stickyPage = eventKey ? { key: eventKey, idx: eventIdx } : null;
+  gpManualMarks.push({
+    token,
+    origin: {
+      type,
+      key: eventKey, idx: eventIdx, occDate, eventTitle,
+      anchor: useAnchor,
+      // toEntry 兼容字段（清单显示/旧调试）；真正定位只看 anchor
+      line: (useAnchor && useAnchor.kind === 'check') ? { line: useAnchor.line }
+        : (useAnchor && useAnchor.kind === 'block') ? { start: useAnchor.start, end: useAnchor.end } : null,
+      unit: useAnchor
+    },
+    label: (arg && typeof arg.label === 'string') ? arg.label.slice(0, 80) : (type === 'sticky' ? '便利贴手动定位点' : '主窗手动定位点'),
+    targetName: '',
+    stickyPage,
+    manual: true
+  });
+  broadcastGpReturnShow();
+  return gpReturnSnapshot();
+});
+// 主窗回传手动点的滚动快照（纯数据，节点引用过不了 IPC）：按 token 认领，找不到就丢弃（可能已被 ✕ 删掉）。
+ipcMain.handle('gp-return-manual-scrolls', (e, arg) => {
+  const m = gpManualMarks.find((s) => s.token === +((arg && arg.token) || 0));
+  if (m && Array.isArray(arg.scrolls)) m.mainScrolls = arg.scrolls.slice(0, 200);
+  return true;
+});
+// 清单行尾 ✕：唯一能删除手动定位点的入口；只删这一条，不动跳转层、不触发定位。
+ipcMain.handle('gp-return-remove', (e, arg) => {
+  const token = +((arg && arg.token) || 0);
+  const i = gpManualMarks.findIndex((s) => s.token === token);
+  if (i >= 0) gpManualMarks.splice(i, 1);
+  if (gpReturnStack.length || gpManualMarks.length) broadcastGpReturnShow();
+  else broadcastGpReturn('gp-return-hide', { token });
+  return gpReturnSnapshot();
+});
 // 需要重画按钮时（例如新开的便利贴窗没收到上一条广播）：回当前完整快照并广播一次。
 ipcMain.handle('gp-return-show', () => { broadcastGpReturnShow(); return gpReturnSnapshot(); });
 // 新窗口/重载后主动取一次当前状态（不广播，避免别处按钮闪烁）。
@@ -2304,9 +2534,30 @@ ipcMain.handle('gp-jump-done', (e, arg) => {
 // 按 ↩：默认 pop 顶层；带 toToken 则回到清单指定的那一层（含该层一起丢弃）。
 //   任一处按都生效；从清单选低层会一次退掉其上所有层。
 ipcMain.handle('gp-return-back', (e, arg) => {
+  const want = arg && (arg.toToken || arg.token);
+  // ★ 清单点的是手动定位点：只定位，绝不删除（唯一删除入口是 gp-return-remove 的行尾 ✕）。
+  if (want) {
+    const mi = gpManualMarks.findIndex((s) => s.token === +want);
+    if (mi >= 0) {
+      const m = gpManualMarks[mi];
+      const mo = m.origin || {};
+      // ★ 双端都用「加点当下存的两个值」：① 事件识别（翻到哪张便利贴／哪笔行程）；
+      //   ② 相对锚点 anchor（滚到事件内同一行）。⛔不再读任何当前 scrollTop／存档快照。
+      const evKey = mo.key || (m.stickyPage && m.stickyPage.key) || '';
+      const evIdx = Number.isFinite(+mo.idx) ? +mo.idx : ((m.stickyPage && +m.stickyPage.idx) || 0);
+      const anchor = mo.anchor || null;
+      if (evKey) showStickyNoteAt(evKey, evIdx, anchor || undefined);
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('gp-return-restore-anchor', {
+          eventKey: evKey, eventIdx: evIdx,
+          occDate: mo.occDate || '', eventTitle: mo.eventTitle || '', anchor: anchor
+        });
+      }
+      return gpReturnSnapshot();   // 两容器都不变 → 此点仍留在清单里
+    }
+  }
   if (!gpReturnStack.length) return gpReturnSnapshot();
   let pos = gpReturnStack.length - 1;
-  const want = arg && (arg.toToken || arg.token);
   if (want) {
     const found = gpReturnStack.findIndex((s) => s.token === +want);
     if (found < 0) return gpReturnSnapshot();   // 旧 token（已退掉）→ 什么都不做
@@ -2334,7 +2585,8 @@ ipcMain.handle('gp-return-back', (e, arg) => {
   }
   // 丢弃第 pos 层及以上（返回后这些「待返回」都不再存在），下层仍留栈中
   gpReturnStack.length = pos;
-  if (gpReturnStack.length) broadcastGpReturnShow();
+  // ★ 跳转层退空但还有手动点：仍要广播 show（主按钮隐藏、▾ 与清单保留），⛔不能发 hide。
+  if (gpReturnStack.length || gpManualMarks.length) broadcastGpReturnShow();
   else broadcastGpReturn('gp-return-hide', { token: st.token });
   return gpReturnSnapshot();
 });

@@ -1064,6 +1064,9 @@ function calTermTooltip(defs, t) {
 //   [[term:釋義:領域:發行:父階]] → 第 5 欄不加胶囊，只在 tooltip 尾端掛「↑ 父阶：X」
 //   解析規則見 calParseTermToken。逐行處理並跳過代碼圍欄。
 function calRenderTermDefs(text) {
+  // 🆕 2026-11-22：与 {list TERM} 同口径——有 TERM="该名称" 围栏者在正文术语胶囊前加花刮号徽标。
+  //   ⛔判定复用 calCollectGpTermList 的 hasFence，不另写围栏扫描。
+  const fenceTerms = (typeof calCollectGpTermList === 'function') ? calCollectGpTermList('') : new Map();
   let inFence = false;
   return String(text).split('\n').map(function (line) {
     if (/^\s*```/.test(line)) { inFence = !inFence; return line; }
@@ -1095,9 +1098,15 @@ function calRenderTermDefs(text) {
       if (!t) return m;
       // LITE 無全域術語字典，tooltip 只有本條釋義；父階依桌面同口徑掛在尾端
       const tooltip = calTermTooltip(t.def ? [t.def] : [], t);
-      const termHtml = '<span class="tl-term-cap"' +
+      const fenceHit = fenceTerms.get(t.term.toLowerCase());
+      const hasFence = !!(fenceHit && fenceHit.hasFence);
+      // 🆕 2026-11-22：与 {list TERM} 同款「📖 { } 术语」——📖 保留 TERM 身份，避免与具名围栏的「{ } 名称」混淆。
+      const brace = '📖 ' + (hasFence ? '<span class="gp-brace-mark">{ }</span> ' : '');
+      // ★ 有围栏者必须带 data-gp-term-nav：LITE 就地跳转委托只认此属性，⛔只加花刮号外观会丢掉跳转。
+      const navAttr = hasFence ? ' data-gp-term-nav="' + escapeHtml(t.term) + '"' : '';
+      const termHtml = '<span class="tl-term-cap"' + navAttr +
         (tooltip ? ' title="' + escapeHtml(tooltip) + '"' : '') + '>' +
-        escapeHtml(t.term) +
+        brace + escapeHtml(t.term) +
         (t.domain ? '<span class="tl-term-domain">' + escapeHtml(t.domain) + '</span>' : '') +
         (t.release ? '<span class="tl-term-release">' + escapeHtml(t.release) + '</span>' : '') +
         '</span>';
@@ -1336,7 +1345,7 @@ function calRenderNameRefs(text) {
       const nm = calQuotedVal(rawVal);
       if (!nm) return m;
       return '<span class="gp-name-ref" data-gp-name-ref="' + escapeHtml(nm) + '"' +
-        ' title="围栏名称：' + escapeHtml(nm) + '">\u{1F3F7}\uFE0F ' + escapeHtml(nm) + '</span>';
+        ' title="围栏名称：' + escapeHtml(nm) + '"><span class="gp-brace-mark">{ }</span> ' + escapeHtml(nm) + '</span>';
     });
   }).join('\n');
 }
@@ -1501,7 +1510,7 @@ function calParseIncludeToken(token) {
 }
 function calExpandGpIncludes(text, index, renderInsert) {
   const src = String(text == null ? '' : text);
-  if (!src || !index || !index.size) return src;
+  if (!src) return src;
   const RE_ANY = /\{include\s[^}]*\}/i;
   const RE_ONE = /\{include\s[^}]*\}/gi;
   const MAX_DEPTH = 8;
@@ -1519,7 +1528,7 @@ function calExpandGpIncludes(text, index, renderInsert) {
         const key = p.lookupKey;
         if (chain.has(key)) return '';
         const contents = index.get(key);
-        if (!contents || !contents.length) return m;
+        if (!contents || !contents.length) return render('', nm, p.showLabel, m, p.showDirective, p.folded, true);
         return contents.map((raw) => {
           const sub = expand(raw, depth + 1, new Set(chain).add(key));
           return render(sub, nm, p.showLabel, m, p.showDirective, p.folded);
@@ -1529,106 +1538,459 @@ function calExpandGpIncludes(text, index, renderInsert) {
   };
   return expand(src, 0, new Set());
 }
+// 🆕 {gpG8}：结果框临时参数控件（只改 DOM，不写 .md）。
+// 🆕 结果框参数抽屉：每个 .gp-include-box 自带把手/面板；开合与位置只存本会话（sessionStorage，不写文件）。
+const CAL_DRAWER_KEY = 'gpParamDrawerState';
+const calDrawerMem = new Map();
+function calDrawerStateRead() {
+  try {
+    if (typeof window !== 'undefined' && window.sessionStorage) {
+      const raw = window.sessionStorage.getItem(CAL_DRAWER_KEY);
+      return raw ? (JSON.parse(raw) || {}) : {};
+    }
+  } catch (_) { /* fail-safe */ }
+  const out = {};
+  calDrawerMem.forEach((v, k) => { out[k] = v; });
+  return out;
+}
+function calDrawerStateWrite(state) {
+  calDrawerMem.clear();
+  Object.keys(state || {}).forEach((k) => calDrawerMem.set(k, state[k]));
+  try {
+    if (typeof window !== 'undefined' && window.sessionStorage) {
+      window.sessionStorage.setItem(CAL_DRAWER_KEY, JSON.stringify(state || {}));
+    }
+  } catch (_) { /* 不影响主功能 */ }
+}
+function calDrawerOrd(box) {
+  if (!box || typeof document === 'undefined' || !document.querySelectorAll) return -1;
+  return Array.prototype.indexOf.call(document.querySelectorAll('.gp-include-box') || [], box);
+}
+function calDrawerStateSave(box, patch) {
+  const ord = calDrawerOrd(box);
+  if (ord < 0 || !patch) return;
+  const all = calDrawerStateRead();
+  const key = String(ord);
+  all[key] = Object.assign({}, all[key] || {}, patch);
+  calDrawerStateWrite(all);
+}
+function calGpDrawerHtml(inner) {
+  return '<div class="gp-param-drawer">' +
+    '<button type="button" class="gp-param-drawer-handle" title="属性调整" aria-label="属性调整"><span class="gp-drawer-badge" aria-hidden="true">\u2699</span></button>' +
+    '<div class="gp-param-drawer-panel">' +
+      '<div class="gp-param-drawer-head"><span>属性调整</span>' +
+        '<button type="button" class="gp-param-drawer-close" title="收起">\u00D7</button></div>' +
+      '<div class="gp-drawer-directive-wrap"><span class="gp-drawer-directive-label">当前指令</span><code class="gp-drawer-directive"></code></div>' +
+      '<div class="gp-param-drawer-body">' + inner + '</div>' +
+    '</div></div>';
+}
+function calGpDrawerQuote(v) {
+  const s = String(v == null ? '' : v);
+  if (s.indexOf('"') >= 0 && s.indexOf("'") < 0) return "'" + s + "'";
+  if (s.indexOf('"') >= 0 && s.indexOf("'") >= 0) return '\u201C' + s + '\u201D';
+  return '"' + s + '"';
+}
+function calGpDrawerCtrl(box, key) {
+  return box && box.querySelector ? box.querySelector('[data-gp-temp-param="' + key + '"]') : null;
+}
+function calGpDrawerBool(box, key) {
+  const c = calGpDrawerCtrl(box, key);
+  return !!(c && c.checked);
+}
+function calGpDrawerBuildDirective(box) {
+  if (!box || !box.classList) return '';
+  const q = calGpDrawerQuote;
+  const b = (k) => calGpDrawerBool(box, k);
+  const patternCtrl = calGpDrawerCtrl(box, 'pattern');
+  const pattern = patternCtrl ? String(patternCtrl.value == null ? '' : patternCtrl.value) : '';
+  if (box.classList.contains('gp-pmenu-box')) {
+    const kind = String(box.getAttribute('data-gp-pmenu-kind') || 'NAME').toUpperCase();
+    const parts = [pattern ? '{pmenu ' + kind + '=' + q(pattern) : '{pmenu ' + kind];
+    if (kind === 'TERM') parts.push('all=' + (b('all') ? 'true' : 'false'));
+    parts.push('showDirective=' + (b('showDirective') ? 'true' : 'false'));
+    parts.push('folded=' + (b('folded') ? 'true' : 'false'));
+    return parts.join(' ') + '}';
+  }
+  if (box.classList.contains('gp-name-list-box')) {
+    const kind = box.getAttribute('data-gp-term-list') === '1' ? 'TERM' : 'NAME';
+    const parts = [pattern ? '{list ' + kind + '=' + q(pattern) : '{list ' + kind];
+    parts.push('showCount=' + (b('showCount') ? 'true' : 'false'));
+    parts.push('showDirective=' + (b('showDirective') ? 'true' : 'false'));
+    parts.push('folded=' + (b('folded') ? 'true' : 'false'));
+    return parts.join(' ') + '}';
+  }
+  const kind = String(box.getAttribute('data-gp-include-kind') || 'name').toLowerCase();
+  const key = kind === 'term' ? 'TERM' : (kind === 'picture' ? 'picture' : 'NAME');
+  const nameCtrl = calGpDrawerCtrl(box, 'includeName');
+  const name = nameCtrl ? String(nameCtrl.value == null ? '' : nameCtrl.value) : (box.getAttribute('data-gp-include') || '');
+  return ['{include', key + '=' + q(name),
+    'showLabel=' + (b('showLabel') ? 'true' : 'false'),
+    'showDirective=' + (b('showDirective') ? 'true' : 'false'),
+    'folded=' + (b('folded') ? 'true' : 'false')].join(' ') + '}';
+}
+function calDrawerBodiesPayload(index) {
+  const bodies = {};
+  if (index && typeof index.forEach === 'function') {
+    index.forEach((v, k) => {
+      if (Array.isArray(v)) bodies[k] = v.map((raw) => calGpIncludeTextBodyHtml(raw)).join('');
+    });
+  }
+  const json = JSON.stringify(bodies).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+  return '<span hidden data-gp-include-bodies="' + json + '"></span>';
+}
+function calDrawerBodiesRead() {
+  if (window.calGpDrawerBodies) return window.calGpDrawerBodies;
+  if (!document.querySelector) return null;
+  const el = document.querySelector('[data-gp-include-bodies]');
+  if (!el || !el.getAttribute) return null;
+  try {
+    const obj = JSON.parse(el.getAttribute('data-gp-include-bodies') || '');
+    window.calGpDrawerBodies = obj;
+    return obj;
+  } catch (_) { return null; }
+}
+function calDrawerApplyName(box, name) {
+  if (!box || !box.querySelector || !name) return;
+  const kind = String(box.getAttribute('data-gp-include-kind') || 'name').toLowerCase();
+  const key = (kind === 'term' ? 'term:' : '') + String(name).toLowerCase();
+  const bodies = calDrawerBodiesRead();
+  const index = window.calGpDrawerIndex || null;
+  const contents = index && typeof index.get === 'function' ? index.get(key) : null;
+  const body = box.querySelector('.gp-include-body');
+  if (body && bodies && typeof bodies[key] === 'string') {
+    body.innerHTML = bodies[key];
+  } else if (body && contents && contents.length) {
+    body.innerHTML = contents.map((raw) => calGpIncludeTextBodyHtml(raw)).join('');
+  }
+  const label = box.querySelector('.gp-include-label-text');
+  if (label) label.textContent = String(name);
+  if (box.setAttribute) box.setAttribute('data-gp-include', String(name));
+}
+function calGpExecDirectiveHtml(show) {
+  return '<div class="gp-exec-directive"' + (show ? '' : ' hidden') + '><span class="gp-exec-directive-label">当前执行：</span><code class="gp-exec-directive-code"></code></div>';
+}
+function calGpDrawerSync(box) {
+  if (!box || !box.querySelector) return;
+  const text = calGpDrawerBuildDirective(box);
+  const out = box.querySelector('.gp-drawer-directive');
+  if (out) out.textContent = text;
+  const exec = box.querySelector('.gp-exec-directive-code');
+  if (exec) exec.textContent = text;
+}
+function calGpDrawerHydrate(root) {
+  const scope = root && root.querySelectorAll ? root : document;
+  if (!scope || !scope.querySelectorAll) return;
+  const boxes = Array.prototype.slice.call(scope.querySelectorAll('.gp-include-box') || []);
+  const state = calDrawerStateRead();
+  boxes.forEach((box, ord) => {
+    const drawer = box.querySelector ? box.querySelector('.gp-param-drawer') : null;
+    if (!drawer || drawer.getAttribute('data-gp-drawer-hydrated') === '1') return;
+    drawer.setAttribute('data-gp-drawer-hydrated', '1');
+    calGpDrawerSync(box);
+    const st = state[String(ord)] || {};
+    if (st.open) drawer.classList.add('is-open');
+    if (typeof st.x === 'number' && typeof st.y === 'number') {
+      const panel = drawer.querySelector('.gp-param-drawer-panel');
+      if (panel) {
+        panel.style.right = 'auto';
+        panel.style.left = st.x + 'px';
+        panel.style.top = st.y + 'px';
+      }
+    }
+  });
+}
+function calGpDrawerInstall() {
+  if (typeof document === 'undefined' || !document.addEventListener) return;
+  if (typeof window !== 'undefined' && window.__calDrawerBound) { calGpDrawerHydrate(document); return; }
+  if (typeof window !== 'undefined') window.__calDrawerBound = true;
+  document.addEventListener('click', (ev) => {
+    const t = ev.target;
+    if (!t || !t.closest) return;
+    const handle = t.closest('.gp-param-drawer-handle');
+    if (handle) {
+      ev.preventDefault(); ev.stopPropagation();
+      const drawer = handle.closest('.gp-param-drawer');
+      if (!drawer) return;
+      const open = !drawer.classList.contains('is-open');
+      drawer.classList.toggle('is-open', open);
+      calDrawerStateSave(drawer.closest('.gp-include-box'), { open: open ? 1 : 0 });
+      return;
+    }
+    const close = t.closest('.gp-param-drawer-close');
+    if (close) {
+      ev.preventDefault(); ev.stopPropagation();
+      const drawer = close.closest('.gp-param-drawer');
+      if (!drawer) return;
+      drawer.classList.remove('is-open');
+      calDrawerStateSave(drawer.closest('.gp-include-box'), { open: 0 });
+    }
+  });
+  const syncDirective = (ev) => {
+    const t = ev.target;
+    if (!t || !t.closest || !t.closest('[data-gp-temp-param], .gp-include-fold-cb')) return;
+    const box = t.closest('.gp-include-box');
+    if (!box) return;
+    if (t.getAttribute && t.getAttribute('data-gp-temp-param') === 'includeName') {
+      calDrawerApplyName(box, t.value);
+    }
+    calGpDrawerSync(box);
+  };
+  document.addEventListener('change', syncDirective);
+  document.addEventListener('input', syncDirective);
+  document.addEventListener('mousedown', (ev) => {
+    const t = ev.target;
+    if (!t || !t.closest || t.closest('.gp-param-drawer-close')) return;
+    const head = t.closest('.gp-param-drawer-head');
+    if (!head) return;
+    const drawer = head.closest('.gp-param-drawer');
+    const panel = drawer && drawer.querySelector ? drawer.querySelector('.gp-param-drawer-panel') : null;
+    const box = drawer && drawer.closest ? drawer.closest('.gp-include-box') : null;
+    if (!panel || !box || !box.getBoundingClientRect || !panel.getBoundingClientRect) return;
+    const boxRect = box.getBoundingClientRect();
+    const panelRect = panel.getBoundingClientRect();
+    panel.style.right = 'auto';
+    panel.style.left = (panelRect.left - boxRect.left) + 'px';
+    panel.style.top = (panelRect.top - boxRect.top) + 'px';
+    const sx = ev.clientX || 0, sy = ev.clientY || 0;
+    const ox = parseFloat(panel.style.left) || 0, oy = parseFloat(panel.style.top) || 0;
+    ev.preventDefault(); ev.stopPropagation();
+    const move = (e) => {
+      panel.style.left = (ox + (e.clientX || 0) - sx) + 'px';
+      panel.style.top = (oy + (e.clientY || 0) - sy) + 'px';
+    };
+    const up = () => {
+      if (document.removeEventListener) {
+        document.removeEventListener('mousemove', move);
+        document.removeEventListener('mouseup', up);
+      }
+      calDrawerStateSave(box, { x: parseFloat(panel.style.left) || 0, y: parseFloat(panel.style.top) || 0 });
+    };
+    if (document.addEventListener) {
+      document.addEventListener('mousemove', move);
+      document.addEventListener('mouseup', up);
+    }
+  });
+  const start = () => {
+    calGpDrawerHydrate(document);
+    if (typeof MutationObserver !== 'undefined' && document.body) {
+      new MutationObserver(() => calGpDrawerHydrate(document))
+        .observe(document.body, { childList: true, subtree: true });
+    }
+  };
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start);
+  else start();
+}
+calGpDrawerInstall();
+function calGpTempToggle(key, label, on, title) {
+  return '<label class="gp-temp-toggle" title="' + escapeHtml(title || '') + '">' +
+    '<input type="checkbox" data-gp-temp-param="' + key + '"' + (on ? ' checked' : '') + '>' + label + '</label>';
+}
+function calGpTempBar(parts) {
+  const list = (parts || []).filter(Boolean);
+  return list.length ? '<div class="gp-temp-param-bar">' + list.join('') + '</div>' : '';
+}
+function calGpNameSelect(kindKey, current, choices) {
+  const list = ((choices && choices[kindKey]) || []).slice();
+  const cur = String(current == null ? '' : current);
+  if (cur && list.indexOf(cur) < 0) list.unshift(cur);
+  const esc = (s) => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+  const opts = list.map((nm) => '<option value="' + esc(nm) + '"' + (nm === cur ? ' selected' : '') + '>' + esc(nm) + '</option>').join('');
+  return '<label class="gp-temp-name" title="选择要引用的' + (kindKey === 'TERM' ? '术语' : '名称') + '">' +
+    '<span>' + (kindKey === 'TERM' ? '术语' : '名称') + '</span>' +
+    '<select data-gp-temp-param="includeName">' + opts + '</select></label>';
+}
+function calCollectGpTempParams(box) {
+  const out = {};
+  const ctrls = box && box.querySelectorAll ? box.querySelectorAll('[data-gp-temp-param]') || [] : [];
+  Array.prototype.forEach.call(ctrls, (c) => {
+    const key = c.getAttribute && c.getAttribute('data-gp-temp-param');
+    if (!key) return;
+    out[key] = c.type === 'checkbox' ? !!c.checked : String(c.value == null ? '' : c.value);
+  });
+  return out;
+}
+function calApplyGpParams(box, params) {
+  if (!box) return;
+  const p = params || {};
+  const hide = (sel, on) => {
+    const nodes = box.querySelectorAll ? box.querySelectorAll(sel) || [] : [];
+    Array.prototype.forEach.call(nodes, (n) => { n.hidden = !!on; });
+  };
+  if ('showLabel' in p) hide('.gp-include-label-text', p.showLabel === false);
+  if ('showDirective' in p) hide('.gp-include-directive, .gp-exec-directive', p.showDirective === false);
+  if ('showCount' in p) {
+    hide('.gp-name-list-count', p.showCount === false);
+    hide('.gp-name-list-total', p.showCount === false);
+  }
+  if ('folded' in p) {
+    const foldCb = box.querySelector ? box.querySelector('.gp-include-fold-cb') : null;
+    if (foldCb) foldCb.checked = p.folded === true;
+  }
+  if ('includeName' in p && box.classList && box.classList.contains('gp-include-box')) {
+    const nameCtrl = calGpDrawerCtrl(box, 'includeName');
+    const chosen = String(p.includeName == null ? '' : p.includeName);
+    if (nameCtrl) nameCtrl.value = chosen;
+    if (chosen) calDrawerApplyName(box, chosen);
+  }
+  if (box.classList && box.classList.contains('gp-pmenu-box')) calApplyPmenuFilter(box, p.pattern || '');
+  else if (box.classList && box.classList.contains('gp-name-list-box')) calApplyListFilter(box, p.pattern || '');
+}
 // 把 {include} 命中的围栏内部 markdown 预渲染成「只读 HTML ＋ 淡化虚线外框」（与桌面 tlGpIncludeBoxHtml 同口径）。
-function calGpIncludeBoxHtml(raw, name, showLabel, directive, showDirective, folded) {
+function calGpIncludeTextBodyHtml(raw) {
   const CHK_RE = /^\s*[-*+]\s+\[[ xX]\]\s?/;
   const prepared = String(raw == null ? '' : raw).split('\n').map((l) =>
     (CHK_RE.test(l) && typeof calNoteCheckLineHtml === 'function')
       ? calNoteCheckLineHtml(l, null, 0, false, {}) : calRenderNoteMarkers(l)).join('\n');
   let html = renderMarkdown(calRenderNameRefs(calRenderTermDefs(calRenderNoteMarkersLines(prepared))));
-  // 仅单一段落剥 <p>；多段 <p>+<ul> 留给块级 fieldset 承载，避免框空内容外溢。
   if (/^<p>[\s\S]*<\/p>$/.test(html) && !/<\/p>\s*<p>/.test(html) && !/<ul[\s>]/.test(html) && !/<ol[\s>]/.test(html)) {
     html = html.replace(/^<p>([\s\S]*?)<\/p>\s*$/, '$1').trim();
   }
+  return html;
+}
+function calGpIncludeMissingHtml(name, directive) {
+  const label = /\{\s*include\s+TERM\b/i.test(directive || '') ? '术语围栏'
+    : (/\{\s*include\s+picture\b/i.test(directive || '') ? '图片' : '围栏小事件群');
+  return '<div class="gp-include-missing" role="status">找不到' + label + '「' + escapeHtml(name || '') + '」：没有可插入的内容。</div>';
+}
+function calGpIncludeBoxHtml(raw, name, showLabel, directive, showDirective, folded, indexArg, missing) {
+  const nameChoices = indexArg && indexArg.nameChoices ? indexArg.nameChoices : indexArg;
+  if (indexArg && typeof indexArg.get === 'function') window.calGpDrawerIndex = indexArg;
+  const html = missing ? calGpIncludeMissingHtml(name, directive) : calGpIncludeTextBodyHtml(raw);
   // <fieldset> 的 <legend> 骑在虚线边框顶部左上角。徽标常显（与 showLabel 无关，供视觉区分）：
   //   TERM → 📖 书徽标；NAME → 🏷️ 标签牌徽标。只显示徽标、不显示 "TERM" 文字；showLabel=true 时徽标后附名称。
   //   directive 即原始 {include …} token，据此判来源（不改传递链）。
   const isTerm = /\{include\s+TERM\s*=/i.test(directive || '');
   const badge = isTerm
     ? '<span class="gp-include-badge is-term" title="术语详细说明">\u{1F4D6}</span>'
-    : '<span class="gp-include-badge is-name" title="围栏名称引用">\u{1F3F7}\uFE0F</span>';
+    : '<span class="gp-include-badge is-name" title="围栏名称引用"><span class="gp-brace-mark">{ }</span></span>';
   // 折叠按钮：藏在 legend（左上角），只折叠 .gp-include-body；徽标、名称、directive 永不折叠。纯 CSS :has(:checked)。
   //   folded 三态：true → checked + data-gp-fold-default="1"（默认折叠）；false → data-gp-fold-default="0"（默认展开）；
   //                null/未指定 → 无标记，沿用主进程 store 旧行为。
   const foldAttr = folded === true ? ' checked data-gp-fold-default="1"'
     : folded === false ? ' data-gp-fold-default="0"' : '';
   const fold = '<label class="gp-include-fold" title="折叠/展开内容"><input type="checkbox" class="gp-include-fold-cb"' + foldAttr + '><span class="gp-include-fold-ico">\u25BE</span></label>';
-  const legend = '<legend class="gp-include-label">' + fold + badge + (showLabel ? escapeHtml(name) : '') + '</legend>';
-  // showDirective=true：框内顶部显示原始 {include …} 指令文本（转义），默认不显示。（永不折叠）
-  const dirHtml = showDirective ? '<div class="gp-include-directive">' + escapeHtml(directive || '') + '</div>' : '';
-  return '<fieldset class="gp-include-box" data-gp-include="' + escapeHtml(name) + '">' + legend + dirHtml + '<div class="gp-include-body">' + html + '</div></fieldset>';
+  const legend = '<legend class="gp-include-label">' + fold + badge +
+    '<span class="gp-include-label-text"' + (showLabel ? '' : ' hidden') + '>' + escapeHtml(name) + '</span></legend>';
+  const dirHtml = '<div class="gp-include-directive"' + (showDirective ? '' : ' hidden') + '>' + escapeHtml(directive || '') + '</div>' + calGpExecDirectiveHtml(showDirective);
+  const incKind = /\{\s*include\s+TERM\b/i.test(directive || '') ? 'term'
+    : /\{\s*include\s+picture\b/i.test(directive || '') ? 'picture' : 'name';
+  const paramBar = calGpTempBar([
+    incKind === 'picture' ? '' : calGpNameSelect(incKind === 'term' ? 'TERM' : 'NAME', name, nameChoices),
+    calGpTempToggle('showLabel', '显示名称', !!showLabel, '临时切换 showLabel'),
+    calGpTempToggle('showDirective', '显示指令', !!showDirective, '临时切换 showDirective'),
+    calGpTempToggle('folded', '折叠', !!folded, '临时切换 folded（与折叠箭头同步）')
+  ]);
+  return '<fieldset class="gp-include-box" data-gp-include="' + escapeHtml(name) + '" data-gp-include-kind="' + incKind + '">' + legend + dirHtml + calGpDrawerHtml(paramBar) +
+    '<div class="gp-include-body">' + html + '</div></fieldset>';
 }
 // 包装整个 notes 渲染链：renderMarkdown 之前把 {include} token 换成占位符，渲染完成后再注入 box HTML（杜绝二次 render 拆散结构）。
 function calRenderWithIncludes(text, index) {
   const srcText = String(text == null ? '' : text);
   const hasList = CAL_LIST_RE_ANY.test(srcText);
-  if (!hasList && (!index || !index.size || !/\{include\s+(?:name|TERM)\s*=/.test(srcText))) {
+  const hasPmenu = CAL_PMENU_RE_ANY.test(srcText);
+  const hasTermList = CAL_TERM_LIST_RE_ANY.test(srcText);
+  if (!hasList && !hasPmenu && !hasTermList && !/\{include\s+(?:name|TERM)\s*=/i.test(srcText)) {
     return renderMarkdown(calRenderNameRefs(calRenderTermDefs(calRenderNoteMarkersLines(text))));
   }
   // 占位符用普通 ASCII（真 renderer 会剥离 NUL 控制字符 → 裸露 GI0、注入失败）；%%TLINC_n_ZZ%% 已真引擎验证可原样穿过。
   let seq = 0;
   const ph = new Map();
   let prepared = text;
-  if (hasList || (index && index.size)) {
-    prepared = calExpandGpIncludes(text, index, (raw, nm, showLabel, directive, showDirective, folded) => {
-      const tok = '%%TLINC_' + (seq++) + '_ZZ%%';
-      ph.set(tok, { raw, nm, showLabel, directive, showDirective, folded });
+  if (true) {
+    prepared = calExpandGpIncludes(text, index, (raw, nm, showLabel, directive, showDirective, folded, missing) => {
+          const tok = '%%TLINC_' + (seq++) + '_ZZ%%';
+          ph.set(tok, { raw, nm, showLabel, directive, showDirective, folded, missing });
       return tok;
     });
   }
   if (hasList) {
-    prepared = calExpandGpLists(prepared, (list, showCount, directive, folded, pattern) => {
+    prepared = calExpandGpLists(prepared, (list, showCount, directive, folded, pattern, showDirective) => {
       const tok = '%%TLLST_' + (seq++) + '_ZZ%%';
-      ph.set(tok, { list, showCount, directive, folded, pattern, isList: true });
+      ph.set(tok, { list, showCount, directive, folded, pattern, showDirective, isList: true });
+      return tok;
+    });
+  }
+  if (hasPmenu) {
+    prepared = calExpandGpPmenus(prepared, (items, directive, folded, pattern, kind, showDirective) => {
+      const tok = '%%TLPMENU_' + (seq++) + '_ZZ%%';
+      ph.set(tok, { items, directive, folded, pattern, kind, showDirective, isPmenu: true });
+      return tok;
+    });
+  }
+  if (hasTermList) {
+    prepared = calExpandGpTermLists(prepared, (list, showCount, directive, folded, pattern, showDirective) => {
+      const tok = '%%TLTERM_' + (seq++) + '_ZZ%%';
+      ph.set(tok, { list, showCount, directive, folded, pattern, showDirective, isTermList: true });
       return tok;
     });
   }
   let html = renderMarkdown(calRenderNameRefs(calRenderTermDefs(calRenderNoteMarkersLines(prepared))));
   ph.forEach((v, tok) => {
-    const box = v.isList ? calGpNameListBoxHtml(v.list, v.showCount, v.directive, v.folded, v.pattern)
-      : calGpIncludeBoxHtml(v.raw, v.nm, v.showLabel, v.directive, v.showDirective, v.folded);
+    const box = v.isPmenu ? calGpPmenuBoxHtml(v.items, v.directive, v.folded, v.pattern, v.kind, undefined, v.showDirective)
+      : v.isTermList ? calGpTermListBoxHtml(v.list, v.showCount, v.directive, v.folded, v.pattern, v.showDirective)
+      : v.isList ? calGpNameListBoxHtml(v.list, v.showCount, v.directive, v.folded, v.pattern, v.showDirective)
+      : calGpIncludeBoxHtml(v.raw, v.nm, v.showLabel, v.directive, v.showDirective, v.folded, index, v.missing);
     html = html.split(tok).join(box);
   });
-  return html;
+  return html + calDrawerBodiesPayload(index);
 }
 // 独立 task 行里的 {include}：占位符法在原文层展开、checkbox 行渲染后注入 box（task 分支不走 calRenderWithIncludes）。
 function calTaskLineWithIncludes(line, index, uid, i, canEdit, opts) {
   const hasList = CAL_LIST_RE_ANY.test(String(line));
-  if (!hasList && (!index || !index.size || !/\{include\s/.test(String(line)))) {
+  const hasPmenu = CAL_PMENU_RE_ANY.test(String(line));
+  const hasTermList = CAL_TERM_LIST_RE_ANY.test(String(line));
+  if (!hasList && !hasPmenu && !hasTermList && !/\{include\s/.test(String(line))) {
     return calNoteCheckLineHtml(line, uid, i, canEdit, opts);
   }
   let seq = 0;
   const ph = new Map();
   let prepared = line;
-  if (index && index.size) {
-    prepared = calExpandGpIncludes(line, index, (raw, nm, showLabel, directive, showDirective, folded) => {
-      const tok = '%%TLINC_' + (seq++) + '_ZZ%%';
-      ph.set(tok, { raw, nm, showLabel, directive, showDirective, folded });
+  if (true) {
+    prepared = calExpandGpIncludes(line, index, (raw, nm, showLabel, directive, showDirective, folded, missing) => {
+          const tok = '%%TLINC_' + (seq++) + '_ZZ%%';
+          ph.set(tok, { raw, nm, showLabel, directive, showDirective, folded, missing });
       return tok;
     });
   }
   if (hasList) {
-    prepared = calExpandGpLists(prepared, (list, showCount, directive, folded, pattern) => {
+    prepared = calExpandGpLists(prepared, (list, showCount, directive, folded, pattern, showDirective) => {
       const tok = '%%TLLST_' + (seq++) + '_ZZ%%';
-      ph.set(tok, { list, showCount, directive, folded, pattern, isList: true });
+      ph.set(tok, { list, showCount, directive, folded, pattern, showDirective, isList: true });
+      return tok;
+    });
+  }
+  if (hasPmenu) {
+    prepared = calExpandGpPmenus(prepared, (items, directive, folded, pattern, kind, showDirective) => {
+      const tok = '%%TLPMENU_' + (seq++) + '_ZZ%%';
+      ph.set(tok, { items, directive, folded, pattern, kind, showDirective, isPmenu: true });
+      return tok;
+    });
+  }
+  if (hasTermList) {
+    prepared = calExpandGpTermLists(prepared, (list, showCount, directive, folded, pattern, showDirective) => {
+      const tok = '%%TLTERM_' + (seq++) + '_ZZ%%';
+      ph.set(tok, { list, showCount, directive, folded, pattern, showDirective, isTermList: true });
       return tok;
     });
   }
   let html = calNoteCheckLineHtml(prepared, uid, i, canEdit, opts);
   ph.forEach((v, tok) => {
-    const box = v.isList ? calGpNameListBoxHtml(v.list, v.showCount, v.directive, v.folded, v.pattern)
-      : calGpIncludeBoxHtml(v.raw, v.nm, v.showLabel, v.directive, v.showDirective, v.folded);
+    const box = v.isPmenu ? calGpPmenuBoxHtml(v.items, v.directive, v.folded, v.pattern, v.kind, undefined, v.showDirective)
+      : v.isTermList ? calGpTermListBoxHtml(v.list, v.showCount, v.directive, v.folded, v.pattern, v.showDirective)
+      : v.isList ? calGpNameListBoxHtml(v.list, v.showCount, v.directive, v.folded, v.pattern, v.showDirective)
+      : calGpIncludeBoxHtml(v.raw, v.nm, v.showLabel, v.directive, v.showDirective, v.folded, index, v.missing);
     html = html.split(tok).join(box);
   });
-  return html;
+  return html + calDrawerBodiesPayload(index);
 }
 // ========== 🆕 2026-11-20：{list NAME} 列出「所有具名围栏」的名称清单（与桌面 tl 同口径） ==========
 //   · {gpJ|NAME="X"} 算具名；{gpJ} 无 NAME 不算。每个名称是可点击 .gp-name-ref 胶囊，复用现有跳转委托。
 //   · 属性：showCount=true 附「(N)」；folded=true/false 默认态（data-gp-fold-default 三态）。
 const CAL_LIST_RE_ANY = /\{list\s+NAME\b[^}]*\}/i;
 const CAL_LIST_RE_ONE = /\{list\s+NAME\b[^}]*\}/gi;
-function calParseListToken(token) {
+function calParseListToken(token, listKey) {
   const s = String(token == null ? '' : token);
+  const key = listKey || 'NAME';
   const readVal = (m) => {
     if (!m) return '';
     for (let i = 1; i < m.length; i++) if (m[i] != null) return String(m[i]).trim();
@@ -1641,24 +2003,55 @@ function calParseListToken(token) {
     return v === 'true' || v === 'on' || v === '1' || v === 'yes';
   };
   // NAME="…"：万用字元查询（* 通配任意字符）。无 NAME= 时为空＝列全部。
-  const pattern = readVal(s.match(/(?:^|\s)NAME\s*=\s*(?:"([^"\n]*)"|'([^'\n]*)'|([^\s}]+))/i));
-  return { showCount: boolTri('showCount') === true, folded: boolTri('folded'), pattern };
+  const pattern = readVal(s.match(new RegExp('(?:^|\\s)' + key + '\\s*=\\s*(?:"([^"\\n]*)"|\'([^\'\\n]*)\'|([^\\s}]+))', 'i')));
+  // 🆕 2026-11-22：{pmenu TERM all=true} → 列出全部术语（含只有 [[term]] 无围栏者）。
+  return { showCount: boolTri('showCount') === true, folded: boolTri('folded'), pattern,
+    all: boolTri('all') === true, showDirective: boolTri('showDirective') };
 }
-// 万用字元匹配：* 通配任意字符；多段 * 拆成片段按顺序全命中（AND）；不带 * 的纯词＝包含匹配；大小写不敏感。
+// 万用字元匹配（list/pmenu 共用）：无 * 完全符合；*X* 包含；*X 结尾；X* 开头；大小写不敏感。
 function calGpNamePatternHit(name, pattern) {
   if (!pattern) return true;
   const hay = String(name == null ? '' : name).toLowerCase();
   const needle = String(pattern).toLowerCase();
-  if (needle.indexOf('*') < 0) return hay.indexOf(needle) >= 0;
-  const parts = needle.split('*').filter((x) => x !== '');
-  if (!parts.length) return true;
+  if (needle.indexOf('*') < 0) return hay === needle;
+  const parts = needle.split('*');
+  if (!parts.some((x) => x !== '')) return true;
   let pos = 0;
-  for (const part of parts) {
+  for (let i = 0; i < parts.length; i++) {
+    const part = parts[i];
+    if (!part) continue;
     const at = hay.indexOf(part, pos);
     if (at < 0) return false;
+    if (i === 0 && parts[0] !== '' && at !== 0) return false;
     pos = at + part.length;
   }
+  if (parts[parts.length - 1] !== '') return pos === hay.length;
   return true;
+}
+// list/pmenu 命中 0 笔时写清楚讯息（与 include 找不到同口径）
+function calGpListMissingHtml(kind, pattern) {
+  const label = kind === 'term' ? '术语' : (kind === 'pmenu-term' ? '术语详细说明' : '围栏名称');
+  const p = pattern ? '「' + escapeHtml(pattern) + '」' : '';
+  return '<div class="gp-include-missing" role="status">找不到符合' + p + '的' + label + '：没有可显示的内容。</div>';
+}
+// 🆕 {gpG8}：list NAME/TERM 临时过滤——只切 li.hidden / 计数，⛔不写 .md、不写 store。
+function calApplyListFilter(box, userKw) {
+  const list = box && box.querySelector ? box.querySelector('.gp-name-list') : null;
+  if (!list || !list.children) return;
+  // 🆕 当前指令驱动：临时 pattern 是唯一过滤条件；清空＝列出全部（⛔不再叠加原始硬底）。
+  const kw = String(userKw == null ? '' : userKw).trim();
+  let shown = 0, total = 0;
+  for (let i = 0; i < list.children.length; i++) {
+    const li = list.children[i];
+    const nm = String(li.getAttribute && li.getAttribute('data-list-item-name') || '');
+    if (!nm) continue;
+    total++;
+    const visible = !kw || calGpNamePatternHit(nm, kw);
+    li.hidden = !visible;
+    if (visible) shown++;
+  }
+  const cnt = box.querySelector ? box.querySelector('.gp-list-filter-count') : null;
+  if (cnt) cnt.textContent = shown + '/' + total;
 }
 function calFilterGpNameList(list, pattern) {
   if (!pattern) return list;
@@ -1684,23 +2077,30 @@ function calCollectGpNameList() {
   });
   return out;
 }
-function calGpNameListBoxHtml(list, showCount, directive, folded, pattern) {
+function calGpNameListBoxHtml(list, showCount, directive, folded, pattern, showDirective) {
+  const showDir = showDirective !== false;
   const entries = Array.from(list.values());
-  const body = entries.length
+  const initCount = entries.filter((it) => calGpNamePatternHit(it.name, pattern)).length;
+  const filterBar = '<div class="gp-list-filter-bar"><input type="text" class="gp-list-filter-input" data-gp-temp-param="pattern" aria-label="临时关键字过滤" placeholder="输入关键字过滤（可用 * 通配，不写入文件）" value="' + escapeHtml(pattern || '') + '">' +
+    calGpTempToggle('showCount', '显示数量', !!showCount, '临时切换 showCount') +
+    calGpTempToggle('showDirective', '显示指令', showDir, '临时切换 showDirective') +
+    calGpTempToggle('folded', '折叠', !!folded, '临时切换 folded（与折叠箭头同步）') +
+    '<span class="gp-list-filter-count">' + initCount + '/' + entries.length + '</span></div>';
+  const body = (initCount
     ? '<ul class="gp-name-list">' + entries.map((it) => {
-        const cnt = showCount ? ' <span class="gp-name-list-count">(' + it.count + ')</span>' : '';
-        return '<li><span class="gp-name-ref" data-gp-name-ref="' + escapeHtml(it.name) + '"' +
-          ' title="跳转到围栏：' + escapeHtml(it.name) + '">\u{1F3F7}\uFE0F ' + escapeHtml(it.name) + '</span>' + cnt + '</li>';
+        const cnt = ' <span class="gp-name-list-count"' + (showCount ? '' : ' hidden') + '>(' + it.count + ')</span>';
+        const hide = calGpNamePatternHit(it.name, pattern) ? '' : ' hidden';
+        return '<li' + hide + ' data-list-item-name="' + escapeHtml(it.name) + '"><span class="gp-name-ref" data-gp-name-ref="' + escapeHtml(it.name) + '"' +
+          ' title="跳转到围栏：' + escapeHtml(it.name) + '"><span class="gp-brace-mark">{ }</span> ' + escapeHtml(it.name) + '</span>' + cnt + '</li>';
       }).join('') + '</ul>'
-    : pattern
-    ? '<div class="gp-name-list-empty">没有名称匹配 <code>' + escapeHtml(pattern) + '</code> 的具名围栏</div>'
-    : '<div class="gp-name-list-empty">尚未有具名围栏（在围栏 open 行写 NAME="名称" 即可，如 <code>{gpJ|NAME="X"}</code>）</div>';
+    : calGpListMissingHtml('name', pattern));
   const foldAttr = folded === true ? ' checked data-gp-fold-default="1"'
     : folded === false ? ' data-gp-fold-default="0"' : '';
   const fold = '<label class="gp-include-fold" title="折叠/展开内容"><input type="checkbox" class="gp-include-fold-cb"' + foldAttr + '><span class="gp-include-fold-ico">\u25BE</span></label>';
-  const legend = '<legend class="gp-include-label">' + fold + '<span class="gp-include-badge is-name" title="具名围栏清单">\u{1F3F7}\uFE0F</span>围栏名称清单 <span class="gp-name-list-total">' + entries.length + '</span></legend>';
-  const dirHtml = '<div class="gp-include-directive">' + escapeHtml(directive || '') + '</div>';
-  return '<fieldset class="gp-include-box gp-name-list-box" data-gp-name-list="1">' + legend + dirHtml + '<div class="gp-include-body">' + body + '</div></fieldset>';
+  const legend = '<legend class="gp-include-label">' + fold + '<span class="gp-include-badge is-name" title="具名围栏清单"><span class="gp-brace-mark">{ }</span></span>围栏名称清单 <span class="gp-name-list-total"' + (showCount ? '' : ' hidden') + '>' + initCount + '</span></legend>';
+  const dirHtml = '<div class="gp-include-directive"' + (showDir ? '' : ' hidden') + '>' + escapeHtml(directive || '') + '</div>' + calGpExecDirectiveHtml(showDir);
+  return '<fieldset class="gp-include-box gp-name-list-box" data-gp-name-list="1"' +
+    ' data-gp-list-pattern="' + escapeHtml(pattern || '') + '">' + legend + dirHtml + calGpDrawerHtml(filterBar) + '<div class="gp-include-body">' + body + '</div></fieldset>';
 }
 function calExpandGpLists(text, renderInsert) {
   const src = String(text == null ? '' : text);
@@ -1708,13 +2108,364 @@ function calExpandGpLists(text, renderInsert) {
   const all = calCollectGpNameList();
   return src.replace(CAL_LIST_RE_ONE, (m) => {
     const p = calParseListToken(m);
-    const list = calFilterGpNameList(all, p.pattern);
-    return renderInsert(list, p.showCount, m, p.folded, p.pattern);
+    return renderInsert(all, p.showCount, m, p.folded, p.pattern, p.showDirective);
+  });
+}
+// ========== 🆕 2026-11-21：{pmenu NAME} 围栏内容弹出式选单（LITE，与桌面/VIEW 同口径） ==========
+// 🆕 2026-11-22：正则通用化，{pmenu NAME} 与 {pmenu TERM} 共用同一条链。
+const CAL_PMENU_RE_ANY = /\{pmenu\s+(?:NAME|TERM)\b[^}]*\}/i;
+const CAL_PMENU_RE_ONE = /\{pmenu\s+(?:NAME|TERM)\b[^}]*\}/gi;
+function calRenderGpBodyHtml(raw) {
+  const CHK_RE = /^\s*[-*+]\s+\[[ xX]\]\s?/;
+  const prepared = String(raw == null ? '' : raw).split('\n').map((l) =>
+    (CHK_RE.test(l) && typeof calNoteCheckLineHtml === 'function')
+      ? calNoteCheckLineHtml(l, null, 0, false, {}) : calRenderNoteMarkers(l)).join('\n');
+  let html = renderMarkdown(calRenderNameRefs(calRenderTermDefs(calRenderNoteMarkersLines(prepared))));
+  if (/^<p>[\s\S]*<\/p>$/.test(html) && !/<\/p>\s*<p>/.test(html) && !/<ul[\s>]/.test(html) && !/<ol[\s>]/.test(html)) {
+    html = html.replace(/^<p>([\s\S]*?)<\/p>\s*$/, '$1').trim();
+  }
+  return html;
+}
+// 🆕 2026-11-22：术语资讯正文（无围栏说明时选中显示）：释义／领域／首发／父阶。
+function calTermInfoBody(t) {
+  const lines = [];
+  if (t && t.def) lines.push('释义：' + t.def);
+  if (t && t.domain) lines.push('领域：' + t.domain);
+  if (t && t.release) lines.push('首发：' + t.release);
+  if (t && t.parent) lines.push('父阶：' + t.parent);
+  return lines.length ? lines.join('\n') : '（此术语尚未填写释义或说明）';
+}
+// 🆕 2026-11-22：kind='TERM' 时按围栏 TERM= 建项（{pmenu TERM}），与 NAME 共用扫描/通配。
+function calCollectGpPmenuItems(pattern, kind, all) {
+  const useTerm = String(kind || '').toUpperCase() === 'TERM';
+  const out = new Map();
+  const events = state.calEvents || [];
+  events.forEach((ev) => {
+    if (!ev || !ev.notes) return;
+    const lines = String(ev.notes).replace(/\r\n/g, '\n').split('\n');
+    const scan = (typeof calGpFenceScan === 'function') ? calGpFenceScan(lines) : { ranges: [] };
+    (scan.ranges || []).forEach((r) => {
+      const nm = String((useTerm ? r.termName : r.name) || '').trim();
+      if (!nm || !calGpNamePatternHit(nm, pattern)) return;
+      const key = nm.toLowerCase();
+      const body = lines.slice((+r.start || 0) + 1, +r.end || 0).join('\n').trim();
+      const hit = out.get(key);
+      if (hit) { hit.parts.push(body); hit.hasFence = true; }
+      else out.set(key, { name: nm, parts: [body], hasFence: true });
+    });
+  });
+  // all=true：并入全部 [[term]]（含无围栏者）显示术语资讯；有围栏者保留正文并标 hasFence。
+  if (all === true && useTerm && typeof calParseTermToken === 'function') {
+    events.forEach((ev) => {
+      if (!ev) return;
+      [ev.title, ev.notes].forEach((txt) => {
+        String(txt == null ? '' : txt).replace(/\[\[([^\]\n]+)\]\]/g, (m, inner) => {
+          const t = calParseTermToken(inner);
+          if (!t || !calGpNamePatternHit(t.term, pattern)) return m;
+          const key = t.term.toLowerCase();
+          const hit = out.get(key);
+          if (hit) { if (hit.parts.length === 0) hit.parts.push(calTermInfoBody(t)); return m; }
+          out.set(key, { name: t.term, parts: [calTermInfoBody(t)], hasFence: false });
+          return m;
+        });
+      });
+    });
+  }
+  return Array.from(out.values()).map((it) => ({
+    name: it.name,
+    body: it.parts.filter((x) => x !== '').join('\n\n'),
+    hasFence: it.hasFence === true
+  }));
+}
+function calGpPmenuBoxHtml(items, directive, folded, pattern, kind, allArg, showDirective) {
+  const showDir = showDirective !== false;
+  // 🆕 2026-11-22：kind='TERM'（{pmenu TERM}）区分徽标/文案；默认 NAME 保持原样。
+  const useTerm = String(kind || '').toUpperCase() === 'TERM';
+  const all = (typeof allArg === 'boolean')
+    ? allArg
+    : /(?:^|\s)all\s*=\s*(?:"true"|'true'|true|"on"|'on'|on|"1"|'1'|\b1\b)/i.test(String(directive || ''));
+  const badge = useTerm
+    ? '<span class="gp-include-badge is-term" title="术语内容弹出式选单">\u{1F4D6}</span>'
+    : '<span class="gp-include-badge is-name" title="围栏内容弹出式选单"><span class="gp-brace-mark">{ }</span></span>';
+  const selLabel = useTerm ? '选择术语' : '选择围栏名称';
+  // 🆕 {gpG8}：预存全量候选；初始仍按指令 pattern/all 隐藏，⛔不改 .md、不写 store。
+  const rawItems = (typeof calCollectGpPmenuItems === 'function')
+    ? calCollectGpPmenuItems('', kind, true)
+    : items.slice();
+  // 测试桩/旧注入可能传入额外项；并入但不覆盖真实扫描结果，避免临时候选丢失。
+  const seen = new Set(rawItems.map((it) => String((it && it.name) || '').toLowerCase()));
+  (Array.isArray(items) ? items : []).forEach((it) => {
+    const nm = String((it && it.name) || '').toLowerCase();
+    if (!nm || seen.has(nm)) return;
+    rawItems.push(it); seen.add(nm);
+  });
+  const opts = rawItems.map((it, i) => {
+    const brace = (useTerm && it.hasFence) ? '{ } ' : '';
+    const prefix = useTerm ? '\u{1F4D6} ' : '{ } ';
+    const navAttr = (it.hasFence || !useTerm) ? ' data-nav-name="' + escapeHtml(it.name) + '"' : '';
+    const passBase = calGpNamePatternHit(it.name, pattern);
+    const hide = (!passBase || (useTerm && !all && !it.hasFence)) ? ' hidden' : '';
+    return '<option value="' + i + '" data-content="' + escapeHtml(calRenderGpBodyHtml(it.body)) + '"' +
+      ' data-item-name="' + escapeHtml(it.name) + '" data-fence="' + (it.hasFence ? '1' : '0') + '"' + navAttr + hide + '>' +
+      prefix + brace + escapeHtml(it.name) + '</option>';
+  }).join('');
+  const initCount = rawItems.filter((it) => (!useTerm || all || it.hasFence) && calGpNamePatternHit(it.name, pattern)).length;
+  const filterBar = '<div class="gp-pmenu-filter-bar"><input type="text" class="gp-pmenu-filter-input" data-gp-temp-param="pattern" aria-label="临时关键字过滤" placeholder="输入关键字过滤（可用 * 通配，不写入文件）" value="' + escapeHtml(pattern || '') + '">' +
+    (useTerm ? '<label class="gp-pmenu-all-toggle" title="临时显示没有围栏说明的术语"><input type="checkbox" class="gp-pmenu-all-cb" data-gp-temp-param="all"' + (all ? ' checked' : '') + '>全部</label>' : '') +
+    calGpTempToggle('showDirective', '显示指令', showDir, '临时切换 showDirective') +
+    calGpTempToggle('folded', '折叠', !!folded, '临时切换 folded（与折叠箭头同步）') +
+    '<span class="gp-pmenu-filter-count">' + initCount + '/' + rawItems.length + '</span></div>';
+  const body = (initCount
+    ? '<div class="gp-pmenu-nav-row"><select class="gp-pmenu-select" aria-label="' + selLabel + '"><option value="">请选择' + selLabel + '…</option>' + opts + '</select>' +
+      '<button type="button" class="gp-pmenu-nav-btn" hidden title="跳转到该围栏小事件群">定位</button></div>' +
+      '<div class="gp-pmenu-content">选择上方菜单项目以显示围栏小事件群的内容</div>'
+    : calGpListMissingHtml(useTerm ? 'pmenu-term' : 'name', pattern));
+  const foldAttr = folded === true ? ' checked data-gp-fold-default="1"'
+    : folded === false ? ' data-gp-fold-default="0"' : '';
+  const fold = '<label class="gp-include-fold" title="折叠/展开内容"><input type="checkbox" class="gp-include-fold-cb"' + foldAttr + '><span class="gp-include-fold-ico">\u25BE</span></label>';
+  const legend = '<legend class="gp-include-label">' + fold + badge +
+    (useTerm ? '术语内容选单' : '围栏内容选单') + ' <span class="gp-name-list-total">' + initCount + '</span></legend>';
+  return '<fieldset class="gp-include-box gp-pmenu-box" data-gp-pmenu="1"' + (useTerm ? ' data-gp-pmenu-kind="TERM"' : '') +
+    ' data-gp-pmenu-pattern="' + escapeHtml(pattern || '') + '" data-gp-pmenu-all="' + (all ? '1' : '0') + '">' + legend +
+    '<div class="gp-include-directive"' + (showDir ? '' : ' hidden') + '>' + escapeHtml(directive || '') + '</div>' + calGpExecDirectiveHtml(showDir) + calGpDrawerHtml(filterBar) +
+    '<div class="gp-include-body">' + body + '</div></fieldset>';
+}
+function calExpandGpPmenus(text, renderInsert) {
+  const src = String(text == null ? '' : text);
+  if (!CAL_PMENU_RE_ANY.test(src)) return src;
+  return src.replace(CAL_PMENU_RE_ONE, (m) => {
+    // 🆕 kind 由头部关键字定（⛔不用整 token 含 'TERM' 判断：pattern 值里也可能有 TERM）
+    const kind = /\{\s*pmenu\s+TERM\b/i.test(m) ? 'TERM' : 'NAME';
+    const p = calParseListToken(m, kind);
+    // 🆕 当前指令驱动：先收全部，再由临时 pattern 控制显隐；⛔不在收集阶段硬过滤。
+    return renderInsert(calCollectGpPmenuItems('', kind, p.all), m, p.folded, p.pattern, kind, p.showDirective);
+  });
+}
+// 单一委派；与桌面共用 window.__gpPmenuBound 名称，避免引擎同时载入时重复绑定。
+// 🆕 2026-11-22：LITE 就地围栏定位（TERM/NAME 共用），等同桌面花刮号名称/术语胶囊跳转。
+//   LITE 为单页应用 → 直接滚到同页 .md-unit.is-gp[data-gp-term|data-gp-name] 并闪烁。
+function calGpNavToFence(name, kind) {
+  const nm = String(name == null ? '' : name).trim().toLowerCase();
+  if (!nm) return;
+  const attr = String(kind || '').toUpperCase() === 'TERM' ? 'data-gp-term' : 'data-gp-name';
+  const selector = '.md-unit.is-gp[' + attr + ']';
+  const scopes = [document];
+  if (typeof elements !== 'undefined' && elements && elements.preview) scopes.unshift(elements.preview);
+  let target = null;
+  for (const scope of scopes) {
+    const found = Array.prototype.slice.call(scope.querySelectorAll(selector));
+    target = found.find((u) => String(u.getAttribute(attr) || '').trim().toLowerCase() === nm);
+    if (target) break;
+  }
+  if (!target) {
+    if (typeof showToast === 'function') showToast('当前页面找不到围栏：' + nm, 'info');
+    return;
+  }
+  target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  target.classList.remove('cal-jump-flash');
+  void target.offsetWidth;
+  target.classList.add('cal-jump-flash');
+  setTimeout(() => target.classList.remove('cal-jump-flash'), 2000);
+}
+// 🆕 {gpG8}：临时参数过滤——只切 option.hidden / 计数，⛔不写 .md、不写 store。
+function calApplyPmenuFilter(box, userKw) {
+  const sel = box && box.querySelector ? box.querySelector('.gp-pmenu-select') : null;
+  if (!sel || !sel.options) return;
+  // 🆕 当前指令驱动：临时 pattern 是唯一过滤条件；清空＝列出全部（⛔不再叠加原始硬底）。
+  const allCb = box.querySelector ? box.querySelector('.gp-pmenu-all-cb') : null;
+  const allOn = !!(allCb && allCb.checked);
+  const kw = String(userKw == null ? '' : userKw).trim();
+  let shown = 0, total = 0;
+  for (let i = 0; i < sel.options.length; i++) {
+    const opt = sel.options[i];
+    if (!opt.value) continue;
+    total++;
+    const nm = String(opt.getAttribute('data-item-name') || '');
+    const fence = opt.getAttribute('data-fence') === '1';
+    const visible = (!kw || calGpNamePatternHit(nm, kw)) &&
+      (allOn || fence || box.getAttribute('data-gp-pmenu-kind') !== 'TERM');
+    opt.hidden = !visible;
+    if (visible) shown++;
+  }
+  const cnt = box.querySelector ? box.querySelector('.gp-pmenu-filter-count') : null;
+  if (cnt) cnt.textContent = shown + '/' + total;
+  const cur = sel.selectedOptions && sel.selectedOptions[0];
+  const out = box.querySelector ? box.querySelector('.gp-pmenu-content') : null;
+  if (cur && cur.hidden && out) {
+    out.innerHTML = '选择上方菜单项目以显示围栏小事件群的内容';
+    const navBtn = box.querySelector ? box.querySelector('.gp-pmenu-nav-btn') : null;
+    if (navBtn) {
+      navBtn.hidden = true;
+      navBtn.removeAttribute('data-nav-name');
+    }
+  }
+}
+function calGpPmenuInstall() {
+  // ★ 定位按钮委托挂在 __gpPmenuBound 早退之前（同桌面 include/本引擎历史教训）。
+  if (typeof window !== 'undefined' && !window.__calPmenuNavBound) {
+    window.__calPmenuNavBound = true;
+    if (typeof document !== 'undefined' && typeof document.addEventListener === 'function') {
+      document.addEventListener('click', (e) => {
+        const btn = e.target && e.target.closest && e.target.closest('.gp-pmenu-nav-btn');
+        if (!btn || btn.hidden) return;
+        const box = typeof btn.closest === 'function' ? btn.closest('.gp-pmenu-box') : null;
+        const name = String(btn.getAttribute('data-nav-name') || '').trim();
+        if (!box || !name) return;
+        e.preventDefault();
+        e.stopPropagation();
+        calGpNavToFence(name, box.getAttribute('data-gp-pmenu-kind') === 'TERM' ? 'TERM' : 'NAME');
+      });
+    }
+  }
+  if (typeof window !== 'undefined') {
+    if (window.__gpPmenuBound) return;
+    window.__gpPmenuBound = true;
+  }
+  if (typeof document === 'undefined' || typeof document.addEventListener !== 'function') return;
+  document.addEventListener('change', (e) => {
+    const cb = e.target && typeof e.target.getAttribute === 'function' && e.target.getAttribute('data-gp-temp-param') ? e.target : null;
+    if (cb) {
+      const b = typeof cb.closest === 'function' ? cb.closest('.gp-include-box') : null;
+      if (b) calApplyGpParams(b, calCollectGpTempParams(b));
+      return;
+    }
+    const sel = e.target && e.target.classList && e.target.classList.contains('gp-pmenu-select') ? e.target : null;
+    if (!sel) return;
+    const box = typeof sel.closest === 'function' ? sel.closest('.gp-pmenu-box') : null;
+    const out = box && box.querySelector ? box.querySelector('.gp-pmenu-content') : null;
+    if (!out) return;
+    const opt = sel.selectedOptions && sel.selectedOptions[0];
+    out.innerHTML = (opt && opt.getAttribute('data-content')) || '选择上方菜单项目以显示围栏小事件群的内容';
+    const navBtn = box && box.querySelector ? box.querySelector('.gp-pmenu-nav-btn') : null;
+    if (navBtn) {
+      const navName = (opt && typeof opt.getAttribute === 'function') ? String(opt.getAttribute('data-nav-name') || '') : '';
+      navBtn.hidden = !navName || !(opt && opt.value);
+      if (navName && opt && opt.value) navBtn.setAttribute('data-nav-name', navName);
+      else navBtn.removeAttribute('data-nav-name');
+    }
+  });
+  document.addEventListener('input', (e) => {
+    const t = e.target;
+    if (!t || typeof t.getAttribute !== 'function' || !t.getAttribute('data-gp-temp-param')) return;
+    const box = typeof t.closest === 'function' ? t.closest('.gp-include-box') : null;
+    if (box) calApplyGpParams(box, calCollectGpTempParams(box));
+  });
+}
+calGpPmenuInstall();
+// ========== 🆕 2026-11-21：{list TERM} 术语清单（LITE，与桌面/VIEW 同口径） ==========
+const CAL_TERM_LIST_RE_ANY = /\{list\s+TERM\b[^}]*\}/i;
+const CAL_TERM_LIST_RE_ONE = /\{list\s+TERM\b[^}]*\}/gi;
+function calTermNameOf(inner) {
+  const full = String(inner == null ? '' : inner).trim();
+  if (!full) return '';
+  const i = full.indexOf(':');
+  const term = (i < 0 ? full : full.slice(0, i)).trim();
+  if (!term || /^(dl|cp|cr|remind|bookmark|alert)$/i.test(term)) return '';
+  if (/^\d{4}-\d{2}-\d{2}$/.test(term)) return '';
+  return term;
+}
+// 🆕 2026-11-22 性能：calCollectGpTermList 是全量扫描（逐事件逐行＋围栏扫描），而 calRenderTermDefs
+//   在渲染热路径里每个术语胶囊都会调用 → 原本每次全量扫＝O(事件数×行数×调用数)。
+//   以「事件数组引用 + 内容指纹」为键缓存，同一批数据只扫一次（基准实测 ~90x）。
+let _calTermListCacheKey = null;
+let _calTermListCache = null;
+function calFpSample(str) {
+  const n = str.length; if (!n) return '0';
+  let h = n;
+  if (n <= 64) { for (let i = 0; i < n; i++) h = (h * 31 + str.charCodeAt(i)) >>> 0; }
+  else { for (let k = 0; k < 32; k++) h = (h * 31 + str.charCodeAt(Math.floor(k * (n - 1) / 31))) >>> 0; }
+  return h.toString(36);
+}
+function calTermListFingerprint() {
+  const list = state.calEvents || [];
+  let s = list.length + '#';
+  for (let i = 0; i < list.length; i++) {
+    const ev = list[i] || {};
+    // ⛔ 不能只用 length：原地改同长度会漏失效 → 摘要含头/中/尾字符。
+    s += String(ev.uid || '') + ':' + calFpSample(String(ev.title || '')) + ':' + calFpSample(String(ev.notes || '')) + '|';
+  }
+  return s;
+}
+function calCollectGpTermList(pattern) {
+  // 只有空 pattern（{list TERM} 全部 / 渲染 hasFence 查询）可复用整表缓存；带 pattern 的结果另存。
+  const fp = calTermListFingerprint() + '|' + String(pattern || '');
+  if (_calTermListCacheKey === fp && _calTermListCache) return _calTermListCache;
+  return (_calTermListCache = calCollectGpTermListUncached(pattern)), (_calTermListCacheKey = fp), _calTermListCache;
+}
+function calCollectGpTermListUncached(pattern) {
+  const out = new Map();
+  const bump = (nm, hasFence) => {
+    const name = String(nm || '').trim();
+    if (!name || !calGpNamePatternHit(name, pattern)) return;
+    const key = name.toLowerCase();
+    const hit = out.get(key);
+    if (hit) {
+      hit.count++;
+      if (hasFence) hit.hasFence = true;   // 🆕 2026-11-22：围栏 TERM= 命中 → 有详细说明
+    } else {
+      out.set(key, { name, count: 1, hasFence: hasFence === true });
+    }
+  };
+  (state.calEvents || []).forEach((ev) => {
+    if (!ev) return;
+    [ev.title, ev.notes].forEach((txt) => {
+      String(txt == null ? '' : txt).replace(/\[\[([^\]\n]+)\]\]/g, (m, inner) => {
+        bump(calTermNameOf(inner)); return m;
+      });
+    });
+    if (!ev.notes) return;
+    const lines = String(ev.notes).replace(/\r\n/g, '\n').split('\n');
+    const scan = (typeof calGpFenceScan === 'function') ? calGpFenceScan(lines) : { ranges: [] };
+    (scan.ranges || []).forEach((r) => {
+      const nm = String(r.termName || '').trim();
+      if (nm) bump(nm, true);
+    });
+  });
+  return out;
+}
+function calGpTermListBoxHtml(list, showCount, directive, folded, pattern, showDirective) {
+  const showDir = showDirective !== false;
+  const entries = Array.from(list.values());
+  const initCount = entries.filter((it) => calGpNamePatternHit(it.name, pattern)).length;
+  const filterBar = '<div class="gp-list-filter-bar"><input type="text" class="gp-list-filter-input" data-gp-temp-param="pattern" aria-label="临时关键字过滤" placeholder="输入关键字过滤（可用 * 通配，不写入文件）" value="' + escapeHtml(pattern || '') + '">' +
+    calGpTempToggle('showCount', '显示数量', !!showCount, '临时切换 showCount') +
+    calGpTempToggle('showDirective', '显示指令', showDir, '临时切换 showDirective') +
+    calGpTempToggle('folded', '折叠', !!folded, '临时切换 folded（与折叠箭头同步）') +
+    '<span class="gp-list-filter-count">' + initCount + '/' + entries.length + '</span></div>';
+  const body = (initCount
+    ? '<ul class="gp-name-list">' + entries.map((it) => {
+        const cnt = ' <span class="gp-name-list-count"' + (showCount ? '' : ' hidden') + '>(' + it.count + ')</span>';
+        const fenceBrace = it.hasFence ? '<span class="gp-brace-mark" title="有围栏详细说明">{ }</span> ' : '';
+        const navAttr = it.hasFence ? ' data-gp-term-nav="' + escapeHtml(it.name) + '"' : '';
+        const hide = calGpNamePatternHit(it.name, pattern) ? '' : ' hidden';
+        return '<li' + hide + ' data-list-item-name="' + escapeHtml(it.name) + '"><span class="tl-term-cap" data-term="' + escapeHtml(it.name) + '"' + navAttr +
+          ' title="术语：' + escapeHtml(it.name) + (it.hasFence ? '（点击定位到围栏）' : '') + '">📖 ' + fenceBrace + escapeHtml(it.name) + '</span>' + cnt + '</li>';
+      }).join('') + '</ul>'
+    : calGpListMissingHtml('term', pattern));
+  const foldAttr = folded === true ? ' checked data-gp-fold-default="1"'
+    : folded === false ? ' data-gp-fold-default="0"' : '';
+  const fold = '<label class="gp-include-fold" title="折叠/展开内容"><input type="checkbox" class="gp-include-fold-cb"' + foldAttr + '><span class="gp-include-fold-ico">\u25BE</span></label>';
+  const legend = '<legend class="gp-include-label">' + fold +
+    '<span class="gp-include-badge is-term" title="术语清单">\u{1F4D6}</span>术语清单 <span class="gp-name-list-total"' + (showCount ? '' : ' hidden') + '>' + initCount + '</span></legend>';
+  return '<fieldset class="gp-include-box gp-name-list-box gp-term-list-box" data-gp-term-list="1"' +
+    ' data-gp-list-pattern="' + escapeHtml(pattern || '') + '">' + legend +
+    '<div class="gp-include-directive"' + (showDir ? '' : ' hidden') + '>' + escapeHtml(directive || '') + '</div>' + calGpExecDirectiveHtml(showDir) + calGpDrawerHtml(filterBar) +
+    '<div class="gp-include-body">' + body + '</div></fieldset>';
+}
+function calExpandGpTermLists(text, renderInsert) {
+  const src = String(text == null ? '' : text);
+  if (!CAL_TERM_LIST_RE_ANY.test(src)) return src;
+  return src.replace(CAL_TERM_LIST_RE_ONE, (m) => {
+    const p = calParseListToken(m, 'TERM');
+    const list = calCollectGpTermList('');
+    return renderInsert(list, p.showCount, m, p.folded, p.pattern, p.showDirective);
   });
 }
 // 扫 state.calEvents 全部行程的 gp 围栏 NAME → {include} 索引（与桌面 tlCollectGpIncludeIndex 同口径）。
 function calCollectGpIncludeIndex() {
   const map = new Map();
+  map.nameChoices = { NAME: [], TERM: [] };
+  const seenNames = { NAME: new Set(), TERM: new Set() };
   (state.calEvents || []).forEach((ev) => {
     if (!ev || !ev.notes) return;
     const lines = String(ev.notes).replace(/\r\n/g, '\n').split('\n');
@@ -1723,7 +2474,9 @@ function calCollectGpIncludeIndex() {
       const body = lines.slice(r.start + 1, r.end).join('\n');
       const nm = String(r.name || '').trim();
       if (nm) {
-        const key = nm.toLowerCase();
+        const nkey = nm.toLowerCase();
+        if (!seenNames.NAME.has(nkey)) { seenNames.NAME.add(nkey); map.nameChoices.NAME.push(nm); }
+        const key = nkey;
         let arr = map.get(key);
         if (!arr) { arr = []; map.set(key, arr); }
         arr.push(body);
@@ -1731,6 +2484,7 @@ function calCollectGpIncludeIndex() {
       const tm = String(r.termName || '').trim();
       if (tm) {
         const tkey = 'term:' + tm.toLowerCase();
+        if (!seenNames.TERM.has(tkey)) { seenNames.TERM.add(tkey); map.nameChoices.TERM.push(tm); }
         let arr = map.get(tkey);
         if (!arr) { arr = []; map.set(tkey, arr); }
         arr.push(body);
@@ -1760,7 +2514,7 @@ function calGpInlineStyle(b) {
 function calGpBadgesHtml(b) {
   const badges = [];
   if (b && b.name) {
-    badges.push('<span class="gp-badge gp-badge-name" title="围栏名称：' + escapeHtml(b.name) + '">\u{1F3F7}️ ' + escapeHtml(b.name) + '</span>');
+    badges.push('<span class="gp-badge gp-badge-name" title="围栏名称：' + escapeHtml(b.name) + '"><span class="gp-brace-mark">{ }</span> ' + escapeHtml(b.name) + '</span>');
   }
   if (b && b.termName) {
     badges.push(calRenderTermDefs('[[' + b.termName + ']]'));
@@ -2017,7 +2771,10 @@ function calRenderNotes(notes, uid, forceEditable) {
       // 🆕 2026-11-14：與桌面 tlRenderNotes 唯讀分支、以及下方 canEdit 分支同口徑補齊 data-gp-rail，
       //    否則唯讀行程的 gp 群只有 fg/bg 底色、沒有軌道外框（CSS 靠 [data-gp-rail]::after 畫軌道）。
       out += '<div class="md-unit is-gp"' + (b.anim ? ' data-gp-anim="' + b.anim + '"' : '') +
-        (b.railStyle ? ' data-gp-rail="' + b.railStyle + '"' : '') + calGpInlineStyle(b) + '>' +
+        (b.railStyle ? ' data-gp-rail="' + b.railStyle + '"' : '') +
+        // 🆕 2026-11-22：具名围栏加 data-gp-name 锚点（与桌面同口径），供 {pmenu NAME} 定位按钮就地跳转。
+        (b.name ? ' data-gp-name="' + escapeHtml(b.name) + '"' : '') +
+        (b.termName ? ' data-gp-term="' + escapeHtml(b.termName) + '"' : '') + calGpInlineStyle(b) + '>' +
         renderChunk(dLines.slice(b.start, b.end + 1).join('\n')) + '</div>';
       cursor = b.end + 1;
     });
@@ -5999,4 +6756,20 @@ function applyEventsToEditor() {
   updatePreview(); // 重新渲染行程列表 / 月曆
   // 便利貼彈層開著時同步重繪：勾 checkbox / 表單存檔後，張數、內容與子事件進度立即更新
   if (typeof calStickyRefreshIfOpen === 'function') calStickyRefreshIfOpen();
+}
+
+// ===== 🆕 2026-11-22：{list TERM} 花刮号术语胶囊点击 → 就地定位到 TERM 围栏小事件群 =====
+//   LITE 为单页应用，无主窗/便利贴之分 → 就地滚动到同页 .md-unit.is-gp[data-gp-term] 并闪烁。
+//   只认带 data-gp-term-nav 的（＝有围栏详细说明者）；右键仍走术语菜单。
+if (typeof window !== 'undefined' && !window.__calTermNavBound) {
+  window.__calTermNavBound = true;
+  document.addEventListener('click', function (e) {
+    const cap = e.target && e.target.closest && e.target.closest('.tl-term-cap[data-gp-term-nav]');
+    if (!cap) return;
+    const tm = String(cap.getAttribute('data-gp-term-nav') || '').trim();
+    if (!tm) return;
+    e.preventDefault();
+    e.stopPropagation();
+    calGpNavToFence(tm, 'TERM');   // ★ 与 pmenu 定位按钮共用同一就地跳转口径
+  }, true);
 }

@@ -160,6 +160,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.on('gp-name-ref-jump', (event, payload) => callback(payload));
   },
 
+  // 🆕 2026-11-22：便利贴 {list TERM} 花刮号胶囊点击 → 主进程转发 → 主窗跳到 TERM 围栏
+  onGpTermRefRequest: (callback) => {
+    ipcRenderer.on('gp-term-ref-jump', (event, payload) => callback(payload));
+  },
+
+  // 🆕 2026-11-22：calendar 关闭时，便利贴 TERM 胶囊本地查找围栏
+  onGpLocalTermJump: (callback) => {
+    ipcRenderer.on('gp-local-term-jump', (event, payload) => callback(payload));
+  },
+
   // 🆕 2026-11-20：{NAME=X} 跳转后的「返回」悬浮按钮 —— 主进程广播显示/隐藏（主窗＋所有便利贴同时收）
   onGpReturnShow: (callback) => {
     ipcRenderer.on('gp-return-show', (event, payload) => callback(payload));
@@ -170,6 +180,18 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // 🆕 主窗收到来源快照 → 还原滚动位置（origin.type==='main' 时由主进程定向发来）
   onGpReturnRestore: (callback) => {
     ipcRenderer.on('gp-return-restore', (event, payload) => callback(payload));
+  },
+  // 🆕 手动设定主窗返回定位点：主进程要求 renderer 抓一份当前滚动快照，保持与返回栈等长
+  onGpReturnCapture: (callback) => {
+    ipcRenderer.on('gp-return-capture', () => callback());
+  },
+  // 🆕 2026-11-21：手动点专属——抓「可过 IPC 的」滚动快照，带 token 回传给主进程按 token 认领
+  onGpReturnCaptureManual: (callback) => {
+    ipcRenderer.on('gp-return-capture-manual', (event, payload) => callback(payload));
+  },
+  // 🆕 2026-11-21：清单点选手动点返回——只用「事件识别 + 事件内相对锚点」还原主窗
+  onGpReturnRestoreAnchor: (callback) => {
+    ipcRenderer.on('gp-return-restore-anchor', (event, payload) => callback(payload));
   },
   // 🆕 便利贴定位完成回告（串行化：主窗等它滚完再滚自己）
   onGpJumpDone: (callback) => {

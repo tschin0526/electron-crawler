@@ -563,7 +563,107 @@
 // v251：{list NAME="*关键字*"} 万用字元查询（* 通配、多段 AND、大小写不敏感、纯词＝包含）；
 //       三端 parse/collect/filter/box 同步，空结果提示带查询词。calendar-editor.js 改，
 //       五处 ?v 戳刷为 lite-namelist-wildcard-20261120，APP_VERSION/manifest 1.10.62→1.10.63。
-const CACHE_NAME = 'md-editor-lite-v251';
+// v252：{pmenu NAME} 围栏内容弹出式选单（与 list 同通配语法；select 菜单选中后在虚线框显示该围栏内容）；
+//       三端 render 链 + change 委派 + style.css 选单样式。calendar-editor.js/style.css 改，
+//       五处 ?v 戳刷为 lite-pmenu-20261121，APP_VERSION/manifest 1.10.63→1.10.64。
+// v253：{list TERM} 术语清单（三端同口径；数据源含 [[term]] 与围栏 TERM=，showCount/folded 与 list NAME 一致）；
+//       calParseListToken 增 key 参数，三份渲染链加占位符。calendar-editor.js 改，
+//       五处 ?v 戳刷为 lite-termlist-20261121，APP_VERSION/manifest 1.10.64→1.10.65。
+// v254：围栏小事件群名称徽标的小图标由 🏷️ 改为花刮号 { }（三端同口径，CSS 深绿＋金描边）；
+//       calendar-editor.js/style.css 改，五处 ?v 戳刷为 lite-brace-badge-20261122，APP_VERSION/manifest 1.10.65→1.10.66。
+// v255：花刮号徽标扩到全部「名称」徽标（{NAME=X} 引用、list NAME 清单、include/p菜单的 is-name 徽标）；
+//       三端同口径，CSS .gp-brace-mark 改全域生效。五处 ?v 刷为 lite-brace-badge-all-20261122，APP_VERSION/manifest 1.10.66→1.10.67。
+// v256：{list TERM} 中「有 TERM= 围栏详细说明」的术语，📖 徽标后加花刮号 { }（代表内容写在围栏小事件群中）；
+//       三端同口径（hasFence 标记）。calendar-editor.js 改，五处 ?v 刷为 lite-term-fence-brace-20261122，APP_VERSION/manifest 1.10.67→1.10.68。
+// v257：{list TERM} 花刮号术语胶囊点击 → 跳转定位到 TERM 围栏小事件群（等同花刮号名称跳转）。
+//       三端同口径（data-gp-term-nav + data-gp-term 锚点）。calendar-editor.js 改，
+//       五处 ?v 刷为 lite-term-nav-20261122，APP_VERSION/manifest 1.10.68→1.10.69。
+// v258：新增 {pmenu TERM folded=false}——参考 {pmenu NAME}，按围栏 TERM= 建菜单，选中显示该术语围栏正文。
+//       三端同口径（parse/collect/box 加 kind）。calendar-editor.js 改，
+//       五处 ?v 刷为 lite-pmenu-term-20261122，APP_VERSION/manifest 1.10.69→1.10.70。
+// v259：{pmenu TERM all=true}——列出全部术语（含只有 [[term]] 无围栏者），有围栏说明者选项前加花刮号 { }，
+//       无围栏者选中显示术语资讯（释义/领域/首发/父阶）。三端同口径。calendar-editor.js 改，
+//       五处 ?v 刷为 lite-pmenu-term-all-20261122，APP_VERSION/manifest 1.10.70→1.10.71。
+// v260：{pmenu NAME/TERM} 选框旁加「定位」按钮——选中项有围栏说明才显示，点击等同花刮号名称/术语胶囊跳转
+//       （三端：桌面主窗调 tlJumpToGpName/Term，便利贴发 IPC，LITE 就地滚到 data-gp-name/data-gp-term 围栏）。
+//       五处 ?v 刷为 lite-pmenu-locate-20261122，APP_VERSION/manifest 1.10.71→1.10.72。
+// v261：正文 [[term]] 术语胶囊也按 {list TERM} 口径显示花刮号徽标——有 TERM="该名称" 围栏者才加，
+//       判定复用 tlCollectGpTermList / calCollectGpTermList 的 hasFence（覆盖便利贴正文，因 HTML 由主窗渲染）。
+//       五处 ?v 刷为 lite-termcap-brace-20261122，APP_VERSION/manifest 1.10.72→1.10.73。
+// v262：正文 TERM 胶囊在花刮号前补回 📖（与 {list TERM} 同款「📖 { } 术语」），避免与具名围栏的「{ } 名称」混淆。
+//       五处 ?v 刷为 lite-termcap-book-20261122，APP_VERSION/manifest 1.10.73→1.10.74。
+// v263：正文带花刮号的 TERM 胶囊补 data-gp-term-nav——三端点击跳转委托只认此属性，
+//       只加花刮号外观会丢掉「跳到 TERM 围栏小事件群」的功能。
+//       五处 ?v 刷为 lite-termcap-nav-20261122，APP_VERSION/manifest 1.10.74→1.10.75。
+// v264：性能修复——calCollectGpTermList / tlCollectTerms 加内容指纹缓存，消除渲染热路径 O(N²) 全量扫描
+//       （基准 100 事件×30 行×400 次：183ms→2ms）；指纹含短串逐字符哈希，避免同长度原地改漏失效。
+//       五处 ?v 刷为 lite-perf-cache-20261122，APP_VERSION/manifest 1.10.75→1.10.76。
+// v265：pmenu 花刮号结果框加临时参数过滤（关键字输入框 + TERM all 开关），只切 option.hidden，
+//       不写 .md、不写 pmenuSelectState；三端 DOM/委派/CSS 同口径。
+//       五处 ?v 刷为 lite-pmenu-temp-filter-20261122，APP_VERSION/manifest 1.10.76→1.10.77。
+// v266：list NAME / list TERM 也比照 pmenu 加临时关键字过滤；三端初值按指令 pattern 隐藏，
+//       输入只切 li.hidden 与计数，⛔不写 .md/store。
+//       五处 ?v 刷为 lite-list-temp-filter-20261122，APP_VERSION/manifest 1.10.77→1.10.78。
+// v267：结果框指令全部可用参数临时设定（include showLabel/showDirective；list showCount；pmenu all/pattern），
+//       三端统一 data-gp-temp-param 控件，值由主进程会话缓存跨翻页保持，⛔不写 .md。
+//       五处 ?v 刷为 lite-all-params-20261122，APP_VERSION/manifest 1.10.78→1.10.79。
+// v268：补齐遗漏的 folded 参数临时设定；include/list NAME/list TERM/pmenu 全部结果框统一带「折叠」控件，
+//       参数栏与 legend 折叠箭头共用同一会话缓存（主进程下发前同步 checked），⛔不写 .md。
+//       五处 ?v 刷为 lite-folded-param-20261122，APP_VERSION/manifest 1.10.79→1.10.80。
+// v269：list NAME/TERM 与 pmenu NAME/TERM 支持 showDirective；省略＝维持原行为显示指令，
+//       显式 false 才隐藏；三端参数栏加「显示指令」临时开关，⛔不写 .md。
+//       五处 ?v 刷为 lite-showdirective-20261122，APP_VERSION/manifest 1.10.80→1.10.81。
+// v270：临时参数复选框标签字号统一——font-size: .8em 从 .gp-temp-param-bar 移到 .gp-temp-toggle，
+//       include/list/pmenu 三端同字号，解决 list/pmenu 标签偏大的视觉不一致。
+//       五处 ?v 刷为 lite-temp-label-size-20261122，APP_VERSION/manifest 1.10.81→1.10.82。
+// v271：list/pmenu 万用字元匹配改为锚点口径——无 * 完全符合；*X* 包含；*X 结尾；X* 开头。
+//       临时关键字输入框同口径（提示改为「可用 * 通配」），三端共用 helper，⛔不写 .md。
+//       五处 ?v 刷为 lite-wildcard-anchor-20261122，APP_VERSION/manifest 1.10.82→1.10.83。
+// v272：每个花刮号结果框的参数控件改为「固定把手 + 可拖动抽屉」；开合/位置存 sessionStorage（仅本会话），
+//       include/list NAME/list TERM/pmenu NAME/pmenu TERM 三端一致，⛔不写 .md。
+//       五处 ?v 刷为 lite-param-drawer-20261122，APP_VERSION/manifest 1.10.83→1.10.84。
+// v273：属性抽屉改为不透明立体浮动框；背景/字色优先 --gp-bg/--gp-fg/--gp-border，
+//       未设群色时退回 --note-bg/--note-fg（LITE --cal-sticky-bg/--cal-sticky-fg）；把手改 ⚙ 小徽标。
+//       五处 ?v 刷为 lite-drawer-badge-20261122，APP_VERSION/manifest 1.10.84→1.10.85。
+// v274：⚙ 徽标移到结果框右上角框线上（right/top: -.75em，圆心压住虚线边框），不再落在框内。
+//       五处 ?v 刷为 lite-drawer-corner-badge-20261122，APP_VERSION/manifest 1.10.85→1.10.86。
+// v275：⚙ 徽标缩小（1.1em / .72em），right/top 同步改 -.55em 保持圆心压在框线上。
+//       五处 ?v 刷为 lite-drawer-badge-small-20261122，APP_VERSION/manifest 1.10.86→1.10.87。
+// v276：属性抽屉顶部显示「当前指令」——按临时控件实时拼出 include/list/pmenu 花刮号指令（不写 .md）。
+//       五处 ?v 刷为 lite-directive-preview-20261123，APP_VERSION/manifest 1.10.87→1.10.88。
+// v277：当前指令成为真正执行条件——临时 pattern 是唯一过滤条件（清空＝全部）；输入框用原指令 pattern 初始化。
+//       五处 ?v 刷为 lite-directive-authoritative-20261123，APP_VERSION/manifest 1.10.88→1.10.89。
+// v278：showDirective=true 时结果框同时显示原文本指令与「当前执行：」组字指令（随临时参数同步）。
+//       五处 ?v 刷为 lite-exec-directive-display-20261123，APP_VERSION/manifest 1.10.89→1.10.90。
+// v279：三下 Shift 插字浮层新增花刮号指令：include（NAME/TERM/picture）、list NAME/TERM、pmenu NAME/TERM。
+//       五处 ?v 刷为 lite-shift-gp-directive-20261123，APP_VERSION/manifest 1.10.90→1.10.91。
+// v280：修正 include 总入口正则漏 i → 大写 NAME（三连 Shift 组字结果）被当普通文字；picture 入口同步大小写不敏感。
+//       五处 ?v 刷为 lite-include-name-casefix-20261123，APP_VERSION/manifest 1.10.91→1.10.92。
+// v281：三下 Shift 的 {include} 名称栏改为下拉选单（NAME/TERM 从全量围栏收，picture 维持路径输入）。
+//       五处 ?v 刷为 lite-shift-include-name-select-20261123，APP_VERSION/manifest 1.10.92→1.10.93。
+// v282：结果框「属性调整」抽屉也加 include 名称下拉（NAME/TERM），切换即更新当前执行指令并跨翻页缓存。
+//       五处 ?v 刷为 lite-drawer-include-name-select-20261123，APP_VERSION/manifest 1.10.93→1.10.94。
+// v283：属性抽屉切换 include 名称后按当前指令重取正文并重渲染结果框（不再只改指令文字、沿用旧正文）。
+//       五处 ?v 刷为 lite-drawer-include-name-rerender-20261123，APP_VERSION/manifest 1.10.94→1.10.95。
+// v284：便利贴窗没有主窗内存 index → 渲染链下发 [data-gp-include-bodies] 正文映射，抽屉改名从 DOM 读取重渲染。
+//       五处 ?v 刷为 lite-drawer-include-embedded-bodies-20261123，APP_VERSION/manifest 1.10.95→1.10.96。
+// v285：主进程临时参数注入补 select/option[selected]，翻页后 includeName 缓存能恢复并触发正文重渲染。
+//       五处 ?v 刷为 lite-drawer-include-name-persist-20261123，APP_VERSION/manifest 1.10.96→1.10.97。
+// v286：三下 Shift 改为按选区里的花刮号指令智能识别，直接开对应插字表单并预填（不必再从清单挑）。
+//       五处 ?v 刷为 lite-shift-smart-select-directive-20261123，APP_VERSION/manifest 1.10.97→1.10.98。
+// v287：便利贴菜单加「今日事件自动开临时便利贴」开关；今日/跨天/显示在今天的普通行程本会话临时开窗。
+//       五处 ?v 刷为 lite-auto-temp-today-20261123，APP_VERSION/manifest 1.10.98→1.10.99。
+// v288：移除当日临时贴开关，改固化逻辑：date=今天 且（endDate=今天 或 空白）的普通行程默认临时贴。
+//       五处 ?v 刷为 lite-auto-temp-today-fixed-20261123，APP_VERSION/manifest 1.10.99→1.10.100。
+// v289：无围栏 TERM 胶囊仍显示 📖 TERM 徽标，但只有有围栏时才加 { } 详细说明徽标。
+//       五处 ?v 刷为 lite-termcap-nofence-book-20261123，APP_VERSION/manifest 1.10.100→1.10.101。
+// v290：{include NAME="X"} 找不到围栏时不再退回裸指令文字，改为显示完整结果框＋「找不到资料」说明。
+//       五处 ?v 刷为 lite-include-missing-box-20261123，APP_VERSION/manifest 1.10.101→1.10.102。
+// v291：list NAME/TERM、pmenu 命中 0 笔时不再留空结果框，正文区写清楚找不到资料。
+//       五处 ?v 刷为 lite-list-empty-message-20261123，APP_VERSION/manifest 1.10.102→1.10.103。
+// v292：便利贴插字表单 include/list/pmenu 三态参数下拉改为 checkbox（未指定/true/false）。
+//       五处 ?v 刷为 lite-marker-bool-checkbox-20261123，APP_VERSION/manifest 1.10.103→1.10.104。
+const CACHE_NAME = 'md-editor-lite-v292';
 const ASSETS = [
   './',
   './index.html',
