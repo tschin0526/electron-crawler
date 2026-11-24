@@ -8142,10 +8142,15 @@
         if (typeof tlAllEvents === 'function') {
           tlCalEvents = tlAllEvents(document.getElementById('taskText').value);
         }
+        // 🆕 每次刷新都重新播种「今日临时便利贴」uid：跨日后 tlTempStickyUids 里还是昨天的，
+        //    不播种的话 refs 永远不会包含今天的普通行程。sync=false 避免内部又发一遍 sticky-note-sync，
+        //    因为本函数下一行（原 8148）会统一发整份。
+        if (typeof tlApplyAutoTempToday === 'function') tlApplyAutoTempToday({ sync: false });
         const refs = (typeof tlStickyNoteRefs === 'function') ? tlStickyNoteRefs() : [];
         // 🆕 events：全部行程（含普通行程），供便利贴窗 find-same 找回 VIEW 来源行程与跨行程相同内容
         const events = (typeof tlCompactStickyEvents === 'function') ? tlCompactStickyEvents(tlCalEvents) : [];
         window.electronAPI.send('sticky-note-sync', { notes: refs, events });
+        let refreshTargetLabel = (payload && typeof payload.key === 'string') ? '当前便利贴' : '全部便利贴';
         if (payload && typeof payload.key === 'string') {
           const key = payload.key, idx = +payload.idx || 0;
           let ref = refs.find(r => r.key === key && r.idx === idx);
@@ -8163,14 +8168,17 @@
             const candidates = refs.filter(r => r.idx === idx && r.date === payload.date);
             if (candidates.length === 1) ref = candidates[0];
           }
-          if (ref) window.electronAPI.send('sticky-note-refresh', Object.assign({}, ref, { key, idx }));
+          if (ref) {
+            refreshTargetLabel = '「' + String(ref.title || '未命名') + '」';
+            window.electronAPI.send('sticky-note-refresh', Object.assign({}, ref, { key, idx }));
+          }
         } else {
           refs.forEach(r => window.electronAPI.send('sticky-note-refresh', r));
         }
         await complete({
           success: true,
           count: refs.length,
-          message: '便利贴刷新完成，共同步 ' + refs.length + ' 项。'
+          message: '已重新读取 calendar.md；' + refreshTargetLabel + '内容已更新；共同步 ' + refs.length + ' 张便利贴。'
         });
       } catch (error) {
         console.error('[TodoList] 刷新便利贴失败:', error);
@@ -8235,6 +8243,10 @@
         if (typeof saveTask !== 'function') throw new Error('Calendar 保存功能不可用');
         const saved = await saveTask(false, true, true);
         if (!saved) throw new Error('Calendar 未确认保存完成');
+        // 🆕 主档保存后自己推 sticky 刷新 — 与 include 档（tlSaveIncludedEventNotes）对称。
+        //    主进程收到 sticky-note-sync 后会自动给所有已开便利贴窗发 sticky-note-refresh，
+        //    所以便利贴窗不需要再额外发 refresh-request 走整条多余链（省 300-800ms）。
+        if (typeof tlPushStickyRefreshes === 'function') tlPushStickyRefreshes(true);
         if (typeof showToast === 'function') showToast('便利贴内容已保存到 Calendar', 'success');
         await reply({ success: true });
       } catch (error) {

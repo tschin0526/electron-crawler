@@ -59,6 +59,7 @@ let stickyMenuLoadSeq = 0;
 let stickyRefreshSeq = 0;
 let activeStickyRefreshId = '';
 let stickyRefreshFeedbackTimer = null;
+let stickyRefreshWatchdogTimer = null;
 let flipPointerX = null;
 let pointerClientX = null;
 let pointerClientY = null;
@@ -115,17 +116,49 @@ function tint(hex, opacityPct) {
   const a = Math.round((Math.max(20, Math.min(100, opacityPct == null ? 100 : opacityPct)) / 100) * 255);
   return '#' + h + a.toString(16).padStart(2, '0');
 }
-function showStickyRefreshFeedback(message, isError = false) {
+function showStickyRefreshFeedback(message, isError = false, tone = '') {
   const feedback = document.getElementById('noteRefreshFeedback');
   if (!feedback) return;
   if (stickyRefreshFeedbackTimer) clearTimeout(stickyRefreshFeedbackTimer);
-  feedback.textContent = message;
-  feedback.classList.toggle('error', isError);
+  feedback.textContent = '';
+  const text = document.createElement('span');
+  text.className = 'note-refresh-feedback-text';
+  text.textContent = message;
+  feedback.appendChild(text);
+  // 共用的「手动关闭」按钮工厂：auto 被点了之后转常驻 → 显示 ×；× 点了彻底关闭
+  const appendCloseBtn = () => {
+    const close = document.createElement('button');
+    close.type = 'button';
+    close.className = 'note-refresh-feedback-close';
+    close.setAttribute('aria-label', '关闭刷新结果讯息');
+    close.textContent = '\u00D7';
+    close.onclick = (e) => {
+      e.stopPropagation();
+      if (stickyRefreshFeedbackTimer) { clearTimeout(stickyRefreshFeedbackTimer); stickyRefreshFeedbackTimer = null; }
+      feedback.onclick = null;
+      feedback.classList.remove('visible', 'persistent');
+      feedback.textContent = '';
+    };
+    feedback.appendChild(close);
+  };
+  feedback.classList.toggle('error', !!isError);
+  feedback.classList.toggle('success', tone === 'success' || tone === 'done-success');
+  feedback.classList.toggle('info', tone === 'info');
+  // 2026-11-24：所有提示（含刷新完成）统一 2 秒自动关闭；
+  // 期间使用者自己点了该讯息框 → 取消计时、转常驻并显示 ×，由使用者自己关。
+  feedback.classList.remove('persistent');
   feedback.classList.add('visible');
+  feedback.onclick = () => {
+    if (stickyRefreshFeedbackTimer) { clearTimeout(stickyRefreshFeedbackTimer); stickyRefreshFeedbackTimer = null; }
+    feedback.onclick = null;
+    feedback.classList.add('persistent');
+    appendCloseBtn();
+  };
   stickyRefreshFeedbackTimer = setTimeout(() => {
     feedback.classList.remove('visible');
+    feedback.onclick = null;
     stickyRefreshFeedbackTimer = null;
-  }, 3200);
+  }, 2000);
 }
 
 // 从事件块提取 Remark 正文。参考桌面主程式 tlExtractRemark：按围栏长度匹配，支持备注内部再出现 ```。
@@ -780,34 +813,77 @@ function setupControls() {
       ipcRenderer.invoke('sticky-note-close-page', { key: KEY, idx: IDX });
     }
   };
-  // 重新读表：请求主进程重读 calendar.md 并把最新事件内容经 sticky-note-refresh → applyNoteContent 落渲染
+  // 重新读表：请求主进程重读 calendar.md 并把最新事件内容经 sticky-note-refresh → applyNoteContent 落渲染。
+  // 2026-11-24：按下就先给讯息；任何异常／超时都要给讯息，绝不能静默无反应。
   function rereadStickyNoteTable() {
-    const ev = sourceEvent(KEY);
-    activeStickyRefreshId = 'sticky-refresh-' + Date.now() + '-' + (++stickyRefreshSeq);
-    showStickyRefreshFeedback('正在刷新便利贴…');
-    ipcRenderer.send('sticky-note-refresh-request', {
-      requestId: activeStickyRefreshId,
-      key: KEY, idx: IDX,
-      title: (document.getElementById('title').textContent || '').replace(/\s+/g, ' ').trim(),
-      date: ev ? ev.date : ''
-    });
+    showStickyRefreshFeedback('🔄 已收到刷新指令，正在重新读取 calendar.md…', false, 'info');
+    try {
+      const ev = sourceEvent(KEY);
+      const requestId = 'sticky-refresh-' + Date.now() + '-' + (++stickyRefreshSeq);
+      activeStickyRefreshId = requestId;
+      if (stickyRefreshWatchdogTimer) clearTimeout(stickyRefreshWatchdogTimer);
+      stickyRefreshWatchdogTimer = setTimeout(() => {
+        if (activeStickyRefreshId !== requestId) return;
+        activeStickyRefreshId = '';
+        showStickyRefreshFeedback(
+          '⚠️ 刷新指令已送出，但 15 秒内没收到 Calendar 的完成回覆｜请确认 Calendar 已开启后重试',
+          true, 'done-error'
+        );
+      }, 15000);
+      ipcRenderer.send('sticky-note-refresh-request', {
+        requestId,
+        key: KEY, idx: IDX,
+        title: (document.getElementById('title').textContent || '').replace(/\s+/g, ' ').trim(),
+        date: ev ? ev.date : ''
+      });
+    } catch (err) {
+      if (stickyRefreshWatchdogTimer) clearTimeout(stickyRefreshWatchdogTimer);
+      activeStickyRefreshId = '';
+      showStickyRefreshFeedback(
+        '⚠️ 刷新指令执行失败｜' + (err && err.message ? err.message : String(err)),
+        true, 'done-error'
+      );
+    }
   }
   const refreshStickyNote = (e) => {
     e.stopPropagation();
+    if (e.preventDefault) e.preventDefault();
     closeMenu();
+    // 🆕 手动按 🔄 ＝使用者明确要重新采信远端 → 先解除「本地权威」保护，再刷新
+    try { clearAuthWriteGuard(KEY); } catch (err) {
+      showStickyRefreshFeedback(
+        '⚠️ 刷新前置处理失败｜' + (err && err.message ? err.message : String(err)),
+        true, 'done-error'
+      );
+      return;
+    }
     rereadStickyNoteTable();
     armEdgeHandlesAutoHide(); // 点击后从「此刻」重新计算 4 秒自动隐藏
   };
-  // 🆕 手动按 🔄 ＝使用者明确要重新采信远端 → 先解除「本地权威」保护，再刷新
-  document.getElementById('noteRefreshHandle').onclick = () => {
-    clearAuthWriteGuard(KEY);
-    refreshStickyNote();
-  };
+  const refreshBtn = document.getElementById('noteRefreshHandle');
+  // 用捕获阶段监听，避免既有 onclick 被别处覆盖后完全没反应；按下瞬间先给可见反馈。
+  // setupControls() 在分体与翻页初始化都会走到；避免重复绑定导致一次点击发两次刷新。
+  if (refreshBtn && !refreshBtn.dataset.gpRefreshBound) {
+    refreshBtn.dataset.gpRefreshBound = '1';
+    refreshBtn.addEventListener('pointerdown', (e) => {
+      e.stopPropagation();
+      showStickyRefreshFeedback('🔄 已按下刷新按钮，正在处理…', false, 'info');
+    }, true);
+    refreshBtn.addEventListener('click', refreshStickyNote, true);
+  }
   ipcRenderer.on('sticky-note-refresh-result', (event, result) => {
     if (!result || result.requestId !== activeStickyRefreshId) return;
-    showStickyRefreshFeedback(result.message || (result.success
-      ? '便利贴刷新完成，共同步 ' + result.count + ' 项。'
-      : '便利贴刷新失败。'), !result.success);
+    if (stickyRefreshWatchdogTimer) { clearTimeout(stickyRefreshWatchdogTimer); stickyRefreshWatchdogTimer = null; }
+    activeStickyRefreshId = '';
+    const detail = result.message || (result.success
+      ? '已重新同步 ' + result.count + ' 张便利贴。'
+      : '未收到进一步说明，请重试。');
+    const at = new Date().toLocaleTimeString('zh-CN', { hour12: false });
+    showStickyRefreshFeedback(
+      (result.success ? '✅ 便利贴刷新完成｜' : '⚠️ 便利贴刷新未完成｜') + detail + '｜' + at,
+      !result.success,
+      result.success ? 'done-success' : 'done-error'
+    );
   });
   document.getElementById('miCalendar').onclick = (e) => { e.stopPropagation(); closeMenu(); ipcRenderer.invoke('activate-main-window'); };
   // 📜 滚动：唤起主程式并滚动定位到该行程（不打开编辑框）
@@ -2721,13 +2797,9 @@ async function commitStickyNoteContent(notes, eventKey, eventIdx, eventSrc, opts
       const bad = verifyNoteExpectation(fresh, expect);
       if (bad) return { ok: false, error: bad, verifyFailed: true };
     }
-    const savedEvent = sourceEvent(targetKey);
-    ipcRenderer.send('sticky-note-refresh-request', {
-      key: targetKey,
-      idx: targetIdx,
-      title: savedEvent ? savedEvent.title : '',
-      date: savedEvent ? savedEvent.date : ''
-    });
+    // 🆕 不再手动发 sticky-note-refresh-request — 主窗 tlOnStickyEdit 保存完会自己调
+    //    tlPushStickyRefreshes()（含 include 档路径 tlSaveIncludedEventNotes 本来就有），
+    //    主进程收到 sticky-note-sync 后自动给所有已开便利贴窗发 sticky-note-refresh。
     return { ok: true };
   } catch (error) {
     return { ok: false, error: (error && error.message) ? error.message : String(error) };

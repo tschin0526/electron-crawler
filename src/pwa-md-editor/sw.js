@@ -663,7 +663,17 @@
 //       五处 ?v 刷为 lite-list-empty-message-20261123，APP_VERSION/manifest 1.10.102→1.10.103。
 // v292：便利贴插字表单 include/list/pmenu 三态参数下拉改为 checkbox（未指定/true/false）。
 //       五处 ?v 刷为 lite-marker-bool-checkbox-20261123，APP_VERSION/manifest 1.10.103→1.10.104。
-const CACHE_NAME = 'md-editor-lite-v292';
+// v293：便利贴「刷新」完成后显示明确结果（目标名称、同步数量、完成时间）。
+//       五处 ?v 刷为 lite-sticky-refresh-done-20261124，APP_VERSION/manifest 1.10.104→1.10.105。
+// v294：便利贴刷新完成讯息改为常驻（带 × 关闭），避免用户错过自动消失的提示。
+//       五处 ?v 刷为 lite-sticky-refresh-persistent-done-20261124，APP_VERSION/manifest 1.10.105→1.10.106。
+// v295：底部浮动刷新按钮加按下即反馈、捕获监听、异常/15 秒超时兜底；setupControls 重入不重复绑定。
+//       五处 ?v 刷为 lite-sticky-refresh-click-feedback-20261124，APP_VERSION/manifest 1.10.106→1.10.107。
+// v296：10:27 外部同步把三个插件档还原成已提交版本；从 .trae-html-share-packages 恢复刷新修复，done-* 讯息改直接常驻＋×。
+//       五处 ?v 刷为 lite-sticky-refresh-restored-20261124，APP_VERSION/manifest 1.10.107→1.10.108。
+// v297：刷新讯息统一 2 秒自动关闭；使用者点了讯息框则取消计时转常驻并显示 × 自行关闭。
+//       五处 ?v 刷为 lite-sticky-refresh-auto-close-2s-20261124，APP_VERSION/manifest 1.10.108→1.10.109。
+const CACHE_NAME = 'md-editor-lite-v297';
 const ASSETS = [
   './',
   './index.html',

@@ -259,12 +259,18 @@
       border: 1px solid rgba(212,175,55,.65); border-radius: 8px;
       background: var(--menu-bg, rgba(32,35,42,.96)); color: var(--note-fg, #fff);
       box-shadow: 0 8px 20px rgba(0,0,0,.3), inset 0 1px 0 rgba(255,255,255,.2);
-      font-size: 11px; line-height: 1.35; text-align: center;
+      font-size: 12px; line-height: 1.45; text-align: center; font-weight: 600;
       opacity: 0; pointer-events: none; transition: opacity .15s ease, transform .15s ease;
       -webkit-app-region: no-drag;
     }
-    .note-refresh-feedback.visible { opacity: 1; transform: translate(-50%, 0); }
+    .note-refresh-feedback.visible { opacity: 1; transform: translate(-50%, 0); pointer-events: auto; }
     .note-refresh-feedback.error { border-color: rgba(220,38,38,.7); }
+    .note-refresh-feedback.success { border-color: rgba(34,197,94,.85); box-shadow: 0 8px 22px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.25); }
+    .note-refresh-feedback.info { border-color: rgba(212,175,55,.65); }
+    /* 被用户点过 → 常驻：略加大 padding / font-size / max-width，与临时态区分 */
+    .note-refresh-feedback.persistent { padding: 9px 12px; font-size: 13px; max-width: calc(100% - 20px); }
+    .note-refresh-feedback-text { vertical-align: middle; }
+    .note-refresh-feedback-close { margin-left: 8px; padding: 0 2px; border: 0; background: transparent; color: inherit; font-size: 16px; line-height: 1; cursor: pointer; vertical-align: middle; }
     .meta { padding: 0; font-size: 11px; color: var(--note-fg, #8a8f99); flex: none; min-width: 0; }
     /* 子事件进度胶囊「完成/总数」（日期右边；全完成转绿）——与主程式列表行 .ev-sub-progress 同款式 */
     .note-sub-progress { display: inline-block; margin-left: 6px; padding: 1px 8px; border-radius: 999px; font-size: 10px; line-height: 1.5; font-weight: 600; white-space: nowrap; vertical-align: middle; color: var(--note-fg, #33384a); background: rgba(127,127,127,.16); border: 1px solid rgba(127,127,127,.4); }
