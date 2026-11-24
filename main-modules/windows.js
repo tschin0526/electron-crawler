@@ -2283,8 +2283,22 @@ ipcMain.handle('wake-main-from-note', (e, arg) => {
     : act === 'glossary' ? 'open-term-glossary'
     : act === 'gp-name-jump' ? 'gp-name-ref-jump'
     : isTermJump ? 'gp-term-ref-jump'
+    : act === 'gp-whereuse-jump' ? 'gp-whereuse-jump'
     : 'open-sticky-event';
   const notifySticky = () => {
+    // 🆕 2026-11-24：{whereuse} 定位直接带命中位置数据（uid + 事件内锚点），不靠名称索引。
+    //   来源仍是便利贴 key/idx + 点击当时滚动位置，供返回清单还原。
+    if (channel === 'gp-whereuse-jump') {
+      win.webContents.send(channel, {
+        hit: (arg && arg.hit) || null,
+        fromKey: (arg && typeof arg.key === 'string') ? arg.key : '',
+        fromIdx: +((arg && arg.idx) || 0) || 0,
+        fromScrollTop: (arg && typeof arg.scrollTop === 'number' && isFinite(arg.scrollTop)) ? Math.max(0, arg.scrollTop) : 0,
+        fromLabel: (arg && typeof arg.label === 'string') ? arg.label.slice(0, 80) : '',
+        fromLocalUnit: (arg && arg.localUnit) ? arg.localUnit : null
+      });
+      return;
+    }
     if (channel === 'open-term-glossary') {
       win.webContents.send(channel, {
         term: (arg && typeof arg.term === 'string') ? arg.term : '',
@@ -2324,7 +2338,7 @@ ipcMain.handle('wake-main-from-note', (e, arg) => {
       fromLocalUnit: (arg && arg.localUnit) ? arg.localUnit : null   // 🆕 校准主窗用
     });
   };
-  if (channel === 'gp-name-ref-jump' && stickyCalendarReadyWindowId !== win.webContents.id) {
+  if ((channel === 'gp-name-ref-jump' || channel === 'gp-whereuse-jump') && stickyCalendarReadyWindowId !== win.webContents.id) {
     const pending = {
       webContentsId: win.webContents.id,
       sent: false,

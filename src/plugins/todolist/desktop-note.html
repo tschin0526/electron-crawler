@@ -676,6 +676,18 @@
     .gp-name-list { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: .35em .5em; }
     .gp-name-list > li { display: inline-flex; align-items: center; gap: .15em; max-width: 100%; }
     .gp-name-list-count { font-size: .8em; color: var(--ev-muted, #888); white-space: nowrap; }
+    /* {whereuse TERM} 位置清单：纵向逐条列出命中，「定位」按钮与内容同源 */
+    .gp-whereuse-list { display: flex; flex-direction: column; flex-wrap: nowrap; gap: .3em; font-size: .85em; }
+    .gp-whereuse-list > li { display: flex; flex-wrap: wrap; align-items: baseline; gap: .2em .5em; width: 100%; max-width: 100%; padding: .25em .1em; border-bottom: 1px dashed var(--gp-border, currentColor); }
+    .gp-whereuse-list > li:last-child { border-bottom: 0; }
+    .gp-whereuse-seq { flex: 0 0 auto; min-width: 1.8em; text-align: right; font-weight: 600; color: var(--ev-muted, #888); }
+    .gp-whereuse-meta { font-size: .8em; color: var(--ev-muted, #888); white-space: nowrap; }
+    .gp-whereuse-who { font-weight: 600; }
+    /* 内容独占一行从行首开始（order:1 让 定位 按钮留在标题行）；⛔不要 flex:1 1 12em 挤在标题后留左空白 */
+    .gp-whereuse-text { flex: 0 0 100%; order: 1; min-width: 0; overflow-wrap: anywhere; }
+    /* 命中关键字反白（reverse）：前景/背景对调，覆盖 <mark> 预设黄底 */
+    .gp-whereuse-hit { padding: 0 .15em; border-radius: .2em; background: var(--gp-fg, var(--note-fg, var(--cal-sticky-fg, var(--ev-text, #333)))); color: var(--gp-bg, var(--note-bg, var(--ev-card, #fffbe8))); }
+    .gp-whereuse-go { flex: 0 0 auto; margin-left: auto; padding: .1em .55em; font-size: .8em; cursor: pointer; border: 1px solid var(--gp-border, currentColor); border-radius: .4em; background: var(--gp-bg, var(--note-bg, #fffbe8)); color: inherit; }
     .gp-name-list-empty { font-size: .85em; line-height: 1.4; color: var(--ev-muted, #888); }
     .gp-name-list-empty code { font-family: ui-monospace, Menlo, Consolas, monospace; }
     .gp-include-missing { font-size: .85em; line-height: 1.5; color: var(--ev-muted, #888); font-style: italic; }
@@ -720,7 +732,8 @@
     .gp-temp-toggle input { margin: 0; cursor: pointer; }
     /* 插字表单三态 checkbox：沿用结果框属性 checkbox 外观，旁边小字标出当前态 */
     .nm-bool-toggle { font-size: 1em; color: inherit; }
-    .nm-bool-state { font-size: .8em; color: var(--ev-muted, #888); }
+    /* bool 二态旁注（true/false）：继承主色且不用灰色，避免被误认为只读文字 */
+    .nm-bool-state { font-size: .8em; color: inherit; opacity: .9; }
     .gp-temp-name { display: inline-flex; align-items: center; gap: .25em; white-space: nowrap; color: var(--ev-muted, #888); font-size: .8em; }
     .gp-temp-name select { max-width: 12em; font-size: inherit; padding: 1px 2px; }
     /* 结果框参数抽屉：固定把手 + 可拖动面板；状态只存 sessionStorage */

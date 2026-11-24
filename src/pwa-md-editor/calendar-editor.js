@@ -1603,6 +1603,16 @@ function calGpDrawerBuildDirective(box) {
   const b = (k) => calGpDrawerBool(box, k);
   const patternCtrl = calGpDrawerCtrl(box, 'pattern');
   const pattern = patternCtrl ? String(patternCtrl.value == null ? '' : patternCtrl.value) : '';
+  // ★ whereuse 框带 gp-name-list-box（复用临时过滤），必须先判它，否则误显示成 {list NAME}。
+  if (box.classList.contains('gp-whereuse-box')) {
+    const termCtrl = calGpDrawerCtrl(box, 'term');
+    const term = termCtrl ? String(termCtrl.value == null ? '' : termCtrl.value).trim()
+      : String(box.getAttribute('data-gp-whereuse') || '');
+    return ['{whereuse TERM=' + q(term),
+      'showCount=' + (b('showCount') ? 'true' : 'false'),
+      'showDirective=' + (b('showDirective') ? 'true' : 'false'),
+      'folded=' + (b('folded') ? 'true' : 'false')].join(' ') + '}';
+  }
   if (box.classList.contains('gp-pmenu-box')) {
     const kind = String(box.getAttribute('data-gp-pmenu-kind') || 'NAME').toUpperCase();
     const parts = [pattern ? '{pmenu ' + kind + '=' + q(pattern) : '{pmenu ' + kind];
@@ -1832,6 +1842,14 @@ function calApplyGpParams(box, params) {
     if (nameCtrl) nameCtrl.value = chosen;
     if (chosen) calDrawerApplyName(box, chosen);
   }
+  if (box.classList && box.classList.contains('gp-whereuse-box')) {
+    if ('term' in p) {
+      const term = String(p.term == null ? '' : p.term).trim();
+      const old = String(box.getAttribute('data-gp-whereuse') || '').trim();
+      if (term !== old) calGpWhereuseRerender(box, term);
+    }
+    return;
+  }
   if (box.classList && box.classList.contains('gp-pmenu-box')) calApplyPmenuFilter(box, p.pattern || '');
   else if (box.classList && box.classList.contains('gp-name-list-box')) calApplyListFilter(box, p.pattern || '');
 }
@@ -1889,7 +1907,8 @@ function calRenderWithIncludes(text, index) {
   const hasList = CAL_LIST_RE_ANY.test(srcText);
   const hasPmenu = CAL_PMENU_RE_ANY.test(srcText);
   const hasTermList = CAL_TERM_LIST_RE_ANY.test(srcText);
-  if (!hasList && !hasPmenu && !hasTermList && !/\{include\s+(?:name|TERM)\s*=/i.test(srcText)) {
+  const hasWhereuse = CAL_WHEREUSE_RE_ANY.test(srcText);
+  if (!hasList && !hasPmenu && !hasTermList && !hasWhereuse && !/\{include\s+(?:name|TERM)\s*=/i.test(srcText)) {
     return renderMarkdown(calRenderNameRefs(calRenderTermDefs(calRenderNoteMarkersLines(text))));
   }
   // 占位符用普通 ASCII（真 renderer 会剥离 NUL 控制字符 → 裸露 GI0、注入失败）；%%TLINC_n_ZZ%% 已真引擎验证可原样穿过。
@@ -1924,22 +1943,33 @@ function calRenderWithIncludes(text, index) {
       return tok;
     });
   }
+  if (hasWhereuse) {
+    prepared = calExpandGpWhereuse(prepared, (term, hits, showCount, directive, folded, showDirective) => {
+      const tok = '%%TLWHERE_' + (seq++) + '_ZZ%%';
+      ph.set(tok, { term, hits, showCount, directive, folded, showDirective, isWhereuse: true, boxNo: ++_calWhereuseBoxSeq });
+      return tok;
+    });
+  }
   let html = renderMarkdown(calRenderNameRefs(calRenderTermDefs(calRenderNoteMarkersLines(prepared))));
+  const whereuseHits = {};
   ph.forEach((v, tok) => {
-    const box = v.isPmenu ? calGpPmenuBoxHtml(v.items, v.directive, v.folded, v.pattern, v.kind, undefined, v.showDirective)
+    const box = v.isWhereuse ? calGpWhereuseBoxHtml(v.term, v.hits, v.showCount, v.directive, v.folded, v.showDirective, v.boxNo)
+      : v.isPmenu ? calGpPmenuBoxHtml(v.items, v.directive, v.folded, v.pattern, v.kind, undefined, v.showDirective)
       : v.isTermList ? calGpTermListBoxHtml(v.list, v.showCount, v.directive, v.folded, v.pattern, v.showDirective)
       : v.isList ? calGpNameListBoxHtml(v.list, v.showCount, v.directive, v.folded, v.pattern, v.showDirective)
       : calGpIncludeBoxHtml(v.raw, v.nm, v.showLabel, v.directive, v.showDirective, v.folded, index, v.missing);
+    if (v.isWhereuse) whereuseHits[v.boxNo] = v.hits;
     html = html.split(tok).join(box);
   });
-  return html + calDrawerBodiesPayload(index);
+  return html + calDrawerBodiesPayload(index) + calGpWhereusePayload(whereuseHits);
 }
 // 独立 task 行里的 {include}：占位符法在原文层展开、checkbox 行渲染后注入 box（task 分支不走 calRenderWithIncludes）。
 function calTaskLineWithIncludes(line, index, uid, i, canEdit, opts) {
   const hasList = CAL_LIST_RE_ANY.test(String(line));
   const hasPmenu = CAL_PMENU_RE_ANY.test(String(line));
   const hasTermList = CAL_TERM_LIST_RE_ANY.test(String(line));
-  if (!hasList && !hasPmenu && !hasTermList && !/\{include\s/.test(String(line))) {
+  const hasWhereuse = CAL_WHEREUSE_RE_ANY.test(String(line));
+  if (!hasList && !hasPmenu && !hasTermList && !hasWhereuse && !/\{include\s/.test(String(line))) {
     return calNoteCheckLineHtml(line, uid, i, canEdit, opts);
   }
   let seq = 0;
@@ -1973,15 +2003,25 @@ function calTaskLineWithIncludes(line, index, uid, i, canEdit, opts) {
       return tok;
     });
   }
+  if (hasWhereuse) {
+    prepared = calExpandGpWhereuse(prepared, (term, hits, showCount, directive, folded, showDirective) => {
+      const tok = '%%TLWHERE_' + (seq++) + '_ZZ%%';
+      ph.set(tok, { term, hits, showCount, directive, folded, showDirective, isWhereuse: true, boxNo: ++_calWhereuseBoxSeq });
+      return tok;
+    });
+  }
   let html = calNoteCheckLineHtml(prepared, uid, i, canEdit, opts);
+  const whereuseHits = {};
   ph.forEach((v, tok) => {
-    const box = v.isPmenu ? calGpPmenuBoxHtml(v.items, v.directive, v.folded, v.pattern, v.kind, undefined, v.showDirective)
+    const box = v.isWhereuse ? calGpWhereuseBoxHtml(v.term, v.hits, v.showCount, v.directive, v.folded, v.showDirective, v.boxNo)
+      : v.isPmenu ? calGpPmenuBoxHtml(v.items, v.directive, v.folded, v.pattern, v.kind, undefined, v.showDirective)
       : v.isTermList ? calGpTermListBoxHtml(v.list, v.showCount, v.directive, v.folded, v.pattern, v.showDirective)
       : v.isList ? calGpNameListBoxHtml(v.list, v.showCount, v.directive, v.folded, v.pattern, v.showDirective)
       : calGpIncludeBoxHtml(v.raw, v.nm, v.showLabel, v.directive, v.showDirective, v.folded, index, v.missing);
+    if (v.isWhereuse) whereuseHits[v.boxNo] = v.hits;
     html = html.split(tok).join(box);
   });
-  return html + calDrawerBodiesPayload(index);
+  return html + calDrawerBodiesPayload(index) + calGpWhereusePayload(whereuseHits);
 }
 // ========== 🆕 2026-11-20：{list NAME} 列出「所有具名围栏」的名称清单（与桌面 tl 同口径） ==========
 //   · {gpJ|NAME="X"} 算具名；{gpJ} 无 NAME 不算。每个名称是可点击 .gp-name-ref 胶囊，复用现有跳转委托。
@@ -2459,6 +2499,240 @@ function calExpandGpTermLists(text, renderInsert) {
     const p = calParseListToken(m, 'TERM');
     const list = calCollectGpTermList('');
     return renderInsert(list, p.showCount, m, p.folded, p.pattern, p.showDirective);
+  });
+}
+// ========== 🆕 2026-11-24：{whereuse TERM="..."} 全文位置清单（与桌面同口径，LITE 就地定位） ==========
+// 语义：搜纯文本 TERM 在主档中出现的所有位置；位置格式与「内容定位小盒子」一致：
+//   事件识别 {uid,title,date} + 事件内锚点 {kind:'check',line,text,focus:'content'} / {kind:'block',start,end,name}。
+const CAL_WHEREUSE_RE_ANY = /\{whereuse\s+TERM\b[^}]*\}/i;
+const CAL_WHEREUSE_RE_ONE = /\{whereuse\s+TERM\b[^}]*\}/gi;
+const CAL_WHEREUSE_TEXT_MAX = 160;  // 结果清单每行显示上限（原 80，加倍以露出命中关键字）
+let _calWhereuseBoxSeq = 0;   // 同一页多个 whereuse 框 → payload 序号必须全局唯一
+// ★ TERM 可能被贴进渲染后的术语胶囊 HTML → 还原纯词条名（与桌面/VIEW 同口径）。
+function calWhereuseCleanTerm(v) {
+  let s = String(v == null ? '' : v).trim();
+  if (!s) return '';
+  const br = s.match(/^\[\[([^\]]+)\]\]$/);
+  if (br) {
+    const nm = String(br[1]).split(/[:：]/)[0].replace(/^📖\s*/, '').trim();
+    if (nm) return nm;
+  }
+  if (!/[<>]/.test(s) && !/&(?:quot|amp|lt|gt|nbsp|#39);/i.test(s)) return s.replace(/^📖\s*/, '').trim();
+  const dt = s.match(/data-term\s*=\s*(?:"([^"]*)"|'([^']*)')/i);
+  if (dt && (dt[1] || dt[2])) return String(dt[1] || dt[2]).trim();
+  s = s.replace(/<[^>]*>/g, '').replace(/<[^>]*$/g, '');
+  s = s.replace(/&quot;/gi, '"').replace(/&#39;/gi, "'").replace(/&lt;/gi, '<').replace(/&gt;/gi, '>').replace(/&nbsp;/gi, ' ').replace(/&amp;/gi, '&');
+  return s.replace(/[\u200B-\u200D\uFEFF\u{1F4D6}\u{1F4D7}]/gu, '').replace(/\s+/g, ' ').trim();
+}
+function calWhereuseReadTerm(s) {
+  const m = s.match(/\bTERM\s*=\s*"([^}]*)"/i) || s.match(/\bTERM\s*=\s*'([^}]*)'/i) || s.match(/\bTERM\s*=\s*“([^}]*)”/i);
+  return m ? m[1] : '';
+}
+function calWhereuseCleanDirective(m, term) {
+  return String(m).replace(/(\bTERM\s*=\s*)"[^}]*"/i, '$1"' + term + '"')
+    .replace(/(\bTERM\s*=\s*)'[^}]*'/i, "$1'" + term + "'");
+}
+function calParseWhereuseToken(token) {
+  const s = String(token == null ? '' : token);
+  const readVal = (key) => {
+    const m = s.match(new RegExp('(?:^|\\s)' + key + '\\s*=\\s*(?:"([^"\\n]*)"|\'([^\'\\n]*)\'|“([^”\\n]*)”|‘([^’\\n]*)’|([^\\s}]+))', 'i'));
+    if (!m) return '';
+    for (let i = 1; i < m.length; i++) if (m[i] != null) return String(m[i]).trim();
+    return '';
+  };
+  const bool = (key) => {
+    const v = readVal(key).toLowerCase();
+    return v === 'true' || v === 'on' || v === '1' || v === 'yes';
+  };
+  const sd = readVal('showDirective');
+  return { term: calWhereuseCleanTerm(calWhereuseReadTerm(s) || readVal('TERM')), showCount: bool('showCount'), folded: bool('folded'),
+    showDirective: sd ? bool('showDirective') : null };
+}
+function calWhereuseCorpusFromEvents(list) {
+  return (Array.isArray(list) ? list : []).filter(Boolean).map((ev) => {
+    const lines = String(ev.notes == null ? '' : ev.notes).replace(/\r\n/g, '\n').split('\n');
+    const scan = (typeof calGpFenceScan === 'function') ? calGpFenceScan(lines) : { ranges: [] };
+    return {
+      uid: String(ev.uid || ''), title: String(ev.title || ''), date: String(ev.date || ''),
+      lines: lines,
+      fences: (scan.ranges || []).map((r) => ({ start: r.start, end: r.end, name: String(r.name || r.termName || '').trim() }))
+    };
+  });
+}
+// TERM 候选：[[TERM:释义]] 取名称段、TERM="..." 取属性段；都没有才用整行文字。
+//   ★ 比对统一走 calGpNamePatternHit（无 * 完全比对），⛔不用 indexOf 子串。
+function calWhereuseHit(text, pattern) {
+  const s = String(text == null ? '' : text);
+  const cands = [];
+  s.replace(/\[\[([^\]\n]+)\]\]/g, (m, inner) => {
+    const nm = String(inner).split(/[:：]/)[0].trim();
+    if (nm) cands.push(nm);
+    return m;
+  });
+  s.replace(/\bTERM\s*=\s*(?:"([^"\n]*)"|'([^'\n]*)'|“([^”\n]*)”|([^\s}]+))/gi,
+    (m, a, b, c, d) => {
+      const nm = String(a || b || c || d || '').trim();
+      if (nm) cands.push(nm);
+      return m;
+    });
+  if (!cands.length) cands.push(s);
+  return cands.some((c) => calGpNamePatternHit(c, pattern));
+}
+function calWhereuseSearchCorpus(corpus, term) {
+  const q = String(term == null ? '' : term).trim();
+  if (!q) return [];
+  const out = [];
+  (Array.isArray(corpus) ? corpus : []).forEach((ev) => {
+    if (!ev) return;
+    const uid = String(ev.uid || ''), title = String(ev.title || ''), date = String(ev.date || '');
+    const push = (anchor, text, kind, line) => out.push({ uid: uid, title: title, date: date, anchor: anchor, text: text, kind: kind, line: line });
+    if (calWhereuseHit(title, q)) push({ kind: 'card' }, title.slice(0, CAL_WHEREUSE_TEXT_MAX), 'title', -1);
+    (Array.isArray(ev.lines) ? ev.lines : []).forEach((raw, i) => {
+      if (!calWhereuseHit(raw, q)) return;
+      const text = String(raw).replace(/^\s*(?:[-*+]\s+\[[ xX]\]\s?|[-*+]\s+|#{1,6}\s+)/, '').trim().slice(0, CAL_WHEREUSE_TEXT_MAX);
+      const fence = (Array.isArray(ev.fences) ? ev.fences : []).find((r) => i > r.start && i < r.end);
+      if (fence) push({ kind: 'block', start: fence.start, end: fence.end,
+        name: String(fence.name || '').trim(), line: i, text: text, focus: 'content' }, text, 'fence', i);
+      else push({ kind: 'check', line: i, text: text, focus: 'content' }, text, 'line', i);
+    });
+  });
+  return out;
+}
+let _calWhereuseCacheKey = null, _calWhereuseCache = null;
+function calCollectGpWhereuseHits(term) {
+  const q = String(term == null ? '' : term).trim();
+  if (!q) return [];
+  const key = calTermListFingerprint() + '|' + q.toLowerCase();
+  if (_calWhereuseCacheKey === key && _calWhereuseCache) return _calWhereuseCache;
+  _calWhereuseCacheKey = key;
+  return (_calWhereuseCache = calWhereuseSearchCorpus(calWhereuseCorpusFromEvents(state.calEvents || []), q));
+}
+function calGpWhereuseMissingHtml(q) {
+  return '<div class="gp-include-missing" role="status">找不到 TERM「' + escapeHtml(q) + '」在档案中的出现位置。</div>';
+}
+// ★ 命中关键字反白：先在原文上定位匹配区间，再逐段 escapeHtml()，命中段包 <mark>（与桌面/VIEW 同口径）。
+function calWhereuseHighlight(text, pattern) {
+  const s = String(text == null ? '' : text);
+  const q = String(pattern == null ? '' : pattern).trim();
+  if (!s || !q) return escapeHtml(s);
+  const segs = q.split('*').filter((x) => x !== '');
+  if (!segs.length) return escapeHtml(s);
+  const lower = s.toLowerCase();
+  const ranges = [];
+  segs.forEach((seg) => {
+    const needle = seg.toLowerCase();
+    let from = 0, at;
+    while ((at = lower.indexOf(needle, from)) >= 0) {
+      ranges.push({ start: at, end: at + needle.length });
+      from = at + needle.length;
+    }
+  });
+  if (!ranges.length) return escapeHtml(s);
+  ranges.sort((a, b) => a.start - b.start);
+  const merged = [];
+  ranges.forEach((r) => {
+    const last = merged[merged.length - 1];
+    if (last && r.start <= last.end) last.end = Math.max(last.end, r.end);
+    else merged.push({ start: r.start, end: r.end });
+  });
+  let out = '', pos = 0;
+  merged.forEach((r) => {
+    if (r.start > pos) out += escapeHtml(s.slice(pos, r.start));
+    out += '<mark class="gp-whereuse-hit">' + escapeHtml(s.slice(r.start, r.end)) + '</mark>';
+    pos = r.end;
+  });
+  if (pos < s.length) out += escapeHtml(s.slice(pos));
+  return out;
+}
+function calWhereuseListHtml(term, hits) {
+  const entries = hits || [];
+  return entries.length
+    ? '<ul class="gp-name-list gp-whereuse-list">' + entries.map((it, idx) => {
+        const who = String(it.title || '(无标题)') + (it.date ? ' · ' + it.date : '');
+        const where = it.kind === 'title' ? '标题' : (it.kind === 'fence' ? '围栏内第 ' + (it.line + 1) + ' 行' : '第 ' + (it.line + 1) + ' 行');
+        return '<li data-list-item-name="' + escapeHtml(who + ' ' + it.text) + '" data-hit-idx="' + idx + '">' +
+          '<span class="gp-whereuse-seq">' + (idx + 1) + '.</span>' +
+          '<span class="gp-whereuse-meta">' + escapeHtml(where) + '</span> ' +
+          '<span class="gp-whereuse-who">' + calWhereuseHighlight(who, term) + '</span>' +
+          '<span class="gp-whereuse-text">' + calWhereuseHighlight(it.text, term) + '</span>' +
+          '<button type="button" class="gp-whereuse-go" data-hit-idx="' + idx + '" title="定位到此处">定位</button></li>';
+      }).join('') + '</ul>'
+    : calGpWhereuseMissingHtml(term);
+}
+function calGpWhereuseBoxHtml(term, hits, showCount, directive, folded, showDirective, boxNo) {
+  const showDir = showDirective !== false;
+  const initCount = (hits || []).length;
+  // ★ 这个输入框是 TERM 本体：输入即重跑搜索并替换清单，不写 .md。
+  const filterBar = '<div class="gp-list-filter-bar"><input type="text" class="gp-list-filter-input" data-gp-temp-param="term" aria-label="临时更换 TERM 重新查找" placeholder="输入 TERM 重新查找位置（不写入文件）" value="' + escapeHtml(term || '') + '">' +
+    calGpTempToggle('showCount', '显示数量', !!showCount, '临时切换 showCount') +
+    calGpTempToggle('showDirective', '显示指令', showDir, '临时切换 showDirective') +
+    calGpTempToggle('folded', '折叠', !!folded, '临时切换 folded（与折叠箭头同步）') +
+    '<span class="gp-list-filter-count">' + initCount + '/' + initCount + '</span></div>';
+  const body = calWhereuseListHtml(term, hits);
+  const foldAttr = folded === true ? ' checked data-gp-fold-default="1"'
+    : folded === false ? ' data-gp-fold-default="0"' : '';
+  const fold = '<label class="gp-include-fold" title="折叠/展开内容"><input type="checkbox" class="gp-include-fold-cb"' + foldAttr + '><span class="gp-include-fold-ico">\u25BE</span></label>';
+  const legend = '<legend class="gp-include-label">' + fold +
+    '<span class="gp-include-badge is-whereuse" title="文字出现位置清单">\u{1F4CD}</span>使用位置 <span class="gp-name-list-total"' + (showCount ? '' : ' hidden') + '>' + initCount + '</span></legend>';
+  return '<fieldset class="gp-include-box gp-name-list-box gp-whereuse-box" data-gp-whereuse="' + escapeHtml(term) + '" data-gp-whereuse-box="' + (+boxNo || 0) + '">' +
+    legend + '<div class="gp-include-directive"' + (showDir ? '' : ' hidden') + '>' + escapeHtml(directive || '') + '</div>' +
+    calGpExecDirectiveHtml(showDir) + calGpDrawerHtml(filterBar) + '<div class="gp-include-body">' + body + '</div></fieldset>';
+}
+function calGpWhereuseJson(obj) {
+  return JSON.stringify(obj || {}).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+}
+function calGpWhereusePayload(byBox) {
+  return '<span hidden data-gp-whereuse-hits="' +
+    calGpWhereuseJson({ hits: byBox || {}, corpus: calWhereuseCorpusFromEvents(state.calEvents || []) }) + '"></span>';
+}
+function calGpWhereuseHitsRead() {
+  // ⛔ 不缓存：后续重绘会追加 payload span，缓存会让新框读到旧资料。
+  if (typeof document === 'undefined' || !document.querySelectorAll) return { hits: {}, corpus: [] };
+  const merged = { hits: {}, corpus: [] };
+  Array.prototype.forEach.call(document.querySelectorAll('[data-gp-whereuse-hits]'), (el) => {
+    try {
+      const obj = JSON.parse(el.getAttribute('data-gp-whereuse-hits') || '{}');
+      const h = (obj && obj.hits) ? obj.hits : obj;
+      Object.keys(h || {}).forEach((k) => { merged.hits[k] = h[k]; });
+      if (Array.isArray(obj.corpus) && obj.corpus.length) merged.corpus = obj.corpus;
+    } catch (_) {}
+  });
+  return merged;
+}
+function calGpWhereusePayloadUpdate(box, hits) {
+  if (typeof document === 'undefined' || !document.querySelectorAll) return;
+  const boxNo = +box.getAttribute('data-gp-whereuse-box') || 0;
+  Array.prototype.forEach.call(document.querySelectorAll('[data-gp-whereuse-hits]'), (el) => {
+    try {
+      let o = JSON.parse(el.getAttribute('data-gp-whereuse-hits') || '{}');
+      if (!o.hits) o = { hits: o, corpus: [] };
+      if (!o.hits[boxNo]) return;
+      o.hits[boxNo] = hits;
+      el.setAttribute('data-gp-whereuse-hits', calGpWhereuseJson(o));
+    } catch (_) {}
+  });
+}
+function calGpWhereuseRerender(box, term) {
+  if (!box) return;
+  const q = String(term == null ? '' : term).trim();
+  const hits = calCollectGpWhereuseHits(q);
+  box.__whereuseHits = hits;
+  box.setAttribute('data-gp-whereuse', q);
+  const body = box.querySelector ? box.querySelector('.gp-include-body') : null;
+  if (body) body.innerHTML = calWhereuseListHtml(q, hits);
+  const cnt = box.querySelector ? box.querySelector('.gp-list-filter-count') : null;
+  if (cnt) cnt.textContent = hits.length + '/' + hits.length;
+  const total = box.querySelector ? box.querySelector('.gp-name-list-total') : null;
+  if (total) total.textContent = String(hits.length);
+  calGpWhereusePayloadUpdate(box, hits);
+  calGpDrawerSync(box);
+}
+function calExpandGpWhereuse(text, renderInsert) {
+  const src = String(text == null ? '' : text);
+  if (!CAL_WHEREUSE_RE_ANY.test(src)) return src;
+  return src.replace(CAL_WHEREUSE_RE_ONE, (m) => {
+    const p = calParseWhereuseToken(m);
+    return renderInsert(p.term, calCollectGpWhereuseHits(p.term), p.showCount, calWhereuseCleanDirective(m, p.term), p.folded, p.showDirective);
   });
 }
 // 扫 state.calEvents 全部行程的 gp 围栏 NAME → {include} 索引（与桌面 tlCollectGpIncludeIndex 同口径）。
@@ -6771,5 +7045,50 @@ if (typeof window !== 'undefined' && !window.__calTermNavBound) {
     e.preventDefault();
     e.stopPropagation();
     calGpNavToFence(tm, 'TERM');   // ★ 与 pmenu 定位按钮共用同一就地跳转口径
+  }, true);
+}
+
+// ===== 🆕 2026-11-24：{whereuse TERM} 位置清单「定位」→ LITE 就地滚动到该事件/行 =====
+//   LITE 是单页应用、没有便利贴窗与返回栈 → 只做定位与闪烁（桌面端则复用内容定位小盒子的返回机制）。
+function calWhereuseNav(hit) {
+  if (!hit || !hit.uid || typeof document === 'undefined') return;
+  const card = document.querySelector('[data-uid="' + hit.uid + '"]');
+  if (!card) { if (typeof showToast === 'function') showToast('当前视图未显示该事件', 'danger'); return; }
+  const a = hit.anchor || {};
+  let target = null;
+  if (a.kind === 'check' && Number.isFinite(+a.line)) {
+    target = card.querySelector('.ev-cb[data-line="' + (+a.line) + '"]') ||
+      card.querySelector('.ev-md-edit[data-line="' + (+a.line) + '"]');
+  } else if (a.kind === 'block' && Number.isFinite(+a.start)) {
+    const ed = card.querySelector('.md-unit-edit[data-start="' + a.start + '"][data-end="' + a.end + '"]');
+    if (ed) target = ed.closest('.md-unit');
+  }
+  if (!target && a.text) {
+    const norm = (s) => String(s == null ? '' : s).replace(/\s+/g, ' ').trim();
+    const want = norm(a.text).replace(/[…]+$/, '').trim();
+    const cands = Array.prototype.slice.call(card.querySelectorAll('.ev-md-check-text, p, h1, h2, h3, li, .md-unit'));
+    target = cands.find((n) => norm(n.textContent) === want) ||
+      cands.find((n) => want.length >= 4 && norm(n.textContent).indexOf(want) >= 0) || null;
+  }
+  const anchor = (target && target.closest('.ev-md-check')) || target || card;
+  anchor.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  card.classList.remove('tl-jump-flash');
+  void card.offsetWidth;
+  card.classList.add('tl-jump-flash');
+  setTimeout(() => card.classList.remove('tl-jump-flash'), 2000);
+}
+if (typeof window !== 'undefined' && !window.__calWhereuseBound) {
+  window.__calWhereuseBound = true;
+  document.addEventListener('click', function (e) {
+    const go = e.target && e.target.closest && e.target.closest('.gp-whereuse-go[data-hit-idx]');
+    if (!go) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const box = go.closest ? go.closest('.gp-whereuse-box') : null;
+    const boxNo = box ? (+box.getAttribute('data-gp-whereuse-box') || 0) : 0;
+    const all = calGpWhereuseHitsRead() || {};
+    const live = box && box.__whereuseHits;
+    const hit = (live || (all.hits && all.hits[boxNo]) || [])[+go.getAttribute('data-hit-idx')];
+    if (hit) calWhereuseNav(hit);
   }, true);
 }

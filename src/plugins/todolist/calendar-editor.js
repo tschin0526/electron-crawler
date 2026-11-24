@@ -4085,6 +4085,17 @@
       const b = (k) => tlGpDrawerBool(box, k);
       const patternCtrl = tlGpDrawerCtrl(box, 'pattern');
       const pattern = patternCtrl ? String(patternCtrl.value == null ? '' : patternCtrl.value) : '';
+      // ★ 必须放在 gp-name-list-box 之前：whereuse 框也带该类（复用 list 的临时过滤），
+      //   否则这里会误判成 {list NAME}。临时 pattern 没有对应指令参数，不伪造进「当前执行」。
+      if (box.classList.contains('gp-whereuse-box')) {
+        const termCtrl = tlGpDrawerCtrl(box, 'term');
+        const term = termCtrl ? String(termCtrl.value == null ? '' : termCtrl.value).trim()
+          : String(box.getAttribute('data-gp-whereuse') || '');
+        return ['{whereuse TERM=' + q(term),
+          'showCount=' + (b('showCount') ? 'true' : 'false'),
+          'showDirective=' + (b('showDirective') ? 'true' : 'false'),
+          'folded=' + (b('folded') ? 'true' : 'false')].join(' ') + '}';
+      }
       if (box.classList.contains('gp-pmenu-box')) {
         const kind = String(box.getAttribute('data-gp-pmenu-kind') || 'NAME').toUpperCase();
         const parts = [pattern ? '{pmenu ' + kind + '=' + q(pattern) : '{pmenu ' + kind];
@@ -4317,6 +4328,15 @@
         if (nameCtrl) nameCtrl.value = chosen;
         if (chosen) tlGpDrawerApplyName(box, chosen);
       }
+      // ★ whereuse 的输入框是 TERM 本体：换词要重跑搜索，⛔不能落进 gp-name-list-box 的 pattern 过滤。
+      if (box.classList && box.classList.contains('gp-whereuse-box')) {
+        if ('term' in p) {
+          const term = String(p.term == null ? '' : p.term).trim();
+          const old = String(box.getAttribute('data-gp-whereuse') || '').trim();
+          if (term !== old) tlGpWhereuseRerender(box, term);
+        }
+        return;
+      }
       if (box.classList && box.classList.contains('gp-pmenu-box')) tlApplyPmenuFilter(box, p.pattern || '');
       else if (box.classList && box.classList.contains('gp-name-list-box')) tlApplyListFilter(box, p.pattern || '');
     }
@@ -4396,7 +4416,8 @@
       const hasList = TL_LIST_RE_ANY.test(srcText);
       const hasPmenu = TL_PMENU_RE_ANY.test(srcText);
       const hasTermList = TL_TERM_LIST_RE_ANY.test(srcText);
-      if (!hasList && !hasPmenu && !hasTermList && !/\{include\s+(?:name|TERM|picture)\s*=/i.test(srcText)) {
+      const hasWhereuse = TL_WHEREUSE_RE_ANY.test(srcText);
+      if (!hasList && !hasPmenu && !hasTermList && !hasWhereuse && !/\{include\s+(?:name|TERM|picture)\s*=/i.test(srcText)) {
         return renderMarkdown(tlRenderNameRefs(tlRenderTermDefs(tlRenderNoteMarkersLines(text))));
       }
       // ⚠️ 占位符必须是普通 ASCII：真实 renderMarkdown 的后处理会剥离 NUL(\u0000) 控制字符，
@@ -4433,15 +4454,25 @@
           return tok;
         });
       }
+      if (hasWhereuse) {
+        prepared = tlExpandGpWhereuse(prepared, (term, hits, showCount, directive, folded, showDirective) => {
+          const tok = '%%TLWHERE_' + (seq++) + '_ZZ%%';
+          ph.set(tok, { term, hits, showCount, directive, folded, showDirective, isWhereuse: true, boxNo: ++_tlWhereuseBoxSeq });
+          return tok;
+        });
+      }
       let html = renderMarkdown(tlRenderNameRefs(tlRenderTermDefs(tlRenderNoteMarkersLines(prepared))));
+      const whereuseHits = {};
       ph.forEach((v, tok) => {
-        const box = v.isPmenu ? tlGpPmenuBoxHtml(v.items, v.directive, v.folded, v.pattern, v.kind, v.showDirective)
+        const box = v.isWhereuse ? tlGpWhereuseBoxHtml(v.term, v.hits, v.showCount, v.directive, v.folded, v.showDirective, v.boxNo)
+          : v.isPmenu ? tlGpPmenuBoxHtml(v.items, v.directive, v.folded, v.pattern, v.kind, v.showDirective)
           : v.isTermList ? tlGpTermListBoxHtml(v.list, v.showCount, v.directive, v.folded, v.pattern, v.showDirective)
           : v.isList ? tlGpNameListBoxHtml(v.list, v.showCount, v.directive, v.folded, v.pattern, v.showDirective)
           : tlGpIncludeBoxHtml(v.raw, v.nm, v.showLabel, v.directive, v.showDirective, v.kind, v.folded, index, v.missing);
+        if (v.isWhereuse) whereuseHits[v.boxNo] = v.hits;
         html = html.split(tok).join(box);
       });
-      return html + tlGpDrawerBodiesPayload(index);
+      return html + tlGpDrawerBodiesPayload(index) + tlGpWhereusePayload(whereuseHits);
     }
     // 独立 task 行里的 {include}：同样用占位符法在原文层展开、checkbox 行渲染后注入 box。
     //   （blocks.forEach 的 task 分支不走 tlRenderWithIncludes，需单独覆盖；gp 块内行已在 inner 链处理。）
@@ -4450,7 +4481,8 @@
       const hasList = TL_LIST_RE_ANY.test(String(line));
       const hasPmenu = TL_PMENU_RE_ANY.test(String(line));
       const hasTermList = TL_TERM_LIST_RE_ANY.test(String(line));
-      if (!hasList && !hasPmenu && !hasTermList && !/\{include\s/.test(String(line))) {
+      const hasWhereuse = TL_WHEREUSE_RE_ANY.test(String(line));
+      if (!hasList && !hasPmenu && !hasTermList && !hasWhereuse && !/\{include\s/.test(String(line))) {
         return tlTaskLineHtml(line, uid, i, forceEditable);
       }
       let seq = 0;
@@ -4484,15 +4516,25 @@
           return tok;
         });
       }
+      if (hasWhereuse) {
+        prepared = tlExpandGpWhereuse(prepared, (term, hits, showCount, directive, folded, showDirective) => {
+          const tok = '%%TLWHERE_' + (seq++) + '_ZZ%%';
+          ph.set(tok, { term, hits, showCount, directive, folded, showDirective, isWhereuse: true, boxNo: ++_tlWhereuseBoxSeq });
+          return tok;
+        });
+      }
       let html = tlTaskLineHtml(prepared, uid, i, forceEditable);
+      const whereuseHits = {};
       ph.forEach((v, tok) => {
-        const box = v.isPmenu ? tlGpPmenuBoxHtml(v.items, v.directive, v.folded, v.pattern, v.kind, v.showDirective)
+        const box = v.isWhereuse ? tlGpWhereuseBoxHtml(v.term, v.hits, v.showCount, v.directive, v.folded, v.showDirective, v.boxNo)
+          : v.isPmenu ? tlGpPmenuBoxHtml(v.items, v.directive, v.folded, v.pattern, v.kind, v.showDirective)
           : v.isTermList ? tlGpTermListBoxHtml(v.list, v.showCount, v.directive, v.folded, v.pattern, v.showDirective)
           : v.isList ? tlGpNameListBoxHtml(v.list, v.showCount, v.directive, v.folded, v.pattern, v.showDirective)
           : tlGpIncludeBoxHtml(v.raw, v.nm, v.showLabel, v.directive, v.showDirective, v.kind, v.folded, index, v.missing);
+        if (v.isWhereuse) whereuseHits[v.boxNo] = v.hits;
         html = html.split(tok).join(box);
       });
-      return html + tlGpDrawerBodiesPayload(index);
+      return html + tlGpDrawerBodiesPayload(index) + tlGpWhereusePayload(whereuseHits);
     }
     // ========== 🆕 2026-11-20：{list NAME} 列出「所有具名围栏」的名称清单 ==========
     // 语义：扫描全部行程中带 NAME="X" 的围栏（{gpJ|NAME="X"}…{/gpJ}），去重列出名称。
@@ -4913,6 +4955,278 @@
         const list = tlCollectGpTermList('');
         return renderInsert(list, p.showCount, m, p.folded, p.pattern, p.showDirective);
       });
+    }
+    // ========== 🆕 2026-11-24：{whereuse TERM="..."} 全文位置清单 ==========
+    // 语义：列出 TERM 文字在档案（主档＋include 档）中出现的「所有位置」。
+    //   ★ 与术语表不同：这里搜的是**纯文本出现**，不要求 [[TERM]] 标记或 TERM= 围栏。
+    //     每条命中记录的消息与「内容定位小盒子」同格式：
+    //       事件识别 {uid,title,date} + 事件内锚点 {kind:'check',line,text,focus:'content'}
+    //         或 {kind:'block',start,end,name}（命中行在围栏内时）。
+    //   点击「定位」→ 记当前位置入返回栈 → 复用 tlGlossJumpToFence 跳到便利贴/日程对应位置。
+    const TL_WHEREUSE_RE_ANY = /\{whereuse\s+TERM\b[^}]*\}/i;
+    const TL_WHEREUSE_RE_ONE = /\{whereuse\s+TERM\b[^}]*\}/gi;
+    const TL_WHEREUSE_TEXT_MAX = 160;  // 结果清单每行显示上限（原 80，加倍以露出命中关键字）
+    // ★ TERM 可能被贴进渲染后的术语胶囊 HTML（<span class="tl-term" data-term="X">📖 X</span>），
+    //   先把 HTML 还原成纯词条名，否则整条链（指令/当前执行/搜索/找不到讯息）都会带 HTML 而失效。
+    //   优先取 data-term（真词名）→ 去标签 → 解实体 → 去装饰/零宽字符。
+    function tlWhereuseCleanTerm(v) {
+      let s = String(v == null ? '' : v).trim();
+      if (!s) return '';
+      // [[X:释义:领域]] / 裸 [[X]] → 取词名段
+      const br = s.match(/^\[\[([^\]]+)\]\]$/);
+      if (br) {
+        const nm = String(br[1]).split(/[:：]/)[0].replace(/^📖\s*/, '').trim();
+        if (nm) return nm;
+      }
+      if (!/[<>]/.test(s) && !/&(?:quot|amp|lt|gt|nbsp|#39);/i.test(s)) return s.replace(/^📖\s*/, '').trim();
+      const dt = s.match(/data-term\s*=\s*(?:"([^"]*)"|'([^']*)')/i);
+      if (dt && (dt[1] || dt[2])) return String(dt[1] || dt[2]).trim();
+      s = s.replace(/<[^>]*>/g, '').replace(/<[^>]*$/g, '');   // 含被截断的不完整标签也去掉
+      s = s.replace(/&quot;/gi, '"').replace(/&#39;/gi, "'").replace(/&lt;/gi, '<').replace(/&gt;/gi, '>').replace(/&nbsp;/gi, ' ').replace(/&amp;/gi, '&');
+      return s.replace(/[\u200B-\u200D\uFEFF\u{1F4D6}\u{1F4D7}]/gu, '').replace(/\s+/g, ' ').trim();
+    }
+    // TERM 宽口径：值里可能含内部引号（被贴进的胶囊 HTML），贪婪取到 } 前最后引号，避免被 class="…" 截断。
+    function tlWhereuseReadTerm(s) {
+      const m = s.match(/\bTERM\s*=\s*"([^}]*)"/i) || s.match(/\bTERM\s*=\s*'([^}]*)'/i) || s.match(/\bTERM\s*=\s*“([^}]*)”/i);
+      return m ? m[1] : '';
+    }
+    // 显示用 directive：把 TERM 值里混入的 HTML / [[...]] 还原成纯文字，原指令行不再显示 <span>。
+    function tlWhereuseCleanDirective(m, term) {
+      return String(m).replace(/(\bTERM\s*=\s*)"[^}]*"/i, '$1"' + term + '"')
+        .replace(/(\bTERM\s*=\s*)'[^}]*'/i, "$1'" + term + "'");
+    }
+    // 同一份 HTML 可能有多张事件卡各自带 whereuse → 框序号必须全局唯一，payload 才能一一对上。
+    let _tlWhereuseBoxSeq = 0;
+    function tlParseWhereuseToken(token) {
+      const s = String(token == null ? '' : token);
+      const readVal = (key) => {
+        const m = s.match(new RegExp('(?:^|\\s)' + key + '\\s*=\\s*(?:"([^"\\n]*)"|\'([^\'\\n]*)\'|“([^”\\n]*)”|‘([^’\\n]*)’|([^\\s}]+))', 'i'));
+        if (!m) return '';
+        for (let i = 1; i < m.length; i++) if (m[i] != null) return String(m[i]).trim();
+        return '';
+      };
+      const bool = (key) => {
+        const v = readVal(key).toLowerCase();
+        return v === 'true' || v === 'on' || v === '1' || v === 'yes';
+      };
+      const sd = readVal('showDirective');
+      return {
+        term: tlWhereuseCleanTerm(tlWhereuseReadTerm(s) || readVal('TERM')),
+        showCount: bool('showCount'),
+        folded: bool('folded'),
+        showDirective: sd ? bool('showDirective') : null   // 省略＝未指定（沿用原行为显示）
+      };
+    }
+    // 🆕 语料快照随 HTML 下发：便利贴窗没有主窗的全量事件，靠它在本地换 TERM 重搜。
+    function tlWhereuseCorpusFromEvents(list) {
+      return (Array.isArray(list) ? list : []).filter(Boolean).map((ev) => {
+        const lines = String(ev.notes == null ? '' : ev.notes).replace(/\r\n/g, '\n').split('\n');
+        const scan = (typeof tlGpFenceScan === 'function') ? tlGpFenceScan(lines) : { ranges: [] };
+        return {
+          uid: String(ev.uid || ''), title: String(ev.title || ''), date: String(ev.date || ''),
+          lines: lines,
+          fences: (scan.ranges || []).map((r) => ({ start: r.start, end: r.end, name: String(r.name || r.termName || '').trim() }))
+        };
+      });
+    }
+    // TERM 候选：[[TERM:释义:领域]] 取名称段、TERM="..." 取属性段；都没有才用整行文字。
+    //   ★ 比对统一走 tlGpNamePatternHit（无 * 完全比对、*X* 包含、* 在头尾做锚点），⛔不用 indexOf 子串。
+    function tlWhereuseHit(text, pattern) {
+      const s = String(text == null ? '' : text);
+      const cands = [];
+      s.replace(/\[\[([^\]\n]+)\]\]/g, (m, inner) => {
+        const nm = String(inner).split(/[:：]/)[0].trim();
+        if (nm) cands.push(nm);
+        return m;
+      });
+      s.replace(/\bTERM\s*=\s*(?:"([^"\n]*)"|'([^'\n]*)'|“([^”\n]*)”|([^\s}]+))/gi,
+        (m, a, b, c, d) => {
+          const nm = String(a || b || c || d || '').trim();
+          if (nm) cands.push(nm);
+          return m;
+        });
+      if (!cands.length) cands.push(s);
+      return cands.some((c) => tlGpNamePatternHit(c, pattern));
+    }
+    function tlWhereuseSearchCorpus(corpus, term) {
+      const q = String(term == null ? '' : term).trim();
+      if (!q) return [];
+      const out = [];
+      (Array.isArray(corpus) ? corpus : []).forEach((ev) => {
+        if (!ev) return;
+        const uid = String(ev.uid || ''), title = String(ev.title || ''), date = String(ev.date || '');
+        const push = (anchor, text, kind, line) => out.push({ uid: uid, title: title, date: date, anchor: anchor, text: text, kind: kind, line: line });
+        if (tlWhereuseHit(title, q)) push({ kind: 'card' }, title.slice(0, TL_WHEREUSE_TEXT_MAX), 'title', -1);
+        (Array.isArray(ev.lines) ? ev.lines : []).forEach((raw, i) => {
+          if (!tlWhereuseHit(raw, q)) return;
+          const text = String(raw).replace(/^\s*(?:[-*+]\s+\[[ xX]\]\s?|[-*+]\s+|#{1,6}\s+)/, '').trim().slice(0, TL_WHEREUSE_TEXT_MAX);
+          const fence = (Array.isArray(ev.fences) ? ev.fences : []).find((r) => i > r.start && i < r.end);
+          if (fence) push({ kind: 'block', start: fence.start, end: fence.end,
+            name: String(fence.name || '').trim(), line: i, text: text, focus: 'content' }, text, 'fence', i);
+          else push({ kind: 'check', line: i, text: text, focus: 'content' }, text, 'line', i);
+        });
+      });
+      return out;
+    }
+    // 全量扫描（只在渲染 whereuse 时调用，不在逐事件热路径）。以内容指纹缓存，避免同批数据重复扫。
+    let _tlWhereuseCacheKey = null, _tlWhereuseCache = null;
+    function tlCollectGpWhereuseHits(term) {
+      const q = String(term == null ? '' : term).trim();
+      if (!q) return [];
+      const key = tlTermsFingerprint() + '|' + q.toLowerCase();
+      if (_tlWhereuseCacheKey === key && _tlWhereuseCache) return _tlWhereuseCache;
+      const list = (typeof tlLiveCalEvents === 'function') ? tlLiveCalEvents() : (tlCalEvents || []);
+      _tlWhereuseCacheKey = key;
+      return (_tlWhereuseCache = tlWhereuseSearchCorpus(tlWhereuseCorpusFromEvents(list), q));
+    }
+    function tlGpWhereuseMissingHtml(q) {
+      return '<div class="gp-include-missing" role="status">找不到 TERM「' + tlEscapeHtml(q) + '」在档案中的出现位置。</div>';
+    }
+    // ★ 命中关键字反白：先在原文（未转义）上定位所有匹配区间，再逐段 esc()，命中段包 <mark>。
+    //   pattern 的 * 是通配分隔符（不字面显示），取非空片段大小写不敏感查找；重叠区间合并后一次输出，⛔不能在转义后字串上找（实体会错位）。
+    function tlWhereuseHighlight(text, pattern, esc) {
+      const s = String(text == null ? '' : text);
+      const q = String(pattern == null ? '' : pattern).trim();
+      if (!s || !q) return esc(s);
+      const segs = q.split('*').filter((x) => x !== '');
+      if (!segs.length) return esc(s);
+      const lower = s.toLowerCase();
+      const ranges = [];
+      segs.forEach((seg) => {
+        const needle = seg.toLowerCase();
+        let from = 0, at;
+        while ((at = lower.indexOf(needle, from)) >= 0) {
+          ranges.push({ start: at, end: at + needle.length });
+          from = at + needle.length;
+        }
+      });
+      if (!ranges.length) return esc(s);
+      ranges.sort((a, b) => a.start - b.start);
+      const merged = [];
+      ranges.forEach((r) => {
+        const last = merged[merged.length - 1];
+        if (last && r.start <= last.end) last.end = Math.max(last.end, r.end);
+        else merged.push({ start: r.start, end: r.end });
+      });
+      let out = '', pos = 0;
+      merged.forEach((r) => {
+        if (r.start > pos) out += esc(s.slice(pos, r.start));
+        out += '<mark class="gp-whereuse-hit">' + esc(s.slice(r.start, r.end)) + '</mark>';
+        pos = r.end;
+      });
+      if (pos < s.length) out += esc(s.slice(pos));
+      return out;
+    }
+    // 清单正文抽成纯函数：换 TERM 时只替换这一段，折叠态与抽屉位置都不丢。
+    function tlWhereuseListHtml(term, hits) {
+      const entries = hits || [];
+      return entries.length
+        ? '<ul class="gp-name-list gp-whereuse-list">' + entries.map((it, idx) => {
+            const who = String(it.title || '(无标题)') + (it.date ? ' · ' + it.date : '');
+            const where = it.kind === 'title' ? '标题' : (it.kind === 'fence' ? '围栏内第 ' + (it.line + 1) + ' 行' : '第 ' + (it.line + 1) + ' 行');
+            return '<li data-list-item-name="' + tlEscapeHtml(who + ' ' + it.text) + '" data-hit-idx="' + idx + '">' +
+              '<span class="gp-whereuse-seq">' + (idx + 1) + '.</span>' +
+              '<span class="gp-whereuse-meta">' + tlEscapeHtml(where) + '</span> ' +
+              '<span class="gp-whereuse-who">' + tlWhereuseHighlight(who, term, tlEscapeHtml) + '</span>' +
+              '<span class="gp-whereuse-text">' + tlWhereuseHighlight(it.text, term, tlEscapeHtml) + '</span>' +
+              '<button type="button" class="gp-whereuse-go" data-hit-idx="' + idx + '" title="记录当前位置并定位到此处">定位</button>' +
+              '</li>';
+          }).join('') + '</ul>'
+        : tlGpWhereuseMissingHtml(term);
+    }
+    function tlGpWhereuseBoxHtml(term, hits, showCount, directive, folded, showDirective, boxNo) {
+      const showDir = showDirective !== false;
+      const initCount = (hits || []).length;
+      // ★ 这个输入框是 TERM 本体（不是结果过滤）：输入即重跑搜索并替换清单，不写 .md。
+      const filterBar = '<div class="gp-list-filter-bar"><input type="text" class="gp-list-filter-input" data-gp-temp-param="term" aria-label="临时更换 TERM 重新查找" placeholder="输入 TERM 重新查找位置（不写入文件）" value="' + tlEscapeHtml(term || '') + '">' +
+        tlGpTempToggle('showCount', '显示数量', !!showCount, '临时切换 showCount') +
+        tlGpTempToggle('showDirective', '显示指令', showDir, '临时切换 showDirective') +
+        tlGpTempToggle('folded', '折叠', !!folded, '临时切换 folded（与折叠箭头同步）') +
+        '<span class="gp-list-filter-count">' + initCount + '/' + initCount + '</span></div>';
+      const body = tlWhereuseListHtml(term, hits);
+      const foldAttr = folded === true ? ' checked data-gp-fold-default="1"'
+        : folded === false ? ' data-gp-fold-default="0"' : '';
+      const fold = '<label class="gp-include-fold" title="折叠/展开内容"><input type="checkbox" class="gp-include-fold-cb"' + foldAttr + '><span class="gp-include-fold-ico">\u25BE</span></label>';
+      const legend = '<legend class="gp-include-label">' + fold +
+        '<span class="gp-include-badge is-whereuse" title="文字出现位置清单">\u{1F4CD}</span>使用位置 <span class="gp-name-list-total"' + (showCount ? '' : ' hidden') + '>' + initCount + '</span></legend>';
+      const dirHtml = '<div class="gp-include-directive"' + (showDir ? '' : ' hidden') + '>' + tlEscapeHtml(directive || '') + '</div>' + tlGpExecDirectiveHtml(showDir);
+      return '<fieldset class="gp-include-box gp-name-list-box gp-whereuse-box" data-gp-whereuse="' + tlEscapeHtml(term) + '" data-gp-whereuse-box="' + (+boxNo || 0) + '">' +
+        legend + dirHtml + tlGpDrawerHtml(filterBar) + '<div class="gp-include-body">' + body + '</div></fieldset>';
+    }
+    function tlGpWhereuseJson(obj) {
+      return JSON.stringify(obj || {}).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+    }
+    // 把命中位置与语料一起随 HTML 下发：便利贴窗没有主窗内存索引，既供点击定位，也供就地换 TERM 重搜。
+    function tlGpWhereusePayload(byBox) {
+      const list = (typeof tlLiveCalEvents === 'function') ? tlLiveCalEvents() : (tlCalEvents || []);
+      return '<span hidden data-gp-whereuse-hits="' +
+        tlGpWhereuseJson({ hits: byBox || {}, corpus: tlWhereuseCorpusFromEvents(list) }) + '"></span>';
+    }
+    function tlGpWhereuseHitsRead() {
+      // ⛔ 不缓存到 window：同一次会话里后续重绘会追加新的 payload span，缓存会让新框读到旧数据。
+      if (typeof document === 'undefined' || !document.querySelectorAll) return { hits: {}, corpus: [] };
+      const merged = { hits: {}, corpus: [] };
+      Array.prototype.forEach.call(document.querySelectorAll('[data-gp-whereuse-hits]'), (el) => {
+        try {
+          const obj = JSON.parse(el.getAttribute('data-gp-whereuse-hits') || '{}');
+          const h = (obj && obj.hits) ? obj.hits : obj;   // 兼容旧格式
+          Object.keys(h || {}).forEach((k) => { merged.hits[k] = h[k]; });
+          if (Array.isArray(obj.corpus) && obj.corpus.length) merged.corpus = obj.corpus;
+        } catch (_) {}
+      });
+      return merged;
+    }
+    function tlGpWhereusePayloadUpdate(box, hits) {
+      if (typeof document === 'undefined' || !document.querySelectorAll) return;
+      const boxNo = +box.getAttribute('data-gp-whereuse-box') || 0;
+      Array.prototype.forEach.call(document.querySelectorAll('[data-gp-whereuse-hits]'), (el) => {
+        try {
+          let o = JSON.parse(el.getAttribute('data-gp-whereuse-hits') || '{}');
+          if (!o.hits) o = { hits: o, corpus: [] };
+          if (!o.hits[boxNo]) return;
+          o.hits[boxNo] = hits;
+          el.setAttribute('data-gp-whereuse-hits', tlGpWhereuseJson(o));
+        } catch (_) {}
+      });
+    }
+    // 输入新 TERM → 重搜 → 只替换清单正文（折叠与抽屉位置不丢）。
+    function tlGpWhereuseRerender(box, term) {
+      if (!box) return;
+      const q = String(term == null ? '' : term).trim();
+      const hits = tlCollectGpWhereuseHits(q);
+      box.__whereuseHits = hits;
+      box.setAttribute('data-gp-whereuse', q);
+      const body = box.querySelector ? box.querySelector('.gp-include-body') : null;
+      if (body) body.innerHTML = tlWhereuseListHtml(q, hits);
+      const cnt = box.querySelector ? box.querySelector('.gp-list-filter-count') : null;
+      if (cnt) cnt.textContent = hits.length + '/' + hits.length;
+      const total = box.querySelector ? box.querySelector('.gp-name-list-total') : null;
+      if (total) total.textContent = String(hits.length);
+      tlGpWhereusePayloadUpdate(box, hits);
+      tlGpDrawerSync(box);
+    }
+    function tlExpandGpWhereuse(text, renderInsert) {
+      const src = String(text == null ? '' : text);
+      if (!TL_WHEREUSE_RE_ANY.test(src)) return src;
+      return src.replace(TL_WHEREUSE_RE_ONE, (m) => {
+        const p = tlParseWhereuseToken(m);
+        return renderInsert(p.term, tlCollectGpWhereuseHits(p.term), p.showCount, tlWhereuseCleanDirective(m, p.term), p.folded, p.showDirective);
+      });
+    }
+    // 点击清单「定位」：调用方（主窗点击委托 / 便利贴 IPC）先 prepare 记录来源，这里只负责 arm＋跳。
+    function tlWhereuseJump(hit) {
+      if (!hit || !hit.uid) { showToast('位置信息不完整，无法定位', 'danger'); return; }
+      const a = hit.anchor || {};
+      if (a.kind === 'block' && Number.isFinite(+a.start)) {
+        tlGpReturnArmAndShow();
+        tlGlossJumpToFence(hit.uid, +a.start, +a.end || +a.start, a.name || '');
+      } else if (a.kind === 'check' && Number.isFinite(+a.line)) {
+        tlGpReturnArmAndShow();
+        tlGlossJumpToFence(hit.uid, +a.line, +a.line, '', { kind: 'check', text: a.text || hit.text || '' });
+      } else {
+        tlGpReturnArmAndShow();
+        tlGlossJumpToFence(hit.uid, 0, 0, '');
+      }
     }
     // 扫 tlCalEvents 全部行程的 gp 围栏 NAME → {include} 索引（与 tlCollectGpNames 同扫描口径）。
     function tlCollectGpIncludeIndex() {
@@ -5564,9 +5878,12 @@
       return (parseInt(ev && ev.sticky, 10) || 0) > 0 ||
         ((typeof tlIsTempSticky === 'function') && tlIsTempSticky(uid));
     }
-    async function tlGlossJumpToFence(uid, startLine, endLine, name) {
+    // 🆕 2026-11-24：opt={kind:'check',text} → 同一套握手/滚动/闪烁改定位到「备注某一行」，
+    //   供 {whereuse} 的位置清单复用（⛔不要另写一份握手，双端串行化会漂移）。
+    async function tlGlossJumpToFence(uid, startLine, endLine, name, opt) {
       tlCloseGlossary();
-      const wantName = String(name == null ? '' : name).trim();
+      const isCheck = !!(opt && opt.kind === 'check');
+      const wantName = isCheck ? '' : String(name == null ? '' : name).trim();
       const jumpToken = ++tlGpJumpSeq;
       const ev = (tlCalEvents || []).find((e) => e && e.uid === uid);
       // 🆕 临时便利贴（右键「临时开启为便利贴」）不写 sticky 字段，ev.sticky 恒为 0；
@@ -5582,6 +5899,27 @@
         if (!cardEl || !cardEl.offsetParent) {
           if (hasSticky) { showToast('已切换到便利贴；主窗口当前视图未显示该事件', 'info'); }
           else { showToast('当前视图未显示该事件，请切换到包含它的视图后再试', 'danger'); }
+          return;
+        }
+        // 🆕 {whereuse} 行锚点：先按 data-line 命中，再用清单显示的正文文字兜底（与便利贴 noteFindContentByText 同口径）。
+        if (isCheck) {
+          const line = parseInt(startLine, 10);
+          let target = cardEl.querySelector('.ev-cb[data-line="' + line + '"]') ||
+            cardEl.querySelector('.ev-md-edit[data-line="' + line + '"]');
+          if (!target && opt.text) {
+            const norm = (s) => String(s == null ? '' : s).replace(/\s+/g, ' ').trim();
+            const want = norm(opt.text).replace(/[…]+$/, '').trim();
+            const cands = Array.prototype.slice.call(cardEl.querySelectorAll('.ev-md-check-text, p, h1, h2, h3, li, blockquote'));
+            target = cands.find((n) => norm(n.textContent) === want) ||
+              cands.find((n) => want.length >= 4 && norm(n.textContent).indexOf(want) >= 0) || null;
+          }
+          const anchorEl = (target && target.closest('.ev-md-check')) || target || cardEl;
+          anchorEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          cardEl.classList.remove('tl-jump-flash');
+          void cardEl.offsetWidth;
+          cardEl.classList.add('tl-jump-flash');
+          setTimeout(() => cardEl.classList.remove('tl-jump-flash'), 2000);
+          if (target && typeof tlBlinkFound === 'function') tlBlinkFound(target);
           return;
         }
         // 精定位围栏：★ 具名时 data-gp-name 精确命中（行号只作兜底）
@@ -5646,7 +5984,9 @@
           const res = await window.electronAPI.invoke('focus-sticky-note', {
             key: uid,
             idx: 0,
-            focusUnit: { kind: 'block', start: startLine, end: endLine, name: wantName, jumpToken: jumpToken }
+            focusUnit: isCheck
+              ? { kind: 'check', line: parseInt(startLine, 10), text: String((opt && opt.text) || '').slice(0, 80), focus: 'content', jumpToken: jumpToken }
+              : { kind: 'block', start: startLine, end: endLine, name: wantName, jumpToken: jumpToken }
           });
           if (res && res.success === false) finish();
         } catch (err) {
@@ -6354,6 +6694,28 @@
         tlGpReturnPrepare('main', '', 0, { label: label, uid: uid, localUnit: tlRefLocalUnit(cap) });
         tlJumpToGpTerm(cap.getAttribute('data-gp-term-nav'));
       });
+      // 🆕 2026-11-24：{whereuse TERM} 位置清单「定位」→ 记当前位置入返回栈，再跳到目标事件/便利贴。
+      document.addEventListener('click', function (e) {
+        if (e.target && e.target.closest && e.target.closest('#tlGpReturnDock')) return;
+        const go = e.target && e.target.closest && e.target.closest('.gp-whereuse-go[data-hit-idx]');
+        if (!go) return;
+        e.preventDefault();
+        e.stopPropagation();
+        const box = go.closest ? go.closest('.gp-whereuse-box') : null;
+        const boxNo = box ? (+box.getAttribute('data-gp-whereuse-box') || 0) : 0;
+        const payload = tlGpWhereuseHitsRead() || {};
+        // ★ 抽屉里换过 TERM 时优先用 box 上的最新结果；payload 存的是原 TERM 的位置。
+        const hits = (box && box.__whereuseHits) || (payload.hits && payload.hits[boxNo]) || [];
+        const hit = hits[+go.getAttribute('data-hit-idx')];
+        if (!hit) { showToast('找不到该位置的定位信息', 'danger'); return; }
+        const evCard = go.closest('.ev-item') || go.closest('[data-uid]');
+        const uid = (evCard && evCard.getAttribute('data-uid')) || '';
+        const titleEl = evCard && evCard.querySelector('.ev-title');
+        const label = '主窗' + (titleEl && String(titleEl.textContent).trim()
+          ? '「' + String(titleEl.textContent).trim().slice(0, 24) + '」' : '');
+        tlGpReturnPrepare('main', '', 0, { label: label, uid: uid, localUnit: tlRefLocalUnit(go) });
+        tlWhereuseJump(hit);
+      });
     }
     if (typeof window !== 'undefined') {
       window.tlRenderNameRefs = tlRenderNameRefs;
@@ -6362,6 +6724,8 @@
       window.tlJumpToGpTerm = tlJumpToGpTerm;   // 🆕 便利贴 TERM 胶囊 IPC 入口
       window.tlCollectGpTermFences = tlCollectGpTermFences;
       window.tlGpReturnPrepare = tlGpReturnPrepare;   // 🆕 便利贴 IPC 入口记来源用
+      window.tlWhereuseJump = tlWhereuseJump;        // 🆕 2026-11-24：便利贴 whereuse 定位 IPC 入口
+      window.tlCollectGpWhereuseHits = tlCollectGpWhereuseHits;
       window.tlCalibrateMainToUnit = tlCalibrateMainToUnit;  // 🆕 便利贴来源：跳转前校准主窗
       window.tlOpenGpNamePicker = tlOpenGpNamePicker;
       window.tlCloseGpNamePicker = tlCloseGpNamePicker;

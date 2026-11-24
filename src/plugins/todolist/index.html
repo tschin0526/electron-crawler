@@ -2415,6 +2415,18 @@
     .gp-name-list { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: .35em .5em; }
     .gp-name-list > li { display: inline-flex; align-items: center; gap: .15em; max-width: 100%; }
     .gp-name-list-count { font-size: .8em; color: var(--ev-muted, #888); white-space: nowrap; }
+    /* {whereuse TERM} 位置清单：纵向逐条列出命中，「定位」按钮与内容同源 */
+    .gp-whereuse-list { display: flex; flex-direction: column; flex-wrap: nowrap; gap: .3em; font-size: .85em; }
+    .gp-whereuse-list > li { display: flex; flex-wrap: wrap; align-items: baseline; gap: .2em .5em; width: 100%; max-width: 100%; padding: .25em .1em; border-bottom: 1px dashed var(--gp-border, currentColor); }
+    .gp-whereuse-list > li:last-child { border-bottom: 0; }
+    .gp-whereuse-seq { flex: 0 0 auto; min-width: 1.8em; text-align: right; font-weight: 600; color: var(--ev-muted, #888); }
+    .gp-whereuse-meta { font-size: .8em; color: var(--ev-muted, #888); white-space: nowrap; }
+    .gp-whereuse-who { font-weight: 600; }
+    /* 内容独占一行从行首开始（order:1 让 定位 按钮留在标题行）；⛔不要 flex:1 1 12em 挤在标题后留左空白 */
+    .gp-whereuse-text { flex: 0 0 100%; order: 1; min-width: 0; overflow-wrap: anywhere; }
+    /* 命中关键字反白（reverse）：前景/背景对调，覆盖 <mark> 预设黄底 */
+    .gp-whereuse-hit { padding: 0 .15em; border-radius: .2em; background: var(--gp-fg, var(--note-fg, var(--cal-sticky-fg, var(--ev-text, #333)))); color: var(--gp-bg, var(--note-bg, var(--cal-sticky-bg, var(--ev-card, #fff)))); }
+    .gp-whereuse-go { flex: 0 0 auto; margin-left: auto; padding: .1em .55em; font-size: .8em; cursor: pointer; border: 1px solid var(--gp-border, currentColor); border-radius: .4em; background: var(--gp-bg, var(--ev-card, #fff)); color: inherit; }
     .gp-name-list-empty { font-size: .85em; line-height: 1.4; color: var(--ev-muted, #888); }
     .gp-name-list-empty code { font-family: ui-monospace, Menlo, Consolas, monospace; }
     .gp-include-missing { font-size: .85em; line-height: 1.5; color: var(--ev-muted, #888); font-style: italic; }
@@ -7967,6 +7979,33 @@
     // 🆕 2026-11-22：便利贴 TERM 花刮号胶囊点击 → 主窗跳到 TERM 围栏
     if (window.electronAPI && typeof window.electronAPI.onGpTermRefRequest === 'function') {
       window.electronAPI.onGpTermRefRequest(function (p) { tlOnGpNameRefRequest(p); });
+    }
+    // 🆕 2026-11-24：便利贴 {whereuse} 位置清单「定位」→ 主窗记来源（便利贴页+滚动位置）并跳到命中位置。
+    function tlOnGpWhereuseRequest(payload, retry) {
+      const hit = payload && payload.hit;
+      if (!hit || !hit.uid) return;
+      tlCalEvents = (typeof tlLiveCalEvents === 'function')
+        ? tlLiveCalEvents()
+        : ((typeof tlAllEvents === 'function') ? tlAllEvents(document.getElementById('taskText').value) : tlCalEvents);
+      // 主窗刚被便利贴唤起时事件可能还没载入完 → 等就绪（此时尚未 prepare，不会污染返回栈）。
+      const ready = (tlCalEvents || []).some(function (e) { return e && e.uid === hit.uid; }) ||
+        ((typeof tlIsTempSticky === 'function') && tlIsTempSticky(hit.uid));
+      if (!ready) {
+        if ((+retry || 0) < 8) { setTimeout(function () { tlOnGpWhereuseRequest(payload, (+retry || 0) + 1); }, 150); return; }
+      }
+      if (typeof tlCalibrateMainToUnit === 'function') {
+        try { tlCalibrateMainToUnit(payload.fromKey, payload.fromLocalUnit); } catch (e) {}
+      }
+      if (typeof tlGpReturnPrepare === 'function') {
+        tlGpReturnPrepare('sticky', payload.fromKey, payload.fromIdx, {
+          scrollTop: payload.fromScrollTop,
+          label: payload.fromLabel || '便利贴'
+        });
+      }
+      if (typeof tlWhereuseJump === 'function') tlWhereuseJump(hit);
+    }
+    if (window.electronAPI && typeof window.electronAPI.onGpWhereuseRequest === 'function') {
+      window.electronAPI.onGpWhereuseRequest(function (p) { tlOnGpWhereuseRequest(p); });
     }
     // 🆕 便利贴工具「新建便利贴」：便利贴窗收标题＋目标 include 档 → 这里负责真正建出完整 ## EVENT 块并追加落盘。
     //    便利贴窗没有解析/序列化能力（也不该有第二份），所以写盘统一回到 Calendar 这一处：

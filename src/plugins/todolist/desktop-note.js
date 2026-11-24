@@ -1373,6 +1373,37 @@ function setupControls() {
       }
       return;
     }
+    // 🆕 2026-11-24：{whereuse TERM} 位置清单「定位」→ 回主窗记来源并跳到该命中位置。
+    //   命中数据是主窗渲染时随 HTML 下发的（隐藏 data-gp-whereuse-hits），本窗体不重扫档案。
+    const whereGo = e.target.closest && e.target.closest('.gp-whereuse-go[data-hit-idx]');
+    if (whereGo) {
+      e.preventDefault();
+      e.stopPropagation();
+      const box = whereGo.closest ? whereGo.closest('.gp-whereuse-box') : null;
+      const boxNo = box ? (+box.getAttribute('data-gp-whereuse-box') || 0) : 0;
+      const all = {};
+      Array.prototype.forEach.call(document.querySelectorAll('[data-gp-whereuse-hits]'), (el) => {
+        try {
+          const o = JSON.parse(el.getAttribute('data-gp-whereuse-hits') || '{}');
+          // ★ payload 自 2026-11-24 起是 {hits:{boxNo:[...]}, corpus:[...]}；必须取 o.hits，
+          //   不能把顶层键当 boxNo（否则 all[数字] 永远 undefined → 「找不到该位置的定位信息」）。兼容旧纯 map。
+          const h = (o && o.hits) ? o.hits : o;
+          Object.keys(h || {}).forEach((k) => { all[k] = h[k]; });
+        } catch (_) {}
+      });
+      // ★ 若在抽屉里换过 TERM，本地重搜的结果缓存在 box 上，优先用它（payload 还是旧 TERM 的位置）。
+      const live = box && box.__whereuseHits;
+      const hit = (live || all[boxNo] || [])[+whereGo.getAttribute('data-hit-idx')];
+      if (!hit) { showStickyRefreshFeedback('找不到该位置的定位信息', true); return; }
+      const titleText = (document.getElementById('title') || {}).textContent || '';
+      ipcRenderer.invoke('wake-main-from-note', {
+        key: KEY, idx: IDX, action: 'gp-whereuse-jump', hit: hit,
+        scrollTop: currentScrollTop(),
+        localUnit: noteLocalUnitFromRef(whereGo),
+        label: '便利贴「' + String(titleText).trim().slice(0, 24) + '」'
+      }).catch(() => {});
+      return;
+    }
     const execLink = e.target.closest && e.target.closest('a.card-exec-link');
     if (execLink) {
       e.preventDefault();
@@ -8398,10 +8429,12 @@ function noteMarkerDirectiveQuote(v) {
 function noteMarkerDirectiveBools(v, keys) {
   return keys.map((k) => (v[k] === '' || v[k] == null ? '' : ' ' + k + '=' + v[k])).join('');
 }
-// 2026-11-23：三态参数下拉改为 checkbox（与结果框 .gp-temp-toggle 同外观）。
-//   点击循环：未指定（半选）→ true（勾选）→ false（空白）；保留原来的三态语义，不产生多余参数。
-function noteMarkerDirectiveTriField(key, label, def) {
-  return { key: key, label: label, type: 'bool', def: def == null ? '' : def };
+// 2026-11-24：bool 参数统一二态 checkbox（与结果框 .gp-temp-toggle 同外观）——
+//   勾选＝true、取消＝false，不再有「未指定／半选」。
+//   def 是与「省略该参数」等价的初始值，让新建表单的默认勾选状态与渲染层默认行为一致：
+//   include 的 showLabel/showDirective 省略＝false；list/pmenu 的 showDirective 省略＝显示（true）。
+function noteMarkerDirectiveBoolField(key, label, def) {
+  return { key: key, label: label, type: 'bool', def: def === 'true' ? 'true' : 'false' };
 }
 function noteMarkerDirectivePatternField(kind, placeholder) {
   return { key: 'pattern', label: '过滤条件（' + kind + '）', type: 'text', forbid: '"}',
@@ -8440,7 +8473,8 @@ function noteMarkerDetectFromSelection(raw) {
       : (Object.prototype.hasOwnProperty.call(p.attrs, 'picture') ? 'picture' : 'NAME'));
     const key = kind.toLowerCase();
     return { def: NOTE_MARKER_DEFS.find((d) => d.id === 'gp-include'),
-      preset: { kind, name: p.attrs[key] || '', showLabel: bool('showlabel'),
+      preset: { kind, name: p.attrs[key] || '',
+        showLabel: bool('showlabel'),
         showDirective: bool('showdirective'), folded: bool('folded') } };
   }
   if (head === 'list' || head === 'pmenu') {
@@ -8536,9 +8570,9 @@ function noteMarkerListDirectiveDef(kind, id, label) {
     syntax: '{list ' + kind + '="*关键字*" showCount=true showDirective=true folded=false}',
     fields: [
       noteMarkerDirectivePatternField(kind),
-      noteMarkerDirectiveTriField('showCount', '显示数量'),
-      noteMarkerDirectiveTriField('showDirective', '显示指令'),
-      noteMarkerDirectiveTriField('folded', '折叠'),
+      noteMarkerDirectiveBoolField('showCount', '显示数量', 'false'),
+      noteMarkerDirectiveBoolField('showDirective', '显示指令', 'true'),
+      noteMarkerDirectiveBoolField('folded', '折叠', 'false'),
     ],
     build: (v) => noteMarkerDirectiveBuild('list', kind, v.pattern,
       noteMarkerDirectiveBools(v, ['showCount', 'showDirective', 'folded']))
@@ -8547,9 +8581,9 @@ function noteMarkerListDirectiveDef(kind, id, label) {
 function noteMarkerPmenuDirectiveDef(kind, id, label) {
   const keys = kind === 'TERM' ? ['all', 'showDirective', 'folded'] : ['showDirective', 'folded'];
   const fields = [noteMarkerDirectivePatternField(kind)];
-  if (kind === 'TERM') fields.push(noteMarkerDirectiveTriField('all', '含无围栏术语'));
-  fields.push(noteMarkerDirectiveTriField('showDirective', '显示指令'));
-  fields.push(noteMarkerDirectiveTriField('folded', '折叠'));
+  if (kind === 'TERM') fields.push(noteMarkerDirectiveBoolField('all', '含无围栏术语', 'false'));
+  fields.push(noteMarkerDirectiveBoolField('showDirective', '显示指令', 'true'));
+  fields.push(noteMarkerDirectiveBoolField('folded', '折叠', 'false'));
   return {
     id: id, label: label, forbid: '"}',
     syntax: '{pmenu ' + kind + '="*关键字*"' + (kind === 'TERM' ? ' all=true' : '') + ' showDirective=true folded=false}',
@@ -8690,12 +8724,13 @@ const NOTE_MARKER_DEFS = [
         options: [['NAME', 'NAME 围栏'], ['TERM', 'TERM 围栏'], ['picture', '图片（相对 calendar.md）']] },
       { key: 'name', label: '名称／路径', type: 'gp-name', required: true, forbid: '"}',
         placeholder: '要插入的围栏名称、术语或图片档名' },
-      noteMarkerDirectiveTriField('showLabel', '显示名称'),
-      noteMarkerDirectiveTriField('showDirective', '显示指令'),
-      noteMarkerDirectiveTriField('folded', '折叠'),
+      noteMarkerDirectiveBoolField('showLabel', '显示名称', 'false'),
+      noteMarkerDirectiveBoolField('showDirective', '显示指令', 'false'),
+      noteMarkerDirectiveBoolField('folded', '折叠', 'false'),
     ],
-    check: (v) => (v.kind === 'picture' && v.showLabel === 'true')
-      ? 'picture 没有名称徽标，不必设 showLabel' : '',
+    // ⛔ 旧版对 picture 的 showLabel 加了错误的校验拦截，2026-11-24 移除：
+    //   徽标 🖼️ 常显与 showLabel 无关，但 showLabel 控制 legend 里的名称文字（见 tlGpIncludeBoxHtml），
+    //   picture 设 showLabel=true 会显示「测试用图片1.png」，完全有用。
     build: (v) => '{include ' + (v.kind === 'TERM' ? 'TERM' : (v.kind === 'picture' ? 'picture' : 'NAME')) + '=' +
       noteMarkerDirectiveQuote(v.name) + noteMarkerDirectiveBools(v, ['showLabel', 'showDirective', 'folded']) + '}'
   },
@@ -8796,35 +8831,34 @@ function noteMarkerFieldSelect(f, key, options, def) {
   return el;
 }
 function noteMarkerBoolFieldState(el) {
-  if (!el) return '';
-  return el.indeterminate ? '未指定' : (el.checked ? 'true' : 'false');
+  return el && el.checked ? 'true' : 'false';
 }
 function noteMarkerBoolField(f) {
   const label = document.createElement('label');
   label.className = 'gp-temp-toggle nm-bool-toggle';
-  label.title = '点击循环：未指定 → true → false';
+  label.title = '勾选＝true，取消勾选＝false';
   const el = document.createElement('input');
   el.type = 'checkbox';
   el.id = 'nmf_' + f.key;
-  el.dataset.tri = '1';
-  const v = typeof f.def === 'function' ? f.def() : (f.def == null ? '' : String(f.def));
-  el.checked = v === 'true';
-  el.indeterminate = v === '';                 // false → 空白勾选；未指定 → 半选
+  el.dataset.bool = '1';
+  const v = typeof f.def === 'function' ? f.def() : (f.def == null ? 'false' : String(f.def));
+  el.checked = v === 'true';                   // 只有 true/false 两态，无半选
   const state = document.createElement('span');
   state.className = 'nm-bool-state';
   const sync = () => { state.textContent = noteMarkerBoolFieldState(el); };
-  el.addEventListener('click', (e) => {
-    e.preventDefault();                        // 自管三态循环，不让浏览器直接 checked→false
-    if (el.indeterminate) { el.indeterminate = false; el.checked = true; }
-    else if (el.checked) { el.checked = false; }
-    else { el.indeterminate = true; }
-    sync();
-    el.dispatchEvent(new Event('change', { bubbles: true }));
-  });
+  el.addEventListener('change', sync);        // 原生 checkbox：浏览器自己 toggle，这里只同步旁注
   sync();
   label.appendChild(el);
   label.appendChild(state);
   return label;
+}
+// bool 参数归一：空值一律回落到该字段 def，与「指令省略该参数」的渲染语义一致。
+function noteMarkerBoolValue(def, key, raw) {
+  const f = (def && def.fields || []).find((x) => x.key === key);
+  const dv = f ? (typeof f.def === 'function' ? f.def() : String(f.def == null ? 'false' : f.def)) : 'false';
+  const s = raw == null ? '' : String(raw);
+  if (!s) return dv;
+  return (s === 'true' || s === 'on' || s === '1') ? 'true' : 'false';
 }
 function noteMarkerAlertScheduleField(f, ctl) {
   const box = document.createElement('div');
@@ -8890,10 +8924,8 @@ function noteMarkerApplyPreset(def, preset) {
     if (preset[key] == null) return;
     const el = document.getElementById('nmf_' + key);
     if (!el) return;
-    if (el.dataset && el.dataset.tri === '1') {
-      const v = String(preset[key]);
-      el.checked = v === 'true';
-      el.indeterminate = v === '';
+    if (el.dataset && el.dataset.bool === '1') {
+      el.checked = noteMarkerBoolValue(def, key, preset[key]) === 'true';
       const state = el.parentElement && el.parentElement.querySelector('.nm-bool-state');
       if (state) state.textContent = noteMarkerBoolFieldState(el);
       return;
@@ -9045,7 +9077,7 @@ function noteMarkerReadValues(def) {
   def.fields.forEach((f) => {
     if (f.type === 'bool') {
       const el = document.getElementById('nmf_' + f.key);
-      values[f.key] = !el ? '' : (el.indeterminate ? '' : (el.checked ? 'true' : 'false'));
+      values[f.key] = el && el.checked ? 'true' : 'false';
       return;
     }
     if (f.type === 'interval') {

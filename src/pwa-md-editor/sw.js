@@ -673,7 +673,7 @@
 //       五处 ?v 刷为 lite-sticky-refresh-restored-20261124，APP_VERSION/manifest 1.10.107→1.10.108。
 // v297：刷新讯息统一 2 秒自动关闭；使用者点了讯息框则取消计时转常驻并显示 × 自行关闭。
 //       五处 ?v 刷为 lite-sticky-refresh-auto-close-2s-20261124，APP_VERSION/manifest 1.10.108→1.10.109。
-const CACHE_NAME = 'md-editor-lite-v297';
+const CACHE_NAME = 'md-editor-lite-v298';
 const ASSETS = [
   './',
   './index.html',

@@ -165,6 +165,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.on('gp-term-ref-jump', (event, payload) => callback(payload));
   },
 
+  // 🆕 2026-11-24：便利贴 {whereuse TERM} 位置清单「定位」→ 主进程转发命中数据 → 主窗跳转
+  onGpWhereuseRequest: (callback) => {
+    ipcRenderer.on('gp-whereuse-jump', (event, payload) => callback(payload));
+  },
+
   // 🆕 2026-11-22：calendar 关闭时，便利贴 TERM 胶囊本地查找围栏
   onGpLocalTermJump: (callback) => {
     ipcRenderer.on('gp-local-term-jump', (event, payload) => callback(payload));
