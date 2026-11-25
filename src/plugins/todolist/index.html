@@ -2421,7 +2421,7 @@
     .gp-whereuse-list > li:last-child { border-bottom: 0; }
     .gp-whereuse-seq { flex: 0 0 auto; min-width: 1.8em; text-align: right; font-weight: 600; color: var(--ev-muted, #888); }
     .gp-whereuse-meta { font-size: .8em; color: var(--ev-muted, #888); white-space: nowrap; }
-    .gp-whereuse-who { font-weight: 600; }
+    .gp-whereuse-who { font-weight: 600; min-width: 0; overflow-wrap: anywhere; }
     /* 内容独占一行从行首开始（order:1 让 定位 按钮留在标题行）；⛔不要 flex:1 1 12em 挤在标题后留左空白 */
     .gp-whereuse-text { flex: 0 0 100%; order: 1; min-width: 0; overflow-wrap: anywhere; }
     /* 命中关键字反白（reverse）：前景/背景对调，覆盖 <mark> 预设黄底 */

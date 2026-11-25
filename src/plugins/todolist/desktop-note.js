@@ -2279,7 +2279,7 @@ function noteExtractGpAttrs(line) {
   const rest = inner.slice(pipe1 + 1);
   const pipe2 = rest.indexOf('|');
   const attrsPart = pipe2 >= 0 ? rest.slice(0, pipe2) : rest;
-  const termPart = pipe2 >= 0 ? rest.slice(pipe2 + 1) : '';
+  let termPart = pipe2 >= 0 ? rest.slice(pipe2 + 1) : '';
   // 解析 attrs 段
   const extra = [];
   let fg = '', bg = '', anim = '', termName = '', name = '', railStyle = '', railA = '', railB = '';
@@ -2302,13 +2302,15 @@ function noteExtractGpAttrs(line) {
     else if (k === 'name') { const q = noteQuotedVal(v); if (q) name = q; extra.push(p); }  // 裸值无效，原文留 extra
     else extra.push(p);
   });
-  // 兜底：attrs 段里可能有 TERM="xxx"（没有第二个 pipe 的情况），移到 termName
+  // 兜底：attrs 段里可能有 TERM="xxx"（没有第二个 pipe 的情况），移到 termName + term 字段
   const termInAttrs = extra.find((x) => /^TERM\s*=/i.test(x));
   if (termInAttrs) {
     const q = noteQuotedVal(termInAttrs.replace(/^TERM\s*=\s*/i, ''));
     if (q) termName = q;
     const idx = extra.indexOf(termInAttrs);
     if (idx >= 0) extra.splice(idx, 1);
+    // 🆕 2026-11-25：必须把 TERM 加回 termPart，否则写回时属性丢失
+    if (termPart) termPart += '|' + termInAttrs; else termPart = termInAttrs;
   }
   // 解析 term 段（用 | 分隔，如 alert|TERM=便利贴|remind）
   let alert = false;

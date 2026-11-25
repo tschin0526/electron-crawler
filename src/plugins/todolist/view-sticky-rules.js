@@ -926,10 +926,15 @@
     const pattern = patternCtrl ? String(patternCtrl.value == null ? '' : patternCtrl.value) : '';
     // ★ whereuse 框带 gp-name-list-box（复用临时过滤），必须先判它，否则误显示成 {list NAME}。
     if (box.classList.contains('gp-whereuse-box')) {
-      const termCtrl = gpGpDrawerCtrl(box, 'term');
-      const term = termCtrl ? String(termCtrl.value == null ? '' : termCtrl.value).trim()
+      const kind = String(box.getAttribute('data-gp-whereuse-kind') || 'TERM').toUpperCase();
+      const paramKey = kind === 'NAME' ? 'name' : kind === 'TEXT' ? 'text' : 'term';
+      const attrKey = kind === 'NAME' ? 'NAME' : kind === 'TEXT' ? 'TEXT' : 'TERM';
+      const ctrl = gpGpDrawerCtrl(box, paramKey);
+      let val = ctrl ? String(ctrl.value == null ? '' : ctrl.value).trim()
         : String(box.getAttribute('data-gp-whereuse') || '');
-      return ['{whereuse TERM=' + q(term),
+      if (kind === 'NAME') val = gpWhereuseNameCleanName(val);
+      if (kind === 'TEXT') val = gpWhereuseTextCleanText(val);
+      return ['{whereuse ' + attrKey + '=' + q(val),
         'showCount=' + (b('showCount') ? 'true' : 'false'),
         'showDirective=' + (b('showDirective') ? 'true' : 'false'),
         'folded=' + (b('folded') ? 'true' : 'false')].join(' ') + '}';
@@ -1163,10 +1168,10 @@
       if (nameCtrl) nameCtrl.value = chosen;
       if (chosen) gpDrawerApplyName(box, chosen);
     }
-    // ★ whereuse 的输入框是 TERM 本体：换词要重跑搜索，⛔不能落进 gp-name-list-box 的 pattern 过滤。
+    // ★ whereuse 的输入框是查询词本体（TERM／NAME）：换词要重跑搜索，⛔不能落进 gp-name-list-box 的 pattern 过滤。
     if (box.classList && box.classList.contains('gp-whereuse-box')) {
-      if ('term' in p) {
-        const term = String(p.term == null ? '' : p.term).trim();
+      if ('term' in p || 'name' in p) {
+        const term = String(('name' in p ? p.name : p.term) == null ? '' : ('name' in p ? p.name : p.term)).trim();
         const old = String(box.getAttribute('data-gp-whereuse') || '').trim();
         if (term !== old) gpWhereuseRerender(box, term, (typeof window !== 'undefined' && window.gpGpDrawerD) || null);
       }
@@ -1253,7 +1258,9 @@
     const hasPmenu = GP_PMENU_RE_ANY.test(String(rawText || ''));
     const hasTermList = GP_TERM_LIST_RE_ANY.test(String(rawText || ''));
     const hasWhereuse = GP_WHEREUSE_RE_ANY.test(String(rawText || ''));
-    if (!hasList && !hasPmenu && !hasTermList && !hasWhereuse && !GP_INCLUDE_RE_ANY.test(rawText)) return renderText(rawText);
+    const hasWhereuseName = GP_WHEREUSE_NAME_RE_ANY.test(String(rawText || ''));
+    const hasWhereuseText = GP_WHEREUSE_TEXT_RE_ANY.test(String(rawText || ''));
+    if (!hasList && !hasPmenu && !hasTermList && !hasWhereuse && !hasWhereuseName && !hasWhereuseText && !GP_INCLUDE_RE_ANY.test(rawText)) return renderText(rawText);
     // 占位符用普通 ASCII（真 renderer 剥 NUL 控制字符 → 裸露标记、注入失败）；%%TLINC_n_ZZ%% 真引擎验证可原样穿过。
     let seq = 0;
     const ph = new Map();
@@ -1303,15 +1310,37 @@
         return tok;
       });
     }
+    if (hasWhereuseName) {
+      prepared = String(prepared).replace(GP_WHEREUSE_NAME_RE_ONE, (m) => {
+        const p = gpParseWhereuseNameToken(m);
+        const tok = '%%TLWHEREN_' + (seq++) + '_ZZ%%';
+        ph.set(tok, { isWhereuseName: true, name: p.name, hits: gpWhereuseNameSearchCorpus((D && D.gpEvents) ? gpWhereuseCorpusFromEvents(D.gpEvents) : [], p.name),
+          showCount: p.showCount, directive: gpWhereuseNameCleanDirective(m, p.name), folded: p.folded, showDirective: p.showDirective,
+          boxNo: ++_gpWhereuseBoxSeq });
+        return tok;
+      });
+    }
+    if (hasWhereuseText) {
+      prepared = String(prepared).replace(GP_WHEREUSE_TEXT_RE_ONE, (m) => {
+        const p = gpParseWhereuseTextToken(m);
+        const tok = '%%TLWHERET_' + (seq++) + '_ZZ%%';
+        ph.set(tok, { isWhereuseText: true, text: p.text, hits: gpWhereuseTextSearchCorpus((D && D.gpEvents) ? gpWhereuseCorpusFromEvents(D.gpEvents) : [], p.text),
+          showCount: p.showCount, directive: gpWhereuseTextCleanDirective(m, p.text), folded: p.folded, showDirective: p.showDirective,
+          boxNo: ++_gpWhereuseBoxSeq });
+        return tok;
+      });
+    }
     let out = renderText(prepared);
     const whereuseHits = {};
     ph.forEach((v, tok) => {
-      const box = v.isWhereuse ? gpGpWhereuseBoxHtml(v.term, v.hits, v.showCount, v.directive, v.folded, v.showDirective, v.boxNo, D)
+      const box = v.isWhereuseText ? gpGpWhereuseBoxHtml(v.text, v.hits, v.showCount, v.directive, v.folded, v.showDirective, v.boxNo, D, 'TEXT')
+        : v.isWhereuseName ? gpGpWhereuseBoxHtml(v.name, v.hits, v.showCount, v.directive, v.folded, v.showDirective, v.boxNo, D, 'NAME')
+        : v.isWhereuse ? gpGpWhereuseBoxHtml(v.term, v.hits, v.showCount, v.directive, v.folded, v.showDirective, v.boxNo, D)
         : v.isPmenu ? gpPmenuBoxHtml(v.directive, v.folded, v.pattern, D, v.kind, v.all, v.showDirective)
         : v.isTermList ? gpTermListBoxHtml(v.list, v.showCount, v.directive, v.folded, D, v.pattern, v.showDirective)
         : v.isList ? gpNameListBoxHtml(v.list, v.showCount, v.directive, v.folded, D, v.pattern, v.showDirective)
         : gpIncludeBoxHtml(v.raw, v.nm, D, v.showLabel, v.directive, v.showDirective, v.kind, v.folded, idx, v.missing);
-      if (v.isWhereuse) whereuseHits[v.boxNo] = v.hits;
+      if (v.isWhereuse || v.isWhereuseName || v.isWhereuseText) whereuseHits[v.boxNo] = v.hits;
       out = out.split(tok).join(box);
     });
     return out + gpDrawerBodiesPayload(idx, D) + gpWhereusePayload(whereuseHits, D);
@@ -1321,6 +1350,10 @@
   //   {kind:'check',line,text,focus:'content'} / {kind:'block',start,end,name}，与内容定位小盒子同格式。
   const GP_WHEREUSE_RE_ANY = /\{whereuse\s+TERM\b[^}]*\}/i;
   const GP_WHEREUSE_RE_ONE = /\{whereuse\s+TERM\b[^}]*\}/gi;
+  const GP_WHEREUSE_NAME_RE_ANY = /\{whereuse\s+NAME\b[^}]*\}/i;
+  const GP_WHEREUSE_NAME_RE_ONE = /\{whereuse\s+NAME\b[^}]*\}/gi;
+  const GP_WHEREUSE_TEXT_RE_ANY = /\{whereuse\s+TEXT\b[^}]*\}/i;
+  const GP_WHEREUSE_TEXT_RE_ONE = /\{whereuse\s+TEXT\b[^}]*\}/gi;
   const GP_WHEREUSE_TEXT_MAX = 160;  // 结果清单每行显示上限（原 80，加倍以露出命中关键字）
   // ★ TERM 可能被贴进渲染后的术语胶囊 HTML → 还原纯词条名（与桌面/LITE 同口径）。
   function gpWhereuseCleanTerm(v) {
@@ -1382,6 +1415,7 @@
   // 纯函数：从语料搜 TERM → 与内容定位小盒子同格式的位置记录。
   // TERM 候选：[[TERM:释义]] 取名称段、TERM="..." 取属性段；都没有才用整行文字。
   //   ★ 比对统一走 gpGpNamePatternHit（无 * 完全比对），⛔不用 indexOf 子串。
+  // TERM 候选：只搜 [[TERM:释义:领域]]（取名称段）。⛔不搜 TERM="..." 属性。
   function gpWhereuseHit(text, pattern) {
     const s = String(text == null ? '' : text);
     const cands = [];
@@ -1390,13 +1424,7 @@
       if (nm) cands.push(nm);
       return m;
     });
-    s.replace(/\bTERM\s*=\s*(?:"([^"\n]*)"|'([^'\n]*)'|“([^”\n]*)”|([^\s}]+))/gi,
-      (m, a, b, c, d) => {
-        const nm = String(a || b || c || d || '').trim();
-        if (nm) cands.push(nm);
-        return m;
-      });
-    if (!cands.length) cands.push(s);
+    if (!cands.length) return false;
     return cands.some((c) => gpGpNamePatternHit(c, pattern));
   }
   function gpWhereuseSearchCorpus(corpus, term) {
@@ -1456,13 +1484,21 @@
     if (pos < s.length) out += esc(s.slice(pos));
     return out;
   }
-  // 清单正文抽成纯函数：输入框换 TERM 时原地重渲染这一段，不动整个结果框（折叠/抽屉位置不丢）。
-  function gpWhereuseListHtml(term, hits, esc) {
+  // ★ NAME 与 TERM 共享相同的渲染结构：序号 + 位置(行号) + 事件标题+日期 + 内容 + 定位按钮。
+  function gpWhereuseListHtml(term, hits, esc, kind) {
     const entries = hits || [];
+    const k = String(kind || 'TERM').toUpperCase();
+    const isName = k === 'NAME';
+    const isText = k === 'TEXT';
+    const missing = '<div class="gp-include-missing" role="status">' +
+      (isText ? '找不到符合 TEXT「' + esc(term) + '」的文本内容。'
+        : isName ? '找不到符合 NAME「' + esc(term) + '」的围栏小事件群。'
+        : '找不到 TERM「' + esc(term) + '」在档案中的出现位置。') + '</div>';
     return entries.length
       ? '<ul class="gp-name-list gp-whereuse-list">' + entries.map((it, idx) => {
           const who = String(it.title || '(无标题)') + (it.date ? ' · ' + it.date : '');
-          const where = it.kind === 'title' ? '标题' : (it.kind === 'fence' ? '围栏内第 ' + (it.line + 1) + ' 行' : '第 ' + (it.line + 1) + ' 行');
+          const where = isName ? ('便利贴/日程事件 起始第 ' + ((+it.line || 0) + 1) + ' 行')
+            : (it.kind === 'title' ? '标题' : '便利贴/日程事件 第 ' + ((+it.line || 0) + 1) + ' 行');
           return '<li data-list-item-name="' + esc(who + ' ' + it.text) + '" data-hit-idx="' + idx + '">' +
             '<span class="gp-whereuse-seq">' + (idx + 1) + '.</span>' +
             '<span class="gp-whereuse-meta">' + esc(where) + '</span> ' +
@@ -1470,25 +1506,36 @@
             '<span class="gp-whereuse-text">' + gpWhereuseHighlight(it.text, term, esc) + '</span>' +
             '<button type="button" class="gp-whereuse-go" data-hit-idx="' + idx + '" title="定位到此处">定位</button></li>';
         }).join('') + '</ul>'
-      : '<div class="gp-include-missing" role="status">找不到 TERM「' + esc(term) + '」在档案中的出现位置。</div>';
+      : missing;
   }
-  function gpGpWhereuseBoxHtml(term, hits, showCount, directive, folded, showDirective, boxNo, D) {
+  function gpGpWhereuseBoxHtml(term, hits, showCount, directive, folded, showDirective, boxNo, D, kind) {
     const esc = (s) => (D && typeof D.esc === 'function') ? D.esc(s) : String(s == null ? '' : s);
     const showDir = showDirective !== false;
     const initCount = (hits || []).length;
-    // ★ 这个输入框是 TERM 本体（不是结果过滤）：输入即重跑搜索并替换清单，不写 .md。
-    const filterBar = '<div class="gp-list-filter-bar"><input type="text" class="gp-list-filter-input" data-gp-temp-param="term" aria-label="临时更换 TERM 重新查找" placeholder="输入 TERM 重新查找位置（不写入文件）" value="' + esc(term || '') + '">' +
+    const k = String(kind || 'TERM').toUpperCase();
+    const isName = k === 'NAME';
+    const isText = k === 'TEXT';
+    const placeholder = isName ? '输入 NAME 重新查找围栏小事件群名称（不写入文件）'
+      : isText ? '输入 TEXT 重新查找文本位置（不写入文件）'
+      : '输入 TERM 重新查找位置（不写入文件）';
+    const ariaLabel = isName ? '临时更换 NAME 重新查找围栏名称'
+      : isText ? '临时更换 TEXT 重新查找'
+      : '临时更换 TERM 重新查找';
+    const filterBar = '<div class="gp-list-filter-bar"><input type="text" class="gp-list-filter-input" data-gp-temp-param="' + (isName ? 'name' : isText ? 'text' : 'term') + '" aria-label="' + ariaLabel + '" placeholder="' + placeholder + '" value="' + esc(term || '') + '">' +
       gpTempToggle(D, 'showCount', '显示数量', !!showCount, '临时切换 showCount') +
       gpTempToggle(D, 'showDirective', '显示指令', showDir, '临时切换 showDirective') +
       gpTempToggle(D, 'folded', '折叠', !!folded, '临时切换 folded（与折叠箭头同步）') +
       '<span class="gp-list-filter-count">' + initCount + '/' + initCount + '</span></div>';
-    const body = gpWhereuseListHtml(term, hits, esc);
+    const body = gpWhereuseListHtml(term, hits, esc, k);
     const foldAttr = folded === true ? ' checked data-gp-fold-default="1"'
       : folded === false ? ' data-gp-fold-default="0"' : '';
     const fold = '<label class="gp-include-fold" title="折叠/展开内容"><input type="checkbox" class="gp-include-fold-cb"' + foldAttr + '><span class="gp-include-fold-ico">\u25BE</span></label>';
+    const legendTitle = isName ? '围栏小事件群名称清单' : isText ? '文本内容位置清单' : '文字出现位置清单';
     const legend = '<legend class="gp-include-label">' + fold +
-      '<span class="gp-include-badge is-whereuse" title="文字出现位置清单">\u{1F4CD}</span>使用位置 <span class="gp-name-list-total"' + (showCount ? '' : ' hidden') + '>' + initCount + '</span></legend>';
-    return '<fieldset class="gp-include-box gp-name-list-box gp-whereuse-box" data-gp-whereuse="' + esc(term) + '" data-gp-whereuse-box="' + (+boxNo || 0) + '">' +
+      '<span class="gp-include-badge is-whereuse' + (isName ? ' gp-brace-mark' : '') + '" title="' + legendTitle + '">' + (isName ? '{ }' : '\u{1F4CD}') + '</span>' +
+      (isName ? '名称清单' : isText ? '文本位置' : '使用位置') + ' <span class="gp-name-list-total"' + (showCount ? '' : ' hidden') + '>' + initCount + '</span></legend>';
+    const fieldsetClass = 'gp-include-box gp-name-list-box gp-whereuse-box' + (isName ? ' is-whereuse-name' : '');
+    return '<fieldset class="' + fieldsetClass + '" data-gp-whereuse="' + esc(term) + '" data-gp-whereuse-kind="' + k + '" data-gp-whereuse-box="' + (+boxNo || 0) + '">' +
       legend + '<div class="gp-include-directive"' + (showDir ? '' : ' hidden') + '>' + esc(directive || '') + '</div>' +
       gpGpExecDirectiveHtml(showDir) + gpGpDrawerHtml(filterBar) + '<div class="gp-include-body">' + body + '</div></fieldset>';
   }
@@ -1530,19 +1577,160 @@
   function gpWhereuseRerender(box, term, D) {
     if (!box) return;
     const q = String(term == null ? '' : term).trim();
-    const hits = gpWhereuseSearchCorpus(gpWhereuseHitsRead().corpus, q);
+    const kind = String(box.getAttribute && box.getAttribute('data-gp-whereuse-kind') || 'TERM').toUpperCase();
+    const isName = kind === 'NAME';
+    const isText = kind === 'TEXT';
+    const hits = isText ? gpWhereuseTextSearchCorpus(gpWhereuseHitsRead().corpus, q)
+      : isName ? gpWhereuseNameSearchCorpus(gpWhereuseHitsRead().corpus, q)
+      : gpWhereuseSearchCorpus(gpWhereuseHitsRead().corpus, q);
     // ★ 点击定位优先读这里（重搜后的最新结果）；payload 只作翻页前的持久来源。
     box.__whereuseHits = hits;
     box.setAttribute('data-gp-whereuse', q);
     const esc = (s) => (D && typeof D.esc === 'function') ? D.esc(s) : String(s == null ? '' : s);
     const body = box.querySelector ? box.querySelector('.gp-include-body') : null;
-    if (body) body.innerHTML = gpWhereuseListHtml(q, hits, esc);
+    if (body) body.innerHTML = gpWhereuseListHtml(q, hits, esc, kind);
     const cnt = box.querySelector ? box.querySelector('.gp-list-filter-count') : null;
     if (cnt) cnt.textContent = hits.length + '/' + hits.length;
     const total = box.querySelector ? box.querySelector('.gp-name-list-total') : null;
     if (total) total.textContent = String(hits.length);
     gpWhereusePayloadUpdate(box, hits);
     gpGpDrawerSync(box);
+  }
+  // ========== 🆕 2026-11-25：{whereuse NAME="..."} 围栏小事件群名称清单（VIEW 引擎） ==========
+  function gpWhereuseNameReadName(s) {
+    const m = s.match(/\bNAME\s*=\s*"([^}]*)"/i) || s.match(/\bNAME\s*=\s*'([^}]*)'/i) || s.match(/\bNAME\s*=\s*"([^}]*)"/i);
+    return m ? m[1] : '';
+  }
+  // ★ NAME 值的 * 可能被 markdown 渲染成 <em>/<strong> → 还原成 * / **（保留万用字元语义）。
+  function gpWhereuseNameCleanName(v) {
+    let s = String(v == null ? '' : v).trim();
+    if (!s || !/[<>]/.test(s)) return s;
+    s = s.replace(/<\s*(em|i)\b[^>]*>([\s\S]*?)<\s*\/\s*\1\s*>/gi, '*$2*');
+    s = s.replace(/<\s*(strong|b)\b[^>]*>([\s\S]*?)<\s*\/\s*\1\s*>/gi, '**$2**');
+    s = s.replace(/<br\s*\/?>/gi, ' ');
+    s = s.replace(/<[^>]*>/g, '').replace(/<[^>]*$/g, '');
+    s = s.replace(/&quot;/gi, '"').replace(/&#39;/gi, "'").replace(/&lt;/gi, '<').replace(/&gt;/gi, '>').replace(/&nbsp;/gi, ' ').replace(/&amp;/gi, '&');
+    return s.replace(/[\u200B-\u200D\uFEFF]/g, '').trim();
+  }
+  function gpWhereuseNameCleanDirective(m, name) {
+    return String(m).replace(/(\bNAME\s*=\s*)"[^}]*"/i, '$1"' + name + '"')
+      .replace(/(\bNAME\s*=\s*)'[^}]*'/i, "$1'" + name + "'");
+  }
+  function gpParseWhereuseNameToken(token) {
+    const s = String(token == null ? '' : token);
+    const readVal = (key) => {
+      const m = s.match(new RegExp('(?:^|\\s)' + key + '\\s*=\\s*(?:"([^"\\n]*)"|\'([^\'\\n]*)\'|“([^”\\n]*)”|‘([^’\\n]*)’|([^\\s}]+))', 'i'));
+      if (!m) return '';
+      for (let i = 1; i < m.length; i++) if (m[i] != null) return String(m[i]).trim();
+      return '';
+    };
+    const bool = (key) => {
+      const v = readVal(key).toLowerCase();
+      return v === 'true' || v === 'on' || v === '1' || v === 'yes';
+    };
+    const sd = readVal('showDirective');
+    const name = gpWhereuseNameReadName(s) || readVal('NAME');
+    return { name: gpWhereuseNameCleanName(name),
+      showCount: bool('showCount'), folded: bool('folded'),
+      showDirective: sd ? bool('showDirective') : null };
+  }
+  // ★ NAME 候选：独立引用 {NAME="X"} / {NAME='X'} / {NAME=X} → 取 NAME 属性值。
+  //   ⛔围栏 open 行 '{gpJ|NAME="X"}' 里的 NAME 不算（那是围栏定义，不是「使用」围栏）。
+  function gpWhereuseNameHit(text, pattern) {
+    const s = String(text == null ? '' : text);
+    const cands = [];
+    s.replace(/\{NAME=(?:"([^"\n]*)"|'([^'\n]*)'|“([^”\n]*)”|‘([^’\n]*)’|([^{}\n]+))\}/g,
+      (m, a, b, c, d, e) => {
+        const nm = String(a || b || c || d || e || '').trim();
+        if (nm) cands.push(nm);
+        return m;
+      });
+    if (!cands.length) return false;
+    return cands.some((c) => gpGpNamePatternHit(c, pattern));
+  }
+  function gpWhereuseNameSearchCorpus(corpus, namePattern) {
+    const q = String(namePattern == null ? '' : namePattern).trim();
+    if (!q) return [];
+    const out = [];
+    (Array.isArray(corpus) ? corpus : []).forEach((ev) => {
+      if (!ev) return;
+      const uid = String(ev.uid || ''), title = String(ev.title || ''), date = String(ev.date || '');
+      const push = (anchor, text, kind, line) => out.push({
+        uid: uid, title: title, date: date, anchor: anchor, text: text, kind: kind, line: line
+      });
+      if (gpWhereuseNameHit(title, q)) push({ kind: 'card' }, title.slice(0, 200), 'title', -1);
+      (Array.isArray(ev.lines) ? ev.lines : []).forEach((raw, i) => {
+        if (!gpWhereuseNameHit(raw, q)) return;
+        const m = raw.match(/\{NAME=(?:"([^"\n]*)"|'([^'\n]*)'|“([^”\n]*)”|‘([^’\n]*)’|([^{}\n]+))\}/);
+        const hitName = m ? String(m[1] || m[2] || m[3] || m[4] || m[5] || '').trim() : '';
+        push({ kind: 'block', start: i, end: i, name: hitName, line: i, focus: 'content' },
+          raw.trim().slice(0, 200), 'fence', i);
+      });
+    });
+    return out;
+  }
+  // ========== 🆕 2026-11-26：{whereuse TEXT="..."} 任意文本内容搜索（VIEW 引擎） ==========
+  // 语义：列出所有包含搜索词（万用字元 *）的**任意文本行**——⛔不需要 [[TERM]] 或 {NAME=} 等标记。
+  function gpWhereuseTextReadText(s) {
+    const m = s.match(/\bTEXT\s*=\s*"([^}]*)"/i) || s.match(/\bTEXT\s*=\s*'([^}]*)'/i) || s.match(/\bTEXT\s*=\s*"([^}]*)"/i);
+    return m ? m[1] : '';
+  }
+  function gpWhereuseTextCleanText(v) {
+    let s = String(v == null ? '' : v).trim();
+    if (!s || !/[<>]/.test(s)) return s;
+    s = s.replace(/<\s*(em|i)\b[^>]*>([\s\S]*?)<\s*\/\s*\1\s*>/gi, '*$2*');
+    s = s.replace(/<\s*(strong|b)\b[^>]*>([\s\S]*?)<\s*\/\s*\1\s*>/gi, '**$2**');
+    s = s.replace(/<br\s*\/?>/gi, ' ');
+    s = s.replace(/<[^>]*>/g, '').replace(/<[^>]*$/g, '');
+    s = s.replace(/&quot;/gi, '"').replace(/&#39;/gi, "'").replace(/&lt;/gi, '<').replace(/&gt;/gi, '>').replace(/&nbsp;/gi, ' ').replace(/&amp;/gi, '&');
+    return s.replace(/[\u200B-\u200D\uFEFF]/g, '').trim();
+  }
+  function gpWhereuseTextCleanDirective(m, text) {
+    return String(m).replace(/(\bTEXT\s*=\s*)"[^}]*"/i, '$1"' + text + '"')
+      .replace(/(\bTEXT\s*=\s*)'[^}]*'/i, "$1'" + text + "'");
+  }
+  function gpParseWhereuseTextToken(token) {
+    const s = String(token == null ? '' : token);
+    const readVal = (key) => {
+      const m = s.match(new RegExp('(?:^|\\s)' + key + '\\s*=\\s*(?:"([^"\\n]*)"|\'([^\'\\n]*)\'|“([^”\\n]*)”|‘([^’\\n]*)’|([^\\s}]+))', 'i'));
+      if (!m) return '';
+      for (let i = 1; i < m.length; i++) if (m[i] != null) return String(m[i]).trim();
+      return '';
+    };
+    const bool = (key) => {
+      const v = readVal(key).toLowerCase();
+      return v === 'true' || v === 'on' || v === '1' || v === 'yes';
+    };
+    const sd = readVal('showDirective');
+    const text = gpWhereuseTextReadText(s) || readVal('TEXT');
+    return { text: gpWhereuseTextCleanText(text),
+      showCount: bool('showCount'), folded: bool('folded'),
+      showDirective: sd ? bool('showDirective') : null };
+  }
+  function gpWhereuseTextHit(text, pattern) {
+    return gpGpNamePatternHit(text, pattern);
+  }
+  function gpWhereuseTextSearchCorpus(corpus, textPattern) {
+    const q = String(textPattern == null ? '' : textPattern).trim();
+    if (!q) return [];
+    const out = [];
+    (Array.isArray(corpus) ? corpus : []).forEach((ev) => {
+      if (!ev) return;
+      const uid = String(ev.uid || ''), title = String(ev.title || ''), date = String(ev.date || '');
+      const push = (anchor, text, kind, line) => out.push({
+        uid: uid, title: title, date: date, anchor: anchor, text: text, kind: kind, line: line
+      });
+      if (gpWhereuseTextHit(title, q)) push({ kind: 'card' }, title.slice(0, GP_WHEREUSE_TEXT_MAX), 'title', -1);
+      (Array.isArray(ev.lines) ? ev.lines : []).forEach((raw, i) => {
+        if (!gpWhereuseTextHit(raw, q)) return;
+        const text = String(raw).replace(/^\s*(?:[-*+]\s+\[[ xX]\]\s?|[-*+]\s+|#{1,6}\s+)/, '').trim().slice(0, GP_WHEREUSE_TEXT_MAX);
+        const fence = (Array.isArray(ev.fences) ? ev.fences : []).find((r) => i > r.start && i < r.end);
+        if (fence) push({ kind: 'block', start: fence.start, end: fence.end,
+          name: String(fence.name || '').trim(), line: i, text: text, focus: 'content' }, text, 'fence', i);
+        else push({ kind: 'check', line: i, text: text, focus: 'content' }, text, 'line', i);
+      });
+    });
+    return out;
   }
   // ========== 🆕 2026-11-20：{list NAME} 具名围栏名称清单（共享 VIEW 引擎，与桌面/LITE 同口径） ==========
   //   · 数据源：从 D.gpIncludeIndex 的 key 重建（key 即围栏 NAME 小写；排除 'term:' 前缀）。
@@ -2087,7 +2275,7 @@
     const rest = s.slice(pipe1 + 1);
     const pipe2 = rest.indexOf('|');
     const attrsPart = pipe2 >= 0 ? rest.slice(0, pipe2) : rest;
-    const termPart = pipe2 >= 0 ? rest.slice(pipe2 + 1) : '';
+    let termPart = pipe2 >= 0 ? rest.slice(pipe2 + 1) : '';
     let fg = '', bg = '', anim = '', alert = false, termName = '', name = '', railStyle = '', railA = '', railB = '';
     // 解析 attrs 段（, 分隔）
     attrsPart.split(',').forEach((pair) => {
@@ -2100,7 +2288,12 @@
       if (k === 'fg') fg = resolveColorNameLocal(v);
       else if (k === 'bg') bg = resolveColorNameLocal(v);
       else if (k === 'anim' && /^(pulse|scan|data|aurora|orbit|arc|holo|signal|glitch)$/.test(v)) anim = v;
-      else if (/^TERM\s*$/i.test(k)) { const q = gpQuotedVal(v); if (q) termName = q; }  // TERM 在 attrs 段兜底
+      // TERM 在 attrs 段兜底（同时加回 termPart，避免写回时丢失）
+      else if (/^TERM\s*$/i.test(k)) {
+        const q = gpQuotedVal(v);
+        if (q) termName = q;
+        if (!termPart) termPart = 'TERM=' + (v.startsWith('"') || v.startsWith("'") ? v : '"' + v + '"');
+      }
       else if (k === 'name') { const q = gpQuotedVal(v); if (q) name = q; }
       else if (k === 'rail') {
         const rp = v.split('#');
@@ -2138,7 +2331,7 @@
         });
       });
     }
-    return { key: key, fg: fg, bg: bg, anim: anim, alert: alert, termName: termName, name: name, railStyle: railStyle, railA: railA, railB: railB };
+    return { key: key, fg: fg, bg: bg, anim: anim, alert: alert, term: termPart, termName: termName, name: name, railStyle: railStyle, railA: railA, railB: railB };
   }
   // 🆕 gp 单元里的 - [ ] 行：转成与一般 checkbox 相同的 .ev-md-check/.ev-cb（只读框、无圆点）。
   //    否则 D.markdown 会把它们渲染成 <ul><li>，便利贴 CSS 的 .body ul li{list-style:disc}
