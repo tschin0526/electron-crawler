@@ -6726,6 +6726,11 @@
     // ★ 2026-11-21：跳转层占深度号（按序返回）；手动点只显示「手动」＋行尾 ✕，不占号、不被按序消费。
     function tlGpReturnRenderPanel(panel, entries, remaining) {
       const esc = tlEscapeHtml;
+      const manualLocateOpen = panel.dataset.manualLocateOpen === 'true';
+      const previousTitle = panel.querySelector('.gp-return-manual-title');
+      const previousLine = panel.querySelector('.gp-return-manual-line');
+      const titleValue = previousTitle ? previousTitle.value : '';
+      const lineValue = previousLine ? previousLine.value : '';
       // 手动点 label 形如「便利贴「标题」·「位置文字」」：只把位置那段包成强调（大一号粗体）。
       // ★ 入参必须已 esc()，片段才能安全直进 innerHTML；只替换第一处，标题里的引号不会被误伤。
       // ★ 只强调「·「位置内容」」那一段（便利貼與主窗 label 現在同格式）；事件標題不放大，與便利貼一致。
@@ -6756,7 +6761,31 @@
       panel.innerHTML = '<div class="gp-return-list-title">返回定位</div>' +
         (entries.length
           ? '<div class="gp-return-list-rows" style="display:flex">' + rows + '</div>'
-          : '<div class="gp-return-list-empty">尚无定位点</div>');
+          : '<div class="gp-return-list-empty">尚无定位点</div>') +
+        '<button type="button" class="gp-return-manual-locate">\u{1F4CD} 手动定位点设定</button>' +
+        '<form class="gp-return-manual-form' + (manualLocateOpen ? ' open' : '') + '">' +
+          '<label>便利贴名称（日程事件标题）<input class="gp-return-manual-title" type="text" autocomplete="off" value="' + esc(titleValue) + '" required></label>' +
+          '<label>定位点所在行号（从 1 开始）<input class="gp-return-manual-line" type="number" min="1" step="1" value="' + esc(lineValue) + '" required></label>' +
+          '<div class="gp-return-manual-actions"><button type="button" data-act="cancel">取消</button><button type="submit">定位</button></div>' +
+        '</form>';
+      const manualLocateBtn = panel.querySelector('.gp-return-manual-locate');
+      const manualLocateForm = panel.querySelector('.gp-return-manual-form');
+      manualLocateBtn.addEventListener('click', (e) => {
+        e.preventDefault(); e.stopPropagation();
+        const open = !manualLocateForm.classList.contains('open');
+        panel.dataset.manualLocateOpen = String(open);
+        manualLocateForm.classList.toggle('open', open);
+        if (open) panel.querySelector('.gp-return-manual-title').focus();
+      });
+      manualLocateForm.addEventListener('submit', (e) => {
+        e.preventDefault(); e.stopPropagation();
+        tlGpManualLocateSubmit(panel);
+      });
+      manualLocateForm.querySelector('[data-act="cancel"]').addEventListener('click', (e) => {
+        e.preventDefault(); e.stopPropagation();
+        panel.dataset.manualLocateOpen = 'false';
+        manualLocateForm.classList.remove('open');
+      });
       panel.querySelectorAll('.gp-return-list-row').forEach((row) => {
         row.addEventListener('click', (e) => {
           e.preventDefault(); e.stopPropagation();
@@ -6772,6 +6801,68 @@
           }
         });
       });
+    }
+    function tlGpManualLocateSubmit(panel) {
+      const titleInput = panel.querySelector('.gp-return-manual-title');
+      const lineInput = panel.querySelector('.gp-return-manual-line');
+      const title = String(titleInput && titleInput.value || '').trim();
+      const lineNumber = Number(lineInput && lineInput.value);
+      if (!title) { showToast('请输入便利贴名称（日程事件标题）', 'danger'); return; }
+      if (!Number.isInteger(lineNumber) || lineNumber < 1) { showToast('行号必须是大于 0 的整数', 'danger'); return; }
+      const textArea = document.getElementById('taskText');
+      if (!textArea) { showToast('找不到当前日程内容', 'danger'); return; }
+      const wantedTitle = title.replace(/\s+/g, ' ').toLocaleLowerCase();
+      const events = tlAllEvents(textArea.value);
+      const matches = events.filter((ev) =>
+        ev && String(ev.title || '').replace(/\s+/g, ' ').trim().toLocaleLowerCase() === wantedTitle
+      );
+      if (!matches.length) { showToast('找不到日程事件：' + title, 'danger'); return; }
+
+      const visibleList = typeof tlActiveDetailList === 'function' ? tlActiveDetailList() : null;
+      let visibleCard = null;
+      if (visibleList && typeof visibleList.querySelectorAll === 'function') {
+        const cards = Array.prototype.slice.call(visibleList.querySelectorAll('.ev-item[data-uid]'));
+        visibleCard = cards.find((card) => {
+          if (!card.offsetParent) return false;
+          const titleEl = card.querySelector('.ev-title');
+          if (!titleEl) return false;
+          const clone = titleEl.cloneNode(true);
+          clone.querySelectorAll('button, svg, .ev-link, .ev-tags, .ev-span-badge, .ev-sub-progress, .ev-span-display-mode')
+            .forEach((el) => el.remove());
+          return String(clone.textContent || '').replace(/\s+/g, ' ').trim().toLocaleLowerCase() === wantedTitle;
+        }) || null;
+      }
+      if (!visibleCard && tlCalMode !== 'list' && typeof tlSetMode === 'function') {
+        tlSetMode('list');
+        setTimeout(() => tlGpManualLocateSubmit(panel), 0);
+        return;
+      }
+      const event = visibleCard
+        ? matches.find((ev) => String(ev.uid || '') === visibleCard.getAttribute('data-uid')) || matches[0]
+        : matches[0];
+      const line = lineNumber - 1;
+      const noteLines = String(event.notes || '').replace(/\r\n/g, '\n').split('\n');
+      if (line >= noteLines.length) {
+        showToast('「' + title + '」只有 ' + noteLines.length + ' 行，找不到第 ' + lineNumber + ' 行', 'danger');
+        return;
+      }
+      const lineText = tlPlainForMatch(noteLines[line]);
+      const lineRef = { line: line };
+      if (visibleCard) {
+        const target = tlLineAnchorInEvent(visibleCard, lineRef) ||
+          (lineText ? tlFindContentByText(visibleCard, lineText) : null);
+        if (!target) {
+          showToast('找不到「' + title + '」第 ' + lineNumber + ' 行的段落，请检查行号', 'danger');
+          return;
+        }
+        target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        tlBlinkFound(target);
+      } else if (!tlScrollToEventByUid(event.uid, lineRef, lineText)) {
+        showToast('无法定位日程事件：' + title, 'danger');
+        return;
+      }
+      panel.dataset.manualLocateOpen = 'false';
+      panel.style.display = 'none';
     }
     function tlGpReturnBtnShow(payload) {
       const entries = (payload && Array.isArray(payload.entries)) ? payload.entries : [];
@@ -7020,7 +7111,7 @@
       }
       return null;
     }
-    function tlScrollToEventByUid(uid, lineRef) {
+    function tlScrollToEventByUid(uid, lineRef, manualLineText) {
       if (!uid) return false;
       const txt = document.getElementById('taskText');
       let list = [];
@@ -7043,10 +7134,17 @@
       else tlDetailListScrollPending = true;
       tlRenderEventsContent();
       setTimeout(function () {
-        const row = document.querySelector('[data-uid="' + uid + '"]');
+        const activeList = typeof tlActiveDetailList === 'function' ? tlActiveDetailList() : null;
+        const eventCards = activeList && typeof activeList.querySelectorAll === 'function'
+          ? Array.prototype.slice.call(activeList.querySelectorAll('.ev-item[data-uid]')) : [];
+        const row = eventCards.find((card) =>
+          card.getAttribute('data-uid') === uid && card.offsetParent
+        ) || document.querySelector('[data-uid="' + uid + '"]');
         if (row && row.offsetParent) {
           // 🆕 有便利贴第一行锚点 → 滚到那一行（顶部对齐），不再是整张卡居中。
-          const anchor = tlLineAnchorInEvent(row, lineRef);
+          const anchor = tlLineAnchorInEvent(row, lineRef) ||
+            (typeof manualLineText === 'string' && manualLineText
+              ? tlFindContentByText(row, manualLineText) : null);
           if (anchor) {
             anchor.scrollIntoView({ behavior: 'smooth', block: 'start' });
             if (typeof tlBlinkFound === 'function') tlBlinkFound(anchor);
@@ -7057,7 +7155,15 @@
             }
             return;
           }
+          if (typeof manualLineText === 'string') {
+            showToast('找不到该行的段落，请检查行号', 'danger');
+            return;
+          }
           try { if (typeof tlJumpToEventCore === 'function') tlJumpToEventCore(uid); } catch (e) { /* 高亮失败不影响滚动 */ }
+          return;
+        }
+        if (typeof manualLineText === 'string') {
+          showToast('当前列表中找不到该行的段落，请检查事件内容或行号', 'danger');
           return;
         }
         const cell = document.querySelector('#tlEvYearGrid .ev-year-day[data-date="' + date + '"], #tlEvMonthGrid .ev-cell[data-date="' + date + '"]');
