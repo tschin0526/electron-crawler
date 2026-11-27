@@ -5268,14 +5268,27 @@ function notePlainForMatch(s) {
     .replace(/\s+/g, ' ')
     .trim();
 }
+// ★ 手动定位点「可定位段落」判定（两端必须完全同口径）：
+//   ① 带文字的分割线 `--- 2026-11-27(五) ---` 渲染成 <hr>，没有可定位的正文 → 不算段落
+//   ② 花刮号指令行 `- {whereuse TEXT="X" showCount=true}` 会渲染出可见结果框 → 算段落
+//   ③ 纯围栏标记 `{gpD}` / `{/gpD}` 只是结构标记 → 不算段落
+function noteManualHasContent(s) {
+  const raw = String(s == null ? '' : s);
+  if (/^[ \t]{0,3}(-{3,}|\*{3,}|_{3,})[ \t]+.+[ \t]+\1[ \t]*$/.test(raw)) return false;
+  const braces = raw.match(/\{[^{}]*\}/g) || [];
+  const hasDirective = braces.some((b) => {
+    const inner = b.slice(1, -1);
+    return /[ \t]/.test(inner) && !/^\/?gp[A-Za-z0-9_]*(?:[ \t][^}]*)?$/i.test(inner);
+  });
+  const t = raw.replace(/<!--[\s\S]*?-->/g, '').replace(/\{[^{}]*\}/g, ' ');
+  const rest = notePlainForMatch(t);
+  if (!rest && hasDirective) return true;
+  return !!rest;
+}
 // 🆕 手动定位点设定：输入行没有正文时，向前（行号递减）回退到最近一个有内容的可定位行（0-based）。
 function noteGpManualPrevContentLine(lines, from) {
-  const hasParagraph = (s) => {
-    const t = String(s == null ? '' : s).replace(/<!--[\s\S]*?-->/g, '').replace(/\{[^{}]*\}/g, ' ');
-    return !!t.trim() && !!notePlainForMatch(t);
-  };
   let i = Math.max(0, Math.min(+from || 0, lines.length - 1));
-  while (i > 0 && !hasParagraph(lines[i])) i -= 1;
+  while (i > 0 && !noteManualHasContent(lines[i])) i -= 1;
   return i;
 }
 // 🆕 便利贴侧「手动定位点设定」提交：标题+日期在【全部日程事件】里找目标，行号定位到该行段落。
@@ -5356,12 +5369,17 @@ async function noteGpManualLocateSubmit(panel) {
   // ① 主窗：既有「滚动」定位同一条链。
   //   ★ uid 直接随 payload 下发：主窗 tlCalEvents 快照的 uid 可能已过期，不能再只靠 key 反查；
   //   ★ line 带 gpManualPrevLines：主窗渲染后若输入行没段落，与便利贴按同一组候选向前回退；
+  //   ★ ★ 必须同时带 gpManualLines（原始备注行）：主窗靠它与便利贴同款「行序映射」定位花刮号
+  //       指令行 / 带文字分割线；缺了这份资料主窗只会退回 prevLines，落到前一行（用户实测差一行）。
   //   ★ line1/line0 同时下发，提示与锚点口径可核对（提示用 1-based，DOM 用 0-based）。
   try {
     ipcRenderer.invoke('wake-main-from-note', {
       action: 'scroll', key: uid, uid: uid, title: title, date: date,
       text: lineText,
-      line: { line: line0, line1: lineNumber, focus: 'content', gpManualPrevLines: prevLines }
+      line: {
+        line: line0, line1: lineNumber, focus: 'content',
+        gpManualPrevLines: prevLines, gpManualLines: lines
+      }
     }).catch(() => {});
   } catch (e) {}
   // ② 便利贴：在目录里找这笔日程对应的贴；有贴才翻页/开窗定位，没贴就主窗定位后明确告知
@@ -6478,7 +6496,10 @@ function noteLineCompact(s) {
     .toLocaleLowerCase();
 }
 function noteLineDomCandidates(root) {
-  const all = Array.prototype.slice.call(root.querySelectorAll(NOTE_CONTENT_SEL + ', tr'));
+  // ★ `.gp-include-directive` 是 div，花刮号指令原文（如 {whereuse ...}）就在它里面；
+  //   不加进候选，行序映射对「纯花刮号指令行」就会落空而误退到前一行。
+  const sel = NOTE_CONTENT_SEL + ', tr, .gp-include-directive, .gp-exec-directive';
+  const all = Array.prototype.slice.call(root.querySelectorAll(sel));
   const out = [];
   all.forEach((el) => {
     if (el.closest && (el.closest('.gp-badges') || el.closest('.ev-date') || el.closest('button'))) return;

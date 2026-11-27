@@ -6980,7 +6980,8 @@
           if (tlGpManualPrevContentLine(noteLines, i) !== i) continue;   // 只试「本身就有段落」的行
           const txt = tlPlainForMatch(noteLines[i]);
           if (!txt) continue;
-          const hit = tlLineAnchorInEvent(visibleCard, { line: i }) || tlFindContentByText(visibleCard, txt);
+          const hit = tlLineAnchorInEvent(visibleCard, { line: i }) || tlFindContentByText(visibleCard, txt) ||
+            tlLineByOrder(visibleCard, noteLines, i);
           if (hit) { target = hit; effectiveLine = i; effectiveText = txt; break; }
         }
         if (!target) {
@@ -7297,6 +7298,10 @@
           let anchor = tlLineAnchorInEvent(row, lineRef) ||
             (typeof manualLineText === 'string' && manualLineText
               ? tlFindContentByText(row, manualLineText) : null);
+          // ★ 花刮号指令行等没有 data-line / md-unit 外框 → 与便利贴同口径用「原文行序映射」命中那一行
+          if (!anchor && lineRef && Array.isArray(lineRef.gpManualLines)) {
+            anchor = tlLineByOrder(row, lineRef.gpManualLines, +lineRef.line);
+          }
           // ★ 手动定位点设定：渲染后该行仍找不到段落 → 沿「向前」候选逐行试，直到命中真实段落。
           //   与便利贴 noteFindUnitElement 的 gpManualPrevLines 同口径。
           if (!anchor && lineRef && Array.isArray(lineRef.gpManualPrevLines)) {
@@ -7360,6 +7365,47 @@
       });
       return exact || contained || null;
     }
+    // ★ 与便利贴 noteLineByOrder 同口径：把原文行按文档顺序映射到渲染后的任意正文元素。
+    //   花刮号指令行（`- {whereuse ...}`）没有 data-line，也不是 md-unit 外框，只能靠行序映射命中。
+    function tlManualLineCompact(s) {
+      const raw = String(s == null ? '' : s);
+      if (/^[\s|:-]+$/.test(raw) && raw.indexOf('-') >= 0 && raw.indexOf('|') >= 0) return '';
+      return tlPlainForMatch(raw)
+        .replace(/^\s*\|/, '').replace(/\|\s*$/, '')
+        .replace(/[{}|]/g, '').replace(/\s+/g, '')
+        .toLocaleLowerCase();
+    }
+    function tlLineByOrder(root, lines, n, from) {
+      if (!root || !Array.isArray(lines) || !Number.isFinite(+n) || +n < 0) return null;
+      // ★ `.gp-include-directive` 是 div，花刮号指令原文（如 {whereuse ...}）就在它里面；
+      //   不加进候选，行序映射对「纯花刮号指令行」就会落空而误退到前一行。
+      const sel = TL_CONTENT_SEL + ', tr, .gp-include-directive, .gp-exec-directive';
+      const all = Array.prototype.slice.call(root.querySelectorAll(sel));
+      const cands = [];
+      all.forEach((el) => {
+        if (el.closest && (el.closest('.gp-badges') || el.closest('.ev-date') || el.closest('button'))) return;
+        if (el.matches && (el.matches('td') || el.matches('th'))) {
+          const tr = el.parentElement;
+          if (!tr || cands.indexOf(tr) >= 0) return;
+          cands.push(tr);
+        } else if (cands.indexOf(el) < 0) cands.push(el);
+      });
+      const begin = Number.isFinite(+from) ? Math.max(0, +from) : 0;
+      let j = 0, hit = null;
+      for (let i = Math.min(begin, +n); i <= +n && j < cands.length; i += 1) {
+        const want = tlManualLineCompact(lines[i]);
+        if (!want) continue;
+        let found = -1;
+        for (let k = j; k < cands.length; k += 1) {
+          const got = tlManualLineCompact(cands[k].textContent);
+          if (!got) continue;
+          if (got === want || (want.length >= 4 && got.indexOf(want) >= 0)) { found = k; break; }
+        }
+        if (found < 0) continue;
+        hit = cands[found]; j = found + 1;
+      }
+      return hit;
+    }
     // 🆕 2026-11-21：手动定位点返回——只用「事件识别 + 事件内相对锚点」定位主窗。
     //   ① 事件已在画面上（常见情况）：直接滚到同一行，⛔不重绘、⛔不改日期游标，
     //      避免 tlScrollToEventByUid 的 400ms 重绘把刚定位好的画面盖掉；
@@ -7400,6 +7446,10 @@
       let target = (anchor && anchor.focus === 'content' && anchor.text)
         ? tlFindContentByText(row, anchor.text) : null;
       if (!target && typeof tlLineAnchorInEvent === 'function') target = tlLineAnchorInEvent(row, anchor) || null;
+      // ★ 花刮号指令行等无 data-line / md-unit 外框 → 与便利贴同口径的行序映射兜底
+      if (!target && anchor && Array.isArray(anchor.gpManualLines)) {
+        target = tlLineByOrder(row, anchor.gpManualLines, +anchor.line) || null;
+      }
       // ★ 手动定位点清单点选：该行找不到段落时沿前一行方向逐行试（与提交时的回退同口径）
       if (!target && anchor && Array.isArray(anchor.gpManualPrevLines)) {
         for (let i = 0; i < anchor.gpManualPrevLines.length; i += 1) {
@@ -9577,14 +9627,27 @@
         .replace(/\s+/g, ' ')
         .trim();
     }
+    // ★ 手动定位点「可定位段落」判定（两端必须完全同口径）：
+    //   ① 带文字的分割线 `--- 2026-11-27(五) ---` 渲染成 <hr>，没有可定位的正文 → 不算段落
+    //   ② 花刮号指令行 `- {whereuse TEXT="X" showCount=true}` 会渲染出可见结果框 → 算段落
+    //   ③ 纯围栏标记 `{gpD}` / `{/gpD}` 只是结构标记 → 不算段落
+    function tlManualHasContent(s) {
+      const raw = String(s == null ? '' : s);
+      if (/^[ \t]{0,3}(-{3,}|\*{3,}|_{3,})[ \t]+.+[ \t]+\1[ \t]*$/.test(raw)) return false;
+      const braces = raw.match(/\{[^{}]*\}/g) || [];
+      const hasDirective = braces.some((b) => {
+        const inner = b.slice(1, -1);
+        return /[ \t]/.test(inner) && !/^\/?gp[A-Za-z0-9_]*(?:[ \t][^}]*)?$/i.test(inner);
+      });
+      const t = raw.replace(/<!--[\s\S]*?-->/g, '').replace(/\{[^{}]*\}/g, ' ');
+      const rest = tlPlainForMatch(t);
+      if (!rest && hasDirective) return true;
+      return !!rest;
+    }
     // 🆕 手动定位点设定：输入行没有正文时，向前（行号递减）回退到最近一个有内容的可定位行（0-based）。
     function tlGpManualPrevContentLine(lines, from) {
-      const hasParagraph = (s) => {
-        const t = String(s == null ? '' : s).replace(/<!--[\s\S]*?-->/g, '').replace(/\{[^{}]*\}/g, ' ');
-        return !!t.trim() && !!tlPlainForMatch(t);
-      };
       let i = Math.max(0, Math.min(+from || 0, lines.length - 1));
-      while (i > 0 && !hasParagraph(lines[i])) i -= 1;
+      while (i > 0 && !tlManualHasContent(lines[i])) i -= 1;
       return i;
     }
     // 🆕 事件表单备注框命中行闪烁定位：「找出相同的项目」切换过来时，把备注框滚动到目标行、
