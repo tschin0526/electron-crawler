@@ -5285,11 +5285,23 @@ function noteManualHasContent(s) {
   if (!rest && hasDirective) return true;
   return !!rest;
 }
-// 🆕 手动定位点设定：输入行没有正文时，向前（行号递减）回退到最近一个有内容的可定位行（0-based）。
+// ★ 手动定位点：先向上找最近的可定位行；向上找不到（例如第 1 行是空行／分割线）再向下找。
+//   两端必须同口径，否则同一输入会落到不同行。
+function noteManualFindLocatable(lines, from) {
+  const arr = Array.isArray(lines) ? lines : [];
+  const n = Math.max(0, Math.min(+from || 0, arr.length - 1));
+  if (!arr.length) return { line: n, dir: 'none', found: false };
+  if (noteManualHasContent(arr[n])) return { line: n, dir: 'same', found: true };
+  for (let i = n - 1; i >= 0; i -= 1) {
+    if (noteManualHasContent(arr[i])) return { line: i, dir: 'up', found: true };
+  }
+  for (let i = n + 1; i < arr.length; i += 1) {
+    if (noteManualHasContent(arr[i])) return { line: i, dir: 'down', found: true };
+  }
+  return { line: n, dir: 'none', found: false };
+}
 function noteGpManualPrevContentLine(lines, from) {
-  let i = Math.max(0, Math.min(+from || 0, lines.length - 1));
-  while (i > 0 && !noteManualHasContent(lines[i])) i -= 1;
-  return i;
+  return noteManualFindLocatable(lines, from).line;
 }
 // 🆕 便利贴侧「手动定位点设定」提交：标题+日期在【全部日程事件】里找目标，行号定位到该行段落。
 //   ★ 主窗：复用既有「滚动」链（wake-main-from-note → tlScrollToEventByUid），会自动显示主窗；
@@ -5343,8 +5355,9 @@ async function noteGpManualLocateSubmit(panel) {
     showNoteMoveToast('「' + title + '」只有 ' + lines.length + ' 行，找不到第 ' + lineNumber + ' 行', true);
     return;
   }
-  // ★ 输入行是空行/只有标记 → 向前回退到最近一个有正文的行作为实际设定值
-  const line0 = noteGpManualPrevContentLine(lines, requestedLine0);
+  // ★ 输入行不可定位 → 先向上、再向下找到最近一个有正文的行作为实际设定值
+  const located = noteManualFindLocatable(lines, requestedLine0);
+  const line0 = located.line;
   const lineText = notePlainForMatch(lines[line0]);
   // ★ 渲染后若该行仍找不到段落，按同样的「向前」顺序逐行试前几行的正文（由 noteFindUnitElement 消费）
   const prevLines = [];
@@ -5360,9 +5373,9 @@ async function noteGpManualLocateSubmit(panel) {
     gpManualPrevLines: prevLines, gpManualLines: lines
   };
   if (line0 !== requestedLine0) {
-    // 提示明确写「输入行号 → 实际行号」，避免用户拿 MD 全档行号或表格行来对照误以为跳错。
+    // 提示明确写「输入行号 → 实际行号」，向上/向下都要说清楚（向上已找不到才向下找）。
     const msg = '备注正文第 ' + lineNumber + ' 行没有可定位的段落（空行／纯标记／表格行等），' +
-      '已按向前回退改用第 ' + (line0 + 1) + ' 行';
+      (located.dir === 'down' ? '已向下找到第 ' : '已向前回退到第 ') + (line0 + 1) + ' 行';
     if (typeof showFindSameBlinkToast === 'function') showFindSameBlinkToast(msg);
     else showNoteMoveToast(msg);
   }

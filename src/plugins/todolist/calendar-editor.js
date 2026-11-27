@@ -6913,8 +6913,9 @@
         showToast('「' + title + '」只有 ' + noteLines.length + ' 行，找不到第 ' + lineNumber + ' 行', 'danger');
         return;
       }
-      // ★ 该行是空行/只有标记时，先按原文向前回退到最近一个有正文的行
-      let line = tlGpManualPrevContentLine(noteLines, requestedLine);
+      // ★ 该行不可定位时：先向上找，向上找不到再向下找（与便利贴同口径）
+      const located = tlManualFindLocatable(noteLines, requestedLine);
+      let line = located.line;
       let lineText = tlPlainForMatch(noteLines[line]);
       let effectiveLine = line;
       let effectiveText = lineText;
@@ -6930,7 +6931,7 @@
         if (fallbackNotified || !Number.isFinite(+i) || +i === requestedLine) return;
         fallbackNotified = true;
         showToast('备注正文第 ' + lineNumber + ' 行没有可定位的段落（空行／纯标记／表格行等），' +
-          '已按向前回退改用第 ' + (+i + 1) + ' 行', 'success');
+          (located.dir === 'down' ? '已向下找到第 ' : '已向前回退到第 ') + (+i + 1) + ' 行', 'success');
       };
       // 🆕 双向联动：① 把这次设定写入共享手动定位点（两端 ▾ 清单都看得到、可点选回用）；
       //    ② 把同一事件同一行同步到便利贴（翻页/开窗＋滚动闪烁）。只执行一次，取最终回退后的行。
@@ -9644,11 +9645,24 @@
       if (!rest && hasDirective) return true;
       return !!rest;
     }
-    // 🆕 手动定位点设定：输入行没有正文时，向前（行号递减）回退到最近一个有内容的可定位行（0-based）。
+    // ★ 手动定位点：先向上找最近的可定位行；向上找不到（例如第 1 行是空行／分割线）再向下找。
+    //   与便利贴 noteManualFindLocatable 完全同口径。
+    function tlManualFindLocatable(lines, from) {
+      const arr = Array.isArray(lines) ? lines : [];
+      const n = Math.max(0, Math.min(+from || 0, arr.length - 1));
+      if (!arr.length) return { line: n, dir: 'none', found: false };
+      if (tlManualHasContent(arr[n])) return { line: n, dir: 'same', found: true };
+      for (let i = n - 1; i >= 0; i -= 1) {
+        if (tlManualHasContent(arr[i])) return { line: i, dir: 'up', found: true };
+      }
+      for (let i = n + 1; i < arr.length; i += 1) {
+        if (tlManualHasContent(arr[i])) return { line: i, dir: 'down', found: true };
+      }
+      return { line: n, dir: 'none', found: false };
+    }
+    // 🆕 手动定位点设定：输入行没有正文时，先向前回退；找不到再向后找（0-based）。
     function tlGpManualPrevContentLine(lines, from) {
-      let i = Math.max(0, Math.min(+from || 0, lines.length - 1));
-      while (i > 0 && !tlManualHasContent(lines[i])) i -= 1;
-      return i;
+      return tlManualFindLocatable(lines, from).line;
     }
     // 🆕 事件表单备注框命中行闪烁定位：「找出相同的项目」切换过来时，把备注框滚动到目标行、
     //   选中该行（浏览器原生选中即高亮），并叠加金底＋金环闪烁（4 秒）。
