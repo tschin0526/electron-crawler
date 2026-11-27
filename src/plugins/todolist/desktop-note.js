@@ -5211,7 +5211,7 @@ function noteGpReturnRenderPanel(panel, entries, remaining) {
       : '<div class="gp-return-list-empty">尚无定位点</div>') +
     '<button type="button" class="gp-return-manual-locate">\u{1F4CD} 手动定位点设定</button>' +
     '<form class="gp-return-manual-form' + (manualLocateOpen ? ' open' : '') + '">' +
-      '<label>便利贴名称（日程事件标题）<input class="gp-return-manual-title" type="text" autocomplete="off" value="' + esc(titleValue) + '" required></label>' +
+      '<label>便利贴名称（日程事件标题）<span class="gp-return-name-field"><input class="gp-return-manual-title" type="text" autocomplete="off" value="' + esc(titleValue) + '" required><button type="button" class="gp-return-name-caret" title="点此或双击输入框，列出可能的名称">\u25BC</button></span></label>' +
       '<label>日程日期（YYYY-MM-DD）<input class="gp-return-manual-date" type="text" inputmode="numeric" autocomplete="off" placeholder="2026-10-22" value="' + esc(dateValue) + '" required></label>' +
       '<label title="该日程备注正文内的行号，从 1 开始；不是整份 MD 档的绝对行号">定位点所在行号（备注正文，从 1 开始）<input class="gp-return-manual-line" type="number" min="1" step="1" value="' + esc(lineValue) + '" required></label>' +
       '<div class="gp-return-manual-actions"><button type="button" class="gp-return-manual-cancel">取消</button><button type="submit">定位</button></div>' +
@@ -5229,6 +5229,26 @@ function noteGpReturnRenderPanel(panel, entries, remaining) {
     });
     // 使用者一输入就标记为「本机编辑中」，重绘时保留本地草稿；提交/取消时清除，恢复以共享值为准
     manualLocateForm.addEventListener('input', () => { panel.dataset.manualLocateDirty = 'true'; });
+    // ★ 名称栏双击「或点右侧 ▼ 徽标」→ 按已输入的部分内容模糊搜索 → 展开清单 → 点选回填两栏
+    const titleEl = q('.gp-return-manual-title');
+    const dateEl = q('.gp-return-manual-date');
+    const nameCaret = q('.gp-return-name-caret');
+    if (titleEl && dateEl) {
+      const openNamePicks = async (e) => {
+        if (e) { e.preventDefault(); e.stopPropagation(); }
+        panel.dataset.manualLocateDirty = 'true';
+        const old = panel.querySelector('.gp-return-name-picks');
+        if (old && old.parentNode) old.parentNode.removeChild(old);
+        const cands = await noteGpLocateNameCandidates(titleEl.value);
+        if (!cands.length) {
+          showNoteMoveToast('找不到符合的日程名称', true);
+          return;
+        }
+        noteGpShowLocateNamePicks(panel, titleEl, dateEl, cands);
+      };
+      titleEl.addEventListener('dblclick', openNamePicks);
+      if (nameCaret) nameCaret.addEventListener('click', openNamePicks);
+    }
     manualLocateForm.addEventListener('submit', (e) => {
       e.preventDefault(); e.stopPropagation();
       panel.dataset.manualLocateDirty = 'false';
@@ -5255,6 +5275,23 @@ function noteGpReturnRenderPanel(panel, entries, remaining) {
       ipcRenderer.invoke('gp-return-remove', { token: +x.getAttribute('data-x-token') }).catch(() => {});
     });
   });
+}
+// ★ 手动定位点标题比对（宽容版，与主窗 tlNormManualTitle 完全同口径）：
+//   去掉 <BIG>/<CENTER>/<MARK>/<u>…</u> 等标签、# 标题前缀、强调符号、链接目标后比纯文字；
+//   并忽略所有空白（中文标题里随手多打的空格不该挡住比对）。
+//   ⛔ 只剥格式标记与空白、不删内容字，避免不同标题被误当成同一个。
+function noteNormManualTitle(s) {
+  return String(s == null ? '' : s)
+    .replace(/<\/?[A-Za-z][^>]*>/g, '')
+    .replace(/!\[([^\]]*)\]\([^)]*\)/g, '$1')
+    .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
+    .replace(/\[\[([^\]]*)\]\]/g, '$1')
+    .replace(/^\s*#{1,6}\s+/, '')
+    .replace(/^\s*>\s*/, '')
+    .replace(/[*_`~]/g, '')
+    .replace(/\s+/g, '')
+    .trim()
+    .toLocaleLowerCase();
 }
 // 🆕 手动定位点设定：正文行兜底文字，与主窗 tlPlainForMatch 同口径（去链接/标记/行首列表符号）。
 function notePlainForMatch(s) {
@@ -5307,6 +5344,82 @@ function noteGpManualPrevContentLine(lines, from) {
 //   ★ 主窗：复用既有「滚动」链（wake-main-from-note → tlScrollToEventByUid），会自动显示主窗；
 //   ★ 便利贴：按 uid 找到对应贴 → focus-sticky-note 带 focusUnit → 翻页/开窗后滚到该行并闪烁。
 //   ⛔ 不入返回栈：与主窗手动定位点设定同口径，只定位、不产生「返回原位」层数。
+// ★ 名称栏双击 → 按「已输入的部分内容」模糊搜索可能的名称清单（与主窗 tlGpLocateNameCandidates 同口径）。
+//   输入经 noteNormManualTitle 去标示/空白/小写后对事件标题做 includes 部分比对；数据源走 IPC。
+//   每项 {title: 显示用干净名称, date: 起始日}；无有效起始日者跳过；同名同日去重，日期升序。
+//   ⛔ 只提供候选清单，绝不自动回填、绝不代替提交；点选由 noteGpShowLocateNamePicks 负责回填两栏。
+async function noteGpLocateNameCandidates(partial) {
+  const needle = noteNormManualTitle(partial);
+  let res = null;
+  try { res = await ipcRenderer.invoke('sticky-note-order'); } catch (e) { res = null; }
+  const events = (res && Array.isArray(res.events)) ? res.events : [];
+  const seen = Object.create(null);
+  const out = [];
+  events.forEach((ev) => {
+    if (!ev) return;
+    const full = String(ev.title || '');
+    if (needle && noteNormManualTitle(full).indexOf(needle) < 0) return;
+    const d = String(ev.date || '');
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return;
+    const clean = full.replace(/<\/?[A-Za-z][^>]*>/g, '').replace(/^\s*#{1,6}\s+/, '')
+      .replace(/^\s*>\s*/, '').replace(/\s+/g, ' ').trim();
+    const key = noteNormManualTitle(clean) + '\u0000' + d;
+    const hasSticky = (parseInt(ev.sticky, 10) || 0) > 0;
+    // 文件行数＝备注正文行数（手动定位行号同口径），供清单显示、便于判断行号可填范围
+    const lineCount = String(ev.notes || '').replace(/\r\n/g, '\n').split('\n').length;
+    if (seen[key]) {
+      if (hasSticky) seen[key].hasSticky = true;
+      if (lineCount > seen[key].lineCount) seen[key].lineCount = lineCount;
+      return;
+    }
+    const row = { title: clean || full, date: d, hasSticky: hasSticky, lineCount: lineCount };
+    seen[key] = row;
+    out.push(row);
+  });
+  return out.sort((a, b) => a.date.localeCompare(b.date) || a.title.localeCompare(b.title));
+}
+function noteGpShowLocateNamePicks(panel, titleEl, dateEl, cands) {
+  const old = panel.querySelector('.gp-return-name-picks');
+  if (old) old.remove();
+  const box = document.createElement('div');
+  box.className = 'gp-return-name-picks';
+  const head = document.createElement('div');
+  head.className = 'gp-return-name-picks-head';
+  head.textContent = '找到 ' + cands.length + ' 笔，请选择（名称 / 起始日期 / 便利贴 / 行数）：';
+  box.appendChild(head);
+  cands.forEach((c) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'gp-return-name-pick';
+    b.setAttribute('data-title', c.title);
+    b.setAttribute('data-date', c.date);
+    const name = document.createElement('span');
+    name.className = 'gp-return-name-pick-title';
+    name.textContent = c.title;
+    const date = document.createElement('span');
+    date.className = 'gp-return-name-pick-date';
+    date.textContent = c.date;
+    const stick = document.createElement('span');
+    stick.className = 'gp-return-name-pick-sticky' + (c.hasSticky ? ' has' : '');
+    stick.textContent = c.hasSticky ? '\u{1F4CC}' : '\u2014';   // 📌 有便利贴 / — 无
+    stick.title = c.hasSticky ? '该日程有便利贴' : '该日程没有便利贴';
+    const lines = document.createElement('span');
+    lines.className = 'gp-return-name-pick-lines';
+    lines.textContent = c.lineCount + ' 行';
+    lines.title = '文件行数（备注正文，可填行号 1 ~ ' + c.lineCount + '）';
+    b.appendChild(name); b.appendChild(date); b.appendChild(stick); b.appendChild(lines);
+    b.addEventListener('click', (e) => {
+      e.preventDefault(); e.stopPropagation();
+      titleEl.value = c.title;
+      dateEl.value = c.date;
+      panel.dataset.manualLocateDirty = 'true';
+      if (box.parentNode) box.parentNode.removeChild(box);
+      showNoteMoveToast('已带入：' + c.title + '（' + c.date + '）', false);
+    });
+    box.appendChild(b);
+  });
+  if (titleEl && titleEl.parentNode) titleEl.parentNode.insertBefore(box, titleEl.nextSibling);
+}
 async function noteGpManualLocateSubmit(panel) {
   const titleEl = panel.querySelector('.gp-return-manual-title');
   const dateEl = panel.querySelector('.gp-return-manual-date');
@@ -5320,9 +5433,8 @@ async function noteGpManualLocateSubmit(panel) {
   let res = null;
   try { res = await ipcRenderer.invoke('sticky-note-order'); } catch (e) { res = null; }
   const events = (res && Array.isArray(res.events)) ? res.events : [];
-  // 与主窗同口径：档案标题可能带 Markdown `# ` 前缀，界面/输入都是纯名称，比对前统一规范化
-  const normManualTitle = (s) => String(s || '').replace(/^\s*#{1,6}\s+/, '').replace(/\s+/g, ' ').trim().toLocaleLowerCase();
-  const wanted = normManualTitle(title);
+  // 宽容比对（与主窗 tlNormManualTitle 完全同口径）：输入不必照抄 MD/HTML 标示
+  const wanted = noteNormManualTitle(title);
   // ★ 名称即日程事件标题，同一份资料；日期消歧口径与主窗 tlGpManualLocateSubmit 完全一致：
   //   ① date 起始日精确 → ② endDate 结束日精确 → ③ 落在 [date,endDate] 区间 → ④ 显示日（today/last）
   //   跨天事件的 date 只是起始日，用户看到的是整段区间，因此区间内任一天都要能找到。
@@ -5342,7 +5454,7 @@ async function noteGpManualLocateSubmit(panel) {
   const ev = events
     .map((x, i) => ({
       x, i,
-      rank: (x && normManualTitle(x.title) === wanted) ? rankEv(x) : -1
+      rank: (x && noteNormManualTitle(x.title) === wanted) ? rankEv(x) : -1
     }))
     .filter((z) => z.rank >= 0)
     .sort((a, b) => (a.rank - b.rank) || (a.i - b.i))   // 稳定：同级维持原顺序 → 取第一笔
@@ -6484,6 +6596,12 @@ function noteFindContentByText(body, text) {
   let exact = null, contained = null, containedLen = Infinity;
   cands.forEach((el) => {
     if (el.closest && el.closest('.gp-badges')) return;
+    // ★ 花刮号展开结果项不是原文正文，不能当文字兜底锚点（与主窗同口径）
+    if (el.closest && el.closest('.gp-include-box')) {
+      const isDirective = (el.matches && (el.matches('.gp-include-directive') || el.matches('.gp-exec-directive')))
+        || (el.querySelector && el.querySelector('.gp-include-directive, .gp-exec-directive'));
+      if (!isDirective) return;
+    }
     const t = normalizeUnitText(el.textContent);
     if (!t) return;
     if (t === want) { if (!exact) exact = el; }
@@ -6516,6 +6634,14 @@ function noteLineDomCandidates(root) {
   const out = [];
   all.forEach((el) => {
     if (el.closest && (el.closest('.gp-badges') || el.closest('.ev-date') || el.closest('button'))) return;
+    // ★ 花刮号展开结果（fieldset.gp-include-box）里的 li/p/... 是「指令执行后的结果项」，
+    //   不是原文正文行；收进候选会让行序错位、定位到展开结果第 N 项。只保留指令原文行本身
+    //   （.gp-include-directive / .gp-exec-directive），其余框内正文一律排除。（与主窗同口径）
+    if (el.closest && el.closest('.gp-include-box')) {
+      const isDirective = (el.matches && (el.matches('.gp-include-directive') || el.matches('.gp-exec-directive')))
+        || (el.querySelector && el.querySelector('.gp-include-directive, .gp-exec-directive'));
+      if (!isDirective) return;
+    }
     // 表格的 td/th 合并成整行 <tr>：原文一行表格对应一个渲染单元
     if (el.matches && (el.matches('td') || el.matches('th'))) {
       const tr = el.parentElement;
@@ -6530,18 +6656,31 @@ function noteLineByOrder(root, lines, n, from) {
   if (!root || !Array.isArray(lines) || !Number.isFinite(+n) || +n < 0) return null;
   const cands = noteLineDomCandidates(root);
   const begin = Number.isFinite(+from) ? Math.max(0, +from) : 0;
-  let j = 0, hit = null;
+  let j = 0, hit = null, lastFound = -1;
   for (let i = Math.min(begin, +n); i <= +n && j < cands.length; i += 1) {
     const want = noteLineCompact(lines[i]);
     if (!want) continue;
+    // ★ 软换行合并段落：连续纯文本行（如 A/B/C…）在 Markdown 里渲染成同一个 <p>，
+    //   原文多行对应一个 DOM 元素。若上一个命中的候选文本里还含当前短文本行，就复用它，
+    //   ⛔不再消耗新候选——否则后续行全部落空、hit 停在更前面的段落（用户回报「设136闪132」）。
+    //   仅对短行（<4 字）且候选文本更长时复用，避免破坏「相同长文字多行按顺序消歧」。
+    if (lastFound >= 0 && lastFound < cands.length && want.length < 4) {
+      const prev = noteLineCompact(cands[lastFound].textContent);
+      if (prev && prev.length > want.length && prev.indexOf(want) >= 0) {
+        hit = cands[lastFound];
+        continue;
+      }
+    }
     let found = -1;
     for (let k = j; k < cands.length; k += 1) {
       const got = noteLineCompact(cands[k].textContent);
       if (!got) continue;
-      if (got === want || (want.length >= 4 && got.indexOf(want) >= 0)) { found = k; break; }
+      if (got === want || (want.length >= 4 && got.indexOf(want) >= 0)
+        || (want.length >= 1 && want.length < 4 && got.length > want.length && got.indexOf(want) >= 0)) { found = k; break; }
     }
     if (found < 0) continue;
     hit = cands[found];
+    lastFound = found;
     j = found + 1;
   }
   return hit;

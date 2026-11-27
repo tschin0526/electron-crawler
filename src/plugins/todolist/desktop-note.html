@@ -394,6 +394,36 @@
       -webkit-app-region: no-drag;
     }
     .gp-return-manual-form input:focus { outline: 1px solid #D4AF37; border-color: #D4AF37; }
+    /* 名称栏右侧 ▼ 徽标：与双击等价，点开可能的名称清单 */
+    .gp-return-name-field { position: relative; display: block; }
+    .gp-return-name-field input { padding-right: 26px !important; }
+    .gp-return-name-caret {
+      position: absolute; right: 1px; top: 1px; bottom: 1px; width: 24px;
+      border: 0; border-left: 1px solid rgba(127,127,127,.35); border-radius: 0 5px 5px 0;
+      background: rgba(212,175,55,.16); color: #9a7b12; font-size: 10px; line-height: 1; cursor: pointer;
+      -webkit-app-region: no-drag;
+    }
+    .gp-return-name-caret:hover { background: rgba(212,175,55,.38); }
+    /* 名称栏双击 → 部分名称模糊搜索的双栏清单（名称 / 起始日期 / 便利贴），实色不透明、贴合金色主题 */
+    .gp-return-name-picks {
+      display: flex; flex-direction: column; gap: 3px; margin-top: -2px;
+      padding: 5px; border: 1px solid #D4AF37; border-radius: 7px;
+      background: var(--note-bg, #fff); color: var(--note-fg, #333); box-shadow: 0 6px 18px rgba(0,0,0,.28);
+      -webkit-app-region: no-drag;
+    }
+    .gp-return-name-picks-head { font-size: 10px; color: #9a7b12; padding: 0 2px 2px; }
+    .gp-return-name-pick {
+      display: flex; align-items: center; gap: 8px; width: 100%; text-align: left; padding: 3px 7px;
+      border: 1px solid rgba(212,175,55,.45); border-radius: 5px;
+      background: var(--note-bg, #fff); color: inherit; font: inherit; font-size: 11px; cursor: pointer;
+      -webkit-app-region: no-drag;
+    }
+    .gp-return-name-pick:hover { background: rgba(212,175,55,.22); border-color: #D4AF37; }
+    .gp-return-name-pick-title { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .gp-return-name-pick-date { flex: 0 0 auto; font-size: 10px; color: #9a7b12; font-variant-numeric: tabular-nums; }
+    .gp-return-name-pick-sticky { flex: 0 0 auto; min-width: 14px; text-align: center; font-size: 10px; color: #999; }
+    .gp-return-name-pick-sticky.has { color: #c8912a; }
+    .gp-return-name-pick-lines { flex: 0 0 auto; min-width: 30px; text-align: right; font-size: 9.5px; color: #9a7b12; font-variant-numeric: tabular-nums; }
     .gp-return-manual-actions { display: flex; justify-content: flex-end; gap: 6px; }
     .gp-return-manual-actions button {
       padding: 3px 9px; border: 1px solid rgba(212,175,55,.65); border-radius: 6px;

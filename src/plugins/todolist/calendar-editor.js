@@ -2409,6 +2409,8 @@
           endDate: ev.endDate || '',
           // 手动定位点日期消歧要按「显示日」口径匹配，便利贴窗收不到原始事件对象，故一并下发
           spanDisplay: ev.spanDisplay || '',
+          // 便利贴旗标：手动定位名称清单要显示「该选项是否有便利贴」
+          sticky: Math.max(0, parseInt(ev.sticky, 10) || 0),
           // ⚠️ 只有 INCLUDE(ro) 行程才带 src（与主进程目录一致：普通档 src 恒空＝主档）
           src: ev.ro ? String(ev.src || '') : '',
           notes: ev.notes || ''
@@ -6780,7 +6782,7 @@
           : '<div class="gp-return-list-empty">尚无定位点</div>') +
         '<button type="button" class="gp-return-manual-locate">\u{1F4CD} 手动定位点设定</button>' +
         '<form class="gp-return-manual-form' + (manualLocateOpen ? ' open' : '') + '">' +
-          '<label>便利贴名称（日程事件标题）<input class="gp-return-manual-title" type="text" autocomplete="off" value="' + esc(titleValue) + '" required></label>' +
+          '<label>便利贴名称（日程事件标题）<span class="gp-return-name-field"><input class="gp-return-manual-title" type="text" autocomplete="off" value="' + esc(titleValue) + '" required><button type="button" class="gp-return-name-caret" title="点此或双击输入框，列出可能的名称">\u25BC</button></span></label>' +
           '<label>日程日期（YYYY-MM-DD）<input class="gp-return-manual-date" type="text" inputmode="numeric" autocomplete="off" placeholder="2026-10-22" value="' + esc(dateValue) + '" required></label>' +
           '<label title="该日程备注正文内的行号，从 1 开始；不是整份 MD 档的绝对行号">定位点所在行号（备注正文，从 1 开始）<input class="gp-return-manual-line" type="number" min="1" step="1" value="' + esc(lineValue) + '" required></label>' +
           '<div class="gp-return-manual-actions"><button type="button" class="gp-return-manual-cancel">取消</button><button type="submit">定位</button></div>' +
@@ -6798,6 +6800,26 @@
         });
         // 使用者一输入就标记为「本机编辑中」，重绘时保留本地草稿；提交/取消时清除，恢复以共享值为准
         manualLocateForm.addEventListener('input', () => { panel.dataset.manualLocateDirty = 'true'; });
+        // ★ 名称栏双击「或点右侧 ▼ 徽标」→ 按已输入的部分内容模糊搜索 → 展开清单 → 点选回填两栏
+        const titleInput = q('.gp-return-manual-title');
+        const dateInput = q('.gp-return-manual-date');
+        const nameCaret = q('.gp-return-name-caret');
+        if (titleInput && dateInput) {
+          const openNamePicks = (e) => {
+            if (e) { e.preventDefault(); e.stopPropagation(); }
+            panel.dataset.manualLocateDirty = 'true';
+            const old = panel.querySelector('.gp-return-name-picks');
+            if (old && old.parentNode) old.parentNode.removeChild(old);
+            const cands = tlGpLocateNameCandidates(titleInput.value);
+            if (!cands.length) {
+              if (typeof showToast === 'function') showToast('找不到符合的日程名称', 'danger');
+              return;
+            }
+            tlGpShowLocateNamePicks(panel, titleInput, dateInput, cands);
+          };
+          titleInput.addEventListener('dblclick', openNamePicks);
+          if (nameCaret) nameCaret.addEventListener('click', openNamePicks);
+        }
         manualLocateForm.addEventListener('submit', (e) => {
           e.preventDefault(); e.stopPropagation();
           panel.dataset.manualLocateDirty = 'false';
@@ -6827,6 +6849,85 @@
         });
       });
     }
+    // ★ 名称栏双击 → 按「已输入的部分内容」模糊搜索可能的名称清单（名称 + 起始日期）。
+    //   输入先经 tlNormManualTitle 去标示/空白/小写，再对事件标题规范化串做 includes 部分比对。
+    //   每项 {title: 显示用干净名称, date: 起始日 YYYY-MM-DD}；无有效起始日的事件跳过；同名同日去重。
+    //   ⛔ 只提供候选清单，绝不自动回填、绝不代替提交；点选由 tlGpShowLocateNamePicks 负责回填两栏。
+    function tlGpLocateNameCandidates(partial) {
+      const textArea = document.getElementById('taskText');
+      if (!textArea) return [];
+      const needle = tlNormManualTitle(partial);
+      const events = tlAllEvents(textArea.value);
+      const seen = Object.create(null);
+      const out = [];
+      (events || []).forEach((ev) => {
+        if (!ev) return;
+        const full = String(ev.title || '');
+        if (needle && tlNormManualTitle(full).indexOf(needle) < 0) return;
+        const d = String(ev.date || '');
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return;   // 清单要显示起始日，无有效日期者不列
+        // 显示名优先去 # / <TAG> 等标示；⟵ 用与标题宽容比对同源的清洗，但保留原大小写以便阅读
+        const clean = full.replace(/<\/?[A-Za-z][^>]*>/g, '').replace(/^\s*#{1,6}\s+/, '')
+          .replace(/^\s*>\s*/, '').replace(/\s+/g, ' ').trim();
+        const key = tlNormManualTitle(clean) + '\u0000' + d;
+        const hasSticky = (parseInt(ev.sticky, 10) || 0) > 0;
+        // 文件行数＝备注正文行数（手动定位行号同口径），供清单显示、便于判断行号可填范围
+        const lineCount = String(ev.notes || '').replace(/\r\n/g, '\n').split('\n').length;
+        if (seen[key]) {
+          // 同名同日合并为一项：任一笔有便利贴即显示「有」；行数取较大者（覆盖最全）
+          if (hasSticky) seen[key].hasSticky = true;
+          if (lineCount > seen[key].lineCount) seen[key].lineCount = lineCount;
+          return;
+        }
+        const row = { title: clean || full, date: d, hasSticky: hasSticky, lineCount: lineCount };
+        seen[key] = row;
+        out.push(row);
+      });
+      return out.sort((a, b) => a.date.localeCompare(b.date) || a.title.localeCompare(b.title));
+    }
+    // 在名称栏下方展开双栏清单（名称 | 起始日期），点选即把两项回填到表单对应栏位。
+    function tlGpShowLocateNamePicks(panel, titleInput, dateInput, cands) {
+      const old = panel.querySelector('.gp-return-name-picks');
+      if (old) old.remove();
+      const box = document.createElement('div');
+      box.className = 'gp-return-name-picks';
+      const head = document.createElement('div');
+      head.className = 'gp-return-name-picks-head';
+      head.textContent = '找到 ' + cands.length + ' 笔，请选择（名称 / 起始日期 / 便利贴 / 行数）：';
+      box.appendChild(head);
+      cands.forEach((c) => {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'gp-return-name-pick';
+        b.setAttribute('data-title', c.title);
+        b.setAttribute('data-date', c.date);
+        const name = document.createElement('span');
+        name.className = 'gp-return-name-pick-title';
+        name.textContent = c.title;
+        const date = document.createElement('span');
+        date.className = 'gp-return-name-pick-date';
+        date.textContent = c.date;
+        const stick = document.createElement('span');
+        stick.className = 'gp-return-name-pick-sticky' + (c.hasSticky ? ' has' : '');
+        stick.textContent = c.hasSticky ? '\u{1F4CC}' : '\u2014';   // 📌 有便利贴 / — 无
+        stick.title = c.hasSticky ? '该日程有便利贴' : '该日程没有便利贴';
+        const lines = document.createElement('span');
+        lines.className = 'gp-return-name-pick-lines';
+        lines.textContent = c.lineCount + ' 行';
+        lines.title = '文件行数（备注正文，可填行号 1 ~ ' + c.lineCount + '）';
+        b.appendChild(name); b.appendChild(date); b.appendChild(stick); b.appendChild(lines);
+        b.addEventListener('click', (e) => {
+          e.preventDefault(); e.stopPropagation();
+          titleInput.value = c.title;
+          dateInput.value = c.date;
+          panel.dataset.manualLocateDirty = 'true';
+          if (box.parentNode) box.parentNode.removeChild(box);
+          if (typeof showToast === 'function') showToast('已带入：' + c.title + '（' + c.date + '）', 'success');
+        });
+        box.appendChild(b);
+      });
+      if (titleInput && titleInput.parentNode) titleInput.parentNode.insertBefore(box, titleInput.nextSibling);
+    }
     function tlGpManualLocateSubmit(panel) {
       const titleInput = panel.querySelector('.gp-return-manual-title');
       const dateInput = panel.querySelector('.gp-return-manual-date');
@@ -6839,10 +6940,8 @@
       if (!Number.isInteger(lineNumber) || lineNumber < 1) { showToast('行号必须是大于 0 的整数', 'danger'); return; }
       const textArea = document.getElementById('taskText');
       if (!textArea) { showToast('找不到当前日程内容', 'danger'); return; }
-      // 档案里标题常写成 `- title: `# 名称``，解析后仍带 `# `；界面显示与使用者输入却是纯名称。
-      // 比对前统一去掉 Markdown 标题前缀，否则「在电脑上的草稿」永远配不到「# 在电脑上的草稿」。
-      const normManualTitle = (s) => String(s || '').replace(/^\s*#{1,6}\s+/, '').replace(/\s+/g, ' ').trim().toLocaleLowerCase();
-      const wantedTitle = normManualTitle(title);
+      // 宽容比对：输入不必照抄 MD/HTML 标示（#、<BIG>、<MARK>、<u>…</u> 等）。
+      const wantedTitle = tlNormManualTitle(title);
       const events = tlAllEvents(textArea.value);
       // ★ 名称＝日程事件标题；日期消歧按「显示口径」分级，仍同名同级取第一笔：
       //   ① ev.date 起始日精确（原口径，最优先）
@@ -6864,7 +6963,7 @@
       const matches = events
         .map((ev, i) => ({
           ev, i,
-          rank: (ev && normManualTitle(ev.title) === wantedTitle) ? rankEventDate(ev) : -1
+          rank: (ev && tlNormManualTitle(ev.title) === wantedTitle) ? rankEventDate(ev) : -1
         }))
         .filter((x) => x.rank >= 0)
         .sort((a, b) => (a.rank - b.rank) || (a.i - b.i))   // 稳定：同级维持档案原顺序 → 取第一笔
@@ -6896,7 +6995,7 @@
           const clone = titleEl.cloneNode(true);
           clone.querySelectorAll('button, svg, .ev-link, .ev-tags, .ev-span-badge, .ev-sub-progress, .ev-span-display-mode')
             .forEach((el) => el.remove());
-          return String(clone.textContent || '').replace(/\s+/g, ' ').trim().toLocaleLowerCase() === wantedTitle;
+          return tlNormManualTitle(clone.textContent) === wantedTitle;
         }) || null;
       }
       if (!visibleCard && tlCalMode !== 'list' && typeof tlSetMode === 'function') {
@@ -7251,7 +7350,16 @@
         const units = row.querySelectorAll('.md-unit[data-start][data-end]');
         for (let i = 0; i < units.length; i++) {
           const s = +units[i].getAttribute('data-start'), e = +units[i].getAttribute('data-end');
-          if (Number.isFinite(s) && Number.isFinite(e) && s <= line && line <= e) return units[i];
+          if (Number.isFinite(s) && Number.isFinite(e) && s <= line && line <= e) {
+            // ★ 手动定位点：命中围栏后必须细化到「这一行」，不能返回整个外框——
+            //   外框内含花刮号展开结果（{whereuse}/{list} 的 fieldset），滚/闪整个框会
+            //   视觉上定位到展开结果第 N 项（用户回报）。与便利贴 noteManualLineUnit 同口径。
+            if (Array.isArray(ref.gpManualLines) && typeof tlLineByOrder === 'function') {
+              const inner = tlLineByOrder(units[i], ref.gpManualLines, line, s);
+              if (inner) return inner;
+            }
+            return units[i];
+          }
         }
         return null;
       }
@@ -7357,6 +7465,12 @@
       let exact = null, contained = null, containedLen = Infinity;
       cands.forEach((el) => {
         if (el.closest && (el.closest('.gp-badges') || el.closest('.ev-date'))) return;
+        // ★ 花刮号展开结果项不是原文正文，不能当文字兜底锚点（否则定位到「10. 便利贴/日程事件」）
+        if (el.closest && el.closest('.gp-include-box')) {
+          const isDirective = (el.matches && (el.matches('.gp-include-directive') || el.matches('.gp-exec-directive')))
+            || (el.querySelector && el.querySelector('.gp-include-directive, .gp-exec-directive'));
+          if (!isDirective) return;
+        }
         const t = String(el.textContent || '').replace(/\s+/g, ' ').trim();
         if (!t) return;
         if (t === want) { if (!exact) exact = el; }
@@ -7385,6 +7499,15 @@
       const cands = [];
       all.forEach((el) => {
         if (el.closest && (el.closest('.gp-badges') || el.closest('.ev-date') || el.closest('button'))) return;
+        // ★ 花刮号展开结果（{whereuse}/{list}/{pmenu}/{include} 的 fieldset.gp-include-box）里的
+        //   li/p/... 是「指令执行后的结果项」，不是原文正文行；收进候选会让行序错位、定位到
+        //   展开结果第 N 项（用户回报「10. 便利贴/日程事件」）。只保留指令原文行本身
+        //   （.gp-include-directive / .gp-exec-directive），其余框内正文一律排除。
+        if (el.closest && el.closest('.gp-include-box')) {
+          const isDirective = (el.matches && (el.matches('.gp-include-directive') || el.matches('.gp-exec-directive')))
+            || (el.querySelector && el.querySelector('.gp-include-directive, .gp-exec-directive'));
+          if (!isDirective) return;
+        }
         if (el.matches && (el.matches('td') || el.matches('th'))) {
           const tr = el.parentElement;
           if (!tr || cands.indexOf(tr) >= 0) return;
@@ -7392,18 +7515,29 @@
         } else if (cands.indexOf(el) < 0) cands.push(el);
       });
       const begin = Number.isFinite(+from) ? Math.max(0, +from) : 0;
-      let j = 0, hit = null;
+      let j = 0, hit = null, lastFound = -1;
       for (let i = Math.min(begin, +n); i <= +n && j < cands.length; i += 1) {
         const want = tlManualLineCompact(lines[i]);
         if (!want) continue;
+        // ★ 软换行合并段落：连续纯文本行渲染成同一个 <p>，多行对应一个 DOM 元素。
+        //   短文本行若仍在上一个命中候选里就复用，⛔不消耗新候选（否则 hit 停在更前面，
+        //   用户回报「设136闪132」）。仅短行(<4字)且候选更长时复用，不影响长文字按顺序消歧。
+        if (lastFound >= 0 && lastFound < cands.length && want.length < 4) {
+          const prev = tlManualLineCompact(cands[lastFound].textContent);
+          if (prev && prev.length > want.length && prev.indexOf(want) >= 0) {
+            hit = cands[lastFound];
+            continue;
+          }
+        }
         let found = -1;
         for (let k = j; k < cands.length; k += 1) {
           const got = tlManualLineCompact(cands[k].textContent);
           if (!got) continue;
-          if (got === want || (want.length >= 4 && got.indexOf(want) >= 0)) { found = k; break; }
+          if (got === want || (want.length >= 4 && got.indexOf(want) >= 0)
+            || (want.length >= 1 && want.length < 4 && got.length > want.length && got.indexOf(want) >= 0)) { found = k; break; }
         }
         if (found < 0) continue;
-        hit = cands[found]; j = found + 1;
+        hit = cands[found]; lastFound = found; j = found + 1;
       }
       return hit;
     }
@@ -9614,6 +9748,23 @@
         const hl = Array.isArray(p.highlightLines) ? p.highlightLines.map((x) => (+x || 0)).sort((a, b) => a - b) : [];
         setTimeout(function () { tlFlashEventFormLines(hl, p.highlightText); }, 60);
       }
+    }
+    // ★ 手动定位点标题比对（宽容版，三端同口径）：输入不必照抄 MD/HTML 标示。
+    //   去掉 <BIG>/<CENTER>/<MARK>/<u>…</u> 等标签、# 标题前缀、强调符号、链接目标后比纯文字；
+    //   并忽略所有空白（中文标题里随手多打的空格不该挡住比对）。
+    //   ⛔ 只剥格式标记与空白、不删内容字，避免不同标题被误当成同一个。
+    function tlNormManualTitle(s) {
+      return String(s == null ? '' : s)
+        .replace(/<\/?[A-Za-z][^>]*>/g, '')
+        .replace(/!\[([^\]]*)\]\([^)]*\)/g, '$1')
+        .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
+        .replace(/\[\[([^\]]*)\]\]/g, '$1')
+        .replace(/^\s*#{1,6}\s+/, '')
+        .replace(/^\s*>\s*/, '')
+        .replace(/[*_`~]/g, '')
+        .replace(/\s+/g, '')
+        .trim()
+        .toLocaleLowerCase();
     }
     // 🆕 把 Markdown 原文压成可跟「备注框原文」比对的形式：去掉链接目标 / [[…]] 标记 / 行首块级符号。
     //    用于「找出相同 → 切换」没拿到行号时的内容兜底定位。
