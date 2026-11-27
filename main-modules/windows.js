@@ -2314,10 +2314,16 @@ ipcMain.handle('wake-main-from-note', (e, arg) => {
     }
     win.webContents.send(channel, {
       key: (arg && arg.key) || '',
+      // ★ 手动定位点：直接带事件 uid / 标题 / 日期，主窗不必再靠 tlCalEvents 快照把 key 转 uid
+      //   （快照 uid 可能过期 → tlFindEventUidByKey 失败 → 主窗完全不动）
+      uid: (arg && (arg.uid || arg.eventKey)) || '',
+      title: (arg && typeof arg.title === 'string') ? arg.title : '',
+      date: (arg && typeof arg.date === 'string') ? arg.date : '',
       // 🆕 「找出相同的项目」切换定位：便利贴窗传来的高亮行（0-based 行号区间）＋目标原文，转交主程式 open-sticky-event
       lines: (arg && Array.isArray(arg.lines)) ? arg.lines : [],
       text: (arg && typeof arg.text === 'string') ? arg.text : '',
-      // 🆕 菜单「滚动」：便利贴当前第一行的 0-based 锚点，calendar 据此滚到同一行而不是整张卡中间
+      // 🆕 菜单「滚动」：便利贴当前第一行的 0-based 锚点，calendar 据此滚到同一行而不是整张卡中间。
+      //   ★ 手动定位点还会带 gpManualPrevLines（向前回退候选），让主窗与便利贴闪同一行。
       line: (arg && arg.line && typeof arg.line === 'object') ? arg.line : null
     });
   };
@@ -2338,19 +2344,24 @@ ipcMain.handle('wake-main-from-note', (e, arg) => {
       fromLocalUnit: (arg && arg.localUnit) ? arg.localUnit : null   // 🆕 校准主窗用
     });
   };
-  if ((channel === 'gp-name-ref-jump' || channel === 'gp-whereuse-jump') && stickyCalendarReadyWindowId !== win.webContents.id) {
+  // ★ 手动定位点的 action='scroll' 也要过就绪门：主窗刚被便利贴唤起时，
+  //    did-finish-load 不等于 init() 已读入 calendar.md，此时送 scroll-sticky-event
+  //    会在空 taskText 上查不到 uid → 主窗毫不动弹（用户回报）。
+  if ((channel === 'gp-name-ref-jump' || channel === 'gp-whereuse-jump' || channel === 'scroll-sticky-event') && stickyCalendarReadyWindowId !== win.webContents.id) {
     const pending = {
       webContentsId: win.webContents.id,
       sent: false,
       timer: null,
-      send: sendNameJump
+      // ⛔ 不能用 sendNameJump：它是名称跳转专用 payload；统一回 notifySticky
+      //   才会按 channel 送正确的 {uid,title,date,line,text} / whereuse / name。
+      send: notifySticky
     };
     pending.timer = setTimeout(() => {
       if (pending.sent) return;
       const at = pendingStickyJumpRequests.indexOf(pending);
       if (at >= 0) pendingStickyJumpRequests.splice(at, 1);
       // 兜底：主窗始终没回报 ready 时，至少等页面载入完再送，不让这次点击石沉大海
-      const fire = () => { if (!pending.sent) { pending.sent = true; sendNameJump(); } };
+      const fire = () => { if (!pending.sent) { pending.sent = true; pending.send(); } };
       if (!win.isDestroyed() && win.webContents.isLoading()) win.webContents.once('did-finish-load', fire);
       else fire();
     }, 4000);
@@ -2376,6 +2387,8 @@ ipcMain.handle('wake-main-from-note', (e, arg) => {
 //   只有清单行尾 ✕（gp-return-remove）才删除。两容器都进同一份快照供清单显示。
 const gpReturnStack = [];     // 名称跳转产生的定位点（按序返回）
 const gpManualMarks = [];     // 使用者主动设定的定位点（不参与按序返回）
+// 🆕 手动定位点设定的三项资料（名称/日期/行号）：随快照广播给两端，让另一端表单也能看到并直接再用
+let gpLastManualLocate = null;
 let gpReturnSeq = 0;
 function gpReturnSnapshot() {
   const toEntry = (s, i, manual) => {
@@ -2406,6 +2419,7 @@ function gpReturnSnapshot() {
       : (gpManualMarks.length ? gpManualMarks[gpManualMarks.length - 1].token : 0),
     remaining: gpReturnStack.length,          // ★ 主按钮 N 只算跳转层
     manualRemaining: gpManualMarks.length,    // 清单用：手动点数（不进 N）
+    lastManualLocate: gpLastManualLocate,     // 🆕 两端表单共用的最后一组设定值
     entries: gpReturnStack.map((s, i) => toEntry(s, i, false))
       .concat(gpManualMarks.map((s, i) => toEntry(s, i, true)))
   };
@@ -2516,6 +2530,14 @@ ipcMain.handle('gp-return-mark', (e, arg) => {
     stickyPage,
     manual: true
   });
+  // 🆕 把表单三项设定随这次标记广播出去；另一端表单可直接显示、再按「定位」即可复用
+  if (arg && (typeof arg.title === 'string' || typeof arg.date === 'string' || Number.isFinite(+arg.line))) {
+    gpLastManualLocate = {
+      title: String((arg && arg.title) || '').slice(0, 120),
+      date: String((arg && arg.date) || ''),
+      line: Math.max(1, +((arg && arg.line) || 0) || 0)
+    };
+  }
   broadcastGpReturnShow();
   return gpReturnSnapshot();
 });

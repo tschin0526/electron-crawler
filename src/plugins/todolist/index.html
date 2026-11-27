@@ -2802,26 +2802,55 @@
     .tl-stats-jump { padding: 2px 10px; border: none; border-radius: 6px; background: var(--ev-primary, #7c3aed); color: #fff; font-size: 11px; cursor: pointer; }
     .tl-stats-jump:hover { filter: brightness(1.15); }
     /* 跳转定位高亮（滚动到事件后短暂闪烁描边） */
-    .tl-jump-flash { animation: tlJumpFlash 2s ease; }
-    @keyframes tlJumpFlash { 0%, 60% { box-shadow: 0 0 0 3px rgba(245,197,24,.85); border-radius: 6px; } 100% { box-shadow: none; } }
+    /* ★ 闪烁统一 5 秒：keyframe 的亮段均匀铺满整个 5 秒（5 次脉冲直到 ~90%），
+       旧版 2.5s×2 的亮只到 60%(=第4秒)、末尾整段暗 → 肉眼觉得「没闪满 5 秒」。亮起时 transform:scale 放大文字。 */
+    .tl-jump-flash { animation: tlJumpFlash 5s linear 1; transform-origin: left center; }
+    @keyframes tlJumpFlash {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(245,197,24,0); transform: scale(1); }
+      2%, 10%  { box-shadow: 0 0 0 3px rgba(245,197,24,.85); transform: scale(1.04); }
+      12%, 19% { box-shadow: 0 0 0 0 rgba(245,197,24,0); transform: scale(1); }
+      22%, 30% { box-shadow: 0 0 0 3px rgba(245,197,24,.85); transform: scale(1.04); }
+      32%, 39% { box-shadow: 0 0 0 0 rgba(245,197,24,0); transform: scale(1); }
+      42%, 50% { box-shadow: 0 0 0 3px rgba(245,197,24,.85); transform: scale(1.04); }
+      52%, 59% { box-shadow: 0 0 0 0 rgba(245,197,24,0); transform: scale(1); }
+      62%, 70% { box-shadow: 0 0 0 3px rgba(245,197,24,.85); transform: scale(1.04); }
+      72%, 79% { box-shadow: 0 0 0 0 rgba(245,197,24,0); transform: scale(1); }
+      82%, 90% { box-shadow: 0 0 0 3px rgba(245,197,24,.85); transform: scale(1.04); }
+      92%, 100% { box-shadow: 0 0 0 0 rgba(245,197,24,0); transform: scale(1); }
+    }
     /* ⏰ 闹铃定位闪烁：围栏小事件群金底＋金环脉冲（与便利贴窗 .fs-found-blink / #tlEvFNotes.tl-evf-notes-flash 同口径） */
-    .md-unit.is-gp.tl-alert-gp-flash { animation: tlEvfNotesFlash 2s ease-in-out 2; }
-    /* 🆕 与便利贴窗口 .fs-found-blink 完全同口径：金底 50% + 金环 3px 脉冲 4 秒 */
-    .fs-found-blink.md-unit, .fs-found-blink.ev-md-check, .fs-found-blink { animation: tlEvfNotesFlash 2s ease-in-out 2; }
+    .md-unit.is-gp.tl-alert-gp-flash { animation: tlEvfNotesFlash 5s linear 1; }
+    /* 🆕 与便利贴窗口 .fs-found-blink 完全同口径：金底 + 金环脉冲 5 秒，亮起时文字放大 */
+    .fs-found-blink.md-unit, .fs-found-blink.ev-md-check, .fs-found-blink { animation: tlEvfNotesFlash 5s linear 1; transform-origin: left center; }
     /* 🆕 .md-unit 闪的时候用 transparent 替代 --ev-input-bg（它没这个变量），让原始颜色透出来 */
     .fs-found-blink.md-unit { animation-name: tlMdUnitBlink; }
     @keyframes tlMdUnitBlink {
-      0%, 100% { background: transparent; box-shadow: 0 0 0 0 rgba(212,175,55,0); }
-      20%, 60% { background: rgba(212,175,55,.5); box-shadow: 0 0 0 3px rgba(212,175,55,.95); }
-      40%, 80% { background: transparent; box-shadow: 0 0 0 0 rgba(212,175,55,0); }
+      0%, 100% { background: transparent; box-shadow: 0 0 0 0 rgba(212,175,55,0); transform: scale(1); }
+      2%, 10%  { background: rgba(212,175,55,.5); box-shadow: 0 0 0 3px rgba(212,175,55,.95); transform: scale(1.08); }
+      12%, 19% { background: transparent; box-shadow: 0 0 0 0 rgba(212,175,55,0); transform: scale(1); }
+      22%, 30% { background: rgba(212,175,55,.5); box-shadow: 0 0 0 3px rgba(212,175,55,.95); transform: scale(1.08); }
+      32%, 39% { background: transparent; box-shadow: 0 0 0 0 rgba(212,175,55,0); transform: scale(1); }
+      42%, 50% { background: rgba(212,175,55,.5); box-shadow: 0 0 0 3px rgba(212,175,55,.95); transform: scale(1.08); }
+      52%, 59% { background: transparent; box-shadow: 0 0 0 0 rgba(212,175,55,0); transform: scale(1); }
+      62%, 70% { background: rgba(212,175,55,.5); box-shadow: 0 0 0 3px rgba(212,175,55,.95); transform: scale(1.08); }
+      72%, 79% { background: transparent; box-shadow: 0 0 0 0 rgba(212,175,55,0); transform: scale(1); }
+      82%, 90% { background: rgba(212,175,55,.5); box-shadow: 0 0 0 3px rgba(212,175,55,.95); transform: scale(1.08); }
+      92%, 100% { background: transparent; box-shadow: 0 0 0 0 rgba(212,175,55,0); transform: scale(1); }
     }
-    /* 🆕 「找出相同的项目」切换定位：事件表单备注框命中行闪烁两下金底＋金环（与便利贴窗 .fs-found-blink 同口径） */
-    /* 🆕 「找出相同 → 切换」在行程表单备注框里的命中闪烁：4 秒（2s × 2 次脉冲），与便利贴窗口径一致 */
-    #tlEvFNotes.tl-evf-notes-flash { animation: tlEvfNotesFlash 2s ease-in-out 2; }
+    /* 🆕 「找出相同的项目」切换定位：事件表单备注框命中行闪烁 5 秒（与便利贴窗 .fs-found-blink 同口径） */
+    #tlEvFNotes.tl-evf-notes-flash { animation: tlEvfNotesFlash 5s linear 1; transform-origin: left center; }
     @keyframes tlEvfNotesFlash {
-      0%, 100% { background: var(--ev-input-bg, #fff); box-shadow: 0 0 0 0 rgba(212,175,55,0); }
-      20%, 60% { background: rgba(212,175,55,.38); box-shadow: 0 0 0 3px rgba(212,175,55,.95); }
-      40%, 80% { background: var(--ev-input-bg, #fff); box-shadow: 0 0 0 0 rgba(212,175,55,0); }
+      0%, 100% { background-color: var(--ev-input-bg, #fff); box-shadow: 0 0 0 0 rgba(212,175,55,0); transform: scale(1); }
+      2%, 10%  { background: rgba(212,175,55,.38); box-shadow: 0 0 0 3px rgba(212,175,55,.95); transform: scale(1.06); }
+      12%, 19% { background-color: var(--ev-input-bg, #fff); box-shadow: 0 0 0 0 rgba(212,175,55,0); transform: scale(1); }
+      22%, 30% { background: rgba(212,175,55,.38); box-shadow: 0 0 0 3px rgba(212,175,55,.95); transform: scale(1.06); }
+      32%, 39% { background-color: var(--ev-input-bg, #fff); box-shadow: 0 0 0 0 rgba(212,175,55,0); transform: scale(1); }
+      42%, 50% { background: rgba(212,175,55,.38); box-shadow: 0 0 0 3px rgba(212,175,55,.95); transform: scale(1.06); }
+      52%, 59% { background-color: var(--ev-input-bg, #fff); box-shadow: 0 0 0 0 rgba(212,175,55,0); transform: scale(1); }
+      62%, 70% { background: rgba(212,175,55,.38); box-shadow: 0 0 0 3px rgba(212,175,55,.95); transform: scale(1.06); }
+      72%, 79% { background-color: var(--ev-input-bg, #fff); box-shadow: 0 0 0 0 rgba(212,175,55,0); transform: scale(1); }
+      82%, 90% { background: rgba(212,175,55,.38); box-shadow: 0 0 0 3px rgba(212,175,55,.95); transform: scale(1.06); }
+      92%, 100% { background-color: var(--ev-input-bg, #fff); box-shadow: 0 0 0 0 rgba(212,175,55,0); transform: scale(1); }
     }
     .tl-ev-form-title { font-size: 16px; font-weight: 600; color: var(--ev-text); margin-bottom: 12px; }
     /* ===== 📊 事件统计弹层 ===== */
@@ -7930,14 +7959,43 @@
     //    年/月网格无事件行时退而闪日期格。
     function tlOnStickyScrollToEvent(payload) {
       const key = payload && payload.key;
-      if (!key) return;
+      // ★ 手动定位点：便利贴直接带 uid 过来，⛔不能再只靠 tlCalEvents 快照把 key 转 uid
+      //   （快照 uid 过期 / key 为空 → 反查失败 → 主窗完全不动）
+      const directUid = payload && (payload.uid || payload.eventKey);
+      if (!key && !directUid) return;
       tlCalEvents = (typeof tlAllEvents === 'function')
         ? tlAllEvents(document.getElementById('taskText').value)
         : tlCalEvents;
-      const uid = (typeof tlFindEventUidByKey === 'function') ? tlFindEventUidByKey(key) : null;
+      let uid = directUid || ((typeof tlFindEventUidByKey === 'function' && key) ? tlFindEventUidByKey(key) : null);
+      // ★ uid 不在现算事件里（旧快照）→ 按标题+日期找回，口径与手动定位点设定完全一致
+      const alive = (u) => !!(u && Array.isArray(tlCalEvents) && tlCalEvents.some((x) => x && x.uid === u));
+      if (!alive(uid)) {
+        uid = null;
+        const title = String((payload && payload.title) || '');
+        const date = String((payload && payload.date) || '');
+        if (title && date) {
+          const norm = (s) => String(s || '').replace(/^\s*#{1,6}\s+/, '').replace(/\s+/g, ' ').trim().toLocaleLowerCase();
+          const want = norm(title);
+          const rank = (ev) => {
+            const start = String(ev.date || ''), end = String(ev.endDate || '');
+            if (start === date) return 0;
+            if (end && end === date) return 1;
+            if (start && end && date >= start && date <= end) return 2;
+            const shown = (typeof tlEventDisplayDate === 'function') ? String(tlEventDisplayDate(ev) || '') : start;
+            return shown === date ? 3 : -1;
+          };
+          const hit = (Array.isArray(tlCalEvents) ? tlCalEvents : [])
+            .map((ev, i) => ({ ev: ev, i: i, rank: (ev && norm(ev.title) === want) ? rank(ev) : -1 }))
+            .filter((x) => x.rank >= 0)
+            .sort((a, b) => (a.rank - b.rank) || (a.i - b.i))[0];
+          if (hit) uid = hit.ev.uid || '';
+        }
+      }
       if (!uid) { if (typeof showToast === 'function') showToast('找不到该行程', 'danger'); return; }
       // 🆕 带上便利贴当前第一行的行号锚点 → 滚到同一行，而不是整张事件卡中间
-      const ok = (typeof tlScrollToEventByUid === 'function') && tlScrollToEventByUid(uid, payload && payload.line);
+      // 🆕 手动定位点设定：payload.line 带 gpManualPrevLines（与主窗同口径向前回退），
+      //    payload.text＝该行纯文字，正文行没有 data-line 锚点时按内容兜底定位
+      const ok = (typeof tlScrollToEventByUid === 'function') && tlScrollToEventByUid(uid, payload && payload.line, payload && payload.text);
       if (!ok && typeof showToast === 'function') showToast('找不到该行程的日期', 'danger');
     }
     if (window.electronAPI && typeof window.electronAPI.onStickyScrollToEvent === 'function') {

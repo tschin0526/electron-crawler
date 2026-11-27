@@ -3402,13 +3402,17 @@ function noteDotBlockText(dot) {
 // 让命中的行闪烁：checkbox 行取外层 .ev-md-check（金底＋金环脉冲）；
 //   非 checkbox 行（列表/胶囊/段落）取 .md-unit 区块，整块闪同样的金底＋金环。
 //   🆕 时长 4 秒（约 4 次脉冲）——使用者要求「闪久一点、更醒目」（2026-10-30）。
-function blinkFoundLineTwice(cbEl) {
-  const row = (cbEl && cbEl.closest) ? (cbEl.closest('.ev-md-check') || cbEl.closest('.md-unit') || cbEl) : cbEl;
+function blinkFoundLineTwice(cbEl, exact) {
+  // ★ exact=true（手动定位点）：只闪传进来的这一行，⛔不再爬 .md-unit 外框，
+  //   否则围栏小事件群整块与具体行同时闪（用户回报效果叠加）。
+  const row = (!exact && cbEl && cbEl.closest)
+    ? (cbEl.closest('.ev-md-check') || cbEl.closest('.md-unit') || cbEl)
+    : cbEl;
   if (!row) return;
   row.classList.remove('fs-found-blink');
   void row.offsetWidth;   // 强制 reflow，确保重复点击也能重新触发动画
   row.classList.add('fs-found-blink');
-  setTimeout(() => { row.classList.remove('fs-found-blink'); }, 4200);
+  setTimeout(() => { row.classList.remove('fs-found-blink'); }, 5200);
 }
 
 // 🆕 关闭结果窗（并清掉待搬移目标，避免残留状态被下次误用）
@@ -5080,6 +5084,7 @@ function noteInitIncludeFoldDelegate() {
 }
 
 // ===== 🆕 2026-11-20：{NAME=X} 跳转后的「返回原位」工具组（便利贴侧） =====
+let noteGpLastManualLocate = null;   // 🆕 主进程广播的最后一组手动定位设定（两端表单互通）
 //   主进程在跳转完成后广播 gp-return-show（payload=完整快照）→ 浮出 ↩ 按钮 + ☰ 位置清单。
 //   ⚠️ ipcRenderer.on 的回调第一个参数是 event，payload 是第二个！旧版把 event 当 payload
 //      → payload.remaining 永远 undefined → 兜底成 (1)（跳几层都显示 1 的真因）。
@@ -5156,6 +5161,24 @@ function noteGpReturnEnsureDock() {
 // combo 选单共用渲染：① 返回清单（展层） ② 设定 返回定位点（把当前便利贴位置压入返回栈）；空栈时第一项显示「尚无定位点」。
 function noteGpReturnRenderPanel(panel, entries, remaining) {
   const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  // 🆕 手动定位点设定：重绘清单时保留使用者已输入但未提交的三栏（与主窗同口径）
+  const q = (sel) => (typeof panel.querySelector === 'function') ? panel.querySelector(sel) : null;
+  const manualLocateOpen = panel.dataset.manualLocateOpen === 'true';
+  const previousTitle = q('.gp-return-manual-title');
+  const previousDate = q('.gp-return-manual-date');
+  const previousLine = q('.gp-return-manual-line');
+  const shared = (typeof noteGpLastManualLocate !== 'undefined' && noteGpLastManualLocate) || {};
+  // ★ 与主窗同口径：三栏一律以主进程 lastManualLocate 为权威来源（返回清单也是每次从主进程重建）。
+  //   旧版 `previousXxx ? previousXxx.value : shared.xxx` 让本地旧值永远压过广播值 → 两端各显示各的。
+  //   只有「本机正在此表单编辑、尚未提交」(dirty) 时才保留本地草稿，避免输入中被对端广播冲掉。
+  const dirty = panel.dataset.manualLocateDirty === 'true';
+  const fillManual = (sharedVal, prevEl) => {
+    if (!dirty && sharedVal) return sharedVal;
+    return prevEl ? prevEl.value : (sharedVal || '');
+  };
+  const titleValue = fillManual(shared.title, previousTitle);
+  const dateValue = fillManual(shared.date, previousDate);
+  const lineValue = fillManual(shared.line, previousLine);
   // 手动点 label 形如「便利贴「标题」·「位置文字」」：只把位置那段包成强调（大一号粗体）。
   // ★ 入参必须已 esc()，片段才能安全直进 innerHTML；只替换第一处，标题里的引号不会被误伤。
   // ★ 只强调「·「位置内容」」那一段（便利貼與主窗 label 現在同格式）；事件標題不放大，與便利貼一致。
@@ -5185,7 +5208,40 @@ function noteGpReturnRenderPanel(panel, entries, remaining) {
   panel.innerHTML = '<div class="gp-return-list-title">返回定位</div>' +
     (entries.length
       ? '<div class="gp-return-list-rows" style="display:flex">' + rows + '</div>'
-      : '<div class="gp-return-list-empty">尚无定位点</div>');
+      : '<div class="gp-return-list-empty">尚无定位点</div>') +
+    '<button type="button" class="gp-return-manual-locate">\u{1F4CD} 手动定位点设定</button>' +
+    '<form class="gp-return-manual-form' + (manualLocateOpen ? ' open' : '') + '">' +
+      '<label>便利贴名称（日程事件标题）<input class="gp-return-manual-title" type="text" autocomplete="off" value="' + esc(titleValue) + '" required></label>' +
+      '<label>日程日期（YYYY-MM-DD）<input class="gp-return-manual-date" type="text" inputmode="numeric" autocomplete="off" placeholder="2026-10-22" value="' + esc(dateValue) + '" required></label>' +
+      '<label title="该日程备注正文内的行号，从 1 开始；不是整份 MD 档的绝对行号">定位点所在行号（备注正文，从 1 开始）<input class="gp-return-manual-line" type="number" min="1" step="1" value="' + esc(lineValue) + '" required></label>' +
+      '<div class="gp-return-manual-actions"><button type="button" class="gp-return-manual-cancel">取消</button><button type="submit">定位</button></div>' +
+    '</form>';
+  // 表单事件只在真实 DOM 上绑定（回归测试桩只校验产出的 HTML）；清单行的绑定照旧执行
+  const manualLocateBtn = q('.gp-return-manual-locate');
+  const manualLocateForm = q('.gp-return-manual-form');
+  if (manualLocateBtn && manualLocateForm) {
+    manualLocateBtn.addEventListener('click', (e) => {
+      e.preventDefault(); e.stopPropagation();
+      const open = !manualLocateForm.classList.contains('open');
+      panel.dataset.manualLocateOpen = String(open);
+      manualLocateForm.classList.toggle('open', open);
+      if (open) q('.gp-return-manual-title').focus();
+    });
+    // 使用者一输入就标记为「本机编辑中」，重绘时保留本地草稿；提交/取消时清除，恢复以共享值为准
+    manualLocateForm.addEventListener('input', () => { panel.dataset.manualLocateDirty = 'true'; });
+    manualLocateForm.addEventListener('submit', (e) => {
+      e.preventDefault(); e.stopPropagation();
+      panel.dataset.manualLocateDirty = 'false';
+      noteGpManualLocateSubmit(panel);
+    });
+    const cancelBtn = manualLocateForm.querySelector('.gp-return-manual-cancel');
+    if (cancelBtn) cancelBtn.addEventListener('click', (e) => {
+      e.preventDefault(); e.stopPropagation();
+      panel.dataset.manualLocateDirty = 'false';
+      panel.dataset.manualLocateOpen = 'false';
+      manualLocateForm.classList.remove('open');
+    });
+  }
   panel.querySelectorAll('.gp-return-list-row').forEach((row) => {
     row.addEventListener('click', (e) => {
       e.preventDefault(); e.stopPropagation();
@@ -5200,8 +5256,149 @@ function noteGpReturnRenderPanel(panel, entries, remaining) {
     });
   });
 }
+// 🆕 手动定位点设定：正文行兜底文字，与主窗 tlPlainForMatch 同口径（去链接/标记/行首列表符号）。
+function notePlainForMatch(s) {
+  return String(s == null ? '' : s)
+    .replace(/!\[([^\]]*)\]\([^)]*\)/g, '$1')
+    .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
+    .replace(/\[\[[^\]]*\]\]/g, ' ')
+    .replace(/^[\s>#*+~-]+/, ' ')
+    .replace(/^\s*\d{1,9}[.)]\s*/, ' ')
+    .replace(/[*_`~]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+// 🆕 手动定位点设定：输入行没有正文时，向前（行号递减）回退到最近一个有内容的可定位行（0-based）。
+function noteGpManualPrevContentLine(lines, from) {
+  const hasParagraph = (s) => {
+    const t = String(s == null ? '' : s).replace(/<!--[\s\S]*?-->/g, '').replace(/\{[^{}]*\}/g, ' ');
+    return !!t.trim() && !!notePlainForMatch(t);
+  };
+  let i = Math.max(0, Math.min(+from || 0, lines.length - 1));
+  while (i > 0 && !hasParagraph(lines[i])) i -= 1;
+  return i;
+}
+// 🆕 便利贴侧「手动定位点设定」提交：标题+日期在【全部日程事件】里找目标，行号定位到该行段落。
+//   ★ 主窗：复用既有「滚动」链（wake-main-from-note → tlScrollToEventByUid），会自动显示主窗；
+//   ★ 便利贴：按 uid 找到对应贴 → focus-sticky-note 带 focusUnit → 翻页/开窗后滚到该行并闪烁。
+//   ⛔ 不入返回栈：与主窗手动定位点设定同口径，只定位、不产生「返回原位」层数。
+async function noteGpManualLocateSubmit(panel) {
+  const titleEl = panel.querySelector('.gp-return-manual-title');
+  const dateEl = panel.querySelector('.gp-return-manual-date');
+  const lineEl = panel.querySelector('.gp-return-manual-line');
+  const title = String((titleEl && titleEl.value) || '').trim();
+  const date = String((dateEl && dateEl.value) || '').trim();
+  const lineNumber = Number(lineEl && lineEl.value);
+  if (!title) { showNoteMoveToast('请输入便利贴名称（日程事件标题）', true); return; }
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) { showNoteMoveToast('日期请填 YYYY-MM-DD', true); return; }
+  if (!Number.isInteger(lineNumber) || lineNumber < 1) { showNoteMoveToast('行号必须是大于 0 的整数', true); return; }
+  let res = null;
+  try { res = await ipcRenderer.invoke('sticky-note-order'); } catch (e) { res = null; }
+  const events = (res && Array.isArray(res.events)) ? res.events : [];
+  // 与主窗同口径：档案标题可能带 Markdown `# ` 前缀，界面/输入都是纯名称，比对前统一规范化
+  const normManualTitle = (s) => String(s || '').replace(/^\s*#{1,6}\s+/, '').replace(/\s+/g, ' ').trim().toLocaleLowerCase();
+  const wanted = normManualTitle(title);
+  // ★ 名称即日程事件标题，同一份资料；日期消歧口径与主窗 tlGpManualLocateSubmit 完全一致：
+  //   ① date 起始日精确 → ② endDate 结束日精确 → ③ 落在 [date,endDate] 区间 → ④ 显示日（today/last）
+  //   跨天事件的 date 只是起始日，用户看到的是整段区间，因此区间内任一天都要能找到。
+  const now = new Date();
+  const todayStr = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0') + '-' + String(now.getDate()).padStart(2, '0');
+  const rankEv = (x) => {
+    const start = String(x.date || '');
+    const end = String(x.endDate || '');
+    if (start === date) return 0;
+    if (end && end === date) return 1;
+    if (start && end && date >= start && date <= end) return 2;
+    const sd = String(x.spanDisplay || '');
+    const display = sd === 'today' ? todayStr : (sd === 'last' && end ? end : start);
+    if (display === date) return 3;
+    return -1;
+  };
+  const ev = events
+    .map((x, i) => ({
+      x, i,
+      rank: (x && normManualTitle(x.title) === wanted) ? rankEv(x) : -1
+    }))
+    .filter((z) => z.rank >= 0)
+    .sort((a, b) => (a.rank - b.rank) || (a.i - b.i))   // 稳定：同级维持原顺序 → 取第一笔
+    .map((z) => z.x)[0];
+  if (!ev) { showNoteMoveToast('找不到日程事件：' + title + '（' + date + '）', true); return; }
+  const uid = String(ev.uid || ev.key || '');
+  const lines = String(ev.notes || '').replace(/\r\n/g, '\n').split('\n');
+  const requestedLine0 = lineNumber - 1;   // 1-based 输入 → 0-based 锚点（与主窗 tlLineAnchorInEvent 同口径）
+  if (requestedLine0 >= lines.length) {
+    showNoteMoveToast('「' + title + '」只有 ' + lines.length + ' 行，找不到第 ' + lineNumber + ' 行', true);
+    return;
+  }
+  // ★ 输入行是空行/只有标记 → 向前回退到最近一个有正文的行作为实际设定值
+  const line0 = noteGpManualPrevContentLine(lines, requestedLine0);
+  const lineText = notePlainForMatch(lines[line0]);
+  // ★ 渲染后若该行仍找不到段落，按同样的「向前」顺序逐行试前几行的正文（由 noteFindUnitElement 消费）
+  const prevLines = [];
+  for (let i = line0 - 1; i >= 0 && prevLines.length < 20; i -= 1) {
+    if (noteGpManualPrevContentLine(lines, i) !== i) continue;   // 只收「本身就有段落」的行
+    const t = notePlainForMatch(lines[i]);
+    if (t) prevLines.push({ kind: 'check', line: i, text: t, focus: 'content' });
+  }
+  // ★ gpManualLines 随锚点下发：便利贴渲染快取可能没有 md-unit 外框，靠原文行顺序
+  //   也能把「段落／标题／表格／引用」等任意资料行映射到渲染后的正文元素（与主窗任意行可定位同口径）。
+  const focusUnit = {
+    kind: 'check', line: line0, text: lineText, focus: 'content',
+    gpManualPrevLines: prevLines, gpManualLines: lines
+  };
+  if (line0 !== requestedLine0) {
+    // 提示明确写「输入行号 → 实际行号」，避免用户拿 MD 全档行号或表格行来对照误以为跳错。
+    const msg = '备注正文第 ' + lineNumber + ' 行没有可定位的段落（空行／纯标记／表格行等），' +
+      '已按向前回退改用第 ' + (line0 + 1) + ' 行';
+    if (typeof showFindSameBlinkToast === 'function') showFindSameBlinkToast(msg);
+    else showNoteMoveToast(msg);
+  }
+  // ① 主窗：既有「滚动」定位同一条链。
+  //   ★ uid 直接随 payload 下发：主窗 tlCalEvents 快照的 uid 可能已过期，不能再只靠 key 反查；
+  //   ★ line 带 gpManualPrevLines：主窗渲染后若输入行没段落，与便利贴按同一组候选向前回退；
+  //   ★ line1/line0 同时下发，提示与锚点口径可核对（提示用 1-based，DOM 用 0-based）。
+  try {
+    ipcRenderer.invoke('wake-main-from-note', {
+      action: 'scroll', key: uid, uid: uid, title: title, date: date,
+      text: lineText,
+      line: { line: line0, line1: lineNumber, focus: 'content', gpManualPrevLines: prevLines }
+    }).catch(() => {});
+  } catch (e) {}
+  // ② 便利贴：在目录里找这笔日程对应的贴；有贴才翻页/开窗定位，没贴就主窗定位后明确告知
+  const notes = (res && Array.isArray(res.notes)) ? res.notes : [];
+  const order = (res && Array.isArray(res.order)) ? res.order : [];
+  const sameKey = (n) => n && String(n.key || '') === uid;
+  const target = (order.find(sameKey) || notes.find(sameKey) || null);
+  // 🆕 清单互通：写入主进程共享手动定位点 → 两端 ▾ 都看得到、点选可回用同一行
+  //   （点选走 gp-return-back → 同时定位便利贴与主窗，与主窗设定完全同款）
+  const markIdx = target ? (+target.idx || 0) : 0;
+  try {
+    ipcRenderer.invoke('gp-return-mark', {
+      type: 'sticky', key: uid, idx: markIdx,
+      eventKey: uid, eventIdx: markIdx,
+      occDate: date, eventTitle: title,
+      title: title, date: date, line: lineNumber,   // 🆕 三项设定随快照互通，另一端表单可直接看到
+      anchor: focusUnit,
+      label: '便利贴「' + title + '」·「' + lineText + '」'
+    }).catch(() => {});
+  } catch (e) {}
+  if (target) {
+    const key = String(target.key || ''), idx = +target.idx || 0;
+    const inOrder = order.some((n) => n && String(n.key || '') === key && (+n.idx || 0) === idx);
+    // 翻页清单没这张 → toggle 会把它加进清单；分体窗没开 → toggle 会开窗。已在清单/已开则绝不能 toggle（会关掉）。
+    if (!inOrder && !target.isOpen) {
+      try { await ipcRenderer.invoke('toggle-sticky-note', { key: key, idx: idx }); } catch (e) {}
+    }
+    try { await ipcRenderer.invoke('focus-sticky-note', { key: key, idx: idx, focusUnit: focusUnit }); } catch (e) {}
+  } else {
+    showNoteMoveToast('该日程未设便利贴，已定位主窗');
+  }
+  panel.dataset.manualLocateOpen = 'false';
+  panel.style.display = 'none';
+}
 function noteGpReturnShow(payload) {
   const entries = (payload && Array.isArray(payload.entries)) ? payload.entries : [];
+  if (payload && payload.lastManualLocate) noteGpLastManualLocate = payload.lastManualLocate;
   // ★ 角标分别取主进程两个计数：remaining＝跳转层数、manualRemaining＝手动点数
   const remaining = Math.max(0, +((payload && payload.remaining) || 0) || 0);
   const manual = Math.max(0, +((payload && payload.manualRemaining) || 0) || 0);
@@ -5285,6 +5482,7 @@ function noteInitGpReturnBtn() {
   // 新开的便利贴窗没收到上一条广播：主动取一次当前快照
   ipcRenderer.invoke('gp-return-state', {}).then((snap) => {
     if (snap && ((snap.remaining || 0) > 0 || (snap.manualRemaining || 0) > 0)) noteGpReturnShow(snap);
+    else if (snap && snap.lastManualLocate) noteGpLastManualLocate = snap.lastManualLocate;
   }).catch(() => {});
 }
 
@@ -6264,13 +6462,106 @@ function noteFindContentByText(body, text) {
   });
   return exact || contained || null;
 }
+// ★ 手动定位点：把 Markdown 原文行与「渲染后的任意正文元素」按文档顺序对齐。
+//   主窗靠 .md-unit[data-start/end] 让段落/标题/表格/引用等任意资料行都能当标的物；
+//   便利贴若拿到的是旧快取 HTML（没有 md-unit 外框）或表格行（没有 data-line），
+//   旧版只剩「文字比对」→ 对不上就回退到前一条 checkbox（用户回报：便利贴只认 checkbox）。
+//   这里用原文行顺序逐个消耗 DOM 正文元素，表格行按 <tr> 取整行，故任何有内容的行都可定位。
+function noteLineCompact(s) {
+  const raw = String(s == null ? '' : s);
+  // 表格分隔行（|---|---|）渲染后没有对应元素，不能占掉一个 DOM 候选
+  if (/^[\s|:-]+$/.test(raw) && raw.indexOf('-') >= 0 && raw.indexOf('|') >= 0) return '';
+  return notePlainForMatch(raw)
+    .replace(/^\s*\|/, '').replace(/\|\s*$/, '')
+    .replace(/[{}|]/g, '')
+    .replace(/\s+/g, '')
+    .toLocaleLowerCase();
+}
+function noteLineDomCandidates(root) {
+  const all = Array.prototype.slice.call(root.querySelectorAll(NOTE_CONTENT_SEL + ', tr'));
+  const out = [];
+  all.forEach((el) => {
+    if (el.closest && (el.closest('.gp-badges') || el.closest('.ev-date') || el.closest('button'))) return;
+    // 表格的 td/th 合并成整行 <tr>：原文一行表格对应一个渲染单元
+    if (el.matches && (el.matches('td') || el.matches('th'))) {
+      const tr = el.parentElement;
+      if (!tr || out.indexOf(tr) >= 0) return;
+      out.push(tr);
+    } else if (out.indexOf(el) < 0) out.push(el);
+  });
+  return out;
+}
+// from＝原文起始行（框的 data-start）；只从这一行开始消耗候选，避免框外文字抢走框内元素。
+function noteLineByOrder(root, lines, n, from) {
+  if (!root || !Array.isArray(lines) || !Number.isFinite(+n) || +n < 0) return null;
+  const cands = noteLineDomCandidates(root);
+  const begin = Number.isFinite(+from) ? Math.max(0, +from) : 0;
+  let j = 0, hit = null;
+  for (let i = Math.min(begin, +n); i <= +n && j < cands.length; i += 1) {
+    const want = noteLineCompact(lines[i]);
+    if (!want) continue;
+    let found = -1;
+    for (let k = j; k < cands.length; k += 1) {
+      const got = noteLineCompact(cands[k].textContent);
+      if (!got) continue;
+      if (got === want || (want.length >= 4 && got.indexOf(want) >= 0)) { found = k; break; }
+    }
+    if (found < 0) continue;
+    hit = cands[found];
+    j = found + 1;
+  }
+  return hit;
+}
+// ★ 围栏内定位要闪「这一行」，⛔不能用 closestUnit：它会把 p/tr/h3 一路爬到 .md-unit 外框，
+//   结果整块小事件群一起闪（用户回报）。checkbox 文字则收回它自己的 .ev-md-check 行。
+function noteConcreteLineEl(el) {
+  if (!el) return null;
+  if (el.matches && el.matches('.ev-md-check-text')) {
+    const check = el.closest('.ev-md-check');
+    return check || el;
+  }
+  if (el.matches && (el.matches('td') || el.matches('th'))) return el.parentElement || el;
+  return el;
+}
+// ★ 手动定位点：按 0-based 行号找正文锚点，与主窗 tlLineAnchorInEvent 同口径再加强：
+//   data-line → md-unit 行区间（进一步细化到框内那一行）→ 原文行顺序映射（任意资料行）。
+function noteManualLineUnit(body, line, lines) {
+  if (!body || !Number.isFinite(+line)) return null;
+  const n = +line;
+  const ed = body.querySelector('.ev-md-edit[data-line="' + n + '"]');
+  if (ed) return closestUnit(ed);
+  const cb = body.querySelector('.ev-cb[data-line="' + n + '"]');
+  if (cb) return closestUnit(cb);
+  const units = body.querySelectorAll('.md-unit[data-start][data-end]');
+  for (let i = 0; i < units.length; i += 1) {
+    const s = +units[i].getAttribute('data-start'), e = +units[i].getAttribute('data-end');
+    if (!Number.isFinite(s) || !Number.isFinite(e) || !(s <= n && n <= e)) continue;
+    // ★ 命中围栏区块后不能再把整块外框交给闪烁：在框内按原文行序找出这一行的正文元素
+    const inner = noteLineByOrder(units[i], lines, n, s);
+    return inner ? noteConcreteLineEl(inner) : units[i];
+  }
+  const byOrder = noteLineByOrder(body, lines, n);
+  return byOrder ? noteConcreteLineEl(byOrder) : null;
+}
 function noteFindUnitElement(unit) {
   const body = document.getElementById('body');
   if (!body || !unit) return null;
-  // ★ 手动点：文字优先——滚到/闪烁的就是清单显示的那一句，绝不再被围栏 name 抢去标题
-  if (unit.focus === 'content' && typeof unit.text === 'string' && unit.text) {
-    const hit = noteFindContentByText(body, unit.text);
-    if (hit) return hit;
+  // ★ 手动定位点：行号是权威，绝不能被「同样的文字在前面又出现一次」抢走。
+  //   旧版文字优先 → 输入第 45 行却闪到前面同句的第 N 行（用户回报「行号与闪烁内容不一样」）。
+  //   顺序：输入行 → 向前回退候选行 → 文字 → 围栏 name。
+  if (unit.focus === 'content') {
+    const lineHit = noteManualLineUnit(body, unit.line, unit.gpManualLines);
+    if (lineHit) return lineHit;
+    if (Array.isArray(unit.gpManualPrevLines) && !unit.__gpPrevProbe) {
+      for (let i = 0; i < unit.gpManualPrevLines.length; i += 1) {
+        const hit = noteManualLineUnit(body, unit.gpManualPrevLines[i].line, unit.gpManualLines);
+        if (hit) return hit;
+      }
+    }
+    if (typeof unit.text === 'string' && unit.text) {
+      const hit = noteFindContentByText(body, unit.text);
+      if (hit) return hit;
+    }
   }
   // ① 坐标精确匹配（用户右击的就是「编辑小圆点」，先找它自身，最贴近目标）
   if (unit.kind === 'check' && Number.isFinite(unit.line)) {
@@ -6333,6 +6624,15 @@ function noteFindUnitElement(unit) {
       if (hit) return closestUnit(hit);
     }
   }
+  // ★ 手动定位点设定：上面所有直接匹配都失败后，才沿前一行方向逐行试。
+  //   ⛔ 不能放在函数开头：否则前一行文字会先命中，把「定位到输入行」抢走（用户回报定位失效）。
+  if (Array.isArray(unit.gpManualPrevLines) && !unit.__gpPrevProbe) {
+    for (let i = 0; i < unit.gpManualPrevLines.length; i += 1) {
+      const cand = Object.assign({}, unit.gpManualPrevLines[i], { __gpPrevProbe: true });
+      const hit = noteFindUnitElement(cand);
+      if (hit) return hit;
+    }
+  }
   return null;
 }
 function noteScrollToCenter(el) {
@@ -6347,19 +6647,36 @@ function noteScrollToCenter(el) {
   });
 }
 // 🆕 2026-11-21 手动点：滚到「清单显示的那一行正文」顶部（不是围栏标题、也不是整块居中）。
-function noteScrollToTop(el) {
+// ★ 2026-11-27：滚到位后再让内容往下退 ≈5cm（189px），避免目标行贴着顶部被工具栏/标题盖住看不到；
+//   若已在顶端（结果 <0）退无可退，保持 0——对应「如果还有滚动的可能下」。
+const NOTE_LOCATE_HEADROOM_PX = 189;   // ≈5cm（96dpi 下 1cm≈37.8px）
+function noteScrollToTop(el, unit) {
   const body = document.getElementById('body');
   if (!body || !el) return;
+  // ★ 围栏内定位拿到的是「具体行元素」（p/tr/…），比整块 .md-unit 更容易被 refresh / 高亮重包换掉。
+  //   一旦 detached，旧版 apply 直接 return → 便利贴完全不滚（用户回报）。
+  //   故每次执行都先确认连接状态；掉了就用同一个锚点重新解析，绝不放弃滚动。
+  const resolve = () => {
+    if (el && el.isConnected) return el;
+    if (unit && typeof noteFindUnitElement === 'function') {
+      const fresh = noteFindUnitElement(unit);
+      if (fresh && fresh.isConnected) return fresh;
+    }
+    return null;
+  };
   const apply = () => {
-    if (!el.isConnected) return;
+    const target = resolve();
+    if (!target) return;
     const bRect = body.getBoundingClientRect();
-    const eRect = el.getBoundingClientRect();
-    const top = Math.max(0, body.scrollTop + (eRect.top - bRect.top) - 8);
+    const eRect = target.getBoundingClientRect();
+    const top = Math.max(0, body.scrollTop + (eRect.top - bRect.top) - NOTE_LOCATE_HEADROOM_PX);
     body.scrollTop = top;
     if (scrollSaveTimer) { clearTimeout(scrollSaveTimer); scrollSaveTimer = null; }
     writeScrollPos(top);
   };
-  // 两帧后执行避开 restoreScrollPos 的 rAF；180ms 再校正一次（高亮重包／VIEW 排序会改坐标）
+  // ★ 立即滚一次：避免重绘抢在 rAF 之前把目标换掉导致「一次都没滚」。
+  //   随后两帧后再来一次避开 restoreScrollPos 的 rAF；180ms 校正（高亮重包／VIEW 排序改坐标）。
+  apply();
   requestAnimationFrame(() => { apply(); setTimeout(apply, 180); });
 }
 // 🆕 具名围栏跳转：滚到「NAME 徽标（标题）」而不是整个围栏中心 —— 用户要的是标题就在视野上方。
@@ -6404,7 +6721,7 @@ function noteScrollToTitle(el, name, termName) {
     if (!anchor) return null;
     const bRect = body.getBoundingClientRect();
     const aRect = anchor.getBoundingClientRect();
-    const top = Math.max(0, body.scrollTop + (aRect.top - bRect.top) - 8);
+    const top = Math.max(0, body.scrollTop + (aRect.top - bRect.top) - NOTE_LOCATE_HEADROOM_PX);
     body.scrollTop = top;
     if (scrollSaveTimer) { clearTimeout(scrollSaveTimer); scrollSaveTimer = null; }
     if (KEY) {
@@ -6421,33 +6738,42 @@ function noteScrollToTitle(el, name, termName) {
         if (!anchor) return;
         const b = body.getBoundingClientRect();
         const a = anchor.getBoundingClientRect();
-        if (Math.abs((a.top - b.top) - 8) > 12) applyTitleScroll();
+        if (Math.abs((a.top - b.top) - NOTE_LOCATE_HEADROOM_PX) > 12) applyTitleScroll();
       }, 180);
     });
   });
 }
-function flashUnit(el) {
+function flashUnit(el, exact) {
   if (!el) return;
-  // ① 复用项目里「找出相同 → 切换」已在真机验证的闪烁（fs-found-blink：4 秒金底＋金环脉冲），DRY。
+  // ① 复用项目里「找出相同 → 切换」已在真机验证的闪烁（fs-found-blink：5 秒金底＋金环脉冲），DRY。
   //    ⛔ 不再自己造 .note-unit-flash 动画：万一便利贴窗样式表没刷新/被覆盖，自造动画就会「完全看不见」。
-  if (typeof blinkFoundLineTwice === 'function') blinkFoundLineTwice(el);
+  //    ★ 手动定位点传 exact=true：只闪这一行，不能让 blinkFoundLineTwice 爬回 .md-unit 外框。
+  if (typeof blinkFoundLineTwice === 'function') blinkFoundLineTwice(el, exact);
   else {
     el.classList.remove('fs-found-blink');
     void el.offsetWidth;
     el.classList.add('fs-found-blink');
-    setTimeout(() => el.classList.remove('fs-found-blink'), 4200);
+    setTimeout(() => el.classList.remove('fs-found-blink'), 5200);
   }
   // ② Web Animations API 兜底：优先级高于所有 CSS（含 !important 之外的层叠），
   //    直接作用于元素，不受选择器特异性／样式表版本影响；线上若 CSS 失效仍必定闪。
+  // ★ 单次 5000ms、5 次脉冲铺满整段（旧版 2500×2 的亮只到 75%、末尾暗），亮起时同步 scale 放大文字。
+  //    WAAPI 优先级高于 CSS，故这里必须也带 transform，否则会把 CSS 的放大盖掉。
   if (typeof el.animate === 'function') {
     try {
-      el.animate([
-        { backgroundColor: 'rgba(212,175,55,0)', boxShadow: '0 0 0 0 rgba(212,175,55,0)', offset: 0 },
-        { backgroundColor: 'rgba(212,175,55,.55)', boxShadow: '0 0 0 3px rgba(212,175,55,.98)', offset: 0.25 },
-        { backgroundColor: 'rgba(212,175,55,0)', boxShadow: '0 0 0 0 rgba(212,175,55,0)', offset: 0.5 },
-        { backgroundColor: 'rgba(212,175,55,.55)', boxShadow: '0 0 0 3px rgba(212,175,55,.98)', offset: 0.75 },
-        { backgroundColor: 'rgba(212,175,55,0)', boxShadow: '0 0 0 0 rgba(212,175,55,0)', offset: 1 }
-      ], { duration: 2000, iterations: 2, easing: 'ease-in-out' });
+      const frames = [];
+      const OFF = 'rgba(212,175,55,0)', ON = 'rgba(212,175,55,.55)';
+      frames.push({ backgroundColor: OFF, boxShadow: '0 0 0 0 ' + OFF, transform: 'scale(1)', offset: 0 });
+      for (let k = 0; k < 5; k += 1) {
+        const base = k * 0.2;                 // 每周期起点 0/.2/.4/.6/.8
+        frames.push({ backgroundColor: ON, boxShadow: '0 0 0 3px rgba(212,175,55,.98)', transform: 'scale(1.08)', offset: base + 0.02 });
+        frames.push({ backgroundColor: ON, boxShadow: '0 0 0 3px rgba(212,175,55,.98)', transform: 'scale(1.08)', offset: base + 0.10 });
+        frames.push({ backgroundColor: OFF, boxShadow: '0 0 0 0 ' + OFF, transform: 'scale(1)', offset: base + 0.12 });
+        frames.push({ backgroundColor: OFF, boxShadow: '0 0 0 0 ' + OFF, transform: 'scale(1)', offset: base + 0.19 });
+      }
+      frames.push({ backgroundColor: OFF, boxShadow: '0 0 0 0 ' + OFF, transform: 'scale(1)', offset: 1 });
+      if (el.style) el.style.transformOrigin = 'left center';
+      el.animate(frames, { duration: 5000, iterations: 1, easing: 'linear' });
     } catch (e) {}
   }
 }
@@ -6457,7 +6783,7 @@ function noteFlashWholePage() {
   note.classList.remove('note-page-flash');
   void note.offsetWidth;
   note.classList.add('note-page-flash');
-  setTimeout(() => note.classList.remove('note-page-flash'), 2400);
+  setTimeout(() => note.classList.remove('note-page-flash'), 5200);
 }
 function noteScrollFlashUnit(unit) {
   // 🆕 串行化握手：定位（含 180ms 延迟校正）结束后回告主窗，主窗才滚自己的画面。
@@ -6480,8 +6806,8 @@ function noteScrollFlashUnit(unit) {
     noteFlashWholePage();
     return;
   }
-  // ★ 手动点：滚到「清单显示的那一行正文」；具名围栏的 name 标题对齐只给名称跳转用
-  if (contentMode) noteScrollToTop(el);
+  // ★ 手动点：滚到「清单显示的那一行正文」；带 unit 让滚动在目标被重绘替换时能重新解析
+  if (contentMode) noteScrollToTop(el, unit);
   else if (unit && unit.name) noteScrollToTitle(el, unit.name);
   else noteScrollToCenter(el);
   // ⚠️ 闪烁必须延到「滚动落地」那一帧，并**重新查一次元素**：
@@ -6496,7 +6822,9 @@ function noteScrollFlashUnit(unit) {
         noteFlashWholePage();
         return;
       }
-      flashUnit(fresh);
+      // ★ 重绘后换了节点 → 再按新节点滚一次，避免「闪对了但画面没动」
+      if (contentMode && fresh !== el) noteScrollToTop(fresh, unit);
+      flashUnit(fresh, contentMode);
     });
   });
 }

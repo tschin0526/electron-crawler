@@ -1332,8 +1332,21 @@ body {
 .ev-stats-detail-table td.d-content[title] { cursor: help; text-decoration: underline dotted rgba(148,163,184,.6); text-underline-offset: 3px; }
 .cal-stats-jump { padding: 3px 10px; border: none; border-radius: 6px; background: var(--primary, #7c3aed); color: #fff; font-size: 11px; cursor: pointer; }
 /* 跳转定位高亮（滚动到事件后短暂闪烁描边） */
-.cal-jump-flash { animation: calJumpFlash 2s ease; }
-@keyframes calJumpFlash { 0%, 60% { box-shadow: 0 0 0 3px rgba(245,197,24,.85); border-radius: 6px; } 100% { box-shadow: none; } }
+/* ★ 闪烁 5 秒：亮段铺满整段（旧版只到 60%、末尾渐暗），亮起时 scale 放大文字 */
+.cal-jump-flash { animation: calJumpFlash 5s linear 1; transform-origin: left center; }
+@keyframes calJumpFlash {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(245,197,24,0); transform: scale(1); }
+  2%, 10%  { box-shadow: 0 0 0 3px rgba(245,197,24,.85); transform: scale(1.04); }
+  12%, 19% { box-shadow: 0 0 0 0 rgba(245,197,24,0); transform: scale(1); }
+  22%, 30% { box-shadow: 0 0 0 3px rgba(245,197,24,.85); transform: scale(1.04); }
+  32%, 39% { box-shadow: 0 0 0 0 rgba(245,197,24,0); transform: scale(1); }
+  42%, 50% { box-shadow: 0 0 0 3px rgba(245,197,24,.85); transform: scale(1.04); }
+  52%, 59% { box-shadow: 0 0 0 0 rgba(245,197,24,0); transform: scale(1); }
+  62%, 70% { box-shadow: 0 0 0 3px rgba(245,197,24,.85); transform: scale(1.04); }
+  72%, 79% { box-shadow: 0 0 0 0 rgba(245,197,24,0); transform: scale(1); }
+  82%, 90% { box-shadow: 0 0 0 3px rgba(245,197,24,.85); transform: scale(1.04); }
+  92%, 100% { box-shadow: 0 0 0 0 rgba(245,197,24,0); transform: scale(1); }
+}
 .ev-form-title { font-size: 16px; font-weight: 600; color: var(--text); margin-bottom: 12px; }
 .ev-f-label { display: block; font-size: 12px; color: var(--text-secondary); margin-bottom: 10px; }
 /* 🗓 表單日期輸入框旁的星期提示（依輸入日期即時更新；與正文同色同字號，便於閱讀） */

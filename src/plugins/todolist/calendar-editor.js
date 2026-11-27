@@ -971,7 +971,7 @@
         el.classList.remove('tl-jump-flash');
         void el.offsetWidth;
         el.classList.add('tl-jump-flash');
-        setTimeout(() => el.classList.remove('tl-jump-flash'), 2000);
+        setTimeout(() => el.classList.remove('tl-jump-flash'), 5200);
       } catch (e) { /* 定位失败不影响写入结果 */ }
     }
 
@@ -1324,7 +1324,7 @@
         body.innerHTML = '<div class="tl-gloss-noresult">没有符合「' + tlEscapeHtml(String((input && input.value) || '').trim()) + '」的术语。<br>可试试术语名、释义、领域、发行、父阶或来源行程的关键词。</div>';
       } else {
         body.innerHTML = shown.map((t, i) => {
-          // 来源事件 chips：关弹层 → scrollIntoView 居中 → 金色描边闪 2s；标题走 MD 行内渲染，故不注入 <mark>
+          // 来源事件 chips：关弹层 → scrollIntoView 居中 → 金色描边闪 5s；标题走 MD 行内渲染，故不注入 <mark>
           const srcHtml = (t.srcs && t.srcs.length)
             ? '<div class="tl-gloss-srcs"><span class="tl-gloss-srcs-label">来源事件：</span>' + t.srcs.map((s) => {
                 const srcText = ((s.title || '') + ' ' + (s.date || '')).toLowerCase();
@@ -1590,7 +1590,7 @@
       el.classList.remove('fs-found-blink');
       void el.offsetWidth;
       el.classList.add('fs-found-blink');
-      setTimeout(() => { el.classList.remove('fs-found-blink'); }, 4200);
+      setTimeout(() => { el.classList.remove('fs-found-blink'); }, 5200);
     }
     // 🆕 重写：分 pending / done 两个 tab，两个都支持定位+闪烁
     function tlRenderAlarmPreview() {
@@ -2407,6 +2407,8 @@
           title: ev.title || '',
           date: ev.date || '',
           endDate: ev.endDate || '',
+          // 手动定位点日期消歧要按「显示日」口径匹配，便利贴窗收不到原始事件对象，故一并下发
+          spanDisplay: ev.spanDisplay || '',
           // ⚠️ 只有 INCLUDE(ro) 行程才带 src（与主进程目录一致：普通档 src 恒空＝主档）
           src: ev.ro ? String(ev.src || '') : '',
           notes: ev.notes || ''
@@ -6107,7 +6109,7 @@
       tlCloseStats();
       tlJumpToEventCore(uid);
     }
-    // 🆕 Glossary 术语表跳转：与事件统计同款（关弹层 → scrollIntoView 居中 → 金色描边闪 2s）
+    // 🆕 Glossary 术语表跳转：与事件统计同款（关弹层 → scrollIntoView 居中 → 金色描边闪 5s）
     function tlGlossJumpToEvent(uid) {
       tlCloseGlossary();
       tlJumpToEventCore(uid);
@@ -6170,7 +6172,7 @@
           cardEl.classList.remove('tl-jump-flash');
           void cardEl.offsetWidth;
           cardEl.classList.add('tl-jump-flash');
-          setTimeout(() => cardEl.classList.remove('tl-jump-flash'), 2000);
+          setTimeout(() => cardEl.classList.remove('tl-jump-flash'), 5200);
           if (target && typeof tlBlinkFound === 'function') tlBlinkFound(target);
           return;
         }
@@ -6210,12 +6212,12 @@
         cardEl.classList.remove('tl-jump-flash');
         void cardEl.offsetWidth;
         cardEl.classList.add('tl-jump-flash');
-        setTimeout(() => cardEl.classList.remove('tl-jump-flash'), 2000);
+        setTimeout(() => cardEl.classList.remove('tl-jump-flash'), 5200);
         if (targetUnit) {
           if (typeof tlBlinkFound === 'function') tlBlinkFound(targetUnit);
           else {
             targetUnit.classList.add('fs-found-blink');
-            setTimeout(() => targetUnit.classList.remove('fs-found-blink'), 4200);
+            setTimeout(() => targetUnit.classList.remove('fs-found-blink'), 5200);
           }
         }
       };
@@ -6350,6 +6352,7 @@
     //   origin.type='sticky' → 返回时主进程 showStickyNoteAt(key,idx) 翻回来源便利贴（主窗滚动也一并还原）。
     let tlGpReturnOrigin = null;
     const tlGpReturnScrollStack = [];   // 与主进程 gpReturnStack 等长同步：每次 prepare push 一份，每次 restore pop 一份
+    let tlGpLastManualLocate = null;    // 🆕 主进程广播的最后一组手动定位设定（两端表单互通）
     // 捕获主窗当前所有可滚动容器 + window 的 top（快照留本地，不 IPC）。
     function tlGpReturnCaptureScrolls() {
       const snaps = [];
@@ -6726,11 +6729,24 @@
     // ★ 2026-11-21：跳转层占深度号（按序返回）；手动点只显示「手动」＋行尾 ✕，不占号、不被按序消费。
     function tlGpReturnRenderPanel(panel, entries, remaining) {
       const esc = tlEscapeHtml;
+      const q = (sel) => (typeof panel.querySelector === 'function') ? panel.querySelector(sel) : null;
       const manualLocateOpen = panel.dataset.manualLocateOpen === 'true';
-      const previousTitle = panel.querySelector('.gp-return-manual-title');
-      const previousLine = panel.querySelector('.gp-return-manual-line');
-      const titleValue = previousTitle ? previousTitle.value : '';
-      const lineValue = previousLine ? previousLine.value : '';
+      const previousTitle = q('.gp-return-manual-title');
+      const previousDate = q('.gp-return-manual-date');
+      const previousLine = q('.gp-return-manual-line');
+      const shared = (typeof tlGpLastManualLocate !== 'undefined' && tlGpLastManualLocate) || {};
+      // ★ 与返回清单同口径：三栏一律以主进程 lastManualLocate 为权威来源（清单也是每次从主进程重建）。
+      //   旧版 `previousXxx ? previousXxx.value : shared.xxx` 让本地旧值永远压过广播值 →
+      //   便利贴提交后主窗表单仍显示自己上次的旧值（截图：一端「在电脑上的草稿」、一端「# 在电脑上的草稿」）。
+      //   只有「本机正在此表单编辑、尚未提交」(dirty) 时才保留本地草稿，避免输入中被对端广播冲掉。
+      const dirty = panel.dataset.manualLocateDirty === 'true';
+      const fillManual = (sharedVal, prevEl) => {
+        if (!dirty && sharedVal) return sharedVal;
+        return prevEl ? prevEl.value : (sharedVal || '');
+      };
+      const titleValue = fillManual(shared.title, previousTitle);
+      const dateValue = fillManual(shared.date, previousDate);
+      const lineValue = fillManual(shared.line, previousLine);
       // 手动点 label 形如「便利贴「标题」·「位置文字」」：只把位置那段包成强调（大一号粗体）。
       // ★ 入参必须已 esc()，片段才能安全直进 innerHTML；只替换第一处，标题里的引号不会被误伤。
       // ★ 只强调「·「位置内容」」那一段（便利貼與主窗 label 現在同格式）；事件標題不放大，與便利貼一致。
@@ -6765,27 +6781,36 @@
         '<button type="button" class="gp-return-manual-locate">\u{1F4CD} 手动定位点设定</button>' +
         '<form class="gp-return-manual-form' + (manualLocateOpen ? ' open' : '') + '">' +
           '<label>便利贴名称（日程事件标题）<input class="gp-return-manual-title" type="text" autocomplete="off" value="' + esc(titleValue) + '" required></label>' +
-          '<label>定位点所在行号（从 1 开始）<input class="gp-return-manual-line" type="number" min="1" step="1" value="' + esc(lineValue) + '" required></label>' +
-          '<div class="gp-return-manual-actions"><button type="button" data-act="cancel">取消</button><button type="submit">定位</button></div>' +
+          '<label>日程日期（YYYY-MM-DD）<input class="gp-return-manual-date" type="text" inputmode="numeric" autocomplete="off" placeholder="2026-10-22" value="' + esc(dateValue) + '" required></label>' +
+          '<label title="该日程备注正文内的行号，从 1 开始；不是整份 MD 档的绝对行号">定位点所在行号（备注正文，从 1 开始）<input class="gp-return-manual-line" type="number" min="1" step="1" value="' + esc(lineValue) + '" required></label>' +
+          '<div class="gp-return-manual-actions"><button type="button" class="gp-return-manual-cancel">取消</button><button type="submit">定位</button></div>' +
         '</form>';
-      const manualLocateBtn = panel.querySelector('.gp-return-manual-locate');
-      const manualLocateForm = panel.querySelector('.gp-return-manual-form');
-      manualLocateBtn.addEventListener('click', (e) => {
-        e.preventDefault(); e.stopPropagation();
-        const open = !manualLocateForm.classList.contains('open');
-        panel.dataset.manualLocateOpen = String(open);
-        manualLocateForm.classList.toggle('open', open);
-        if (open) panel.querySelector('.gp-return-manual-title').focus();
-      });
-      manualLocateForm.addEventListener('submit', (e) => {
-        e.preventDefault(); e.stopPropagation();
-        tlGpManualLocateSubmit(panel);
-      });
-      manualLocateForm.querySelector('[data-act="cancel"]').addEventListener('click', (e) => {
-        e.preventDefault(); e.stopPropagation();
-        panel.dataset.manualLocateOpen = 'false';
-        manualLocateForm.classList.remove('open');
-      });
+      // 表单事件只在真实 DOM 上绑定（回归测试桩只校验产出的 HTML）；清单行的绑定照旧执行
+      const manualLocateBtn = q('.gp-return-manual-locate');
+      const manualLocateForm = q('.gp-return-manual-form');
+      if (manualLocateBtn && manualLocateForm) {
+        manualLocateBtn.addEventListener('click', (e) => {
+          e.preventDefault(); e.stopPropagation();
+          const open = !manualLocateForm.classList.contains('open');
+          panel.dataset.manualLocateOpen = String(open);
+          manualLocateForm.classList.toggle('open', open);
+          if (open) q('.gp-return-manual-title').focus();
+        });
+        // 使用者一输入就标记为「本机编辑中」，重绘时保留本地草稿；提交/取消时清除，恢复以共享值为准
+        manualLocateForm.addEventListener('input', () => { panel.dataset.manualLocateDirty = 'true'; });
+        manualLocateForm.addEventListener('submit', (e) => {
+          e.preventDefault(); e.stopPropagation();
+          panel.dataset.manualLocateDirty = 'false';
+          tlGpManualLocateSubmit(panel);
+        });
+        const cancelBtn = manualLocateForm.querySelector('.gp-return-manual-cancel');
+        if (cancelBtn) cancelBtn.addEventListener('click', (e) => {
+          e.preventDefault(); e.stopPropagation();
+          panel.dataset.manualLocateDirty = 'false';
+          panel.dataset.manualLocateOpen = 'false';
+          manualLocateForm.classList.remove('open');
+        });
+      }
       panel.querySelectorAll('.gp-return-list-row').forEach((row) => {
         row.addEventListener('click', (e) => {
           e.preventDefault(); e.stopPropagation();
@@ -6804,26 +6829,68 @@
     }
     function tlGpManualLocateSubmit(panel) {
       const titleInput = panel.querySelector('.gp-return-manual-title');
+      const dateInput = panel.querySelector('.gp-return-manual-date');
       const lineInput = panel.querySelector('.gp-return-manual-line');
       const title = String(titleInput && titleInput.value || '').trim();
+      const date = String(dateInput && dateInput.value || '').trim();
       const lineNumber = Number(lineInput && lineInput.value);
       if (!title) { showToast('请输入便利贴名称（日程事件标题）', 'danger'); return; }
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) { showToast('日期请填 YYYY-MM-DD', 'danger'); return; }
       if (!Number.isInteger(lineNumber) || lineNumber < 1) { showToast('行号必须是大于 0 的整数', 'danger'); return; }
       const textArea = document.getElementById('taskText');
       if (!textArea) { showToast('找不到当前日程内容', 'danger'); return; }
-      const wantedTitle = title.replace(/\s+/g, ' ').toLocaleLowerCase();
+      // 档案里标题常写成 `- title: `# 名称``，解析后仍带 `# `；界面显示与使用者输入却是纯名称。
+      // 比对前统一去掉 Markdown 标题前缀，否则「在电脑上的草稿」永远配不到「# 在电脑上的草稿」。
+      const normManualTitle = (s) => String(s || '').replace(/^\s*#{1,6}\s+/, '').replace(/\s+/g, ' ').trim().toLocaleLowerCase();
+      const wantedTitle = normManualTitle(title);
       const events = tlAllEvents(textArea.value);
-      const matches = events.filter((ev) =>
-        ev && String(ev.title || '').replace(/\s+/g, ' ').trim().toLocaleLowerCase() === wantedTitle
-      );
-      if (!matches.length) { showToast('找不到日程事件：' + title, 'danger'); return; }
+      // ★ 名称＝日程事件标题；日期消歧按「显示口径」分级，仍同名同级取第一笔：
+      //   ① ev.date 起始日精确（原口径，最优先）
+      //   ② ev.endDate 结束日精确
+      //   ③ 落在 [date, endDate] 区间内任一天（YYYY-MM-DD 字典序＝时间序）
+      //   ④ 事件显示日（tlEventDisplayDate：含 spanDisplay='today' → 今天、'last' → 结束日）
+      //   跨天事件的 date 只是起始日，用户看到的是整段区间（本次「在电脑上的草稿」
+      //   date=2026-10-22 / endDate=2026-11-01，用户填区间内的 2026-10-26 原本会误报找不到）。
+      const rankEventDate = (ev) => {
+        const start = String(ev.date || '');
+        const end = String(ev.endDate || '');
+        if (start === date) return 0;
+        if (end && end === date) return 1;
+        if (start && end && date >= start && date <= end) return 2;
+        const shown = (typeof tlEventDisplayDate === 'function') ? String(tlEventDisplayDate(ev) || '') : start;
+        if (shown === date) return 3;
+        return -1;
+      };
+      const matches = events
+        .map((ev, i) => ({
+          ev, i,
+          rank: (ev && normManualTitle(ev.title) === wantedTitle) ? rankEventDate(ev) : -1
+        }))
+        .filter((x) => x.rank >= 0)
+        .sort((a, b) => (a.rank - b.rank) || (a.i - b.i))   // 稳定：同级维持档案原顺序 → 取第一笔
+        .map((x) => x.ev);
+      if (!matches.length) { showToast('找不到日程事件：' + title + '（' + date + '）', 'danger'); return; }
+      const wantedEvent = matches[0];
 
       const visibleList = typeof tlActiveDetailList === 'function' ? tlActiveDetailList() : null;
       let visibleCard = null;
       if (visibleList && typeof visibleList.querySelectorAll === 'function') {
         const cards = Array.prototype.slice.call(visibleList.querySelectorAll('.ev-item[data-uid]'));
+        const cardDateOk = (card) => {
+          // uid 一致即同一事件：卡片显示的是「显示在今天」或整段区间时，日期栏不含输入的区间内日期，
+          // 不能再拿输入日期当硬门槛，否则可见卡会被误判为不可见、绕去重新渲染路径。
+          if (String(card.getAttribute('data-uid') || '') === String(wantedEvent.uid || '')) return true;
+          const d = card.querySelector('.ev-date');
+          const hay = String(card.getAttribute('data-occ-date') || '') + ' ' + String((d && d.textContent) || '');
+          const start = String(wantedEvent.date || '');
+          const end = String(wantedEvent.endDate || '');
+          if (start && hay.indexOf(start) >= 0) return true;
+          if (end && hay.indexOf(end) >= 0) return true;
+          return hay.indexOf(date) >= 0;
+        };
         visibleCard = cards.find((card) => {
-          if (!card.offsetParent) return false;
+          if (!card.offsetParent || !cardDateOk(card)) return false;
+          if (String(card.getAttribute('data-uid') || '') === String(wantedEvent.uid || '')) return true;
           const titleEl = card.querySelector('.ev-title');
           if (!titleEl) return false;
           const clone = titleEl.cloneNode(true);
@@ -6838,34 +6905,118 @@
         return;
       }
       const event = visibleCard
-        ? matches.find((ev) => String(ev.uid || '') === visibleCard.getAttribute('data-uid')) || matches[0]
-        : matches[0];
-      const line = lineNumber - 1;
+        ? matches.find((ev) => String(ev.uid || '') === visibleCard.getAttribute('data-uid')) || wantedEvent
+        : wantedEvent;
+      const requestedLine = lineNumber - 1;
       const noteLines = String(event.notes || '').replace(/\r\n/g, '\n').split('\n');
-      if (line >= noteLines.length) {
+      if (requestedLine >= noteLines.length) {
         showToast('「' + title + '」只有 ' + noteLines.length + ' 行，找不到第 ' + lineNumber + ' 行', 'danger');
         return;
       }
-      const lineText = tlPlainForMatch(noteLines[line]);
-      const lineRef = { line: line };
+      // ★ 该行是空行/只有标记时，先按原文向前回退到最近一个有正文的行
+      let line = tlGpManualPrevContentLine(noteLines, requestedLine);
+      let lineText = tlPlainForMatch(noteLines[line]);
+      let effectiveLine = line;
+      let effectiveText = lineText;
+      // ★ 前方「本身就有段落」的行，供两种路径共用：可见卡直接试、不可见卡渲染后再试
+      const prevLines = [];
+      for (let i = line - 1; i >= 0 && prevLines.length < 20; i -= 1) {
+        if (tlGpManualPrevContentLine(noteLines, i) !== i) continue;
+        const t = tlPlainForMatch(noteLines[i]);
+        if (t) prevLines.push({ line: i, text: t });
+      }
+      let fallbackNotified = false;
+      const notifyFallback = (i) => {
+        if (fallbackNotified || !Number.isFinite(+i) || +i === requestedLine) return;
+        fallbackNotified = true;
+        showToast('备注正文第 ' + lineNumber + ' 行没有可定位的段落（空行／纯标记／表格行等），' +
+          '已按向前回退改用第 ' + (+i + 1) + ' 行', 'success');
+      };
+      // 🆕 双向联动：① 把这次设定写入共享手动定位点（两端 ▾ 清单都看得到、可点选回用）；
+      //    ② 把同一事件同一行同步到便利贴（翻页/开窗＋滚动闪烁）。只执行一次，取最终回退后的行。
+      let linked = false;
+      const linkOnce = () => {
+        if (linked) return;
+        linked = true;
+        const api = window.electronAPI;
+        if (!api || typeof api.invoke !== 'function') return;
+        const anchor = {
+          kind: 'check', line: effectiveLine, text: effectiveText, focus: 'content',
+          gpManualPrevLines: prevLines, gpManualLines: noteLines
+        };
+        const label = '主窗「' + title + '」·「' + effectiveText + '」';
+        const writeMark = (idx) => {
+          api.invoke('gp-return-mark', {
+            type: 'main', label: label,
+            eventKey: String(event.uid || ''), eventIdx: +idx || 0,
+            occDate: String(event.date || date || ''), eventTitle: String(event.title || title),
+            title: title, date: date, line: (+effectiveLine || 0) + 1,   // 🆕 三项设定随快照互通
+            anchor: anchor
+          }).catch(() => {});
+        };
+        api.invoke('sticky-note-order').then((res) => {
+          const notes = (res && Array.isArray(res.notes)) ? res.notes : [];
+          const order = (res && Array.isArray(res.order)) ? res.order : [];
+          const sameKey = (n) => n && String(n.key || '') === String(event.uid || '');
+          const target = order.find(sameKey) || notes.find(sameKey) || null;
+          const idx = target ? (+target.idx || 0) : 0;
+          writeMark(idx);   // 清单互通不依赖便利贴是否存在
+          if (!target) return;
+          const key = String(target.key || '');
+          const inOrder = order.some((n) => n && String(n.key || '') === key && (+n.idx || 0) === idx);
+          if (!inOrder && !target.isOpen) {
+            api.invoke('toggle-sticky-note', { key: key, idx: idx })
+              .then(() => api.invoke('focus-sticky-note', { key: key, idx: idx, focusUnit: anchor }))
+              .catch(() => {});
+          } else {
+            api.invoke('focus-sticky-note', { key: key, idx: idx, focusUnit: anchor }).catch(() => {});
+          }
+        }).catch(() => writeMark(0));
+      };
       if (visibleCard) {
-        const target = tlLineAnchorInEvent(visibleCard, lineRef) ||
-          (lineText ? tlFindContentByText(visibleCard, lineText) : null);
+        let target = null;
+        // ★ DOM 里也找不到该行段落时继续逐行往前回退，直到命中真正存在的段落
+        for (let i = line; i >= 0; i -= 1) {
+          if (tlGpManualPrevContentLine(noteLines, i) !== i) continue;   // 只试「本身就有段落」的行
+          const txt = tlPlainForMatch(noteLines[i]);
+          if (!txt) continue;
+          const hit = tlLineAnchorInEvent(visibleCard, { line: i }) || tlFindContentByText(visibleCard, txt);
+          if (hit) { target = hit; effectiveLine = i; effectiveText = txt; break; }
+        }
         if (!target) {
-          showToast('找不到「' + title + '」第 ' + lineNumber + ' 行的段落，请检查行号', 'danger');
+          showToast('「' + title + '」第 1–' + (line + 1) + ' 行都找不到可定位的段落，请检查行号', 'danger');
           return;
         }
-        target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        tlScrollLocateTarget(target, visibleList);
         tlBlinkFound(target);
-      } else if (!tlScrollToEventByUid(event.uid, lineRef, lineText)) {
-        showToast('无法定位日程事件：' + title, 'danger');
-        return;
+        linkOnce();
+      } else {
+        const lineRef = {
+          line: effectiveLine,
+          gpManualPrevLines: prevLines,
+          // 渲染后（约 400ms）才可能知道最终落在哪一行 → 回调里再提示，避免报旧行号
+          gpManualOnFallback: (i, text) => {
+            effectiveLine = i;
+            if (text) effectiveText = text;
+            notifyFallback(i);
+            linkOnce();
+          }
+        };
+        if (!tlScrollToEventByUid(event.uid, lineRef, lineText)) {
+          showToast('无法定位日程事件：' + title, 'danger');
+          return;
+        }
       }
+      // 只有真的回退过才提示，让使用者知道「设定值」已被自动前移；
+      // 不可见卡的路径延后到渲染落地后，给 gpManualOnFallback 先更新的机会（只提示一次）。
+      if (visibleCard) notifyFallback(effectiveLine);
+      else setTimeout(() => { notifyFallback(effectiveLine); linkOnce(); }, 480);
       panel.dataset.manualLocateOpen = 'false';
       panel.style.display = 'none';
     }
     function tlGpReturnBtnShow(payload) {
       const entries = (payload && Array.isArray(payload.entries)) ? payload.entries : [];
+      if (payload && payload.lastManualLocate) tlGpLastManualLocate = payload.lastManualLocate;
       // ★ 角标分别取主进程两个计数：remaining＝跳转层数、manualRemaining＝手动点数；⛔不用 entries.length
       const remaining = Math.max(0, +((payload && payload.remaining) || 0) || 0);
       const manual = Math.max(0, +((payload && payload.manualRemaining) || 0) || 0);
@@ -6933,6 +7084,7 @@
           while (tlGpReturnScrollStack.length < (snap.remaining || 0)) tlGpReturnScrollStack.push(tlGpReturnCaptureScrolls());
           // 只剩手动点时也要显示 ▾ 与清单（Show 内部会把主按钮隐藏）
           if ((snap.remaining || 0) > 0 || (snap.manualRemaining || 0) > 0) tlGpReturnBtnShow(snap);
+          else if (snap && snap.lastManualLocate) tlGpLastManualLocate = snap.lastManualLocate;
         }).catch(() => {});
       }
     }
@@ -7073,7 +7225,7 @@
       window.tlOpenGpNamePicker = tlOpenGpNamePicker;
       window.tlCloseGpNamePicker = tlCloseGpNamePicker;
     }
-    // 跳转核心：定位主画面 [data-uid] 元素 → 平滑滚动居中 → .tl-jump-flash 金色描边闪 2s
+    // 跳转核心：定位主画面 [data-uid] 元素 → 平滑滚动居中 → .tl-jump-flash 金色描边闪 5s
     function tlJumpToEventCore(uid) {
       const el = document.querySelector('[data-uid="' + uid + '"]');
       if (!el || !el.offsetParent) { showToast('当前视图未显示该事件，请切换到包含它的视图后再试', 'danger'); return; }
@@ -7081,7 +7233,7 @@
       el.classList.remove('tl-jump-flash');
       void el.offsetWidth;  // 强制 reflow 重启动画
       el.classList.add('tl-jump-flash');
-      setTimeout(() => el.classList.remove('tl-jump-flash'), 2000);
+      setTimeout(() => el.classList.remove('tl-jump-flash'), 5200);
     }
     // 🆕 滚动定位到某行程的「单一可信来源」：便利贴菜单「滚动」、便利贴编辑窗体关闭后回到该行程共用。
     //    两段式：① 游标／选中日／列表锚点设到该行程日期 → 各模式渲染后自动滚到该日期；
@@ -7142,16 +7294,30 @@
         ) || document.querySelector('[data-uid="' + uid + '"]');
         if (row && row.offsetParent) {
           // 🆕 有便利贴第一行锚点 → 滚到那一行（顶部对齐），不再是整张卡居中。
-          const anchor = tlLineAnchorInEvent(row, lineRef) ||
+          let anchor = tlLineAnchorInEvent(row, lineRef) ||
             (typeof manualLineText === 'string' && manualLineText
               ? tlFindContentByText(row, manualLineText) : null);
+          // ★ 手动定位点设定：渲染后该行仍找不到段落 → 沿「向前」候选逐行试，直到命中真实段落。
+          //   与便利贴 noteFindUnitElement 的 gpManualPrevLines 同口径。
+          if (!anchor && lineRef && Array.isArray(lineRef.gpManualPrevLines)) {
+            for (let k = 0; k < lineRef.gpManualPrevLines.length; k += 1) {
+              const cand = lineRef.gpManualPrevLines[k];
+              const hit = tlLineAnchorInEvent(row, cand) ||
+                (cand.text ? tlFindContentByText(row, cand.text) : null);
+              if (hit) {
+                anchor = hit;
+                if (typeof lineRef.gpManualOnFallback === 'function') lineRef.gpManualOnFallback(cand.line, cand.text);
+                break;
+              }
+            }
+          }
           if (anchor) {
-            anchor.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            tlScrollLocateTarget(anchor);
             if (typeof tlBlinkFound === 'function') tlBlinkFound(anchor);
             else {
               anchor.classList.remove('tl-jump-flash'); void anchor.offsetWidth;
               anchor.classList.add('tl-jump-flash');
-              setTimeout(function () { anchor.classList.remove('tl-jump-flash'); }, 2000);
+              setTimeout(function () { anchor.classList.remove('tl-jump-flash'); }, 5200);
             }
             return;
           }
@@ -7171,7 +7337,7 @@
           cell.classList.remove('tl-jump-flash');
           void cell.offsetWidth;  // 强制 reflow 重启动画
           cell.classList.add('tl-jump-flash');
-          setTimeout(function () { cell.classList.remove('tl-jump-flash'); }, 2000);
+          setTimeout(function () { cell.classList.remove('tl-jump-flash'); }, 5200);
         }
       }, 400);
       return true;
@@ -7231,16 +7397,25 @@
         return (typeof tlScrollToEventByUid === 'function') ? tlScrollToEventByUid(uid, anchor) : false;
       }
       // ★ 手动点文字优先：滚到/闪烁的就是清单显示的那一行，不是围栏标题或整块中心
-      const byText = (anchor && anchor.focus === 'content' && anchor.text)
+      let target = (anchor && anchor.focus === 'content' && anchor.text)
         ? tlFindContentByText(row, anchor.text) : null;
-      const target = byText || ((typeof tlLineAnchorInEvent === 'function') ? (tlLineAnchorInEvent(row, anchor) || null) : null);
+      if (!target && typeof tlLineAnchorInEvent === 'function') target = tlLineAnchorInEvent(row, anchor) || null;
+      // ★ 手动定位点清单点选：该行找不到段落时沿前一行方向逐行试（与提交时的回退同口径）
+      if (!target && anchor && Array.isArray(anchor.gpManualPrevLines)) {
+        for (let i = 0; i < anchor.gpManualPrevLines.length; i += 1) {
+          const cand = anchor.gpManualPrevLines[i];
+          const hit = tlFindContentByText(row, cand.text) ||
+            ((typeof tlLineAnchorInEvent === 'function') ? (tlLineAnchorInEvent(row, cand) || null) : null);
+          if (hit) { target = hit; break; }
+        }
+      }
       const el = target || row;
-      el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      tlScrollLocateTarget(el);
       if (typeof tlBlinkFound === 'function') tlBlinkFound(el);
       else {
         el.classList.remove('tl-jump-flash'); void el.offsetWidth;
         el.classList.add('tl-jump-flash');
-        setTimeout(function () { el.classList.remove('tl-jump-flash'); }, 2000);
+        setTimeout(function () { el.classList.remove('tl-jump-flash'); }, 5200);
       }
       return true;
     }
@@ -8559,6 +8734,21 @@
       el.style.position = prevPos;
       return next;
     }
+    // ★ 定位落点的统一滚动：把目标行滚到顶部，再让「内容往下退」一段 HEADROOM（≈5cm），
+    //   避免目标行贴着滚动容器顶部被 sticky 日期条／工具栏盖住而看不到。
+    //   做法：目标行的绝对 scrollTop 减 HEADROOM；若已在顶端（结果 <0）则退无可退，保持 0——
+    //   正好对应「如果还有滚动的可能下」这一口径。用 tlElAbsTop 的 sticky 安全算法算绝对位置，
+    //   ⛔ 不再用 scrollIntoView({block:'start'})：它把行贴到顶部，正是本次要消除的问题。
+    const TL_LOCATE_HEADROOM_PX = 189;   // ≈5cm（96dpi 下 1cm≈37.8px）
+    function tlScrollLocateTarget(el, scroller) {
+      if (!el) return false;
+      const sc = scroller || tlActiveDetailList();
+      if (!sc || !sc.offsetHeight) { el.scrollIntoView({ behavior: 'smooth', block: 'center' }); return true; }
+      const abs = tlElAbsTop(el, sc);
+      const top = Math.max(0, abs - TL_LOCATE_HEADROOM_PX);
+      sc.scrollTo ? sc.scrollTo({ top: top, behavior: 'smooth' }) : (sc.scrollTop = top);
+      return true;
+    }
     // 当前模式下真正可见/可滚动的「明细列表」元素（undone 勾选切换只重锚这一条）
     function tlActiveDetailList() {
       if (tlCalMode === 'list') return document.getElementById('tlEvList');
@@ -9387,6 +9577,16 @@
         .replace(/\s+/g, ' ')
         .trim();
     }
+    // 🆕 手动定位点设定：输入行没有正文时，向前（行号递减）回退到最近一个有内容的可定位行（0-based）。
+    function tlGpManualPrevContentLine(lines, from) {
+      const hasParagraph = (s) => {
+        const t = String(s == null ? '' : s).replace(/<!--[\s\S]*?-->/g, '').replace(/\{[^{}]*\}/g, ' ');
+        return !!t.trim() && !!tlPlainForMatch(t);
+      };
+      let i = Math.max(0, Math.min(+from || 0, lines.length - 1));
+      while (i > 0 && !hasParagraph(lines[i])) i -= 1;
+      return i;
+    }
     // 🆕 事件表单备注框命中行闪烁定位：「找出相同的项目」切换过来时，把备注框滚动到目标行、
     //   选中该行（浏览器原生选中即高亮），并叠加金底＋金环闪烁（4 秒）。
     //   lines 为空时用 text 兜底（按内容找行号），两者都没有就什么都不做。
@@ -9434,8 +9634,8 @@
       ta.classList.remove('tl-evf-notes-flash');
       void ta.offsetWidth;   // 强制 reflow 重启动画
       ta.classList.add('tl-evf-notes-flash');
-      // 🆕 4 秒（CSS 为 2s × 2 次脉冲）：与便利贴窗的命中闪烁时长一致，更醒目
-      setTimeout(function () { ta.classList.remove('tl-evf-notes-flash'); }, 4200);
+      // 🆕 5 秒（CSS 为 2.5s × 2 次脉冲）：与便利贴窗的命中闪烁时长一致，更醒目
+      setTimeout(function () { ta.classList.remove('tl-evf-notes-flash'); }, 5200);
     }
 
     // 📝 開啟編輯/新增行程時，依備註內容自動加高 textarea（最多 15 行，不足 15 行按實際行數）

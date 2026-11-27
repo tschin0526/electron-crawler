@@ -2339,7 +2339,7 @@ function calGpNavToFence(name, kind) {
   target.classList.remove('cal-jump-flash');
   void target.offsetWidth;
   target.classList.add('cal-jump-flash');
-  setTimeout(() => target.classList.remove('cal-jump-flash'), 2000);
+  setTimeout(() => target.classList.remove('cal-jump-flash'), 5200);
 }
 // 🆕 {gpG8}：临时参数过滤——只切 option.hidden / 计数，⛔不写 .md、不写 store。
 function calApplyPmenuFilter(box, userKw) {
@@ -4140,7 +4140,7 @@ function calJumpToEvent(uid) {
   el.classList.remove('cal-jump-flash');
   void el.offsetWidth;  // 強制 reflow 重啟動畫
   el.classList.add('cal-jump-flash');
-  setTimeout(() => el.classList.remove('cal-jump-flash'), 2000);
+  setTimeout(() => el.classList.remove('cal-jump-flash'), 5200);
 }
 function calStatsTableHtml(s) {
   const head = '<thead><tr><th>標籤</th><th>主事件<br>總計</th><th>主·完成</th><th>主·未完成</th><th>子事件<br>總計</th><th>子·完成</th><th>子·未完成</th></tr></thead>';
@@ -7302,7 +7302,7 @@ function calWhereuseNav(hit) {
   card.classList.remove('tl-jump-flash');
   void card.offsetWidth;
   card.classList.add('tl-jump-flash');
-  setTimeout(() => card.classList.remove('tl-jump-flash'), 2000);
+  setTimeout(() => card.classList.remove('tl-jump-flash'), 5200);
 }
 if (typeof window !== 'undefined' && !window.__calWhereuseBound) {
   window.__calWhereuseBound = true;
