@@ -5309,18 +5309,11 @@ function notePlainForMatch(s) {
 //   ① 带文字的分割线 `--- 2026-11-27(五) ---` 渲染成 <hr>，没有可定位的正文 → 不算段落
 //   ② 花刮号指令行 `- {whereuse TEXT="X" showCount=true}` 会渲染出可见结果框 → 算段落
 //   ③ 纯围栏标记 `{gpD}` / `{/gpD}` 只是结构标记 → 不算段落
+// ★ 2026-11-28 用户新规则：所有可见渲染结果都可定位（分割线/围栏标记/花刮号指令），
+//   只有空白行不可定位。与主窗 tlManualHasContent 完全同口径。
 function noteManualHasContent(s) {
   const raw = String(s == null ? '' : s);
-  if (/^[ \t]{0,3}(-{3,}|\*{3,}|_{3,})[ \t]+.+[ \t]+\1[ \t]*$/.test(raw)) return false;
-  const braces = raw.match(/\{[^{}]*\}/g) || [];
-  const hasDirective = braces.some((b) => {
-    const inner = b.slice(1, -1);
-    return /[ \t]/.test(inner) && !/^\/?gp[A-Za-z0-9_]*(?:[ \t][^}]*)?$/i.test(inner);
-  });
-  const t = raw.replace(/<!--[\s\S]*?-->/g, '').replace(/\{[^{}]*\}/g, ' ');
-  const rest = notePlainForMatch(t);
-  if (!rest && hasDirective) return true;
-  return !!rest;
+  return raw.replace(/<!--[\s\S]*?-->/g, '').trim().length > 0;
 }
 // ★ 手动定位点：先向上找最近的可定位行；向上找不到（例如第 1 行是空行／分割线）再向下找。
 //   两端必须同口径，否则同一输入会落到不同行。
@@ -6620,7 +6613,37 @@ function noteLineCompact(s) {
   const raw = String(s == null ? '' : s);
   // 表格分隔行（|---|---|）渲染后没有对应元素，不能占掉一个 DOM 候选
   if (/^[\s|:-]+$/.test(raw) && raw.indexOf('-') >= 0 && raw.indexOf('|') >= 0) return '';
-  return notePlainForMatch(raw)
+  // ★ 渲染后归一化（与主窗 tlManualLineCompact 完全同口径）：NAME="X" / TERM="X" 引用
+  //   会被渲染成「括号徽标 + X」胶囊，<br> 没有字面文本，中文引号可能转直引号。
+  //   ⛔只处理紧邻左花括号的 NAME/TERM 引用，不动 whereuse 等花刮号指令原文。
+  //   [[term:释义:领域]] 同样渲染成「📖 括号徽标 + term + 领域」胶囊。
+  const norm = raw
+    // ⚠️ 正则里的花括号用 \x7b/\x7d 写，避免按大括号计数提取函数的旧测试误判边界。
+    .replace(/\x7b(?:NAME|TERM)\s*=\s*(?:"([^"\n]*)"|'([^'\n]*)'|“([^”\n]*)”|‘([^’\n]*)’|([^\x7b\x7d\n]+))\x7d/gi,
+      (m, ...g) => '{ } ' + String(g.slice(0, 5).find((x) => x != null) || ''))
+    .replace(/\[\[([^\]\n]+)\]\]/g, (m, inner) => {
+      const t = String(inner == null ? '' : inner).trim();
+      const head = t.split(':', 1)[0].trim();
+      // 日期标记与提醒/收藏/闹铃不属于术语胶囊，保持原文交给各自渲染器
+      if (!head || head === 'dl' || head === 'cp' || head === 'cr' ||
+          /^\d{4}-\d{2}-\d{2}$/.test(head) || /^(?:remind|bookmark|alert)$/i.test(head)) return m;
+      const parts = t.split(':');
+      let domain = '', release = '';
+      if (parts.length >= 5) {
+        domain = (parts[parts.length - 3] || '').trim();
+        release = (parts[parts.length - 2] || '').trim();
+      } else if (parts.length === 4) {
+        domain = (parts[parts.length - 2] || '').trim();
+        release = (parts[parts.length - 1] || '').trim();
+      } else if (parts.length === 3) {
+        domain = (parts[parts.length - 1] || '').trim();
+      }
+      return '📖 ' + head + (domain ? ' ' + domain : '') + (release ? ' ' + release : '');
+    })
+    .replace(/<br\s*\/?>/gi, ' ')
+    .replace(/[“”]/g, '"')
+    .replace(/[‘’]/g, "'");
+  return notePlainForMatch(norm)
     .replace(/^\s*\|/, '').replace(/\|\s*$/, '')
     .replace(/[{}|]/g, '')
     .replace(/\s+/g, '')
@@ -6629,7 +6652,7 @@ function noteLineCompact(s) {
 function noteLineDomCandidates(root) {
   // ★ `.gp-include-directive` 是 div，花刮号指令原文（如 {whereuse ...}）就在它里面；
   //   不加进候选，行序映射对「纯花刮号指令行」就会落空而误退到前一行。
-  const sel = NOTE_CONTENT_SEL + ', tr, .gp-include-directive, .gp-exec-directive';
+  const sel = NOTE_CONTENT_SEL + ', tr, hr, .gp-include-directive, .gp-exec-directive';
   const all = Array.prototype.slice.call(root.querySelectorAll(sel));
   const out = [];
   all.forEach((el) => {
@@ -6672,6 +6695,17 @@ function noteLineByOrder(root, lines, n, from) {
       }
     }
     let found = -1;
+    // ★ 与主窗同口径：含花刮号指令的长行拆成多个可见片段时，取最后一个可见元素，
+    //   ⛔不选隐藏的指令原文（否则看不到闪烁）；普通行完全不受影响。
+    if (want.length >= 20 && /\x7b(?:include|whereuse|list|pmenu|gp)/i.test(String(lines[i] || ''))) {
+      for (let k = j; k < cands.length; k += 1) {
+        const got = noteLineCompact(cands[k].textContent);
+        if (got && got.length >= 4 && want.indexOf(got) >= 0 && !(cands[k].matches && cands[k].matches('.gp-include-directive, .gp-exec-directive'))) {
+          found = k;
+        }
+      }
+      if (found >= 0) { hit = cands[found]; lastFound = found; j = found + 1; continue; }
+    }
     for (let k = j; k < cands.length; k += 1) {
       const got = noteLineCompact(cands[k].textContent);
       if (!got) continue;
@@ -6696,11 +6730,63 @@ function noteConcreteLineEl(el) {
   if (el.matches && (el.matches('td') || el.matches('th'))) return el.parentElement || el;
   return el;
 }
+// ★ 2026-11-28：花刮号指令行直接命中整个结果框（与主窗 tlGpBoxAnchorForLine 同口径）。
+//   结果框的 textContent 会被展开内容污染，行序映射必然失败并误退到前一行。
+function noteGpBoxAnchorForLine(body, line, lines) {
+  if (!body || !Array.isArray(lines) || !Number.isFinite(+line)) return null;
+  const n = +line;
+  const raw = String(lines[n] == null ? '' : lines[n]);
+  // ★ 纯围栏标记行 → 该围栏小事件整块（与主窗同口径，选行号区间最紧的那层）
+  if (new RegExp('^\\s*\\x7b\\/?gp[A-Za-z0-9_]*(?:\\|[^\\x7b\\x7d]*)?\\x7d\\s*$').test(raw)) {
+    const units = body.querySelectorAll('.md-unit.is-gp[data-start][data-end]');
+    let hit = null, span = Infinity;
+    for (let i = 0; i < units.length; i += 1) {
+      const s = +units[i].getAttribute('data-start'), e = +units[i].getAttribute('data-end');
+      if (Number.isFinite(s) && Number.isFinite(e) && s <= n && n <= e && (e - s) < span) {
+        hit = units[i]; span = e - s;
+      }
+    }
+    return hit ? (hit.querySelector('.md-unit-edit') || hit) : null;
+  }
+  // ★ 花刮号指令行：按「行号所属围栏 + 指令出现序号」定位结果框，⛔不按参数值/文字找。
+  //   同一份备注里常有两条同名指令（不同行），从头遍历属性会先命中前面那行。
+  const dirRe = new RegExp('\\x7b(?:include|whereuse|list|pmenu)\\b[^\\x7d]*\\x7d', 'gi');
+  const own = raw.match(dirRe);
+  if (!own || !own.length) return null;
+  let scope = body, start = 0, span = Infinity;
+  const units = body.querySelectorAll('.md-unit[data-start][data-end]');
+  for (let i = 0; i < units.length; i += 1) {
+    const s = +units[i].getAttribute('data-start'), e = +units[i].getAttribute('data-end');
+    if (Number.isFinite(s) && Number.isFinite(e) && s <= n && n <= e && (e - s) < span) {
+      scope = units[i]; start = s; span = e - s;
+    }
+  }
+  const boxes = Array.prototype.slice.call(scope.querySelectorAll('.gp-include-box'));
+  if (!boxes.length) return null;
+  let before = 0;
+  for (let i = start; i <= n; i += 1) {
+    const ms = String(lines[i] == null ? '' : lines[i]).match(dirRe);
+    if (ms) before += ms.length;
+  }
+  const idx = before - own.length;
+  if (idx >= 0 && idx < boxes.length) return boxes[idx];
+  const norm = (s) => String(s == null ? '' : s).replace(/[“”]/g, '"').replace(/[‘’]/g, "'").replace(/\s+/g, ' ').trim();
+  const want = norm(own[0]);
+  for (let i = 0; i < boxes.length; i += 1) {
+    const d = boxes[i].querySelector('.gp-include-directive');
+    if (d && norm(d.textContent) === want) return boxes[i];
+  }
+  // 序号与原文都对不上 → 宁可交给回退链，也⛔不闪一个不相干的框
+  return null;
+}
 // ★ 手动定位点：按 0-based 行号找正文锚点，与主窗 tlLineAnchorInEvent 同口径再加强：
 //   data-line → md-unit 行区间（进一步细化到框内那一行）→ 原文行顺序映射（任意资料行）。
 function noteManualLineUnit(body, line, lines) {
   if (!body || !Number.isFinite(+line)) return null;
   const n = +line;
+  // ★ 花刮号指令行 → 整个结果框（用户规则：闪整个花刮号执行结果框）
+  const gpBox = noteGpBoxAnchorForLine(body, n, lines);
+  if (gpBox) return gpBox;
   const ed = body.querySelector('.ev-md-edit[data-line="' + n + '"]');
   if (ed) return closestUnit(ed);
   const cb = body.querySelector('.ev-cb[data-line="' + n + '"]');

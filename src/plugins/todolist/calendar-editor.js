@@ -5095,6 +5095,33 @@
       if (!cands.length) return false;
       return cands.some((c) => tlGpNamePatternHit(c, pattern));
     }
+    // 🆕 2026-11-27：whereuse 三类结果的定位点统一采用「手动定位点设定」同款锚点。
+    //   形状与 tlGpManualLocateSubmit / noteGpManualLocateSubmit 的 focusUnit 完全一致：
+    //   kind:'check' / 0-based line / focus:'content' / text / gpManualPrevLines / gpManualLines。
+    //   ★ 命中行本身就是「使用位置」（{NAME=X}／[[TERM]]／文字），天然是标的物，⛔不再套
+    //     「手动输入空行往上/往下找」的回退（那只对使用者手填行号才有意义）。
+    //     仍带 gpManualPrevLines：渲染后万一这一行没独立 DOM 元素，与手动定位同款向前兜底。
+    function tlWhereuseManualAnchor(ev, line0, fallbackText) {
+      const lines = (ev && Array.isArray(ev.lines)) ? ev.lines : [];
+      const line = Number.isFinite(+line0) ? Math.max(0, +line0) : 0;
+      // ★ 与手动定位的 tlPlainForMatch 同口径，但保留 [[TERM]] 的名称文字：
+      //   whereuse TERM 的命中行若只剩「说明」两字，文字兜底会太短而失效。
+      const plain = (s) => {
+        const raw = String(s == null ? '' : s).replace(/\[\[([^\]\n]+)\]\]/g, '$1');
+        return (typeof tlPlainForMatch === 'function') ? tlPlainForMatch(raw) : raw.trim();
+      };
+      const text = plain(lines[line]);
+      const prevLines = [];
+      for (let i = line - 1; i >= 0 && prevLines.length < 20; i -= 1) {
+        if (typeof tlGpManualPrevContentLine === 'function' && tlGpManualPrevContentLine(lines, i) !== i) continue;
+        const t = plain(lines[i]);
+        if (t) prevLines.push({ kind: 'check', line: i, text: t, focus: 'content' });
+      }
+      return {
+        kind: 'check', line: line, text: text || String(fallbackText || ''), focus: 'content',
+        gpManualPrevLines: prevLines, gpManualLines: lines
+      };
+    }
     function tlWhereuseSearchCorpus(corpus, term) {
       const q = String(term == null ? '' : term).trim();
       if (!q) return [];
@@ -5102,7 +5129,14 @@
       (Array.isArray(corpus) ? corpus : []).forEach((ev) => {
         if (!ev) return;
         const uid = String(ev.uid || ''), title = String(ev.title || ''), date = String(ev.date || '');
-        const push = (anchor, text, kind, line) => out.push({ uid: uid, title: title, date: date, anchor: anchor, text: text, kind: kind, line: line });
+        // ★ anchor 改为手动定位点同款 focusUnit；旧花刮号锚点保留在 whereuseAnchor 供显示/兼容，⛔定位不再消费它。
+        const push = (whereuseAnchor, text, kind, line) => out.push({
+          uid: uid, title: title, date: date,
+          // 标题命中没有正文行号 → 用 card 锚点走手动定位核心的「事件卡」路径，⛔不冒充第1行
+          anchor: (line < 0 ? { kind: 'card' } : tlWhereuseManualAnchor(ev, line, text)),
+          whereuseAnchor: whereuseAnchor,
+          text: text, kind: kind, line: line
+        });
         if (tlWhereuseHit(title, q)) push({ kind: 'card' }, title.slice(0, TL_WHEREUSE_TEXT_MAX), 'title', -1);
         (Array.isArray(ev.lines) ? ev.lines : []).forEach((raw, i) => {
           if (!tlWhereuseHit(raw, q)) return;
@@ -5277,19 +5311,94 @@
       });
     }
     // 点击清单「定位」：调用方（主窗点击委托 / 便利贴 IPC）先 prepare 记录来源，这里只负责 arm＋跳。
+    // ★ 2026-11-27：定位链完全复用「手动定位点设定」——主窗走 tlLineAnchorInEvent /
+    //   tlLineByOrder + tlScrollLocateTarget / tlBlinkFound（5cm 下移＋5 秒放大闪烁），
+    //   便利贴走 focus-sticky-note 带同一份 focusUnit；返回栈仍由 prepare + 此处 arm 负责。
+    function tlWhereuseHitAnchor(hit) {
+      const a = (hit && hit.anchor) || {};
+      if (a.kind === 'card' || (hit && hit.kind === 'title')) return { kind: 'card' };
+      if (Array.isArray(a.gpManualLines) && Number.isFinite(+a.line)) return a;
+      // 兼容旧 payload（还没带手动锚点）：按 uid 从当前语料重建，不让旧缓存点下去没反应。
+      const list = (typeof tlLiveCalEvents === 'function') ? tlLiveCalEvents() : (tlCalEvents || []);
+      const ev = (Array.isArray(list) ? list : []).find((x) => x && String(x.uid || '') === String((hit || {}).uid || ''));
+      const corpus = ev ? tlWhereuseCorpusFromEvents([ev])[0] : null;
+      const line = Number.isFinite(+a.line) ? +a.line : (Number.isFinite(+hit.line) ? +hit.line : 0);
+      return tlWhereuseManualAnchor(corpus, line, hit.text);
+    }
+    function tlWhereuseLocateMain(uid, title, anchor, text, list, card) {
+      const a = anchor || {};
+      // 标题命中：没有正文行号 → 用手动定位核心的「事件卡」路径（不冒充第1行）
+      if (a.kind === 'card') {
+        const ok = (typeof tlScrollToEventByUid === 'function') ? tlScrollToEventByUid(uid, null, null) : false;
+        if (!ok && typeof showToast === 'function') showToast('找不到该行程的日期：' + (title || uid), 'danger');
+        return ok;
+      }
+      if (card) {
+        // 可见卡：与手动定位点设定同款「直接试该行 → 行序映射 → 向前候选」，不重绘画面
+        const ref = { line: a.line, focus: 'content', text: a.text, gpManualLines: a.gpManualLines };
+        let target = (typeof tlLineAnchorInEvent === 'function') ? tlLineAnchorInEvent(card, ref) : null;
+        if (!target && a.text && typeof tlFindContentByText === 'function') target = tlFindContentByText(card, a.text);
+        if (!target && Array.isArray(a.gpManualLines) && typeof tlLineByOrder === 'function') {
+          target = tlLineByOrder(card, a.gpManualLines, +a.line);
+        }
+        if (!target && Array.isArray(a.gpManualPrevLines)) {
+          for (let i = 0; i < a.gpManualPrevLines.length; i += 1) {
+            const cand = a.gpManualPrevLines[i];
+            target = ((typeof tlLineAnchorInEvent === 'function') ? tlLineAnchorInEvent(card, cand) : null) ||
+              (cand.text ? tlFindContentByText(card, cand.text) : null);
+            if (target) break;
+          }
+        }
+        if (target) {
+          tlScrollLocateTarget(target, list);
+          tlBlinkFound(target);
+          return true;
+        }
+      }
+      // 事件不在当前画面：走手动定位点设定同一核心（切日期＋重绘＋滚锚点＋闪烁）
+      const lineRef = {
+        line: a.line, line1: (+a.line || 0) + 1, focus: 'content', text: a.text,
+        gpManualLines: a.gpManualLines, gpManualPrevLines: a.gpManualPrevLines
+      };
+      const ok = (typeof tlScrollToEventByUid === 'function') ? tlScrollToEventByUid(uid, lineRef, text) : false;
+      if (!ok && typeof showToast === 'function') showToast('找不到该行程的日期：' + (title || uid), 'danger');
+      return ok;
+    }
+    function tlWhereuseLocateSticky(uid, anchor) {
+      const api = (typeof window !== 'undefined') ? window.electronAPI : null;
+      if (!api || typeof api.invoke !== 'function' || !uid) return;
+      api.invoke('sticky-note-order').then((res) => {
+        const notes = (res && Array.isArray(res.notes)) ? res.notes : [];
+        const order = (res && Array.isArray(res.order)) ? res.order : [];
+        const same = (n) => n && String(n.key || '') === String(uid);
+        const target = order.find(same) || notes.find(same) || null;
+        if (!target) return;   // 没设便利贴：只定位主窗，不替用户凭空开一张
+        const key = String(target.key || ''), idx = +target.idx || 0;
+        const inOrder = order.some((n) => n && String(n.key || '') === key && (+n.idx || 0) === idx);
+        // 与手动定位点设定同款：翻页清单没这张就先加进清单（顺带开窗），否则直接聚焦。
+        const ready = (!inOrder && !target.isOpen)
+          ? api.invoke('toggle-sticky-note', { key: key, idx: idx })
+          : Promise.resolve();
+        // 标题命中只翻到该贴，不闪具体行（没有行号可闪）
+        const unit = (anchor && anchor.kind === 'card') ? undefined : anchor;
+        return ready.then(() => api.invoke('focus-sticky-note', {
+          key: key, idx: idx, focusUnit: unit
+        }));
+      }).catch(() => {});
+    }
     function tlWhereuseJump(hit) {
       if (!hit || !hit.uid) { showToast('位置信息不完整，无法定位', 'danger'); return; }
-      const a = hit.anchor || {};
-      if (a.kind === 'block' && Number.isFinite(+a.start)) {
-        tlGpReturnArmAndShow();
-        tlGlossJumpToFence(hit.uid, +a.start, +a.end || +a.start, a.name || '');
-      } else if (a.kind === 'check' && Number.isFinite(+a.line)) {
-        tlGpReturnArmAndShow();
-        tlGlossJumpToFence(hit.uid, +a.line, +a.line, '', { kind: 'check', text: a.text || hit.text || '' });
-      } else {
-        tlGpReturnArmAndShow();
-        tlGlossJumpToFence(hit.uid, 0, 0, '');
+      const anchor = tlWhereuseHitAnchor(hit);
+      tlGpReturnArmAndShow();
+      const list = (typeof tlActiveDetailList === 'function') ? tlActiveDetailList() : null;
+      let card = null;
+      if (list && typeof list.querySelectorAll === 'function') {
+        card = Array.prototype.slice.call(list.querySelectorAll('.ev-item[data-uid]')).find(
+          (c) => c.getAttribute('data-uid') === String(hit.uid) && c.offsetParent
+        ) || null;
       }
+      tlWhereuseLocateMain(hit.uid, hit.title || '', anchor, anchor.text || hit.text, list, card);
+      tlWhereuseLocateSticky(hit.uid, anchor);
     }
     // ========== 🆕 2026-11-25：{whereuse NAME="..."} 围栏小事件群名称清单 ==========
     // 语义：列出 NAME 属性符合 pattern 的「围栏小事件群名称」（⛔不是 TERM 出现位置，也不是围栏内文）。
@@ -5358,8 +5467,13 @@
       (Array.isArray(corpus) ? corpus : []).forEach((ev) => {
         if (!ev) return;
         const uid = String(ev.uid || ''), title = String(ev.title || ''), date = String(ev.date || '');
-        const push = (anchor, text, kind, line) => out.push({
-          uid: uid, title: title, date: date, anchor: anchor, text: text, kind: kind, line: line
+        // ★ 与 TERM 同口径：定位点用手动定位同款锚点，旧花刮号锚点仅留作兼容资料。
+        const push = (whereuseAnchor, text, kind, line) => out.push({
+          uid: uid, title: title, date: date,
+          // 标题命中没有正文行号 → 用 card 锚点走手动定位核心的「事件卡」路径，⛔不冒充第1行
+          anchor: (line < 0 ? { kind: 'card' } : tlWhereuseManualAnchor(ev, line, text)),
+          whereuseAnchor: whereuseAnchor,
+          text: text, kind: kind, line: line
         });
         // 标题里也可能写 {NAME=...} 引用
         if (tlWhereuseNameHit(title, q)) push({ kind: 'card' }, title.slice(0, TL_WHEREUSE_TEXT_MAX), 'title', -1);
@@ -5449,8 +5563,13 @@
       (Array.isArray(corpus) ? corpus : []).forEach((ev) => {
         if (!ev) return;
         const uid = String(ev.uid || ''), title = String(ev.title || ''), date = String(ev.date || '');
-        const push = (anchor, text, kind, line) => out.push({
-          uid: uid, title: title, date: date, anchor: anchor, text: text, kind: kind, line: line
+        // ★ 与 TERM 同口径：定位点用手动定位同款锚点，旧花刮号锚点仅留作兼容资料。
+        const push = (whereuseAnchor, text, kind, line) => out.push({
+          uid: uid, title: title, date: date,
+          // 标题命中没有正文行号 → 用 card 锚点走手动定位核心的「事件卡」路径，⛔不冒充第1行
+          anchor: (line < 0 ? { kind: 'card' } : tlWhereuseManualAnchor(ev, line, text)),
+          whereuseAnchor: whereuseAnchor,
+          text: text, kind: kind, line: line
         });
         // 标题里也搜
         if (tlWhereuseTextHit(title, q)) push({ kind: 'card' }, title.slice(0, TL_WHEREUSE_TEXT_MAX), 'title', -1);
@@ -7321,6 +7440,11 @@
       window.tlCollectGpTermFences = tlCollectGpTermFences;
       window.tlGpReturnPrepare = tlGpReturnPrepare;   // 🆕 便利贴 IPC 入口记来源用
       window.tlWhereuseJump = tlWhereuseJump;        // 🆕 2026-11-24：便利贴 whereuse 定位 IPC 入口
+      // 🆕 2026-11-27：whereuse 定位与手动定位点设定共用组件的测试/复用入口
+      window.tlWhereuseManualAnchor = tlWhereuseManualAnchor;
+      window.tlWhereuseHitAnchor = tlWhereuseHitAnchor;
+      window.tlWhereuseLocateMain = tlWhereuseLocateMain;
+      window.tlWhereuseLocateSticky = tlWhereuseLocateSticky;
       window.tlCollectGpWhereuseHits = tlCollectGpWhereuseHits;
       window.tlCalibrateMainToUnit = tlCalibrateMainToUnit;  // 🆕 便利贴来源：跳转前校准主窗
       window.tlOpenGpNamePicker = tlOpenGpNamePicker;
@@ -7340,11 +7464,68 @@
     //    两段式：① 游标／选中日／列表锚点设到该行程日期 → 各模式渲染后自动滚到该日期；
     //            ② 渲染落地后精定位 [data-uid] 事件行（列表／明细）＋金色闪烁；年/月网格无行时退而闪日期格。
     //    返回 true＝已发起滚动；false＝找不到行程或日期（调用方可自行提示，不产生任何卷动副作用）。
+    // ★ 2026-11-28：花刮号指令行（{include}/{whereuse}/{list}/{pmenu}/{include picture}）
+    //   渲染成 fieldset.gp-include-box，文本会被展开结果污染，行序映射对它无效。
+    //   改按「原文行的指令 token」直接找结果框，命中整框（用户规则：闪整个花刮号执行结果框）。
+    //   lines[line] 是原文，从里面抽出第一个花刮号 token 及其参数（名称/TERM/查询词）。
+    function tlGpBoxAnchorForLine(row, line, lines) {
+      if (!row || !Array.isArray(lines) || !Number.isFinite(+line)) return null;
+      const n = +line;
+      const raw = String(lines[n] == null ? '' : lines[n]);
+      // ★ 纯围栏标记行 → 该围栏小事件整块（选行号区间最紧的那层）
+      if (new RegExp('^\\s*\\x7b\\/?gp[A-Za-z0-9_]*(?:\\|[^\\x7b\\x7d]*)?\\x7d\\s*$').test(raw)) {
+        const units = row.querySelectorAll('.md-unit.is-gp[data-start][data-end]');
+        let hit = null, span = Infinity;
+        for (let i = 0; i < units.length; i += 1) {
+          const s = +units[i].getAttribute('data-start'), e = +units[i].getAttribute('data-end');
+          if (Number.isFinite(s) && Number.isFinite(e) && s <= n && n <= e && (e - s) < span) {
+            hit = units[i]; span = e - s;
+          }
+        }
+        return hit ? (hit.querySelector('.md-unit-edit') || hit) : null;
+      }
+      // ★ 花刮号指令行：按「行号所属围栏 + 指令出现序号」定位结果框。
+      //   ⚠️ 绝不可按参数值/属性文字找：同一份备注里常有两条同名指令（不同行），
+      //   从头遍历 data-gp-include 会先命中前面那行，用户实测第13行错跳到第5行。
+      //   占位符按原文顺序注入 → DOM 里 box 顺序 === 原文指令出现顺序，故可用序号精确定位。
+      const dirRe = new RegExp('\\x7b(?:include|whereuse|list|pmenu)\\b[^\\x7d]*\\x7d', 'gi');
+      const own = raw.match(dirRe);
+      if (!own || !own.length) return null;
+      let scope = row, start = 0, span = Infinity;
+      const units = row.querySelectorAll('.md-unit[data-start][data-end]');
+      for (let i = 0; i < units.length; i += 1) {
+        const s = +units[i].getAttribute('data-start'), e = +units[i].getAttribute('data-end');
+        if (Number.isFinite(s) && Number.isFinite(e) && s <= n && n <= e && (e - s) < span) {
+          scope = units[i]; start = s; span = e - s;
+        }
+      }
+      const boxes = Array.prototype.slice.call(scope.querySelectorAll('.gp-include-box'));
+      if (!boxes.length) return null;
+      let before = 0;
+      for (let i = start; i <= n; i += 1) {
+        const ms = String(lines[i] == null ? '' : lines[i]).match(dirRe);
+        if (ms) before += ms.length;
+      }
+      const idx = before - own.length;
+      if (idx >= 0 && idx < boxes.length) return boxes[idx];
+      // 兜底：直接令原文与结果框内的指令原文一致（防序号与 DOM 顺序偶尔不一致）
+      const norm = (s) => String(s == null ? '' : s).replace(/[“”]/g, '"').replace(/[‘’]/g, "'").replace(/\s+/g, ' ').trim();
+      const want = norm(own[0]);
+      for (let i = 0; i < boxes.length; i += 1) {
+        const d = boxes[i].querySelector('.gp-include-directive');
+        if (d && norm(d.textContent) === want) return boxes[i];
+      }
+      // 序号与原文都对不上 → 宁可交给回退链，也⛔不闪一个不相干的框
+      return null;
+    }
     // 🆕 在事件卡里按 0-based 行号找锚点（便利贴与 calendar 共用 tlRenderNotes，行号一致）。
     function tlLineAnchorInEvent(row, ref) {
       if (!row || !ref || typeof ref !== 'object') return null;
       const line = +ref.line;
       if (Number.isFinite(line)) {
+        // ★ 花刮号指令行优先命中整个结果框（用户规则），⛔不再靠会被展开结果污染的 textContent
+        const gpBox = tlGpBoxAnchorForLine(row, line, ref.gpManualLines);
+        if (gpBox) return gpBox;
         const hit = row.querySelector('.ev-md-edit[data-line="' + line + '"], .ev-cb[data-line="' + line + '"]');
         if (hit) return hit;
         const units = row.querySelectorAll('.md-unit[data-start][data-end]');
@@ -7485,7 +7666,39 @@
     function tlManualLineCompact(s) {
       const raw = String(s == null ? '' : s);
       if (/^[\s|:-]+$/.test(raw) && raw.indexOf('-') >= 0 && raw.indexOf('|') >= 0) return '';
-      return tlPlainForMatch(raw)
+      // ★ 渲染后归一化（两端必须同口径）：表格单元格里的 NAME="X" / TERM="X" 引用会被
+      //   tlRenderNameRefs 渲染成「括号徽标 + X」胶囊（原文的 NAME= 和引号消失），<br> 变成换行
+      //   （textContent 没有字面标签），中文引号也可能被转成直引号。不折算的话这一行永远
+      //   匹配不到 DOM，命中会停在前一行（用户回报：第53行定位到第51行）。
+      //   ⛔只处理紧邻左花括号的 NAME/TERM 引用，不动 whereuse 等花刮号指令原文。
+      //   [[term:释义:领域]] 同样被渲染成「📖 括号徽标 + term + 领域」胶囊（方括号与冒号消失）。
+      const norm = raw
+        // ⚠️ 正则里的花括号用 \x7b/\x7d 写，避免按大括号计数提取函数的旧测试误判边界。
+        .replace(/\x7b(?:NAME|TERM)\s*=\s*(?:"([^"\n]*)"|'([^'\n]*)'|“([^”\n]*)”|‘([^’\n]*)’|([^\x7b\x7d\n]+))\x7d/gi,
+          (m, ...g) => '{ } ' + String(g.slice(0, 5).find((x) => x != null) || ''))
+        .replace(/\[\[([^\]\n]+)\]\]/g, (m, inner) => {
+          const t = String(inner == null ? '' : inner).trim();
+          const head = t.split(':', 1)[0].trim();
+          // 日期标记与提醒/收藏/闹铃不属于术语胶囊，保持原文交给各自渲染器
+          if (!head || head === 'dl' || head === 'cp' || head === 'cr' ||
+              /^\d{4}-\d{2}-\d{2}$/.test(head) || /^(?:remind|bookmark|alert)$/i.test(head)) return m;
+          const parts = t.split(':');
+          let domain = '', release = '';
+          if (parts.length >= 5) {
+            domain = (parts[parts.length - 3] || '').trim();
+            release = (parts[parts.length - 2] || '').trim();
+          } else if (parts.length === 4) {
+            domain = (parts[parts.length - 2] || '').trim();
+            release = (parts[parts.length - 1] || '').trim();
+          } else if (parts.length === 3) {
+            domain = (parts[parts.length - 1] || '').trim();
+          }
+          return '📖 ' + head + (domain ? ' ' + domain : '') + (release ? ' ' + release : '');
+        })
+        .replace(/<br\s*\/?>/gi, ' ')
+        .replace(/[“”]/g, '"')
+        .replace(/[‘’]/g, "'");
+      return tlPlainForMatch(norm)
         .replace(/^\s*\|/, '').replace(/\|\s*$/, '')
         .replace(/[{}|]/g, '').replace(/\s+/g, '')
         .toLocaleLowerCase();
@@ -7494,7 +7707,7 @@
       if (!root || !Array.isArray(lines) || !Number.isFinite(+n) || +n < 0) return null;
       // ★ `.gp-include-directive` 是 div，花刮号指令原文（如 {whereuse ...}）就在它里面；
       //   不加进候选，行序映射对「纯花刮号指令行」就会落空而误退到前一行。
-      const sel = TL_CONTENT_SEL + ', tr, .gp-include-directive, .gp-exec-directive';
+      const sel = TL_CONTENT_SEL + ', tr, hr, .gp-include-directive, .gp-exec-directive';
       const all = Array.prototype.slice.call(root.querySelectorAll(sel));
       const cands = [];
       all.forEach((el) => {
@@ -7530,6 +7743,19 @@
           }
         }
         let found = -1;
+        // ★ 一行同时含花刮号指令＋后续文字时，会拆成「指令原文＋多个可见文字片段」。
+        //   只在【该行确有花刮号指令且够长】时启用：收集后面所有「属于这一行」的片段，
+        //   取最后一个可见元素作为命中点（⛔不能选隐藏的指令原文，否则看不到闪烁）。
+        //   这条分支不动普通行，避免全局行序映射被放宽而错位。
+        if (want.length >= 20 && /\x7b(?:include|whereuse|list|pmenu|gp)/i.test(String(lines[i] || ''))) {
+          for (let k = j; k < cands.length; k += 1) {
+            const got = tlManualLineCompact(cands[k].textContent);
+            if (got && got.length >= 4 && want.indexOf(got) >= 0 && !(cands[k].matches && cands[k].matches('.gp-include-directive, .gp-exec-directive'))) {
+              found = k;
+            }
+          }
+          if (found >= 0) { hit = cands[found]; lastFound = found; j = found + 1; continue; }
+        }
         for (let k = j; k < cands.length; k += 1) {
           const got = tlManualLineCompact(cands[k].textContent);
           if (!got) continue;
@@ -8542,6 +8768,13 @@
     //    ⚠️ 只在「行程视图 + 关键词非空」时起作用，其余情况是空操作；定义在 index.html 的内联脚本里。
     function tlAfterCalRender() {
       if (typeof tlCalSearchReapply === 'function') tlCalSearchReapply();
+      // ★ {include picture}：行程视图（list/day/month/year）每次重绘都会重建 <img data-gp-pic>，
+      //   与画廊/导出/编辑器预览同口径补回真实 src（便利贴走 noteSetBodyHtml 内的同步解析）。
+      //   ⛔之前只在画廊等 3 处 hydrate，明细列表漏掉 → 主窗只显示档名、便利贴却能看到图片。
+      //   hydrateIncludePictures 定义在 index.html 内联脚本，与本文件同处 window 全局作用域。
+      if (typeof hydrateIncludePictures === 'function') {
+        try { hydrateIncludePictures(document); } catch (e) {}
+      }
       // 🆕 重绘后恢复「临时便利贴」的卡片描边与 📌 按钮状态（否则一切换视图标记就丢了）
       if (typeof tlRefreshTempStickyMarks === 'function') tlRefreshTempStickyMarks();
     }
@@ -9779,22 +10012,16 @@
         .replace(/\s+/g, ' ')
         .trim();
     }
-    // ★ 手动定位点「可定位段落」判定（两端必须完全同口径）：
-    //   ① 带文字的分割线 `--- 2026-11-27(五) ---` 渲染成 <hr>，没有可定位的正文 → 不算段落
-    //   ② 花刮号指令行 `- {whereuse TEXT="X" showCount=true}` 会渲染出可见结果框 → 算段落
-    //   ③ 纯围栏标记 `{gpD}` / `{/gpD}` 只是结构标记 → 不算段落
+    // ★ 手动定位点「可定位段落」判定（两端必须完全同口径）——2026-11-28 用户新规则：
+    //   所有【可见的渲染结果】都能定位，只有【空白行】才需要向上找（找不到再向下找）。
+    //   ① 带文字分割线 `--- xxx ---` → 渲染成 <hr>，可直接定位+闪该 <hr>
+    //   ② 围栏标记 `{gpD}` / `{/gpD}` → 定位围栏首行、闪整个小事件区块
+    //   ③ 花刮号指令 `- {whereuse TEXT="X"}` → 定位并闪整个执行结果框
+    //   ④ HTML 注释 `<!-- -->` 不产生可见内容 → 算空行
     function tlManualHasContent(s) {
       const raw = String(s == null ? '' : s);
-      if (/^[ \t]{0,3}(-{3,}|\*{3,}|_{3,})[ \t]+.+[ \t]+\1[ \t]*$/.test(raw)) return false;
-      const braces = raw.match(/\{[^{}]*\}/g) || [];
-      const hasDirective = braces.some((b) => {
-        const inner = b.slice(1, -1);
-        return /[ \t]/.test(inner) && !/^\/?gp[A-Za-z0-9_]*(?:[ \t][^}]*)?$/i.test(inner);
-      });
-      const t = raw.replace(/<!--[\s\S]*?-->/g, '').replace(/\{[^{}]*\}/g, ' ');
-      const rest = tlPlainForMatch(t);
-      if (!rest && hasDirective) return true;
-      return !!rest;
+      const t = raw.replace(/<!--[\s\S]*?-->/g, '');
+      return t.trim().length > 0;
     }
     // ★ 手动定位点：先向上找最近的可定位行；向上找不到（例如第 1 行是空行／分割线）再向下找。
     //   与便利贴 noteManualFindLocatable 完全同口径。

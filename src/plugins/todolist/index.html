@@ -11310,6 +11310,9 @@
       if (typeof api.invoke !== 'function') return;
       const list = Array.prototype.slice.call(nodes);
       await Promise.all(list.map(async (img) => {
+        // ★ 幂等守卫：行程视图每次重绘收尾都会调本函数（tlAfterCalRender），
+        //   已填好 src 的图片直接跳过，避免重复 IPC resolve-picture-path。
+        if (img.getAttribute('src')) return;
         const name = img.getAttribute('data-gp-pic') || '';
         if (!name) return;
         const fail = (msg) => { img.classList.add('pic-missing'); img.alt = '\u{1F5BC}\uFE0F ' + (msg || name); };
