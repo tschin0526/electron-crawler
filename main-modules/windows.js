@@ -1405,7 +1405,13 @@ function showStickyNoteAt(key, idx, focusUnit, restoreScrollTop) {
   win.focus();
   // 🆕 分体模式：翻页走 show-page payload，分体走独立 IPC（窗口已 show，内容多半已渲染；
   //    若刚新建还在 loadFile，等 did-finish-load 再发，renderer 会暂存早到请求）。
-  if (typeof focusUnit !== 'undefined') {
+  // ★ 2026-11-28：⛔翻页模式绝不能再用独立 IPC 发 focusUnit！
+  //   翻页时 focusUnit 已随上面的 show-page payload 下发，由 renderFlipPage 末尾统一消费；
+  //   这里再发一次 sticky-note-focus-unit → renderer 会在「旧页面」（还没翻过去）就立即消费掉
+  //   （noteRendered=true 时 6043 行当场 consume），等真正翻到目标页时 pendingFocusUnit 已空 →
+  //   只翻页不定位不闪烁。两条 IPC 到达顺序随机 → 第一次对、返回后再点大几率失效。
+  //   分体模式没有 show-page，仍需这条独立 IPC，故加 stickyNoteMode 守卫。
+  if (typeof focusUnit !== 'undefined' && stickyNoteMode !== 'flip') {
     const sendUnit = () => { if (!win.isDestroyed()) win.webContents.send('sticky-note-focus-unit', { unit: focusUnit }); };
     if (win.webContents.isLoading()) win.webContents.once('did-finish-load', sendUnit);
     else sendUnit();

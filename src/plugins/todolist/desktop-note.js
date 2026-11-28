@@ -6040,7 +6040,11 @@ ipcRenderer.on('sticky-note-focus-unit', (e, payload) => {
   if (!payload) return;
   pendingFocusUnit = payload.unit || payload;
   if (pendingFocusUnit) notifyCancel();   // 🆕 跳转优先：结束提醒贴展示阶段
-  if (noteRendered) consumePendingFocusUnit();
+  // ★ 2026-11-28：翻页模式下 focusUnit 的权威下发是 sticky-note-show-page 的 payload，
+  //   由 renderFlipPage 末尾消费；这里若当场 consume，会在「还没翻过去」的旧页找目标 →
+  //   找不到/闪错，等真正翻到目标页时 pending 已被清空 → 只翻页不定位（第二次点击随机失效）。
+  //   ⛔翻页模式只存 pending、不立即消费，等翻页渲染完成再统一处理。
+  if (noteRendered && !flipTotal) consumePendingFocusUnit();
 });
 // 🆕 2026-11-20：calendar 关闭时，主进程不唤起主窗，改把 {NAME=X} 回送本窗做本地定位。
 ipcRenderer.on('gp-local-name-jump', (e, payload) => { noteLocalNameJump(payload); });

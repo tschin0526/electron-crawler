@@ -8767,13 +8767,15 @@
     //    右上角计数却还在显示旧数字（说谎）。
     //    ⚠️ 只在「行程视图 + 关键词非空」时起作用，其余情况是空操作；定义在 index.html 的内联脚本里。
     function tlAfterCalRender() {
-      if (typeof tlCalSearchReapply === 'function') tlCalSearchReapply();
-      // ★ {include picture}：行程视图（list/day/month/year）每次重绘都会重建 <img data-gp-pic>，
+      // ★ {include picture}：放最前且独立 try，避免被后续 tlCalSearchReapply 的异常吞掉。
+      //   行程视图（list/day/month/year）每次重绘都会重建 <img data-gp-pic>，
       //   与画廊/导出/编辑器预览同口径补回真实 src（便利贴走 noteSetBodyHtml 内的同步解析）。
-      //   ⛔之前只在画廊等 3 处 hydrate，明细列表漏掉 → 主窗只显示档名、便利贴却能看到图片。
       //   hydrateIncludePictures 定义在 index.html 内联脚本，与本文件同处 window 全局作用域。
       if (typeof hydrateIncludePictures === 'function') {
         try { hydrateIncludePictures(document); } catch (e) {}
+      }
+      if (typeof tlCalSearchReapply === 'function') {
+        try { tlCalSearchReapply(); } catch (e) {}
       }
       // 🆕 重绘后恢复「临时便利贴」的卡片描边与 📌 按钮状态（否则一切换视图标记就丢了）
       if (typeof tlRefreshTempStickyMarks === 'function') tlRefreshTempStickyMarks();
